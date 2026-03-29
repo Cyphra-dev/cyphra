@@ -1,12 +1,15 @@
 # CLI
 
-| Command                          | Description                   |
-| -------------------------------- | ----------------------------- |
-| `cyphra init`                    | Scaffold config and schema    |
-| `cyphra migrate deploy`          | Run pending migrations        |
-| `cyphra migrate dev`             | Same with verbose logging     |
-| `cyphra migration:create <name>` | New `.mjs` migration          |
-| `cyphra push`                    | Apply constraints from schema |
-| `cyphra generate`                | Reserved                      |
+| Command                          | Description                                        |
+| -------------------------------- | -------------------------------------------------- |
+| `cyphra init`                    | Scaffold config, schema, migrations, env example   |
+| `cyphra validate`                | Parse and validate `schema.cyphra`                 |
+| `cyphra generate`                | Emit `cyphra.gen.ts` (labels & relationship types) |
+| `cyphra migrate deploy`          | Run pending migrations                             |
+| `cyphra migrate dev`             | Same with verbose logging                          |
+| `cyphra migration:create <name>` | New `.mjs` migration                               |
+| `cyphra push`                    | Apply constraints from schema                      |
 
-Requires `NEO4J_URI`, `NEO4J_USER`, `NEO4J_PASSWORD`.
+`cyphra.json` may set `schema`, `migrations`, and optional `generate` (output path; default `./cyphra.gen.ts`).
+
+`validate` and `generate` only need the schema file. **`migrate`** and **`push`** require `NEO4J_URI`, `NEO4J_USER`, and `NEO4J_PASSWORD`.

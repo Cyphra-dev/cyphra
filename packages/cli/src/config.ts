@@ -5,6 +5,8 @@ import { resolveUnderRoot } from "./paths.js";
 export type CyphraConfig = {
   readonly schema: string;
   readonly migrations: string;
+  /** Absolute path for `cyphra generate` output (default `./cyphra.gen.ts`). */
+  readonly generate: string;
 };
 
 /**
@@ -21,11 +23,14 @@ export async function loadConfig(cwd: string): Promise<CyphraConfig> {
   }
   const schema = (data as Record<string, unknown>).schema;
   const migrations = (data as Record<string, unknown>).migrations;
+  const generateRaw = (data as Record<string, unknown>).generate;
   if (typeof schema !== "string" || typeof migrations !== "string") {
     throw new Error('cyphra.json requires string fields "schema" and "migrations"');
   }
+  const generatePath = typeof generateRaw === "string" ? generateRaw : "./cyphra.gen.ts";
   return {
     schema: resolveUnderRoot(cwd, schema),
     migrations: resolveUnderRoot(cwd, migrations),
+    generate: resolveUnderRoot(cwd, generatePath),
   };
 }

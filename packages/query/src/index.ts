@@ -5,5 +5,12 @@
 
 export type { CompiledCypher } from "./cypher.js";
 export { compileCypher, cypher } from "./cypher.js";
-export type { EqPredicate, NodeRef, PropRef, RelRef } from "./builder.js";
+export type {
+  EqPredicate,
+  NodeRef,
+  OrderByClause,
+  OrderDirection,
+  PropRef,
+  RelRef,
+} from "./builder.js";
 export { eq, node, prop, rel, select, SelectQuery } from "./builder.js";

@@ -25,6 +25,7 @@ export async function runInit(cwd: string): Promise<void> {
       {
         schema: "./schema.cyphra",
         migrations: "./migrations",
+        generate: "./cyphra.gen.ts",
       },
       null,
       2,

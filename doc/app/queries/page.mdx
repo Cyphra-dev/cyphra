@@ -25,5 +25,14 @@ select()
   .match(u.out(m, o))
   .where(eq(prop(m.alias, "role"), "admin"))
   .returnFields({ id: prop(u.alias, "id") })
+  .orderBy({ prop: prop(u.alias, "createdAt"), direction: "DESC" })
+  .skip(0)
+  .limit(20)
   .toCypher();
 ```
+
+Use `u.in(m, from)` or `u.both(m, other)` for incoming or undirected patterns.
+
+## Codegen
+
+Run `cyphra generate` to produce `cyphra.gen.ts` with `NodeLabel`, `RelType`, and `RelationshipSpec` constants aligned to your `.cyphra` file, then import them alongside the builder for fewer string typos.

@@ -13,6 +13,7 @@ export {
 export { constraintStatementsFromSchema } from "./push.js";
 export { compileRenameLabel, compileRenameProperty } from "./rename.js";
 export { applyConstraintStatements, runPendingMigrations, type LoadedMigration } from "./runner.js";
+export { schemaIntegrationHints } from "./schemaHints.js";
 export {
   CYPHRA_MIGRATION_LABEL,
   ensureMigrationInfrastructure,

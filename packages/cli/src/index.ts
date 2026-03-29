@@ -3,7 +3,9 @@ import { Command } from "commander";
 import { runInit } from "./commands/init.js";
 import { runMigrate } from "./commands/migrate.js";
 import { runMigrationCreate } from "./commands/migrationCreate.js";
+import { runGenerate } from "./commands/generate.js";
 import { runPush } from "./commands/push.js";
+import { runValidateSchema } from "./commands/validateSchema.js";
 import { loadConfig } from "./config.js";
 
 const program = new Command();
@@ -50,10 +52,21 @@ program
   });
 
 program
+  .command("validate")
+  .description("Parse and validate schema.cyphra")
+  .action(async () => {
+    const cwd = process.cwd();
+    const config = await loadConfig(cwd);
+    await runValidateSchema(cwd, config);
+  });
+
+program
   .command("generate")
-  .description("codegen (stub for future releases)")
-  .action(() => {
-    console.log("cyphra generate is not implemented yet.");
+  .description("Emit cyphra.gen.ts (labels, relationship types) from the schema")
+  .action(async () => {
+    const cwd = process.cwd();
+    const config = await loadConfig(cwd);
+    await runGenerate(cwd, config);
   });
 
 program.parseAsync(process.argv).catch((err: unknown) => {
