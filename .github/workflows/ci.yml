@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
   pull_request:
-    branches: [main]
+    branches: [main, dev]
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
@@ -87,5 +87,5 @@ jobs:
           NEO4J_TEST_USER: neo4j
           NEO4J_TEST_PASSWORD: cyphra_ci_test
         run: |
-          pnpm --filter @cyphra/runtime exec vitest run src/client.integration.test.ts
+          pnpm --filter @cyphra/provider-neo4j exec vitest run src/client.integration.test.ts
           pnpm --filter @cyphra/migrator exec vitest run src/push.integration.test.ts
