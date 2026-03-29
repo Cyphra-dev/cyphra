@@ -12,7 +12,7 @@ Command-line interface for Cyphra.
 
 ## Migrations
 
-Migration files are ESM (`.mjs`) and should import `defineMigration` from `@cyphra/migrator` (add that dependency to your app).
+Migration files are ESM (`.mjs`) and should import `defineMigration` from **`cyphra`** or `@cyphra/migrator` (library dependency).
 
 ## Environment
 

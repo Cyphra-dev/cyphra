@@ -1,6 +1,6 @@
 # Cyphra example — basic
 
-Small Node script that uses **`@cyphra/schema`**, **`@cyphra/query`**, **`@cyphra/runtime`**, and **`@cyphra/migrator`**:
+Small Node script that depends on the **`cyphra`** package (single import surface; same APIs as the scoped `@cyphra/*` packages):
 
 1. Parses `schema.cyphra` and prints a canonical copy.
 2. Builds parameterized Cypher with the **`cypher`** template tag.

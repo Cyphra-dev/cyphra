@@ -4,7 +4,7 @@ Cyphra is a **TypeScript-first toolkit for Neo4j** that combines:
 
 - A **schema DSL** (`.cyphra` files) with a Prisma-like feel
 - A **Cypher-first** query layer (tagged templates + a small builder) — [Queries](/queries)
-- **`@cyphra/runtime`** — driver wrapper, sessions, and result mapping — [Runtime](/runtime)
+- **Runtime** — Neo4j driver wrapper, sessions, transactions — [Runtime](/runtime) (also available as `@cyphra/runtime`)
 - **Versioned migrations** with tracking on `__CyphraMigration` nodes — [Migrations](/migrations)
 - A **CLI** (`init`, `validate`, `generate`, `schema print` / `schema ddl`, `migrate`, `push`) — [CLI](/cli)
 
@@ -12,10 +12,19 @@ Cypher stays visible. The graph model stays first-class.
 
 ## Install
 
+**Recommended:** one dependency for the library surface (schema, query, runtime, migrator):
+
 ```bash
-pnpm add @cyphra/runtime @cyphra/query @cyphra/schema @cyphra/migrator
+pnpm add cyphra
+```
+
+The CLI is published separately:
+
+```bash
 pnpm add -D @cyphra/cli
 ```
+
+Advanced: install [`@cyphra/schema`](https://www.npmjs.com/package/@cyphra/schema), [`@cyphra/query`](https://www.npmjs.com/package/@cyphra/query), [`@cyphra/runtime`](https://www.npmjs.com/package/@cyphra/runtime), and [`@cyphra/migrator`](https://www.npmjs.com/package/@cyphra/migrator) individually if you want explicit subpackage boundaries.
 
 ## Example project
 
@@ -24,8 +33,7 @@ See the [Example app](/example) page — run `pnpm example:basic` from the monor
 ## Quick start
 
 ```ts
-import { cypher } from "@cyphra/query";
-import { CyphraClient } from "@cyphra/runtime";
+import { cypher, CyphraClient } from "cyphra";
 
 const client = new CyphraClient({
   uri: process.env.NEO4J_URI!,

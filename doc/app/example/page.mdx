@@ -4,10 +4,12 @@ The repo includes a **runnable Node example** at [`examples/basic/`](https://git
 
 It demonstrates:
 
-- Parsing and printing a `.cyphra` schema (`@cyphra/schema`)
-- Parameterized Cypher with the **`cypher`** tag and **`SelectQuery`** (`@cyphra/query`)
-- Offline **DDL preview** for `cyphra push` — constraints and range indexes (`@cyphra/migrator`)
-- Optional **live** `RETURN 1` via **`CyphraClient.queryRecords`** when `NEO4J_*` env vars are set (`@cyphra/runtime`)
+- Parsing and printing a `.cyphra` schema
+- Parameterized Cypher with the **`cypher`** tag and **`SelectQuery`**
+- Offline **DDL preview** for `cyphra push` — constraints and range indexes
+- Optional **live** `RETURN 1` via **`CyphraClient.queryRecords`** when `NEO4J_*` env vars are set
+
+The example depends on the **`cyphra`** meta-package only (`import { … } from "cyphra"`).
 
 ## Run locally
 

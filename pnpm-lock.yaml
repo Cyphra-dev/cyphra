@@ -78,18 +78,9 @@ importers:
 
   examples/basic:
     dependencies:
-      '@cyphra/migrator':
+      cyphra:
         specifier: workspace:*
-        version: link:../../packages/migrator
-      '@cyphra/query':
-        specifier: workspace:*
-        version: link:../../packages/query
-      '@cyphra/runtime':
-        specifier: workspace:*
-        version: link:../../packages/runtime
-      '@cyphra/schema':
-        specifier: workspace:*
-        version: link:../../packages/schema
+        version: link:../../packages/cyphra
     devDependencies:
       '@types/node':
         specifier: ^22.10.2
@@ -128,6 +119,31 @@ importers:
       vitest:
         specifier: ^3.0.2
         version: 3.2.4(@types/debug@4.1.13)(@types/node@22.19.15)(tsx@4.21.0)(yaml@2.8.3)
+
+  packages/cyphra:
+    dependencies:
+      '@cyphra/migrator':
+        specifier: workspace:*
+        version: link:../migrator
+      '@cyphra/query':
+        specifier: workspace:*
+        version: link:../query
+      '@cyphra/runtime':
+        specifier: workspace:*
+        version: link:../runtime
+      '@cyphra/schema':
+        specifier: workspace:*
+        version: link:../schema
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.2
+        version: 22.19.15
+      tsup:
+        specifier: ^8.3.5
+        version: 8.5.1(postcss@8.5.8)(tsx@4.21.0)(typescript@5.9.3)(yaml@2.8.3)
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
 
   packages/migrator:
     dependencies:

@@ -3,12 +3,17 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   constraintStatementsFromSchema,
+  CyphraClient,
+  cypher,
+  eq,
   indexStatementsFromSchema,
+  node,
+  parseSchema,
+  printSchemaDocument,
+  prop,
   schemaIntegrationHints,
-} from "@cyphra/migrator";
-import { cypher, eq, node, prop, select } from "@cyphra/query";
-import { CyphraClient } from "@cyphra/runtime";
-import { parseSchema, printSchemaDocument } from "@cyphra/schema";
+  select,
+} from "cyphra";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, "..");
