@@ -9,4 +9,4 @@ node User {
 }
 ```
 
-The parser produces an AST used by `cyphra push` for constraints.
+The parser produces an AST used by `cyphra push`, `cyphra generate`, and programmatic APIs. Use **`printSchemaDocument`** from `@cyphra/schema` (or **`cyphra schema print`**) to emit a canonical `.cyphra` text for diffs and reviews—comments are not preserved.

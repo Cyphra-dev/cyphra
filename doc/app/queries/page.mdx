@@ -36,3 +36,7 @@ Use `u.in(m, from)` or `u.both(m, other)` for incoming or undirected patterns.
 ## Codegen
 
 Run `cyphra generate` to produce `cyphra.gen.ts` with `NodeLabel`, `RelType`, and `RelationshipSpec` constants aligned to your `.cyphra` file, then import them alongside the builder for fewer string typos.
+
+## Result mapping
+
+`@cyphra/runtime` exports **`toPlainRecords`** and **`toPlainRecord`** to turn a `session.run` / `runCompiled` result into plain objects (`record.toObject()`), without an ORM layer.

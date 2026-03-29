@@ -5,6 +5,7 @@ import { runMigrate } from "./commands/migrate.js";
 import { runMigrationCreate } from "./commands/migrationCreate.js";
 import { runGenerate } from "./commands/generate.js";
 import { runPush } from "./commands/push.js";
+import { runSchemaPrint } from "./commands/schemaPrint.js";
 import { runValidateSchema } from "./commands/validateSchema.js";
 import { loadConfig } from "./config.js";
 
@@ -67,6 +68,17 @@ program
     const cwd = process.cwd();
     const config = await loadConfig(cwd);
     await runGenerate(cwd, config);
+  });
+
+const schemaCmd = program.command("schema").description("Schema utilities");
+
+schemaCmd
+  .command("print")
+  .description("Pretty-print schema.cyphra to stdout (canonical formatting)")
+  .action(async () => {
+    const cwd = process.cwd();
+    const config = await loadConfig(cwd);
+    await runSchemaPrint(config);
   });
 
 program.parseAsync(process.argv).catch((err: unknown) => {

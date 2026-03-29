@@ -18,7 +18,7 @@ export type MigrationDefinition = {
  * export default defineMigration({
  *   name: "001_init",
  *   async up({ db }) {
- *     await db.run`CREATE (n:Example { id: $p0 })` with values - use run with template
+ *     await db.run`MERGE (n:Example { id: ${"seed-1"} })`;
  *   },
  * });
  * ```
