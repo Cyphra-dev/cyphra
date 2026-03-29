@@ -44,6 +44,36 @@ describe("SelectQuery", () => {
     expect(u.both(a, p)).toBe("(u:User)-[a:AUTHORED]-(p:Post)");
   });
 
+  it("appends OPTIONAL MATCH after MATCH", () => {
+    const u = node("User", "u");
+    const f = node("User", "f");
+    const r = rel("FOLLOWS", "r");
+    const { text } = select()
+      .match(`(${u.alias}:${u.label})`)
+      .optionalMatch(u.out(r, f))
+      .returnStar()
+      .toCypher();
+    expect(text).toBe(
+      "MATCH (u:User) OPTIONAL MATCH (u:User)-[r:FOLLOWS]->(f:User) RETURN *",
+    );
+  });
+
+  it("allows multiple optionalMatch calls", () => {
+    const { text } = select()
+      .match("(a:A)")
+      .optionalMatch("(a)-[:R1]->(b:B)")
+      .optionalMatch("(a)-[:R2]->(c:C)")
+      .returnStar()
+      .toCypher();
+    expect(text).toBe(
+      "MATCH (a:A) OPTIONAL MATCH (a)-[:R1]->(b:B) OPTIONAL MATCH (a)-[:R2]->(c:C) RETURN *",
+    );
+  });
+
+  it("rejects optionalMatch before match", () => {
+    expect(() => select().optionalMatch("(x:X)")).toThrow(/match\(\) before optionalMatch/);
+  });
+
   it("adds ORDER BY, SKIP, and LIMIT with parameters", () => {
     const u = node("User", "u");
     const q = select()

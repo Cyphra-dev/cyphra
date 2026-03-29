@@ -344,12 +344,13 @@ export type OrderByClause = {
 type Projection = "star" | Record<string, PropRef>;
 
 /**
- * `MATCH … WHERE … RETURN … ORDER BY … SKIP … LIMIT` builder (Cypher remains explicit in `match()`).
+ * `MATCH … OPTIONAL MATCH … WHERE … RETURN … ORDER BY … SKIP … LIMIT` builder (Cypher remains explicit in `match()` / `optionalMatch()`).
  * WHERE clauses are AND-combined; use {@link and} / {@link or} for explicit grouping.
  * Every bound value is a parameter except `IS NULL` / `IS NOT NULL`.
  */
 export class SelectQuery {
   private matchPattern = "";
+  private optionalPatterns: string[] = [];
   private predicates: WherePredicate[] = [];
   private projection: Projection | null = null;
   private returnDistinctFlag = false;
@@ -362,6 +363,19 @@ export class SelectQuery {
    */
   match(pattern: string): this {
     this.matchPattern = pattern;
+    return this;
+  }
+
+  /**
+   * Append `OPTIONAL MATCH` after the primary {@link match} (same pattern string rules: full clause body only).
+   *
+   * @throws If {@link match} was not called yet.
+   */
+  optionalMatch(pattern: string): this {
+    if (!this.matchPattern) {
+      throw new Error("SelectQuery: call match() before optionalMatch()");
+    }
+    this.optionalPatterns.push(pattern);
     return this;
   }
 
@@ -450,6 +464,9 @@ export class SelectQuery {
     const sink: ParamSink = { params, nextParam };
 
     let text = `MATCH ${this.matchPattern}`;
+    for (const opt of this.optionalPatterns) {
+      text += ` OPTIONAL MATCH ${opt}`;
+    }
     if (this.predicates.length > 0) {
       // Multiple where() args are AND-combined; a bare OR at this level must stay grouped (Cypher: AND > OR).
       const parts =
