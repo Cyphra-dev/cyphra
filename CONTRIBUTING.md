@@ -20,7 +20,10 @@ pnpm typecheck
 pnpm test
 pnpm build
 pnpm doc:build
+pnpm example:basic
 ```
+
+Example app: [`examples/basic/`](./examples/basic) (`pnpm build` packages first).
 
 If you change the public API of `@cyphra/schema`, run `pnpm build` (or `pnpm --filter @cyphra/schema build`) before `pnpm typecheck` so dependent packages see updated `dist/*.d.ts`.
 

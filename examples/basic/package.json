@@ -1,0 +1,20 @@
+{
+  "name": "cyphra-example-basic",
+  "private": true,
+  "type": "module",
+  "description": "Minimal demo: schema parse, cypher tag, SelectQuery, optional Neo4j",
+  "scripts": {
+    "start": "tsx src/main.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@cyphra/query": "workspace:*",
+    "@cyphra/runtime": "workspace:*",
+    "@cyphra/schema": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}

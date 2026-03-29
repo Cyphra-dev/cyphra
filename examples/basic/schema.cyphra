@@ -1,0 +1,11 @@
+node User {
+  id    String @id @default(cuid())
+  email String @unique
+  name  String @index
+}
+
+node Post {
+  id     String @id
+  title  String
+  author User? @relationship(type: "AUTHORED", direction: IN)
+}

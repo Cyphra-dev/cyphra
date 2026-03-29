@@ -20,6 +20,7 @@
     "audit": "pnpm audit --audit-level=high",
     "doc:dev": "pnpm --filter cyphra-doc dev",
     "doc:build": "pnpm --filter cyphra-doc build",
+    "example:basic": "pnpm --filter cyphra-example-basic start",
     "changeset": "changeset"
   },
   "devDependencies": {

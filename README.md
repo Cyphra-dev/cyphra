@@ -4,6 +4,7 @@
 
 - **Packages**: `@cyphra/schema`, `@cyphra/query`, `@cyphra/runtime`, `@cyphra/migrator`, `@cyphra/cli`
 - **Docs site**: [`doc/`](./doc) (Next.js + Nextra) — `pnpm doc:dev` / `pnpm doc:build`
+- **Example app**: [`examples/basic/`](./examples/basic) — `pnpm build` then `pnpm example:basic`
 - **Security**: see [SECURITY.md](./SECURITY.md)
 
 ## Monorepo
@@ -17,6 +18,16 @@ pnpm typecheck
 pnpm format:check
 pnpm doc:build
 ```
+
+## Example
+
+After `pnpm build` (packages need `dist/`):
+
+```bash
+pnpm example:basic
+```
+
+See [`examples/basic/README.md`](./examples/basic/README.md).
 
 ## License
 
