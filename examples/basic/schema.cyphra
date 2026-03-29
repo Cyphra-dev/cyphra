@@ -14,5 +14,6 @@ relationship Follows {
   type "FOLLOWS"
   from User
   to User
-  since DateTime @index
+  since     DateTime @index
+  requestId String   @unique
 }

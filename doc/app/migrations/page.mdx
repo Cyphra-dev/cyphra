@@ -21,4 +21,6 @@ Applied migrations are stored as:
 
 Use `cyphra migrate deploy` after setting `NEO4J_*` env vars.
 
+`cyphra push` (and `@cyphra/migrator`’s `constraintStatementsFromSchema` / `indexStatementsFromSchema`) emits **node** uniqueness constraints and **relationship** property uniqueness for `@unique` on `relationship { … }` fields (Neo4j **5.7+**).
+
 For Neo4j 5+, **`db.runInTransactionBatches({ inner, batchSize, params })`** wraps `inner` in `CALL { … } IN TRANSACTIONS OF … ROWS` so long-running writes commit in chunks (your `inner` query should typically batch rows with `LIMIT` / `WITH`).

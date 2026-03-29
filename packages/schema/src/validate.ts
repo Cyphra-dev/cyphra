@@ -63,9 +63,25 @@ export function validateSchema(doc: SchemaDocument): void {
 
     for (const f of decl.fields) {
       const idx = decoratorCount(f.decorators, "index");
+      const uniq = decoratorCount(f.decorators, "unique");
       if (idx > 1) {
         throw new SchemaValidationError(
           `Relationship "${decl.name}" field "${f.name}": at most one @index allowed (found ${idx}).`,
+        );
+      }
+      if (uniq > 1) {
+        throw new SchemaValidationError(
+          `Relationship "${decl.name}" field "${f.name}": at most one @unique allowed (found ${uniq}).`,
+        );
+      }
+      if (idx > 0 && uniq > 0) {
+        throw new SchemaValidationError(
+          `Relationship "${decl.name}" field "${f.name}": @index is redundant with @unique (unique constraints are indexed).`,
+        );
+      }
+      if (hasDecoratorNamed(f.decorators, "id")) {
+        throw new SchemaValidationError(
+          `Relationship "${decl.name}" field "${f.name}": @id is only valid on node scalar fields.`,
         );
       }
     }

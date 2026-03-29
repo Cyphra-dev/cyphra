@@ -17,6 +17,6 @@ relationship Follows {
 }
 ```
 
-**Decorators (V1):** `@id`, `@unique`, `@index` (Neo4j 5+ **range** index: on nodes via `(n:Label)`, on rich relationships via `()-[r:TYPE]-()`), `@default(…)`, `@relationship(…)`. On **nodes**, you cannot combine `@index` with `@id` or `@unique` on the same field (those constraints already imply an index).
+**Decorators (V1):** `@id`, `@unique`, `@index` (Neo4j 5+ **range** index: on nodes via `(n:Label)`, on rich relationships via `()-[r:TYPE]-()`), `@default(…)`, `@relationship(…)`. On **nodes**, you cannot combine `@index` with `@id` or `@unique` on the same field (those constraints already imply an index). On **relationship** models, `@unique` maps to a **relationship property uniqueness** constraint (Neo4j **5.7+**); `@id` is not allowed on relationship fields.
 
 The parser produces an AST used by `cyphra push`, `cyphra generate`, and programmatic APIs. Use **`printSchemaDocument`** from `@cyphra/schema` (or **`cyphra schema print`**) to emit a canonical `.cyphra` text for diffs and reviews—comments are not preserved.

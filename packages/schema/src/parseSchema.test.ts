@@ -115,4 +115,59 @@ describe("parseSchema", () => {
     `),
     ).toThrow(SchemaValidationError);
   });
+
+  it("rejects @index with @unique on a relationship field", () => {
+    expect(() =>
+      parseSchema(`
+      node A { id String @id }
+      relationship R {
+        type "T"
+        from A
+        to A
+        x String @unique @index
+      }
+    `),
+    ).toThrow(SchemaValidationError);
+  });
+
+  it("rejects duplicate @unique on a relationship field", () => {
+    expect(() =>
+      parseSchema(`
+      node A { id String @id }
+      relationship R {
+        type "T"
+        from A
+        to A
+        x String @unique @unique
+      }
+    `),
+    ).toThrow(SchemaValidationError);
+  });
+
+  it("rejects @id on a relationship field", () => {
+    expect(() =>
+      parseSchema(`
+      node A { id String @id }
+      relationship R {
+        type "T"
+        from A
+        to A
+        x String @id
+      }
+    `),
+    ).toThrow(SchemaValidationError);
+  });
+
+  it("allows @unique on relationship properties", () => {
+    const doc = parseSchema(`
+      node A { id String @id }
+      relationship R {
+        type "T"
+        from A
+        to A
+        token String @unique
+      }
+    `);
+    expect(doc.declarations[1]).toMatchObject({ kind: "Relationship", name: "R" });
+  });
 });

@@ -7,6 +7,14 @@ function isScalarWithDecorator(
   return field.kind === "Scalar" && field.decorators.some((d) => d.name === dec);
 }
 
+/** Decorator presence without a type predicate (avoids `never` when chaining multiple `@…` checks). */
+function hasDecoratorName(
+  field: { readonly decorators: readonly { readonly name: string }[] },
+  name: string,
+): boolean {
+  return field.decorators.some((d) => d.name === name);
+}
+
 /** Cypher relationship type token for patterns (`:KNOWS` or :`a-b`). */
 function cypherRelTypeToken(relType: string): string {
   if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(relType)) {
@@ -25,7 +33,9 @@ function idPropertyName(node: NodeDeclaration): string | undefined {
 }
 
 /**
- * Generate `CREATE CONSTRAINT … IF NOT EXISTS` statements for `@id` and `@unique` scalar fields.
+ * Generate `CREATE CONSTRAINT … IF NOT EXISTS` statements for node `@id` / `@unique` and relationship `@unique`.
+ *
+ * Relationship property uniqueness uses Neo4j 5.7+ syntax (`FOR ()-[r:TYPE]-() REQUIRE r.prop IS UNIQUE`).
  *
  * @param doc - Parsed schema AST.
  * @returns Cypher DDL strings (Neo4j 5 syntax).
@@ -33,25 +43,35 @@ function idPropertyName(node: NodeDeclaration): string | undefined {
 export function constraintStatementsFromSchema(doc: SchemaDocument): string[] {
   const statements: string[] = [];
   for (const decl of doc.declarations) {
-    if (decl.kind !== "Node") {
+    if (decl.kind === "Node") {
+      const label = decl.name;
+      const idProp = idPropertyName(decl);
+      if (idProp) {
+        statements.push(
+          `CREATE CONSTRAINT ${escapeConstraintName(`${label}_${idProp}_id`)} IF NOT EXISTS FOR (n:\`${label}\`) REQUIRE n.\`${idProp}\` IS UNIQUE`,
+        );
+      }
+      for (const f of decl.fields) {
+        if (!isScalarWithDecorator(f, "unique")) {
+          continue;
+        }
+        if (f.name === idProp) {
+          continue;
+        }
+        statements.push(
+          `CREATE CONSTRAINT ${escapeConstraintName(`${label}_${f.name}_unique`)} IF NOT EXISTS FOR (n:\`${label}\`) REQUIRE n.\`${f.name}\` IS UNIQUE`,
+        );
+      }
       continue;
     }
-    const label = decl.name;
-    const idProp = idPropertyName(decl);
-    if (idProp) {
-      statements.push(
-        `CREATE CONSTRAINT ${escapeConstraintName(`${label}_${idProp}_id`)} IF NOT EXISTS FOR (n:\`${label}\`) REQUIRE n.\`${idProp}\` IS UNIQUE`,
-      );
-    }
+
+    const typeTok = cypherRelTypeToken(decl.relType);
     for (const f of decl.fields) {
       if (!isScalarWithDecorator(f, "unique")) {
         continue;
       }
-      if (f.name === idProp) {
-        continue;
-      }
       statements.push(
-        `CREATE CONSTRAINT ${escapeConstraintName(`${label}_${f.name}_unique`)} IF NOT EXISTS FOR (n:\`${label}\`) REQUIRE n.\`${f.name}\` IS UNIQUE`,
+        `CREATE CONSTRAINT ${escapeConstraintName(`${decl.name}_${f.name}_rel_unique`)} IF NOT EXISTS FOR ()-[r:${typeTok}]-() REQUIRE r.\`${f.name}\` IS UNIQUE`,
       );
     }
   }
@@ -71,7 +91,13 @@ export function indexStatementsFromSchema(doc: SchemaDocument): string[] {
     if (decl.kind === "Node") {
       const label = decl.name;
       for (const f of decl.fields) {
-        if (f.kind !== "Scalar" || !isScalarWithDecorator(f, "index")) {
+        if (f.kind !== "Scalar") {
+          continue;
+        }
+        if (!isScalarWithDecorator(f, "index")) {
+          continue;
+        }
+        if (hasDecoratorName(f, "unique")) {
           continue;
         }
         statements.push(
@@ -84,6 +110,9 @@ export function indexStatementsFromSchema(doc: SchemaDocument): string[] {
     const typeTok = cypherRelTypeToken(decl.relType);
     for (const f of decl.fields) {
       if (!isScalarWithDecorator(f, "index")) {
+        continue;
+      }
+      if (hasDecoratorName(f, "unique")) {
         continue;
       }
       statements.push(
