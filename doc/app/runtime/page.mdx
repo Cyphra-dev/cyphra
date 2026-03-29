@@ -1,0 +1,43 @@
+# Runtime
+
+**`@cyphra/runtime`** wraps the official Neo4j JavaScript driver with Cyphra’s **compiled Cypher** types (`CompiledCypher` from `@cyphra/query`).
+
+## Client
+
+```ts
+import { cypher } from "@cyphra/query";
+import { CyphraClient } from "@cyphra/runtime";
+
+const client = new CyphraClient({
+  uri: process.env.NEO4J_URI!,
+  user: process.env.NEO4J_USER!,
+  password: process.env.NEO4J_PASSWORD!,
+  database: "neo4j", // optional, Neo4j 4+
+  debug: false, // when true: logs Cypher text and parameter keys (never values)
+});
+
+await client.withSession(async (session) => {
+  await client.runCompiled(session, cypher`RETURN 1 AS n`);
+});
+
+await client.close();
+```
+
+## Sessions and transactions
+
+- **`session()`** — you own `close()`; prefer **`withSession(fn)`** so the session is always closed.
+- **`withReadTransaction`** / **`withWriteTransaction`** — delegate to the driver’s `executeRead` / `executeWrite` with a managed transaction.
+
+## Executing queries
+
+- **`runCompiled(session, compiled)`** — run `CompiledCypher` from `cypher\`…\`` or `SelectQuery.toCypher()`.
+- **`runCypher(session, strings, ...values)`** — tagged-template style on the client (same parameter rules as `compileCypher`).
+- **`queryRecords`** / **`queryRecord`** — `runCompiled` plus plain row objects (`record.toObject()`).
+- **`selectRecords`** / **`selectRecord`** — same for a `SelectQuery`.
+
+Lower-level helpers **`toPlainRecords`** and **`toPlainRecord`** map a driver `Result` (or compatible) to plain objects if you call `session.run` yourself.
+
+## See also
+
+- [Queries](/queries) — `cypher` tag and `SelectQuery` builder
+- [Example app](/example) — optional live round-trip with `NEO4J_*` env vars

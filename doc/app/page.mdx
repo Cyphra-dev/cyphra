@@ -3,9 +3,10 @@
 Cyphra is a **TypeScript-first toolkit for Neo4j** that combines:
 
 - A **schema DSL** (`.cyphra` files) with a Prisma-like feel
-- A **Cypher-first** query layer (tagged templates + a small builder)
-- **Versioned migrations** with tracking on `__CyphraMigration` nodes
-- A **CLI** for `init`, `migrate`, and `push`
+- A **Cypher-first** query layer (tagged templates + a small builder) — [Queries](/queries)
+- **`@cyphra/runtime`** — driver wrapper, sessions, and result mapping — [Runtime](/runtime)
+- **Versioned migrations** with tracking on `__CyphraMigration` nodes — [Migrations](/migrations)
+- A **CLI** (`init`, `validate`, `generate`, `schema print` / `schema ddl`, `migrate`, `push`) — [CLI](/cli)
 
 Cypher stays visible. The graph model stays first-class.
 

@@ -26,6 +26,7 @@ export {
   isNull,
   lt,
   lte,
+  matches,
   neq,
   not,
   or,

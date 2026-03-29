@@ -183,6 +183,11 @@ function emitPredicate(pred: WherePredicate, sink: ParamSink): string {
       sink.params[k] = pred.substring;
       return `${propExpr(pred.left)} CONTAINS $${k}`;
     }
+    case "matches": {
+      const k = sink.nextParam();
+      sink.params[k] = pred.pattern;
+      return `${propExpr(pred.left)} =~ $${k}`;
+    }
     default: {
       const _exhaustive: never = pred;
       throw new Error(`Unhandled predicate: ${JSON.stringify(_exhaustive)}`);
@@ -206,7 +211,8 @@ export type WherePredicate =
   | { readonly kind: "in"; readonly left: PropRef; readonly values: readonly unknown[] }
   | { readonly kind: "startsWith"; readonly left: PropRef; readonly substring: string }
   | { readonly kind: "endsWith"; readonly left: PropRef; readonly substring: string }
-  | { readonly kind: "contains"; readonly left: PropRef; readonly substring: string };
+  | { readonly kind: "contains"; readonly left: PropRef; readonly substring: string }
+  | { readonly kind: "matches"; readonly left: PropRef; readonly pattern: string };
 
 /** Equality branch of {@link WherePredicate}. */
 export type EqPredicate = Extract<WherePredicate, { kind: "eq" }>;
@@ -302,6 +308,14 @@ export function endsWith(left: PropRef, substring: string): WherePredicate {
 /** `left CONTAINS $pN` */
 export function contains(left: PropRef, substring: string): WherePredicate {
   return { kind: "contains", left, substring };
+}
+
+/**
+ * `left =~ $pN` — regular-expression match; the pattern is always a bound parameter.
+ * Neo4j uses Java-compatible regex (see Cypher manual).
+ */
+export function matches(left: PropRef, pattern: string): WherePredicate {
+  return { kind: "matches", left, pattern };
 }
 
 export type OrderDirection = "ASC" | "DESC";

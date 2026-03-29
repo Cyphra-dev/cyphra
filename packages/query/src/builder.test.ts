@@ -8,6 +8,7 @@ import {
   inList,
   isNotNull,
   isNull,
+  matches,
   neq,
   node,
   not,
@@ -75,6 +76,7 @@ describe("SelectQuery", () => {
         startsWith(prop(u.alias, "email"), "evil"),
         endsWith(prop(u.alias, "email"), ".com"),
         contains(prop(u.alias, "name"), `'"`), // stays a param, not Cypher injection
+        matches(prop(u.alias, "email"), "^[a-z]+@"),
       )
       .returnFields({ id: prop(u.alias, "id") });
     const { text, params } = q.toCypher();
@@ -82,7 +84,7 @@ describe("SelectQuery", () => {
       [
         "MATCH (u:User) WHERE u.status <> $p0 AND u.deletedAt IS NULL AND u.email IS NOT NULL",
         "AND u.score >= $p1 AND u.role IN $p2 AND u.email STARTS WITH $p3 AND u.email ENDS WITH $p4",
-        "AND u.name CONTAINS $p5 RETURN u.id AS id",
+        "AND u.name CONTAINS $p5 AND u.email =~ $p6 RETURN u.id AS id",
       ].join(" "),
     );
     expect(params).toEqual({
@@ -92,6 +94,7 @@ describe("SelectQuery", () => {
       p3: "evil",
       p4: ".com",
       p5: `'"`,
+      p6: "^[a-z]+@",
     });
   });
 
