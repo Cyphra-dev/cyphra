@@ -33,6 +33,8 @@ select()
 
 Use `u.in(m, from)` or `u.both(m, other)` for incoming or undirected patterns.
 
+`where()` accepts multiple predicates (AND-combined): `eq`, `neq`, `gt`, `gte`, `lt`, `lte`, `isNull`, `isNotNull`, `inList`, `startsWith`, `endsWith`, `contains`. Every value is a Neo4j parameter—only `IS NULL` / `IS NOT NULL` have no bound value.
+
 ## Codegen
 
 Run `cyphra generate` to produce `cyphra.gen.ts` with `NodeLabel`, `RelType`, and `RelationshipSpec` constants aligned to your `.cyphra` file, then import them alongside the builder for fewer string typos.

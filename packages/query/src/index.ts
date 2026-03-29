@@ -12,5 +12,24 @@ export type {
   OrderDirection,
   PropRef,
   RelRef,
+  WherePredicate,
 } from "./builder.js";
-export { eq, node, prop, rel, select, SelectQuery } from "./builder.js";
+export {
+  contains,
+  endsWith,
+  eq,
+  gt,
+  gte,
+  inList,
+  isNotNull,
+  isNull,
+  lt,
+  lte,
+  neq,
+  node,
+  prop,
+  rel,
+  select,
+  SelectQuery,
+  startsWith,
+} from "./builder.js";

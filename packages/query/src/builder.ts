@@ -81,21 +81,93 @@ export function prop(alias: string, name: string): PropRef {
   return { alias, name };
 }
 
-/** Equality predicate for the fluent builder (right-hand side is parameterized). */
-export type EqPredicate = {
-  readonly kind: "eq";
-  readonly left: PropRef;
-  readonly right: unknown;
-};
+function propExpr(p: PropRef): string {
+  return `${p.alias}.${p.name}`;
+}
+
+/** Predicate combined with AND in {@link SelectQuery.where}. */
+export type WherePredicate =
+  | { readonly kind: "eq"; readonly left: PropRef; readonly right: unknown }
+  | { readonly kind: "neq"; readonly left: PropRef; readonly right: unknown }
+  | { readonly kind: "gt"; readonly left: PropRef; readonly right: unknown }
+  | { readonly kind: "gte"; readonly left: PropRef; readonly right: unknown }
+  | { readonly kind: "lt"; readonly left: PropRef; readonly right: unknown }
+  | { readonly kind: "lte"; readonly left: PropRef; readonly right: unknown }
+  | { readonly kind: "isNull"; readonly left: PropRef }
+  | { readonly kind: "isNotNull"; readonly left: PropRef }
+  | { readonly kind: "in"; readonly left: PropRef; readonly values: readonly unknown[] }
+  | { readonly kind: "startsWith"; readonly left: PropRef; readonly substring: string }
+  | { readonly kind: "endsWith"; readonly left: PropRef; readonly substring: string }
+  | { readonly kind: "contains"; readonly left: PropRef; readonly substring: string };
+
+/** Equality branch of {@link WherePredicate}. */
+export type EqPredicate = Extract<WherePredicate, { kind: "eq" }>;
+
+/** `left = $pN` */
+export function eq(left: PropRef, right: unknown): WherePredicate {
+  return { kind: "eq", left, right };
+}
+
+/** `left <> $pN` */
+export function neq(left: PropRef, right: unknown): WherePredicate {
+  return { kind: "neq", left, right };
+}
+
+/** `left > $pN` */
+export function gt(left: PropRef, right: unknown): WherePredicate {
+  return { kind: "gt", left, right };
+}
+
+/** `left >= $pN` */
+export function gte(left: PropRef, right: unknown): WherePredicate {
+  return { kind: "gte", left, right };
+}
+
+/** `left < $pN` */
+export function lt(left: PropRef, right: unknown): WherePredicate {
+  return { kind: "lt", left, right };
+}
+
+/** `left <= $pN` */
+export function lte(left: PropRef, right: unknown): WherePredicate {
+  return { kind: "lte", left, right };
+}
+
+/** `left IS NULL` */
+export function isNull(left: PropRef): WherePredicate {
+  return { kind: "isNull", left };
+}
+
+/** `left IS NOT NULL` */
+export function isNotNull(left: PropRef): WherePredicate {
+  return { kind: "isNotNull", left };
+}
 
 /**
- * `left = $pN` with `right` bound as a parameter.
+ * `left IN $pN` — list is passed as a single parameter (never concatenated into Cypher).
  *
- * @param left - Property reference.
- * @param right - Value (bound, not interpolated into Cypher text).
+ * @throws If `values` is empty (use other predicates; `IN []` is always false in Cypher).
  */
-export function eq(left: PropRef, right: unknown): EqPredicate {
-  return { kind: "eq", left, right };
+export function inList(left: PropRef, values: readonly unknown[]): WherePredicate {
+  if (values.length === 0) {
+    throw new Error("inList: empty list is not supported; use explicit false or omit the clause");
+  }
+  return { kind: "in", left, values };
+}
+
+/** `left STARTS WITH $pN` */
+export function startsWith(left: PropRef, substring: string): WherePredicate {
+  return { kind: "startsWith", left, substring };
+}
+
+/** `left ENDS WITH $pN` */
+export function endsWith(left: PropRef, substring: string): WherePredicate {
+  return { kind: "endsWith", left, substring };
+}
+
+/** `left CONTAINS $pN` */
+export function contains(left: PropRef, substring: string): WherePredicate {
+  return { kind: "contains", left, substring };
 }
 
 export type OrderDirection = "ASC" | "DESC";
@@ -106,11 +178,12 @@ export type OrderByClause = {
 };
 
 /**
- * Minimal `MATCH … WHERE … RETURN … ORDER BY … SKIP … LIMIT` builder (Cypher remains explicit in `match()`).
+ * `MATCH … WHERE … RETURN … ORDER BY … SKIP … LIMIT` builder (Cypher remains explicit in `match()`).
+ * WHERE clauses are AND-combined; every value is a parameter except `IS NULL` / `IS NOT NULL`.
  */
 export class SelectQuery {
   private matchPattern = "";
-  private predicates: EqPredicate[] = [];
+  private predicates: WherePredicate[] = [];
   private projection: Record<string, PropRef> | null = null;
   private order: OrderByClause[] = [];
   private skipCount: number | null = null;
@@ -124,7 +197,7 @@ export class SelectQuery {
     return this;
   }
 
-  where(...preds: EqPredicate[]): this {
+  where(...preds: WherePredicate[]): this {
     this.predicates.push(...preds);
     return this;
   }
@@ -189,9 +262,79 @@ export class SelectQuery {
     if (this.predicates.length > 0) {
       const parts: string[] = [];
       for (const pred of this.predicates) {
-        const key = nextParam();
-        params[key] = pred.right;
-        parts.push(`${pred.left.alias}.${pred.left.name} = $${key}`);
+        const ref = propExpr(pred.left);
+        switch (pred.kind) {
+          case "eq": {
+            const k = nextParam();
+            params[k] = pred.right;
+            parts.push(`${ref} = $${k}`);
+            break;
+          }
+          case "neq": {
+            const k = nextParam();
+            params[k] = pred.right;
+            parts.push(`${ref} <> $${k}`);
+            break;
+          }
+          case "gt": {
+            const k = nextParam();
+            params[k] = pred.right;
+            parts.push(`${ref} > $${k}`);
+            break;
+          }
+          case "gte": {
+            const k = nextParam();
+            params[k] = pred.right;
+            parts.push(`${ref} >= $${k}`);
+            break;
+          }
+          case "lt": {
+            const k = nextParam();
+            params[k] = pred.right;
+            parts.push(`${ref} < $${k}`);
+            break;
+          }
+          case "lte": {
+            const k = nextParam();
+            params[k] = pred.right;
+            parts.push(`${ref} <= $${k}`);
+            break;
+          }
+          case "isNull":
+            parts.push(`${ref} IS NULL`);
+            break;
+          case "isNotNull":
+            parts.push(`${ref} IS NOT NULL`);
+            break;
+          case "in": {
+            const k = nextParam();
+            params[k] = [...pred.values];
+            parts.push(`${ref} IN $${k}`);
+            break;
+          }
+          case "startsWith": {
+            const k = nextParam();
+            params[k] = pred.substring;
+            parts.push(`${ref} STARTS WITH $${k}`);
+            break;
+          }
+          case "endsWith": {
+            const k = nextParam();
+            params[k] = pred.substring;
+            parts.push(`${ref} ENDS WITH $${k}`);
+            break;
+          }
+          case "contains": {
+            const k = nextParam();
+            params[k] = pred.substring;
+            parts.push(`${ref} CONTAINS $${k}`);
+            break;
+          }
+          default: {
+            const _exhaustive: never = pred;
+            throw new Error(`Unhandled predicate: ${JSON.stringify(_exhaustive)}`);
+          }
+        }
       }
       text += ` WHERE ${parts.join(" AND ")}`;
     }

@@ -1,5 +1,19 @@
 import { describe, expect, it } from "vitest";
-import { eq, node, prop, rel, select } from "./builder.js";
+import {
+  contains,
+  endsWith,
+  eq,
+  gte,
+  inList,
+  isNotNull,
+  isNull,
+  neq,
+  node,
+  prop,
+  rel,
+  select,
+  startsWith,
+} from "./builder.js";
 
 describe("SelectQuery", () => {
   it("builds MATCH/WHERE/RETURN with parameters", () => {
@@ -43,5 +57,43 @@ describe("SelectQuery", () => {
   it("rejects invalid skip/limit", () => {
     expect(() => select().match("(u:U)").skip(-1).toCypher()).toThrow(/skip/);
     expect(() => select().match("(u:U)").limit(1.5).toCypher()).toThrow(/limit/);
+  });
+
+  it("combines comparisons, null checks, IN, and string predicates with parameters", () => {
+    const u = node("User", "u");
+    const q = select()
+      .match(`(${u.alias}:${u.label})`)
+      .where(
+        neq(prop(u.alias, "status"), "banned"),
+        isNull(prop(u.alias, "deletedAt")),
+        isNotNull(prop(u.alias, "email")),
+        gte(prop(u.alias, "score"), 10),
+        inList(prop(u.alias, "role"), ["admin", "mod"]),
+        startsWith(prop(u.alias, "email"), "evil"),
+        endsWith(prop(u.alias, "email"), ".com"),
+        contains(prop(u.alias, "name"), `'"`), // stays a param, not Cypher injection
+      )
+      .returnFields({ id: prop(u.alias, "id") });
+    const { text, params } = q.toCypher();
+    expect(text).toBe(
+      [
+        "MATCH (u:User) WHERE u.status <> $p0 AND u.deletedAt IS NULL AND u.email IS NOT NULL",
+        "AND u.score >= $p1 AND u.role IN $p2 AND u.email STARTS WITH $p3 AND u.email ENDS WITH $p4",
+        "AND u.name CONTAINS $p5 RETURN u.id AS id",
+      ].join(" "),
+    );
+    expect(params).toEqual({
+      p0: "banned",
+      p1: 10,
+      p2: ["admin", "mod"],
+      p3: "evil",
+      p4: ".com",
+      p5: `'"`,
+    });
+  });
+
+  it("rejects empty inList", () => {
+    const u = node("User", "u");
+    expect(() => inList(prop(u.alias, "x"), [])).toThrow(/empty list/);
   });
 });
