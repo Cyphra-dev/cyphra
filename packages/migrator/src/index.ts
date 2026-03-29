@@ -10,7 +10,7 @@ export {
   type MigrationDb,
   type MigrationMigrateHelpers,
 } from "./migrationDb.js";
-export { constraintStatementsFromSchema } from "./push.js";
+export { constraintStatementsFromSchema, indexStatementsFromSchema } from "./push.js";
 export { compileRenameLabel, compileRenameProperty } from "./rename.js";
 export { applyConstraintStatements, runPendingMigrations, type LoadedMigration } from "./runner.js";
 export { schemaIntegrationHints } from "./schemaHints.js";

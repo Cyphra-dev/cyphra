@@ -50,6 +50,32 @@ export function constraintStatementsFromSchema(doc: SchemaDocument): string[] {
   return statements;
 }
 
+/**
+ * Generate `CREATE RANGE INDEX … IF NOT EXISTS` for node scalar fields marked `@index`.
+ * Skips properties already covered by {@link constraintStatementsFromSchema} rules.
+ *
+ * @param doc - Parsed schema AST.
+ * @returns Cypher DDL strings (Neo4j 5+ range index syntax).
+ */
+export function indexStatementsFromSchema(doc: SchemaDocument): string[] {
+  const statements: string[] = [];
+  for (const decl of doc.declarations) {
+    if (decl.kind !== "Node") {
+      continue;
+    }
+    const label = decl.name;
+    for (const f of decl.fields) {
+      if (f.kind !== "Scalar" || !isScalarWithDecorator(f, "index")) {
+        continue;
+      }
+      statements.push(
+        `CREATE RANGE INDEX ${escapeConstraintName(`${label}_${f.name}_idx`)} IF NOT EXISTS FOR (n:\`${label}\`) ON (n.\`${f.name}\`)`,
+      );
+    }
+  }
+  return statements;
+}
+
 function escapeConstraintName(name: string): string {
   return name.replace(/[^A-Za-z0-9_]/g, "_");
 }

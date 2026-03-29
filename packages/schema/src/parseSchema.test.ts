@@ -68,4 +68,38 @@ describe("parseSchema", () => {
     const huge = "node X { y String }\n".repeat(Math.ceil(MAX_SCHEMA_BYTES / 20) + 10);
     expect(() => parseSchema(huge)).toThrow(SchemaValidationError);
   });
+
+  it("rejects @index with @unique on the same field", () => {
+    expect(() =>
+      parseSchema(`
+      node N {
+        x String @unique @index
+      }
+    `),
+    ).toThrow(SchemaValidationError);
+  });
+
+  it("rejects @index on relationship properties (not supported yet)", () => {
+    expect(() =>
+      parseSchema(`
+      node A { id String @id }
+      relationship R {
+        type "T"
+        from A
+        to A
+        meta String @index
+      }
+    `),
+    ).toThrow(SchemaValidationError);
+  });
+
+  it("rejects duplicate @index on the same field", () => {
+    expect(() =>
+      parseSchema(`
+      node N {
+        x String @index @index
+      }
+    `),
+    ).toThrow(SchemaValidationError);
+  });
 });
