@@ -31,7 +31,7 @@ relationship Membership {
   to Organization
 
   role  String
-  since DateTime
+  since DateTime @index
 }
 `;
 
@@ -79,7 +79,20 @@ describe("parseSchema", () => {
     ).toThrow(SchemaValidationError);
   });
 
-  it("rejects @index on relationship properties (not supported yet)", () => {
+  it("allows @index on relationship properties", () => {
+    const doc = parseSchema(`
+      node A { id String @id }
+      relationship R {
+        type "T"
+        from A
+        to A
+        meta String @index
+      }
+    `);
+    expect(doc.declarations[1]).toMatchObject({ kind: "Relationship", name: "R" });
+  });
+
+  it("rejects duplicate @index on a relationship field", () => {
     expect(() =>
       parseSchema(`
       node A { id String @id }
@@ -87,7 +100,7 @@ describe("parseSchema", () => {
         type "T"
         from A
         to A
-        meta String @index
+        x String @index @index
       }
     `),
     ).toThrow(SchemaValidationError);

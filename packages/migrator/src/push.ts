@@ -1,10 +1,18 @@
-import type { NodeDeclaration, SchemaDocument } from "@cyphra/schema";
+import type { NodeDeclaration, ScalarNodeField, SchemaDocument } from "@cyphra/schema";
 
 function isScalarWithDecorator(
-  field: NodeDeclaration["fields"][number],
+  field: { readonly kind: string; readonly decorators: readonly { readonly name: string }[] },
   dec: string,
-): field is import("@cyphra/schema").ScalarNodeField {
+): field is ScalarNodeField {
   return field.kind === "Scalar" && field.decorators.some((d) => d.name === dec);
+}
+
+/** Cypher relationship type token for patterns (`:KNOWS` or :`a-b`). */
+function cypherRelTypeToken(relType: string): string {
+  if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(relType)) {
+    return relType;
+  }
+  return `\`${relType.replace(/`/g, "``")}\``;
 }
 
 function idPropertyName(node: NodeDeclaration): string | undefined {
@@ -51,8 +59,8 @@ export function constraintStatementsFromSchema(doc: SchemaDocument): string[] {
 }
 
 /**
- * Generate `CREATE RANGE INDEX … IF NOT EXISTS` for node scalar fields marked `@index`.
- * Skips properties already covered by {@link constraintStatementsFromSchema} rules.
+ * Generate `CREATE RANGE INDEX … IF NOT EXISTS` for `@index` on **node** scalars and on **relationship** model scalars.
+ * Node indexes use `(n:Label)`; relationship indexes use `()-[r:TYPE]-()` with the Neo4j type from `type "…"`.
  *
  * @param doc - Parsed schema AST.
  * @returns Cypher DDL strings (Neo4j 5+ range index syntax).
@@ -60,16 +68,26 @@ export function constraintStatementsFromSchema(doc: SchemaDocument): string[] {
 export function indexStatementsFromSchema(doc: SchemaDocument): string[] {
   const statements: string[] = [];
   for (const decl of doc.declarations) {
-    if (decl.kind !== "Node") {
+    if (decl.kind === "Node") {
+      const label = decl.name;
+      for (const f of decl.fields) {
+        if (f.kind !== "Scalar" || !isScalarWithDecorator(f, "index")) {
+          continue;
+        }
+        statements.push(
+          `CREATE RANGE INDEX ${escapeConstraintName(`${label}_${f.name}_idx`)} IF NOT EXISTS FOR (n:\`${label}\`) ON (n.\`${f.name}\`)`,
+        );
+      }
       continue;
     }
-    const label = decl.name;
+
+    const typeTok = cypherRelTypeToken(decl.relType);
     for (const f of decl.fields) {
-      if (f.kind !== "Scalar" || !isScalarWithDecorator(f, "index")) {
+      if (!isScalarWithDecorator(f, "index")) {
         continue;
       }
       statements.push(
-        `CREATE RANGE INDEX ${escapeConstraintName(`${label}_${f.name}_idx`)} IF NOT EXISTS FOR (n:\`${label}\`) ON (n.\`${f.name}\`)`,
+        `CREATE RANGE INDEX ${escapeConstraintName(`${decl.name}_${f.name}_rel_idx`)} IF NOT EXISTS FOR ()-[r:${typeTok}]-() ON (r.\`${f.name}\`)`,
       );
     }
   }

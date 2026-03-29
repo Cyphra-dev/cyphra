@@ -62,9 +62,10 @@ export function validateSchema(doc: SchemaDocument): void {
     }
 
     for (const f of decl.fields) {
-      if (hasDecoratorNamed(f.decorators, "index")) {
+      const idx = decoratorCount(f.decorators, "index");
+      if (idx > 1) {
         throw new SchemaValidationError(
-          `Relationship "${decl.name}" field "${f.name}": @index on relationship properties is not supported yet (use a migration with a relationship index).`,
+          `Relationship "${decl.name}" field "${f.name}": at most one @index allowed (found ${idx}).`,
         );
       }
     }
