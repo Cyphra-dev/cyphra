@@ -1,0 +1,22 @@
+# Migrations
+
+Migrations are ESM modules using `defineMigration`:
+
+```js
+import { defineMigration } from "@cyphra/migrator";
+
+export default defineMigration({
+  name: "001_init",
+  async up({ db }) {
+    await db.run`RETURN 1`;
+  },
+});
+```
+
+Applied migrations are stored as:
+
+```cypher
+(:__CyphraMigration { name, appliedAt, checksum })
+```
+
+Use `cyphra migrate deploy` after setting `NEO4J_*` env vars.

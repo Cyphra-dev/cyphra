@@ -1,0 +1,37 @@
+# Contributing
+
+## Setup
+
+- Node 20+
+- [pnpm](https://pnpm.io/) 9+
+
+```bash
+pnpm install
+```
+
+## Checks
+
+```bash
+pnpm lint
+pnpm lint:fix
+pnpm format
+pnpm format:check
+pnpm typecheck
+pnpm test
+pnpm build
+pnpm doc:build
+```
+
+Tests use a root `vitest.config.ts` with `test.projects` pointing at each `packages/*` workspace (see [Vitest projects](https://vitest.dev/config/#projects)).
+
+## Changesets
+
+User-facing package changes should include a changeset:
+
+```bash
+pnpm changeset
+```
+
+## Releases
+
+Publishing is automated from `main` via GitHub Actions when changesets are present. Configure **npm Trusted Publishers** for this repository so OIDC can authenticate publishes without long-lived `NPM_TOKEN` secrets.

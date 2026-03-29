@@ -1,0 +1,12 @@
+# Schema DSL
+
+Define nodes, relationships, and decorators in `schema.cyphra`:
+
+```cyphra
+node User {
+  id    String @id @default(cuid())
+  email String @unique
+}
+```
+
+The parser produces an AST used by `cyphra push` for constraints.

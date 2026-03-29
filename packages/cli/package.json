@@ -1,0 +1,33 @@
+{
+  "name": "@cyphra/cli",
+  "version": "0.0.0",
+  "description": "Cyphra CLI: init, migrate, push",
+  "type": "module",
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "bin": {
+    "cyphra": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@cyphra/migrator": "workspace:*",
+    "@cyphra/runtime": "workspace:*",
+    "@cyphra/schema": "workspace:*",
+    "commander": "^12.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "tsup": "^8.3.5",
+    "typescript": "^5.7.2",
+    "vitest": "^3.0.2"
+  }
+}
