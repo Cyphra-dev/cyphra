@@ -5,6 +5,7 @@ import { runMigrate } from "./commands/migrate.js";
 import { runMigrationCreate } from "./commands/migrationCreate.js";
 import { runGenerate } from "./commands/generate.js";
 import { runPush } from "./commands/push.js";
+import { runSchemaDdl } from "./commands/schemaDdl.js";
 import { runSchemaPrint } from "./commands/schemaPrint.js";
 import { runValidateSchema } from "./commands/validateSchema.js";
 import { loadConfig } from "./config.js";
@@ -79,6 +80,15 @@ schemaCmd
     const cwd = process.cwd();
     const config = await loadConfig(cwd);
     await runSchemaPrint(config);
+  });
+
+schemaCmd
+  .command("ddl")
+  .description("Print constraint + range-index DDL for push (no database connection)")
+  .action(async () => {
+    const cwd = process.cwd();
+    const config = await loadConfig(cwd);
+    await runSchemaDdl(config);
   });
 
 program.parseAsync(process.argv).catch((err: unknown) => {
