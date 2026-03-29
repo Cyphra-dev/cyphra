@@ -25,7 +25,7 @@ pnpm example:basic
 
 Example app: [`examples/basic/`](./examples/basic) (`pnpm build` packages first).
 
-If you change the public API of `@cyphra/schema`, run `pnpm build` (or `pnpm --filter @cyphra/schema build`) before `pnpm typecheck` so dependent packages see updated `dist/*.d.ts`.
+If you change the public API of `@cyphra/schema`, run `pnpm build` (or `pnpm --filter @cyphra/schema build`) before `pnpm typecheck` so dependent packages see updated `dist/*.d.ts`. Rebuild **`cyphra`** (`pnpm --filter cyphra build`) when changing any re-exported surface so the meta-package `dist/` stays aligned.
 
 `@cyphra/migrator` Vitest config resolves `@cyphra/schema` (and related packages) to **TypeScript source**, so `pnpm test` stays accurate without rebuilding `dist/` after every schema change. `@cyphra/runtime` tests alias `@cyphra/query` the same way.
 

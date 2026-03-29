@@ -8,6 +8,7 @@ export default defineConfig({
       "packages/runtime",
       "packages/migrator",
       "packages/cli",
+      "packages/cyphra",
     ],
   },
 });

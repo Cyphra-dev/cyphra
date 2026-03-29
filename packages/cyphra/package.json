@@ -21,7 +21,8 @@
   },
   "scripts": {
     "build": "tsup",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
   },
   "dependencies": {
     "@cyphra/migrator": "workspace:*",
@@ -32,7 +33,8 @@
   "devDependencies": {
     "@types/node": "^22.10.2",
     "tsup": "^8.3.5",
-    "typescript": "^5.7.2"
+    "typescript": "^5.7.2",
+    "vitest": "^3.0.2"
   },
   "keywords": [
     "neo4j",

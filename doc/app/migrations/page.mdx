@@ -3,7 +3,8 @@
 Migrations are ESM modules using `defineMigration`:
 
 ```js
-import { defineMigration } from "@cyphra/migrator";
+import { defineMigration } from "cyphra";
+// or: import { defineMigration } from "@cyphra/migrator";
 
 export default defineMigration({
   name: "001_init",
