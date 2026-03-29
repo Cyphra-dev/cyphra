@@ -15,6 +15,7 @@ export type {
   WherePredicate,
 } from "./builder.js";
 export {
+  and,
   contains,
   endsWith,
   eq,
@@ -27,6 +28,7 @@ export {
   lte,
   neq,
   not,
+  or,
   node,
   prop,
   rel,

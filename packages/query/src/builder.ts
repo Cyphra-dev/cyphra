@@ -90,9 +90,43 @@ type ParamSink = {
   readonly nextParam: () => string;
 };
 
+/** Under AND: OR children need parentheses (OR has lower precedence than AND in Cypher). */
+function emitUnderAnd(pred: WherePredicate, sink: ParamSink): string {
+  if (pred.kind === "or") {
+    return `(${emitPredicate(pred, sink)})`;
+  }
+  return emitPredicate(pred, sink);
+}
+
+/** Under OR: AND children need parentheses. */
+function emitUnderOr(pred: WherePredicate, sink: ParamSink): string {
+  if (pred.kind === "and") {
+    return `(${emitPredicate(pred, sink)})`;
+  }
+  return emitPredicate(pred, sink);
+}
+
 /** Emit one WHERE fragment; mutates `sink.params` for bound values. */
 function emitPredicate(pred: WherePredicate, sink: ParamSink): string {
   switch (pred.kind) {
+    case "and": {
+      if (pred.items.length === 0) {
+        throw new Error("and(): at least one predicate is required");
+      }
+      if (pred.items.length === 1) {
+        return emitPredicate(pred.items[0]!, sink);
+      }
+      return pred.items.map((item) => emitUnderAnd(item, sink)).join(" AND ");
+    }
+    case "or": {
+      if (pred.items.length === 0) {
+        throw new Error("or(): at least one predicate is required");
+      }
+      if (pred.items.length === 1) {
+        return emitPredicate(pred.items[0]!, sink);
+      }
+      return pred.items.map((item) => emitUnderOr(item, sink)).join(" OR ");
+    }
     case "not":
       return `NOT (${emitPredicate(pred.inner, sink)})`;
     case "eq": {
@@ -158,6 +192,8 @@ function emitPredicate(pred: WherePredicate, sink: ParamSink): string {
 
 /** Predicate combined with AND in {@link SelectQuery.where}. */
 export type WherePredicate =
+  | { readonly kind: "and"; readonly items: readonly WherePredicate[] }
+  | { readonly kind: "or"; readonly items: readonly WherePredicate[] }
   | { readonly kind: "not"; readonly inner: WherePredicate }
   | { readonly kind: "eq"; readonly left: PropRef; readonly right: unknown }
   | { readonly kind: "neq"; readonly left: PropRef; readonly right: unknown }
@@ -174,6 +210,27 @@ export type WherePredicate =
 
 /** Equality branch of {@link WherePredicate}. */
 export type EqPredicate = Extract<WherePredicate, { kind: "eq" }>;
+
+/**
+ * `(p0 AND p1 AND …)` — use with {@link or} for grouped conditions.
+ * Top-level {@link SelectQuery.where} arguments are already AND-combined.
+ */
+export function and(...items: WherePredicate[]): WherePredicate {
+  if (items.length === 0) {
+    throw new Error("and(): at least one predicate is required");
+  }
+  return { kind: "and", items };
+}
+
+/**
+ * `(p0 OR p1 OR …)` — Cypher precedence: AND binds tighter than OR; children are parenthesized when needed.
+ */
+export function or(...items: WherePredicate[]): WherePredicate {
+  if (items.length === 0) {
+    throw new Error("or(): at least one predicate is required");
+  }
+  return { kind: "or", items };
+}
 
 /** `NOT (inner …)` — `inner` uses the same parameter rules as top-level predicates. */
 export function not(inner: WherePredicate): WherePredicate {
@@ -258,7 +315,8 @@ type Projection = "star" | Record<string, PropRef>;
 
 /**
  * `MATCH … WHERE … RETURN … ORDER BY … SKIP … LIMIT` builder (Cypher remains explicit in `match()`).
- * WHERE clauses are AND-combined; every value is a parameter except `IS NULL` / `IS NOT NULL`.
+ * WHERE clauses are AND-combined; use {@link and} / {@link or} for explicit grouping.
+ * Every bound value is a parameter except `IS NULL` / `IS NOT NULL`.
  */
 export class SelectQuery {
   private matchPattern = "";
@@ -276,6 +334,10 @@ export class SelectQuery {
     return this;
   }
 
+  /**
+   * AND-combine predicates. When you pass more than one argument, any root-level {@link or}
+   * is parenthesized so it is not parsed as `a OR (b AND c)`.
+   */
   where(...preds: WherePredicate[]): this {
     this.predicates.push(...preds);
     return this;
@@ -349,7 +411,11 @@ export class SelectQuery {
 
     let text = `MATCH ${this.matchPattern}`;
     if (this.predicates.length > 0) {
-      const parts = this.predicates.map((pred) => emitPredicate(pred, sink));
+      // Multiple where() args are AND-combined; a bare OR at this level must stay grouped (Cypher: AND > OR).
+      const parts =
+        this.predicates.length === 1
+          ? [emitPredicate(this.predicates[0]!, sink)]
+          : this.predicates.map((pred) => emitUnderAnd(pred, sink));
       text += ` WHERE ${parts.join(" AND ")}`;
     }
     if (this.projection === "star") {

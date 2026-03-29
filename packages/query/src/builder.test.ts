@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  and,
   contains,
   endsWith,
   eq,
@@ -10,6 +11,7 @@ import {
   neq,
   node,
   not,
+  or,
   prop,
   rel,
   select,
@@ -118,5 +120,52 @@ describe("SelectQuery", () => {
     const u = node("User", "u");
     const { text } = select().match(`(${u.alias}:${u.label})`).returnStar().toCypher();
     expect(text).toBe("MATCH (u:User) RETURN *");
+  });
+
+  it("groups OR and AND with correct Cypher precedence", () => {
+    const u = node("User", "u");
+    const q = select()
+      .match(`(${u.alias}:${u.label})`)
+      .where(
+        or(eq(prop(u.alias, "role"), "admin"), eq(prop(u.alias, "role"), "mod")),
+        eq(prop(u.alias, "active"), true),
+      )
+      .returnStar();
+    const { text, params } = q.toCypher();
+    expect(text).toBe(
+      "MATCH (u:User) WHERE (u.role = $p0 OR u.role = $p1) AND u.active = $p2 RETURN *",
+    );
+    expect(params).toEqual({ p0: "admin", p1: "mod", p2: true });
+  });
+
+  it("parenthesizes AND under OR", () => {
+    const u = node("User", "u");
+    const q = select()
+      .match(`(${u.alias}:${u.label})`)
+      .where(or(and(eq(prop(u.alias, "a"), 1), eq(prop(u.alias, "b"), 2)), eq(prop(u.alias, "c"), 3)))
+      .returnStar();
+    const { text, params } = q.toCypher();
+    expect(text).toBe(
+      "MATCH (u:User) WHERE (u.a = $p0 AND u.b = $p1) OR u.c = $p2 RETURN *",
+    );
+    expect(params).toEqual({ p0: 1, p1: 2, p2: 3 });
+  });
+
+  it("parenthesizes OR under AND", () => {
+    const u = node("User", "u");
+    const q = select()
+      .match(`(${u.alias}:${u.label})`)
+      .where(and(or(eq(prop(u.alias, "x"), 1), eq(prop(u.alias, "x"), 2)), eq(prop(u.alias, "y"), 3)))
+      .returnStar();
+    const { text, params } = q.toCypher();
+    expect(text).toBe(
+      "MATCH (u:User) WHERE (u.x = $p0 OR u.x = $p1) AND u.y = $p2 RETURN *",
+    );
+    expect(params).toEqual({ p0: 1, p1: 2, p2: 3 });
+  });
+
+  it("rejects empty and() / or()", () => {
+    expect(() => and()).toThrow(/and\(\)/);
+    expect(() => or()).toThrow(/or\(\)/);
   });
 });
