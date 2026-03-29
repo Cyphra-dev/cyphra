@@ -38,6 +38,8 @@ jobs:
           publish: pnpm changeset publish
           commit: "chore: version packages"
           title: "chore: version packages"
+          # Org policy may forbid the default GITHUB_TOKEN from opening PRs; use a PAT when needed.
+          github-token: ${{ secrets.CHANGESET_RELEASE_PAT || github.token }}
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.CHANGESET_RELEASE_PAT || github.token }}
           NPM_CONFIG_PROVENANCE: "true"

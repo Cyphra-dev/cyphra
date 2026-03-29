@@ -53,3 +53,5 @@ Publishable packages are **fixed** in [`.changeset/config.json`](./.changeset/co
 ## Releases
 
 Publishing is automated from `main` via GitHub Actions when changesets are present. Configure **npm Trusted Publishers** for this repository so OIDC can authenticate publishes without long-lived `NPM_TOKEN` secrets.
+
+Some organizations block the default `GITHUB_TOKEN` from **creating pull requests** (Changesets opens a “Version Packages” PR). If the Release workflow fails with that error, add a repository secret **`CHANGESET_RELEASE_PAT`**: a fine-grained PAT with **Contents** and **Pull requests** read/write on this repo (or a classic PAT with `repo` scope). The workflow uses it instead of `GITHUB_TOKEN` for the Changesets step. Alternatively, an org owner can allow GitHub Actions to create pull requests for this repository.
