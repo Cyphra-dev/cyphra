@@ -53,9 +53,7 @@ describe("SelectQuery", () => {
       .optionalMatch(u.out(r, f))
       .returnStar()
       .toCypher();
-    expect(text).toBe(
-      "MATCH (u:User) OPTIONAL MATCH (u:User)-[r:FOLLOWS]->(f:User) RETURN *",
-    );
+    expect(text).toBe("MATCH (u:User) OPTIONAL MATCH (u:User)-[r:FOLLOWS]->(f:User) RETURN *");
   });
 
   it("allows multiple optionalMatch calls", () => {
@@ -217,12 +215,12 @@ describe("SelectQuery", () => {
     const u = node("User", "u");
     const q = select()
       .match(`(${u.alias}:${u.label})`)
-      .where(or(and(eq(prop(u.alias, "a"), 1), eq(prop(u.alias, "b"), 2)), eq(prop(u.alias, "c"), 3)))
+      .where(
+        or(and(eq(prop(u.alias, "a"), 1), eq(prop(u.alias, "b"), 2)), eq(prop(u.alias, "c"), 3)),
+      )
       .returnStar();
     const { text, params } = q.toCypher();
-    expect(text).toBe(
-      "MATCH (u:User) WHERE (u.a = $p0 AND u.b = $p1) OR u.c = $p2 RETURN *",
-    );
+    expect(text).toBe("MATCH (u:User) WHERE (u.a = $p0 AND u.b = $p1) OR u.c = $p2 RETURN *");
     expect(params).toEqual({ p0: 1, p1: 2, p2: 3 });
   });
 
@@ -230,12 +228,12 @@ describe("SelectQuery", () => {
     const u = node("User", "u");
     const q = select()
       .match(`(${u.alias}:${u.label})`)
-      .where(and(or(eq(prop(u.alias, "x"), 1), eq(prop(u.alias, "x"), 2)), eq(prop(u.alias, "y"), 3)))
+      .where(
+        and(or(eq(prop(u.alias, "x"), 1), eq(prop(u.alias, "x"), 2)), eq(prop(u.alias, "y"), 3)),
+      )
       .returnStar();
     const { text, params } = q.toCypher();
-    expect(text).toBe(
-      "MATCH (u:User) WHERE (u.x = $p0 OR u.x = $p1) AND u.y = $p2 RETURN *",
-    );
+    expect(text).toBe("MATCH (u:User) WHERE (u.x = $p0 OR u.x = $p1) AND u.y = $p2 RETURN *");
     expect(params).toEqual({ p0: 1, p1: 2, p2: 3 });
   });
 

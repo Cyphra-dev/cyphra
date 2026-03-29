@@ -28,7 +28,9 @@ describe("constraintStatementsFromSchema", () => {
       }
     `);
     const stmts = constraintStatementsFromSchema(doc);
-    expect(stmts.some((s) => s.includes("FOR ()-[r:KNOWS]-()") && s.includes("edgeKey"))).toBe(true);
+    expect(stmts.some((s) => s.includes("FOR ()-[r:KNOWS]-()") && s.includes("edgeKey"))).toBe(
+      true,
+    );
     expect(stmts.some((s) => s.includes("R_edgeKey_rel_unique"))).toBe(true);
   });
 

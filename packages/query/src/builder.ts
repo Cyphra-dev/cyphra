@@ -214,7 +214,12 @@ export type WherePredicate =
   | { readonly kind: "gte"; readonly left: PropRef; readonly right: unknown }
   | { readonly kind: "lt"; readonly left: PropRef; readonly right: unknown }
   | { readonly kind: "lte"; readonly left: PropRef; readonly right: unknown }
-  | { readonly kind: "between"; readonly left: PropRef; readonly low: unknown; readonly high: unknown }
+  | {
+      readonly kind: "between";
+      readonly left: PropRef;
+      readonly low: unknown;
+      readonly high: unknown;
+    }
   | { readonly kind: "isNull"; readonly left: PropRef }
   | { readonly kind: "isNotNull"; readonly left: PropRef }
   | { readonly kind: "in"; readonly left: PropRef; readonly values: readonly unknown[] }

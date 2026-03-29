@@ -6,5 +6,11 @@ export default defineConfig({
   dts: true,
   sourcemap: true,
   clean: true,
-  external: ["@cyphra/migrator", "@cyphra/query", "@cyphra/runtime", "@cyphra/schema", "neo4j-driver"],
+  external: [
+    "@cyphra/migrator",
+    "@cyphra/query",
+    "@cyphra/runtime",
+    "@cyphra/schema",
+    "neo4j-driver",
+  ],
 });

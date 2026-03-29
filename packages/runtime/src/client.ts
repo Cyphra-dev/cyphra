@@ -180,7 +180,10 @@ export class CyphraClient {
   }
 
   /** {@link selectRecords} on a managed transaction. */
-  async selectRecordsTx(tx: ManagedTransaction, query: SelectQuery): Promise<Record<string, unknown>[]> {
+  async selectRecordsTx(
+    tx: ManagedTransaction,
+    query: SelectQuery,
+  ): Promise<Record<string, unknown>[]> {
     return this.queryRecordsTx(tx, query.toCypher());
   }
 

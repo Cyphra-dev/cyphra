@@ -8,17 +8,17 @@ pnpm add -D @cyphra/cli
 
 App code usually depends on **`cyphra`** (library stack) separately — see [home / Install](/).
 
-| Command                          | Description                                           |
-| -------------------------------- | ----------------------------------------------------- |
-| `cyphra init`                    | Scaffold config, schema, migrations, env example      |
-| `cyphra validate`                | Parse and validate `schema.cyphra`                    |
-| `cyphra schema print`            | Canonical pretty-print of the schema to stdout        |
+| Command                          | Description                                            |
+| -------------------------------- | ------------------------------------------------------ |
+| `cyphra init`                    | Scaffold config, schema, migrations, env example       |
+| `cyphra validate`                | Parse and validate `schema.cyphra`                     |
+| `cyphra schema print`            | Canonical pretty-print of the schema to stdout         |
 | `cyphra schema ddl`              | Print `cyphra push` DDL (constraints + indexes); no DB |
-| `cyphra generate`                | Emit `cyphra.gen.ts` (labels & relationship types)    |
-| `cyphra migrate deploy`          | Run pending migrations                                |
-| `cyphra migrate dev`             | Same with verbose logging                             |
-| `cyphra migration:create <name>` | New `.mjs` migration                                  |
-| `cyphra push`                    | Apply constraints + `@index` range indexes (Neo4j 5+) |
+| `cyphra generate`                | Emit `cyphra.gen.ts` (labels & relationship types)     |
+| `cyphra migrate deploy`          | Run pending migrations                                 |
+| `cyphra migrate dev`             | Same with verbose logging                              |
+| `cyphra migration:create <name>` | New `.mjs` migration                                   |
+| `cyphra push`                    | Apply constraints + `@index` range indexes (Neo4j 5+)  |
 
 `cyphra.json` may set `schema`, `migrations`, and optional `generate` (output path; default `./cyphra.gen.ts`).
 

@@ -44,7 +44,7 @@ await client.withWriteTransaction(async (tx) => {
 
 ## Executing queries
 
-- **`runCompiled(session, compiled)`** — run `CompiledCypher` from `cypher\`…\`` or `SelectQuery.toCypher()`.
+- **`runCompiled(session, compiled)`** — run `CompiledCypher` from `cypher\`…\``or`SelectQuery.toCypher()`.
 - **`runCypher(session, strings, ...values)`** — tagged-template style on the client (same parameter rules as `compileCypher`).
 - **`queryRecords`** / **`queryRecord`** — `runCompiled` plus plain row objects (`record.toObject()`).
 - **`selectRecords`** / **`selectRecord`** — same for a `SelectQuery`.
