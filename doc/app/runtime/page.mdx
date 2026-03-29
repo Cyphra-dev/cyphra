@@ -23,10 +23,22 @@ await client.withSession(async (session) => {
 await client.close();
 ```
 
+Optional **`driverConfig`** is passed through as the third argument to `neo4j.driver` (pool size, `connectionAcquisitionTimeout`, `logging`, etc.). Types: import **`Config`** from `@cyphra/runtime` or `neo4j-driver`.
+
 ## Sessions and transactions
 
 - **`session()`** — you own `close()`; prefer **`withSession(fn)`** so the session is always closed.
 - **`withReadTransaction`** / **`withWriteTransaction`** — delegate to the driver’s `executeRead` / `executeWrite` with a managed transaction.
+
+Inside a transaction callback, use **`runCompiledTx`**, **`runCypherTx`**, **`queryRecordsTx`**, **`queryRecordTx`**, **`selectRecordsTx`**, or **`selectRecordTx`** — same behavior as the `session` variants, but routed through `tx.run` (required for writes and retry semantics).
+
+```ts
+import { cypher } from "@cyphra/query";
+
+await client.withWriteTransaction(async (tx) => {
+  await client.runCompiledTx(tx, cypher`CREATE (n:Tmp { id: ${id} })`);
+});
+```
 
 ## Executing queries
 
@@ -34,6 +46,8 @@ await client.close();
 - **`runCypher(session, strings, ...values)`** — tagged-template style on the client (same parameter rules as `compileCypher`).
 - **`queryRecords`** / **`queryRecord`** — `runCompiled` plus plain row objects (`record.toObject()`).
 - **`selectRecords`** / **`selectRecord`** — same for a `SelectQuery`.
+
+Each of the above has a **`*Tx(tx, …)`** counterpart for use inside **`withWriteTransaction`** / **`withReadTransaction`**.
 
 Lower-level helpers **`toPlainRecords`** and **`toPlainRecord`** map a driver `Result` (or compatible) to plain objects if you call `session.run` yourself.
 

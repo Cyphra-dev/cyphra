@@ -4,5 +4,5 @@
  */
 
 export { CyphraClient, type CyphraClientOptions } from "./client.js";
-export type { Driver, Session } from "./client.js";
+export type { Config, Driver, ManagedTransaction, Session } from "./client.js";
 export { toPlainRecord, toPlainRecords } from "./records.js";

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Session } from "neo4j-driver";
+import type { ManagedTransaction, Session } from "neo4j-driver";
 import type { CompiledCypher } from "@cyphra/query";
 import { select } from "@cyphra/query";
 import { CyphraClient } from "./client.js";
@@ -10,6 +10,17 @@ describe("CyphraClient", () => {
       uri: "bolt://localhost:7687",
       user: "neo4j",
       password: "test",
+    });
+    expect(c.rawDriver).toBeDefined();
+    return c.close();
+  });
+
+  it("accepts neo4j driver Config", () => {
+    const c = new CyphraClient({
+      uri: "bolt://localhost:7687",
+      user: "neo4j",
+      password: "test",
+      driverConfig: { connectionAcquisitionTimeout: 60_000 },
     });
     expect(c.rawDriver).toBeDefined();
     return c.close();
@@ -48,6 +59,41 @@ describe("CyphraClient", () => {
     } as unknown as Session;
     await client.selectRecords(session, q);
     expect(seenText).toBe(q.toCypher().text);
+    await client.close();
+  });
+
+  it("runCompiledTx delegates to transaction.run", async () => {
+    const client = new CyphraClient({
+      uri: "bolt://localhost:7687",
+      user: "neo4j",
+      password: "test",
+    });
+    const compiled: CompiledCypher = { text: "RETURN 1 AS n", params: {} };
+    const tx = {
+      run: async (text: string, params: Record<string, unknown>) => {
+        expect(text).toBe(compiled.text);
+        expect(params).toEqual({});
+        return Promise.resolve({ records: [] });
+      },
+    } as unknown as ManagedTransaction;
+    await client.runCompiledTx(tx, compiled);
+    await client.close();
+  });
+
+  it("queryRecordsTx maps rows like queryRecords", async () => {
+    const client = new CyphraClient({
+      uri: "bolt://localhost:7687",
+      user: "neo4j",
+      password: "test",
+    });
+    const tx = {
+      run: async () =>
+        Promise.resolve({
+          records: [{ toObject: () => ({ k: "v" }) }],
+        }),
+    } as unknown as ManagedTransaction;
+    const compiled: CompiledCypher = { text: "RETURN 1", params: {} };
+    await expect(client.queryRecordsTx(tx, compiled)).resolves.toEqual([{ k: "v" }]);
     await client.close();
   });
 });

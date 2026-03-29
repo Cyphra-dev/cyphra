@@ -1,4 +1,9 @@
-import neo4j, { type Driver, type Session, type ManagedTransaction } from "neo4j-driver";
+import neo4j, {
+  type Config,
+  type Driver,
+  type ManagedTransaction,
+  type Session,
+} from "neo4j-driver";
 import { compileCypher, type CompiledCypher, type SelectQuery } from "@cyphra/query";
 import { toPlainRecord, toPlainRecords } from "./records.js";
 
@@ -11,6 +16,8 @@ export type CyphraClientOptions = {
   database?: string;
   /** When true, logs compiled Cypher and parameter keys (never values). */
   debug?: boolean;
+  /** Third argument to `neo4j.driver` — pool size, acquisition timeout, logging, etc. */
+  driverConfig?: Config;
 };
 
 /**
@@ -39,7 +46,11 @@ export class CyphraClient {
   private readonly debug: boolean;
 
   constructor(opts: CyphraClientOptions) {
-    this.driver = neo4j.driver(opts.uri, neo4j.auth.basic(opts.user, opts.password));
+    this.driver = neo4j.driver(
+      opts.uri,
+      neo4j.auth.basic(opts.user, opts.password),
+      opts.driverConfig,
+    );
     this.database = opts.database;
     this.debug = opts.debug ?? false;
   }
@@ -65,6 +76,32 @@ export class CyphraClient {
       console.debug("[cyphra] cypher:", compiled.text, "param keys:", Object.keys(compiled.params));
     }
     return session.run(compiled.text, compiled.params);
+  }
+
+  /**
+   * Like {@link runCompiled}, but on a managed transaction from {@link withWriteTransaction} /
+   * {@link withReadTransaction}.
+   */
+  async runCompiledTx(
+    tx: ManagedTransaction,
+    compiled: CompiledCypher,
+  ): Promise<ReturnType<ManagedTransaction["run"]>> {
+    if (this.debug) {
+      console.debug("[cyphra] cypher:", compiled.text, "param keys:", Object.keys(compiled.params));
+    }
+    return tx.run(compiled.text, compiled.params);
+  }
+
+  /**
+   * Tagged template executed on `tx` (values are parameterized).
+   */
+  async runCypherTx(
+    tx: ManagedTransaction,
+    strings: TemplateStringsArray,
+    ...values: unknown[]
+  ): Promise<ReturnType<ManagedTransaction["run"]>> {
+    const compiled = compileCypher(strings, values);
+    return this.runCompiledTx(tx, compiled);
   }
 
   /**
@@ -111,6 +148,24 @@ export class CyphraClient {
     return toPlainRecord(result);
   }
 
+  /** {@link queryRecords} on a managed transaction. */
+  async queryRecordsTx(
+    tx: ManagedTransaction,
+    compiled: CompiledCypher,
+  ): Promise<Record<string, unknown>[]> {
+    const result = await this.runCompiledTx(tx, compiled);
+    return toPlainRecords(result);
+  }
+
+  /** {@link queryRecord} on a managed transaction. */
+  async queryRecordTx(
+    tx: ManagedTransaction,
+    compiled: CompiledCypher,
+  ): Promise<Record<string, unknown> | undefined> {
+    const result = await this.runCompiledTx(tx, compiled);
+    return toPlainRecord(result);
+  }
+
   /** Shorthand for {@link queryRecords} with a {@link SelectQuery}. */
   async selectRecords(session: Session, query: SelectQuery): Promise<Record<string, unknown>[]> {
     return this.queryRecords(session, query.toCypher());
@@ -122,6 +177,19 @@ export class CyphraClient {
     query: SelectQuery,
   ): Promise<Record<string, unknown> | undefined> {
     return this.queryRecord(session, query.toCypher());
+  }
+
+  /** {@link selectRecords} on a managed transaction. */
+  async selectRecordsTx(tx: ManagedTransaction, query: SelectQuery): Promise<Record<string, unknown>[]> {
+    return this.queryRecordsTx(tx, query.toCypher());
+  }
+
+  /** {@link selectRecord} on a managed transaction. */
+  async selectRecordTx(
+    tx: ManagedTransaction,
+    query: SelectQuery,
+  ): Promise<Record<string, unknown> | undefined> {
+    return this.queryRecordTx(tx, query.toCypher());
   }
 
   /** Open a session, run `fn`, always close the session. */
@@ -166,4 +234,4 @@ export class CyphraClient {
   }
 }
 
-export type { Driver, Session };
+export type { Config, Driver, ManagedTransaction, Session };
