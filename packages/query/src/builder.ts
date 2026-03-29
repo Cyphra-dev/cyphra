@@ -159,6 +159,14 @@ function emitPredicate(pred: WherePredicate, sink: ParamSink): string {
       sink.params[k] = pred.right;
       return `${propExpr(pred.left)} <= $${k}`;
     }
+    case "between": {
+      const kLo = sink.nextParam();
+      const kHi = sink.nextParam();
+      sink.params[kLo] = pred.low;
+      sink.params[kHi] = pred.high;
+      const pe = propExpr(pred.left);
+      return `(${pe} >= $${kLo} AND ${pe} <= $${kHi})`;
+    }
     case "isNull":
       return `${propExpr(pred.left)} IS NULL`;
     case "isNotNull":
@@ -206,6 +214,7 @@ export type WherePredicate =
   | { readonly kind: "gte"; readonly left: PropRef; readonly right: unknown }
   | { readonly kind: "lt"; readonly left: PropRef; readonly right: unknown }
   | { readonly kind: "lte"; readonly left: PropRef; readonly right: unknown }
+  | { readonly kind: "between"; readonly left: PropRef; readonly low: unknown; readonly high: unknown }
   | { readonly kind: "isNull"; readonly left: PropRef }
   | { readonly kind: "isNotNull"; readonly left: PropRef }
   | { readonly kind: "in"; readonly left: PropRef; readonly values: readonly unknown[] }
@@ -271,6 +280,13 @@ export function lt(left: PropRef, right: unknown): WherePredicate {
 /** `left <= $pN` */
 export function lte(left: PropRef, right: unknown): WherePredicate {
   return { kind: "lte", left, right };
+}
+
+/**
+ * Inclusive range: `(left >= $pN AND left <= $pM)` — both bounds are parameters.
+ */
+export function between(left: PropRef, low: unknown, high: unknown): WherePredicate {
+  return { kind: "between", left, low, high };
 }
 
 /** `left IS NULL` */

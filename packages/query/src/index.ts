@@ -16,6 +16,7 @@ export type {
 } from "./builder.js";
 export {
   and,
+  between,
   contains,
   endsWith,
   eq,

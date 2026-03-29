@@ -9,11 +9,18 @@ node User {
   name  String @index
 }
 
+node Post {
+  id     String @id
+  title  String
+  author User? @relationship(type: "AUTHORED", direction: IN)
+}
+
 relationship Follows {
   type "FOLLOWS"
   from User
   to User
-  since DateTime @index
+  since     DateTime @index
+  requestId String   @unique
 }
 ```
 

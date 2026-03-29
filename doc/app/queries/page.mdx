@@ -33,7 +33,7 @@ select()
 
 Use `u.in(m, from)` or `u.both(m, other)` for incoming or undirected patterns.
 
-`where()` accepts multiple predicates (AND-combined): `eq`, `neq`, `gt`, `gte`, `lt`, `lte`, `isNull`, `isNotNull`, `inList`, `startsWith`, `endsWith`, `contains`, **`matches`** (`=~`, Java-style regex; pattern is always a parameter), `not(inner)`, and grouping via **`and(…)`** / **`or(…)`** (parentheses follow Cypher precedence: `AND` binds tighter than `OR`). Example: `.where(or(eq(prop(u.alias, "role"), "a"), eq(prop(u.alias, "role"), "b")), eq(prop(u.alias, "active"), true))` → `(u.role = $p0 OR u.role = $p1) AND u.active = $p2`.
+`where()` accepts multiple predicates (AND-combined): `eq`, `neq`, `gt`, `gte`, `lt`, `lte`, **`between`** (inclusive `(prop >= $lo AND prop <= $hi)`), `isNull`, `isNotNull`, `inList`, `startsWith`, `endsWith`, `contains`, **`matches`** (`=~`, Java-style regex; pattern is always a parameter), `not(inner)`, and grouping via **`and(…)`** / **`or(…)`** (parentheses follow Cypher precedence: `AND` binds tighter than `OR`). Example: `.where(or(eq(prop(u.alias, "role"), "a"), eq(prop(u.alias, "role"), "b")), eq(prop(u.alias, "active"), true))` → `(u.role = $p0 OR u.role = $p1) AND u.active = $p2`.
 
 Every value is a Neo4j parameter—only `IS NULL` / `IS NOT NULL` have no bound value.
 

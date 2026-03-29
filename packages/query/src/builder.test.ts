@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   and,
+  between,
   contains,
   endsWith,
   eq,
@@ -153,6 +154,17 @@ describe("SelectQuery", () => {
       .returnStar()
       .toCypher();
     expect(text).toBe("MATCH (u:User) RETURN DISTINCT *");
+  });
+
+  it("builds inclusive between with two parameters", () => {
+    const u = node("User", "u");
+    const q = select()
+      .match(`(${u.alias}:${u.label})`)
+      .where(between(prop(u.alias, "score"), 0, 100))
+      .returnStar();
+    const { text, params } = q.toCypher();
+    expect(text).toBe("MATCH (u:User) WHERE (u.score >= $p0 AND u.score <= $p1) RETURN *");
+    expect(params).toEqual({ p0: 0, p1: 100 });
   });
 
   it("groups OR and AND with correct Cypher precedence", () => {
