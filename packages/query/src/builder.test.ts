@@ -125,6 +125,36 @@ describe("SelectQuery", () => {
     expect(text).toBe("MATCH (u:User) RETURN *");
   });
 
+  it("supports RETURN DISTINCT *", () => {
+    const u = node("User", "u");
+    const { text } = select()
+      .match(`(${u.alias}:${u.label})`)
+      .returnStar()
+      .returnDistinct()
+      .toCypher();
+    expect(text).toBe("MATCH (u:User) RETURN DISTINCT *");
+  });
+
+  it("supports RETURN DISTINCT with projected fields", () => {
+    const u = node("User", "u");
+    const { text } = select()
+      .match(`(${u.alias}:${u.label})`)
+      .returnFields({ id: prop(u.alias, "id") })
+      .returnDistinct()
+      .toCypher();
+    expect(text).toBe("MATCH (u:User) RETURN DISTINCT u.id AS id");
+  });
+
+  it("allows returnDistinct before returnStar", () => {
+    const u = node("User", "u");
+    const { text } = select()
+      .match(`(${u.alias}:${u.label})`)
+      .returnDistinct()
+      .returnStar()
+      .toCypher();
+    expect(text).toBe("MATCH (u:User) RETURN DISTINCT *");
+  });
+
   it("groups OR and AND with correct Cypher precedence", () => {
     const u = node("User", "u");
     const q = select()

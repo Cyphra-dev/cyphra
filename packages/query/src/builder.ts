@@ -336,6 +336,7 @@ export class SelectQuery {
   private matchPattern = "";
   private predicates: WherePredicate[] = [];
   private projection: Projection | null = null;
+  private returnDistinctFlag = false;
   private order: OrderByClause[] = [];
   private skipCount: number | null = null;
   private limitCount: number | null = null;
@@ -368,6 +369,15 @@ export class SelectQuery {
   /** `RETURN *` (mutually exclusive with {@link returnFields} — last call wins). */
   returnStar(): this {
     this.projection = "star";
+    return this;
+  }
+
+  /**
+   * `RETURN DISTINCT …` — may be called before or after {@link returnFields} / {@link returnStar}
+   * (projection must still be set before {@link toCypher}).
+   */
+  returnDistinct(): this {
+    this.returnDistinctFlag = true;
     return this;
   }
 
@@ -432,13 +442,14 @@ export class SelectQuery {
           : this.predicates.map((pred) => emitUnderAnd(pred, sink));
       text += ` WHERE ${parts.join(" AND ")}`;
     }
+    const distinctKw = this.returnDistinctFlag ? "DISTINCT " : "";
     if (this.projection === "star") {
-      text += " RETURN *";
+      text += ` RETURN ${distinctKw}*`;
     } else {
       const ret = Object.entries(this.projection)
         .map(([out, pr]) => `${pr.alias}.${pr.name} AS ${out}`)
         .join(", ");
-      text += ` RETURN ${ret}`;
+      text += ` RETURN ${distinctKw}${ret}`;
     }
     if (this.order.length > 0) {
       const ob = this.order.map((c) => `${c.prop.alias}.${c.prop.name} ${c.direction}`).join(", ");

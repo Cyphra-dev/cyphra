@@ -37,7 +37,7 @@ Use `u.in(m, from)` or `u.both(m, other)` for incoming or undirected patterns.
 
 Every value is a Neo4j parameter—only `IS NULL` / `IS NOT NULL` have no bound value.
 
-Call **`returnFields({ … })`** or **`returnStar()`** before `toCypher()` (a bare `MATCH` without `RETURN` is rejected).
+Call **`returnFields({ … })`** or **`returnStar()`** before `toCypher()` (a bare `MATCH` without `RETURN` is rejected). Chain **`returnDistinct()`** after either to emit **`RETURN DISTINCT …`** (deduplicate rows before `ORDER BY` / `SKIP` / `LIMIT`).
 
 ## Runtime shortcuts
 
