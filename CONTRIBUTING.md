@@ -29,13 +29,14 @@ If you change the public API of `@cyphra/schema`, run `pnpm build` (or `pnpm --f
 
 `@cyphra/migrator` Vitest config resolves `@cyphra/schema` (and related packages) to **TypeScript source**, so `pnpm test` stays accurate without rebuilding `dist/` after every schema change. `@cyphra/runtime` tests alias `@cyphra/query` the same way.
 
-Optional **Neo4j-backed** check (`packages/runtime/src/client.integration.test.ts`): set `NEO4J_TEST_URI`, `NEO4J_TEST_USER`, and `NEO4J_TEST_PASSWORD`, then run:
+Optional **Neo4j-backed** checks — set `NEO4J_TEST_URI`, `NEO4J_TEST_USER`, and `NEO4J_TEST_PASSWORD`, then run:
 
 ```bash
 pnpm --filter @cyphra/runtime exec vitest run src/client.integration.test.ts
+pnpm --filter @cyphra/migrator exec vitest run src/push.integration.test.ts
 ```
 
-CI runs this against a Neo4j 5 service container on every push and pull request.
+The migrator test applies generated `CREATE CONSTRAINT` / `CREATE RANGE INDEX` DDL twice (idempotent `IF NOT EXISTS`). CI runs both against a Neo4j 5 service container on every push and pull request.
 
 Tests use a root `vitest.config.ts` with `test.projects` pointing at each `packages/*` workspace (see [Vitest projects](https://vitest.dev/config/#projects)).
 

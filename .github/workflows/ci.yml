@@ -81,9 +81,11 @@ jobs:
       - name: Build packages
         run: pnpm -r --filter './packages/*' run build
 
-      - name: Runtime integration (Neo4j)
+      - name: Neo4j integration tests
         env:
           NEO4J_TEST_URI: bolt://127.0.0.1:7687
           NEO4J_TEST_USER: neo4j
           NEO4J_TEST_PASSWORD: cyphra_ci_test
-        run: pnpm --filter @cyphra/runtime exec vitest run src/client.integration.test.ts
+        run: |
+          pnpm --filter @cyphra/runtime exec vitest run src/client.integration.test.ts
+          pnpm --filter @cyphra/migrator exec vitest run src/push.integration.test.ts
