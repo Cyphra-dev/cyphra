@@ -1,3 +1,4 @@
+import { cypher } from "@cyphra/query";
 import { describe, expect, it } from "vitest";
 import { CyphraClient } from "./client.js";
 
@@ -14,12 +15,8 @@ describe.skipIf(!hasNeo)("CyphraClient integration", () => {
     });
     try {
       await client.withSession(async (session) => {
-        const r = await client.runCypher(
-          session,
-          ["RETURN ", " AS n"] as unknown as TemplateStringsArray,
-          42,
-        );
-        const n = r.records[0].get("n");
+        const r = await client.runCompiled(session, cypher`RETURN ${42} AS n`);
+        const n = r.records[0]?.get("n");
         const val = typeof n?.toNumber === "function" ? n.toNumber() : n;
         expect(val).toBe(42);
       });
