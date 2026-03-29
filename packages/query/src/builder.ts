@@ -85,8 +85,80 @@ function propExpr(p: PropRef): string {
   return `${p.alias}.${p.name}`;
 }
 
+type ParamSink = {
+  readonly params: Record<string, unknown>;
+  readonly nextParam: () => string;
+};
+
+/** Emit one WHERE fragment; mutates `sink.params` for bound values. */
+function emitPredicate(pred: WherePredicate, sink: ParamSink): string {
+  switch (pred.kind) {
+    case "not":
+      return `NOT (${emitPredicate(pred.inner, sink)})`;
+    case "eq": {
+      const k = sink.nextParam();
+      sink.params[k] = pred.right;
+      return `${propExpr(pred.left)} = $${k}`;
+    }
+    case "neq": {
+      const k = sink.nextParam();
+      sink.params[k] = pred.right;
+      return `${propExpr(pred.left)} <> $${k}`;
+    }
+    case "gt": {
+      const k = sink.nextParam();
+      sink.params[k] = pred.right;
+      return `${propExpr(pred.left)} > $${k}`;
+    }
+    case "gte": {
+      const k = sink.nextParam();
+      sink.params[k] = pred.right;
+      return `${propExpr(pred.left)} >= $${k}`;
+    }
+    case "lt": {
+      const k = sink.nextParam();
+      sink.params[k] = pred.right;
+      return `${propExpr(pred.left)} < $${k}`;
+    }
+    case "lte": {
+      const k = sink.nextParam();
+      sink.params[k] = pred.right;
+      return `${propExpr(pred.left)} <= $${k}`;
+    }
+    case "isNull":
+      return `${propExpr(pred.left)} IS NULL`;
+    case "isNotNull":
+      return `${propExpr(pred.left)} IS NOT NULL`;
+    case "in": {
+      const k = sink.nextParam();
+      sink.params[k] = [...pred.values];
+      return `${propExpr(pred.left)} IN $${k}`;
+    }
+    case "startsWith": {
+      const k = sink.nextParam();
+      sink.params[k] = pred.substring;
+      return `${propExpr(pred.left)} STARTS WITH $${k}`;
+    }
+    case "endsWith": {
+      const k = sink.nextParam();
+      sink.params[k] = pred.substring;
+      return `${propExpr(pred.left)} ENDS WITH $${k}`;
+    }
+    case "contains": {
+      const k = sink.nextParam();
+      sink.params[k] = pred.substring;
+      return `${propExpr(pred.left)} CONTAINS $${k}`;
+    }
+    default: {
+      const _exhaustive: never = pred;
+      throw new Error(`Unhandled predicate: ${JSON.stringify(_exhaustive)}`);
+    }
+  }
+}
+
 /** Predicate combined with AND in {@link SelectQuery.where}. */
 export type WherePredicate =
+  | { readonly kind: "not"; readonly inner: WherePredicate }
   | { readonly kind: "eq"; readonly left: PropRef; readonly right: unknown }
   | { readonly kind: "neq"; readonly left: PropRef; readonly right: unknown }
   | { readonly kind: "gt"; readonly left: PropRef; readonly right: unknown }
@@ -102,6 +174,11 @@ export type WherePredicate =
 
 /** Equality branch of {@link WherePredicate}. */
 export type EqPredicate = Extract<WherePredicate, { kind: "eq" }>;
+
+/** `NOT (inner …)` — `inner` uses the same parameter rules as top-level predicates. */
+export function not(inner: WherePredicate): WherePredicate {
+  return { kind: "not", inner };
+}
 
 /** `left = $pN` */
 export function eq(left: PropRef, right: unknown): WherePredicate {
@@ -177,6 +254,8 @@ export type OrderByClause = {
   readonly direction: OrderDirection;
 };
 
+type Projection = "star" | Record<string, PropRef>;
+
 /**
  * `MATCH … WHERE … RETURN … ORDER BY … SKIP … LIMIT` builder (Cypher remains explicit in `match()`).
  * WHERE clauses are AND-combined; every value is a parameter except `IS NULL` / `IS NOT NULL`.
@@ -184,7 +263,7 @@ export type OrderByClause = {
 export class SelectQuery {
   private matchPattern = "";
   private predicates: WherePredicate[] = [];
-  private projection: Record<string, PropRef> | null = null;
+  private projection: Projection | null = null;
   private order: OrderByClause[] = [];
   private skipCount: number | null = null;
   private limitCount: number | null = null;
@@ -207,6 +286,12 @@ export class SelectQuery {
    */
   returnFields(fields: Record<string, PropRef>): this {
     this.projection = fields;
+    return this;
+  }
+
+  /** `RETURN *` (mutually exclusive with {@link returnFields} — last call wins). */
+  returnStar(): this {
+    this.projection = "star";
     return this;
   }
 
@@ -251,94 +336,25 @@ export class SelectQuery {
     if (!this.matchPattern) {
       throw new Error("SelectQuery: call match() before toCypher()");
     }
+    if (this.projection === null) {
+      throw new Error("SelectQuery: call returnFields() or returnStar() before toCypher()");
+    }
     const params: Record<string, unknown> = {};
     let p = 0;
     const nextParam = (): string => {
       const key = `p${p++}`;
       return key;
     };
+    const sink: ParamSink = { params, nextParam };
 
     let text = `MATCH ${this.matchPattern}`;
     if (this.predicates.length > 0) {
-      const parts: string[] = [];
-      for (const pred of this.predicates) {
-        const ref = propExpr(pred.left);
-        switch (pred.kind) {
-          case "eq": {
-            const k = nextParam();
-            params[k] = pred.right;
-            parts.push(`${ref} = $${k}`);
-            break;
-          }
-          case "neq": {
-            const k = nextParam();
-            params[k] = pred.right;
-            parts.push(`${ref} <> $${k}`);
-            break;
-          }
-          case "gt": {
-            const k = nextParam();
-            params[k] = pred.right;
-            parts.push(`${ref} > $${k}`);
-            break;
-          }
-          case "gte": {
-            const k = nextParam();
-            params[k] = pred.right;
-            parts.push(`${ref} >= $${k}`);
-            break;
-          }
-          case "lt": {
-            const k = nextParam();
-            params[k] = pred.right;
-            parts.push(`${ref} < $${k}`);
-            break;
-          }
-          case "lte": {
-            const k = nextParam();
-            params[k] = pred.right;
-            parts.push(`${ref} <= $${k}`);
-            break;
-          }
-          case "isNull":
-            parts.push(`${ref} IS NULL`);
-            break;
-          case "isNotNull":
-            parts.push(`${ref} IS NOT NULL`);
-            break;
-          case "in": {
-            const k = nextParam();
-            params[k] = [...pred.values];
-            parts.push(`${ref} IN $${k}`);
-            break;
-          }
-          case "startsWith": {
-            const k = nextParam();
-            params[k] = pred.substring;
-            parts.push(`${ref} STARTS WITH $${k}`);
-            break;
-          }
-          case "endsWith": {
-            const k = nextParam();
-            params[k] = pred.substring;
-            parts.push(`${ref} ENDS WITH $${k}`);
-            break;
-          }
-          case "contains": {
-            const k = nextParam();
-            params[k] = pred.substring;
-            parts.push(`${ref} CONTAINS $${k}`);
-            break;
-          }
-          default: {
-            const _exhaustive: never = pred;
-            throw new Error(`Unhandled predicate: ${JSON.stringify(_exhaustive)}`);
-          }
-        }
-      }
+      const parts = this.predicates.map((pred) => emitPredicate(pred, sink));
       text += ` WHERE ${parts.join(" AND ")}`;
     }
-    if (this.projection) {
+    if (this.projection === "star") {
+      text += " RETURN *";
+    } else {
       const ret = Object.entries(this.projection)
         .map(([out, pr]) => `${pr.alias}.${pr.name} AS ${out}`)
         .join(", ");

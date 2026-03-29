@@ -1,5 +1,6 @@
 import neo4j, { type Driver, type Session, type ManagedTransaction } from "neo4j-driver";
-import { compileCypher, type CompiledCypher } from "@cyphra/query";
+import { compileCypher, type CompiledCypher, type SelectQuery } from "@cyphra/query";
+import { toPlainRecord, toPlainRecords } from "./records.js";
 
 export type CyphraClientOptions = {
   /** Bolt / Neo4j URI, e.g. `neo4j+s://xxx.databases.neo4j.io`. */
@@ -80,6 +81,47 @@ export class CyphraClient {
   ): Promise<ReturnType<Session["run"]>> {
     const compiled = compileCypher(strings, values);
     return this.runCompiled(session, compiled);
+  }
+
+  /**
+   * Run compiled Cypher and map rows to plain objects (`record.toObject()`).
+   *
+   * @param session - Open session.
+   * @param compiled - From {@link compileCypher}, {@link import("@cyphra/query").cypher}, or {@link SelectQuery.toCypher}.
+   */
+  async queryRecords(
+    session: Session,
+    compiled: CompiledCypher,
+  ): Promise<Record<string, unknown>[]> {
+    const result = await this.runCompiled(session, compiled);
+    return toPlainRecords(result);
+  }
+
+  /**
+   * First row as a plain object, or `undefined` if empty.
+   *
+   * @param session - Open session.
+   * @param compiled - Compiled query.
+   */
+  async queryRecord(
+    session: Session,
+    compiled: CompiledCypher,
+  ): Promise<Record<string, unknown> | undefined> {
+    const result = await this.runCompiled(session, compiled);
+    return toPlainRecord(result);
+  }
+
+  /** Shorthand for {@link queryRecords} with a {@link SelectQuery}. */
+  async selectRecords(session: Session, query: SelectQuery): Promise<Record<string, unknown>[]> {
+    return this.queryRecords(session, query.toCypher());
+  }
+
+  /** Shorthand for {@link queryRecord} with a {@link SelectQuery}. */
+  async selectRecord(
+    session: Session,
+    query: SelectQuery,
+  ): Promise<Record<string, unknown> | undefined> {
+    return this.queryRecord(session, query.toCypher());
   }
 
   /** Open a session, run `fn`, always close the session. */

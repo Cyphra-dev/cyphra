@@ -26,6 +26,7 @@ export {
   lt,
   lte,
   neq,
+  not,
   node,
   prop,
   rel,

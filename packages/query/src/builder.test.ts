@@ -9,6 +9,7 @@ import {
   isNull,
   neq,
   node,
+  not,
   prop,
   rel,
   select,
@@ -95,5 +96,27 @@ describe("SelectQuery", () => {
   it("rejects empty inList", () => {
     const u = node("User", "u");
     expect(() => inList(prop(u.alias, "x"), [])).toThrow(/empty list/);
+  });
+
+  it("wraps predicates with NOT (...)", () => {
+    const u = node("User", "u");
+    const q = select()
+      .match(`(${u.alias}:${u.label})`)
+      .where(not(eq(prop(u.alias, "role"), "admin")))
+      .returnStar();
+    const { text, params } = q.toCypher();
+    expect(text).toBe("MATCH (u:User) WHERE NOT (u.role = $p0) RETURN *");
+    expect(params).toEqual({ p0: "admin" });
+  });
+
+  it("requires returnFields or returnStar", () => {
+    const u = node("User", "u");
+    expect(() => select().match(`(${u.alias}:${u.label})`).toCypher()).toThrow(/returnFields/);
+  });
+
+  it("supports RETURN *", () => {
+    const u = node("User", "u");
+    const { text } = select().match(`(${u.alias}:${u.label})`).returnStar().toCypher();
+    expect(text).toBe("MATCH (u:User) RETURN *");
   });
 });
