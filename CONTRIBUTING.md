@@ -38,7 +38,7 @@ pnpm --filter @cyphra/migrator exec vitest run src/push.integration.test.ts
 
 The migrator test applies generated `CREATE CONSTRAINT` / `CREATE RANGE INDEX` DDL twice (idempotent `IF NOT EXISTS`). CI runs both against a Neo4j 5 service container on every push and pull request.
 
-Tests use a root `vitest.config.ts` with `test.projects` pointing at each `packages/*` workspace (see [Vitest projects](https://vitest.dev/config/#projects)).
+Tests use a root `vitest.config.ts` with `test.projects` pointing at each `packages/*` workspace (see [Vitest projects](https://vitest.dev/config/#projects)). The **`cyphra`** package’s Vitest config aliases `@cyphra/*` to **source** so barrel tests do not depend on stale `dist/`.
 
 ## Changesets
 
@@ -47,6 +47,8 @@ User-facing package changes should include a changeset:
 ```bash
 pnpm changeset
 ```
+
+Publishable packages are **fixed** in [`.changeset/config.json`](./.changeset/config.json): `cyphra` and every `@cyphra/*` release share the **same version**, so the meta-package stays aligned with its dependencies on npm.
 
 ## Releases
 

@@ -12,6 +12,7 @@ This package depends on `@cyphra/schema`, `@cyphra/query`, `@cyphra/runtime`, an
 ```ts
 import {
   parseSchema,
+  parseSchemaFile,
   cypher,
   CyphraClient,
   defineMigration,

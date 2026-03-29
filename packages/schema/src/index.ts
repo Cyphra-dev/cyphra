@@ -20,6 +20,7 @@ export type {
 export { SchemaValidationError } from "./errors.js";
 export { printSchemaDocument, formatDecorator } from "./printSchema.js";
 export { MAX_SCHEMA_BYTES, parseSchema } from "./parseSchema.js";
+export { parseSchemaFile } from "./readSchemaFile.js";
 export type { CodegenModel } from "./renderCyphraGen.js";
 export {
   collectCodegenModel,
