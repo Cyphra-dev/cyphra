@@ -9,3 +9,10 @@ node Post {
   title  String
   author User? @relationship(type: "AUTHORED", direction: IN)
 }
+
+relationship Follows {
+  type "FOLLOWS"
+  from User
+  to User
+  since DateTime @index
+}

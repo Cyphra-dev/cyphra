@@ -1,6 +1,11 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  constraintStatementsFromSchema,
+  indexStatementsFromSchema,
+  schemaIntegrationHints,
+} from "@cyphra/migrator";
 import { cypher, eq, node, prop, select } from "@cyphra/query";
 import { CyphraClient } from "@cyphra/runtime";
 import { parseSchema, printSchemaDocument } from "@cyphra/schema";
@@ -31,6 +36,23 @@ async function main(): Promise<void> {
   console.log("\n--- SelectQuery ---");
   console.log(built.text);
   console.log("param keys:", Object.keys(built.params));
+
+  const hints = schemaIntegrationHints(doc);
+  if (hints.length > 0) {
+    console.log("\n--- Schema hints (relationship models) ---");
+    for (const h of hints) {
+      console.log("-", h);
+    }
+  }
+
+  console.log("\n--- DDL preview: constraints (cyphra push) ---");
+  for (const stmt of constraintStatementsFromSchema(doc)) {
+    console.log(stmt);
+  }
+  console.log("\n--- DDL preview: range indexes ---");
+  for (const stmt of indexStatementsFromSchema(doc)) {
+    console.log(stmt);
+  }
 
   const uri = process.env.NEO4J_URI;
   const user = process.env.NEO4J_USER;

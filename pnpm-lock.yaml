@@ -78,6 +78,9 @@ importers:
 
   examples/basic:
     dependencies:
+      '@cyphra/migrator':
+        specifier: workspace:*
+        version: link:../../packages/migrator
       '@cyphra/query':
         specifier: workspace:*
         version: link:../../packages/query

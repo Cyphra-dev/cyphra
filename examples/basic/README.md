@@ -1,11 +1,12 @@
 # Cyphra example — basic
 
-Small Node script that uses **`@cyphra/schema`**, **`@cyphra/query`**, and **`@cyphra/runtime`**:
+Small Node script that uses **`@cyphra/schema`**, **`@cyphra/query`**, **`@cyphra/runtime`**, and **`@cyphra/migrator`**:
 
 1. Parses `schema.cyphra` and prints a canonical copy.
 2. Builds parameterized Cypher with the **`cypher`** template tag.
 3. Builds the same shape with **`SelectQuery`**.
-4. If `NEO4J_*` env vars are set, runs `RETURN 1` via **`CyphraClient.queryRecords`**.
+4. Prints **`schemaIntegrationHints`** and offline **DDL** lines (constraints + range indexes) as produced by `cyphra push`.
+5. If `NEO4J_*` env vars are set, runs `RETURN 1` via **`CyphraClient.queryRecords`**.
 
 ## Run
 
