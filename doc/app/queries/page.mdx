@@ -93,12 +93,7 @@ import { exists, prop, eq, select } from "cyphra";
 
 select()
   .match("(u:User)")
-  .where(
-    exists(
-      "(u)-[:POSTED]->(p:Post)",
-      eq(prop("p", "published"), true),
-    ),
-  )
+  .where(exists("(u)-[:POSTED]->(p:Post)", eq(prop("p", "published"), true)))
   .returnStar();
 ```
 

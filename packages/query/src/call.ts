@@ -47,10 +47,6 @@ export function callSubqueryCompiledWith(
   for (const v of importVariables) {
     assertImportVariable(v);
   }
-  const prefix =
-    importVariables.length > 0 ? `WITH ${importVariables.join(", ")} ` : "";
-  return callSubqueryCompiled(
-    { text: prefix + inner.text, params: { ...inner.params } },
-    options,
-  );
+  const prefix = importVariables.length > 0 ? `WITH ${importVariables.join(", ")} ` : "";
+  return callSubqueryCompiled({ text: prefix + inner.text, params: { ...inner.params } }, options);
 }

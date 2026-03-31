@@ -47,10 +47,12 @@ describe("createSchemaClient", () => {
       data: { id: "pid", title: "Hello", slug: "hello", body: "…" },
     });
 
-    expect(runCompiledTx).toHaveBeenCalledTimes(1);
-    const first = (runCompiledTx.mock.calls[0] as unknown as [unknown, CompiledCypher])[1];
+    expect(runCompiledTx).not.toHaveBeenCalled();
+    expect(queryRecordTx).toHaveBeenCalledTimes(1);
+    const first = (queryRecordTx.mock.calls[0] as unknown as [unknown, CompiledCypher])[1];
     expect(first.text).toContain("CREATE (n:Post)");
     expect(first.text).toContain("n.createdAt = datetime()");
+    expect(first.text).toContain("RETURN n AS n");
     expect(first.params.props).toMatchObject({
       id: "pid",
       title: "Hello",
@@ -58,7 +60,6 @@ describe("createSchemaClient", () => {
       body: "…",
     });
     expect(first.params.props).not.toHaveProperty("createdAt");
-    expect(queryRecordTx).toHaveBeenCalledTimes(1);
     expect(row).toEqual({ n: { id: "pid", title: "Hello" } });
   });
 
@@ -86,10 +87,12 @@ describe("createSchemaClient", () => {
       },
     });
 
-    const write = (runCompiledTx.mock.calls[0] as unknown as [unknown, CompiledCypher])[1];
+    expect(runCompiledTx).not.toHaveBeenCalled();
+    const write = (queryRecordTx.mock.calls[0] as unknown as [unknown, CompiledCypher])[1];
     expect(write.text).toContain("CREATE (n:Post)");
     expect(write.text).toContain("CREATE (m:Author)");
     expect(write.text).toContain("CREATE (n)-[r:WRITTEN_BY]->(m)");
+    expect(write.text).toContain("RETURN n AS n");
     expect(write.params).toHaveProperty("f1_props");
   });
 
@@ -117,10 +120,42 @@ describe("createSchemaClient", () => {
       },
     });
 
-    const write = (runCompiledTx.mock.calls[0] as unknown as [unknown, CompiledCypher])[1];
+    expect(runCompiledTx).not.toHaveBeenCalled();
+    const write = (queryRecordTx.mock.calls[0] as unknown as [unknown, CompiledCypher])[1];
     expect(write.text).toContain("MATCH (m:Author)");
     expect(write.text).toContain("CREATE (n:Post)");
     expect(write.text).toContain("CREATE (n)-[r:WRITTEN_BY]->(m)");
+    expect(write.text).toContain("RETURN n AS n");
+  });
+
+  it("create does not depend on cuid id generation to return created row", async () => {
+    const doc = parseSchema(`
+node Widget {
+  id String @id @default(uuid())
+  name String
+}
+`);
+    validateSchema(doc);
+
+    const runCompiledTx = vi.fn(async () => undefined);
+    const queryRecordTx = vi.fn(async () => ({ n: { id: "w-1", name: "Widget" } }));
+
+    const client = {
+      withWriteTransaction: async (fn: (tx: unknown) => Promise<unknown>) => fn({}),
+      runCompiledTx,
+      queryRecordTx,
+    } as unknown as CyphraClient;
+
+    const db = createSchemaClient(client, doc);
+    const row = await db.widgets.create({ data: { name: "Widget" } });
+
+    expect(runCompiledTx).not.toHaveBeenCalled();
+    expect(queryRecordTx).toHaveBeenCalledTimes(1);
+    const compiled = (queryRecordTx.mock.calls[0] as unknown as [unknown, CompiledCypher])[1];
+    expect(compiled.text).toContain("CREATE (n:Widget)");
+    expect(compiled.text).toContain("RETURN n AS n");
+    expect(compiled.text).not.toContain("MATCH (n:Widget)");
+    expect(row).toEqual({ n: { id: "w-1", name: "Widget" } });
   });
 
   it("posts.findMany with include runs compileRootOptionalOutgoingSelect-shaped read", async () => {

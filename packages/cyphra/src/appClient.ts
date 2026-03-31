@@ -2,10 +2,7 @@ import { loadConfigSync } from "@cyphra/config";
 import { createSchemaClient, type CyphraSchemaClient } from "@cyphra/orm";
 import type { CompiledCypher } from "@cyphra/query";
 import { parseSchema, validateSchema } from "@cyphra/schema";
-import {
-  CyphraClient as RuntimeCyphraClient,
-  type CyphraClientOptions,
-} from "@cyphra/runtime";
+import { CyphraClient as RuntimeCyphraClient, type CyphraClientOptions } from "@cyphra/runtime";
 import { readFileSync } from "node:fs";
 import { createFluentQueryRoot, type FluentQueryRoot } from "@cyphra/query";
 

@@ -16,6 +16,7 @@ jobs:
 
   neo4j-integration:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     services:
       neo4j:
         image: neo4j:5-community

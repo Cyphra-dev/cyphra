@@ -98,7 +98,11 @@ describe("cyphra package barrel", () => {
 
   it("CyphraClient.orm lazy-loads delegates from cyphra.config + schema", async () => {
     const dir = await mkdtemp(join(tmpdir(), "cyphra-meta-orm-"));
-    await writeFile(join(dir, "schema.cyphra"), `node BlogPost { id String @id title String }\n`, "utf8");
+    await writeFile(
+      join(dir, "schema.cyphra"),
+      `node BlogPost { id String @id title String }\n`,
+      "utf8",
+    );
     await writeFile(
       join(dir, "cyphra.config.ts"),
       `export default { schema: "./schema.cyphra", migrations: { path: "./migrations" } };\n`,

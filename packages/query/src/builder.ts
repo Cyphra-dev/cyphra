@@ -34,10 +34,7 @@ export type NodeRef = {
  * - **Exact hop count** — non-negative integer, e.g. **`2`** → **`*2`**.
  * - **Range** — at least one of **`min`** / **`max`**: **`{ min: 1, max: 3 }`**, **`{ max: 5 }`** (`*..5`), **`{ min: 2 }`** (`*2..`).
  */
-export type RelVarLength =
-  | "any"
-  | number
-  | { readonly min?: number; readonly max?: number };
+export type RelVarLength = "any" | number | { readonly min?: number; readonly max?: number };
 
 /** Symbolic relationship variable (`[m:MEMBER_OF]` or `[m:KNOWS*1..3]`). */
 export type RelRef = {
@@ -112,7 +109,7 @@ export type PropRef = {
   readonly name: string;
 };
 
-function assertCypherIdentifier(name: string, label: string): void {
+export function assertCypherIdentifier(name: string, label: string): void {
   if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
     throw new Error(`${label}: invalid identifier ${JSON.stringify(name)}`);
   }
@@ -125,6 +122,8 @@ function assertCypherIdentifier(name: string, label: string): void {
  * @param alias - Cypher variable name.
  */
 export function node(label: string, alias: string): NodeRef {
+  assertCypherIdentifier(label, "node(label)");
+  assertCypherIdentifier(alias, "node(alias)");
   return {
     label,
     alias,
@@ -148,6 +147,8 @@ export function node(label: string, alias: string): NodeRef {
  * @param varLength - Optional variable-length quantifier; see {@link RelVarLength}.
  */
 export function rel(type: string, alias: string, varLength?: RelVarLength): RelRef {
+  assertCypherIdentifier(type, "rel(type)");
+  assertCypherIdentifier(alias, "rel(alias)");
   if (varLength !== undefined) {
     validateRelVarLength(varLength);
   }
@@ -163,7 +164,9 @@ export function rel(type: string, alias: string, varLength?: RelVarLength): RelR
 export function prop(alias: string, name: string): PropRef {
   assertCypherIdentifier(alias, "prop(alias)");
   if (!name) {
-    throw new Error("prop(): property name must be non-empty; use bareVar(alias) for a bare variable");
+    throw new Error(
+      "prop(): property name must be non-empty; use bareVar(alias) for a bare variable",
+    );
   }
   assertCypherIdentifier(name, "prop(name)");
   return { alias, name };
@@ -481,8 +484,7 @@ export type OrderByClause =
     };
 
 function orderBySegment(c: OrderByClause): string {
-  const sortKey =
-    "expression" in c ? c.expression.trim() : propExpr(c.prop);
+  const sortKey = "expression" in c ? c.expression.trim() : propExpr(c.prop);
   if ("expression" in c && !sortKey) {
     throw new Error("SelectQuery.orderBy: expression must be non-empty");
   }
@@ -537,7 +539,9 @@ export class SelectQuery {
       throw new Error("SelectQuery.use: qualifiedGraphName must be non-empty");
     }
     if (!/^[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*$/.test(q)) {
-      throw new Error(`SelectQuery.use: invalid qualified graph name ${JSON.stringify(qualifiedGraphName)}`);
+      throw new Error(
+        `SelectQuery.use: invalid qualified graph name ${JSON.stringify(qualifiedGraphName)}`,
+      );
     }
     this.useClause = q;
     return this;
@@ -580,9 +584,7 @@ export class SelectQuery {
       throw new Error("SelectQuery.withOrderLimit: at least one variable is required");
     }
     for (const v of variables) {
-      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(v)) {
-        throw new Error(`SelectQuery.withOrderLimit: invalid variable name ${JSON.stringify(v)}`);
-      }
+      assertCypherIdentifier(v, "SelectQuery.withOrderLimit(variable)");
     }
     if (order.length === 0) {
       throw new Error("SelectQuery.withOrderLimit: at least one ORDER BY clause is required");
@@ -607,9 +609,7 @@ export class SelectQuery {
       throw new Error("SelectQuery.withDistinct: at least one variable is required");
     }
     for (const v of variables) {
-      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(v)) {
-        throw new Error(`SelectQuery.withDistinct: invalid variable name ${JSON.stringify(v)}`);
-      }
+      assertCypherIdentifier(v, "SelectQuery.withDistinct(variable)");
     }
     this.preWhereWith = { variables, distinct: true, order: [], limit: null };
     return this;
@@ -628,6 +628,9 @@ export class SelectQuery {
    * @param fields - Map of output alias → property reference.
    */
   returnFields(fields: Record<string, PropRef>): this {
+    for (const outAlias of Object.keys(fields)) {
+      assertCypherIdentifier(outAlias, "SelectQuery.returnFields(alias)");
+    }
     this.projection = { kind: "props", fields };
     return this;
   }
@@ -644,7 +647,9 @@ export class SelectQuery {
     for (const [alias, expr] of entries) {
       assertCypherIdentifier(alias, "SelectQuery.returnRawFields(alias)");
       if (!expr.trim()) {
-        throw new Error(`SelectQuery.returnRawFields: empty expression for alias ${JSON.stringify(alias)}`);
+        throw new Error(
+          `SelectQuery.returnRawFields: empty expression for alias ${JSON.stringify(alias)}`,
+        );
       }
     }
     this.projection = { kind: "raw", fields };
@@ -813,4 +818,3 @@ export function compileWhereFragment(predicates: WherePredicate[]): CompiledCyph
       : predicates.map((pred) => emitUnderAnd(pred, sink));
   return { text: parts.join(" AND "), params };
 }
-

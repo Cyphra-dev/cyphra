@@ -75,7 +75,11 @@ export function compileRootOptionalOutgoingSelect(spec: {
   readonly returnMaps: readonly JsMapProjection[];
   readonly scalars?: Readonly<Record<string, JsScalarRef>>;
   readonly where?: readonly WherePredicate[];
-  readonly orderBy?: { readonly variable: string; readonly property: string; readonly direction: OrderDirection };
+  readonly orderBy?: {
+    readonly variable: string;
+    readonly property: string;
+    readonly direction: OrderDirection;
+  };
   readonly skip?: number;
   readonly limit?: number;
 }): CompiledCypher {
@@ -87,8 +91,14 @@ export function compileRootOptionalOutgoingSelect(spec: {
   if (spec.outgoing) {
     assertIdent(spec.outgoing.relType, "compileRootOptionalOutgoingSelect(outgoing.relType)");
     assertIdent(spec.outgoing.relAlias, "compileRootOptionalOutgoingSelect(outgoing.relAlias)");
-    assertIdent(spec.outgoing.targetLabel, "compileRootOptionalOutgoingSelect(outgoing.targetLabel)");
-    assertIdent(spec.outgoing.targetAlias, "compileRootOptionalOutgoingSelect(outgoing.targetAlias)");
+    assertIdent(
+      spec.outgoing.targetLabel,
+      "compileRootOptionalOutgoingSelect(outgoing.targetLabel)",
+    );
+    assertIdent(
+      spec.outgoing.targetAlias,
+      "compileRootOptionalOutgoingSelect(outgoing.targetAlias)",
+    );
     const p = node(spec.rootLabel, spec.rootAlias);
     const r = rel(spec.outgoing.relType, spec.outgoing.relAlias);
     const t = node(spec.outgoing.targetLabel, spec.outgoing.targetAlias);
@@ -128,7 +138,11 @@ export function compileRootOptionalOutgoingSelect(spec: {
  * - Optional **`whereRootEq`**: AND of `n.prop = value` without hand-writing {@link eq} / {@link prop}
  */
 export function compileRootWithOptionalOut(spec: {
-  readonly root: { readonly label: string; readonly pick: readonly string[]; readonly alias?: string };
+  readonly root: {
+    readonly label: string;
+    readonly pick: readonly string[];
+    readonly alias?: string;
+  };
   readonly optionalRelationship?: {
     readonly type: string;
     readonly targetLabel: string;

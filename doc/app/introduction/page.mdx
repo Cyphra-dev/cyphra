@@ -22,10 +22,10 @@ Cyphra is open source (MIT) and ships as:
 | ------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
 | **Schema** (`@cyphra/schema`)         | Parse and validate `.cyphra`, print canonical documents, derive constraint/index DDL for Neo4j 5+               |
 | **Queries** (`@cyphra/query`)         | `cypher` tagged templates and `SelectQuery` builder—values are always **parameters**, never string-concatenated |
-| **ORM** (`@cyphra/orm`)               | `createNodeCrud`, traversal helpers—compiled Cypher from **`.cyphra`** + `CyphraClient`                          |
-| **Cyphra Client** (`@cyphra/runtime`) | `CyphraClient` with **`CyphraNeo4j`** adapter: sessions, transactions, `runCompiled`, `queryRecords`, …       |
+| **ORM** (`@cyphra/orm`)               | `createNodeCrud`, traversal helpers—compiled Cypher from **`.cyphra`** + `CyphraClient`                         |
+| **Cyphra Client** (`@cyphra/runtime`) | `CyphraClient` with **`CyphraNeo4j`** adapter: sessions, transactions, `runCompiled`, `queryRecords`, …         |
 | **Migrations** (`@cyphra/migrator`)   | `defineMigration`, `cyphra migrate`, `cyphra push`, tracking on `__CyphraMigration` nodes                       |
-| **CLI** (`@cyphra/cli`)               | `init`, `validate`, `db pull`, `schema add`, `schema print` / `ddl`, `migrate`, `push`                           |
+| **CLI** (`@cyphra/cli`)               | `init`, `validate`, `db pull`, `schema add`, `schema print` / `ddl`, `migrate`, `push`                          |
 
 The npm package **`cyphra`** is the **central meta-package**: it lists the libraries as dependencies, re-exports the surface, and exposes **`import { query, orm } from "cyphra"`** (namespaces) plus optional subpaths **`cyphra/query`** and **`cyphra/orm`**. You also get the **`cyphra`** CLI via `bin`. Scoped **`@cyphra/*`** packages remain available for a minimal graph.
 

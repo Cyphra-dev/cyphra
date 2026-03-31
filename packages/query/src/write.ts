@@ -1,14 +1,14 @@
 import type { CompiledCypher } from "./cypher.js";
-import { compileWhereFragment, type WherePredicate } from "./builder.js";
-
-function assertCypherIdentifier(name: string, label: string): void {
-  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
-    throw new Error(`${label}: invalid identifier ${JSON.stringify(name)}`);
-  }
-}
+import { assertCypherIdentifier, compileWhereFragment, type WherePredicate } from "./builder.js";
 
 /** `CREATE (n:Label) SET n += $props` */
-export function compileCreate(label: string, props: Record<string, unknown>, alias = "n"): CompiledCypher {
+export function compileCreate(
+  label: string,
+  props: Record<string, unknown>,
+  alias = "n",
+): CompiledCypher {
+  assertCypherIdentifier(label, "compileCreate(label)");
+  assertCypherIdentifier(alias, "compileCreate(alias)");
   return {
     text: `CREATE (${alias}:${label}) SET ${alias} += $props`,
     params: { props },
@@ -182,6 +182,8 @@ export function compileDetachDeleteWhere(
   alias: string,
   predicates: WherePredicate[],
 ): CompiledCypher {
+  assertCypherIdentifier(label, "compileDetachDeleteWhere(label)");
+  assertCypherIdentifier(alias, "compileDetachDeleteWhere(alias)");
   const { text: whereSql, params: whereParams } = compileWhereFragment(predicates);
   if (!whereSql) {
     throw new Error("compileDetachDeleteWhere: at least one WHERE predicate is required");
@@ -199,6 +201,8 @@ export function compileSetWhere(
   predicates: WherePredicate[],
   props: Record<string, unknown>,
 ): CompiledCypher {
+  assertCypherIdentifier(label, "compileSetWhere(label)");
+  assertCypherIdentifier(alias, "compileSetWhere(alias)");
   const { text: whereSql, params: whereParams } = compileWhereFragment(predicates);
   if (!whereSql) {
     throw new Error("compileSetWhere: at least one WHERE predicate is required");
@@ -219,6 +223,8 @@ export function compileDeleteWhere(
   alias: string,
   predicates: WherePredicate[],
 ): CompiledCypher {
+  assertCypherIdentifier(label, "compileDeleteWhere(label)");
+  assertCypherIdentifier(alias, "compileDeleteWhere(alias)");
   const { text: whereSql, params: whereParams } = compileWhereFragment(predicates);
   if (!whereSql) {
     throw new Error("compileDeleteWhere: at least one WHERE predicate is required");
@@ -319,7 +325,9 @@ export function compileRemoveRelationshipProperties(
   const pattern = matchAnonymousTypedRelationship(relAlias, relType, ends);
   const { text: whereSql, params: whereParams } = compileWhereFragment(predicates);
   if (!whereSql) {
-    throw new Error("compileRemoveRelationshipProperties: at least one WHERE predicate is required");
+    throw new Error(
+      "compileRemoveRelationshipProperties: at least one WHERE predicate is required",
+    );
   }
   const removeList = propertyNames.map((p) => `${relAlias}.${p}`).join(", ");
   return {
@@ -337,6 +345,8 @@ export function compileRemoveProperties(
   predicates: WherePredicate[],
   propertyNames: readonly string[],
 ): CompiledCypher {
+  assertCypherIdentifier(label, "compileRemoveProperties(label)");
+  assertCypherIdentifier(alias, "compileRemoveProperties(alias)");
   if (propertyNames.length === 0) {
     throw new Error("compileRemoveProperties: at least one property name is required");
   }

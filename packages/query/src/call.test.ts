@@ -29,8 +29,12 @@ describe("callSubqueryCompiled", () => {
   });
 
   it("rejects invalid branchIndex", () => {
-    expect(() => callSubqueryCompiled(cypher`RETURN 1 AS n`, { branchIndex: -1 })).toThrow(/branchIndex/);
-    expect(() => callSubqueryCompiled(cypher`RETURN 1 AS n`, { branchIndex: 1.5 })).toThrow(/branchIndex/);
+    expect(() => callSubqueryCompiled(cypher`RETURN 1 AS n`, { branchIndex: -1 })).toThrow(
+      /branchIndex/,
+    );
+    expect(() => callSubqueryCompiled(cypher`RETURN 1 AS n`, { branchIndex: 1.5 })).toThrow(
+      /branchIndex/,
+    );
   });
 
   it("callSubqueryCompiledWith prefixes WITH for correlation", () => {

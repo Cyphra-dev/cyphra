@@ -22,9 +22,15 @@ describe("match hints", () => {
   });
 
   it("matchHintUsingRangeIndex, TextIndex, PointIndex", () => {
-    expect(matchHintUsingRangeIndex("p", "Pioneer", ["born"])).toBe("USING RANGE INDEX p:Pioneer(born)");
-    expect(matchHintUsingTextIndex("c", "Country", ["name"])).toBe("USING TEXT INDEX c:Country(name)");
-    expect(matchHintUsingPointIndex("l", "Location", ["coord"])).toBe("USING POINT INDEX l:Location(coord)");
+    expect(matchHintUsingRangeIndex("p", "Pioneer", ["born"])).toBe(
+      "USING RANGE INDEX p:Pioneer(born)",
+    );
+    expect(matchHintUsingTextIndex("c", "Country", ["name"])).toBe(
+      "USING TEXT INDEX c:Country(name)",
+    );
+    expect(matchHintUsingPointIndex("l", "Location", ["coord"])).toBe(
+      "USING POINT INDEX l:Location(coord)",
+    );
   });
 
   it("matchHintUsingJoin", () => {

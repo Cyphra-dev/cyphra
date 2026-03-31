@@ -4,7 +4,9 @@ import { compileRelatedNodes, compileShortestPath } from "./traverse.js";
 describe("compileShortestPath", () => {
   it("BOTH uses undirected rel segment", () => {
     const c = compileShortestPath("User", "id", "a", "User", "id", "b", "KNOWS", 4, "BOTH");
-    expect(c.text).toContain("shortestPath((a:User { id: $fromId })-[r:KNOWS*1..4]-(b:User { id: $toId }))");
+    expect(c.text).toContain(
+      "shortestPath((a:User { id: $fromId })-[r:KNOWS*1..4]-(b:User { id: $toId }))",
+    );
     expect(c.params).toEqual({ fromId: "a", toId: "b" });
   });
 

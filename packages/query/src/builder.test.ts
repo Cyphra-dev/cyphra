@@ -46,6 +46,13 @@ describe("SelectQuery", () => {
     expect(u.both(a, p)).toBe("(u:User)-[a:AUTHORED]-(p:Post)");
   });
 
+  it("rejects invalid node()/rel() identifiers", () => {
+    expect(() => node("User-Profile", "u")).toThrow(/invalid identifier/);
+    expect(() => node("User", "u-1")).toThrow(/invalid identifier/);
+    expect(() => rel("MEMBER-OF", "m")).toThrow(/invalid identifier/);
+    expect(() => rel("MEMBER_OF", "m-1")).toThrow(/invalid identifier/);
+  });
+
   it("supports variable-length rel() quantifiers", () => {
     const a = node("Person", "a");
     const b = node("Person", "b");
@@ -132,9 +139,7 @@ describe("SelectQuery", () => {
         { prop: prop(u.alias, "score"), direction: "DESC", nulls: "FIRST" },
       )
       .toCypher();
-    expect(text).toContain(
-      "ORDER BY u.nickname ASC NULLS LAST, u.score DESC NULLS FIRST",
-    );
+    expect(text).toContain("ORDER BY u.nickname ASC NULLS LAST, u.score DESC NULLS FIRST");
   });
 
   it("withOrderLimit passes nulls through ORDER BY", () => {
@@ -221,6 +226,14 @@ describe("SelectQuery", () => {
       .toCypher();
     expect(text).toBe("MATCH (n:N) RETURN n.role AS role, count(*) AS total ORDER BY total DESC");
     expect(params).toEqual({});
+  });
+
+  it("rejects invalid output aliases for returnFields", () => {
+    expect(() =>
+      select()
+        .match("(n:N)")
+        .returnFields({ "bad-alias": prop("n", "id") }),
+    ).toThrow(/invalid identifier/);
   });
 
   it("ORDER BY expression supports NULLS", () => {
@@ -346,10 +359,7 @@ describe("SelectQuery", () => {
     const q = select()
       .match(`(${u.alias}:${u.label})`)
       .where(
-        exists(
-          `(${u.alias}:${u.label})-[:POSTED]->(p:Post)`,
-          eq(prop("p", "published"), true),
-        ),
+        exists(`(${u.alias}:${u.label})-[:POSTED]->(p:Post)`, eq(prop("p", "published"), true)),
       )
       .returnStar();
     const { text, params } = q.toCypher();
@@ -402,7 +412,9 @@ describe("SelectQuery", () => {
   it("WITH DISTINCT ORDER BY LIMIT before WHERE", () => {
     const { text, params } = select()
       .match("(u:User)")
-      .withOrderLimit(["u"], [{ prop: prop("u", "score"), direction: "DESC" }], 5, { distinct: true })
+      .withOrderLimit(["u"], [{ prop: prop("u", "score"), direction: "DESC" }], 5, {
+        distinct: true,
+      })
       .where(eq(prop("u", "active"), true))
       .returnStar()
       .toCypher();

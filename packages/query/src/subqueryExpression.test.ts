@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { compileCollectBlock, compileCountBlock, compileExistsBlock } from "./subqueryExpression.js";
+import {
+  compileCollectBlock,
+  compileCountBlock,
+  compileExistsBlock,
+} from "./subqueryExpression.js";
 
 describe("subqueryExpression", () => {
   it("compileExistsBlock remaps parameters", () => {
@@ -15,15 +19,11 @@ describe("subqueryExpression", () => {
   });
 
   it("compileCountBlock and compileCollectBlock", () => {
-    expect(
-      compileCountBlock({ text: "MATCH (n:N) RETURN n", params: {} }),
-    ).toEqual({
+    expect(compileCountBlock({ text: "MATCH (n:N) RETURN n", params: {} })).toEqual({
       text: "COUNT { MATCH (n:N) RETURN n }",
       params: {},
     });
-    expect(
-      compileCollectBlock({ text: "MATCH (n:N) RETURN n AS x", params: {} }),
-    ).toEqual({
+    expect(compileCollectBlock({ text: "MATCH (n:N) RETURN n AS x", params: {} })).toEqual({
       text: "COLLECT { MATCH (n:N) RETURN n AS x }",
       params: {},
     });

@@ -15,18 +15,18 @@ Everything executed against the database is **parameter-safe** (no string-splici
 
 ## Monorepo map
 
-| Package | Role |
-| --- | --- |
-| **`cyphra`** | Meta-package: **`query`** / **`orm`** namespaces, optional `cyphra/query` & `cyphra/orm` subpaths, workspace helper **`loadCyphraWorkspace`**, re-exports + `cyphra` CLI binary. |
-| `@cyphra/schema` | Parse/validate `.cyphra`, canonical print, constraint/index DDL for Neo4j 5+. |
-| `@cyphra/query` | `cypher` tag, `SelectQuery` and other compilers; grows toward Cypher Manual parity. |
-| `@cyphra/orm` | CRUD/traversal helpers compiled from schema + client. |
-| `@cyphra/runtime` | `CyphraClient`, sessions, transactions, execution helpers. |
-| `@cyphra/migrator` | `defineMigration`, push/migrate flows, migration tracking in the graph. |
-| `@cyphra/config` | **`loadConfig`**, path resolution — shared by CLI, **`cyphra`** (`loadCyphraWorkspace`), and apps. |
-| `@cyphra/cli` | `init`, `validate`, `db pull`, schema/migrate/push. |
-| `@cyphra/core` | Shared **provider** types and driver contracts. |
-| `@cyphra/provider-neo4j` | Bolt implementation for Neo4j. |
+| Package                  | Role                                                                                                                                                                             |
+| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **`cyphra`**             | Meta-package: **`query`** / **`orm`** namespaces, optional `cyphra/query` & `cyphra/orm` subpaths, workspace helper **`loadCyphraWorkspace`**, re-exports + `cyphra` CLI binary. |
+| `@cyphra/schema`         | Parse/validate `.cyphra`, canonical print, constraint/index DDL for Neo4j 5+.                                                                                                    |
+| `@cyphra/query`          | `cypher` tag, `SelectQuery` and other compilers; grows toward Cypher Manual parity.                                                                                              |
+| `@cyphra/orm`            | CRUD/traversal helpers compiled from schema + client.                                                                                                                            |
+| `@cyphra/runtime`        | `CyphraClient`, sessions, transactions, execution helpers.                                                                                                                       |
+| `@cyphra/migrator`       | `defineMigration`, push/migrate flows, migration tracking in the graph.                                                                                                          |
+| `@cyphra/config`         | **`loadConfig`**, path resolution — shared by CLI, **`cyphra`** (`loadCyphraWorkspace`), and apps.                                                                               |
+| `@cyphra/cli`            | `init`, `validate`, `db pull`, schema/migrate/push.                                                                                                                              |
+| `@cyphra/core`           | Shared **provider** types and driver contracts.                                                                                                                                  |
+| `@cyphra/provider-neo4j` | Bolt implementation for Neo4j.                                                                                                                                                   |
 
 Also in the workspace: **`doc/`** (Next.js/Nextra site), **`examples/*`** (clone-only samples, not published to npm), **`extensions/*`** (e.g. VS Code). **Fixed versioning**: `cyphra` and every `@cyphra/*` release share the same version (Changesets).
 

@@ -73,10 +73,7 @@ import {
   currentLocalTimeExpr,
   currentTimeExpr,
 } from "../../temporalExpr.js";
-import {
-  compileCreateLinkedNodes,
-  compileRootOptionalOutgoingSelect,
-} from "../../graphQuery.js";
+import { compileCreateLinkedNodes, compileRootOptionalOutgoingSelect } from "../../graphQuery.js";
 import { compileMapProjection } from "../../mapProjection.js";
 import { compilePatternComprehension } from "../../patternComprehension.js";
 import {
@@ -167,10 +164,7 @@ export const implementedCatalogEntries: readonly CatalogEntryImplemented[] = [
     id: "subquery-correlated",
     manualSection: "CALL { } correlated",
     compile: () =>
-      callSubqueryCompiledWith(
-        ["u"],
-        cypher`MATCH (u)-[:WROTE]->(p:Post) RETURN p AS post`,
-      ),
+      callSubqueryCompiledWith(["u"], cypher`MATCH (u)-[:WROTE]->(p:Post) RETURN p AS post`),
     expectedText: norm("CALL { WITH u MATCH (u)-[:WROTE]->(p:Post) RETURN p AS post }"),
     expectedParams: {},
   },
@@ -312,7 +306,13 @@ export const implementedCatalogEntries: readonly CatalogEntryImplemented[] = [
     id: "merge-node-on-create-on-match",
     manualSection: "ON CREATE / ON MATCH",
     compile: () =>
-      compileMergeSet("Person", "id", "u1", {}, { onCreate: { name: "New" }, onMatch: { touched: true } }),
+      compileMergeSet(
+        "Person",
+        "id",
+        "u1",
+        {},
+        { onCreate: { name: "New" }, onMatch: { touched: true } },
+      ),
     expectedText: norm(
       "MERGE (n:Person { id: $keyVal }) ON CREATE SET n += $onCreateProps ON MATCH SET n += $onMatchProps",
     ),
@@ -494,8 +494,7 @@ export const implementedCatalogEntries: readonly CatalogEntryImplemented[] = [
     status: "implemented",
     id: "clause-use",
     manualSection: "USE",
-    compile: () =>
-      select().use("composite.primary").match("(n:N)").returnStar().toCypher(),
+    compile: () => select().use("composite.primary").match("(n:N)").returnStar().toCypher(),
     expectedText: norm("USE composite.primary MATCH (n:N) RETURN *"),
     expectedParams: {},
   },
@@ -669,10 +668,14 @@ export const implementedCatalogEntries: readonly CatalogEntryImplemented[] = [
     compile: () =>
       select()
         .match("(u:User)")
-        .withOrderLimit(["u"], [{ prop: prop("u", "score"), direction: "DESC" }], 5, { distinct: true })
+        .withOrderLimit(["u"], [{ prop: prop("u", "score"), direction: "DESC" }], 5, {
+          distinct: true,
+        })
         .returnStar()
         .toCypher(),
-    expectedText: norm("MATCH (u:User) WITH DISTINCT u ORDER BY u.score DESC LIMIT toInteger($p0) RETURN *"),
+    expectedText: norm(
+      "MATCH (u:User) WITH DISTINCT u ORDER BY u.score DESC LIMIT toInteger($p0) RETURN *",
+    ),
     expectedParams: { p0: 5 },
   },
   {
@@ -695,10 +698,7 @@ export const implementedCatalogEntries: readonly CatalogEntryImplemented[] = [
     compile: () =>
       select()
         .match("(n:N)")
-        .where(
-          not(inList(prop("n", "role"), ["guest"])),
-          eq(prop("n", "name"), "x"),
-        )
+        .where(not(inList(prop("n", "role"), ["guest"])), eq(prop("n", "name"), "x"))
         .returnStar()
         .toCypher(),
     expectedText: norm("MATCH (n:N) WHERE NOT (n.role IN $p0) AND n.name = $p1 RETURN *"),
@@ -775,8 +775,7 @@ export const implementedCatalogEntries: readonly CatalogEntryImplemented[] = [
     status: "implemented",
     id: "compile-cypher-api",
     manualSection: "Parameters / expressions",
-    compile: () =>
-      compileCypher(["RETURN ", " AS n"] as unknown as TemplateStringsArray, [99]),
+    compile: () => compileCypher(["RETURN ", " AS n"] as unknown as TemplateStringsArray, [99]),
     expectedText: norm("RETURN $p0 AS n"),
     expectedParams: { p0: 99 },
   },
@@ -873,9 +872,7 @@ export const implementedCatalogEntries: readonly CatalogEntryImplemented[] = [
         params: load.params,
       };
     },
-    expectedText: norm(
-      "USING PERIODIC COMMIT 1000 LOAD CSV WITH HEADERS FROM $csvUrl AS row",
-    ),
+    expectedText: norm("USING PERIODIC COMMIT 1000 LOAD CSV WITH HEADERS FROM $csvUrl AS row"),
     expectedParams: { csvUrl: "file:///batch.csv" },
   },
   {
@@ -997,9 +994,7 @@ export const implementedCatalogEntries: readonly CatalogEntryImplemented[] = [
         property: "age",
         ifNotExists: true,
       }),
-    expectedText: norm(
-      "CREATE RANGE INDEX person_age_idx IF NOT EXISTS FOR (n:Person) ON (n.age)",
-    ),
+    expectedText: norm("CREATE RANGE INDEX person_age_idx IF NOT EXISTS FOR (n:Person) ON (n.age)"),
     expectedParams: {},
   },
   {
@@ -1032,9 +1027,7 @@ export const implementedCatalogEntries: readonly CatalogEntryImplemented[] = [
     id: "clause-terminate",
     manualSection: "TERMINATE TRANSACTIONS",
     compile: () => compileTerminateTransactions(["neo4j-transaction-1", "mydb-transaction-2"]),
-    expectedText: norm(
-      'TERMINATE TRANSACTIONS "neo4j-transaction-1", "mydb-transaction-2"',
-    ),
+    expectedText: norm('TERMINATE TRANSACTIONS "neo4j-transaction-1", "mydb-transaction-2"'),
     expectedParams: {},
   },
   {

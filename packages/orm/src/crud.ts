@@ -6,20 +6,40 @@ import {
   eq,
   prop,
   select,
+  type CompiledCypher,
   type WherePredicate,
 } from "@cyphra/query";
 import type { CyphraClient } from "@cyphra/runtime";
 import type { SchemaDocument } from "@cyphra/schema";
-import { getIdFieldName, getNodeDeclaration, getScalarFields, getUniqueFieldNames } from "./nodeMeta.js";
+import {
+  getIdFieldName,
+  getNodeDeclaration,
+  getScalarFields,
+  getUniqueFieldNames,
+} from "./nodeMeta.js";
 
 export type NodeCrud = {
   readonly label: string;
   findUnique(where: Record<string, unknown>): Promise<Record<string, unknown> | undefined>;
-  findMany(opts?: { where?: Record<string, unknown>; skip?: number; limit?: number }): Promise<Record<string, unknown>[]>;
+  findMany(opts?: {
+    where?: Record<string, unknown>;
+    skip?: number;
+    limit?: number;
+  }): Promise<Record<string, unknown>[]>;
   create(data: Record<string, unknown>): Promise<Record<string, unknown> | undefined>;
-  update(where: Record<string, unknown>, patch: Record<string, unknown>): Promise<Record<string, unknown> | undefined>;
+  update(
+    where: Record<string, unknown>,
+    patch: Record<string, unknown>,
+  ): Promise<Record<string, unknown> | undefined>;
   delete(where: Record<string, unknown>): Promise<void>;
 };
+
+function withReturnNode(compiled: CompiledCypher, alias = "n"): CompiledCypher {
+  return {
+    text: `${compiled.text} RETURN ${alias} AS ${alias}`,
+    params: compiled.params,
+  };
+}
 
 function buildUniqueWhere(
   nodeDecl: import("@cyphra/schema").NodeDeclaration,
@@ -48,7 +68,11 @@ function buildUniqueWhere(
  * Uses `MERGE` on the `@id` field for {@link NodeCrud.create} when an id is present in `data`;
  * otherwise uses `CREATE` with `SET n += $props` (caller should supply ids via app logic).
  */
-export function createNodeCrud(client: CyphraClient, doc: SchemaDocument, nodeName: string): NodeCrud {
+export function createNodeCrud(
+  client: CyphraClient,
+  doc: SchemaDocument,
+  nodeName: string,
+): NodeCrud {
   const nodeDecl = getNodeDeclaration(doc, nodeName);
   if (!nodeDecl) {
     throw new Error(`createNodeCrud: unknown node "${nodeName}"`);
@@ -84,7 +108,10 @@ export function createNodeCrud(client: CyphraClient, doc: SchemaDocument, nodeNa
         for (const [k, v] of Object.entries(opts.where)) {
           preds.push(eq(prop(alias, k), v));
         }
-        let q = select().match(`(${alias}:${label})`).where(...preds).returnStar();
+        let q = select()
+          .match(`(${alias}:${label})`)
+          .where(...preds)
+          .returnStar();
         if (opts.skip != null) q = q.skip(opts.skip);
         if (opts.limit != null) q = q.limit(opts.limit);
         return client.withSession((s) => client.queryRecords(s, q.toCypher()));
@@ -101,19 +128,12 @@ export function createNodeCrud(client: CyphraClient, doc: SchemaDocument, nodeNa
         const { [idField]: keyVal, ...rest } = data;
         const compiled = compileMergeSet(label, idField, keyVal, rest);
         return client.withSession(async (s) => {
-          await client.runCompiled(s, compiled);
-          const preds = buildUniqueWhere(nodeDecl, { [idField]: keyVal });
-          const q = select()
-            .match(`(n:${label})`)
-            .where(...preds)
-            .returnStar();
-          return client.queryRecord(s, q.toCypher());
+          return client.queryRecord(s, withReturnNode(compiled));
         });
       }
       const compiled = compileCreate(label, data);
       return client.withSession(async (s) => {
-        await client.runCompiled(s, compiled);
-        return undefined;
+        return client.queryRecord(s, withReturnNode(compiled));
       });
     },
 

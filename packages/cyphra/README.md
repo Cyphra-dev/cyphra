@@ -12,14 +12,14 @@ You get a **`bin`** entry, so `npx cyphra`, `pnpm exec cyphra`, or `node_modules
 
 ## What’s inside
 
-| Area        | Role                                                            |
-| ----------- | --------------------------------------------------------------- |
-| **Schema**  | Parse & validate `.cyphra`, schema print and DDL helpers        |
-| **Query**   | `cypher` tag, `SelectQuery`, write/batch compilers              |
-| **ORM**     | `createNodeCrud`, traversals, batch write helper                |
-| **Runtime** | `CyphraClient`, sessions, transactions, Neo4j Bolt              |
-| **Migrate** | `defineMigration`, `push`, tracked migrations                   |
-| **CLI**     | `init`, `validate`, `db pull`, `migrate`, `push`, …             |
+| Area        | Role                                                     |
+| ----------- | -------------------------------------------------------- |
+| **Schema**  | Parse & validate `.cyphra`, schema print and DDL helpers |
+| **Query**   | `cypher` tag, `SelectQuery`, write/batch compilers       |
+| **ORM**     | `createNodeCrud`, traversals, batch write helper         |
+| **Runtime** | `CyphraClient`, sessions, transactions, Neo4j Bolt       |
+| **Migrate** | `defineMigration`, `push`, tracked migrations            |
+| **CLI**     | `init`, `validate`, `db pull`, `migrate`, `push`, …      |
 
 Smaller installs: depend on **`@cyphra/schema`**, **`@cyphra/query`**, etc., instead of this meta-package.
 
@@ -35,11 +35,7 @@ When you import **`CyphraClient` from `cyphra`**, you get a subclass that adds a
 Paths are relative to the project root. **`migrations`** may be a string or **`{ path: string }`**. Optional **`datasource`** (with **`provider`**) matches a Prisma-like layout; you can still wire **`CyphraNeo4j`** with env vars in application code.
 
 ```ts
-import {
-  CyphraClient,
-  CyphraNeo4j,
-  defineCyphraConfig,
-} from "cyphra";
+import { CyphraClient, CyphraNeo4j, defineCyphraConfig } from "cyphra";
 
 export default defineCyphraConfig({
   schema: "./schema.cyphra",

@@ -3,9 +3,11 @@ dist
 .turbo
 *.tsbuildinfo
 .env
-!examples/nextjs-blog/.env
-.env.local
-.env.*.local
+.env.*
+!.env.example
+!**/.env.example
+!.env.template
+!**/.env.template
 .DS_Store
 coverage
 doc/.next
@@ -20,8 +22,6 @@ dist/
 out/
 coverage/
 .turbo/
-.env.local
-.env.*.local
 .DS_Store
 .vscode/
 .idea/

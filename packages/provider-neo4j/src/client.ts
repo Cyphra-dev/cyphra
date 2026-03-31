@@ -1,6 +1,13 @@
 import type { CompiledCypher, SelectQuery } from "@cyphra/query";
 import { compileCypher } from "@cyphra/query";
-import type { Config, Driver, EagerResult, ManagedTransaction, QueryConfig, Session } from "neo4j-driver";
+import type {
+  Config,
+  Driver,
+  EagerResult,
+  ManagedTransaction,
+  QueryConfig,
+  Session,
+} from "neo4j-driver";
 import neo4j, { int, isInt } from "neo4j-driver";
 import { CyphraNeo4j } from "./adapter.js";
 import { eagerResultToPlainRecords, toPlainRecord, toPlainRecords } from "./records.js";
@@ -9,7 +16,12 @@ import { mergeSessionConfig } from "./sessionConfig.js";
 type SessionRunTransactionConfig = NonNullable<Parameters<Session["run"]>[2]>;
 
 function isPlainParamObject(v: unknown): v is Record<string, unknown> {
-  return v !== null && typeof v === "object" && !Array.isArray(v) && Object.getPrototypeOf(v) === Object.prototype;
+  return (
+    v !== null &&
+    typeof v === "object" &&
+    !Array.isArray(v) &&
+    Object.getPrototypeOf(v) === Object.prototype
+  );
 }
 
 /**
@@ -158,7 +170,11 @@ export class CyphraClient {
     }
     const t0 = this.onQuery ? performance.now() : 0;
     try {
-      return await session.run(compiled.text, neo4jQueryParams(compiled.params), options?.transactionConfig);
+      return await session.run(
+        compiled.text,
+        neo4jQueryParams(compiled.params),
+        options?.transactionConfig,
+      );
     } finally {
       if (this.onQuery) {
         this.onQuery({
@@ -236,11 +252,20 @@ export class CyphraClient {
       ...(database !== undefined ? { database } : {}),
     };
     if (this.debug) {
-      console.debug("[cyphra] executeQuery:", compiled.text, "param keys:", Object.keys(compiled.params));
+      console.debug(
+        "[cyphra] executeQuery:",
+        compiled.text,
+        "param keys:",
+        Object.keys(compiled.params),
+      );
     }
     const t0 = this.onQuery ? performance.now() : 0;
     try {
-      return await this.adapter.driver.executeQuery(compiled.text, neo4jQueryParams(compiled.params), merged);
+      return await this.adapter.driver.executeQuery(
+        compiled.text,
+        neo4jQueryParams(compiled.params),
+        merged,
+      );
     } finally {
       if (this.onQuery) {
         this.onQuery({
@@ -261,7 +286,9 @@ export class CyphraClient {
   }
 
   /** Delegates to {@link Driver.verifyConnectivity}; uses adapter `database` when `opts.database` omitted. */
-  async verifyConnectivity(opts?: { database?: string }): Promise<import("neo4j-driver").ServerInfo> {
+  async verifyConnectivity(opts?: {
+    database?: string;
+  }): Promise<import("neo4j-driver").ServerInfo> {
     return this.adapter.driver.verifyConnectivity({
       database: opts?.database ?? this.adapter.database,
     });

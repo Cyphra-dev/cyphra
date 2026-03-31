@@ -86,10 +86,7 @@ function normalizeUserConfig(
   };
 }
 
-function finalizeConfig(
-  cwd: string,
-  user: CyphraUserConfig,
-): CyphraConfig {
+function finalizeConfig(cwd: string, user: CyphraUserConfig): CyphraConfig {
   const n = normalizeUserConfig(cwd, user);
   const provider: GraphProviderId = n.provider ?? DEFAULT_GRAPH_PROVIDER;
   return {

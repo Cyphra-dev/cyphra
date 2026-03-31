@@ -142,7 +142,10 @@ export function compileCreateConstraintRelationshipUnique(options: {
   readonly property: string;
   readonly ifNotExists?: boolean;
 }): CompiledCypher {
-  assertSchemaIdent(options.constraintName, "compileCreateConstraintRelationshipUnique(constraintName)");
+  assertSchemaIdent(
+    options.constraintName,
+    "compileCreateConstraintRelationshipUnique(constraintName)",
+  );
   assertSchemaIdent(options.relVariable, "compileCreateConstraintRelationshipUnique(relVariable)");
   assertSchemaIdent(options.relType, "compileCreateConstraintRelationshipUnique(relType)");
   assertSchemaIdent(options.property, "compileCreateConstraintRelationshipUnique(property)");

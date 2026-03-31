@@ -11,9 +11,7 @@ describe("compileCaseExpression", () => {
       ],
       "zero",
     );
-    expect(c.text).toBe(
-      "CASE WHEN x > $b0_p0 THEN $t0 WHEN x < $b1_p0 THEN $t1 ELSE $e END",
-    );
+    expect(c.text).toBe("CASE WHEN x > $b0_p0 THEN $t0 WHEN x < $b1_p0 THEN $t1 ELSE $e END");
     expect(c.params).toEqual({
       t0: "positive",
       b0_p0: 0,
@@ -25,6 +23,8 @@ describe("compileCaseExpression", () => {
 
   it("rejects empty branches", () => {
     expect(() => compileCaseExpression([], "x")).toThrow(/at least one WHEN/);
-    expect(() => compileCaseExpression([{ when: [], then: 1 }], 0)).toThrow(/at least one WHEN predicate/);
+    expect(() => compileCaseExpression([{ when: [], then: 1 }], 0)).toThrow(
+      /at least one WHEN predicate/,
+    );
   });
 });

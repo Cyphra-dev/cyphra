@@ -27,13 +27,24 @@ describe("write helpers", () => {
     expect(c.params.props).toEqual({ title: "Hi" });
   });
 
+  it("compileCreate rejects invalid label/alias identifiers", () => {
+    expect(() => compileCreate("Bad-Label", {})).toThrow(/invalid identifier/);
+    expect(() => compileCreate("Post", {}, "bad-alias")).toThrow(/invalid identifier/);
+  });
+
   it("compileMergeSet", () => {
     const c = compileMergeSet("Post", "slug", "a-slug", { title: "T" });
     expect(c.text).toContain("MERGE (n:Post { slug: $keyVal })");
   });
 
   it("compileMergeSet ON CREATE / ON MATCH", () => {
-    const c = compileMergeSet("Person", "id", "u1", {}, { onCreate: { name: "N" }, onMatch: { seen: true } });
+    const c = compileMergeSet(
+      "Person",
+      "id",
+      "u1",
+      {},
+      { onCreate: { name: "N" }, onMatch: { seen: true } },
+    );
     expect(c.text).toBe(
       "MERGE (n:Person { id: $keyVal }) ON CREATE SET n += $onCreateProps ON MATCH SET n += $onMatchProps",
     );
@@ -85,6 +96,21 @@ describe("write helpers", () => {
     expect(c.text).toMatch(/MATCH \(p:Post\) WHERE .* DETACH DELETE p/);
   });
 
+  it("node write helpers reject invalid label/alias identifiers", () => {
+    expect(() => compileDetachDeleteWhere("Bad-Post", "p", [eq(prop("p", "slug"), "x")])).toThrow(
+      /invalid identifier/,
+    );
+    expect(() => compileSetWhere("Post", "bad-alias", [eq(prop("p", "slug"), "x")], {})).toThrow(
+      /invalid identifier/,
+    );
+    expect(() => compileDeleteWhere("Post", "bad-alias", [eq(prop("p", "slug"), "x")])).toThrow(
+      /invalid identifier/,
+    );
+    expect(() =>
+      compileRemoveProperties("Post", "bad-alias", [eq(prop("p", "slug"), "x")], ["legacy"]),
+    ).toThrow(/invalid identifier/);
+  });
+
   it("compileSetWhere", () => {
     const c = compileSetWhere("Post", "p", [eq(prop("p", "slug"), "x")], { title: "New" });
     expect(c.text).toContain("SET p += $props");
@@ -102,11 +128,12 @@ describe("write helpers", () => {
   });
 
   it("compileDeleteRelationshipWhere in and undirected", () => {
-    expect(compileDeleteRelationshipWhere("R", "r", [eq(prop("r", "x"), 1)], { ends: "in" }).text).toBe(
-      "MATCH ()<-[r:R]-() WHERE r.x = $p0 DELETE r",
-    );
     expect(
-      compileDeleteRelationshipWhere("R", "r", [eq(prop("r", "x"), 1)], { ends: "undirected" }).text,
+      compileDeleteRelationshipWhere("R", "r", [eq(prop("r", "x"), 1)], { ends: "in" }).text,
+    ).toBe("MATCH ()<-[r:R]-() WHERE r.x = $p0 DELETE r");
+    expect(
+      compileDeleteRelationshipWhere("R", "r", [eq(prop("r", "x"), 1)], { ends: "undirected" })
+        .text,
     ).toBe("MATCH ()-[r:R]-() WHERE r.x = $p0 DELETE r");
   });
 
@@ -136,9 +163,7 @@ describe("write helpers", () => {
 
   it("compileUnwindDetachDelete", () => {
     const c = compileUnwindDetachDelete("Post", "slug", ["a", "b"]);
-    expect(c.text).toBe(
-      "UNWIND $ids AS id MATCH (n:Post) WHERE n.slug = id DETACH DELETE n",
-    );
+    expect(c.text).toBe("UNWIND $ids AS id MATCH (n:Post) WHERE n.slug = id DETACH DELETE n");
     expect(c.params.ids).toEqual(["a", "b"]);
   });
 

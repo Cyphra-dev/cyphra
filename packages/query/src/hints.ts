@@ -44,7 +44,13 @@ export function matchHintUsingRangeIndex(
   labelOrRelType: string,
   properties: readonly string[],
 ): string {
-  return matchHintIndexFragment("RANGE ", variable, labelOrRelType, properties, "matchHintUsingRangeIndex");
+  return matchHintIndexFragment(
+    "RANGE ",
+    variable,
+    labelOrRelType,
+    properties,
+    "matchHintUsingRangeIndex",
+  );
 }
 
 /** **`USING TEXT INDEX variable:LabelOrType(prop1, …)`**. */
@@ -53,7 +59,13 @@ export function matchHintUsingTextIndex(
   labelOrRelType: string,
   properties: readonly string[],
 ): string {
-  return matchHintIndexFragment("TEXT ", variable, labelOrRelType, properties, "matchHintUsingTextIndex");
+  return matchHintIndexFragment(
+    "TEXT ",
+    variable,
+    labelOrRelType,
+    properties,
+    "matchHintUsingTextIndex",
+  );
 }
 
 /** **`USING POINT INDEX variable:LabelOrType(prop1, …)`**. */
@@ -62,7 +74,13 @@ export function matchHintUsingPointIndex(
   labelOrRelType: string,
   properties: readonly string[],
 ): string {
-  return matchHintIndexFragment("POINT ", variable, labelOrRelType, properties, "matchHintUsingPointIndex");
+  return matchHintIndexFragment(
+    "POINT ",
+    variable,
+    labelOrRelType,
+    properties,
+    "matchHintUsingPointIndex",
+  );
 }
 
 /** **`USING SCAN variable:LabelOrType`** — label scan hint (node or relationship pattern variable). */

@@ -23,7 +23,10 @@ export async function runCreateLinkedNodesTx(
 /**
  * Run {@link compileCreateLinkedNodes} in a dedicated write transaction.
  */
-export async function runCreateLinkedNodes(client: CyphraClient, spec: CreateLinkedNodesSpec): Promise<void> {
+export async function runCreateLinkedNodes(
+  client: CyphraClient,
+  spec: CreateLinkedNodesSpec,
+): Promise<void> {
   await client.withWriteTransaction(async (tx) => {
     await runCreateLinkedNodesTx(client, tx, spec);
   });

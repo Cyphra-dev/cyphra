@@ -137,7 +137,10 @@ schemaCmd
 schemaCmd
   .command("add")
   .description("Append a node block to schema.cyphra (interactive TTY, or --json for CI)")
-  .option("--json <file>", "Path to JSON: { label, fields: [{ name, type, optional?, id?, unique? }] }")
+  .option(
+    "--json <file>",
+    "Path to JSON: { label, fields: [{ name, type, optional?, id?, unique? }] }",
+  )
   .action(async (opts: { json?: string }) => {
     const cwd = process.cwd();
     const config = await loadConfig(cwd);

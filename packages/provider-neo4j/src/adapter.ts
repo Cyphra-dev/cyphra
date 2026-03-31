@@ -47,7 +47,11 @@ export class CyphraNeo4j {
       if (uri === undefined || uri === "") {
         throw new Error("CyphraNeo4j: provide uri or url for the Bolt connection string");
       }
-      this.driver = neo4j.driver(uri, neo4j.auth.basic(opts.user, opts.password), opts.driverConfig);
+      this.driver = neo4j.driver(
+        uri,
+        neo4j.auth.basic(opts.user, opts.password),
+        opts.driverConfig,
+      );
       this.database = opts.database;
       this.ownDriver = true;
     }

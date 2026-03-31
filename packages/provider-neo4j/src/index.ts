@@ -18,11 +18,7 @@ export {
   type CyphraNeo4jDriverOptions,
   type CyphraNeo4jOptions,
 } from "./adapter.js";
-export {
-  eagerResultToPlainRecords,
-  toPlainRecord,
-  toPlainRecords,
-} from "./records.js";
+export { eagerResultToPlainRecords, toPlainRecord, toPlainRecords } from "./records.js";
 export { mergeSessionConfig } from "./sessionConfig.js";
 export {
   NEO4J_DRIVER_ADAPTER_COVERAGE,

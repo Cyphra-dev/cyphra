@@ -10,7 +10,7 @@
  */
 
 import type { CompiledCypher } from "./cypher.js";
-import { eq, prop, select, type WherePredicate } from "./builder.js";
+import { assertCypherIdentifier, eq, prop, select, type WherePredicate } from "./builder.js";
 
 /** Client minimal pour exécuter une requête compilée en lecture. */
 export type FluentReadClient = {
@@ -30,6 +30,7 @@ export class MatchVar {
   }
 
   label(name: string): this {
+    assertCypherIdentifier(name, "MatchVar.label(name)");
     this.labelName = name;
     return this;
   }
@@ -107,6 +108,10 @@ class AfterMatch {
     targetLabel: string,
     opts?: { readonly relAlias?: string; readonly targetAlias?: string },
   ): this {
+    assertCypherIdentifier(relType, "AfterMatch.optionalOut(relType)");
+    assertCypherIdentifier(targetLabel, "AfterMatch.optionalOut(targetLabel)");
+    assertCypherIdentifier(opts?.relAlias ?? "r", "AfterMatch.optionalOut(relAlias)");
+    assertCypherIdentifier(opts?.targetAlias ?? "a", "AfterMatch.optionalOut(targetAlias)");
     this.optional = {
       relType,
       targetLabel,
@@ -123,6 +128,9 @@ class AfterMatch {
   return(...varNames: string[]): AfterReturn {
     if (varNames.length === 0) {
       throw new Error("Cyphra fluent query: pass at least one variable to .return(...)");
+    }
+    for (const name of varNames) {
+      assertCypherIdentifier(name, "AfterMatch.return(varName)");
     }
     return new AfterReturn(this.client, this.root, this.optional, varNames);
   }

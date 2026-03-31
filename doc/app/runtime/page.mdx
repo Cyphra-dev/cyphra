@@ -44,15 +44,15 @@ const client = new CyphraClient({
 });
 ```
 
-| Option                  | Purpose                                                                                                 |
-| ----------------------- | ------------------------------------------------------------------------------------------------------- |
-| **`adapter`**           | **`CyphraNeo4j`** instance (recommended).                                                              |
-| **`uri`**               | Bolt / Neo4j URI (`neo4j://`, `bolt://`, `neo4j+s://`, …) when not using **`adapter`**.                 |
-| **`user` / `password`** | Passed to **`neo4j.auth.basic`**.                                                                       |
-| **`database`**          | Neo4j 4+ database name for **`session({ database })`**.                                                 |
-| **`debug`**             | When **`true`**, logs compiled Cypher and **parameter key names** only.                                 |
+| Option                  | Purpose                                                                                                                |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| **`adapter`**           | **`CyphraNeo4j`** instance (recommended).                                                                              |
+| **`uri`**               | Bolt / Neo4j URI (`neo4j://`, `bolt://`, `neo4j+s://`, …) when not using **`adapter`**.                                |
+| **`user` / `password`** | Passed to **`neo4j.auth.basic`**.                                                                                      |
+| **`database`**          | Neo4j 4+ database name for **`session({ database })`**.                                                                |
+| **`debug`**             | When **`true`**, logs compiled Cypher and **parameter key names** only.                                                |
 | **`onQuery`**           | Called after each **`runCompiled`** / **`runCompiledTx`** with **Cypher text**, **param keys**, and **duration** (ms). |
-| **`driverConfig`**      | **`Config`** forwarded to **`neo4j.driver`** (pool size, `connectionAcquisitionTimeout`, `logging`, …). |
+| **`driverConfig`**      | **`Config`** forwarded to **`neo4j.driver`** (pool size, `connectionAcquisitionTimeout`, `logging`, …).                |
 
 **`rawDriver`** exposes the underlying **`Driver`** for advanced scenarios.
 

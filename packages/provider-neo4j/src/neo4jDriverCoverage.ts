@@ -37,7 +37,8 @@ export const NEO4J_DRIVER_ADAPTER_COVERAGE: readonly Neo4jDriverCoverageRow[] = 
     driverArea: "Driver",
     neo4jDriverApi: "driver() / Driver.close",
     support: "first_class",
-    cyphraNotes: "Inject Driver via CyphraNeo4jDriverOptions; dispose() only when adapter owns driver",
+    cyphraNotes:
+      "Inject Driver via CyphraNeo4jDriverOptions; dispose() only when adapter owns driver",
   },
   {
     id: "session-default-database",
@@ -56,9 +57,11 @@ export const NEO4J_DRIVER_ADAPTER_COVERAGE: readonly Neo4jDriverCoverageRow[] = 
   {
     id: "session-bookmarks-impersonation-fetch",
     driverArea: "Session",
-    neo4jDriverApi: "bookmarks, impersonatedUser, fetchSize, bookmarkManager, notificationFilter, auth",
+    neo4jDriverApi:
+      "bookmarks, impersonatedUser, fetchSize, bookmarkManager, notificationFilter, auth",
     support: "passthrough",
-    cyphraNotes: "Pass via session(override) / withSession(fn, override); full SessionConfig supported",
+    cyphraNotes:
+      "Pass via session(override) / withSession(fn, override); full SessionConfig supported",
   },
   {
     id: "session-run-autocommit",
@@ -93,7 +96,8 @@ export const NEO4J_DRIVER_ADAPTER_COVERAGE: readonly Neo4jDriverCoverageRow[] = 
     driverArea: "Driver",
     neo4jDriverApi: "driver.executeQuery (retriable, EagerResult)",
     support: "first_class",
-    cyphraNotes: "executeCompiledQuery / queryRecordsExecute; merges default database into QueryConfig",
+    cyphraNotes:
+      "executeCompiledQuery / queryRecordsExecute; merges default database into QueryConfig",
   },
   {
     id: "driver-verify-serverinfo",
@@ -107,7 +111,8 @@ export const NEO4J_DRIVER_ADAPTER_COVERAGE: readonly Neo4jDriverCoverageRow[] = 
     driverArea: "Values",
     neo4jDriverApi: "Integer, DateTime, Point, Node, Path, …",
     support: "passthrough",
-    cyphraNotes: "Returned in plain maps via toPlainRecords; use neo4j-driver types / is* guards as needed",
+    cyphraNotes:
+      "Returned in plain maps via toPlainRecords; use neo4j-driver types / is* guards as needed",
   },
   {
     id: "rx-api",

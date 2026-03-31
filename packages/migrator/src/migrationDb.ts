@@ -1,4 +1,5 @@
-import type { CyphraDriverClient, CyphraSession } from "@cyphra/core";
+import type { CyphraDriverClient, CyphraManagedTransaction, CyphraSession } from "@cyphra/core";
+import { compileCypher } from "@cyphra/query";
 import { wrapInTransactions } from "./batch.js";
 import { compileRenameLabel, compileRenameProperty } from "./rename.js";
 
@@ -38,10 +39,17 @@ export type MigrationMigrateHelpers = {
  * @param client - Cyphra runtime client.
  * @param session - Neo4j session (caller manages lifecycle).
  */
-export function createMigrationDb(client: CyphraDriverClient, session: CyphraSession): MigrationDb {
+type CypherRunner = Pick<CyphraSession, "run"> | Pick<CyphraManagedTransaction, "run">;
+
+export function createMigrationDb(client: CyphraDriverClient, session: CypherRunner): MigrationDb {
   const run = async (strings: TemplateStringsArray, ...values: unknown[]): Promise<void> => {
-    const result = await client.runCypher(session, strings, ...values);
-    await result;
+    if ("close" in session) {
+      const result = await client.runCypher(session, strings, ...values);
+      await result;
+      return;
+    }
+    const compiled = compileCypher(strings, values);
+    await (session.run(compiled.text, compiled.params) as PromiseLike<unknown>);
   };
 
   const runInTransactionBatches = async (opts: {

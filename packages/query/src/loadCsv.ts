@@ -10,14 +10,7 @@ function assertCypherIdentifier(name: string, label: string): void {
 export type LoadCsvFieldTerminator = "comma" | "semicolon" | "pipe" | "tab";
 
 function fieldTerminatorClause(t: LoadCsvFieldTerminator): string {
-  const ch =
-    t === "comma"
-      ? ","
-      : t === "semicolon"
-        ? ";"
-        : t === "pipe"
-          ? "|"
-          : "\u0009";
+  const ch = t === "comma" ? "," : t === "semicolon" ? ";" : t === "pipe" ? "|" : "\u0009";
   return ` FIELDTERMINATOR '${ch}'`;
 }
 

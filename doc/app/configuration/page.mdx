@@ -24,13 +24,13 @@ export default defineCyphraConfig({
 });
 ```
 
-| Field | Type | Description |
-| ----- | ---- | ----------- |
-| **`schema`** | `string` | Path to **`.cyphra`** (relative to the config file). |
-| **`migrations`** | `string` \| `{ path: string }` | Migrations directory (string path or Prisma-style object). |
-| **`provider`** | `string` | Graph provider (default **`neo4j`**). |
-| **`datasource`** | `object` | Optional Prisma-style block; **`datasource.provider`** is used when **`provider`** is omitted. Connection secrets are often `process.env.*` and may still be passed to **`CyphraNeo4j`** in app code. |
-| **`targetNeo4j`** | `string` | Optional Neo4j / Cypher dialect hint for docs and future emit. |
+| Field             | Type                           | Description                                                                                                                                                                                           |
+| ----------------- | ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **`schema`**      | `string`                       | Path to **`.cyphra`** (relative to the config file).                                                                                                                                                  |
+| **`migrations`**  | `string` \| `{ path: string }` | Migrations directory (string path or Prisma-style object).                                                                                                                                            |
+| **`provider`**    | `string`                       | Graph provider (default **`neo4j`**).                                                                                                                                                                 |
+| **`datasource`**  | `object`                       | Optional Prisma-style block; **`datasource.provider`** is used when **`provider`** is omitted. Connection secrets are often `process.env.*` and may still be passed to **`CyphraNeo4j`** in app code. |
+| **`targetNeo4j`** | `string`                       | Optional Neo4j / Cypher dialect hint for docs and future emit.                                                                                                                                        |
 
 ### App runtime: `CyphraClient.orm`
 
@@ -47,9 +47,9 @@ Created by **`cyphra init`**. Required fields:
 
 Optional:
 
-| Field          | Type     | Default             | Description                                                                                   |
-| -------------- | -------- | ------------------- | --------------------------------------------------------------------------------------------- |
-| **`provider`** | `string` | `"neo4j"`           | Graph **provider** (Prisma-style). Only **`neo4j`** today; see [Graph providers](/providers). |
+| Field          | Type     | Default   | Description                                                                                   |
+| -------------- | -------- | --------- | --------------------------------------------------------------------------------------------- |
+| **`provider`** | `string` | `"neo4j"` | Graph **provider** (Prisma-style). Only **`neo4j`** today; see [Graph providers](/providers). |
 
 Example:
 

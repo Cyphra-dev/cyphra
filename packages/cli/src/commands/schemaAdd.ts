@@ -23,7 +23,11 @@ function isTTY(): boolean {
   return Boolean(process.stdin.isTTY && process.stdout.isTTY);
 }
 
-function renderNodeBlock(label: string, fields: FieldInput[], idFieldName: string | undefined): string {
+function renderNodeBlock(
+  label: string,
+  fields: FieldInput[],
+  idFieldName: string | undefined,
+): string {
   const bodyLines = fields.map((f) => {
     const opt = f.optional ? "?" : "";
     const decs: string[] = [];
@@ -91,7 +95,7 @@ export async function runSchemaAddFromJson(
     }
   }
   if (!idField) {
-    throw new Error("schema add --json: mark one field with \"id\": true for @id");
+    throw new Error('schema add --json: mark one field with "id": true for @id');
   }
   const block = renderNodeBlock(payload.label, fields, idField);
   await appendNodeToSchema(config, block);
@@ -105,7 +109,7 @@ export async function runSchemaAddInteractive(cwd: string, config: CyphraConfig)
   void cwd;
   if (!isTTY()) {
     throw new Error(
-      'Interactive mode requires a TTY. Pass --json <file> for non-interactive use, or edit schema.cyphra by hand.',
+      "Interactive mode requires a TTY. Pass --json <file> for non-interactive use, or edit schema.cyphra by hand.",
     );
   }
 
@@ -114,7 +118,8 @@ export async function runSchemaAddInteractive(cwd: string, config: CyphraConfig)
   const label = await p.text({
     message: "Neo4j label / node name (PascalCase)",
     placeholder: "Product",
-    validate: (v) => (/^[A-Za-z_][A-Za-z0-9_]*$/.test(v ?? "") ? undefined : "Use letters, numbers, underscore"),
+    validate: (v) =>
+      /^[A-Za-z_][A-Za-z0-9_]*$/.test(v ?? "") ? undefined : "Use letters, numbers, underscore",
   });
   if (p.isCancel(label)) {
     p.cancel("Aborted");

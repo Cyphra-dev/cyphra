@@ -14,8 +14,17 @@ import type { CyphraClient } from "@cyphra/runtime";
 import type { NodeDeclaration, RelationalNodeField, SchemaDocument } from "@cyphra/schema";
 import { validateSchema } from "@cyphra/schema";
 import { createNodeCrud, type NodeCrud } from "./crud.js";
-import { getIdFieldName, getNodeDeclaration, getScalarFields, getUniqueFieldNames } from "./nodeMeta.js";
-import { decoratorStringArg, decoratorStringOrIdArg, getScalarDefaultFn } from "./schemaDecorators.js";
+import {
+  getIdFieldName,
+  getNodeDeclaration,
+  getScalarFields,
+  getUniqueFieldNames,
+} from "./nodeMeta.js";
+import {
+  decoratorStringArg,
+  decoratorStringOrIdArg,
+  getScalarDefaultFn,
+} from "./schemaDecorators.js";
 
 function newUuid(): string {
   const c = globalThis.crypto;
@@ -37,7 +46,11 @@ export function modelNameToClientKey(nodeName: string): string {
   return head.endsWith("s") ? head : `${head}s`;
 }
 
-function assertScalarKeysAllowed(nodeDecl: NodeDeclaration, keys: Iterable<string>, ctx: string): void {
+function assertScalarKeysAllowed(
+  nodeDecl: NodeDeclaration,
+  keys: Iterable<string>,
+  ctx: string,
+): void {
   const allowed = new Set(getScalarFields(nodeDecl).map((f) => f.name));
   for (const k of keys) {
     if (!allowed.has(k)) {
@@ -95,7 +108,10 @@ type NestedRelSpec =
   | { field: RelationalNodeField; kind: "create"; payload: Record<string, unknown> }
   | { field: RelationalNodeField; kind: "connect"; payload: Record<string, unknown> };
 
-function partitionCreateData(nodeDecl: NodeDeclaration, data: Record<string, unknown>): {
+function partitionCreateData(
+  nodeDecl: NodeDeclaration,
+  data: Record<string, unknown>,
+): {
   scalars: Record<string, unknown>;
   nested?: NestedRelSpec;
 } {
@@ -116,7 +132,9 @@ function partitionCreateData(nodeDecl: NodeDeclaration, data: Record<string, unk
         );
       }
       if (!isPlainObject(v)) {
-        throw new Error(`schemaClient.create: field "${k}" must be an object with { create } or { connect }`);
+        throw new Error(
+          `schemaClient.create: field "${k}" must be an object with { create } or { connect }`,
+        );
       }
       const inner = v as { create?: unknown; connect?: unknown };
       if (inner.create !== undefined && inner.connect !== undefined) {
@@ -130,7 +148,9 @@ function partitionCreateData(nodeDecl: NodeDeclaration, data: Record<string, unk
         continue;
       }
       if (!isPlainObject(inner.create)) {
-        throw new Error(`schemaClient.create: field "${k}" expects { create: { … } } or { connect: { … } }`);
+        throw new Error(
+          `schemaClient.create: field "${k}" expects { create: { … } } or { connect: { … } }`,
+        );
       }
       nested = { field: rel, kind: "create", payload: inner.create };
       continue;
@@ -163,18 +183,14 @@ function buildUniqueWhereForAlias(
 
 async function runCreateAndReturn(
   client: CyphraClient,
-  label: string,
-  idField: string,
-  idValue: unknown,
   compiled: CompiledCypher,
+  alias = "n",
 ): Promise<Record<string, unknown> | undefined> {
   return client.withWriteTransaction(async (tx) => {
-    await client.runCompiledTx(tx, compiled);
-    const q = select()
-      .match(`(n:${label})`)
-      .where(eq(prop("n", idField), idValue))
-      .returnStar();
-    return client.queryRecordTx(tx, q.toCypher());
+    return client.queryRecordTx(tx, {
+      text: `${compiled.text} RETURN ${alias} AS ${alias}`,
+      params: compiled.params,
+    });
   });
 }
 
@@ -184,14 +200,15 @@ async function modelCreateWithConnect(
   nodeDecl: NodeDeclaration,
   scalars: Record<string, unknown>,
   nested: NestedRelSpec & { kind: "connect" },
-  idField: string,
 ): Promise<Record<string, unknown> | undefined> {
   if (nested.field.cardinality === "many") {
     throw new Error(`schemaClient.connect: only to-one relations ("${nested.field.name}")`);
   }
   const edge = getRelationshipEdgeMeta(nested.field);
   if (!edge || edge.direction !== "OUT") {
-    throw new Error(`schemaClient.connect: requires OUT @relationship on ${nodeDecl.name}.${nested.field.name}`);
+    throw new Error(
+      `schemaClient.connect: requires OUT @relationship on ${nodeDecl.name}.${nested.field.name}`,
+    );
   }
   const targetDecl = getNodeDeclaration(doc, nested.field.target);
   if (!targetDecl) {
@@ -211,10 +228,14 @@ async function modelCreateWithConnect(
       : createNode;
   const rel = compileCreateRelationship("n", "r", edge.relType, "m");
   const compiled = concatCompiledCypher([matchPart, withTs, rel], { separator: " " });
-  return runCreateAndReturn(client, nodeDecl.name, idField, primaryPrepared.props[idField], compiled);
+  return runCreateAndReturn(client, compiled, "n");
 }
 
-function applyCreateServerTimestamp(compiled: CompiledCypher, alias: string, property: string): CompiledCypher {
+function applyCreateServerTimestamp(
+  compiled: CompiledCypher,
+  alias: string,
+  property: string,
+): CompiledCypher {
   const needle = `SET ${alias} += $props`;
   if (!compiled.text.includes(needle)) {
     throw new Error(`schemaClient: expected CREATE to contain ${JSON.stringify(needle)}`);
@@ -231,15 +252,14 @@ async function modelCreate(
   nodeDecl: NodeDeclaration,
   data: Record<string, unknown>,
 ): Promise<Record<string, unknown> | undefined> {
-  const idField = getIdFieldName(nodeDecl);
-  if (!idField) {
-    throw new Error(`schemaClient.create: node "${nodeDecl.name}" has no @id field`);
-  }
-
   const { scalars, nested } = partitionCreateData(nodeDecl, data);
 
   if (!nested) {
-    const { props, serverTimestamp } = prepareScalarCreatePayload(nodeDecl, scalars, "schemaClient.create");
+    const { props, serverTimestamp } = prepareScalarCreatePayload(
+      nodeDecl,
+      scalars,
+      "schemaClient.create",
+    );
     const compiled = compileCreateLinkedNodes({
       primary: {
         label: nodeDecl.name,
@@ -248,11 +268,11 @@ async function modelCreate(
         serverTimestamp,
       },
     });
-    return runCreateAndReturn(client, nodeDecl.name, idField, props[idField], compiled);
+    return runCreateAndReturn(client, compiled, "n");
   }
 
   if (nested.kind === "connect") {
-    return modelCreateWithConnect(client, doc, nodeDecl, scalars, nested, idField);
+    return modelCreateWithConnect(client, doc, nodeDecl, scalars, nested);
   }
 
   if (nested.field.cardinality === "many") {
@@ -299,13 +319,7 @@ async function modelCreate(
     link: { type: edge.relType, alias: "r" },
   });
 
-  return runCreateAndReturn(
-    client,
-    nodeDecl.name,
-    idField,
-    primaryPrepared.props[idField],
-    compiled,
-  );
+  return runCreateAndReturn(client, compiled, "n");
 }
 
 /** Prisma-shaped args for {@link ModelDelegate.create}. */
@@ -372,21 +386,29 @@ function getSingleIncludeRel(
     return undefined;
   }
   if (keys.length > 1) {
-    throw new Error(`schemaClient.findMany: only one include: true relation is supported (got ${keys.join(", ")})`);
+    throw new Error(
+      `schemaClient.findMany: only one include: true relation is supported (got ${keys.join(", ")})`,
+    );
   }
   const name = keys[0]!;
   const field = nodeDecl.fields.find(
     (f): f is RelationalNodeField => f.kind === "Relational" && f.name === name,
   );
   if (!field) {
-    throw new Error(`schemaClient.findMany: unknown relation include "${name}" on ${nodeDecl.name}`);
+    throw new Error(
+      `schemaClient.findMany: unknown relation include "${name}" on ${nodeDecl.name}`,
+    );
   }
   if (field.cardinality === "many") {
-    throw new Error(`schemaClient.findMany: include on "${name}" is only supported for to-one relations`);
+    throw new Error(
+      `schemaClient.findMany: include on "${name}" is only supported for to-one relations`,
+    );
   }
   const edge = getRelationshipEdgeMeta(field);
   if (!edge || edge.direction !== "OUT") {
-    throw new Error(`schemaClient.findMany: include requires OUT @relationship on ${nodeDecl.name}.${name}`);
+    throw new Error(
+      `schemaClient.findMany: include requires OUT @relationship on ${nodeDecl.name}.${name}`,
+    );
   }
   return { field };
 }

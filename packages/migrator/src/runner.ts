@@ -23,29 +23,40 @@ export async function runPendingMigrations(
   ordered: readonly LoadedMigration[],
 ): Promise<readonly string[]> {
   const applied: string[] = [];
-  await client.withSession(async (session) => {
-    await tracker.ensureMigrationInfrastructure(session);
-    for (const m of ordered) {
-      if (await tracker.isMigrationApplied(session, m.name)) {
-        continue;
+  await client.withSession(async (session) => tracker.ensureMigrationInfrastructure(session));
+  for (const m of ordered) {
+    if (
+      await client.withSession(async (session) => {
+        return tracker.isMigrationApplied(session, m.name);
+      })
+    ) {
+      continue;
+    }
+
+    const didApply = await client.withWriteTransaction(async (tx) => {
+      if (await tracker.isMigrationApplied(tx, m.name)) {
+        return false;
       }
-      const db = createMigrationDb(client, session);
+      const db = createMigrationDb(client, tx);
       try {
         await m.definition.up({ db });
       } catch (e) {
         throw new Error(`Migration "${m.name}" failed during up()`, { cause: e });
       }
       try {
-        await tracker.recordMigration(session, m.name, m.checksum);
+        await tracker.recordMigration(tx, m.name, m.checksum);
       } catch (e) {
         throw new Error(
           `Migration "${m.name}" ran but recording on ${tracker.CYPHRA_MIGRATION_LABEL} failed`,
           { cause: e },
         );
       }
+      return true;
+    });
+    if (didApply) {
       applied.push(m.name);
     }
-  });
+  }
   return applied;
 }
 

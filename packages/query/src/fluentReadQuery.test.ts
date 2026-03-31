@@ -61,4 +61,20 @@ describe("createFluentQueryRoot", () => {
     });
     await expect(chain.return("p").first()).rejects.toThrow(/\.label\(/);
   });
+
+  it("rejects invalid identifiers in label/optionalOut/return", () => {
+    const root = createFluentQueryRoot({ readQuery: vi.fn() });
+    expect(() => root.match((p) => p.label("Bad-Label")).return("p")).toThrow(/invalid identifier/);
+
+    expect(() =>
+      root
+        .match((p) => p.label("Post"))
+        .optionalOut("WRITTEN-BY", "Author")
+        .return("p"),
+    ).toThrow(/invalid identifier/);
+
+    expect(() => root.match((p) => p.label("Post")).return("bad-alias")).toThrow(
+      /invalid identifier/,
+    );
+  });
 });

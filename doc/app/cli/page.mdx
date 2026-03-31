@@ -15,18 +15,18 @@ All commands expect **`cyphra.config.ts`** or **`cyphra.json`** in the **current
 
 ## Commands
 
-| Command                              | Needs Neo4j? | Description                                                                                                                                                         |
-| ------------------------------------ | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **`cyphra init`**                    | No           | Scaffold **`cyphra.json`**, **`schema.cyphra`**, **`migrations/`**, **`.env.example`**.                                                                             |
-| **`cyphra validate`**                | No           | Parse and validate the schema file from config.                                                                                                                     |
-| **`cyphra schema print`**            | No           | Canonical pretty-print of the schema to stdout.                                                                                                                     |
-| **`cyphra schema ddl`**              | No           | Print **`push`** DDL (constraints + range indexes); no DB connection.                                                                                               |
-| **`cyphra migration:create <name>`** | No           | Create a new `.mjs` migration stub under **`migrations/`** (name must include a letter or digit; unsafe characters become `_`; existing files are not overwritten). |
-| **`cyphra migrate deploy`**          | Yes          | Run all pending migrations.                                                                                                                                         |
-| **`cyphra migrate dev`**             | Yes          | Same as deploy with verbose logging.                                                                                                                                |
-| **`cyphra push`**                    | Yes          | Apply constraint + index DDL from the schema.                                                                                                                       |
-| **`cyphra db pull`** / **`cyphra db-pull`** | Yes   | Draft **`schema.cyphra`** from labels, relationship types, and catalog queries (`--print`, `--force`, **`--sample-size`**).                                         |
-| **`cyphra schema add`**              | No           | Append a **`node`** block (interactive TTY, or **`--json <file>`** for CI). Validates before write.                                                                  |
+| Command                                     | Needs Neo4j? | Description                                                                                                                                                         |
+| ------------------------------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **`cyphra init`**                           | No           | Scaffold **`cyphra.json`**, **`schema.cyphra`**, **`migrations/`**, **`.env.example`**.                                                                             |
+| **`cyphra validate`**                       | No           | Parse and validate the schema file from config.                                                                                                                     |
+| **`cyphra schema print`**                   | No           | Canonical pretty-print of the schema to stdout.                                                                                                                     |
+| **`cyphra schema ddl`**                     | No           | Print **`push`** DDL (constraints + range indexes); no DB connection.                                                                                               |
+| **`cyphra migration:create <name>`**        | No           | Create a new `.mjs` migration stub under **`migrations/`** (name must include a letter or digit; unsafe characters become `_`; existing files are not overwritten). |
+| **`cyphra migrate deploy`**                 | Yes          | Run all pending migrations.                                                                                                                                         |
+| **`cyphra migrate dev`**                    | Yes          | Same as deploy with verbose logging.                                                                                                                                |
+| **`cyphra push`**                           | Yes          | Apply constraint + index DDL from the schema.                                                                                                                       |
+| **`cyphra db pull`** / **`cyphra db-pull`** | Yes          | Draft **`schema.cyphra`** from labels, relationship types, and catalog queries (`--print`, `--force`, **`--sample-size`**).                                         |
+| **`cyphra schema add`**                     | No           | Append a **`node`** block (interactive TTY, or **`--json <file>`** for CI). Validates before write.                                                                 |
 
 ## Configuration
 

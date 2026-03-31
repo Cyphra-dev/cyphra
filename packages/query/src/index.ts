@@ -19,7 +19,11 @@ export {
 } from "./cypher25.js";
 export { CyphraQueryError } from "./errors.js";
 export { concatCompiledCypher } from "./compose.js";
-export { compileCollectBlock, compileCountBlock, compileExistsBlock } from "./subqueryExpression.js";
+export {
+  compileCollectBlock,
+  compileCountBlock,
+  compileExistsBlock,
+} from "./subqueryExpression.js";
 export type { CallSubqueryOptions } from "./call.js";
 export { callSubqueryCompiled, callSubqueryCompiledWith } from "./call.js";
 export type { CaseWhenBranch } from "./caseExpr.js";

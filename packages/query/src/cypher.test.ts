@@ -41,7 +41,9 @@ describe("remapCompiledCypherParamKeys", () => {
   });
 
   it("rejects invalid keyPrefix", () => {
-    expect(() => remapCompiledCypherParamKeys(cypher`RETURN ${1}`, "nounderscore")).toThrow(/keyPrefix/);
+    expect(() => remapCompiledCypherParamKeys(cypher`RETURN ${1}`, "nounderscore")).toThrow(
+      /keyPrefix/,
+    );
     expect(() => remapCompiledCypherParamKeys(cypher`RETURN ${1}`, "")).toThrow(/keyPrefix/);
   });
 });

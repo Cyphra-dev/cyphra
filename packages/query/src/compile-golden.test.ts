@@ -52,7 +52,9 @@ describe("compile golden (Cypher + params)", () => {
   it("callSubqueryCompiled wraps and prefixes params", () => {
     const inner = cypher`RETURN ${42} AS n`;
     const c = callSubqueryCompiled(inner);
-    expect(c.text.replace(/\s+/g, " ").trim()).toMatchInlineSnapshot(`"CALL { RETURN $c0_p0 AS n }"`);
+    expect(c.text.replace(/\s+/g, " ").trim()).toMatchInlineSnapshot(
+      `"CALL { RETURN $c0_p0 AS n }"`,
+    );
     expect(Object.keys(c.params)).toEqual(["c0_p0"]);
   });
 

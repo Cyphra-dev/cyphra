@@ -18,13 +18,15 @@ describe("compileComprehensionFilterClause", () => {
   });
 
   it("rejects empty predicates", () => {
-    expect(() => compileComprehensionFilterClause("x", "xs", [], [])).toThrow(/at least one predicate/);
+    expect(() => compileComprehensionFilterClause("x", "xs", [], [])).toThrow(
+      /at least one predicate/,
+    );
   });
 
   it("rejects param key collision", () => {
-    expect(() =>
-      compileComprehensionFilterClause("n", "p0", [], [gt(bareVar("n"), 0)]),
-    ).toThrow(/collides/);
+    expect(() => compileComprehensionFilterClause("n", "p0", [], [gt(bareVar("n"), 0)])).toThrow(
+      /collides/,
+    );
   });
 });
 

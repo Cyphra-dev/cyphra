@@ -23,11 +23,11 @@ describe("compilePatternComprehension", () => {
   });
 
   it("rejects empty pattern or projection", () => {
-    expect(() =>
-      compilePatternComprehension({ pattern: "  ", projectionExpression: "x" }),
-    ).toThrow(/pattern/);
-    expect(() =>
-      compilePatternComprehension({ pattern: "(n)", projectionExpression: "" }),
-    ).toThrow(/projectionExpression/);
+    expect(() => compilePatternComprehension({ pattern: "  ", projectionExpression: "x" })).toThrow(
+      /pattern/,
+    );
+    expect(() => compilePatternComprehension({ pattern: "(n)", projectionExpression: "" })).toThrow(
+      /projectionExpression/,
+    );
   });
 });

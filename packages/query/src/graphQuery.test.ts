@@ -109,7 +109,9 @@ describe("graphQuery", () => {
       limit: 10,
     });
     expect(normalizeCypher(got.text)).toBe(
-      normalizeCypher("MATCH (p:Post) RETURN p { .id } AS post SKIP toInteger($p0) LIMIT toInteger($p1)"),
+      normalizeCypher(
+        "MATCH (p:Post) RETURN p { .id } AS post SKIP toInteger($p0) LIMIT toInteger($p1)",
+      ),
     );
     expect(got.params).toEqual({ p0: 5, p1: 10 });
   });
