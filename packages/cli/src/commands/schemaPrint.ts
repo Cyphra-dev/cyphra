@@ -1,15 +1,15 @@
-import { readFile } from "node:fs/promises";
-import { parseSchema, printSchemaDocument, validateSchema } from "@cyphra/schema";
-import type { CyphraConfig } from "../config.js";
+import { printSchemaDocument } from "@cyphra/schema";
+import type { CyphraConfig } from "@cyphra/config";
+import { parseSchemaAt, readSchemaFileUtf8 } from "../schemaSource.js";
 
 /**
  * Print a canonical `.cyphra` rendering of the schema to stdout.
  *
+ * @param cwd - Project root (for error messages).
  * @param config - Config with absolute schema path.
  */
-export async function runSchemaPrint(config: CyphraConfig): Promise<void> {
-  const raw = await readFile(config.schema, "utf8");
-  const doc = parseSchema(raw);
-  validateSchema(doc);
+export async function runSchemaPrint(cwd: string, config: CyphraConfig): Promise<void> {
+  const { rel, raw } = await readSchemaFileUtf8(cwd, config);
+  const doc = parseSchemaAt(rel, raw);
   process.stdout.write(printSchemaDocument(doc));
 }

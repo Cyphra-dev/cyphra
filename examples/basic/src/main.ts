@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  compileMapProjection,
   constraintStatementsFromSchema,
   CyphraClient,
   cypher,
@@ -38,9 +39,22 @@ async function main(): Promise<void> {
     .where(eq(prop(u.alias, "id"), userId))
     .returnStar()
     .toCypher();
-  console.log("\n--- SelectQuery ---");
+  console.log("\n--- SelectQuery (MATCH … WHERE … RETURN *) ---");
   console.log(built.text);
   console.log("param keys:", Object.keys(built.params));
+
+  const blogStyle = select()
+    .match("(p:Post)")
+    .optionalMatch("(p)-[:WRITTEN_BY]->(a:Author)")
+    .returnRawFields({
+      post: compileMapProjection("p", ["id", "title", "slug"]),
+      authorName: "a.name",
+    })
+    .orderBy({ expression: "p.createdAt", direction: "DESC" })
+    .toCypher();
+  console.log("\n--- SelectQuery (OPTIONAL MATCH + map projection, comme l’exemple Next.js) ---");
+  console.log(blogStyle.text);
+  console.log("param keys:", Object.keys(blogStyle.params));
 
   const hints = schemaIntegrationHints(doc);
   if (hints.length > 0) {

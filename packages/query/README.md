@@ -1,15 +1,22 @@
 # @cyphra/query
 
-Cypher template tag and minimal query builder for Cyphra.
+**Parameterized Cypher** for Cyphra: a **`cypher`** tagged template and a small **`SelectQuery`** builder. Values are always sent as **query parameters**, not string concatenation.
+
+## Install
+
+```bash
+npm install @cyphra/query
+```
 
 ## Tagged template
 
 ```ts
 import { cypher } from "@cyphra/query";
 
-const { text, params } = cypher`
+const compiled = cypher`
   MATCH (u:User) WHERE u.id = ${userId} RETURN u
 `;
+// compiled.text, compiled.params → session.run(...)
 ```
 
 ## Builder
@@ -28,3 +35,13 @@ const q = select()
 
 q.toCypher();
 ```
+
+The package also exports write/batch helpers (`compileCreate`, `compileMergeSet`, `unionAllCompiled`, …).
+
+## Documentation
+
+**[cyphra.dev — Queries](https://www.cyphra.dev/queries)**
+
+## License
+
+MIT

@@ -27,17 +27,96 @@ export type NodeRef = {
   both(r: RelRef, other: NodeRef): string;
 };
 
-/** Symbolic relationship variable (`[m:MEMBER_OF]`). */
+/**
+ * Variable-length quantifier for {@link rel} (Neo4j `[r:TYPE*]`, `[r:TYPE*2]`, `[r:TYPE*1..5]`, …).
+ *
+ * - **`"any"`** → **`*`** (default variable-length semantics in Neo4j).
+ * - **Exact hop count** — non-negative integer, e.g. **`2`** → **`*2`**.
+ * - **Range** — at least one of **`min`** / **`max`**: **`{ min: 1, max: 3 }`**, **`{ max: 5 }`** (`*..5`), **`{ min: 2 }`** (`*2..`).
+ */
+export type RelVarLength =
+  | "any"
+  | number
+  | { readonly min?: number; readonly max?: number };
+
+/** Symbolic relationship variable (`[m:MEMBER_OF]` or `[m:KNOWS*1..3]`). */
 export type RelRef = {
   readonly type: string;
   readonly alias: string;
+  readonly varLength?: RelVarLength;
 };
 
-/** Property reference for WHERE / RETURN / ORDER BY (`u.email`, `m.role`). */
+function validateRelVarLength(len: RelVarLength): void {
+  if (len === "any") {
+    return;
+  }
+  if (typeof len === "number") {
+    if (!Number.isInteger(len) || len < 0) {
+      throw new Error("rel(): varLength number must be a non-negative integer");
+    }
+    return;
+  }
+  const hasMin = len.min !== undefined;
+  const hasMax = len.max !== undefined;
+  if (!hasMin && !hasMax) {
+    throw new Error("rel(): varLength range requires min and/or max");
+  }
+  if (hasMin) {
+    const m = len.min!;
+    if (!Number.isInteger(m) || m < 0) {
+      throw new Error("rel(): varLength min must be a non-negative integer");
+    }
+  }
+  if (hasMax) {
+    const m = len.max!;
+    if (!Number.isInteger(m) || m < 0) {
+      throw new Error("rel(): varLength max must be a non-negative integer");
+    }
+  }
+  if (hasMin && hasMax && len.min! > len.max!) {
+    throw new Error("rel(): varLength min must be <= max");
+  }
+}
+
+function formatRelVarLength(len: RelVarLength): string {
+  if (len === "any") {
+    return "*";
+  }
+  if (typeof len === "number") {
+    return `*${len}`;
+  }
+  const { min, max } = len;
+  if (min !== undefined && max !== undefined) {
+    return `*${min}..${max}`;
+  }
+  if (min !== undefined) {
+    return `*${min}..`;
+  }
+  return `*..${max!}`;
+}
+
+function relPatternInner(r: RelRef): string {
+  const q = r.varLength !== undefined ? formatRelVarLength(r.varLength) : "";
+  return `${r.alias}:${r.type}${q}`;
+}
+
+/**
+ * Property or bare-variable reference for WHERE / RETURN / ORDER BY (`u.email`, or `n` via {@link bareVar}).
+ */
 export type PropRef = {
   readonly alias: string;
+  /**
+   * Property on `alias`. Use {@link bareVar} so `name` is empty and the expression is just `alias`
+   * (e.g. list-comprehension item `x` in `x IN $list WHERE x > $p0`).
+   */
   readonly name: string;
 };
+
+function assertCypherIdentifier(name: string, label: string): void {
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
+    throw new Error(`${label}: invalid identifier ${JSON.stringify(name)}`);
+  }
+}
 
 /**
  * Create a node reference for patterns and projections.
@@ -50,13 +129,13 @@ export function node(label: string, alias: string): NodeRef {
     label,
     alias,
     out(r: RelRef, to: NodeRef): string {
-      return `(${alias}:${label})-[${r.alias}:${r.type}]->(${to.alias}:${to.label})`;
+      return `(${alias}:${label})-[${relPatternInner(r)}]->(${to.alias}:${to.label})`;
     },
     in(r: RelRef, from: NodeRef): string {
-      return `(${alias}:${label})<-[${r.alias}:${r.type}]-(${from.alias}:${from.label})`;
+      return `(${alias}:${label})<-[${relPatternInner(r)}]-(${from.alias}:${from.label})`;
     },
     both(r: RelRef, other: NodeRef): string {
-      return `(${alias}:${label})-[${r.alias}:${r.type}]-(${other.alias}:${other.label})`;
+      return `(${alias}:${label})-[${relPatternInner(r)}]-(${other.alias}:${other.label})`;
     },
   };
 }
@@ -66,23 +145,38 @@ export function node(label: string, alias: string): NodeRef {
  *
  * @param type - Neo4j relationship type.
  * @param alias - Cypher variable name.
+ * @param varLength - Optional variable-length quantifier; see {@link RelVarLength}.
  */
-export function rel(type: string, alias: string): RelRef {
-  return { type, alias };
+export function rel(type: string, alias: string, varLength?: RelVarLength): RelRef {
+  if (varLength !== undefined) {
+    validateRelVarLength(varLength);
+  }
+  return varLength === undefined ? { type, alias } : { type, alias, varLength };
 }
 
 /**
  * Reference a property on a node or relationship alias.
  *
  * @param alias - Cypher variable (`u`, `m`, …).
- * @param name - Property name.
+ * @param name - Property name (non-empty).
  */
 export function prop(alias: string, name: string): PropRef {
+  assertCypherIdentifier(alias, "prop(alias)");
+  if (!name) {
+    throw new Error("prop(): property name must be non-empty; use bareVar(alias) for a bare variable");
+  }
+  assertCypherIdentifier(name, "prop(name)");
   return { alias, name };
 }
 
+/** Bare Cypher variable for predicates (e.g. item in a list comprehension). */
+export function bareVar(name: string): PropRef {
+  assertCypherIdentifier(name, "bareVar");
+  return { alias: name, name: "" };
+}
+
 function propExpr(p: PropRef): string {
-  return `${p.alias}.${p.name}`;
+  return p.name === "" ? p.alias : `${p.alias}.${p.name}`;
 }
 
 type ParamSink = {
@@ -196,6 +290,16 @@ function emitPredicate(pred: WherePredicate, sink: ParamSink): string {
       sink.params[k] = pred.pattern;
       return `${propExpr(pred.left)} =~ $${k}`;
     }
+    case "exists": {
+      if (pred.inner.length === 0) {
+        return `EXISTS { MATCH ${pred.matchPattern} }`;
+      }
+      const parts =
+        pred.inner.length === 1
+          ? [emitPredicate(pred.inner[0]!, sink)]
+          : pred.inner.map((item) => emitUnderAnd(item, sink));
+      return `EXISTS { MATCH ${pred.matchPattern} WHERE ${parts.join(" AND ")} }`;
+    }
     default: {
       const _exhaustive: never = pred;
       throw new Error(`Unhandled predicate: ${JSON.stringify(_exhaustive)}`);
@@ -226,7 +330,14 @@ export type WherePredicate =
   | { readonly kind: "startsWith"; readonly left: PropRef; readonly substring: string }
   | { readonly kind: "endsWith"; readonly left: PropRef; readonly substring: string }
   | { readonly kind: "contains"; readonly left: PropRef; readonly substring: string }
-  | { readonly kind: "matches"; readonly left: PropRef; readonly pattern: string };
+  | { readonly kind: "matches"; readonly left: PropRef; readonly pattern: string }
+  | {
+      readonly kind: "exists";
+      /** Full `MATCH` pattern body (same rules as {@link SelectQuery.match}). */
+      readonly matchPattern: string;
+      /** Combined with `AND` inside the `EXISTS { … }` subquery. */
+      readonly inner: readonly WherePredicate[];
+    };
 
 /** Equality branch of {@link WherePredicate}. */
 export type EqPredicate = Extract<WherePredicate, { kind: "eq" }>;
@@ -255,6 +366,20 @@ export function or(...items: WherePredicate[]): WherePredicate {
 /** `NOT (inner …)` — `inner` uses the same parameter rules as top-level predicates. */
 export function not(inner: WherePredicate): WherePredicate {
   return { kind: "not", inner };
+}
+
+/**
+ * `EXISTS { MATCH <matchPattern> [WHERE …] }` — Neo4j existential subquery (parameters shared with the outer query).
+ *
+ * @param matchPattern - Full pattern inside `MATCH` (e.g. `(p:Post)-[:LIKES]->(u:User)`).
+ * @param where - Optional predicates, AND-combined inside the subquery.
+ */
+export function exists(matchPattern: string, ...where: WherePredicate[]): WherePredicate {
+  const trimmed = matchPattern.trim();
+  if (!trimmed) {
+    throw new Error("exists(): matchPattern must be non-empty");
+  }
+  return { kind: "exists", matchPattern: trimmed, inner: where };
 }
 
 /** `left = $pN` */
@@ -341,27 +466,82 @@ export function matches(left: PropRef, pattern: string): WherePredicate {
 
 export type OrderDirection = "ASC" | "DESC";
 
-export type OrderByClause = {
-  readonly prop: PropRef;
-  readonly direction: OrderDirection;
-};
+/** `ORDER BY` on a property (parameter-friendly) or a trusted expression (e.g. aggregate alias). */
+export type OrderByClause =
+  | {
+      readonly prop: PropRef;
+      readonly direction: OrderDirection;
+      /** Neo4j **`NULLS FIRST`** / **`NULLS LAST`** (optional). */
+      readonly nulls?: "FIRST" | "LAST";
+    }
+  | {
+      readonly expression: string;
+      readonly direction: OrderDirection;
+      readonly nulls?: "FIRST" | "LAST";
+    };
 
-type Projection = "star" | Record<string, PropRef>;
+function orderBySegment(c: OrderByClause): string {
+  const sortKey =
+    "expression" in c ? c.expression.trim() : propExpr(c.prop);
+  if ("expression" in c && !sortKey) {
+    throw new Error("SelectQuery.orderBy: expression must be non-empty");
+  }
+  const core = `${sortKey} ${c.direction}`;
+  const n = c.nulls;
+  if (n === undefined) {
+    return core;
+  }
+  return `${core} NULLS ${n}`;
+}
+
+type Projection =
+  | "star"
+  | { readonly kind: "props"; readonly fields: Record<string, PropRef> }
+  | { readonly kind: "raw"; readonly fields: Record<string, string> };
 
 /**
- * `MATCH … OPTIONAL MATCH … WHERE … RETURN … ORDER BY … SKIP … LIMIT` builder (Cypher remains explicit in `match()` / `optionalMatch()`).
+ * `[USE …] MATCH … OPTIONAL MATCH … [WITH [DISTINCT] … ORDER BY … LIMIT …] WHERE … RETURN … ORDER BY … SKIP … LIMIT` builder
+ * (Cypher remains explicit in `match()` / `optionalMatch()`).
+ * Optional third argument on {@link rel} ({@link RelVarLength}) emits variable-length segments in {@link node} `out` / `in` / `both` patterns.
  * WHERE clauses are AND-combined; use {@link and} / {@link or} for explicit grouping.
  * Every bound value is a parameter except `IS NULL` / `IS NOT NULL`.
  */
 export class SelectQuery {
+  /** Optional **`USE graph[.subgraph]`** prefix (composite / multi-graph). */
+  private useClause: string | null = null;
   private matchPattern = "";
   private optionalPatterns: string[] = [];
+  /**
+   * Optional `WITH [DISTINCT] vars [ORDER BY …] [LIMIT …]` after `OPTIONAL MATCH` and before `WHERE`.
+   */
+  private preWhereWith: {
+    readonly variables: readonly string[];
+    readonly distinct: boolean;
+    readonly order: readonly OrderByClause[];
+    readonly limit: number | null;
+  } | null = null;
   private predicates: WherePredicate[] = [];
   private projection: Projection | null = null;
   private returnDistinctFlag = false;
   private order: OrderByClause[] = [];
   private skipCount: number | null = null;
   private limitCount: number | null = null;
+
+  /**
+   * Prefix the query with **`USE qualifiedGraphName`** (Neo4j composite database / graph selection).
+   * `qualifiedGraphName` is a dotted path of Cypher identifiers (e.g. **`mycomposite.mygraph`**).
+   */
+  use(qualifiedGraphName: string): this {
+    const q = qualifiedGraphName.trim();
+    if (!q) {
+      throw new Error("SelectQuery.use: qualifiedGraphName must be non-empty");
+    }
+    if (!/^[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*$/.test(q)) {
+      throw new Error(`SelectQuery.use: invalid qualified graph name ${JSON.stringify(qualifiedGraphName)}`);
+    }
+    this.useClause = q;
+    return this;
+  }
 
   /**
    * @param pattern - Full `MATCH` pattern body (e.g. from {@link NodeRef.out}).
@@ -385,6 +565,57 @@ export class SelectQuery {
   }
 
   /**
+   * `WITH [DISTINCT] <vars> ORDER BY … LIMIT …` before `WHERE` — e.g. keep the **n** newest rows per an outer match, then filter.
+   * Variable names must be plain Cypher identifiers (`[A-Za-z_][A-Za-z0-9_]*`).
+   *
+   * @param options.distinct — emit **`WITH DISTINCT`** (Cypher Manual `WITH DISTINCT`).
+   */
+  withOrderLimit(
+    variables: readonly string[],
+    order: readonly OrderByClause[],
+    limit: number,
+    options?: { readonly distinct?: boolean },
+  ): this {
+    if (variables.length === 0) {
+      throw new Error("SelectQuery.withOrderLimit: at least one variable is required");
+    }
+    for (const v of variables) {
+      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(v)) {
+        throw new Error(`SelectQuery.withOrderLimit: invalid variable name ${JSON.stringify(v)}`);
+      }
+    }
+    if (order.length === 0) {
+      throw new Error("SelectQuery.withOrderLimit: at least one ORDER BY clause is required");
+    }
+    if (!Number.isInteger(limit) || limit < 1) {
+      throw new Error("SelectQuery.withOrderLimit: limit must be a positive integer");
+    }
+    this.preWhereWith = {
+      variables,
+      distinct: options?.distinct === true,
+      order,
+      limit,
+    };
+    return this;
+  }
+
+  /**
+   * `WITH DISTINCT <vars>` before `WHERE` (no `ORDER BY` / `LIMIT` on this clause).
+   */
+  withDistinct(variables: readonly string[]): this {
+    if (variables.length === 0) {
+      throw new Error("SelectQuery.withDistinct: at least one variable is required");
+    }
+    for (const v of variables) {
+      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(v)) {
+        throw new Error(`SelectQuery.withDistinct: invalid variable name ${JSON.stringify(v)}`);
+      }
+    }
+    this.preWhereWith = { variables, distinct: true, order: [], limit: null };
+    return this;
+  }
+
+  /**
    * AND-combine predicates. When you pass more than one argument, any root-level {@link or}
    * is parenthesized so it is not parsed as `a OR (b AND c)`.
    */
@@ -397,7 +628,26 @@ export class SelectQuery {
    * @param fields - Map of output alias → property reference.
    */
   returnFields(fields: Record<string, PropRef>): this {
-    this.projection = fields;
+    this.projection = { kind: "props", fields };
+    return this;
+  }
+
+  /**
+   * `RETURN …` with **trusted Cypher expressions** per alias (aggregates, literals, `count(*)`, …).
+   * Use {@link returnFields} when every column is a simple {@link prop} / {@link bareVar}.
+   */
+  returnRawFields(fields: Record<string, string>): this {
+    const entries = Object.entries(fields);
+    if (entries.length === 0) {
+      throw new Error("SelectQuery.returnRawFields: at least one field is required");
+    }
+    for (const [alias, expr] of entries) {
+      assertCypherIdentifier(alias, "SelectQuery.returnRawFields(alias)");
+      if (!expr.trim()) {
+        throw new Error(`SelectQuery.returnRawFields: empty expression for alias ${JSON.stringify(alias)}`);
+      }
+    }
+    this.projection = { kind: "raw", fields };
     return this;
   }
 
@@ -408,7 +658,7 @@ export class SelectQuery {
   }
 
   /**
-   * `RETURN DISTINCT …` — may be called before or after {@link returnFields} / {@link returnStar}
+   * `RETURN DISTINCT …` — may be called before or after {@link returnFields} / {@link returnStar} / {@link returnRawFields}
    * (projection must still be set before {@link toCypher}).
    */
   returnDistinct(): this {
@@ -417,9 +667,9 @@ export class SelectQuery {
   }
 
   /**
-   * Append `ORDER BY` clauses (direction is whitelisted, never from user strings).
+   * Append `ORDER BY` clauses (direction and optional **`NULLS FIRST`/`LAST`** are whitelisted).
    *
-   * @param clauses - Property + ASC/DESC pairs.
+   * @param clauses - Property + ASC/DESC (+ optional `nulls`) pairs.
    */
   orderBy(...clauses: OrderByClause[]): this {
     this.order.push(...clauses);
@@ -458,7 +708,9 @@ export class SelectQuery {
       throw new Error("SelectQuery: call match() before toCypher()");
     }
     if (this.projection === null) {
-      throw new Error("SelectQuery: call returnFields() or returnStar() before toCypher()");
+      throw new Error(
+        "SelectQuery: call returnFields(), returnRawFields(), or returnStar() before toCypher()",
+      );
     }
     const params: Record<string, unknown> = {};
     let p = 0;
@@ -468,9 +720,31 @@ export class SelectQuery {
     };
     const sink: ParamSink = { params, nextParam };
 
-    let text = `MATCH ${this.matchPattern}`;
+    const useKw = this.useClause !== null ? `USE ${this.useClause} ` : "";
+    let text = `${useKw}MATCH ${this.matchPattern}`;
     for (const opt of this.optionalPatterns) {
       text += ` OPTIONAL MATCH ${opt}`;
+    }
+    if (this.preWhereWith !== null) {
+      const w = this.preWhereWith;
+      const dist = w.distinct ? "DISTINCT " : "";
+      const vars = w.variables.join(", ");
+      if (w.order.length > 0) {
+        const ob = w.order.map(orderBySegment).join(", ");
+        if (w.limit !== null) {
+          const limitKey = nextParam();
+          params[limitKey] = w.limit;
+          text += ` WITH ${dist}${vars} ORDER BY ${ob} LIMIT toInteger($${limitKey})`;
+        } else {
+          text += ` WITH ${dist}${vars} ORDER BY ${ob}`;
+        }
+      } else if (w.limit !== null) {
+        const limitKey = nextParam();
+        params[limitKey] = w.limit;
+        text += ` WITH ${dist}${vars} LIMIT toInteger($${limitKey})`;
+      } else {
+        text += ` WITH ${dist}${vars}`;
+      }
     }
     if (this.predicates.length > 0) {
       // Multiple where() args are AND-combined; a bare OR at this level must stay grouped (Cypher: AND > OR).
@@ -483,25 +757,31 @@ export class SelectQuery {
     const distinctKw = this.returnDistinctFlag ? "DISTINCT " : "";
     if (this.projection === "star") {
       text += ` RETURN ${distinctKw}*`;
+    } else if (this.projection.kind === "props") {
+      const ret = Object.entries(this.projection.fields)
+        .map(([out, pr]) => `${propExpr(pr)} AS ${out}`)
+        .join(", ");
+      text += ` RETURN ${distinctKw}${ret}`;
     } else {
-      const ret = Object.entries(this.projection)
-        .map(([out, pr]) => `${pr.alias}.${pr.name} AS ${out}`)
+      const ret = Object.entries(this.projection.fields)
+        .map(([out, expr]) => `${expr.trim()} AS ${out}`)
         .join(", ");
       text += ` RETURN ${distinctKw}${ret}`;
     }
     if (this.order.length > 0) {
-      const ob = this.order.map((c) => `${c.prop.alias}.${c.prop.name} ${c.direction}`).join(", ");
+      const ob = this.order.map(orderBySegment).join(", ");
       text += ` ORDER BY ${ob}`;
     }
+    // Neo4j 5 + GQL: SKIP/LIMIT expect INTEGER; Bolt often maps JS numbers as floats. `toInteger($p)` fixes at runtime.
     if (this.skipCount !== null) {
       const key = nextParam();
       params[key] = this.skipCount;
-      text += ` SKIP $${key}`;
+      text += ` SKIP toInteger($${key})`;
     }
     if (this.limitCount !== null) {
       const key = nextParam();
       params[key] = this.limitCount;
-      text += ` LIMIT $${key}`;
+      text += ` LIMIT toInteger($${key})`;
     }
     return { text, params };
   }
@@ -511,3 +791,26 @@ export class SelectQuery {
 export function select(): SelectQuery {
   return new SelectQuery();
 }
+
+/**
+ * Build a `WHERE …` fragment (without the keyword) and parameters from predicates
+ * (same rules as {@link SelectQuery.where}).
+ */
+export function compileWhereFragment(predicates: WherePredicate[]): CompiledCypher {
+  if (predicates.length === 0) {
+    return { text: "", params: {} };
+  }
+  const params: Record<string, unknown> = {};
+  let p = 0;
+  const nextParam = (): string => {
+    const key = `p${p++}`;
+    return key;
+  };
+  const sink: ParamSink = { params, nextParam };
+  const parts =
+    predicates.length === 1
+      ? [emitPredicate(predicates[0]!, sink)]
+      : predicates.map((pred) => emitUnderAnd(pred, sink));
+  return { text: parts.join(" AND "), params };
+}
+

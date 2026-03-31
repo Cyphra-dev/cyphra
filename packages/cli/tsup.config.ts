@@ -9,5 +9,12 @@ export default defineConfig({
   banner: {
     js: "#!/usr/bin/env node",
   },
-  external: ["@cyphra/migrator", "@cyphra/runtime", "@cyphra/schema", "commander"],
+  external: [
+    "@cyphra/config",
+    "@cyphra/core",
+    "@cyphra/migrator",
+    "@cyphra/runtime",
+    "@cyphra/schema",
+    "commander",
+  ],
 });

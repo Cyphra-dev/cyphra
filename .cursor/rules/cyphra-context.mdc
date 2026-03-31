@@ -1,0 +1,8 @@
+---
+description: Read repository CONTEXT.md for Cyphra boundaries and doc pointers
+alwaysApply: true
+---
+
+# Cyphra monorepo context
+
+At the start of substantive work in this repository, read **`CONTEXT.md`** at the repo root. It summarizes product scope, the `@cyphra/*` package map, technical invariants (parameters, schema, providers), roadmap pointers, and where full documentation lives—so you do not contradict published behavior or duplicate long guides in chat.

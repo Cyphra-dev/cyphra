@@ -1,0 +1,85 @@
+---
+title: What is Cyphra?
+description: Overview of the Cyphra toolkit for Neo4j — schema, queries, client, migrations, and CLI.
+---
+
+# What is Cyphra?
+
+Published docs: **[www.cyphra.dev](https://www.cyphra.dev)** · Source: **[github.com/cyphra-dev/cyphra](https://github.com/cyphra-dev/cyphra)**
+
+**Cyphra** is a TypeScript-first toolkit for **[Neo4j](https://neo4j.com/)**. The intended workflow mirrors **Prisma-style** products—**graph schema → project config → migrate/push (constraints & indexes) → query from TypeScript**—while keeping **Cypher visible** and **parameter-safe**:
+
+- **ORM track (Prisma-like):** schema-driven delegates such as **`db.posts.create({ data })`** via `createSchemaClient`.
+- **Query track (Drizzle-like / Cypher-JS):** **`cypher`** tag, **`select()`** builder, and compilers in **`@cyphra/query`** that output **`CompiledCypher`** for the **official** Bolt stack (`CyphraNeo4j`).
+
+Cyphra is **beta**; public APIs may evolve—see the repo **CHANGELOG** and these docs.
+
+Similar in spirit to [Prisma ORM](https://www.prisma.io/docs/orm) for relational databases, but **the property graph and Cypher remain first-class** end to end.
+
+Cyphra is open source (MIT) and ships as:
+
+| Piece                                 | Role                                                                                                            |
+| ------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| **Schema** (`@cyphra/schema`)         | Parse and validate `.cyphra`, print canonical documents, derive constraint/index DDL for Neo4j 5+               |
+| **Queries** (`@cyphra/query`)         | `cypher` tagged templates and `SelectQuery` builder—values are always **parameters**, never string-concatenated |
+| **ORM** (`@cyphra/orm`)               | `createNodeCrud`, traversal helpers—compiled Cypher from **`.cyphra`** + `CyphraClient`                          |
+| **Cyphra Client** (`@cyphra/runtime`) | `CyphraClient` with **`CyphraNeo4j`** adapter: sessions, transactions, `runCompiled`, `queryRecords`, …       |
+| **Migrations** (`@cyphra/migrator`)   | `defineMigration`, `cyphra migrate`, `cyphra push`, tracking on `__CyphraMigration` nodes                       |
+| **CLI** (`@cyphra/cli`)               | `init`, `validate`, `db pull`, `schema add`, `schema print` / `ddl`, `migrate`, `push`                           |
+
+The npm package **`cyphra`** is the **central meta-package**: it lists the libraries as dependencies, re-exports the surface, and exposes **`import { query, orm } from "cyphra"`** (namespaces) plus optional subpaths **`cyphra/query`** and **`cyphra/orm`**. You also get the **`cyphra`** CLI via `bin`. Scoped **`@cyphra/*`** packages remain available for a minimal graph.
+
+**Provider model:** **`@cyphra/core`** holds shared **graph provider** types and driver contracts; **`@cyphra/provider-neo4j`** is the Bolt implementation. **`cyphra.json`** accepts **`"provider": "neo4j"`** (default) so additional backends can be added like Prisma datasources. See [Graph providers](/providers).
+
+## Why Cyphra
+
+Graph workloads often swing between two extremes:
+
+- **Raw driver + hand-written Cypher** — full control, but easy to slip into **injection bugs** (string interpolation), inconsistent patterns, and no shared **schema contract** in the repo.
+- **Heavy abstractions** — productivity at the cost of opaque generated queries and impedance mismatch with the graph.
+
+Cyphra aims for a middle path:
+
+- **Cypher stays visible** in source and code review (`cypher\`…\``, builder output, DDL from `cyphra schema ddl`).
+- **Parameters are mandatory** for interpolated values in templates—no “string SQL” footguns.
+- A **declarative `.cyphra` file** is the single place for labels, relationship shapes, and index/constraint **intent**, aligned with Neo4j 5+ features (uniqueness, range indexes, relationship property uniqueness where supported).
+- **Migrations** are explicit ESM modules; applied versions are recorded in the graph for operational clarity.
+
+## When to use Cyphra
+
+Cyphra is a good fit if you:
+
+- Build **Node.js / TypeScript** services (REST, GraphQL, workers, serverless) against **Neo4j**.
+- Want **type-safe, reviewable** query construction without hiding Cypher.
+- Need **schema + migrations + CLI** in one ecosystem, with clear separation between ORM and query tracks.
+
+Consider staying on the **driver alone** if you need every query hand-tuned with zero opinionated tooling, or another stack if you target a **non-Neo4j** graph product—**Cyphra only supports Neo4j** today.
+
+## Supported database
+
+Cyphra targets **Neo4j** via **Bolt** using the official JavaScript driver. See [Supported databases](/supported-databases) for versions, Neo4j Aura, and connection notes.
+
+## How it works (high level)
+
+1. **Define a graph model** in `schema.cyphra` (nodes, `relationship` blocks, decorators).
+2. **Configure** [`cyphra.config.ts` or `cyphra.json`](/configuration) and environment variables for Bolt (`NEO4J_URI`, `NEO4J_USER`, `NEO4J_PASSWORD`).
+3. **Apply structure** with **`cyphra push`** (constraints + range indexes from the schema) and/or **versioned** **`cyphra migrate deploy`** for data/DDL migrations.
+4. **Access the database** from TypeScript:
+   - **ORM:** `createSchemaClient(client, schemaDoc)` → e.g. `db.posts.create(…)`;
+   - **Query:** `query.select()`, `query.cypher`, etc., compiled to **`CompiledCypher`** and run with **`CyphraClient`**.
+
+Optional: **`loadCyphraWorkspace(cwd)`** from **`cyphra`** loads config, parses the schema, validates it, and builds a **`CyphraClient`** from env (same paths the CLI uses).
+
+Step-by-step commands and a minimal project layout are on [Getting started](/getting-started).
+
+## Next steps
+
+- [Getting started](/getting-started) — install, `init`, first queries
+- [Schema](/schema) — DSL and decorators
+- [Cyphra Client](/runtime) — sessions and transactions
+- [Queries](/queries) — templates and builder
+- [Migrations & push](/migrations) — DDL and migration modules
+- [CLI reference](/cli) — full command list
+- [Introspection](/introspection) — existing Neo4j → draft schema
+- [Graph ORM](/graph-orm) — CRUD and traversals
+- [Cypher coverage](/cypher-coverage) — DSL roadmap vs manual Cypher

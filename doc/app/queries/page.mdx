@@ -1,54 +1,218 @@
+---
+title: Queries
+description: Parameter-safe Cypher with the cypher template tag and SelectQuery builder.
+---
+
 # Queries
 
-Use **`import { cypher, select, … } from "cyphra"`** when you depend on the [`cyphra`](https://www.npmjs.com/package/cyphra) meta-package, or import from **`@cyphra/query`** directly.
+Cyphra’s query layer is the **Cypher-JS / Drizzle-like** track: you compose **structures in TypeScript** (tagged templates, fluent builders, small compilers like **`compileRootOptionalOutgoingSelect`**) and always end up with **`CompiledCypher`** — **text + parameters** for **`session.run`**. Nothing here **executes** the database; execution stays in **`CyphraClient`** + the official driver.
+
+Interpolated values are **never** concatenated into the query string—they are bound as **Neo4j parameters** (`$p0`, `$p1`, …).
+
+Imports:
+
+```ts
+import { cypher, select, node, rel, prop, eq, exists } from "cyphra";
+import { query } from "cyphra"; // query.cypher, query.select, …
+// or: from "@cyphra/query" / "cyphra/query"
+```
 
 ## Tagged Cypher
 
-Values are always passed as **parameters**, never string-concatenated into Cypher:
+The **`cypher`** tag compiles to **`{ text, params }`** (`CompiledCypher`):
 
 ```ts
-import { cypher } from "@cyphra/query";
+import { cypher } from "cyphra";
 
-const { text, params } = cypher`
+const compiled = cypher`
   MATCH (u:User) WHERE u.id = ${userId} RETURN u
 `;
+// compiled.text  → MATCH (u:User) WHERE u.id = $p0 RETURN u
+// compiled.params → { p0: userId }
 ```
 
-## Builder
+Use it with **`CyphraClient.runCompiled`**, **`queryRecords`**, or the driver’s **`session.run`** directly.
+
+**`compileCypher`** is the underlying function if you need the same behavior without the tag.
+
+## `CALL { }` subqueries
+
+**`callSubqueryCompiled(inner)`** wraps **`inner.text`** as **`CALL { … }`** and rewrites **`inner`**’s parameters to **`$c0_p0`**, **`$c0_p1`**, … so they do not clash with an outer fragment’s **`$p0`**. Use **`branchIndex`** when you place several subqueries in one query (**`c1_`**, **`c2_`**, …).
+
+Lower-level **`remapCompiledCypherParamKeys(compiled, keyPrefix)`** (prefix must end with **`_`**) is the same rewriting primitive used by **`unionAllCompiled`**; use it if you assemble custom multi-part queries.
+
+**`concatCompiledCypher([a, b, …], { separator? })`** concatenates fragments: the first keeps **`p0`**, **`p1`**, …; each next part is remapped with **`f1_`**, **`f2_`**, … so you can stitch clauses without manual param merging.
 
 ```ts
-import { node, rel, prop, eq, select } from "@cyphra/query";
+import { callSubqueryCompiled, cypher, select, concatCompiledCypher } from "cyphra";
+
+const inner = select().match("(x:X)").returnStar().toCypher();
+const sub = callSubqueryCompiled(inner);
+const outer = cypher`MATCH (root:Root) WHERE root.id = ${"r1"}`;
+const q = concatCompiledCypher([outer, sub]);
+```
+
+## SelectQuery builder
+
+For structured reads without hand-writing every clause, use **`select()`** and pattern helpers:
+
+```ts
+import { node, rel, prop, eq, select } from "cyphra";
 
 const u = node("User", "u");
 const o = node("Organization", "o");
 const m = rel("MEMBER_OF", "m");
 
-select()
+const q = select()
   .match(u.out(m, o))
   .where(eq(prop(m.alias, "role"), "admin"))
   .returnFields({ id: prop(u.alias, "id") })
   .orderBy({ prop: prop(u.alias, "createdAt"), direction: "DESC" })
   .skip(0)
-  .limit(20)
-  .toCypher();
+  .limit(20);
+
+const compiled = q.toCypher();
 ```
 
-Use `u.in(m, from)` or `u.both(m, other)` for incoming or undirected patterns. After **`match(...)`**, call **`optionalMatch(pattern)`** one or more times to append **`OPTIONAL MATCH`** clauses in order (then `where` / `return…` apply to the full read shape).
+Patterns:
 
-`where()` accepts multiple predicates (AND-combined): `eq`, `neq`, `gt`, `gte`, `lt`, `lte`, **`between`** (inclusive `(prop >= $lo AND prop <= $hi)`), `isNull`, `isNotNull`, `inList`, `startsWith`, `endsWith`, `contains`, **`matches`** (`=~`, Java-style regex; pattern is always a parameter), `not(inner)`, and grouping via **`and(…)`** / **`or(…)`** (parentheses follow Cypher precedence: `AND` binds tighter than `OR`). Example: `.where(or(eq(prop(u.alias, "role"), "a"), eq(prop(u.alias, "role"), "b")), eq(prop(u.alias, "active"), true))` → `(u.role = $p0 OR u.role = $p1) AND u.active = $p2`.
+- **`node("Label", "alias")`** — node variable.
+- **`rel("TYPE", "alias")`** — single-hop relationship variable.
+- **`rel("TYPE", "alias", varLength)`** — variable-length segment: **`"any"`** (`*`), an integer (exact hops), or **`{ min?, max? }`** (at least one bound) for Neo4j **`[*]`**, **`*n`**, **`*min..max`**, **`*..max`**, **`*min..`** on the relationship.
+- **`u.out(m, o)`**, **`u.in(m, o)`**, **`u.both(m, o)`** — directed / undirected patterns.
+- After **`match(...)`**, chain **`optionalMatch(pattern)`** to append **`OPTIONAL MATCH`** clauses in order.
 
-Every value is a Neo4j parameter—only `IS NULL` / `IS NOT NULL` have no bound value.
+### Predicates (`where`)
 
-Call **`returnFields({ … })`** or **`returnStar()`** before `toCypher()` (a bare `MATCH` without `RETURN` is rejected). Chain **`returnDistinct()`** after either to emit **`RETURN DISTINCT …`** (deduplicate rows before `ORDER BY` / `SKIP` / `LIMIT`).
+**`where`** accepts multiple predicates **AND**-combined: **`eq`**, **`neq`**, **`gt`**, **`gte`**, **`lt`**, **`lte`**, **`between`** (inclusive), **`isNull`**, **`isNotNull`**, **`inList`**, **`startsWith`**, **`endsWith`**, **`contains`**, **`matches`** (`=~`, pattern always parameterized), **`exists`** (Neo4j **`EXISTS { MATCH … }`** with optional inner **`WHERE`**), **`not`**, **`and`**, **`or`**.  
+The left-hand side of comparisons is normally **`prop(alias, "field")`**; **`bareVar("x")`** emits the variable **`x`** alone (for list-comprehension filters and similar).  
+Every value becomes a parameter except pure **`IS NULL` / `IS NOT NULL`**.
+
+```ts
+import { exists, prop, eq, select } from "cyphra";
+
+select()
+  .match("(u:User)")
+  .where(
+    exists(
+      "(u)-[:POSTED]->(p:Post)",
+      eq(prop("p", "published"), true),
+    ),
+  )
+  .returnStar();
+```
+
+### Optional `WITH` before `WHERE`
+
+**`withOrderLimit(variables, order, limit)`** emits **`WITH … ORDER BY … LIMIT $pN`** after all **`MATCH` / `OPTIONAL MATCH`** clauses and **before** the outer **`WHERE`**. Use it for top‑N filtering per match (e.g. latest posts) while keeping the rest of the query parameter-safe.
+
+### Return and modifiers
+
+- **`returnFields({ … })`** or **`returnStar()`** is **required** before **`toCypher()`**.
+- **`returnDistinct()`** after either emits **`RETURN DISTINCT …`**.
+- **`orderBy`**, **`skip`**, **`limit`** chain as in Cypher. Each **`orderBy`** entry may set **`nulls: "FIRST"`** or **`"LAST"`** (Neo4j **`NULLS FIRST` / `NULLS LAST`**). The same shape is used in **`withOrderLimit(..., order, limit)`**.
+
+## Write helpers (`@cyphra/query`)
+
+Small **parameterized** mutators complement **`cypher`** and migrations:
+
+- **`compileCreate`**, **`compileMergeSet`**, **`compileSetWhere`**, **`compileDetachDeleteWhere`** — node create / merge / patch / delete (detach).
+- **Relationship edges (endpoints bound earlier):** **`compileMergeRelationship` / `compileCreateRelationship`** — **`(from)-[rel:TYPE]->(to)`**; **`compileMergeRelationshipIn` / `compileCreateRelationshipIn(end, rel, type, start)`** — **`(end)<-[rel:TYPE]-(start)`** (edge **start → end**). Optional **`SET rel += $props`** when **`props`** is non-empty.
+- **`compileDeleteWhere`** — **`DELETE`** without **`DETACH`** (fails if relationships remain).
+- **`compileDeleteRelationshipWhere(type, relAlias, predicates, { ends? })`** — **`MATCH ()-[rel:TYPE]-() WHERE … DELETE rel`** with anonymous endpoints; **`ends`** is **`"out"`** (default), **`"in"`**, or **`"undirected"`**.
+- **`compileSetRelationshipWhere`** — same **`MATCH`** shape, **`SET rel += $props`** (patch by predicate).
+- **`compileRemoveRelationshipProperties`** — same **`MATCH`** shape, **`REMOVE rel.key`** for listed property names.
+- **`compileRemoveProperties`** — **`REMOVE n.key`** for listed scalar property names (nodes).
+- **`compileUnwindMergeSet`** — **`UNWIND $rows AS row MERGE … SET …`** for batched upserts (`row.patch` map optional).
+- **`compileForeachMergeSet`** — same row shape as **`compileUnwindMergeSet`**, but **`FOREACH (row IN $rows | MERGE … SET …)`** when you must not **`UNWIND`** the outer stream.
+- **`compileForeachDeleteRelationshipsFromPath`** — **`FOREACH (r IN relationships(p) | DELETE r)`** (no params); prefix with a **`MATCH`** that binds the path as **`p`** (for example after **`shortestPath`**).
+- **`compileUnwindDetachDelete`** — **`UNWIND $ids AS id MATCH … WHERE … DETACH DELETE`** for batched deletes by a key field.
+
+Use **`runCompiledBatchWrite`** from **`@cyphra/orm`** to run several compiled steps in one write transaction.
+
+## `LOAD CSV` fragment (C-γ)
+
+**`compileLoadCsvFrom(url, rowAlias, options?)`** emits **`LOAD CSV [WITH HEADERS] FROM $… AS rowAlias`**, with **`url`** always bound as a parameter (default key **`csvUrl`**). Optional **`fieldTerminator`** is one of **`"comma"`**, **`"semicolon"`**, **`"pipe"`**, **`"tab"`** — emitted as a safe literal, not arbitrary user text.
+
+Append the rest of the import (e.g. **`MERGE`**, **`WITH row LIMIT …`**) via **`cypher`** or string composition; check Neo4j’s rules for **`file:///`** vs remote URLs and Aura restrictions.
+
+```ts
+import { compileLoadCsvFrom, cypher } from "cyphra";
+
+const load = compileLoadCsvFrom(csvUrl, "row");
+const full = {
+  text: `${load.text} MERGE (n:Person { id: row.id }) SET n.name = row.name`,
+  params: load.params,
+};
+```
+
+## Planner hints (C-γ)
+
+**`matchHintUsingIndex(variable, labelOrRelType, properties)`**, **`matchHintUsingScan(variable, labelOrRelType)`**, and **`matchHintUsingJoin([v1, v2, …])`** return validated **`USING …`** fragments (identifiers only — no user-controlled Cypher injection). Place them after the **`MATCH`** pattern and before **`WHERE`**. Because **`concatCompiledCypher`** remaps parameters on every fragment after the first, either merge **`MATCH` + hint + tail** yourself when the tail binds values, or keep parameterized clauses in the first fragment only.
+
+```ts
+import { cypher, matchHintUsingIndex } from "cyphra";
+
+const head = cypher`MATCH (n:Person)`;
+const tail = cypher` WHERE n.email = ${addr} RETURN n`;
+const hint = matchHintUsingIndex("n", "Person", ["email"]);
+const q = {
+  text: `${head.text} ${hint}${tail.text}`,
+  params: { ...head.params, ...tail.params },
+};
+```
+
+Hints are easy to misuse; validate plans with **`EXPLAIN`** / **`PROFILE`** on your target Neo4j version.
+
+## List comprehension **`FILTER`** (C-γ)
+
+**`compileComprehensionFilterClause(itemVariable, listParamKey, listValue, predicates)`** builds **`item IN $listParamKey WHERE …`** for use inside **`[ … | expr ]`**. Use **`bareVar("item")`** in predicates when the list element is a scalar; use **`prop("item", "field")`** when elements are maps or graph values with properties.
+
+```ts
+import { bareVar, compileComprehensionFilterClause, gt } from "cyphra";
+
+const filter = compileComprehensionFilterClause("n", "nums", [1, 2, 3], [gt(bareVar("n"), 0)]);
+const q = {
+  text: `RETURN [ ${filter.text} | n * 2 ] AS doubled`,
+  params: filter.params,
+};
+```
+
+Cypher 25 **`FILTER`** / **`WHEN`** / **`NEXT`** outside this pattern are still written with **`cypher`** until version-specific emit exists.
+
+## `CASE` expression
+
+**`compileCaseExpression([{ when, then }, …], elseThen)`** builds **`CASE WHEN … THEN … ELSE … END`**: each **`when`** array is AND-combined like **`where`**; comparison values in **`WHEN`** and all **`then`** / **`elseThen`** results are parameters. Wrap the result in **`RETURN …`** or **`WITH …`** yourself.
+
+```ts
+import { bareVar, compileCaseExpression, gt, lt } from "cyphra";
+
+const kind = compileCaseExpression(
+  [
+    { when: [gt(bareVar("score"), 80)], then: "high" },
+    { when: [lt(bareVar("score"), 40)], then: "low" },
+  ],
+  "mid",
+);
+const q = { text: `RETURN ${kind.text} AS band`, params: kind.params };
+```
 
 ## Runtime shortcuts
 
-`CyphraClient` provides **`queryRecords`** / **`queryRecord`** (from any `CompiledCypher`) and **`selectRecords`** / **`selectRecord`** (from a `SelectQuery`) so you rarely need to wire `run` + `toPlainRecords` by hand. See the [Runtime](/runtime) page for sessions, transactions, and options.
+**`CyphraClient`** exposes **`queryRecords`**, **`queryRecord`**, **`selectRecords`**, and **`selectRecord`** so you rarely wire **`run`** + **`toPlainRecords`** manually. Transaction variants **`*Tx`** exist for use inside **`withReadTransaction`** / **`withWriteTransaction`**. See [Cyphra Client](/runtime).
 
-## Codegen
+## Compared to Prisma or Drizzle
 
-Run `cyphra generate` to produce `cyphra.gen.ts` with `NodeLabel`, `RelType`, and `RelationshipSpec` constants aligned to your `.cyphra` file, then import them alongside the builder for fewer string typos.
+- **Prisma** generates a **client per schema**; Cyphra ships a **fixed** **`CyphraClient`** and optional **`createNodeCrud`** driven by a **parsed** **`.cyphra`** document—your graph model stays a **text** artifact in the repo, closer to how [Drizzle](https://orm.drizzle.team/) keeps TypeScript schema files, but with **`cyphra.config.ts`** for CLI paths like Drizzle’s config file.
+- **Relational** ORMs hide SQL; Cyphra keeps **Cypher visible** (`cypher`, builder output, **`EXPLAIN`**). Use **`cypher`** whenever the typed layer does not yet cover a clause—see [Cypher coverage](/cypher-coverage).
 
 ## Result mapping
 
-`@cyphra/runtime` exports **`toPlainRecords`** and **`toPlainRecord`** to turn a `session.run` / `runCompiled` result into plain objects (`record.toObject()`), without an ORM layer.
+**`toPlainRecords`** / **`toPlainRecord`** map driver **`Result`** rows to plain objects (`record.toObject()`). There is no ORM identity map—just data.
+
+## See also
+
+- [Cyphra Client](/runtime) — sessions, transactions, `debug`
+- [Schema](/schema) — model definition
+- [Graph ORM](/graph-orm) — CRUD and traversals from the same schema
+- [Example project](/example) — combined usage

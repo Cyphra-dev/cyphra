@@ -1,4 +1,4 @@
-import type { CyphraClient } from "@cyphra/runtime";
+import type { CyphraDriverClient } from "@cyphra/core";
 import { createMigrationDb } from "./migrationDb.js";
 import type { MigrationDefinition } from "./defineMigration.js";
 import * as tracker from "./tracker.js";
@@ -16,9 +16,10 @@ export type LoadedMigration = {
  * @param client - Cyphra client.
  * @param ordered - Migrations sorted lexicographically by `name` (caller responsibility).
  * @returns Names that were applied in this run.
+ * @throws With `Migration "<name>" failed during up()` or a recording error; original error is {@link Error.cause}.
  */
 export async function runPendingMigrations(
-  client: CyphraClient,
+  client: CyphraDriverClient,
   ordered: readonly LoadedMigration[],
 ): Promise<readonly string[]> {
   const applied: string[] = [];
@@ -29,8 +30,19 @@ export async function runPendingMigrations(
         continue;
       }
       const db = createMigrationDb(client, session);
-      await m.definition.up({ db });
-      await tracker.recordMigration(session, m.name, m.checksum);
+      try {
+        await m.definition.up({ db });
+      } catch (e) {
+        throw new Error(`Migration "${m.name}" failed during up()`, { cause: e });
+      }
+      try {
+        await tracker.recordMigration(session, m.name, m.checksum);
+      } catch (e) {
+        throw new Error(
+          `Migration "${m.name}" ran but recording on ${tracker.CYPHRA_MIGRATION_LABEL} failed`,
+          { cause: e },
+        );
+      }
       applied.push(m.name);
     }
   });
@@ -39,18 +51,24 @@ export async function runPendingMigrations(
 
 /**
  * Execute DDL statements (e.g. from {@link constraintStatementsFromSchema}).
+ * On failure, throws with message `DDL failed (<preview>)` and the driver error as {@link Error.cause}.
  *
  * @param client - Cyphra client.
  * @param statements - Cypher DDL, one statement per string.
  */
 export async function applyConstraintStatements(
-  client: CyphraClient,
+  client: CyphraDriverClient,
   statements: readonly string[],
 ): Promise<void> {
   await client.withSession(async (session) => {
     for (const statement of statements) {
-      const r = await session.run(statement);
-      await r;
+      try {
+        const r = session.run(statement);
+        await (r as PromiseLike<unknown>);
+      } catch (e) {
+        const preview = statement.length > 160 ? `${statement.slice(0, 160)}…` : statement;
+        throw new Error(`DDL failed (${preview})`, { cause: e });
+      }
     }
   });
 }

@@ -29,13 +29,25 @@ export async function loadMigrationsFromDir(
   const out: LoadedMigration[] = [];
   for (const f of files) {
     const full = path.join(migrationsDir, f);
-    const src = await readFile(full, "utf8");
+    const rel = path.relative(root, full) || f;
+    let src: string;
+    try {
+      src = await readFile(full, "utf8");
+    } catch (e) {
+      throw new Error(`Could not read migration file ${rel}`, { cause: e });
+    }
     const checksum = createHash("sha256").update(src).digest("hex");
     const href = pathToFileURL(full).href;
-    const mod = (await import(href)) as { default?: MigrationDefinition };
+    let mod: { default?: MigrationDefinition };
+    try {
+      mod = (await import(href)) as { default?: MigrationDefinition };
+    } catch (e) {
+      const inner = e instanceof Error ? e.message : String(e);
+      throw new Error(`Failed to load migration ${rel}: ${inner}`, { cause: e });
+    }
     const def = mod.default;
     if (!def?.name || typeof def.up !== "function") {
-      throw new Error(`Migration ${f} must export default defineMigration({ name, up })`);
+      throw new Error(`${rel}: must export default defineMigration({ name, up })`);
     }
     out.push({ name: def.name, checksum, definition: def });
   }

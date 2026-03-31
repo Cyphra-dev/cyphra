@@ -1,0 +1,52 @@
+---
+title: Graph providers
+description: Prisma-style graph database providers in Cyphra—core contracts, Neo4j package, and how to add new backends.
+---
+
+# Graph providers
+
+Cyphra uses a **provider model** similar to [Prisma’s `datasource provider`](https://www.prisma.io/docs/orm/prisma-schema/overview/data-sources): the **same schema and query APIs** are wired to a **concrete graph database** through small, versioned packages.
+
+## Packages
+
+| Package                      | Role                                                                                                                                                 |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **`@cyphra/core`**           | **Provider IDs** (`GraphProviderId`), **datasource** types, and **driver contracts** (`CyphraDriverClient`, `CyphraSession`, …). No database driver. |
+| **`@cyphra/provider-neo4j`** | **Neo4j** over Bolt: `CyphraClient` built on `neo4j-driver`, plus `toPlainRecords` / `toPlainRecord`.                                                |
+| **`@cyphra/runtime`**        | Default **facade**: re-exports **core** + **provider-neo4j** so `import { CyphraClient, GraphProviderId } from "cyphra"` keeps working.              |
+| **`@cyphra/migrator`**       | Migrations and **schema DDL** dispatch on **`provider`** from `cyphra.json` (today only **`neo4j`** emits Cypher DDL).                               |
+
+The **`cyphra`** meta-package depends on **core**, **provider-neo4j**, **runtime**, **migrator**, etc., so a normal app install pulls the **Neo4j** stack explicitly.
+
+## Configuration
+
+Set the graph backend in **`cyphra.json`** (see [Configuration](/configuration)):
+
+```json
+{
+  "provider": "neo4j",
+  "schema": "./schema.cyphra",
+  "migrations": "./migrations"
+}
+```
+
+Omitting **`provider`** defaults to **`neo4j`** for backward compatibility.
+
+## Query dialect
+
+Each provider declares a **query dialect** in **`GRAPH_PROVIDER_META`** (from **`@cyphra/core`**). Today **`neo4j`** uses **Cypher** via **`@cyphra/query`**. Another backend would ship its own **`@cyphra/provider-*`** and, if the language differs, a sibling query helper package or dialect-specific compile path.
+
+## Adding a new provider (outline)
+
+1. Add a new literal to **`GraphProviderId`** and **`GRAPH_PROVIDER_META`** in **`@cyphra/core`**.
+2. Implement **`CyphraDriverClient`** (sessions, transactions, `runCypher` / `runCompiled` or equivalent) in **`@cyphra/provider-<name>`**.
+3. Extend **`constraintStatementsFromSchema`** / **`indexStatementsFromSchema`** (or add provider-specific DDL modules) in **`@cyphra/migrator`**.
+4. Wire the CLI (**`clientFromEnv`**, **`cyphra push`**) to construct the right client from env vars for that provider.
+
+Until those pieces exist, **`assertGraphProviderId`** rejects unknown **`provider`** strings in **`cyphra.json`**.
+
+## See also
+
+- [Supported databases](/supported-databases) — current Neo4j focus
+- [Configuration](/configuration) — `cyphra.json`
+- [What is Cyphra?](/introduction) — stack overview

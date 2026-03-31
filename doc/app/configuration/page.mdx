@@ -1,0 +1,106 @@
+---
+title: Configuration
+description: cyphra.json or cyphra.config.ts, Neo4j connection environment variables, and optional database name.
+---
+
+# Configuration
+
+Cyphra projects are configured at the repository root (or the directory from which you run `cyphra` commands) with **`cyphra.config.ts`** (preferred for TypeScript repos) **or** **`cyphra.json`**, plus **environment variables** for the Bolt connection.
+
+The CLI loads **`cyphra.config.ts`** / **`.mts`** / **`.cts`** / **`.js`** / **`.mjs`** / **`.cjs`** first when present; otherwise it falls back to **`cyphra.json`**.
+
+## `cyphra.config.ts`
+
+Use **`defineCyphraConfig`** from **`cyphra`** (or **`@cyphra/core`**) for typed paths and optional hints:
+
+```ts
+import { defineCyphraConfig } from "cyphra";
+
+export default defineCyphraConfig({
+  schema: "./schema.cyphra",
+  migrations: { path: "./migrations" },
+  datasource: { provider: "neo4j" },
+  targetNeo4j: "5",
+});
+```
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| **`schema`** | `string` | Path to **`.cyphra`** (relative to the config file). |
+| **`migrations`** | `string` \| `{ path: string }` | Migrations directory (string path or Prisma-style object). |
+| **`provider`** | `string` | Graph provider (default **`neo4j`**). |
+| **`datasource`** | `object` | Optional Prisma-style block; **`datasource.provider`** is used when **`provider`** is omitted. Connection secrets are often `process.env.*` and may still be passed to **`CyphraNeo4j`** in app code. |
+| **`targetNeo4j`** | `string` | Optional Neo4j / Cypher dialect hint for docs and future emit. |
+
+### App runtime: `CyphraClient.orm`
+
+When you import **`CyphraClient` from `cyphra`**, the client exposes a lazy **`.orm`** delegate (e.g. `cyphra.orm.posts.create`) built from the **`schema`** file in this config. Resolution uses **`loadConfigSync`** and **`readFileSync`**, so it targets **Node** server runtimes (not Edge bundles without `fs`). For a Bolt-only client without ORM, import **`CyphraClient` from `@cyphra/runtime`** instead. Pass **`projectRoot`** to the constructor if the process cwd is not the directory that contains **`cyphra.config.ts`**.
+
+## `cyphra.json`
+
+Created by **`cyphra init`**. Required fields:
+
+| Field            | Type     | Description                                                                                                                               |
+| ---------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| **`schema`**     | `string` | Path to your `.cyphra` file, relative to the config file’s directory (e.g. `"./schema.cyphra"`). Resolved to an absolute path at runtime. |
+| **`migrations`** | `string` | Path to the migrations directory (e.g. `"./migrations"`).                                                                                 |
+
+Optional:
+
+| Field          | Type     | Default             | Description                                                                                   |
+| -------------- | -------- | ------------------- | --------------------------------------------------------------------------------------------- |
+| **`provider`** | `string` | `"neo4j"`           | Graph **provider** (Prisma-style). Only **`neo4j`** today; see [Graph providers](/providers). |
+
+Example:
+
+```json
+{
+  "$schema": "https://raw.githubusercontent.com/cyphra-dev/cyphra/main/schemas/cyphra-config.schema.json",
+  "provider": "neo4j",
+  "schema": "./schema.cyphra",
+  "migrations": "./migrations"
+}
+```
+
+### JSON Schema (IDE validation)
+
+A machine-readable schema lives in the repo at [`schemas/cyphra-config.schema.json`](https://github.com/cyphra-dev/cyphra/blob/main/schemas/cyphra-config.schema.json). Point **`$schema`** in `cyphra.json` at the **raw** GitHub URL (as above) or a local relative path so VS Code and other editors can validate keys and types.
+
+Paths are resolved **under the project root** (the directory containing the config file); traversal outside that root is rejected for safety.
+
+## Environment variables
+
+Commands that open a driver (**`cyphra push`**, **`cyphra migrate`**, **`cyphra migrate dev`**, **`cyphra db pull`**) require non-empty values for:
+
+| Variable             | Description                                                                                                      |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| **`NEO4J_URI`**      | Bolt URI, e.g. `neo4j://localhost:7687`, `bolt://…`, or `neo4j+s://…` / `neo4j+ssc://…` for Neo4j Aura with TLS. |
+| **`NEO4J_USER`**     | Database user (often `neo4j`).                                                                                   |
+| **`NEO4J_PASSWORD`** | Password.                                                                                                        |
+
+Optional:
+
+| Variable             | Description                                                         |
+| -------------------- | ------------------------------------------------------------------- |
+| **`NEO4J_DATABASE`** | Neo4j 4+ database name; passed to the driver when opening sessions. |
+
+If a required variable is missing or empty, the CLI reports **only the unset names**, for example `Missing Neo4j environment variable(s): NEO4J_PASSWORD.`
+
+**Library-only** code (`CyphraClient` in your app) uses whatever you pass to the constructor—typically `process.env.NEO4J_*` loaded with `dotenv` or your host’s secret manager.
+
+### Security notes
+
+- Do **not** commit real passwords; use `.env` in `.gitignore` and inject secrets in CI.
+- Cyphra’s **`debug: true`** on `CyphraClient` logs **Cypher text and parameter keys only**, never parameter values.
+- See the monorepo **[SECURITY.md](https://github.com/cyphra-dev/cyphra/blob/main/SECURITY.md)** for reporting issues.
+
+## Programmatic config
+
+The CLI and **`loadCyphraWorkspace`** use **`loadConfig(cwd)`** from **`@cyphra/config`** (async). **`loadConfigSync(cwd)`** is also available for synchronous callers (for example the **`cyphra`** package’s **`CyphraClient.orm`** getter). For in-app use you only need paths if you call schema APIs yourself; **`parseSchemaFile(path)`** accepts an explicit filesystem path.
+
+## See also
+
+- [Graph providers](/providers) — core vs `@cyphra/provider-neo4j`
+- [Getting started](/getting-started)
+- [Supported databases](/supported-databases) — TLS and Aura
+- [CLI reference](/cli) — which commands read `cyphra.json`

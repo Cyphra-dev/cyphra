@@ -1,0 +1,42 @@
+name: VS Code extension publish
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "vscode-v*"
+
+concurrency:
+  group: vscode-extension-publish-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      PNPM_VERSION: 9
+      NODE_VERSION: 22
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Package extension (smoke)
+        run: pnpm --filter cyphra-vscode run package
+
+      - name: Publish to Visual Studio Marketplace
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        run: pnpm --filter cyphra-vscode exec vsce publish -p "$VSCE_PAT" --no-dependencies

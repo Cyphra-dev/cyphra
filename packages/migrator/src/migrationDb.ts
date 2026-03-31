@@ -1,5 +1,4 @@
-import type { Session } from "neo4j-driver";
-import type { CyphraClient } from "@cyphra/runtime";
+import type { CyphraDriverClient, CyphraSession } from "@cyphra/core";
 import { wrapInTransactions } from "./batch.js";
 import { compileRenameLabel, compileRenameProperty } from "./rename.js";
 
@@ -39,7 +38,7 @@ export type MigrationMigrateHelpers = {
  * @param client - Cyphra runtime client.
  * @param session - Neo4j session (caller manages lifecycle).
  */
-export function createMigrationDb(client: CyphraClient, session: Session): MigrationDb {
+export function createMigrationDb(client: CyphraDriverClient, session: CyphraSession): MigrationDb {
   const run = async (strings: TemplateStringsArray, ...values: unknown[]): Promise<void> => {
     const result = await client.runCypher(session, strings, ...values);
     await result;
@@ -51,18 +50,17 @@ export function createMigrationDb(client: CyphraClient, session: Session): Migra
     params?: Record<string, unknown>;
   }): Promise<void> => {
     const text = wrapInTransactions(opts.inner, opts.batchSize);
-    const result = await session.run(text, opts.params ?? {});
-    await result;
+    await (session.run(text, opts.params ?? {}) as PromiseLike<unknown>);
   };
 
   const migrate: MigrationMigrateHelpers = {
     async renameLabel(opts) {
       const { text, params } = compileRenameLabel(opts.from, opts.to);
-      await session.run(text, params);
+      await (session.run(text, params) as PromiseLike<unknown>);
     },
     async renameProperty(opts) {
       const { text, params } = compileRenameProperty(opts.label, opts.from, opts.to);
-      await session.run(text, params);
+      await (session.run(text, params) as PromiseLike<unknown>);
     },
   };
 

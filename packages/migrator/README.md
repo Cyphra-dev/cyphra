@@ -1,10 +1,19 @@
 # @cyphra/migrator
 
-Versioned Neo4j migrations and schema push for Cyphra.
+Versioned **Neo4j** migrations and **schema push** (constraints and indexes from your `.cyphra` model).
+
+## Install
+
+```bash
+npm install @cyphra/migrator
+```
+
+Usually consumed via **`cyphra`** together with **`CyphraClient`**.
+
+## Example
 
 ```ts
-import { defineMigration, runPendingMigrations } from "@cyphra/migrator";
-import { CyphraClient } from "@cyphra/runtime";
+import { defineMigration } from "@cyphra/migrator";
 
 export default defineMigration({
   name: "001_example",
@@ -14,4 +23,12 @@ export default defineMigration({
 });
 ```
 
-Tracking node: `(:__CyphraMigration { name, appliedAt, checksum })`.
+Applied migrations are recorded as **`__CyphraMigration`** nodes in the graph.
+
+## Documentation
+
+**[cyphra.dev — Migrations](https://www.cyphra.dev/migrations)**
+
+## License
+
+MIT

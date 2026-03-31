@@ -1,0 +1,54 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Cyphra",
+  "scopeName": "source.cyphra",
+  "patterns": [
+    { "include": "#string" },
+    { "include": "#lineComment" },
+    { "include": "#decorator" },
+    { "include": "#keyword" },
+    { "include": "#direction" },
+    { "include": "#scalarType" },
+    { "include": "#punctuation" }
+  ],
+  "repository": {
+    "lineComment": {
+      "name": "comment.line.double-slash.cyphra",
+      "match": "//.*"
+    },
+    "string": {
+      "name": "string.quoted.double.cyphra",
+      "begin": "\"",
+      "end": "\"",
+      "patterns": [
+        {
+          "name": "constant.character.escape.cyphra",
+          "match": "\\\\."
+        }
+      ]
+    },
+    "decorator": {
+      "match": "(@)(\\w+)",
+      "captures": {
+        "1": { "name": "punctuation.decorator.cyphra" },
+        "2": { "name": "entity.other.attribute-name.cyphra" }
+      }
+    },
+    "keyword": {
+      "name": "keyword.control.cyphra",
+      "match": "(?x)\\b(node|relationship|type|from|to)\\b"
+    },
+    "direction": {
+      "name": "constant.language.cyphra",
+      "match": "(?x)\\b(IN|OUT)\\b"
+    },
+    "scalarType": {
+      "name": "support.type.cyphra",
+      "match": "(?x)\\b(String|Int|Float|Boolean|DateTime)\\b"
+    },
+    "punctuation": {
+      "match": "[\\[\\]{}(),?:]",
+      "name": "punctuation.separator.cyphra"
+    }
+  }
+}

@@ -1,0 +1,42 @@
+---
+title: Supported databases
+description: Neo4j is the shipped graph backend today; provider model may add others later. Versions, Bolt, Aura, and limits.
+---
+
+# Supported databases
+
+Today Cyphra ships **one graph backend**: **Neo4j** via **`@cyphra/provider-neo4j`** and the official **[neo4j-driver](https://www.npmjs.com/package/neo4j-driver)** over **Bolt**. The **`.cyphra`** schema, **Cypher** compilation in **`@cyphra/query`**, DDL from **`cyphra push`**, and **`CyphraClient`** are all aligned with **Neo4j’s property-graph model** and server capabilities.
+
+The codebase uses a **provider model** ([Graph providers](/providers)) so additional databases could ship as separate **`@cyphra/provider-*`** packages later. Until then, **`cyphra.json`** only accepts **`"provider": "neo4j"`** (or omits it for the same default).
+
+## Neo4j versions
+
+- **Target: Neo4j 5.x** — range indexes, modern constraint syntax, and features such as **`CALL { … } IN TRANSACTIONS OF n ROWS`** (used by **`db.runInTransactionBatches`** in migrations) match this generation.
+- Some decorators require **Neo4j 5.7+** (e.g. **relationship property uniqueness** for `@unique` on fields inside a `relationship { … }` block). Older servers may need adjusted schemas or manual DDL.
+- Always check your server version against the [Neo4j operations manual](https://neo4j.com/docs/) for exact Cypher and constraint support.
+
+## Neo4j Aura
+
+**[Neo4j Aura](https://neo4j.com/cloud/aura/)** is supported: use a **`neo4j+s://`** or **`neo4j+ssc://`** URI from the Aura console, plus user and password. TLS is handled by the driver URI scheme and options—no Cyphra-specific Aura plugin is required.
+
+## Connection URLs
+
+Use whatever the **JavaScript driver** accepts:
+
+- `neo4j://`, `bolt://` — local or self-hosted
+- `neo4j+s://`, `neo4j+ssc://` — routed, encrypted cloud-style deployments
+
+Pass **`database`** on **`CyphraClient`** (or the appropriate env convention in your app) when using multiple databases on Neo4j 4+.
+
+## What is not supported yet
+
+- **Other graph databases** (JanusGraph, Amazon Neptune, Memgraph, etc.) — no published Cyphra provider package; APIs and Cypher compatibility differ.
+- **Non-graph SQL/NoSQL stores** — out of scope.
+
+If you need portability across engines today, treat Cyphra as **Neo4j-first** infrastructure and isolate it behind your own boundary until a provider exists.
+
+## See also
+
+- [Graph providers](/providers) — how **`neo4j`** fits the provider model
+- [Configuration](/configuration) — `NEO4J_URI` and related env vars
+- [Cyphra Client](/runtime) — `CyphraClientOptions` (`uri`, `database`, `driverConfig`)

@@ -1,0 +1,10 @@
+{
+  "iconDefinitions": {
+    "_cyphra_schema": {
+      "iconPath": "./cyphra.svg"
+    }
+  },
+  "fileExtensions": {
+    "cyphra": "_cyphra_schema"
+  }
+}

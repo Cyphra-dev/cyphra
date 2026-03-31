@@ -1,13 +1,17 @@
 {
   "name": "cyphra",
-  "version": "0.0.0",
-  "description": "Cyphra monolith: schema DSL, Cypher helpers, Neo4j runtime, and migrations (re-exports @cyphra/*)",
+  "version": "0.2.0",
+  "description": "Central package for Cyphra: schema DSL, Cypher helpers, Neo4j runtime, migrations, and CLI (depends on all @cyphra/* packages)",
   "type": "module",
   "sideEffects": false,
   "publishConfig": {
     "access": "public"
   },
+  "bin": {
+    "cyphra": "./bin/cyphra.mjs"
+  },
   "files": [
+    "bin",
     "dist",
     "README.md"
   ],
@@ -17,6 +21,14 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./query": {
+      "types": "./dist/query.d.ts",
+      "import": "./dist/query.js"
+    },
+    "./orm": {
+      "types": "./dist/orm.d.ts",
+      "import": "./dist/orm.js"
     }
   },
   "scripts": {
@@ -25,7 +37,12 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@cyphra/cli": "workspace:*",
+    "@cyphra/config": "workspace:*",
+    "@cyphra/core": "workspace:*",
+    "@cyphra/orm": "workspace:*",
     "@cyphra/migrator": "workspace:*",
+    "@cyphra/provider-neo4j": "workspace:*",
     "@cyphra/query": "workspace:*",
     "@cyphra/runtime": "workspace:*",
     "@cyphra/schema": "workspace:*"
@@ -44,9 +61,13 @@
     "migrations"
   ],
   "license": "MIT",
+  "homepage": "https://www.cyphra.dev",
+  "bugs": {
+    "url": "https://github.com/cyphra-dev/cyphra/issues"
+  },
   "repository": {
     "type": "git",
-    "url": "https://github.com/cyphra/cyphra.git",
+    "url": "https://github.com/cyphra-dev/cyphra.git",
     "directory": "packages/cyphra"
   }
 }

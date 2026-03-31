@@ -1,25 +1,56 @@
-# CLI
+---
+title: CLI reference
+description: Every cyphra CLI command—init, validate, schema, migrate, push—and when each needs Neo4j connectivity.
+---
 
-Install the binary (dev dependency is typical):
+# CLI reference
+
+The **`cyphra`** command is provided by **`@cyphra/cli`**. Installing the **`cyphra`** meta-package adds the CLI to your app’s **`node_modules/.bin`** (see [What is Cyphra?](/introduction)).
+
+```bash
+npx cyphra --help
+```
+
+All commands expect **`cyphra.config.ts`** or **`cyphra.json`** in the **current working directory** unless you document otherwise for your monorepo layout.
+
+## Commands
+
+| Command                              | Needs Neo4j? | Description                                                                                                                                                         |
+| ------------------------------------ | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **`cyphra init`**                    | No           | Scaffold **`cyphra.json`**, **`schema.cyphra`**, **`migrations/`**, **`.env.example`**.                                                                             |
+| **`cyphra validate`**                | No           | Parse and validate the schema file from config.                                                                                                                     |
+| **`cyphra schema print`**            | No           | Canonical pretty-print of the schema to stdout.                                                                                                                     |
+| **`cyphra schema ddl`**              | No           | Print **`push`** DDL (constraints + range indexes); no DB connection.                                                                                               |
+| **`cyphra migration:create <name>`** | No           | Create a new `.mjs` migration stub under **`migrations/`** (name must include a letter or digit; unsafe characters become `_`; existing files are not overwritten). |
+| **`cyphra migrate deploy`**          | Yes          | Run all pending migrations.                                                                                                                                         |
+| **`cyphra migrate dev`**             | Yes          | Same as deploy with verbose logging.                                                                                                                                |
+| **`cyphra push`**                    | Yes          | Apply constraint + index DDL from the schema.                                                                                                                       |
+| **`cyphra db pull`** / **`cyphra db-pull`** | Yes   | Draft **`schema.cyphra`** from labels, relationship types, and catalog queries (`--print`, `--force`, **`--sample-size`**).                                         |
+| **`cyphra schema add`**              | No           | Append a **`node`** block (interactive TTY, or **`--json <file>`** for CI). Validates before write.                                                                  |
+
+## Configuration
+
+Paths and schema location come from **`cyphra.config.ts`** or **`cyphra.json`** — see [Configuration](/configuration).
+
+## Environment
+
+**`migrate`**, **`migrate dev`**, **`push`**, and **`db pull`** require:
+
+- **`NEO4J_URI`**, **`NEO4J_USER`**, **`NEO4J_PASSWORD`**
+- Optional **`NEO4J_DATABASE`**
+
+## CLI-only install
+
+For tooling-only repos you can depend on **`@cyphra/cli`** alone:
 
 ```bash
 pnpm add -D @cyphra/cli
 ```
 
-App code usually depends on **`cyphra`** (library stack) separately — see [home / Install](/).
+Application code usually still imports **`cyphra`** or **`@cyphra/*`** for libraries.
 
-| Command                          | Description                                            |
-| -------------------------------- | ------------------------------------------------------ |
-| `cyphra init`                    | Scaffold config, schema, migrations, env example       |
-| `cyphra validate`                | Parse and validate `schema.cyphra`                     |
-| `cyphra schema print`            | Canonical pretty-print of the schema to stdout         |
-| `cyphra schema ddl`              | Print `cyphra push` DDL (constraints + indexes); no DB |
-| `cyphra generate`                | Emit `cyphra.gen.ts` (labels & relationship types)     |
-| `cyphra migrate deploy`          | Run pending migrations                                 |
-| `cyphra migrate dev`             | Same with verbose logging                              |
-| `cyphra migration:create <name>` | New `.mjs` migration                                   |
-| `cyphra push`                    | Apply constraints + `@index` range indexes (Neo4j 5+)  |
+## See also
 
-`cyphra.json` may set `schema`, `migrations`, and optional `generate` (output path; default `./cyphra.gen.ts`).
-
-`validate`, `generate`, `schema print`, and **`schema ddl`** only need the schema file (and `cyphra.json`). **`migrate`** and **`push`** require `NEO4J_URI`, `NEO4J_USER`, and `NEO4J_PASSWORD`.
+- [Getting started](/getting-started)
+- [Migrations & push](/migrations)
+- [Schema](/schema)

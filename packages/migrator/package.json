@@ -1,6 +1,6 @@
 {
   "name": "@cyphra/migrator",
-  "version": "0.0.0",
+  "version": "0.2.0",
   "description": "Versioned migrations, batch helpers, and schema push for Cyphra",
   "type": "module",
   "sideEffects": false,
@@ -25,15 +25,25 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@cyphra/core": "workspace:*",
     "@cyphra/query": "workspace:*",
-    "@cyphra/runtime": "workspace:*",
-    "@cyphra/schema": "workspace:*",
-    "neo4j-driver": "^5.27.0"
+    "@cyphra/schema": "workspace:*"
   },
   "devDependencies": {
+    "@cyphra/runtime": "workspace:*",
     "@types/node": "^22.10.2",
     "tsup": "^8.3.5",
     "typescript": "^5.7.2",
     "vitest": "^3.0.2"
+  },
+  "license": "MIT",
+  "homepage": "https://www.cyphra.dev",
+  "bugs": {
+    "url": "https://github.com/cyphra-dev/cyphra/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/cyphra-dev/cyphra.git",
+    "directory": "packages/migrator"
   }
 }

@@ -21,6 +21,8 @@
     "doc:dev": "pnpm --filter cyphra-doc dev",
     "doc:build": "pnpm --filter cyphra-doc build",
     "example:basic": "pnpm --filter cyphra-example-basic start",
+    "blog:db": "docker compose -f examples/nextjs-blog/docker-compose.yml up -d",
+    "blog:dev": "docker compose -f examples/nextjs-blog/docker-compose.yml up -d && pnpm --filter cyphra-example-nextjs-blog dev",
     "changeset": "changeset"
   },
   "devDependencies": {

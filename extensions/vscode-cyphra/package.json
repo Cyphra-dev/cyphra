@@ -1,0 +1,63 @@
+{
+  "name": "cyphra-vscode",
+  "displayName": "Cyphra",
+  "description": "Syntax highlighting for Cyphra .cyphra graph schema files.",
+  "version": "0.2.0",
+  "publisher": "Cyphra",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "keywords": [
+    "cyphra",
+    "neo4j",
+    "graph",
+    "schema",
+    "dsl",
+    "cypher"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/cyphra-dev/cyphra.git",
+    "directory": "extensions/vscode-cyphra"
+  },
+  "license": "MIT",
+  "icon": "logo@4x.png",
+  "scripts": {
+    "vscode:prepublish": "node -e \"process.exit(0)\"",
+    "package": "vsce package --no-dependencies"
+  },
+  "devDependencies": {
+    "@vscode/vsce": "^3.5.0"
+  },
+  "contributes": {
+    "languages": [
+      {
+        "id": "cyphra",
+        "aliases": [
+          "Cyphra"
+        ],
+        "extensions": [
+          ".cyphra"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "cyphra",
+        "scopeName": "source.cyphra",
+        "path": "./syntaxes/cyphra.tmLanguage.json"
+      }
+    ],
+    "iconThemes": [
+      {
+        "id": "cyphra-file-icons",
+        "label": "Cyphra",
+        "path": "./fileicons/cyphra-file-icon-theme.json"
+      }
+    ]
+  }
+}

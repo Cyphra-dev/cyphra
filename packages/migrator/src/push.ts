@@ -1,4 +1,13 @@
+import type { GraphProviderId } from "@cyphra/core";
 import type { NodeDeclaration, ScalarNodeField, SchemaDocument } from "@cyphra/schema";
+
+function assertNeo4jDdlProvider(provider: GraphProviderId): void {
+  if (provider !== "neo4j") {
+    throw new Error(
+      `Schema DDL (cyphra push / schema ddl) is not implemented for graph provider "${provider}"`,
+    );
+  }
+}
 
 function isScalarWithDecorator(
   field: { readonly kind: string; readonly decorators: readonly { readonly name: string }[] },
@@ -38,9 +47,14 @@ function idPropertyName(node: NodeDeclaration): string | undefined {
  * Relationship property uniqueness uses Neo4j 5.7+ syntax (`FOR ()-[r:TYPE]-() REQUIRE r.prop IS UNIQUE`).
  *
  * @param doc - Parsed schema AST.
+ * @param provider - Graph backend; only `"neo4j"` is supported for DDL today.
  * @returns Cypher DDL strings (Neo4j 5 syntax).
  */
-export function constraintStatementsFromSchema(doc: SchemaDocument): string[] {
+export function constraintStatementsFromSchema(
+  doc: SchemaDocument,
+  provider: GraphProviderId = "neo4j",
+): string[] {
+  assertNeo4jDdlProvider(provider);
   const statements: string[] = [];
   for (const decl of doc.declarations) {
     if (decl.kind === "Node") {
@@ -83,9 +97,14 @@ export function constraintStatementsFromSchema(doc: SchemaDocument): string[] {
  * Node indexes use `(n:Label)`; relationship indexes use `()-[r:TYPE]-()` with the Neo4j type from `type "…"`.
  *
  * @param doc - Parsed schema AST.
+ * @param provider - Graph backend; only `"neo4j"` is supported for DDL today.
  * @returns Cypher DDL strings (Neo4j 5+ range index syntax).
  */
-export function indexStatementsFromSchema(doc: SchemaDocument): string[] {
+export function indexStatementsFromSchema(
+  doc: SchemaDocument,
+  provider: GraphProviderId = "neo4j",
+): string[] {
+  assertNeo4jDdlProvider(provider);
   const statements: string[] = [];
   for (const decl of doc.declarations) {
     if (decl.kind === "Node") {

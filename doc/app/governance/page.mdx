@@ -1,0 +1,41 @@
+---
+title: Governance & versions
+description: Neo4j compatibility expectations, semver, and how breaking API changes are handled.
+---
+
+# Governance & versions
+
+## Supported Neo4j
+
+Cyphra is developed and tested primarily against **Neo4j 5.x** (Bolt, Cypher 5). Older versions may work for subsets of the CLI and client but are **not** guaranteed.
+
+**Neo4j Aura** is supported as long as Bolt access and supported Cypher features match self-hosted 5.x for the commands you use. Always verify **`SHOW CONSTRAINTS` / `SHOW INDEXES`** behavior in your target environment when using **`cyphra db pull`**.
+
+## Semver
+
+Public APIs under **`cyphra`** and **`@cyphra/*`** follow **semantic versioning**. Minor releases may add optional fields and new helpers; major releases may remove or rename stable exports.
+
+## Deprecations
+
+Breaking changes should ship with:
+
+- A **deprecation** period when feasible (runtime warnings or TypeScript **`@deprecated`**).
+- **Changelog** entries under the monorepo release notes.
+
+## Codemods
+
+For wide renames (for example client option reshaping), the project may publish **codemods** or documented find-replace recipes alongside major bumps.
+
+## Feature matrix (summary)
+
+| Feature | Minimum Neo4j | Notes |
+| ------- | -------------- | ----- |
+| **`cyphra push`** (constraints, range indexes) | 5+ | Aligns with `IF NOT EXISTS` DDL |
+| **`cyphra db pull`** (`SHOW …`) | 5+ recommended | Falls back with stderr warnings if a catalog query fails |
+| Vector / **`SEARCH`** | Edition-dependent | Use raw **`cypher`** until DSL catches up |
+
+## See also
+
+- [Supported databases](/supported-databases)
+- [Cypher coverage](/cypher-coverage)
+- [Production](/production)

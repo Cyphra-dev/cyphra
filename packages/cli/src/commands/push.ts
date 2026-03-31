@@ -1,12 +1,11 @@
-import { readFile } from "node:fs/promises";
 import {
   applyConstraintStatements,
   constraintStatementsFromSchema,
   indexStatementsFromSchema,
 } from "@cyphra/migrator";
-import { parseSchema } from "@cyphra/schema";
-import { loadConfig } from "../config.js";
+import { loadConfig } from "@cyphra/config";
 import { clientFromEnv } from "../clientFromEnv.js";
+import { parseSchemaAt, readSchemaFileUtf8 } from "../schemaSource.js";
 
 /**
  * Parse `schema.cyphra` and apply generated constraints.
@@ -15,10 +14,10 @@ import { clientFromEnv } from "../clientFromEnv.js";
  */
 export async function runPush(cwd: string): Promise<void> {
   const config = await loadConfig(cwd);
-  const source = await readFile(config.schema, "utf8");
-  const doc = parseSchema(source);
-  const constraints = constraintStatementsFromSchema(doc);
-  const indexes = indexStatementsFromSchema(doc);
+  const { rel, raw } = await readSchemaFileUtf8(cwd, config);
+  const doc = parseSchemaAt(rel, raw);
+  const constraints = constraintStatementsFromSchema(doc, config.provider);
+  const indexes = indexStatementsFromSchema(doc, config.provider);
   const statements = [...constraints, ...indexes];
   const client = clientFromEnv(false);
   try {
