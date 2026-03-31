@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://www.cyphra.dev/schemas/cyphra-config.json",
+  "title": "Cyphra project configuration",
+  "description": "Paths and provider for the Cyphra CLI and libraries. See https://www.cyphra.dev/configuration",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["schema", "migrations"],
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "JSON Schema URL for editor validation (optional)."
+    },
+    "provider": {
+      "type": "string",
+      "enum": ["neo4j"],
+      "description": "Graph database provider (only neo4j is supported today)."
+    },
+    "schema": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Path to the .cyphra schema file, relative to cyphra.json."
+    },
+    "migrations": {
+      "description": "Path to the migrations directory (string), or Prisma-style { \"path\": \"...\" }, relative to cyphra.json.",
+      "oneOf": [
+        {
+          "type": "string",
+          "minLength": 1
+        },
+        {
+          "type": "object",
+          "required": ["path"],
+          "properties": {
+            "path": { "type": "string", "minLength": 1 }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "datasource": {
+      "type": "object",
+      "description": "Optional Prisma-style datasource block (provider and optional connection hints).",
+      "properties": {
+        "provider": { "type": "string", "enum": ["neo4j"] },
+        "url": { "type": "string" },
+        "uri": { "type": "string" },
+        "user": { "type": "string" },
+        "password": { "type": "string" },
+        "database": { "type": "string" }
+      },
+      "required": ["provider"],
+      "additionalProperties": true
+    }
+  }
+}

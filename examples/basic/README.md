@@ -1,35 +1,41 @@
-# Cyphra example — basic
+# Basic Cyphra example
 
-Small Node script that depends on the **`cyphra`** package (single import surface; same APIs as the scoped `@cyphra/*` packages):
+Small **Node.js** script that shows how to:
 
-1. Parses `schema.cyphra` and prints a canonical copy.
-2. Builds parameterized Cypher with the **`cypher`** template tag.
-3. Builds the same shape with **`SelectQuery`**.
-4. Prints **`schemaIntegrationHints`** and offline **DDL** lines (constraints + range indexes) as produced by `cyphra push`.
-5. If `NEO4J_*` env vars are set, runs `RETURN 1` via **`CyphraClient.queryRecords`**.
+1. Parse a **`.cyphra`** schema and print it canonically
+2. Build **parameterized Cypher** with the **`cypher`** tag
+3. Build the same idea with **`SelectQuery`**
+4. Print schema integration hints and **DDL** lines (what `cyphra push` would apply)
+5. Optionally run **`RETURN 1`** against Neo4j when **`NEO4J_*`** env vars are set
 
-## Run
+**Docs:** [cyphra.dev](https://www.cyphra.dev) · **Toolkit:** [`cyphra`](https://www.npmjs.com/package/cyphra) on npm
 
-From the **repository root** (after `pnpm install`):
+## Run (from a clone of the Cyphra repo)
+
+This folder uses the workspace package **`cyphra`**. From the **repository root**:
 
 ```bash
+pnpm install
+pnpm build
 pnpm example:basic
 ```
 
-Or from this folder:
+Or from **`examples/basic`**:
 
 ```bash
 pnpm start
 ```
 
-## Neo4j (optional)
+Build **`packages/*`** once so workspace dependencies expose `dist/`.
 
-Copy `.env.example` to `.env` and fill values, or export variables. Without them, the demo stops after printing compiled Cypher.
+### Neo4j (optional)
 
-## Prerequisite
+Copy **`.env.example`** to **`.env`** or export **`NEO4J_URI`**, **`NEO4J_USER`**, **`NEO4J_PASSWORD`**. Without them, the script stops after printing compiled Cypher.
 
-Workspace packages must be built once so `dist/` exists:
+## Run your own copy with npm
 
-```bash
-pnpm -r --filter './packages/*' run build
-```
+Use **`npm install cyphra`**, copy **`schema.cyphra`** and the logic from **`src/main.ts`**, and run with **`tsx`** or compile with **TypeScript**. The APIs are the same as in this example.
+
+## License
+
+MIT (same as the Cyphra monorepo).

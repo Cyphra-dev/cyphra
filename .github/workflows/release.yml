@@ -15,8 +15,13 @@ permissions:
   id-token: write
 
 jobs:
+  quality:
+    uses: ./.github/workflows/quality-reusable.yml
+
   release:
+    needs: quality
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
         with:
@@ -34,19 +39,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build
-        run: pnpm exec pnpm -r --filter './packages/*' run build
-
-      - name: Lint
-        run: pnpm lint
-
-      - name: Format check
-        run: pnpm format:check
-
-      - name: Typecheck
-        run: pnpm typecheck
-
-      - name: Test
-        run: pnpm test
+        run: pnpm -r --filter './packages/*' run build
 
       - name: Create release PR or publish
         uses: changesets/action@v1
@@ -55,7 +48,6 @@ jobs:
           publish: pnpm changeset publish
           commit: "chore: version packages"
           title: "chore: version packages"
-          # Org policy may forbid the default GITHUB_TOKEN from opening PRs; use a PAT when needed.
           github-token: ${{ secrets.CHANGESET_RELEASE_PAT || github.token }}
         env:
           GITHUB_TOKEN: ${{ secrets.CHANGESET_RELEASE_PAT || github.token }}

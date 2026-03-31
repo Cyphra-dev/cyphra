@@ -6,7 +6,7 @@ We support the latest published minor release line of Cyphra packages on npm.
 
 ## Reporting a vulnerability
 
-Please report security issues **privately** via [GitHub Security Advisories](https://github.com/cyphra/cyphra/security/advisories/new) for this repository, or contact the maintainers with a clear subject line.
+Please report security issues **privately** via [GitHub Security Advisories](https://github.com/cyphra-dev/cyphra/security/advisories/new) for this repository, or contact the maintainers with a clear subject line.
 
 Include:
 

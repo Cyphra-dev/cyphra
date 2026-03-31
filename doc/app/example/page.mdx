@@ -1,19 +1,24 @@
-# Example app
+---
+title: Example project
+description: Run the monorepo basic example—schema, queries, DDL preview, and optional live Neo4j.
+---
 
-The repo includes a **runnable Node example** at [`examples/basic/`](https://github.com/cyphra/cyphra/tree/main/examples/basic) in the GitHub tree.
+# Example project
+
+The Cyphra monorepo ships a **minimal Node.js example** at [`examples/basic/`](https://github.com/cyphra-dev/cyphra/tree/main/examples/basic) on GitHub.
 
 It demonstrates:
 
-- Parsing and printing a `.cyphra` schema
-- Parameterized Cypher with the **`cypher`** tag and **`SelectQuery`**
-- Offline **DDL preview** for `cyphra push` — constraints and range indexes
-- Optional **live** `RETURN 1` via **`CyphraClient.queryRecords`** when `NEO4J_*` env vars are set
+- Parsing and printing a **`.cyphra`** schema
+- **Parameterized Cypher** with the **`cypher`** tag and **`SelectQuery`**
+- Offline **DDL preview** (constraints + range indexes) aligned with **`cyphra push`**
+- Optional **live** `RETURN 1` via **`CyphraClient.queryRecords`** when **`NEO4J_*`** env vars are set
 
-The example depends on the **`cyphra`** meta-package only (`import { … } from "cyphra"`).
+The example depends only on the **`cyphra`** meta-package (`import { … } from "cyphra"`).
 
 ## Run locally
 
-From the monorepo root:
+From the repository root:
 
 ```bash
 pnpm install
@@ -21,4 +26,10 @@ pnpm build
 pnpm example:basic
 ```
 
-See the example [`README.md`](https://github.com/cyphra/cyphra/blob/main/examples/basic/README.md) for details and `.env` setup.
+See [`examples/basic/README.md`](https://github.com/cyphra-dev/cyphra/blob/main/examples/basic/README.md) for **`.env`** setup and details.
+
+## Related docs
+
+- [Getting started](/getting-started) — greenfield setup with **`cyphra init`**
+- [Queries](/queries) — templates and builder
+- [Cyphra Client](/runtime) — `CyphraClient` options

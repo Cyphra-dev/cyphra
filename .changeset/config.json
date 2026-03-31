@@ -6,7 +6,11 @@
     [
       "cyphra",
       "@cyphra/cli",
+      "@cyphra/config",
+      "@cyphra/core",
       "@cyphra/migrator",
+      "@cyphra/orm",
+      "@cyphra/provider-neo4j",
       "@cyphra/query",
       "@cyphra/runtime",
       "@cyphra/schema"

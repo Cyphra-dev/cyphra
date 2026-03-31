@@ -1,17 +1,30 @@
 # @cyphra/schema
 
-Parser and AST types for the Cyphra `.cyphra` schema DSL.
+Parser, validator, and printer for **`.cyphra`** schema files (node models, relationships, decorators).
+
+## Install
+
+```bash
+npm install @cyphra/schema
+```
 
 ## Usage
 
 ```ts
-import { parseSchema } from "@cyphra/schema";
+import { parseSchema, validateSchema, printSchemaDocument } from "@cyphra/schema";
 
 const doc = parseSchema(`
   node User {
     id String @id @default(cuid())
   }
 `);
+validateSchema(doc);
 ```
 
-See the main Cyphra documentation site for the full grammar.
+## Documentation
+
+**[cyphra.dev — Schema](https://www.cyphra.dev/schema)**
+
+## License
+
+MIT

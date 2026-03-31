@@ -1,0 +1,56 @@
+---
+title: Introspection (existing database)
+description: Use cyphra db pull to draft a .cyphra schema from a live Neo4j instance, then refine it before ORM and push.
+---
+
+# Introspection (existing database)
+
+Neo4j is **schema-optional**: a production graph may already have labels, relationship types, constraints, and indexes before you adopt Cyphra. **`cyphra db pull`** (or **`cyphra db-pull`**) introspects the database and writes a **draft** **`schema.cyphra`** file configured in **`cyphra.json`** or **`cyphra.config.ts`**.
+
+## Commands
+
+```bash
+npx cyphra db pull --print
+```
+
+Prints the draft to stdout. To write the configured schema path:
+
+```bash
+npx cyphra db pull
+```
+
+If the schema file already exists, the command fails unless you pass **`--force`**.
+
+Requires **`NEO4J_URI`**, **`NEO4J_USER`**, and **`NEO4J_PASSWORD`** (same as **`cyphra push`**).
+
+### Property key sampling
+
+```bash
+npx cyphra db pull --print --sample-size 50
+```
+
+For each label, Cyphra scans up to **`n`** nodes, collects distinct **`keys(n)`**, and prints them as **`# inferred keys`** comments before the empty **`node`** block. Heterogeneous graphs can still omit keys that only appear outside the sample; treat output as a hint, not ground truth.
+
+## What is generated
+
+The draft includes:
+
+- **`node Label { }`** blocks for each label returned by **`CALL db.labels()`** (labels that are not valid Cyphra identifiers are skipped with a comment).
+- A commented list of **relationship types** from **`CALL db.relationshipTypes()`** — you still model **`relationship`** blocks with explicit **from** / **to** labels in `.cyphra`.
+- Commented rows from **`SHOW CONSTRAINTS`** and **`SHOW INDEXES`** when the server supports them (failures are skipped with a stderr warning).
+
+**Property types** (String vs Int, …) are **not** inferred automatically; **`--sample-size`** only lists key names. **Relationship wiring** still comes from your **`relationship`** blocks. Treat the file as a **hypothesis** and refine it by hand or with **`cyphra schema add`**.
+
+## Workflow
+
+1. Point config at your repo paths and connect env vars to the target database.
+2. Run **`cyphra db pull --print`** and review output.
+3. Add **`@id`**, **`@unique`**, **`@index`**, fields, and **`relationship`** blocks to match your real graph.
+4. Run **`cyphra validate`**.
+5. Use **`cyphra push`** only when the schema matches what you want enforced going forward.
+
+## See also
+
+- [Schema](/schema) — modeling rules
+- [CLI reference](/cli) — all commands
+- [Graph ORM](/graph-orm) — CRUD and traversals after the schema is trustworthy

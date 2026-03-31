@@ -8,7 +8,22 @@ export default tseslint.config(
   ...tseslint.configs.recommended,
   eslintConfigPrettier,
   {
-    ignores: ["**/node_modules/**", "**/dist/**", "doc/**", "packages/schema/src/generated/**"],
+    ignores: [
+      "**/node_modules/**",
+      "**/dist/**",
+      "tmp/**",
+      "doc/**",
+      "packages/schema/src/generated/**",
+      "examples/nextjs-blog/**",
+    ],
+  },
+  {
+    files: ["**/*.mjs"],
+    languageOptions: {
+      globals: {
+        process: "readonly",
+      },
+    },
   },
   {
     files: ["**/*.ts"],

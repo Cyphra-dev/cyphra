@@ -1,6 +1,6 @@
 {
   "name": "@cyphra/query",
-  "version": "0.0.0",
+  "version": "0.2.0",
   "description": "Cypher-first query utilities: template tag and minimal fluent builder for Cyphra",
   "type": "module",
   "sideEffects": false,
@@ -29,5 +29,15 @@
     "tsup": "^8.3.5",
     "typescript": "^5.7.2",
     "vitest": "^3.0.2"
+  },
+  "license": "MIT",
+  "homepage": "https://www.cyphra.dev",
+  "bugs": {
+    "url": "https://github.com/cyphra-dev/cyphra/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/cyphra-dev/cyphra.git",
+    "directory": "packages/query"
   }
 }

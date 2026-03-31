@@ -1,0 +1,46 @@
+---
+title: Graph ORM
+description: createNodeCrud, related-node compilation, and honest limits compared to relational ORMs.
+---
+
+# Graph ORM
+
+Cyphra’s **`@cyphra/orm`** package (re-exported from **`cyphra`**, also **`import { orm } from "cyphra"`** or **`from "cyphra/orm"`**) builds helpers from a **parsed** **`.cyphra`** document and **`CyphraClient`**. It is **not** a hidden query layer: everything compiles to parameterized Cypher you can log, test, and **`EXPLAIN`**.
+
+## Schema client (Prisma-like)
+
+**`createSchemaClient(client, schemaDocument)`** returns an object with one delegate per **`node`** in the schema (keys like **`posts`** for **`Post`**). Each delegate supports **`create({ data })`** (including nested **`author: { create: { … } }`** or **`connect`** on OUT to-one relations), **`findUnique`**, **`findFirst`**, **`findMany`** (with optional **`include`**, **`orderBy`**, **`take` / `skip`**), **`update`**, **`delete`**.
+
+Defaults from the schema (**`@default(cuid())`**, **`@default(now())`** on **`DateTime`**) are applied on **`create`** where implemented.
+
+## CRUD per node label
+
+Use **`createNodeCrud(client, schemaDocument, "Label")`** for **`findUnique`** (by **`@id`** or **`@unique`** fields only), **`findMany`**, **`create`**, **`update`**, and **`delete`**. Unknown labels or invalid **`where`** shapes fail fast with clear errors.
+
+## Batched writes
+
+**`runCompiledBatchWrite(client, steps)`** runs an array of **`CompiledCypher`** inside one **`withWriteTransaction`** — useful for migrations and idempotent **`MERGE`** sequences. Pair with **`compileUnwindMergeSet`** from **`@cyphra/query`** for bulk upserts from a rows parameter.
+
+## Traversals
+
+**`compileRelatedNodes`** builds a **`MATCH`** from a start node (by id) across a named relationship type and target label, with an optional **max depth** and **direction**. Use it to avoid ad-hoc string Cypher for common “load neighbors” paths while keeping a single round-trip strategy explicit.
+
+**`queryRelatedNodes(client, { … })`** runs that compile helper and returns **`queryRecords`** rows.
+
+**`compileShortestPath`** / **`queryShortestPath`** wrap Neo4j’s **`shortestPath`** with two anchored endpoints and a bounded var-length relationship pattern (see the [Cypher manual](https://neo4j.com/docs/cypher-manual/current/functions/path/#functions-shortestpath)).
+
+## Integration tests (Testcontainers)
+
+The **`@cyphra/provider-neo4j`** package includes optional tests that start **`neo4j:5-community`** via **Testcontainers** (requires **Docker**). Set **`CYPHRA_SKIP_TESTCONTAINERS=1`** to skip them in environments without a daemon.
+
+## Cycles, cardinality, and N+1
+
+- **Cycles** in the graph are normal; Cyphra does not silently deduplicate paths. Prefer depth limits and application-level merging when you need stable trees.
+- **TypeScript** types reflect the schema’s optional/required fields, but **Neo4j** only enforces invariants where you have **constraints** — do not treat types as stronger than the database.
+- For hot paths, prefer **one** aggregated Cypher (or the builder / **`cypher`**) over repeated small CRUD calls — see [Queries](/queries).
+
+## See also
+
+- [Cyphra Client](/runtime) — sessions, transactions, **`runCompiled`**
+- [Introspection](/introspection) — starting from an existing database
+- [Cypher coverage](/cypher-coverage) — DSL vs manual Cypher roadmap

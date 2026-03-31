@@ -1,8 +1,33 @@
-# Schema DSL
+---
+title: Schema
+description: The .cyphra schema language—nodes, relationships, decorators, and how they map to Neo4j 5+ constraints and indexes.
+---
 
-Use **`import { parseSchema, parseSchemaFile, printSchemaDocument, … } from "cyphra"`** (or **`@cyphra/schema`**) for programmatic APIs. **`parseSchemaFile(path)`** loads a UTF-8 `.cyphra` file from disk (Node.js).
+# Schema (data model)
 
-Define nodes, relationships, and decorators in `schema.cyphra`:
+The **Cyphra schema** is a small DSL stored in **`.cyphra`** files. It describes **node labels**, **relationship types**, **properties**, and **metadata** (`@id`, `@unique`, `@index`, …) that Cyphra turns into **Neo4j 5+** uniqueness constraints and **range** indexes via **`cyphra push`** and related APIs.
+
+Cyphra is **not** a separate storage engine: the `.cyphra` file is the **authoritative model in your repo**; Neo4j remains the database.
+
+For graphs that already exist in Neo4j, start from **[Introspection](/introspection)** (**`cyphra db pull`**) and refine the draft before relying on **`push`** or the ORM.
+
+## API imports
+
+Use the meta-package or the schema package directly:
+
+```ts
+import { parseSchema, parseSchemaFile, printSchemaDocument, validateSchema } from "cyphra";
+// or: from "@cyphra/schema"
+```
+
+- **`parseSchema(source)`** — parse a string.
+- **`parseSchemaFile(path)`** — read a UTF-8 file from disk (Node).
+- **`printSchemaDocument(ast)`** — canonical text for diffs (comments are **not** preserved).
+- **`validateSchema`** — validation helpers over the AST.
+
+## Node models
+
+Declare labels and fields with the **`node`** keyword:
 
 ```cyphra
 node User {
@@ -10,13 +35,17 @@ node User {
   email String @unique
   name  String @index
 }
+```
 
-node Post {
-  id     String @id
-  title  String
-  author User? @relationship(type: "AUTHORED", direction: IN)
-}
+- **Types** in V1 are mainly **`String`** (with **`DateTime`** used where shown in examples for temporal fields).
+- **`User?`** on a field refers to another node model (optional relationship endpoint).
+- **`@relationship(type: "…", direction: IN | OUT)`** on a property documents the Neo4j relationship pattern for that edge (used for hints and codegen, not a separate physical table).
 
+## Relationship models
+
+Rich relationships (properties on the edge) use a **`relationship`** block:
+
+```cyphra
 relationship Follows {
   type "FOLLOWS"
   from User
@@ -26,6 +55,41 @@ relationship Follows {
 }
 ```
 
-**Decorators (V1):** `@id`, `@unique`, `@index` (Neo4j 5+ **range** index: on nodes via `(n:Label)`, on rich relationships via `()-[r:TYPE]-()`), `@default(…)`, `@relationship(…)`. On **nodes**, you cannot combine `@index` with `@id` or `@unique` on the same field (those constraints already imply an index). On **relationship** models, `@unique` maps to a **relationship property uniqueness** constraint (Neo4j **5.7+**); `@id` is not allowed on relationship fields.
+- **`type`** is the Neo4j relationship type string.
+- **`from` / `to`** reference **`node`** models.
+- Property decorators follow the same rules as on nodes, with **relationship-specific** restrictions below.
 
-The parser produces an AST used by `cyphra push`, `cyphra generate`, and programmatic APIs. Use **`printSchemaDocument`** from `@cyphra/schema` (or **`cyphra schema print`**) to emit a canonical `.cyphra` text for diffs and reviews—comments are not preserved.
+## Decorators (V1)
+
+| Decorator              | On nodes                                              | On relationship properties | Effect (Neo4j 5+)                               |
+| ---------------------- | ----------------------------------------------------- | -------------------------- | ----------------------------------------------- |
+| **`@id`**              | Yes                                                   | No                         | Uniqueness constraint for the field (identity). |
+| **`@unique`**          | Yes                                                   | Yes (5.7+ for rel props)   | Uniqueness constraint.                          |
+| **`@index`**           | Yes (not combined with `@id`/`@unique` on same field) | Yes                        | **Range** index.                                |
+| **`@default(…)`**      | Yes                                                   | As applicable              | Documented default; codegen / migration hints.  |
+| **`@relationship(…)`** | On edge-typed fields                                  | —                          | Metadata for graph shape.                       |
+
+**Rules:**
+
+- On **nodes**, do not combine **`@index`** with **`@id`** or **`@unique`** on the **same** field—those constraints already imply indexing.
+- On **relationship** models, **`@id`** is **not** allowed on fields; **`@unique`** maps to **relationship property uniqueness** constraints (**Neo4j 5.7+**).
+
+Exact DDL is visible with **`cyphra schema ddl`** before applying **`cyphra push`**.
+
+## Single source of truth
+
+- The `.cyphra` file is the **declarative** contract your team reviews in PRs.
+- **`cyphra schema print`** emits a **canonical** document for stable diffs.
+
+## Parser and tooling
+
+The grammar is implemented with **Peggy**; the AST drives:
+
+- **`cyphra validate`**, **`cyphra schema print`**, **`cyphra schema ddl`**
+- **`cyphra push`** / **`@cyphra/migrator`** DDL helpers
+
+## See also
+
+- [Migrations & push](/migrations) — applying constraints and indexes
+- [Queries](/queries) — parameter-safe template and builder patterns
+- [CLI reference](/cli) — schema subcommands

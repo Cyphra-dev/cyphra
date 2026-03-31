@@ -1,41 +1,85 @@
-# Runtime
+---
+title: Cyphra Client
+sidebarTitle: Cyphra Client
+description: CyphraClient wraps neo4j-driver—sessions, read/write transactions, and running compiled Cypher safely.
+---
 
-**`@cyphra/runtime`** wraps the official Neo4j JavaScript driver with Cyphra’s **compiled Cypher** types (`CompiledCypher` from `@cyphra/query`).
+# Cyphra Client
 
-Prefer **`import { CyphraClient, … } from "cyphra"`** if you use the [`cyphra`](https://www.npmjs.com/package/cyphra) meta-package ([install on the home page](/)); subpackage imports are equivalent.
+**`CyphraClient`** (`@cyphra/runtime`) is a thin facade over the official **[neo4j-driver](https://www.npmjs.com/package/neo4j-driver)**. It connects Cyphra’s **compiled queries** (`CompiledCypher` from **`cypher`** or **`SelectQuery.toCypher()`**) to **`Session`** and **`ManagedTransaction`** APIs, with helpers to map results to **plain objects**.
 
-## Client
+Prefer **`import { CyphraClient, … } from "cyphra"`** when you use the meta-package; **`@cyphra/runtime`** is equivalent.
+
+## Construction
+
+Prefer an explicit **`CyphraNeo4j`** adapter (same options as below, plus an optional injected **`Driver`**):
 
 ```ts
-import { cypher } from "@cyphra/query";
-import { CyphraClient } from "@cyphra/runtime";
+import { CyphraClient, CyphraNeo4j } from "cyphra";
 
+const client = new CyphraClient({
+  adapter: new CyphraNeo4j({
+    uri: process.env.NEO4J_URI!,
+    user: process.env.NEO4J_USER!,
+    password: process.env.NEO4J_PASSWORD!,
+    database: "neo4j",
+  }),
+  debug: false, // logs Cypher text + parameter keys only (never values)
+  onQuery: ({ cypher, paramKeys, durationMs }) => {
+    // optional: metrics / tracing — values are never passed here
+  },
+});
+```
+
+Legacy shorthand (still supported):
+
+```ts
 const client = new CyphraClient({
   uri: process.env.NEO4J_URI!,
   user: process.env.NEO4J_USER!,
   password: process.env.NEO4J_PASSWORD!,
-  database: "neo4j", // optional, Neo4j 4+
-  debug: false, // when true: logs Cypher text and parameter keys (never values)
+  database: "neo4j",
+  debug: false,
+  driverConfig: undefined,
 });
+```
+
+| Option                  | Purpose                                                                                                                |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| **`adapter`**           | **`CyphraNeo4j`** instance (recommended).                                                                              |
+| **`uri`**               | Bolt / Neo4j URI (`neo4j://`, `bolt://`, `neo4j+s://`, …) when not using **`adapter`**.                                |
+| **`user` / `password`** | Passed to **`neo4j.auth.basic`**.                                                                                      |
+| **`database`**          | Neo4j 4+ database name for **`session({ database })`**.                                                                |
+| **`debug`**             | When **`true`**, logs compiled Cypher and **parameter key names** only.                                                |
+| **`onQuery`**           | Called after each **`runCompiled`** / **`runCompiledTx`** with **Cypher text**, **param keys**, and **duration** (ms). |
+| **`driverConfig`**      | **`Config`** forwarded to **`neo4j.driver`** (pool size, `connectionAcquisitionTimeout`, `logging`, …).                |
+
+**`rawDriver`** exposes the underlying **`Driver`** for advanced scenarios.
+
+Always call **`await client.close()`** on shutdown (graceful pool teardown).
+
+## Sessions
+
+- **`session()`** — you **must** **`close()`** the session when done.
+- **`withSession(fn)`** — preferred; session is **always** closed after `fn` resolves or throws.
+
+```ts
+import { cypher } from "cyphra";
 
 await client.withSession(async (session) => {
   await client.runCompiled(session, cypher`RETURN 1 AS n`);
 });
-
-await client.close();
 ```
 
-Optional **`driverConfig`** is passed through as the third argument to `neo4j.driver` (pool size, `connectionAcquisitionTimeout`, `logging`, etc.). Types: import **`Config`** from `@cyphra/runtime` or `neo4j-driver`.
+## Transactions
 
-## Sessions and transactions
+- **`withReadTransaction(fn)`** — **`session.executeRead`**.
+- **`withWriteTransaction(fn)`** — **`session.executeWrite`**.
 
-- **`session()`** — you own `close()`; prefer **`withSession(fn)`** so the session is always closed.
-- **`withReadTransaction`** / **`withWriteTransaction`** — delegate to the driver’s `executeRead` / `executeWrite` with a managed transaction.
-
-Inside a transaction callback, use **`runCompiledTx`**, **`runCypherTx`**, **`queryRecordsTx`**, **`queryRecordTx`**, **`selectRecordsTx`**, or **`selectRecordTx`** — same behavior as the `session` variants, but routed through `tx.run` (required for writes and retry semantics).
+Inside the callback, use **`*Tx`** methods so work runs on the **`ManagedTransaction`** (`tx.run`, retries, etc.):
 
 ```ts
-import { cypher } from "@cyphra/query";
+import { cypher } from "cyphra";
 
 await client.withWriteTransaction(async (tx) => {
   await client.runCompiledTx(tx, cypher`CREATE (n:Tmp { id: ${id} })`);
@@ -44,16 +88,25 @@ await client.withWriteTransaction(async (tx) => {
 
 ## Executing queries
 
-- **`runCompiled(session, compiled)`** — run `CompiledCypher` from `cypher\`…\``or`SelectQuery.toCypher()`.
-- **`runCypher(session, strings, ...values)`** — tagged-template style on the client (same parameter rules as `compileCypher`).
-- **`queryRecords`** / **`queryRecord`** — `runCompiled` plus plain row objects (`record.toObject()`).
-- **`selectRecords`** / **`selectRecord`** — same for a `SelectQuery`.
+| Session API                              | Transaction API                              | Description                                              |
+| ---------------------------------------- | -------------------------------------------- | -------------------------------------------------------- |
+| **`runCompiled`**                        | **`runCompiledTx`**                          | Run **`CompiledCypher`**.                                |
+| **`runCypher`**                          | **`runCypherTx`**                            | Tagged template → compile → run.                         |
+| **`queryRecords`** / **`queryRecord`**   | **`queryRecordsTx`** / **`queryRecordTx`**   | Same + **`toPlainRecords` / `toPlainRecord`**.           |
+| **`selectRecords`** / **`selectRecord`** | **`selectRecordsTx`** / **`selectRecordTx`** | **`SelectQuery`** → **`toCypher()`** then same as above. |
 
-Each of the above has a **`*Tx(tx, …)`** counterpart for use inside **`withWriteTransaction`** / **`withReadTransaction`**.
+Lower-level **`toPlainRecords`** / **`toPlainRecord`** are exported if you call **`session.run`** yourself.
 
-Lower-level helpers **`toPlainRecords`** and **`toPlainRecord`** map a driver `Result` (or compatible) to plain objects if you call `session.run` yourself.
+## TypeScript and Neo4j types
+
+Cyphra does **not** map Neo4j temporal/spatial types to custom classes in the query layer—what you get follows **`neo4j-driver`** and your **`toPlainRecord(s)`** usage. Shape results explicitly in application code where needed.
+
+## Deployment
+
+**`CyphraClient`** works in typical Node servers, workers, and many serverless environments where **long-lived drivers** are allowed. For **per-invocation** serverless, prefer **one driver per container reuse** pattern or connection pooling guidance from Neo4j—Cyphra does not add its own pool beyond the driver’s.
 
 ## See also
 
-- [Queries](/queries) — `cypher` tag and `SelectQuery` builder
-- [Example app](/example) — optional live round-trip with `NEO4J_*` env vars
+- [Queries](/queries) — building **`CompiledCypher`**
+- [Supported databases](/supported-databases) — Bolt / Aura
+- [Configuration](/configuration) — env vars

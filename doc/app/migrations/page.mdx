@@ -1,6 +1,24 @@
-# Migrations
+---
+title: Migrations & push
+description: Versioned migrations with defineMigration, cyphra push for schema DDL, and __CyphraMigration tracking in Neo4j.
+---
 
-Migrations are ESM modules using `defineMigration`:
+# Migrations & push
+
+Cyphra separates two complementary ideas:
+
+1. **`cyphra push`** — **declarative** structure from your **`.cyphra`** file: **uniqueness constraints** and **range indexes** (`IF NOT EXISTS` where applicable). This is the main way the **graph schema** becomes **enforced** in Neo4j (alongside your application logic). Run it whenever the schema’s **`@id`**, **`@unique`**, or **`@index`** decorators change.
+2. **`cyphra migrate`** — **imperative**, **versioned** ESM modules for data backfills, graph refactors, and anything that does not belong in the static schema→DDL mapping.
+
+Both use the same **Neo4j** connection (**`NEO4J_URI`**, **`NEO4J_USER`**, **`NEO4J_PASSWORD`**) and the same project config (**`cyphra.config.ts`** or **`cyphra.json`**). Typical flow: edit **`schema.cyphra`** → **`cyphra validate`** / **`cyphra schema ddl`** (preview) → **`cyphra push`** → optional **`cyphra migrate deploy`** for data steps.
+
+## Data migrations (graph refactors)
+
+Beyond **DDL**, use versioned migrations for **label splits**, **relationship renames**, **property backfills**, and **batched** updates. Prefer **`db.runInTransactionBatches`** with **`CALL { … } IN TRANSACTIONS`** patterns for large graphs. Dry-run critical scripts against a copy of production data when possible.
+
+## Versioned migrations
+
+Define migrations with **`defineMigration`**:
 
 ```js
 import { defineMigration } from "cyphra";
@@ -14,14 +32,58 @@ export default defineMigration({
 });
 ```
 
-Applied migrations are stored as:
+- **`name`** must be **stable** (used as the identity key in the graph).
+- **`db.run`** — tagged template; values are **parameters**, same rules as **`cypher`**.
+- **`db.runInTransactionBatches({ inner, batchSize, params })`** — Neo4j 5+ **`CALL { … } IN TRANSACTIONS OF n ROWS`**; **`inner`** should usually batch with **`LIMIT` / `WITH`**.
+- **`db.migrate.renameLabel`**, **`db.migrate.renameProperty`** — validated identifier renames.
+
+### Tracking
+
+Applied migrations are recorded as nodes:
 
 ```cypher
 (:__CyphraMigration { name, appliedAt, checksum })
 ```
 
-Use `cyphra migrate deploy` after setting `NEO4J_*` env vars.
+**`cyphra migrate deploy`** applies pending files; **`cyphra migrate dev`** is the same with more verbose logging. If a **`.mjs`** file fails to **load** (syntax error, missing dependency) or does not **export** a `defineMigration` default, the CLI error names the file and, for load failures, includes **`Caused by:`** details from Node.
 
-`cyphra push` (and `@cyphra/migrator`’s `constraintStatementsFromSchema` / `indexStatementsFromSchema`) emits **node** uniqueness constraints and **relationship** property uniqueness for `@unique` on `relationship { … }` fields (Neo4j **5.7+**).
+Create a new file:
 
-For Neo4j 5+, **`db.runInTransactionBatches({ inner, batchSize, params })`** wraps `inner` in `CALL { … } IN TRANSACTIONS OF … ROWS` so long-running writes commit in chunks (your `inner` query should typically batch rows with `LIMIT` / `WITH`).
+```bash
+npx cyphra migration:create <name>
+```
+
+The **`<name>`** becomes the file stem (`<name>.mjs`) and the migration’s **`name`** field. It must contain at least one letter or digit; other characters are replaced with **`_`**. **`cyphra migration:create`** refuses to overwrite an existing file with the same stem.
+
+## Schema push (DDL)
+
+**`cyphra push`** (and **`@cyphra/migrator`** helpers such as **`constraintStatementsFromSchema`** / **`indexStatementsFromSchema`**) emits:
+
+- **Node** label constraints for **`@id`** / **`@unique`**.
+- **Range indexes** for **`@index`** on nodes and on **relationship** properties in **`relationship { … }`** blocks.
+- **Relationship property uniqueness** for **`@unique`** on relationship fields (**Neo4j 5.7+**).
+
+Preview without a database:
+
+```bash
+npx cyphra schema ddl
+```
+
+If the database rejects a DDL line during **`cyphra push`**, the thrown error includes a **preview of that Cypher** (truncated when very long). The underlying driver error is preserved as **`cause`** where the runtime supports it. The **`cyphra`** CLI prints **`Caused by:`** lines for nested errors so the driver message is visible without losing the Cyphra-level context.
+
+Migration failures follow the same pattern, for example **`Migration "add_users" failed during up()`** (your file stem appears in the message), or an error if recording on **`__CyphraMigration`** fails after a successful **`up()`**. The underlying error is always attached as **`cause`**.
+
+## Ordering and workflow
+
+Typical workflow:
+
+1. Edit **`schema.cyphra`**, review with **`cyphra schema print`** / **`cyphra validate`**.
+2. Run **`cyphra push`** in each environment to align constraints/indexes.
+3. Add **migrations** for data or structural steps that are **not** expressible as decorators alone.
+4. Run **`cyphra migrate deploy`** after deploy.
+
+## See also
+
+- [Schema](/schema) — decorators and DDL mapping
+- [CLI reference](/cli) — `migrate`, `push`, `migration:create`
+- [Getting started](/getting-started) — end-to-end flow

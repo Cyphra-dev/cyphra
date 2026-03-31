@@ -1,0 +1,41 @@
+---
+title: Production & security
+description: Injection safety, RBAC awareness, multi-database, Next.js, and why Bolt does not run on Edge.
+---
+
+# Production & security
+
+## Cypher injection
+
+**`cypher` tagged templates** and compiled builders **bind values as parameters**. Do not concatenate user input into Cypher strings. When you must accept dynamic labels or relationship types, validate them against an explicit allowlist before interpolating.
+
+## RBAC and least privilege
+
+Cyphra does **not** bypass Neo4j’s security model. Grant the application user only the **roles** and **privileges** it needs (`MATCH`, `WRITE`, `INDEX`, etc.). Document **who** can run **`cyphra push`** and migrations in your ops runbooks.
+
+## Multi-database
+
+Use **`NEO4J_DATABASE`** (and the **`database`** option on **`CyphraNeo4j`**) for Neo4j 4+ composite databases. **`USE`** and tenant routing are part of the broader Cypher surface; see [Cypher coverage](/cypher-coverage) for what the DSL exposes over time.
+
+## Next.js and serverless
+
+- Instantiate **`CyphraNeo4j`** / **`CyphraClient`** in **server-only** code (Server Actions, Route Handlers, **`server` components** that do not leak the client to the bundle).
+- **Reuse** a driver or client per process when your host allows long-lived connections; in strict serverless, prefer **one client per invocation** if your platform warns about stale sockets.
+
+## Edge runtimes
+
+The official **Bolt** driver targets **Node.js**. **Edge** (Vercel Edge, Cloudflare Workers without a Node compat layer) is **unsupported** for Bolt. Use a **Node** route, serverless function, or **BFF** that talks to Neo4j and expose a safe HTTP API to Edge code.
+
+## Observability
+
+**`debug: true`** on **`CyphraClient`** logs Cypher text and **parameter keys**, not values. **`onQuery`** fires after each **`runCompiled`** / **`runCompiledTx`** with the same metadata plus **duration** in milliseconds—safe to wire to metrics or OpenTelemetry spans in your app.
+
+## GraphRAG and vectors
+
+Use **Neo4j** vector indexes and **`SEARCH`** / Cypher functions where your edition supports them. Cyphra focuses on **safe query construction**; RAG orchestration stays in your application or framework layer.
+
+## See also
+
+- [Configuration](/configuration) — env vars and secrets
+- [Governance](/governance) — Neo4j versions and deprecation policy
+- [Example project](/example) — Next.js blog in the monorepo

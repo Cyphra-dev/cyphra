@@ -6,5 +6,5 @@ export default defineConfig({
   dts: true,
   sourcemap: true,
   clean: true,
-  external: ["@cyphra/query", "@cyphra/runtime", "@cyphra/schema"],
+  external: ["@cyphra/core", "@cyphra/query", "@cyphra/schema"],
 });

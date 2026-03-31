@@ -1,0 +1,415 @@
+.root {
+  --landing-accent: #0d9488;
+  --landing-accent-dim: color-mix(in srgb, var(--landing-accent) 18%, transparent);
+  --landing-accent-glow: color-mix(in srgb, var(--landing-accent) 35%, transparent);
+  --landing-surface: color-mix(in srgb, var(--landing-accent) 6%, #fafafa);
+  --landing-border: color-mix(in srgb, #0f172a 8%, transparent);
+  --landing-text: #0f172a;
+  --landing-muted: #475569;
+  --landing-card: #ffffff;
+  margin: -1rem -1.25rem 2.5rem;
+  padding: 0 1.25rem 2rem;
+}
+
+:global(html.dark) .root {
+  --landing-accent: #2dd4bf;
+  --landing-accent-dim: color-mix(in srgb, var(--landing-accent) 12%, transparent);
+  --landing-accent-glow: color-mix(in srgb, var(--landing-accent) 22%, transparent);
+  --landing-surface: color-mix(in srgb, var(--landing-accent) 8%, #0c1222);
+  --landing-border: color-mix(in srgb, #f8fafc 10%, transparent);
+  --landing-text: #f1f5f9;
+  --landing-muted: #94a3b8;
+  --landing-card: color-mix(in srgb, #0f172a 85%, #1e293b);
+}
+
+.hero {
+  position: relative;
+  overflow: hidden;
+  border-radius: 1.25rem;
+  padding: clamp(2.5rem, 6vw, 4.25rem) clamp(1.5rem, 4vw, 3rem);
+  margin-bottom: 2.75rem;
+  background:
+    radial-gradient(ellipse 80% 60% at 20% 0%, var(--landing-accent-glow), transparent 55%),
+    radial-gradient(ellipse 60% 50% at 100% 30%, var(--landing-accent-dim), transparent 50%),
+    var(--landing-surface);
+  border: 1px solid var(--landing-border);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--landing-accent) 12%, transparent),
+    0 24px 48px -24px color-mix(in srgb, #000 18%, transparent);
+}
+
+:global(html.dark) .hero {
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--landing-accent) 15%, transparent),
+    0 28px 56px -28px rgba(0, 0, 0, 0.55);
+}
+
+.heroGrid {
+  position: absolute;
+  inset: 0;
+  opacity: 0.35;
+  background-image:
+    linear-gradient(
+      color-mix(in srgb, var(--landing-accent) 25%, transparent) 1px,
+      transparent 1px
+    ),
+    linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--landing-accent) 25%, transparent) 1px,
+      transparent 1px
+    );
+  background-size: 48px 48px;
+  mask-image: radial-gradient(ellipse 70% 70% at 50% 40%, black, transparent);
+  pointer-events: none;
+}
+
+.heroInner {
+  position: relative;
+  max-width: 42rem;
+}
+
+.eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--landing-accent);
+  margin-bottom: 1rem;
+}
+
+.eyebrowDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--landing-accent);
+  box-shadow: 0 0 12px var(--landing-accent);
+}
+
+.title {
+  font-size: clamp(2rem, 5vw, 2.85rem);
+  font-weight: 700;
+  line-height: 1.12;
+  letter-spacing: -0.03em;
+  color: var(--landing-text);
+  margin: 0 0 1rem;
+}
+
+.titleAccent {
+  background: linear-gradient(
+    135deg,
+    var(--landing-accent),
+    color-mix(in srgb, var(--landing-accent) 60%, #6366f1)
+  );
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.subtitle {
+  font-size: clamp(1.05rem, 2vw, 1.2rem);
+  line-height: 1.65;
+  color: var(--landing-muted);
+  margin: 0 0 1.75rem;
+  max-width: 36rem;
+}
+
+.ctaRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.ctaPrimary,
+.ctaSecondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.65rem 1.25rem;
+  border-radius: 0.65rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  text-decoration: none;
+  transition:
+    transform 0.15s ease,
+    box-shadow 0.15s ease,
+    background 0.15s ease;
+}
+
+.ctaPrimary {
+  background: var(--landing-accent);
+  color: #042f2e;
+  border: none;
+  box-shadow: 0 4px 14px var(--landing-accent-glow);
+}
+
+:global(html.dark) .ctaPrimary {
+  color: #042f2e;
+}
+
+.ctaPrimary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 24px var(--landing-accent-glow);
+}
+
+.ctaSecondary {
+  background: color-mix(in srgb, var(--landing-card) 88%, transparent);
+  color: var(--landing-text);
+  border: 1px solid var(--landing-border);
+}
+
+.ctaSecondary:hover {
+  border-color: color-mix(in srgb, var(--landing-accent) 45%, var(--landing-border));
+  transform: translateY(-1px);
+}
+
+.sectionTitle {
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--landing-muted);
+  margin: 0 0 1.25rem;
+}
+
+.pillRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 2.5rem;
+}
+
+.pill {
+  font-size: 0.8rem;
+  padding: 0.35rem 0.75rem;
+  border-radius: 999px;
+  background: var(--landing-accent-dim);
+  color: var(--landing-text);
+  border: 1px solid var(--landing-border);
+  font-weight: 500;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 1rem;
+  margin-bottom: 2.5rem;
+}
+
+.card {
+  padding: 1.35rem 1.35rem 1.25rem;
+  border-radius: 1rem;
+  background: var(--landing-card);
+  border: 1px solid var(--landing-border);
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.card:hover {
+  border-color: color-mix(in srgb, var(--landing-accent) 35%, var(--landing-border));
+  box-shadow: 0 12px 32px -16px color-mix(in srgb, var(--landing-accent) 25%, transparent);
+}
+
+.cardIcon {
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 0.65rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.25rem;
+  margin-bottom: 1rem;
+  background: var(--landing-accent-dim);
+  border: 1px solid var(--landing-border);
+}
+
+.cardTitle {
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--landing-text);
+  margin: 0 0 0.5rem;
+}
+
+.cardTitle a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.cardTitle a:hover {
+  color: var(--landing-accent);
+}
+
+.cardDesc {
+  font-size: 0.9rem;
+  line-height: 1.55;
+  color: var(--landing-muted);
+  margin: 0;
+}
+
+.split {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1.5rem;
+  margin-bottom: 2.5rem;
+}
+
+@media (min-width: 900px) {
+  .split {
+    grid-template-columns: 1fr 1.1fr;
+    align-items: start;
+  }
+}
+
+.splitProse h2 {
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: var(--landing-text);
+  margin: 0 0 1rem;
+  letter-spacing: -0.02em;
+}
+
+.splitProse ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.splitProse li {
+  position: relative;
+  padding-left: 1.35rem;
+  margin-bottom: 0.85rem;
+  font-size: 0.95rem;
+  line-height: 1.5;
+  color: var(--landing-muted);
+}
+
+.splitProse li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0.55rem;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--landing-accent);
+}
+
+.splitStrong {
+  color: var(--landing-text);
+  font-weight: 600;
+}
+
+.codeWrap {
+  border-radius: 1rem;
+  overflow: hidden;
+  border: 1px solid var(--landing-border);
+  background: color-mix(in srgb, #0f172a 96%, var(--landing-accent));
+  box-shadow: 0 16px 40px -20px rgba(0, 0, 0, 0.35);
+}
+
+.codeBar {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.65rem 1rem;
+  background: color-mix(in srgb, #000 25%, transparent);
+  border-bottom: 1px solid var(--landing-border);
+}
+
+.codeDot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  opacity: 0.85;
+}
+
+.codePre {
+  margin: 0;
+  padding: 1.1rem 1.15rem 1.25rem;
+  font-size: 0.8rem;
+  line-height: 1.65;
+  overflow-x: auto;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  color: #e2e8f0;
+}
+
+.codePre :global(.kw) {
+  color: #5eead4;
+}
+
+.codePre :global(.fn) {
+  color: #93c5fd;
+}
+
+.codePre :global(.str) {
+  color: #86efac;
+}
+
+.codePre :global(.cm) {
+  color: #64748b;
+}
+
+.installBlock {
+  border-radius: 1rem;
+  padding: 1.25rem 1.35rem;
+  background: var(--landing-card);
+  border: 1px solid var(--landing-border);
+  margin-bottom: 1.5rem;
+}
+
+.installLabel {
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--landing-muted);
+  margin-bottom: 0.65rem;
+}
+
+.installCmd {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.85rem;
+  padding: 0.65rem 0.85rem;
+  border-radius: 0.5rem;
+  background: var(--landing-surface);
+  border: 1px solid var(--landing-border);
+  color: var(--landing-text);
+  margin-bottom: 0.5rem;
+}
+
+.installCmd:last-of-type {
+  margin-bottom: 0;
+}
+
+.footerNote {
+  font-size: 0.85rem;
+  color: var(--landing-muted);
+  text-align: center;
+  margin: 0;
+  padding-top: 0.5rem;
+}
+
+.installNote {
+  font-size: 0.85rem;
+  line-height: 1.55;
+  color: var(--landing-muted);
+  margin: 0.75rem 0 0;
+  text-align: left;
+}
+
+.installNote code {
+  font-size: 0.8em;
+  padding: 0.1em 0.35em;
+  border-radius: 0.25rem;
+  background: var(--landing-accent-dim);
+}
+
+.footerNote a {
+  color: var(--landing-accent);
+  font-weight: 500;
+}

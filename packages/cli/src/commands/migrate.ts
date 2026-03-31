@@ -1,4 +1,4 @@
-import { loadConfig } from "../config.js";
+import { loadConfig } from "@cyphra/config";
 import { clientFromEnv } from "../clientFromEnv.js";
 import { loadMigrationsFromDir } from "../loadMigrations.js";
 import { runPendingMigrations } from "@cyphra/migrator";
@@ -15,8 +15,10 @@ export async function runMigrate(cwd: string, verbose: boolean): Promise<void> {
   try {
     const loaded = await loadMigrationsFromDir(config.migrations, cwd);
     const applied = await runPendingMigrations(client, loaded);
-    if (verbose || applied.length > 0) {
-      console.log(applied.length ? `Applied: ${applied.join(", ")}` : "No pending migrations");
+    if (applied.length > 0) {
+      console.log(`Applied: ${applied.join(", ")}`);
+    } else {
+      console.log("No pending migrations");
     }
   } finally {
     await client.close();

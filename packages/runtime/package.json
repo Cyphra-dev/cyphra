@@ -1,7 +1,7 @@
 {
   "name": "@cyphra/runtime",
-  "version": "0.0.0",
-  "description": "Neo4j execution layer for Cyphra: sessions, transactions, and cypher tag",
+  "version": "0.2.0",
+  "description": "Cyphra runtime facade: core provider types + Neo4j client",
   "type": "module",
   "sideEffects": false,
   "publishConfig": {
@@ -25,13 +25,29 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@cyphra/query": "workspace:*",
-    "neo4j-driver": "^5.27.0"
+    "@cyphra/core": "workspace:*",
+    "@cyphra/provider-neo4j": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
     "tsup": "^8.3.5",
     "typescript": "^5.7.2",
     "vitest": "^3.0.2"
+  },
+  "keywords": [
+    "neo4j",
+    "cypher",
+    "graph",
+    "cyphra"
+  ],
+  "license": "MIT",
+  "homepage": "https://www.cyphra.dev",
+  "bugs": {
+    "url": "https://github.com/cyphra-dev/cyphra/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/cyphra-dev/cyphra.git",
+    "directory": "packages/runtime"
   }
 }

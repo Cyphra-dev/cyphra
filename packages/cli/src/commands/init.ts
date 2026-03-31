@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 const defaultSchema = `node Example {
@@ -19,13 +19,29 @@ const defaultEnvExample = `# NEO4J_URI=neo4j+s://xxxx.databases.neo4j.io
  */
 export async function runInit(cwd: string): Promise<void> {
   const configPath = path.join(cwd, "cyphra.json");
+  let configExists = false;
+  try {
+    await stat(configPath);
+    configExists = true;
+  } catch (e) {
+    const err = e as NodeJS.ErrnoException;
+    if (err.code !== "ENOENT") throw e;
+  }
+  if (configExists) {
+    throw new Error(
+      `cyphra.json already exists at ${configPath}. Remove it or edit it manually; cyphra init does not overwrite an existing project.`,
+    );
+  }
+  const schemaRef =
+    "https://raw.githubusercontent.com/cyphra-dev/cyphra/main/schemas/cyphra-config.schema.json";
   await writeFile(
     configPath,
     JSON.stringify(
       {
+        $schema: schemaRef,
+        provider: "neo4j",
         schema: "./schema.cyphra",
         migrations: "./migrations",
-        generate: "./cyphra.gen.ts",
       },
       null,
       2,

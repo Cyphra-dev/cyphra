@@ -1,0 +1,44 @@
+{
+  "name": "@cyphra/orm",
+  "version": "0.2.0",
+  "description": "CRUD and graph helpers from .cyphra schema + CyphraClient",
+  "type": "module",
+  "sideEffects": false,
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@cyphra/query": "workspace:*",
+    "@cyphra/runtime": "workspace:*",
+    "@cyphra/schema": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "tsup": "^8.3.5",
+    "typescript": "^5.7.2",
+    "vitest": "^3.0.2"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/cyphra-dev/cyphra.git",
+    "directory": "packages/orm"
+  }
+}

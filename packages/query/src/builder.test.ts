@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   and,
+  bareVar,
   between,
   contains,
   endsWith,
   eq,
+  exists,
   gte,
   inList,
   isNotNull,
@@ -42,6 +44,46 @@ describe("SelectQuery", () => {
     const a = rel("AUTHORED", "a");
     expect(u.in(a, p)).toBe("(u:User)<-[a:AUTHORED]-(p:Post)");
     expect(u.both(a, p)).toBe("(u:User)-[a:AUTHORED]-(p:Post)");
+  });
+
+  it("rejects invalid node()/rel() identifiers", () => {
+    expect(() => node("User-Profile", "u")).toThrow(/invalid identifier/);
+    expect(() => node("User", "u-1")).toThrow(/invalid identifier/);
+    expect(() => rel("MEMBER-OF", "m")).toThrow(/invalid identifier/);
+    expect(() => rel("MEMBER_OF", "m-1")).toThrow(/invalid identifier/);
+  });
+
+  it("supports variable-length rel() quantifiers", () => {
+    const a = node("Person", "a");
+    const b = node("Person", "b");
+    expect(a.out(rel("KNOWS", "r", "any"), b)).toBe("(a:Person)-[r:KNOWS*]->(b:Person)");
+    expect(a.out(rel("KNOWS", "r", 2), b)).toBe("(a:Person)-[r:KNOWS*2]->(b:Person)");
+    expect(a.out(rel("KNOWS", "r", { min: 1, max: 3 }), b)).toBe(
+      "(a:Person)-[r:KNOWS*1..3]->(b:Person)",
+    );
+    expect(a.out(rel("KNOWS", "r", { max: 5 }), b)).toBe("(a:Person)-[r:KNOWS*..5]->(b:Person)");
+    expect(a.out(rel("KNOWS", "r", { min: 2 }), b)).toBe("(a:Person)-[r:KNOWS*2..]->(b:Person)");
+  });
+
+  it("rejects prop() with empty property name", () => {
+    expect(() => prop("u", "")).toThrow(/bareVar/);
+  });
+
+  it("RETURN and ORDER BY support bareVar projection", () => {
+    const { text } = select()
+      .match("(n:N)")
+      .returnFields({ node: bareVar("n") })
+      .orderBy({ prop: bareVar("n"), direction: "ASC" })
+      .toCypher();
+    expect(text).toContain("RETURN n AS node");
+    expect(text).toContain("ORDER BY n ASC");
+  });
+
+  it("rejects invalid rel() varLength", () => {
+    expect(() => rel("R", "r", -1)).toThrow(/non-negative integer/);
+    expect(() => rel("R", "r", 1.5)).toThrow(/non-negative integer/);
+    expect(() => rel("R", "r", {} as { min?: number; max?: number })).toThrow(/requires min/);
+    expect(() => rel("R", "r", { min: 3, max: 1 })).toThrow(/min must be <= max/);
   });
 
   it("appends OPTIONAL MATCH after MATCH", () => {
@@ -82,9 +124,37 @@ describe("SelectQuery", () => {
       .limit(5);
     const { text, params } = q.toCypher();
     expect(text).toBe(
-      "MATCH (u:User) RETURN u.id AS id ORDER BY u.createdAt DESC SKIP $p0 LIMIT $p1",
+      "MATCH (u:User) RETURN u.id AS id ORDER BY u.createdAt DESC SKIP toInteger($p0) LIMIT toInteger($p1)",
     );
     expect(params).toEqual({ p0: 10, p1: 5 });
+  });
+
+  it("ORDER BY supports NULLS FIRST / NULLS LAST", () => {
+    const u = node("User", "u");
+    const { text } = select()
+      .match(`(${u.alias}:${u.label})`)
+      .returnFields({ id: prop(u.alias, "id") })
+      .orderBy(
+        { prop: prop(u.alias, "nickname"), direction: "ASC", nulls: "LAST" },
+        { prop: prop(u.alias, "score"), direction: "DESC", nulls: "FIRST" },
+      )
+      .toCypher();
+    expect(text).toContain("ORDER BY u.nickname ASC NULLS LAST, u.score DESC NULLS FIRST");
+  });
+
+  it("withOrderLimit passes nulls through ORDER BY", () => {
+    const { text, params } = select()
+      .match("(p:Post)")
+      .withOrderLimit(
+        ["p"],
+        [{ prop: prop("p", "publishedAt"), direction: "DESC", nulls: "LAST" }],
+        10,
+      )
+      .where(eq(prop("p", "slug"), "x"))
+      .returnStar()
+      .toCypher();
+    expect(text).toContain("WITH p ORDER BY p.publishedAt DESC NULLS LAST LIMIT toInteger($p0)");
+    expect(params.p0).toBe(10);
   });
 
   it("rejects invalid skip/limit", () => {
@@ -143,9 +213,51 @@ describe("SelectQuery", () => {
     expect(params).toEqual({ p0: "admin" });
   });
 
-  it("requires returnFields or returnStar", () => {
+  it("requires returnFields, returnRawFields, or returnStar", () => {
     const u = node("User", "u");
     expect(() => select().match(`(${u.alias}:${u.label})`).toCypher()).toThrow(/returnFields/);
+  });
+
+  it("returnRawFields supports aggregates and ORDER BY on expression", () => {
+    const { text, params } = select()
+      .match("(n:N)")
+      .returnRawFields({ role: "n.role", total: "count(*)" })
+      .orderBy({ expression: "total", direction: "DESC" })
+      .toCypher();
+    expect(text).toBe("MATCH (n:N) RETURN n.role AS role, count(*) AS total ORDER BY total DESC");
+    expect(params).toEqual({});
+  });
+
+  it("rejects invalid output aliases for returnFields", () => {
+    expect(() =>
+      select()
+        .match("(n:N)")
+        .returnFields({ "bad-alias": prop("n", "id") }),
+    ).toThrow(/invalid identifier/);
+  });
+
+  it("ORDER BY expression supports NULLS", () => {
+    const { text } = select()
+      .match("(n:N)")
+      .returnRawFields({ c: "count(n)" })
+      .orderBy({ expression: "c", direction: "ASC", nulls: "LAST" })
+      .toCypher();
+    expect(text).toContain("ORDER BY c ASC NULLS LAST");
+  });
+
+  it("rejects empty returnRawFields", () => {
+    expect(() => select().match("(n:N)").returnRawFields({})).toThrow(/at least one field/);
+    expect(() => select().match("(n:N)").returnRawFields({ a: "  " })).toThrow(/empty expression/);
+  });
+
+  it("use() prefixes USE clause", () => {
+    const { text } = select().use("g.sub").match("(n:N)").returnStar().toCypher();
+    expect(text).toBe("USE g.sub MATCH (n:N) RETURN *");
+  });
+
+  it("rejects invalid use() names", () => {
+    expect(() => select().use("")).toThrow(/non-empty/);
+    expect(() => select().use("bad-")).toThrow(/invalid qualified/);
   });
 
   it("supports RETURN *", () => {
@@ -240,5 +352,75 @@ describe("SelectQuery", () => {
   it("rejects empty and() / or()", () => {
     expect(() => and()).toThrow(/and\(\)/);
     expect(() => or()).toThrow(/or\(\)/);
+  });
+
+  it("EXISTS subquery predicate", () => {
+    const u = node("User", "u");
+    const q = select()
+      .match(`(${u.alias}:${u.label})`)
+      .where(
+        exists(`(${u.alias}:${u.label})-[:POSTED]->(p:Post)`, eq(prop("p", "published"), true)),
+      )
+      .returnStar();
+    const { text, params } = q.toCypher();
+    expect(text).toBe(
+      "MATCH (u:User) WHERE EXISTS { MATCH (u:User)-[:POSTED]->(p:Post) WHERE p.published = $p0 } RETURN *",
+    );
+    expect(params).toEqual({ p0: true });
+  });
+
+  it("EXISTS without inner WHERE", () => {
+    const { text, params } = select()
+      .match("(o:Order)")
+      .where(exists("(o)-[:CONTAINS]->(:LineItem)"))
+      .returnStar()
+      .toCypher();
+    expect(text).toBe(
+      "MATCH (o:Order) WHERE EXISTS { MATCH (o)-[:CONTAINS]->(:LineItem) } RETURN *",
+    );
+    expect(params).toEqual({});
+  });
+
+  it("rejects empty exists() pattern", () => {
+    expect(() => exists("  ", eq(prop("n", "x"), 1))).toThrow(/matchPattern/);
+  });
+
+  it("WITH ORDER BY LIMIT before WHERE", () => {
+    const q = select()
+      .match("(p:Post)")
+      .withOrderLimit(["p"], [{ prop: prop("p", "createdAt"), direction: "DESC" }], 20)
+      .where(eq(prop("p", "slug"), "hello"))
+      .returnStar();
+    const { text, params } = q.toCypher();
+    expect(text).toBe(
+      "MATCH (p:Post) WITH p ORDER BY p.createdAt DESC LIMIT toInteger($p0) WHERE p.slug = $p1 RETURN *",
+    );
+    expect(params).toEqual({ p0: 20, p1: "hello" });
+  });
+
+  it("WITH DISTINCT before WHERE", () => {
+    const { text, params } = select()
+      .match("(n:N)")
+      .withDistinct(["n"])
+      .where(eq(prop("n", "k"), 1))
+      .returnStar()
+      .toCypher();
+    expect(text).toBe("MATCH (n:N) WITH DISTINCT n WHERE n.k = $p0 RETURN *");
+    expect(params).toEqual({ p0: 1 });
+  });
+
+  it("WITH DISTINCT ORDER BY LIMIT before WHERE", () => {
+    const { text, params } = select()
+      .match("(u:User)")
+      .withOrderLimit(["u"], [{ prop: prop("u", "score"), direction: "DESC" }], 5, {
+        distinct: true,
+      })
+      .where(eq(prop("u", "active"), true))
+      .returnStar()
+      .toCypher();
+    expect(text).toBe(
+      "MATCH (u:User) WITH DISTINCT u ORDER BY u.score DESC LIMIT toInteger($p0) WHERE u.active = $p1 RETURN *",
+    );
+    expect(params).toEqual({ p0: 5, p1: true });
   });
 });

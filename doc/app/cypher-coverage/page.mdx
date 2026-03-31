@@ -1,0 +1,37 @@
+---
+title: Cypher coverage
+description: Roadmap for DSL and API parity with the Neo4j Cypher Manual; use cypher for the long tail.
+---
+
+# Cypher coverage
+
+Cyphra’s query story has two tracks:
+
+1. **Parameterized `cypher` templates** — full Cypher with mandatory value binding.
+2. **Composable compiler helpers** (`SelectQuery`, `unionAllCompiled`, `concatCompiledCypher`, `callSubqueryCompiled`, `compileCaseExpression`, write helpers, …) — grow toward parity with the [Neo4j Cypher Manual](https://neo4j.com/docs/cypher-manual/current/).
+
+Until a clause or function exists in the typed layer, use **`cypher`** — there is no penalty at runtime.
+
+## Tiers (living roadmap)
+
+| Tier    | Focus                                                                                                                                                                                     | Status                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **C-α** | Core **`MATCH` / `WHERE` / `RETURN`**, **`EXISTS { MATCH … }`** (`exists()`), **`WITH … ORDER BY … LIMIT`** before outer **`WHERE`** (`withOrderLimit`), simple **`CALL { }` subqueries** | Builder + templates; **`ORDER BY … NULLS FIRST/LAST`** on **`orderBy`** / **`withOrderLimit`**; **`compileCaseExpression`**; **`callSubqueryCompiled`** + **`remapCompiledCypherParamKeys`**                                                                                                                                                                                                                                                                                                                                                                                              |
+| **C-β** | **`UNION`**, **`FOREACH`**, **`REMOVE`**, variable-length patterns, **`shortestPath`**                                                                                                    | **`UNION`**, **`REMOVE`**, **`rel(…, varLength)`**, relationship **`CREATE` / `MERGE` / `SET` / `REMOVE` / `DELETE`** helpers (`compileCreateRelationship`, **`compileCreateRelationshipIn`**, **`compileMergeRelationship`**, **`compileMergeRelationshipIn`**, **`compileSetRelationshipWhere`**, **`compileRemoveRelationshipProperties`**, **`compileDeleteRelationshipWhere`**), **`compileForeachMergeSet`**, **`compileForeachDeleteRelationshipsFromPath`**, batch **`UNWIND`/`DETACH DELETE`**, ORM **`compileShortestPath`**; other **`FOREACH`** shapes still via **`cypher`** |
+| **C-γ** | **`FILTER`**, Cypher 25 **`WHEN` / `NEXT`**, **`LOAD CSV`**, advanced hints                                                                                                               | **`compileLoadCsvFrom`**; **`compileComprehensionFilterClause`** + **`bareVar`** for list-comprehension **`WHERE`**; planner hints; Cypher 25 **WHEN/NEXT** still via **`cypher`**                                                                                                                                                                                                                                                                                                                                                                                                        |
+
+## Version matrix
+
+Feature availability depends on **Neo4j server version** and **edition** (Community vs Enterprise, Aura). **`defineCyphraConfig`** accepts optional **`targetNeo4j`** as a **hint** for docs and future emit; it does not upgrade your server.
+
+Concrete matrices live in [Governance](/governance) and should be updated as Neo4j ships new syntax.
+
+## Planning and tuning
+
+Use **`explainCompiled`** / **`profileCompiled`** on **`CyphraClient`** (prefixed **`EXPLAIN`** / **`PROFILE`**) against development databases to validate plans for hot queries.
+
+## See also
+
+- [Queries](/queries) — templates, builder, codegen
+- [Graph ORM](/graph-orm) — CRUD and traversals
+- [Production](/production) — security and deployment patterns

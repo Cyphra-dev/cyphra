@@ -1,6 +1,6 @@
 {
   "name": "@cyphra/cli",
-  "version": "0.0.0",
+  "version": "0.2.0",
   "description": "Cyphra CLI: init, migrate, push",
   "type": "module",
   "publishConfig": {
@@ -19,15 +19,29 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@clack/prompts": "^0.9.1",
+    "@cyphra/config": "workspace:*",
+    "@cyphra/core": "workspace:*",
     "@cyphra/migrator": "workspace:*",
     "@cyphra/runtime": "workspace:*",
     "@cyphra/schema": "workspace:*",
-    "commander": "^12.1.0"
+    "commander": "^12.1.0",
+    "jiti": "^2.4.2"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
     "tsup": "^8.3.5",
     "typescript": "^5.7.2",
     "vitest": "^3.0.2"
+  },
+  "license": "MIT",
+  "homepage": "https://www.cyphra.dev",
+  "bugs": {
+    "url": "https://github.com/cyphra-dev/cyphra/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/cyphra-dev/cyphra.git",
+    "directory": "packages/cli"
   }
 }

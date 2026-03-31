@@ -1,4 +1,4 @@
-import { writeFile } from "node:fs/promises";
+import { stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 function migrationFileBody(name: string): string {
@@ -25,9 +25,28 @@ export async function runMigrationCreate(
   migrationsDir: string,
   stem: string,
 ): Promise<void> {
-  const safe = stem.replace(/[^a-zA-Z0-9_-]/g, "_");
+  const trimmed = stem.trim();
+  if (!trimmed) {
+    throw new Error("Migration name must not be empty.");
+  }
+  if (!/[a-zA-Z0-9]/.test(trimmed)) {
+    throw new Error(
+      `Migration name must contain at least one letter or digit (got ${JSON.stringify(stem)})`,
+    );
+  }
+  const safe = trimmed.replace(/[^a-zA-Z0-9_-]/g, "_");
   const fileName = `${safe}.mjs`;
   const full = path.join(migrationsDir, fileName);
+  let alreadyThere = false;
+  try {
+    await stat(full);
+    alreadyThere = true;
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
+  }
+  if (alreadyThere) {
+    throw new Error(`Migration file already exists: ${path.relative(cwd, full)}`);
+  }
   await writeFile(full, migrationFileBody(safe), "utf8");
   console.log(`Created ${path.relative(cwd, full)}`);
 }

@@ -1,0 +1,153 @@
+---
+title: Getting started
+description: Install Cyphra, scaffold a project, run migrations, and execute your first parameterized Cypher against Neo4j.
+---
+
+# Getting started
+
+This guide walks from **empty folder** to a **working Neo4j project** with Cyphra. It mirrors the flow of [Prisma’s “how it works”](https://www.prisma.io/docs/orm) overview: model → configure → migrate → query.
+
+## Prerequisites
+
+- **Node.js 20+**
+- A **Neo4j 5+** instance (local, Docker, or [Neo4j Aura](https://neo4j.com/cloud/aura/)) reachable over **Bolt**
+- `pnpm`, `npm`, or `yarn`
+
+## 1. Install
+
+Install the **meta-package** `cyphra`. It pulls in `@cyphra/schema`, `@cyphra/query`, `@cyphra/runtime`, `@cyphra/migrator`, and `@cyphra/cli`, and exposes the **`cyphra`** CLI.
+
+```bash
+npm install cyphra
+# or: pnpm add cyphra
+```
+
+Verify the CLI:
+
+```bash
+npx cyphra --help
+```
+
+## 2. Scaffold the project
+
+From your project root:
+
+```bash
+npx cyphra init
+```
+
+This creates (among other things):
+
+- **`cyphra.json`** — paths to your schema and migrations directory (see [Configuration](/configuration)); you can replace this later with **`cyphra.config.ts`**
+- **`schema.cyphra`** — starter graph model
+- **`migrations/`** — folder for ESM migration files
+- **`.env.example`** — template for Bolt credentials
+
+If **`cyphra.json`** is already present, **`cyphra init`** fails without overwriting it—remove or rename the file first if you really want a fresh scaffold.
+
+Copy `.env.example` to `.env` and set:
+
+- `NEO4J_URI` — e.g. `neo4j://localhost:7687` or `neo4j+s://….databases.neo4j.io` for Aura
+- `NEO4J_USER` / `NEO4J_PASSWORD`
+
+## 3. Define your schema
+
+Edit **`schema.cyphra`** with `node` and `relationship` blocks and decorators (`@id`, `@unique`, `@index`, `@relationship`, …). Full rules are on the [Schema](/schema) page.
+
+Use the CLI to validate without touching the database:
+
+```bash
+npx cyphra validate
+```
+
+Canonical print (useful for diffs in PRs):
+
+```bash
+npx cyphra schema print
+```
+
+Preview **push** DDL (constraints + range indexes):
+
+```bash
+npx cyphra schema ddl
+```
+
+## 4. Apply indexes and constraints
+
+**`cyphra push`** reads your `.cyphra` file and runs `CREATE CONSTRAINT` / `CREATE RANGE INDEX` statements (with `IF NOT EXISTS` where applicable) against the database configured in your env.
+
+```bash
+npx cyphra push
+```
+
+Requires `NEO4J_URI`, `NEO4J_USER`, and `NEO4J_PASSWORD`.
+
+## 5. Versioned migrations (optional but recommended)
+
+Create a migration:
+
+```bash
+npx cyphra migration:create add_seed_data
+```
+
+Implement `up` in the generated `.mjs` file using `defineMigration` and `db.run` / `db.runInTransactionBatches` / `db.migrate.*` as needed. See [Migrations & push](/migrations).
+
+Apply pending migrations:
+
+```bash
+npx cyphra migrate deploy
+```
+
+Applied migrations are stored as **`__CyphraMigration`** nodes in Neo4j.
+
+## 6. Query from TypeScript
+
+### Option A — Shared config + client (recommended for apps)
+
+If your project already has **`cyphra.config.ts`** at the root, you can load **config + parsed schema + `CyphraClient`** in one step (uses the same **`NEO4J_*`** env vars as the CLI):
+
+```ts
+import { createSchemaClient, loadCyphraWorkspace } from "cyphra";
+
+const { client, doc } = await loadCyphraWorkspace(process.cwd());
+const db = createSchemaClient(client, doc);
+// db.posts.create({ data: { … } }) — see Graph ORM
+
+await client.close();
+```
+
+### Option B — Manual client + query or ORM
+
+Use **`CyphraClient`** with the **`cypher`** tag or **`select()`** (namespace style: **`import { query, orm } from "cyphra"`** → **`query.cypher`**, **`orm.createSchemaClient`**, …):
+
+```ts
+import { cypher, CyphraClient, CyphraNeo4j } from "cyphra";
+
+const client = new CyphraClient({
+  adapter: new CyphraNeo4j({
+    uri: process.env.NEO4J_URI!,
+    user: process.env.NEO4J_USER!,
+    password: process.env.NEO4J_PASSWORD!,
+    database: process.env.NEO4J_DATABASE,
+  }),
+});
+
+await client.withSession(async (session) => {
+  const rows = await client.queryRecords(session, cypher`RETURN 1 AS n`);
+  console.log(rows);
+});
+
+await client.close();
+```
+
+Details: [Cyphra Client](/runtime), [Queries](/queries), [Graph ORM](/graph-orm).
+
+### Existing database
+
+If the graph already exists, run **`cyphra db pull --print`** to preview a draft schema, then refine fields and relationships before **`push`**. See [Introspection](/introspection).
+
+## Next steps
+
+- [Configuration](/configuration) — `cyphra.json` and environment variables
+- [Supported databases](/supported-databases) — Neo4j versions and Aura
+- [Example project](/example) — runnable demo in the monorepo
