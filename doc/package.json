@@ -9,6 +9,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@vercel/analytics": "^2.0.1",
     "next": "^15.1.0",
     "nextra": "^4.2.0",
     "nextra-theme-docs": "^4.2.0",
