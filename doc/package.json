@@ -14,7 +14,8 @@
     "nextra": "^4.2.0",
     "nextra-theme-docs": "^4.2.0",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "trailic": "https://github.com/trailic/trailic/releases/download/v0.1.1/trailic-0.1.1.tgz"
   },
   "devDependencies": {
     "@types/mdx": "^2.0.13",
