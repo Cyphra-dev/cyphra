@@ -38,6 +38,9 @@ importers:
 
   doc:
     dependencies:
+      '@borromic/analytics':
+        specifier: ^0.1.0
+        version: 0.1.0(next@15.5.14(react-dom@19.2.4(react@19.2.4))(react@19.2.4))(react@19.2.4)
       '@vercel/analytics':
         specifier: ^2.0.1
         version: 2.0.1(next@15.5.14(react-dom@19.2.4(react@19.2.4))(react@19.2.4))(react@19.2.4)
@@ -56,9 +59,6 @@ importers:
       react-dom:
         specifier: ^19.0.0
         version: 19.2.4(react@19.2.4)
-      trailic:
-        specifier: https://github.com/trailic/trailic/releases/download/v0.1.1/trailic-0.1.1.tgz
-        version: https://github.com/trailic/trailic/releases/download/v0.1.1/trailic-0.1.1.tgz(react@19.2.4)
     devDependencies:
       '@types/mdx':
         specifier: ^2.0.13
@@ -270,6 +270,18 @@ packages:
   '@bcoe/v8-coverage@1.0.2':
     resolution: {integrity: sha512-6zABk/ECA/QYSCQ1NGiVwwbQerUCZ+TQbp64Q3AgmfNvurHH0j8TtXa1qbShXA6qqkpAj4V5W8pP6mLe1mcMqA==}
     engines: {node: '>=18'}
+
+  '@borromic/analytics@0.1.0':
+    resolution: {integrity: sha512-4Af0mSoMhviFpMQ/YK/CFEJ/6ZhFvXF9QP8gCXK8MRNZa0Rg1QION3glVPT6SRXFpMKdqouKmeHC0KblYiBLpQ==}
+    engines: {node: '>=18'}
+    peerDependencies:
+      next: '>=13'
+      react: '>=18'
+    peerDependenciesMeta:
+      next:
+        optional: true
+      react:
+        optional: true
 
   '@braintree/sanitize-url@7.1.2':
     resolution: {integrity: sha512-jigsZK+sMF/cuiB7sERuo9V7N9jx+dhmHHnQyDSVdpZwVutaBu7WvNYqMDLSgFgfB30n452TP3vjDAvFC973mA==}
@@ -3966,12 +3978,6 @@ packages:
     resolution: {integrity: sha512-65P7iz6X5yEr1cwcgvQxbbIw7Uk3gOy5dIdtZ4rDveLqhrdJP+Li/Hx6tyK0NEb+2GCyneCMJiGqrADCSNk8sQ==}
     engines: {node: '>=8.0'}
 
-  trailic@https://github.com/trailic/trailic/releases/download/v0.1.1/trailic-0.1.1.tgz:
-    resolution: {tarball: https://github.com/trailic/trailic/releases/download/v0.1.1/trailic-0.1.1.tgz}
-    version: 0.1.1
-    peerDependencies:
-      react: '>=18'
-
   tree-kill@1.2.2:
     resolution: {integrity: sha512-L0Orpi8qGpRG//Nd+H90vFB+3iHnue1zSSGmNOOCh1GLJ7rUKVwV2HvijphGQS2UmhUZewS9VgvxYIdgr+fG1A==}
     hasBin: true
@@ -4340,6 +4346,11 @@ snapshots:
       '@babel/helper-validator-identifier': 7.28.5
 
   '@bcoe/v8-coverage@1.0.2': {}
+
+  '@borromic/analytics@0.1.0(next@15.5.14(react-dom@19.2.4(react@19.2.4))(react@19.2.4))(react@19.2.4)':
+    optionalDependencies:
+      next: 15.5.14(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
+      react: 19.2.4
 
   '@braintree/sanitize-url@7.1.2': {}
 
@@ -8853,10 +8864,6 @@ snapshots:
   to-regex-range@5.0.1:
     dependencies:
       is-number: 7.0.0
-
-  trailic@https://github.com/trailic/trailic/releases/download/v0.1.1/trailic-0.1.1.tgz(react@19.2.4):
-    dependencies:
-      react: 19.2.4
 
   tree-kill@1.2.2: {}
 
