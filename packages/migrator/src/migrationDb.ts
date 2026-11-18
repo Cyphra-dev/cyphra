@@ -1,5 +1,5 @@
 import type { Session } from "neo4j-driver";
-import type { CyphraClient } from "@cyphra/runtime";
+import { toNative, type CyphraClient } from "@cyphra/runtime";
 import { wrapInTransactions } from "./batch.js";
 import { compileRenameLabel, compileRenameProperty } from "./rename.js";
 
@@ -24,6 +24,13 @@ export type MigrationDb = {
     batchSize: number;
     params?: Record<string, unknown>;
   }): Promise<void>;
+  /**
+   * Execute a Cypher statement given as **trusted text** (used by generated migrations for DDL, which
+   * cannot be parameterized). Pass values through `params`, never by string concatenation.
+   *
+   * @returns Rows as plain JS objects (integers → number, temporals → Date).
+   */
+  execute(text: string, params?: Record<string, unknown>): Promise<Record<string, unknown>[]>;
   /** Structural / data helpers (validated identifiers only). */
   readonly migrate: MigrationMigrateHelpers;
 };
@@ -66,5 +73,13 @@ export function createMigrationDb(client: CyphraClient, session: Session): Migra
     },
   };
 
-  return { run, runInTransactionBatches, migrate };
+  const execute = async (
+    text: string,
+    params: Record<string, unknown> = {},
+  ): Promise<Record<string, unknown>[]> => {
+    const result = await session.run(text, params);
+    return result.records.map((r) => toNative(r.toObject()) as Record<string, unknown>);
+  };
+
+  return { run, runInTransactionBatches, execute, migrate };
 }

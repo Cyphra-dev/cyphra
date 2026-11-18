@@ -34,6 +34,12 @@ const active = await db.user.findMany({
 const rows = await db.$cypher`MATCH (u:User {email: ${email}}) RETURN u.id AS id`;
 ```
 
+```bash
+cyphra dev                          # local Neo4j 5 in Docker, writes .env
+cyphra migrate dev --name add-roles # migration generated from your schema changes, then applied
+cyphra pull                         # or start from an existing database: write schema.cyphra
+```
+
 - **Install (app code)**: `pnpm add cyphra` — re-exports `@cyphra/schema`, `@cyphra/query`, `@cyphra/runtime`, `@cyphra/migrator`
 - **CLI**: `pnpm add -D @cyphra/cli`
 - **Docs site**: [`doc/`](./doc) (Next.js + Nextra) — `pnpm doc:dev` / `pnpm doc:build`
