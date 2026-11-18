@@ -1,0 +1,20 @@
+{
+  "name": "cyphra-example-blog",
+  "private": true,
+  "type": "module",
+  "description": "Typed ORM client generated from a .cyphra schema",
+  "scripts": {
+    "generate": "cyphra generate",
+    "start": "cyphra generate && tsx src/main.ts",
+    "typecheck": "cyphra generate && tsc --noEmit"
+  },
+  "dependencies": {
+    "cyphra": "workspace:*"
+  },
+  "devDependencies": {
+    "@cyphra/cli": "workspace:*",
+    "@types/node": "^22.10.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}

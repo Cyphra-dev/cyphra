@@ -29,11 +29,13 @@ export type RelationshipDeclaration = {
 
 export type NodeField = ScalarNodeField | RelationalNodeField;
 
-export type ScalarTypeName = "String" | "Int" | "Float" | "Boolean" | "DateTime";
+export type ScalarTypeName = "String" | "Int" | "Float" | "Boolean" | "DateTime" | "Date";
 
 export type ScalarTypeRef = {
   readonly name: ScalarTypeName;
   readonly optional: boolean;
+  /** `String[]`-style scalar list (lists are never optional; an absent list reads as `[]`). */
+  readonly list?: boolean;
 };
 
 export type ScalarNodeField = {
@@ -65,4 +67,6 @@ export type DecoratorArg = {
 
 export type DecoratorValue =
   | { readonly kind: "string"; readonly value: string }
+  | { readonly kind: "number"; readonly value: number }
+  | { readonly kind: "boolean"; readonly value: boolean }
   | { readonly kind: "identifier"; readonly value: string };

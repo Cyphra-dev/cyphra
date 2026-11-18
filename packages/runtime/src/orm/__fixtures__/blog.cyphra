@@ -1,0 +1,26 @@
+node User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  age       Int?
+  tags      String[]
+  createdAt DateTime @default(now())
+  posts     Post[]   @relationship(type: "AUTHORED", direction: OUT)
+  following User[]   @relationship(type: "FOLLOWS", direction: OUT)
+  followers User[]   @relationship(type: "FOLLOWS", direction: IN)
+}
+
+node Post {
+  id        String  @id @default(uuid())
+  title     String
+  published Boolean @default(false)
+  views     Int     @default(0)
+  author    User?   @relationship(type: "AUTHORED", direction: IN)
+}
+
+relationship Follows {
+  type "FOLLOWS"
+  from User
+  to User
+  since DateTime @default(now())
+}

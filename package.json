@@ -21,7 +21,8 @@
     "doc:dev": "pnpm --filter cyphra-doc dev",
     "doc:build": "pnpm --filter cyphra-doc build",
     "example:basic": "pnpm --filter cyphra-example-basic start",
-    "changeset": "changeset"
+    "changeset": "changeset",
+    "example:blog": "pnpm --filter cyphra-example-blog start"
   },
   "devDependencies": {
     "@changesets/cli": "^2.27.10",

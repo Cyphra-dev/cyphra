@@ -26,6 +26,7 @@ describe("runSchemaDdl", () => {
       schema: schemaPath,
       migrations: join(dir, "migrations"),
       generate: join(dir, "cyphra.gen.ts"),
+      runtimeImport: "cyphra",
     };
     const lines: string[] = [];
     vi.spyOn(console, "log").mockImplementation((msg: unknown) => {

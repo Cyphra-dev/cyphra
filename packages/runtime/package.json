@@ -1,7 +1,7 @@
 {
   "name": "@cyphra/runtime",
   "version": "0.1.0",
-  "description": "Neo4j execution layer for Cyphra: sessions, transactions, and cypher tag",
+  "description": "Neo4j execution layer for Cyphra: typed ORM client, sessions, transactions, and cypher tag",
   "type": "module",
   "sideEffects": false,
   "publishConfig": {
@@ -26,6 +26,7 @@
   },
   "dependencies": {
     "@cyphra/query": "workspace:*",
+    "@cyphra/schema": "workspace:*",
     "neo4j-driver": "^5.27.0"
   },
   "devDependencies": {

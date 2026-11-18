@@ -1,0 +1,169 @@
+# Typed client
+
+`cyphra generate` turns your `.cyphra` schema into a **fully typed client**: model types, inputs,
+filters and results are all inferred from the schema — including nested relations and edge properties.
+
+```bash
+pnpm add cyphra
+pnpm add -D @cyphra/cli
+pnpm cyphra generate   # writes cyphra.gen.ts (path set by "generate" in cyphra.json)
+```
+
+```ts
+import { createClient } from "./cyphra.gen.js";
+
+const db = createClient({
+  uri: process.env.NEO4J_URI!,
+  user: process.env.NEO4J_USER!,
+  password: process.env.NEO4J_PASSWORD!,
+});
+```
+
+Each node model becomes a delegate with a lower-cased name: `node User` → `db.user`, `node BlogPost` → `db.blogPost`.
+
+> Requires **Neo4j 5.6+** (the client compiles relations to `COLLECT {}` / `EXISTS {}` subqueries).
+
+## Reading
+
+```ts
+const users = await db.user.findMany({
+  where: { email: { endsWith: "@acme.io" }, posts: { some: { published: true } } },
+  orderBy: [{ createdAt: "desc" }],
+  skip: 0,
+  take: 20,
+});
+
+const alice = await db.user.findUnique({ where: { email: "alice@acme.io" } }); // User | null
+const sure = await db.user.findUniqueOrThrow({ where: { id } }); // throws NotFoundError
+const first = await db.post.findFirst({ where: { published: false } });
+const total = await db.user.count({ where: { name: { not: null } } });
+```
+
+`findUnique`, `update`, `upsert` and `delete` require at least one `@id` / `@unique` field in `where` —
+enforced by the types and at runtime.
+
+### select and include
+
+`include` adds relations to all scalar fields; `select` picks exactly what you want. Both nest, and each
+relation accepts `where`, `orderBy`, `skip` and `take`. The result type follows your arguments.
+
+```ts
+const user = await db.user.findUnique({
+  where: { id },
+  select: {
+    name: true,
+    posts: {
+      where: { published: true },
+      orderBy: { title: "asc" },
+      take: 5,
+      select: { title: true },
+    },
+    following: true,
+  },
+});
+// { name: string | null; posts: { title: string }[]; following: (User & { $edge: Follows })[] } | null
+```
+
+When a relation's edge is described by a `relationship { … }` model, each related node carries its edge
+properties under **`$edge`**.
+
+## Filters
+
+| Field type                         | Operators                                                       |
+| ---------------------------------- | --------------------------------------------------------------- |
+| any scalar                         | value (equals), `null` (absent), `equals`, `not`, `in`, `notIn` |
+| `Int`, `Float`, `DateTime`, `Date` | `lt`, `lte`, `gt`, `gte`                                        |
+| `String`                           | `contains`, `startsWith`, `endsWith`                            |
+| lists (`String[]`, …)              | `has`, `hasEvery`, `hasSome`, `isEmpty`, `equals`               |
+| to-many relation                   | `some`, `none`, `every`                                         |
+| to-one relation                    | `is`, `isNot`, `null` (no related node)                         |
+
+Combine with `AND`, `OR` and `NOT`.
+
+## Writing
+
+```ts
+const alice = await db.user.create({
+  data: {
+    email: "alice@acme.io",
+    posts: { create: [{ title: "Hello graph" }] },
+    following: { connect: { email: "bob@acme.io", $edge: { since: new Date() } } },
+  },
+  include: { posts: true },
+});
+
+await db.user.update({
+  where: { id: alice.id },
+  data: {
+    name: "Alice",
+    loginCount: { increment: 1 },
+    following: { disconnect: { email: "bob@acme.io" } },
+  },
+});
+
+await db.post.update({ where: { id }, data: { author: { connect: { id: alice.id } } } }); // replaces the edge
+await db.post.update({ where: { id }, data: { author: { disconnect: true } } });
+
+await db.user.upsert({ where: { email }, create: { email }, update: { name: "again" } });
+await db.user.delete({ where: { id } }); // DETACH DELETE, returns the deleted node
+await db.user.createMany({ data: [{ email: "a@x.io" }, { email: "b@x.io" }] });
+await db.user.updateMany({ where: { name: null }, data: { name: "anonymous" } });
+await db.user.deleteMany({ where: { email: { endsWith: "@spam.io" } } });
+```
+
+Relation operations: `create` and `connect` (on create and update), plus `disconnect` and `set`
+(to-many only, replaces all edges) on update. On a to-one relation, `connect` / `create` replace the
+existing edge.
+
+A nested write runs in **one write transaction**: if any step fails (for example a `connect` target
+does not exist) nothing is written.
+
+Defaults from the schema are applied on create: `cuid()`, `uuid()`, `now()` and literals
+(`@default("draft")`, `@default(0)`, `@default(true)`).
+
+## Transactions
+
+```ts
+await db.$transaction(async (tx) => {
+  const from = await tx.account.update({ where: { id: a }, data: { balance: { decrement: 10 } } });
+  if (from.balance < 0) throw new Error("insufficient funds"); // rolls everything back
+  await tx.account.update({ where: { id: b }, data: { balance: { increment: 10 } } });
+});
+```
+
+The driver may retry the callback on transient errors, so keep it free of outside side effects.
+
+## Raw Cypher
+
+Cypher is never hidden. `db.$cypher` runs a parameterized tagged template and converts values to plain
+JS (integers → `number`, temporals → `Date`, nodes → their properties):
+
+```ts
+const rows = await db.$cypher<{ name: string; n: number }>`
+  MATCH (u:User)-[:AUTHORED]->(p:Post) WHERE p.published = ${true}
+  RETURN u.name AS name, count(p) AS n ORDER BY n DESC
+`;
+```
+
+The low-level [runtime](/runtime) (`db.$client`) and the [query builder](/queries) remain available.
+
+## Types and values
+
+| Schema     | TypeScript            | Stored in Neo4j as                                               |
+| ---------- | --------------------- | ---------------------------------------------------------------- |
+| `String`   | `string`              | String                                                           |
+| `Int`      | `number`              | Integer (64-bit; values outside the JS safe range throw on read) |
+| `Float`    | `number`              | Float                                                            |
+| `Boolean`  | `boolean`             | Boolean                                                          |
+| `DateTime` | `Date`                | DateTime                                                         |
+| `Date`     | `Date` (UTC midnight) | Date                                                             |
+| `T?`       | `T \| null`           | absent property                                                  |
+| `T[]`      | `T[]`                 | List (absent reads as `[]`)                                      |
+
+## Errors
+
+- `CyphraValidationError`: unknown field or operator, wrong value type, missing required field, or missing unique key.
+- `NotFoundError`: `update` / `delete` / `connect` / `findUniqueOrThrow` target not found.
+
+Field names, labels and relationship types always come from your schema and unknown keys are rejected,
+so arguments cannot inject Cypher. Every value is sent as a parameter.

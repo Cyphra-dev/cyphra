@@ -13,7 +13,7 @@ export async function runGenerate(cwd: string, config: CyphraConfig): Promise<vo
   const source = await readFile(config.schema, "utf8");
   const doc = parseSchema(source);
   validateSchema(doc);
-  const out = renderCyphraGenSource(doc);
+  const out = renderCyphraGenSource(doc, { runtimeImport: config.runtimeImport });
   await writeFile(config.generate, out, "utf8");
   console.log(`Wrote ${path.relative(cwd, config.generate)}`);
 }

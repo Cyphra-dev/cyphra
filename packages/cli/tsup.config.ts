@@ -6,8 +6,6 @@ export default defineConfig({
   dts: false,
   sourcemap: true,
   clean: true,
-  banner: {
-    js: "#!/usr/bin/env node",
-  },
+  // The shebang comes from src/index.ts (tsup preserves it); a banner would duplicate it.
   external: ["@cyphra/migrator", "@cyphra/runtime", "@cyphra/schema", "commander"],
 });

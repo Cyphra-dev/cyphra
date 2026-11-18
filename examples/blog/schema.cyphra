@@ -1,0 +1,25 @@
+// A tiny blog: users write posts and follow each other.
+
+node User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  createdAt DateTime @default(now())
+  posts     Post[]   @relationship(type: "AUTHORED", direction: OUT)
+  following User[]   @relationship(type: "FOLLOWS", direction: OUT)
+}
+
+node Post {
+  id        String   @id @default(uuid())
+  title     String
+  tags      String[]
+  published Boolean  @default(false)
+  author    User?    @relationship(type: "AUTHORED", direction: IN)
+}
+
+relationship Follows {
+  type "FOLLOWS"
+  from User
+  to User
+  since DateTime @default(now())
+}
