@@ -7,6 +7,8 @@ export type CyphraConfig = {
   readonly migrations: string;
   /** Absolute path for `cyphra generate` output (default `./cyphra.gen.ts`). */
   readonly generate: string;
+  /** Module the generated client imports from (default `"cyphra"`). */
+  readonly runtimeImport: string;
 };
 
 /**
@@ -28,9 +30,14 @@ export async function loadConfig(cwd: string): Promise<CyphraConfig> {
     throw new Error('cyphra.json requires string fields "schema" and "migrations"');
   }
   const generatePath = typeof generateRaw === "string" ? generateRaw : "./cyphra.gen.ts";
+  const runtimeImportRaw = (data as Record<string, unknown>).runtimeImport;
+  if (runtimeImportRaw !== undefined && typeof runtimeImportRaw !== "string") {
+    throw new Error('cyphra.json "runtimeImport" must be a string');
+  }
   return {
     schema: resolveUnderRoot(cwd, schema),
     migrations: resolveUnderRoot(cwd, migrations),
     generate: resolveUnderRoot(cwd, generatePath),
+    runtimeImport: runtimeImportRaw ?? "cyphra",
   };
 }

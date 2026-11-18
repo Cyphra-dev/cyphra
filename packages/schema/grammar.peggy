@@ -67,20 +67,22 @@ scalarNodeField
     }
 
 fieldType
-  = n:scalarTypeName opt:"?"? {
+  = n:scalarTypeName "[]" {
+      return { name: n, optional: false, list: true };
+    }
+  / n:scalarTypeName opt:"?"? {
       return { name: n, optional: opt === "?" };
     }
 
 scalarTypeName
-  = "String" { return "String"; }
-  / "Int" { return "Int"; }
-  / "Float" { return "Float"; }
-  / "Boolean" { return "Boolean"; }
-  / "DateTime" { return "DateTime"; }
+  = n:("String" / "Int" / "Float" / "Boolean" / "DateTime" / "Date") ![a-zA-Z0-9_] { return n; }
 
 decorator
   = "@" "default" "(" _ id:identifier "(" _ ")" _ ")" {
       return { name: "default", args: [{ key: "fn", value: { kind: "identifier", value: id } }] };
+    }
+  / "@" "default" "(" _ v:literalValue _ ")" {
+      return { name: "default", args: [{ key: "value", value: v }] };
     }
   / "@" name:identifier "(" _ args:decoratorArgs _ ")" {
       return { name, args };
@@ -101,11 +103,20 @@ decoratorArg
     }
 
 decoratorValue
+  = literalValue
+  / id:identifier {
+      return { kind: "identifier", value: id };
+    }
+
+literalValue
   = s:stringLiteral {
       return { kind: "string", value: s };
     }
-  / id:identifier {
-      return { kind: "identifier", value: id };
+  / b:("true" / "false") ![a-zA-Z0-9_] {
+      return { kind: "boolean", value: b === "true" };
+    }
+  / n:$("-"? [0-9]+ ("." [0-9]+)?) {
+      return { kind: "number", value: Number(n) };
     }
 
 stringLiteral

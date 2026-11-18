@@ -6,3 +6,5 @@
 export { CyphraClient, type CyphraClientOptions } from "./client.js";
 export type { Config, Driver, ManagedTransaction, Session } from "./client.js";
 export { toPlainRecord, toPlainRecords } from "./records.js";
+export * from "./orm/index.js";
+export type { SchemaModel } from "@cyphra/schema";

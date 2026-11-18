@@ -1,7 +1,7 @@
 {
   "name": "@cyphra/runtime",
-  "version": "0.0.0",
-  "description": "Neo4j execution layer for Cyphra: sessions, transactions, and cypher tag",
+  "version": "0.1.0",
+  "description": "Neo4j execution layer for Cyphra: typed ORM client, sessions, transactions, and cypher tag",
   "type": "module",
   "sideEffects": false,
   "publishConfig": {
@@ -26,12 +26,23 @@
   },
   "dependencies": {
     "@cyphra/query": "workspace:*",
-    "neo4j-driver": "^5.27.0"
+    "@cyphra/schema": "workspace:*",
+    "neo4j-driver": "^5.28.3"
   },
   "devDependencies": {
-    "@types/node": "^22.10.2",
-    "tsup": "^8.3.5",
-    "typescript": "^5.7.2",
-    "vitest": "^3.0.2"
+    "@types/node": "^22.20.5",
+    "tsup": "^8.5.1",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.12"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Cyphra-dev/cyphra.git",
+    "directory": "packages/runtime"
+  },
+  "homepage": "https://cyphra-doc.vercel.app",
+  "bugs": {
+    "url": "https://github.com/Cyphra-dev/cyphra/issues"
   }
 }

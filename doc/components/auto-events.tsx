@@ -77,7 +77,13 @@ export function AutoEvents() {
       // Skipped when the click already produced an explicit data-event
       // (e.g. data-event="copy_credential"), so one click = one event.
       const btn = t.closest("button, [role=button]");
-      if (btn && !tagged?.dataset.event && COPY_WORDS.test(`${btn.getAttribute("aria-label") ?? ""} ${btn.getAttribute("title") ?? ""} ${btn.textContent ?? ""}`)) {
+      if (
+        btn &&
+        !tagged?.dataset.event &&
+        COPY_WORDS.test(
+          `${btn.getAttribute("aria-label") ?? ""} ${btn.getAttribute("title") ?? ""} ${btn.textContent ?? ""}`,
+        )
+      ) {
         send("copy", { what: copyContext(btn.parentElement), via: "button" });
       }
 
@@ -104,7 +110,11 @@ export function AutoEvents() {
 
     const onSubmit = (e: SubmitEvent) => {
       const form = e.target as HTMLFormElement | null;
-      if (form?.querySelector('input[type=search], input[name=q], input[name=query], input[name=s], [role=searchbox]')) {
+      if (
+        form?.querySelector(
+          "input[type=search], input[name=q], input[name=query], input[name=s], [role=searchbox]",
+        )
+      ) {
         send("search", { via: "submit" });
       }
     };
@@ -115,7 +125,11 @@ export function AutoEvents() {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const onInput = (e: Event) => {
       const el = e.target as HTMLInputElement | null;
-      if (!el || !el.matches('input[type=search], [role=searchbox], input[name=q], input[name=query]')) return;
+      if (
+        !el ||
+        !el.matches("input[type=search], [role=searchbox], input[name=q], input[name=query]")
+      )
+        return;
       clearTimeout(timer);
       timer = setTimeout(() => {
         if (el.value.trim().length >= 3 && !typed.has(el)) {
@@ -125,10 +139,12 @@ export function AutoEvents() {
       }, 1500);
     };
 
-    const ext = (name: string) => (name.includes(".") ? name.split(".").pop()!.toLowerCase().slice(0, 12) : "none");
+    const ext = (name: string) =>
+      name.includes(".") ? name.split(".").pop()!.toLowerCase().slice(0, 12) : "none";
     const onChange = (e: Event) => {
       const el = e.target as HTMLInputElement | null;
-      if (el?.type === "file" && el.files?.length) send("file_selected", { ext: ext(el.files[0].name), via: "picker" });
+      if (el?.type === "file" && el.files?.length)
+        send("file_selected", { ext: ext(el.files[0].name), via: "picker" });
     };
     const onDrop = (e: DragEvent) => {
       const f = e.dataTransfer?.files?.[0];

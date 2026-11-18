@@ -1,6 +1,9 @@
 import type { Decorator, NodeField, ScalarTypeRef, SchemaDocument } from "./ast.js";
 
 function formatScalarType(t: ScalarTypeRef): string {
+  if (t.list) {
+    return `${t.name}[]`;
+  }
   return t.optional ? `${t.name}?` : t.name;
 }
 
@@ -8,7 +11,7 @@ function formatDecoratorValue(v: Decorator["args"][number]["value"]): string {
   if (v.kind === "string") {
     return JSON.stringify(v.value);
   }
-  return v.value;
+  return String(v.value);
 }
 
 /**
@@ -21,6 +24,10 @@ export function formatDecorator(d: Decorator): string {
     const fnArg = d.args.find((a) => a.key === "fn");
     if (fnArg && fnArg.value.kind === "identifier") {
       return `@default(${fnArg.value.value}())`;
+    }
+    const valueArg = d.args.find((a) => a.key === "value");
+    if (valueArg) {
+      return `@default(${formatDecoratorValue(valueArg.value)})`;
     }
   }
   if (d.args.length === 0) {

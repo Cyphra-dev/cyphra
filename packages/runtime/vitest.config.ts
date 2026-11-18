@@ -8,6 +8,7 @@ export default defineConfig({
   resolve: {
     alias: {
       "@cyphra/query": path.join(monorepoRoot, "packages/query/src/index.ts"),
+      "@cyphra/schema": path.join(monorepoRoot, "packages/schema/src/index.ts"),
     },
   },
   test: {
