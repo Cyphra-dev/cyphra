@@ -4,26 +4,67 @@ description: "Cyphra CLI reference for Neo4j projects: init, validate, generate,
 
 # CLI
 
-Install the binary (dev dependency is typical):
-
 ```bash
 pnpm add -D @cyphra/cli
 ```
 
-App code usually depends on **`cyphra`** (library stack) separately — see [home / Install](/).
+App code depends on **`cyphra`** separately (see [home / Install](/)). The CLI loads `./.env` automatically.
 
-| Command                          | Description                                            |
-| -------------------------------- | ------------------------------------------------------ |
-| `cyphra init`                    | Scaffold config, schema, migrations, env example       |
-| `cyphra validate`                | Parse and validate `schema.cyphra`                     |
-| `cyphra schema print`            | Canonical pretty-print of the schema to stdout         |
-| `cyphra schema ddl`              | Print `cyphra push` DDL (constraints + indexes); no DB |
-| `cyphra generate`                | Emit `cyphra.gen.ts` (labels & relationship types)     |
-| `cyphra migrate deploy`          | Run pending migrations                                 |
-| `cyphra migrate dev`             | Same with verbose logging                              |
-| `cyphra migration:create <name>` | New `.mjs` migration                                   |
-| `cyphra push`                    | Apply constraints + `@index` range indexes (Neo4j 5+)  |
+| Command                          | Description                                                                                                               |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `cyphra init`                    | Scaffold `cyphra.json`, `schema.cyphra`, `migrations/`, `.env.example` (existing files are kept)                          |
+| `cyphra dev`                     | Run a local Neo4j 5 in Docker for this project and write `.env` (`--stop`, `--reset`, `--port`, `--http-port`, `--image`) |
+| `cyphra generate`                | Generate the [typed client](/client) (`cyphra.gen.ts`)                                                                    |
+| `cyphra migrate dev`             | Generate a migration from schema changes, then apply pending ones (`--name`, `--create-only`)                             |
+| `cyphra migrate diff`            | Print the migration `migrate dev` would generate                                                                          |
+| `cyphra migrate deploy`          | Apply pending migrations                                                                                                  |
+| `cyphra migrate status`          | Applied / pending / modified migrations and uncaptured schema changes (non-zero exit if any)                              |
+| `cyphra migration:create <name>` | Empty `.mjs` migration to write by hand                                                                                   |
+| `cyphra pull`                    | Introspect the database and write `schema.cyphra` (`--print`, `--force`)                                                  |
+| `cyphra push`                    | Apply constraints and range indexes directly (prototyping)                                                                |
+| `cyphra validate`                | Parse and validate the schema                                                                                             |
+| `cyphra schema print`            | Canonical pretty-print of the schema                                                                                      |
+| `cyphra schema ddl`              | Print the constraint and index DDL (no database)                                                                          |
 
-`cyphra.json` may set `schema`, `migrations`, and optional `generate` (output path; default `./cyphra.gen.ts`).
+## cyphra.json
 
-`validate`, `generate`, `schema print`, and **`schema ddl`** only need the schema file (and `cyphra.json`). **`migrate`** and **`push`** require `NEO4J_URI`, `NEO4J_USER`, and `NEO4J_PASSWORD`.
+```json
+{
+  "schema": "./schema.cyphra",
+  "migrations": "./migrations",
+  "generate": "./cyphra.gen.ts",
+  "runtimeImport": "cyphra"
+}
+```
+
+`runtimeImport` is the module that generated files (the client and migrations) import from. Set it to
+`@cyphra/runtime` if you depend on the scoped packages instead of `cyphra`.
+
+## Environment
+
+Commands that talk to Neo4j (`migrate dev | deploy | status`, `pull`, `push`) read `NEO4J_URI`,
+`NEO4J_USER`, `NEO4J_PASSWORD` and optionally `NEO4J_DATABASE`.
+
+## cyphra dev
+
+Starts `neo4j:5` in a container named after your project folder, bound to **127.0.0.1 only**, with data
+in a named Docker volume. It waits until Neo4j accepts connections and writes `.env` if there is none:
+
+```bash
+cyphra dev            # start (or restart) and wait until ready
+cyphra dev --stop     # stop, keep data
+cyphra dev --reset    # remove the container and its data
+```
+
+## cyphra pull
+
+Reads labels, relationship types, property types, constraints and indexes from a live database and
+writes a `.cyphra` schema. It is read-only and samples up to 10,000 edges per relationship type to find
+their endpoints. Review the result:
+
+- Relation names are derived from relationship types (`AUTHORED` becomes `authored` on the start node
+  and `authoredBy` on the end node), and every relation is to-many.
+- A property is required only if every node with that label had it at pull time.
+- Single-property uniqueness constraints become `@id` (on a property named `id`) or `@unique`; range
+  indexes become `@index`.
+- Unsupported types (e.g. `Point`) and names that are not identifiers are skipped with a warning.

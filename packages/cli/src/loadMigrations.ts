@@ -24,7 +24,13 @@ export async function loadMigrationsFromDir(
   root: string,
 ): Promise<LoadedMigration[]> {
   assertDirUnderRoot(migrationsDir, root);
-  const entries = await readdir(migrationsDir);
+  let entries: string[];
+  try {
+    entries = await readdir(migrationsDir);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw err;
+  }
   const files = entries.filter((f) => f.endsWith(".js") || f.endsWith(".mjs")).sort();
   const out: LoadedMigration[] = [];
   for (const f of files) {

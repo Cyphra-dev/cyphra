@@ -53,3 +53,28 @@ export async function recordMigration(
   );
   await r;
 }
+
+export type AppliedMigration = {
+  readonly name: string;
+  readonly checksum: string | null;
+  readonly appliedAt: Date | null;
+};
+
+/**
+ * List applied migrations, oldest first.
+ *
+ * @param session - Open session.
+ */
+export async function listAppliedMigrations(session: Session): Promise<AppliedMigration[]> {
+  const result = await session.run(
+    `MATCH (m:__CyphraMigration) RETURN m.name AS name, m.checksum AS checksum, m.appliedAt AS appliedAt ORDER BY m.appliedAt, m.name`,
+  );
+  return result.records.map((r) => {
+    const at = r.get("appliedAt") as { toStandardDate?: () => Date } | null;
+    return {
+      name: r.get("name") as string,
+      checksum: (r.get("checksum") as string | null) ?? null,
+      appliedAt: at?.toStandardDate ? at.toStandardDate() : null,
+    };
+  });
+}
