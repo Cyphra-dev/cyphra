@@ -79,3 +79,9 @@ The job runs **lint**, **format check**, **typecheck**, and **tests** before the
 Configure **npm Trusted Publishers** for this repository so OIDC can authenticate publishes without long-lived `NPM_TOKEN` secrets.
 
 Some organizations block the default `GITHUB_TOKEN` from **creating pull requests** (Changesets opens a “Version Packages” PR). If the Release workflow fails with that error, add a repository secret **`CHANGESET_RELEASE_PAT`**: a fine-grained PAT with **Contents** and **Pull requests** read/write on this repo (or a classic PAT with `repo` scope). The workflow uses it instead of `GITHUB_TOKEN` for the Changesets step. Alternatively, an org owner can allow GitHub Actions to create pull requests for this repository.
+
+## Dependency audit exceptions
+
+`pnpm audit --audit-level=high` runs in CI. Exceptions live in `pnpm.auditConfig.ignoreGhsas` in the root `package.json` and must be listed here:
+
+- **GHSA-mrhx-c7xc-m3w5 (zod < 4.6.6)**: only reached through `nextra` / `nextra-theme-docs` in the docs site. They are pinned to zod 4.3.6 (`pnpm.overrides`) because Nextra 4.6.1 fails to prerender with zod 4.6.x. The advisory concerns validating attacker-controlled oversized collections, while Nextra only validates our own component props at build time. Remove the override and the exception once Nextra supports zod ≥ 4.6.6.

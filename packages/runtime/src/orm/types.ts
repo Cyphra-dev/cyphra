@@ -62,28 +62,27 @@ export type ScalarFilter<T> = [NonNullable<T>] extends [readonly (infer E)[]]
       isEmpty?: boolean;
       equals?: readonly E[];
     }
-  :
-      | T
-      | ({
-          equals?: T;
-          not?: T | ScalarFilter<T>;
-          in?: readonly NonNullable<T>[];
-          notIn?: readonly NonNullable<T>[];
-        } & (NonNullable<T> extends Comparable
+  : | T
+    | ({
+        equals?: T;
+        not?: T | ScalarFilter<T>;
+        in?: readonly NonNullable<T>[];
+        notIn?: readonly NonNullable<T>[];
+      } & (NonNullable<T> extends Comparable
+        ? {
+            lt?: NonNullable<T>;
+            lte?: NonNullable<T>;
+            gt?: NonNullable<T>;
+            gte?: NonNullable<T>;
+          }
+        : unknown) &
+        (NonNullable<T> extends string
           ? {
-              lt?: NonNullable<T>;
-              lte?: NonNullable<T>;
-              gt?: NonNullable<T>;
-              gte?: NonNullable<T>;
+              contains?: string;
+              startsWith?: string;
+              endsWith?: string;
             }
-          : unknown) &
-          (NonNullable<T> extends string
-            ? {
-                contains?: string;
-                startsWith?: string;
-                endsWith?: string;
-              }
-            : unknown));
+          : unknown));
 
 type RelationFilter<TM extends TypeMap, D extends RelationTypeDef> = D["many"] extends true
   ? {
