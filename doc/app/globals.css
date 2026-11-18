@@ -1,0 +1,302 @@
+/* Cyphra brand layer on top of nextra-theme-docs.
+ * Tokens: neutral zinc scale, "node" mint as the primary accent, "edge" violet as the secondary.
+ * next-themes toggles `html.dark`; every color below has a light and a dark value. */
+
+:root {
+  --cy-mint: #0e9f6e;
+  --cy-violet: #7c3aed;
+  --cy-accent: #047a52; /* text and links on light surfaces: 5.4:1 on white */
+  --cy-accent-soft: rgba(16, 185, 129, 0.1);
+
+  --cy-bg: #ffffff;
+  --cy-bg-subtle: #fafafa;
+  --cy-surface: #ffffff;
+  --cy-surface-2: #f4f4f5;
+  --cy-border: #e4e4e7;
+  --cy-border-strong: #d4d4d8;
+  --cy-fg: #09090b;
+  --cy-fg-muted: #52525b;
+  --cy-fg-subtle: #71717a;
+
+  --cy-code-bg: #fafafa;
+  --cy-code-border: #e4e4e7;
+  --cy-inline-code-bg: #f4f4f5;
+
+  --cy-btn-bg: #09090b;
+  --cy-btn-fg: #fafafa;
+  --cy-btn-hover: #27272a;
+
+  --cy-shadow: 0 1px 2px rgba(9, 9, 11, 0.04), 0 8px 24px -8px rgba(9, 9, 11, 0.08);
+  --cy-radius: 12px;
+
+  --x-font-sans: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+  --x-font-mono: var(--font-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+html.dark {
+  --cy-mint: #4be3a6;
+  --cy-violet: #a78bfa;
+  --cy-accent: #4be3a6; /* 12:1 on #09090b */
+  --cy-accent-soft: rgba(75, 227, 166, 0.1);
+
+  --cy-bg: #09090b;
+  --cy-bg-subtle: #0c0c0f;
+  --cy-surface: #111114;
+  --cy-surface-2: #18181b;
+  --cy-border: #232329;
+  --cy-border-strong: #34343c;
+  --cy-fg: #fafafa;
+  --cy-fg-muted: #a1a1aa;
+  --cy-fg-subtle: #8b8b94; /* 5.9:1 on the background, unlike zinc-500 */
+
+  --cy-code-bg: #0c0c0f;
+  --cy-code-border: #232329;
+  --cy-inline-code-bg: #18181b;
+
+  --cy-btn-bg: #fafafa;
+  --cy-btn-fg: #09090b;
+  --cy-btn-hover: #e4e4e7;
+
+  --cy-shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 12px 32px -12px rgba(0, 0, 0, 0.6);
+}
+
+html {
+  font-feature-settings: "ss01", "cv11";
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--cy-mint) 28%, transparent);
+}
+
+/* ---------- Logo ---------- */
+
+.cy-logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.cy-logo-word {
+  font-family: var(--font-sans);
+  font-weight: 600;
+  font-size: 19px;
+  letter-spacing: -0.03em;
+  color: var(--cy-fg);
+}
+
+/* ---------- Navbar ---------- */
+
+.nextra-navbar-blur {
+  border-color: var(--cy-border) !important;
+}
+
+.nextra-navbar nav {
+  gap: 1.25rem;
+}
+
+.nextra-navbar nav a {
+  font-size: 0.875rem;
+}
+
+.cy-nav-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--cy-fg-muted);
+  transition: color 0.15s ease;
+}
+
+.cy-nav-icon:hover {
+  color: var(--cy-fg);
+}
+
+/* ---------- Docs typography ---------- */
+
+.nextra-content h1,
+.nextra-content h2,
+.nextra-content h3,
+.nextra-content h4 {
+  letter-spacing: -0.025em;
+  font-weight: 600;
+}
+
+.nextra-content h1 {
+  letter-spacing: -0.035em;
+}
+
+.nextra-content p,
+.nextra-content li {
+  line-height: 1.75;
+}
+
+.nextra-content a:not(.nextra-card):not([class*="landing"]) {
+  text-underline-offset: 3px;
+}
+
+/* Code blocks: neutral surface instead of pure white/black, brand border, mono font. */
+.nextra-code pre {
+  background-color: var(--cy-code-bg) !important;
+  box-shadow: inset 0 0 0 1px var(--cy-code-border) !important;
+  border-radius: 10px;
+  font-size: 0.8125rem;
+  line-height: 1.7;
+}
+
+/* No ligatures: Cypher arrows like -[:R]-> must read exactly as typed. */
+.nextra-code pre code,
+.nextra-content code {
+  font-family: var(--x-font-mono);
+  font-variant-ligatures: none;
+}
+
+/* Filename bar and the block under it read as one card. */
+.nextra-code > div:first-child:not(:last-child) {
+  height: 2.5rem;
+  border-color: var(--cy-code-border) !important;
+  border-radius: 10px 10px 0 0;
+  background-color: var(--cy-surface-2) !important;
+  font-family: var(--x-font-mono);
+  color: var(--cy-fg-muted) !important;
+}
+
+.nextra-code > div:first-child:not(:last-child) + pre {
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+}
+
+/* Inline code. */
+.nextra-content :not(pre) > code {
+  background-color: var(--cy-inline-code-bg) !important;
+  border: 1px solid var(--cy-border) !important;
+  border-radius: 6px;
+  padding: 0.1em 0.35em;
+  font-size: 0.85em;
+  color: var(--cy-fg);
+}
+
+/* Tables: quiet header, readable rows. */
+.nextra-content table {
+  font-size: 0.875rem;
+}
+
+.nextra-content table th {
+  background-color: var(--cy-bg-subtle);
+  font-weight: 600;
+}
+
+/* Callouts and blockquotes. */
+.nextra-content blockquote {
+  border-color: var(--cy-mint) !important;
+  color: var(--cy-fg-muted);
+}
+
+/* Sidebar: the active page gets a quiet tint and the accent color, not a solid mint block. */
+aside a.x\:bg-primary-100 {
+  background-color: var(--cy-accent-soft) !important;
+  color: var(--cy-accent) !important;
+  font-weight: 500;
+}
+
+/* ---------- Footer ---------- */
+
+:has(> .cy-footer-wrap) {
+  display: flex;
+  flex-direction: column;
+  background-color: var(--cy-bg-subtle) !important;
+  border-top: 1px solid var(--cy-border);
+}
+
+/* The theme switch row (shown when there is no sidebar) moves under the footer links. */
+:has(> .cy-footer-wrap) > :first-child:not(.cy-footer-wrap) {
+  order: 2;
+  margin-top: -1.5rem;
+  padding-bottom: 1.5rem;
+}
+
+:has(> .cy-footer-wrap) > hr {
+  display: none;
+}
+
+.cy-footer-wrap {
+  padding-top: 3.5rem !important;
+  padding-bottom: 2.5rem !important;
+}
+
+.cy-footer {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 1.4fr repeat(3, 1fr);
+  gap: 2.5rem;
+  padding-top: 0.5rem;
+  font-size: 0.875rem;
+  color: var(--cy-fg-muted);
+}
+
+.cy-footer h2 {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--cy-fg);
+  margin-bottom: 0.875rem;
+}
+
+.cy-footer ul {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.cy-footer a {
+  color: var(--cy-fg-muted);
+  transition: color 0.15s ease;
+}
+
+.cy-footer a:hover {
+  color: var(--cy-fg);
+}
+
+.cy-footer-brand p {
+  margin-top: 0.875rem;
+  max-width: 18rem;
+  line-height: 1.6;
+}
+
+.cy-footer-legal {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.5rem 1.5rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--cy-border);
+  font-size: 0.8125rem;
+  color: var(--cy-fg-subtle);
+}
+
+@media (max-width: 767px) {
+  .cy-footer {
+    grid-template-columns: 1fr 1fr;
+    gap: 2rem;
+  }
+
+  .cy-footer-brand {
+    grid-column: 1 / -1;
+  }
+}
+
+/* ---------- Highlighted code (landing) ---------- */
+
+.shiki span {
+  color: var(--shiki-light);
+}
+
+html.dark .shiki span {
+  color: var(--shiki-dark);
+}
+
+/* ---------- Landing: full-bleed inside Nextra's "full" layout ---------- */
+
+article:has(.cy-landing) {
+  padding: 0 !important;
+}
