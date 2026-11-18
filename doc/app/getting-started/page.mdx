@@ -1,47 +1,71 @@
 ---
-title: "Cyphra: TypeScript schema, Cypher queries and migrations for Neo4j"
-sidebarTitle: Cyphra
-description: "Cyphra is an open-source TypeScript toolkit for Neo4j: a Prisma-like .cyphra schema, parameterized Cypher queries, versioned migrations and a CLI."
+title: "Getting started with Cyphra, the typed ORM for Neo4j"
+sidebarTitle: Getting started
+description: "Install Cyphra, describe your Neo4j graph in a .cyphra schema, start a local database, generate a migration and a typed TypeScript client, and run your first query."
 ---
 
-# Cyphra
+import { Cards, Steps, Tabs } from "nextra/components";
 
-Cyphra is a **TypeScript-first toolkit for Neo4j** that combines:
+# Getting started
 
-- A **schema DSL** (`.cyphra` files) with a Prisma-like feel — [Schema](/schema)
-- A **generated, fully typed client** — `db.user.findMany({ include: { posts: true } })` — [Typed client](/client)
-- A **Cypher-first** query layer (tagged templates + a small builder) — [Queries](/queries)
-- **Runtime** — Neo4j driver wrapper, sessions, transactions — [Runtime](/runtime) (also available as `@cyphra/runtime`)
-- **Migrations generated from schema changes**: constraints, indexes, backfills and guards — [Migrations](/migrations)
-- **`cyphra pull`** to start from an existing database, and **`cyphra dev`** for a local Neo4j
-- A **CLI** (`init`, `validate`, `generate`, `schema print` / `schema ddl`, `migrate`, `push`) — [CLI](/cli)
+Cyphra is a **TypeScript ORM for Neo4j**. You describe your graph in a `.cyphra` schema, and Cyphra
+gives you:
 
-Cypher stays visible. The graph model stays first-class.
+- a **generated, fully typed client**: `db.user.findMany({ include: { posts: true } })`, nested writes,
+  `$transaction`, typed edge properties ([Typed client](/client))
+- **migrations generated from schema changes**: constraints, indexes, backfills and guards ([Migrations](/migrations))
+- a **CLI** to start a local Neo4j (`cyphra dev`), introspect an existing database (`cyphra pull`) and
+  more ([CLI](/cli))
+- **Cypher that stays visible**: a parameterized tagged template and a small builder ([Queries](/queries))
+
+Cyphra needs **Neo4j 5.6+** for the typed client.
 
 ## Install
 
-**Recommended:** one dependency for the library surface (schema, query, runtime, migrator):
+The `cyphra` package is everything your app imports. The CLI is a separate dev dependency.
+
+<Tabs items={["npm", "pnpm", "yarn"]}>
+<Tabs.Tab>
+
+```bash
+npm i cyphra
+npm i -D @cyphra/cli
+```
+
+</Tabs.Tab>
+<Tabs.Tab>
 
 ```bash
 pnpm add cyphra
-```
-
-The CLI is published separately:
-
-```bash
 pnpm add -D @cyphra/cli
 ```
 
-Advanced: install [`@cyphra/schema`](https://www.npmjs.com/package/@cyphra/schema), [`@cyphra/query`](https://www.npmjs.com/package/@cyphra/query), [`@cyphra/runtime`](https://www.npmjs.com/package/@cyphra/runtime), and [`@cyphra/migrator`](https://www.npmjs.com/package/@cyphra/migrator) individually if you want explicit subpackage boundaries.
+</Tabs.Tab>
+<Tabs.Tab>
 
-## Example project
+```bash
+yarn add cyphra
+yarn add -D @cyphra/cli
+```
 
-See the [Example app](/example) page — run `pnpm example:basic` from the monorepo after `pnpm build`.
+</Tabs.Tab>
+</Tabs>
+
+You can also install [`@cyphra/schema`](https://www.npmjs.com/package/@cyphra/schema),
+[`@cyphra/query`](https://www.npmjs.com/package/@cyphra/query),
+[`@cyphra/runtime`](https://www.npmjs.com/package/@cyphra/runtime) and
+[`@cyphra/migrator`](https://www.npmjs.com/package/@cyphra/migrator) individually if you want explicit
+package boundaries.
 
 ## Quick start
 
-```cyphra
-// schema.cyphra
+<Steps>
+
+### Describe your graph
+
+`npx cyphra init` scaffolds `cyphra.json`, `schema.cyphra` and `migrations/`. Then edit the schema:
+
+```cyphra filename="schema.cyphra"
 node User {
   id    String @id @default(cuid())
   email String @unique
@@ -55,13 +79,24 @@ node Post {
 }
 ```
 
+### Start a database and migrate
+
 ```bash
-pnpm cyphra dev                    # local Neo4j in Docker, writes .env
-pnpm cyphra migrate dev --name init   # constraints + indexes, as a reviewable migration
-pnpm cyphra generate               # → cyphra.gen.ts
+npx cyphra dev                       # local Neo4j 5 in Docker, writes .env
+npx cyphra migrate dev --name init   # constraints and indexes, as a reviewable migration
 ```
 
-```ts
+Already have a database? `npx cyphra pull` writes `schema.cyphra` from it.
+
+### Generate the client
+
+```bash
+npx cyphra generate                  # writes cyphra.gen.ts
+```
+
+### Query
+
+```ts filename="main.ts"
 import { createClient } from "./cyphra.gen.js";
 
 const db = createClient({
@@ -82,3 +117,14 @@ Prefer raw Cypher? It is one call away, still parameterized:
 ```ts
 const rows = await db.$cypher`MATCH (u:User {email: ${email}}) RETURN u.id AS id`;
 ```
+
+</Steps>
+
+## Next steps
+
+<Cards>
+  <Cards.Card title="Schema" href="/schema" />
+  <Cards.Card title="Typed client" href="/client" />
+  <Cards.Card title="Migrations" href="/migrations" />
+  <Cards.Card title="Example app" href="/example" />
+</Cards>
