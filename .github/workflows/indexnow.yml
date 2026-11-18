@@ -1,0 +1,41 @@
+name: IndexNow
+
+# Vercel reports each deployment to GitHub. When a production deployment
+# succeeds, submit every URL in the live sitemap to IndexNow (Bing, Yandex,
+# Seznam, Naver...). The key is public by design: it is served at
+# https://www.cyphra.dev/<key>.txt from doc/public.
+
+on:
+  deployment_status:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  submit:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.deployment_status.state == 'success' &&
+       github.event.deployment.environment == 'Production')
+    runs-on: ubuntu-latest
+    env:
+      SITE: https://www.cyphra.dev
+      KEY: ba4d264c2e449083bc62a799e72e3d7f
+    steps:
+      - name: Check the key file is live
+        run: |
+          body=$(curl -fsS "$SITE/$KEY.txt" | tr -d '[:space:]')
+          test "$body" = "$KEY"
+
+      - name: Submit sitemap URLs
+        run: |
+          urls=$(curl -fsS "$SITE/sitemap.xml" | grep -o '<loc>[^<]*</loc>' | sed -e 's#<loc>##' -e 's#</loc>##')
+          test -n "$urls"
+          payload=$(jq -n --arg key "$KEY" --arg site "$SITE" --arg urls "$urls" \
+            '{host: ($site | sub("^https://"; "")), key: $key, keyLocation: "\($site)/\($key).txt", urlList: ($urls | split("\n") | map(select(length > 0)))}')
+          echo "$payload"
+          code=$(curl -sS -o response.txt -w '%{http_code}' -X POST https://api.indexnow.org/indexnow \
+            -H 'Content-Type: application/json; charset=utf-8' -d "$payload")
+          echo "IndexNow HTTP $code"; cat response.txt
+          case "$code" in 200|202) ;; *) exit 1 ;; esac
