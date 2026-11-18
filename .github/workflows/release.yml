@@ -52,6 +52,10 @@ jobs:
       - name: Test
         run: pnpm test
 
+      # npm trusted publishing (OIDC) needs npm >= 11.5.1; Node 22 ships npm 10.
+      - name: Upgrade npm
+        run: npm install -g npm@^11.5.1
+
       - name: Create release PR or publish
         uses: changesets/action@v1
         with:
