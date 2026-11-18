@@ -29,6 +29,10 @@ jobs:
       - name: Build packages
         run: pnpm -r --filter './packages/*' run build
 
+      # Bins of workspace packages (e.g. `cyphra` for examples/blog) only link once dist/ exists.
+      - name: Link workspace binaries
+        run: pnpm install --frozen-lockfile --offline
+
       - name: Lint
         run: pnpm lint
 
