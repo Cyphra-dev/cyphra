@@ -1,6 +1,6 @@
 {
   "name": "cyphra",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Cyphra monolith: schema DSL, Cypher helpers, Neo4j runtime, and migrations (re-exports @cyphra/*)",
   "type": "module",
   "sideEffects": false,
@@ -46,7 +46,11 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/cyphra/cyphra.git",
+    "url": "git+https://github.com/Cyphra-dev/cyphra.git",
     "directory": "packages/cyphra"
+  },
+  "homepage": "https://cyphra-doc.vercel.app",
+  "bugs": {
+    "url": "https://github.com/Cyphra-dev/cyphra/issues"
   }
 }

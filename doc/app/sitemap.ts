@@ -25,5 +25,9 @@ export default function sitemap(): MetadataRoute.Sitemap {
   // No lastModified: file mtimes on Vercel are the checkout time, not edits.
   return routes(APP_DIR)
     .sort()
-    .map((path) => ({ url: `${BASE}${path}`, changeFrequency: "weekly", priority: path === "" ? 1 : 0.7 }));
+    .map((path) => ({
+      url: `${BASE}${path}`,
+      changeFrequency: "weekly",
+      priority: path === "" ? 1 : 0.7,
+    }));
 }

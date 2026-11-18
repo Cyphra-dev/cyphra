@@ -1,6 +1,6 @@
 {
   "name": "@cyphra/migrator",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Versioned migrations, batch helpers, and schema push for Cyphra",
   "type": "module",
   "sideEffects": false,
@@ -35,5 +35,15 @@
     "tsup": "^8.3.5",
     "typescript": "^5.7.2",
     "vitest": "^3.0.2"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Cyphra-dev/cyphra.git",
+    "directory": "packages/migrator"
+  },
+  "homepage": "https://cyphra-doc.vercel.app",
+  "bugs": {
+    "url": "https://github.com/Cyphra-dev/cyphra/issues"
   }
 }

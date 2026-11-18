@@ -1,6 +1,6 @@
 {
   "name": "@cyphra/cli",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Cyphra CLI: init, migrate, push",
   "type": "module",
   "publishConfig": {
@@ -29,5 +29,15 @@
     "tsup": "^8.3.5",
     "typescript": "^5.7.2",
     "vitest": "^3.0.2"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Cyphra-dev/cyphra.git",
+    "directory": "packages/cli"
+  },
+  "homepage": "https://cyphra-doc.vercel.app",
+  "bugs": {
+    "url": "https://github.com/Cyphra-dev/cyphra/issues"
   }
 }

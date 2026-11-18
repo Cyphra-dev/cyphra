@@ -25,7 +25,7 @@ pnpm example:basic
 
 Documentation lives in [`doc/`](./doc) (Next.js + Nextra). Sidebar order and section titles are defined in [`doc/app/_meta.tsx`](./doc/app/_meta.tsx); new top-level routes need a matching `page.mdx` and usually an entry in that file.
 
-Publishable packages include **`@cyphra/core`** (provider contracts) and **`@cyphra/provider-neo4j`** (Neo4j driver); **`@cyphra/runtime`** re-exports both for the usual import path.
+Publishable packages: **`@cyphra/schema`** (`.cyphra` parser, validation, codegen), **`@cyphra/query`** (Cypher templates and builder), **`@cyphra/runtime`** (Neo4j client), **`@cyphra/migrator`** (migrations and `push`), **`@cyphra/cli`**, and the **`cyphra`** meta-package that re-exports the libraries.
 
 Example app: [`examples/basic/`](./examples/basic) (`pnpm build` packages first).
 
