@@ -1,0 +1,130 @@
+---
+title: "Getting started with Cyphra, the typed ORM for Neo4j"
+sidebarTitle: Getting started
+description: "Install Cyphra, describe your Neo4j graph in a .cyphra schema, start a local database, generate a migration and a typed TypeScript client, and run your first query."
+---
+
+import { Cards, Steps, Tabs } from "nextra/components";
+
+# Getting started
+
+Cyphra is a **TypeScript ORM for Neo4j**. You describe your graph in a `.cyphra` schema, and Cyphra
+gives you:
+
+- a **generated, fully typed client**: `db.user.findMany({ include: { posts: true } })`, nested writes,
+  `$transaction`, typed edge properties ([Typed client](/client))
+- **migrations generated from schema changes**: constraints, indexes, backfills and guards ([Migrations](/migrations))
+- a **CLI** to start a local Neo4j (`cyphra dev`), introspect an existing database (`cyphra pull`) and
+  more ([CLI](/cli))
+- **Cypher that stays visible**: a parameterized tagged template and a small builder ([Queries](/queries))
+
+Cyphra needs **Neo4j 5.6+** for the typed client.
+
+## Install
+
+The `cyphra` package is everything your app imports. The CLI is a separate dev dependency.
+
+<Tabs items={["npm", "pnpm", "yarn"]}>
+<Tabs.Tab>
+
+```bash
+npm i cyphra
+npm i -D @cyphra/cli
+```
+
+</Tabs.Tab>
+<Tabs.Tab>
+
+```bash
+pnpm add cyphra
+pnpm add -D @cyphra/cli
+```
+
+</Tabs.Tab>
+<Tabs.Tab>
+
+```bash
+yarn add cyphra
+yarn add -D @cyphra/cli
+```
+
+</Tabs.Tab>
+</Tabs>
+
+You can also install [`@cyphra/schema`](https://www.npmjs.com/package/@cyphra/schema),
+[`@cyphra/query`](https://www.npmjs.com/package/@cyphra/query),
+[`@cyphra/runtime`](https://www.npmjs.com/package/@cyphra/runtime) and
+[`@cyphra/migrator`](https://www.npmjs.com/package/@cyphra/migrator) individually if you want explicit
+package boundaries.
+
+## Quick start
+
+<Steps>
+
+### Describe your graph
+
+`npx cyphra init` scaffolds `cyphra.json`, `schema.cyphra` and `migrations/`. Then edit the schema:
+
+```cyphra filename="schema.cyphra"
+node User {
+  id    String @id @default(cuid())
+  email String @unique
+  posts Post[] @relationship(type: "AUTHORED", direction: OUT)
+}
+
+node Post {
+  id     String @id @default(uuid())
+  title  String
+  author User?  @relationship(type: "AUTHORED", direction: IN)
+}
+```
+
+### Start a database and migrate
+
+```bash
+npx cyphra dev                       # local Neo4j 5 in Docker, writes .env
+npx cyphra migrate dev --name init   # constraints and indexes, as a reviewable migration
+```
+
+Already have a database? `npx cyphra pull` writes `schema.cyphra` from it.
+
+### Generate the client
+
+```bash
+npx cyphra generate                  # writes cyphra.gen.ts
+```
+
+### Query
+
+```ts filename="main.ts"
+import { createClient } from "./cyphra.gen.js";
+
+const db = createClient({
+  uri: process.env.NEO4J_URI!,
+  user: process.env.NEO4J_USER!,
+  password: process.env.NEO4J_PASSWORD!,
+});
+
+const alice = await db.user.create({
+  data: { email: "alice@acme.io", posts: { create: [{ title: "Hello graph" }] } },
+  include: { posts: true },
+});
+// alice.posts: { id: string; title: string }[]
+```
+
+Prefer raw Cypher? It is one call away, still parameterized:
+
+```ts
+const rows = await db.$cypher`MATCH (u:User {email: ${email}}) RETURN u.id AS id`;
+```
+
+</Steps>
+
+## Next steps
+
+<Cards>
+  <Cards.Card title="Schema" href="/schema" />
+  <Cards.Card title="Typed client" href="/client" />
+  <Cards.Card title="Migrations" href="/migrations" />
+  <Cards.Card title="Example app" href="/example" />
+</Cards>
