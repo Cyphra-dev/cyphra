@@ -1,5 +1,13 @@
 # @cyphra/migrator
 
+## 0.2.1
+
+### Patch Changes
+
+- @cyphra/query@0.2.1
+- @cyphra/runtime@0.2.1
+- @cyphra/schema@0.2.1
+
 ## 0.2.0
 
 ### Minor Changes

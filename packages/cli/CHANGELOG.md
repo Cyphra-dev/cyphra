@@ -1,5 +1,14 @@
 # @cyphra/cli
 
+## 0.2.1
+
+### Patch Changes
+
+- 55ffec9: Read the database user from `NEO4J_USERNAME`, the name Neo4j Aura and the Vercel integration use. `NEO4J_USER` still works. `cyphra dev` and `cyphra init` now write `NEO4J_USERNAME`.
+  - @cyphra/migrator@0.2.1
+  - @cyphra/runtime@0.2.1
+  - @cyphra/schema@0.2.1
+
 ## 0.2.0
 
 ### Minor Changes
