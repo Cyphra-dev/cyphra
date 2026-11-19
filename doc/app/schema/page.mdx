@@ -4,9 +4,9 @@ description: "The .cyphra schema DSL for Neo4j: nodes, relationships, @id, @uniq
 
 # Schema DSL
 
-Use **`import { parseSchema, parseSchemaFile, printSchemaDocument, … } from "cyphra"`** (or **`@cyphra/schema`**) for programmatic APIs. **`parseSchemaFile(path)`** loads a UTF-8 `.cyphra` file from disk (Node.js).
-
-Define nodes, relationships, and decorators in `schema.cyphra`:
+Your graph lives in one file, `schema.cyphra`: its nodes, the relationships between them and the
+decorators that become Neo4j constraints and indexes. The CLI, the typed client and migrations all
+read it.
 
 ```cyphra
 node User {
@@ -30,17 +30,30 @@ relationship Follows {
 }
 ```
 
-**Scalar types:** `String`, `Int`, `Float`, `Boolean`, `DateTime`, `Date`. Append `?` for optional
+## Scalar types
+
+`String`, `Int`, `Float`, `Boolean`, `DateTime`, `Date`. Append `?` for optional
 (`String?`) or `[]` for a list (`String[]`). Lists are never optional; an absent list reads as `[]`.
 
-**Defaults:** `@default(cuid())`, `@default(uuid())` (String), `@default(now())` (DateTime / Date), or a
+## Defaults
+
+`@default(cuid())`, `@default(uuid())` (String), `@default(now())` (DateTime / Date), or a
 literal matching the field type: `@default("draft")`, `@default(0)`, `@default(1.5)`, `@default(true)`.
 The [typed client](/client) applies them on create.
 
-**Relations:** `posts Post[] @relationship(type: "AUTHORED", direction: OUT)`. `direction` defaults to
+## Relationships
+
+`posts Post[] @relationship(type: "AUTHORED", direction: OUT)`. `direction` defaults to
 `OUT`. If a `relationship { … }` model has the same type and endpoints, its properties type the edge
 (`$edge` in the client).
 
-**Decorators (V1):** `@id`, `@unique`, `@index` (Neo4j 5+ **range** index: on nodes via `(n:Label)`, on rich relationships via `()-[r:TYPE]-()`), `@default(…)`, `@relationship(…)`. On **nodes**, you cannot combine `@index` with `@id` or `@unique` on the same field (those constraints already imply an index). On **relationship** models, `@unique` maps to a **relationship property uniqueness** constraint (Neo4j **5.7+**); `@id` is not allowed on relationship fields.
+## Decorators
 
-The parser produces an AST used by `cyphra push`, `cyphra generate`, and programmatic APIs. Use **`printSchemaDocument`** from `@cyphra/schema` (or **`cyphra schema print`**) to emit a canonical `.cyphra` text for diffs and reviews—comments are not preserved.
+`@id`, `@unique`, `@index` (Neo4j 5+ **range** index: on nodes via `(n:Label)`, on rich relationships via `()-[r:TYPE]-()`), `@default(…)`, `@relationship(…)`. On **nodes**, you cannot combine `@index` with `@id` or `@unique` on the same field (those constraints already imply an index). On **relationship** models, `@unique` maps to a **relationship property uniqueness** constraint (Neo4j **5.7+**); `@id` is not allowed on relationship fields.
+
+## Programmatic API
+
+`parseSchema`, `parseSchemaFile` and `printSchemaDocument` are exported from `cyphra` (or
+`@cyphra/schema`). `parseSchemaFile(path)` loads a UTF-8 `.cyphra` file from disk (Node.js).
+
+The parser produces an AST used by `cyphra push`, `cyphra generate`, and programmatic APIs. Use `printSchemaDocument` from `@cyphra/schema` (or **`cyphra schema print`**) to emit a canonical `.cyphra` text for diffs and reviews—comments are not preserved.

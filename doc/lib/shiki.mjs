@@ -1,7 +1,7 @@
 // Syntax highlighting shared by the MDX pipeline (next.config.mjs) and the landing page.
 // - `cyphraLanguage`: a small TextMate grammar for `.cyphra` schema files.
-// - `cyphraDark` / `cyphraLight`: the brand code themes (mint for decorators and strings,
-//   violet for keywords), tuned for at least 4.5:1 contrast on the code background.
+// - `cyphraDark` / `cyphraLight`: the brand code themes (ink first, signal vermilion for
+//   keywords and decorators), tuned for at least 4.5:1 contrast on the code background.
 
 /** @type {import("shiki").LanguageRegistration} */
 export const cyphraLanguage = {
@@ -72,34 +72,36 @@ export const cyphraLanguage = {
  */
 function theme(mode) {
   const dark = mode === "dark";
+  // Ink-first: identifiers stay in the text color, keywords and decorators take the signal,
+  // strings are sage, types sand, literals a cool blue. All >= 4.5:1 on the code background.
   const c = dark
     ? {
-        bg: "#0c0c0f",
-        fg: "#e4e4e7",
-        comment: "#8b8b96",
-        keyword: "#c4b5fd",
-        string: "#6ee7b7",
-        fn: "#93c5fd",
-        type: "#fcd38d",
-        constant: "#fda4af",
-        property: "#d4d4d8",
-        param: "#a5b4fc",
-        decorator: "#4be3a6",
-        punct: "#a1a1aa",
+        bg: "#0b0b0b",
+        fg: "#e6e4df",
+        comment: "#86847d",
+        keyword: "#ff8a63",
+        string: "#a9c99a",
+        fn: "#f2f1ed",
+        type: "#e3c18a",
+        constant: "#93bdf0",
+        property: "#cbc8c0",
+        param: "#e6e4df",
+        decorator: "#ff8a63",
+        punct: "#9a9891",
       }
     : {
-        bg: "#fafafa",
-        fg: "#18181b",
-        comment: "#6e6e78",
-        keyword: "#6d28d9",
-        string: "#047857",
-        fn: "#1d4ed8",
-        type: "#a14a06",
-        constant: "#be123c",
-        property: "#3f3f46",
-        param: "#4338ca",
-        decorator: "#047a52",
-        punct: "#52525b",
+        bg: "#fdfcfa",
+        fg: "#1a1918",
+        comment: "#6e6b64",
+        keyword: "#c2370c",
+        string: "#3b6b2a",
+        fn: "#0c0c0b",
+        type: "#8a5300",
+        constant: "#1f5f99",
+        property: "#3f3d39",
+        param: "#1a1918",
+        decorator: "#c2370c",
+        punct: "#6a675f",
       };
   return {
     name: `cyphra-${mode}`,

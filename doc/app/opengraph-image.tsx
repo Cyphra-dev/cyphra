@@ -6,9 +6,9 @@ export const contentType = OG_CONTENT_TYPE;
 
 export default function Image() {
   return renderOgImage({
-    eyebrow: "Open source · Neo4j + TypeScript",
-    title: "The typed ORM for Neo4j.",
+    title: "The typed ORM for Neo4j",
     description:
-      "A fully typed TypeScript client, nested writes and schema-diff migrations, from one schema file.",
+      "One schema file. A fully typed TypeScript client, nested writes and migrations from schema diffs.",
+    pattern: "(:Schema)-[:GENERATES]->(:TypedClient)",
   });
 }

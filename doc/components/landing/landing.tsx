@@ -5,6 +5,8 @@ import { LINKS } from "../links";
 import { CopyCommand } from "./copy-command";
 import styles from "./landing.module.css";
 
+const APP_URL = "https://app.cyphra.dev";
+
 const SCHEMA = `
 node User {
   id        String  @id @default(cuid())
@@ -30,10 +32,6 @@ relationship Follows {
 `;
 
 const CLIENT = `
-import { createClient } from "./cyphra.gen.js";
-
-const db = createClient({ uri, user, password });
-
 // One call, one transaction: a user, their post, an edge.
 const alice = await db.user.create({
   data: {
@@ -46,21 +44,34 @@ const alice = await db.user.create({
 
 alice.posts;                    // Post[]
 alice.following[0].$edge.since; // Date, from the Follows edge
-
-const drafts = await db.post.findMany({
-  where: {
-    published: false,
-    author: { is: { email: { endsWith: "@example.com" } } },
-  },
-  select: { title: true, author: { select: { name: true } } },
-});
 `;
 
 const CYPHER = `
 const rows = await db.$cypher<{ name: string; n: number }>\`
-  MATCH (u:User)-[:AUTHORED]->(p:Post) WHERE p.published = \${true}
-  RETURN u.name AS name, count(p) AS n ORDER BY n DESC
+  MATCH (u:User)-[:AUTHORED]->(p:Post)
+  WHERE p.published = \${true}
+  RETURN u.name AS name, count(p) AS n
 \`;
+`;
+
+const MIGRATION = `
+export default defineMigration({
+  name: "20261118174710_add-roles",
+  async up({ db }) {
+    // Backfill User.role with its default on existing nodes.
+    await db.execute("MATCH (n:\`User\`) WHERE n.\`role\` IS NULL SET n.\`role\` = $value", {
+      value: "member",
+    });
+    // Create constraint User_handle_unique.
+    await db.execute("CREATE CONSTRAINT User_handle_unique IF NOT EXISTS …");
+  },
+});
+`;
+
+const CLOUD_ENV = `
+NEO4J_URI=neo4j+s://<your-database-host>:7687
+NEO4J_USERNAME=neo4j
+NEO4J_PASSWORD=<your-password>
 `;
 
 const OPERATOR_YAML = `
@@ -78,45 +89,28 @@ spec:
     schedule: "0 3 * * *"
     s3:
       bucket: my-backups
-      region: eu-west-1
       credentialsSecretName: s3-backups
 `;
 
-async function Code({
-  code,
-  lang,
-  className,
-}: {
-  code: string;
-  lang: CodeLang;
-  className?: string;
-}) {
+async function Code({ code, lang }: { code: string; lang: CodeLang }) {
   const html = await highlight(code, lang);
-  return (
-    <div
-      className={`${styles.code} ${className ?? ""}`}
-      dangerouslySetInnerHTML={{ __html: html }}
-    />
-  );
+  return <div className={styles.code} dangerouslySetInnerHTML={{ __html: html }} />;
 }
 
 function Window({
   title,
   badge,
   children,
+  className,
 }: {
   title: string;
   badge?: string;
   children: ReactNode;
+  className?: string;
 }) {
   return (
-    <figure className={styles.window}>
+    <figure className={`${styles.window} ${className ?? ""}`}>
       <figcaption className={styles.windowBar}>
-        <span className={styles.dots} aria-hidden="true">
-          <i />
-          <i />
-          <i />
-        </span>
         <span className={styles.windowTitle}>{title}</span>
         {badge ? <span className={styles.windowBadge}>{badge}</span> : null}
       </figcaption>
@@ -127,12 +121,12 @@ function Window({
 
 function Arrow() {
   return (
-    <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+    <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" className={styles.arrow}>
       <path
-        d="M3 8h10m-4-4 4 4-4 4"
+        d="M2.5 8h10.5M9 3.5 13.5 8 9 12.5"
         fill="none"
         stroke="currentColor"
-        strokeWidth="1.6"
+        strokeWidth="1.75"
         strokeLinecap="round"
         strokeLinejoin="round"
       />
@@ -140,127 +134,215 @@ function Arrow() {
   );
 }
 
-const icon = (d: ReactNode) => (
-  <svg
-    viewBox="0 0 24 24"
-    width="20"
-    height="20"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="1.5"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    aria-hidden="true"
-  >
-    {d}
-  </svg>
+function Eyebrow({ children }: { children: ReactNode }) {
+  return (
+    <p className={styles.eyebrow}>
+      <span aria-hidden="true">(→</span>
+      {children}
+    </p>
+  );
+}
+
+/* ---------- Hero editor: autocomplete, then the inferred type on hover ---------- */
+
+const T = ({ k, children }: { k: string; children: ReactNode }) => (
+  <span className={styles[`t_${k}`]}>{children}</span>
 );
 
-const FEATURES: { title: string; body: ReactNode; href: string; icon: ReactNode }[] = [
+function HeroEditor() {
+  return (
+    <figure className={styles.editor} aria-label="Editor showing a typed Cyphra query">
+      <div className={styles.editorTabs}>
+        <span className={styles.tab}>schema.cyphra</span>
+        <span className={`${styles.tab} ${styles.tabActive}`}>main.ts</span>
+        <span className={styles.tab}>cyphra.gen.ts</span>
+      </div>
+      <pre className={styles.editorCode}>
+        <code>
+          <span className={styles.ln}>
+            <T k="kw">import</T> {"{ createClient }"} <T k="kw">from</T>{" "}
+            <T k="str">&quot;./cyphra.gen.js&quot;</T>;
+          </span>
+          <span className={styles.ln}> </span>
+          <span className={styles.ln}>
+            <T k="kw">const</T> db = <T k="fn">createClient</T>
+            {"({ uri, user, password });"}
+          </span>
+          <span className={styles.ln}> </span>
+          <span className={`${styles.ln} ${styles.lnActive}`}>
+            <T k="kw">const</T> <span className={styles.hoverTarget}>users</span> ={" "}
+            <T k="kw">await</T> <span className={styles.typeA}>db.user.</span>
+            <span className={styles.typeB}>
+              <T k="fn">findMany</T>({"{"}
+            </span>
+            <span className={styles.caret} aria-hidden="true" />
+            <span className={styles.popover} aria-hidden="true">
+              <span className={`${styles.popItem} ${styles.popSel}`}>
+                <i>ƒ</i>findMany<em>(args?) → Promise&lt;User[]&gt;</em>
+              </span>
+              <span className={styles.popItem}>
+                <i>ƒ</i>findUnique<em>(args) → Promise&lt;User | null&gt;</em>
+              </span>
+              <span className={styles.popItem}>
+                <i>ƒ</i>findFirst<em>(args?) → Promise&lt;User | null&gt;</em>
+              </span>
+              <span className={styles.popItem}>
+                <i>ƒ</i>create<em>(args) → Promise&lt;User&gt;</em>
+              </span>
+            </span>
+            <span className={styles.tooltip} aria-hidden="true">
+              <T k="kw">const</T> users: {"{"}
+              {"\n  "}id: <T k="type">string</T>; email: <T k="type">string</T>;{"\n  "}name:{" "}
+              <T k="type">string</T> | <T k="type">null</T>;{"\n  "}posts: <T k="type">Post</T>[];
+              {"\n"}
+              {"}[]"}
+            </span>
+          </span>
+          <span className={`${styles.ln} ${styles.rest}`}>
+            {"  where: { email: { "}
+            <T k="fn">endsWith</T>: <T k="str">&quot;@acme.dev&quot;</T>
+            {" } },"}
+          </span>
+          <span className={`${styles.ln} ${styles.rest}`}>
+            {"  include: { posts: "}
+            <T k="kw">true</T>
+            {" },"}
+          </span>
+          <span className={`${styles.ln} ${styles.rest}`}>{"});"}</span>
+        </code>
+      </pre>
+      <figcaption className={styles.editorStatus}>
+        <span>
+          <i className={styles.statusDot} aria-hidden="true" />
+          cyphra.gen.ts up to date
+        </span>
+        <span>TypeScript · 0 problems</span>
+      </figcaption>
+    </figure>
+  );
+}
+
+/* ---------- The graph your schema describes ---------- */
+
+type GNode = { id: string; x: number; y: number; name: string; label: string };
+const GNODES: GNode[] = [
+  { id: "alice", x: 40, y: 56, name: "alice", label: ":User" },
+  { id: "bob", x: 40, y: 300, name: "bob", label: ":User" },
+  { id: "p1", x: 380, y: 56, name: "p1", label: ":Post" },
+  { id: "p2", x: 380, y: 300, name: "p2", label: ":Post" },
+];
+const NODE_W = 148;
+const NODE_H = 44;
+
+function SchemaGraph() {
+  const c = (n: GNode) => ({ x: n.x + NODE_W / 2, y: n.y + NODE_H / 2 });
+  const [alice, bob, p1, p2] = GNODES;
+  return (
+    <svg
+      className={styles.graph}
+      viewBox="24 36 528 324"
+      role="img"
+      aria-label="Graph: alice AUTHORED p1, alice FOLLOWS bob since 2024, bob AUTHORED p2"
+    >
+      <defs>
+        <marker
+          id="cy-head"
+          viewBox="0 0 10 10"
+          refX="9"
+          refY="5"
+          markerWidth="9"
+          markerHeight="9"
+          orient="auto-start-reverse"
+        >
+          <path
+            d="M1 1 9 5 1 9"
+            fill="none"
+            stroke="var(--cy-signal)"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </marker>
+      </defs>
+      {/* Edges: drawn, then a signal packet travels along each one. */}
+      {[
+        {
+          d: `M${alice.x + NODE_W} ${c(alice).y}H${p1.x - 4}`,
+          label: "AUTHORED",
+          lx: 282,
+          ly: 66,
+          a: "middle" as const,
+        },
+        {
+          d: `M${bob.x + NODE_W} ${c(bob).y}H${p2.x - 4}`,
+          label: "AUTHORED",
+          lx: 282,
+          ly: 310,
+          a: "middle" as const,
+        },
+        {
+          d: `M${c(alice).x} ${alice.y + NODE_H}V${bob.y - 4}`,
+          label: "FOLLOWS",
+          lx: 128,
+          ly: 160,
+          a: "start" as const,
+        },
+      ].map((e, i) => (
+        <g key={e.d} className={styles.gEdge} style={{ ["--i" as string]: i }}>
+          <path d={e.d} className={styles.gLine} markerEnd="url(#cy-head)" pathLength={1} />
+          <path d={e.d} className={styles.gPacket} pathLength={1} />
+          <text x={e.lx} y={e.ly} className={styles.gRel} textAnchor={e.a}>
+            {e.label}
+          </text>
+        </g>
+      ))}
+      {/* A typed relationship property, read back as alice.following[0].$edge.since */}
+      <g className={styles.gProp}>
+        <rect x="126" y="176" width="112" height="30" rx="6" />
+        <text x="138" y="195">
+          since: <tspan className={styles.gPropType}>Date</tspan>
+        </text>
+      </g>
+      {GNODES.map((n) => (
+        <g key={n.id} className={styles.gNode}>
+          <rect x={n.x} y={n.y} width={NODE_W} height={NODE_H} rx={NODE_H / 2} />
+          <text x={n.x + NODE_W / 2} y={n.y + 27} textAnchor="middle">
+            ({n.name}
+            <tspan className={styles.gLabel}>{n.label}</tspan>)
+          </text>
+        </g>
+      ))}
+    </svg>
+  );
+}
+
+/* ---------- Content ---------- */
+
+const CLIENT_POINTS: { title: string; body: ReactNode; href: string }[] = [
   {
-    title: "A client typed from your schema",
+    title: "Typed from the schema",
     body: (
       <>
-        Models, filters and <code>select</code> / <code>include</code> results are inferred from the
-        schema. Rename a field and the compiler finds every call site.
+        Filters, <code>select</code> and <code>include</code> results are inferred. Rename a field
+        and the compiler finds every call site.
       </>
     ),
     href: "/client",
-    icon: icon(
-      <>
-        <path d="M8 4H6a2 2 0 0 0-2 2v3l-1.5 3L4 15v3a2 2 0 0 0 2 2h2" />
-        <path d="M16 4h2a2 2 0 0 1 2 2v3l1.5 3-1.5 3v3a2 2 0 0 1-2 2h-2" />
-        <path d="M9.5 12h5" />
-      </>,
-    ),
   },
   {
     title: "Nested writes, one transaction",
-    body: (
-      <>
-        Create and connect related nodes in a single call. A nested write runs in one transaction:
-        all of it lands, or none of it.
-      </>
-    ),
+    body: "Create and connect related nodes in one call. All of it lands, or none of it.",
     href: "/client#writing",
-    icon: icon(
-      <>
-        <circle cx="6" cy="6" r="2.5" />
-        <circle cx="18" cy="6" r="2.5" />
-        <circle cx="12" cy="18" r="2.5" />
-        <path d="M7.5 8 11 15.8M16.5 8 13 15.8M8.5 6h7" />
-      </>,
-    ),
   },
   {
     title: "Typed relationship properties",
     body: (
       <>
-        Describe an edge with a <code>relationship</code> model and its properties come back typed
-        under <code>$edge</code>.
+        Model an edge with <code>relationship</code> and its properties come back typed under{" "}
+        <code>$edge</code>.
       </>
     ),
     href: "/schema",
-    icon: icon(
-      <>
-        <circle cx="5" cy="12" r="2.5" />
-        <circle cx="19" cy="12" r="2.5" />
-        <path d="M7.5 12h9" />
-        <rect x="9" y="4" width="6" height="4" rx="1" />
-        <path d="M12 8v4" />
-      </>,
-    ),
-  },
-  {
-    title: "Migrations from schema diffs",
-    body: (
-      <>
-        <code>cyphra migrate dev</code> writes a reviewable migration: constraints, indexes,
-        backfills for new defaults and guards for required fields.
-      </>
-    ),
-    href: "/migrations",
-    icon: icon(
-      <>
-        <path d="M6 3v12" />
-        <circle cx="6" cy="18" r="2.5" />
-        <circle cx="18" cy="6" r="2.5" />
-        <path d="M18 8.5c0 5-6 4-11 8" />
-      </>,
-    ),
-  },
-  {
-    title: "Cypher, one call away",
-    body: (
-      <>
-        <code>db.$cypher</code> runs a tagged template and sends every value as a parameter. Cypher
-        stays visible; nothing is concatenated into a query.
-      </>
-    ),
-    href: "/client#raw-cypher",
-    icon: icon(
-      <>
-        <path d="m7 8-4 4 4 4M17 8l4 4-4 4" />
-        <path d="m14 5-4 14" />
-      </>,
-    ),
-  },
-  {
-    title: "Start from any database",
-    body: (
-      <>
-        <code>cyphra pull</code> introspects a live Neo4j and writes the schema.{" "}
-        <code>cyphra dev</code> starts a local Neo4j 5 in Docker.
-      </>
-    ),
-    href: "/cli",
-    icon: icon(
-      <>
-        <ellipse cx="12" cy="6" rx="7" ry="2.5" />
-        <path d="M5 6v12c0 1.4 3.1 2.5 7 2.5s7-1.1 7-2.5V6" />
-        <path d="M5 12c0 1.4 3.1 2.5 7 2.5s7-1.1 7-2.5" />
-      </>,
-    ),
   },
 ];
 
@@ -289,189 +371,242 @@ const OPERATOR_POINTS = [
   ["Backups", "Scheduled and on-demand dumps to any S3-compatible storage, with retention."],
 ] as const;
 
-/** Background graph for the hero: static SVG, one edge with a CSS pulse (off with reduced motion). */
-function HeroGraph() {
-  const nodes: [number, number, string?][] = [
-    [80, 120],
-    [250, 60],
-    [210, 250, "mint"],
-    [420, 170],
-    [60, 360],
-    [360, 380, "violet"],
-    [560, 300],
-    [600, 90],
-    [760, 200],
-    [700, 420],
-    [900, 110],
-    [960, 330, "mint"],
-    [1120, 220],
-    [1100, 440],
-    [860, 520],
-    [520, 520],
-  ];
-  const edges: [number, number, boolean?][] = [
-    [0, 1],
-    [0, 2],
-    [1, 2],
-    [1, 3],
-    [2, 4],
-    [2, 5, true],
-    [3, 5],
-    [3, 6],
-    [3, 7],
-    [6, 8],
-    [7, 8],
-    [8, 10],
-    [8, 11],
-    [6, 9],
-    [9, 11, true],
-    [10, 12],
-    [11, 12],
-    [11, 13],
-    [9, 14],
-    [5, 15],
-    [15, 9],
-    [13, 14],
-  ];
-  return (
-    <svg
-      className={styles.heroGraph}
-      viewBox="0 0 1180 580"
-      preserveAspectRatio="xMidYMid slice"
-      aria-hidden="true"
-    >
-      <defs>
-        <linearGradient id="hg-hot" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" stopColor="var(--cy-mint)" />
-          <stop offset="1" stopColor="var(--cy-violet)" />
-        </linearGradient>
-      </defs>
-      {edges.map(([a, b, hot]) => (
-        <line
-          key={`${a}-${b}`}
-          x1={nodes[a][0]}
-          y1={nodes[a][1]}
-          x2={nodes[b][0]}
-          y2={nodes[b][1]}
-          className={hot ? styles.edgeHot : styles.edge}
-        />
-      ))}
-      {nodes.map(([x, y, kind]) => (
-        <circle
-          key={`${x}-${y}`}
-          cx={x}
-          cy={y}
-          r={kind ? 7 : 4.5}
-          className={
-            kind === "mint" ? styles.nodeMint : kind === "violet" ? styles.nodeViolet : styles.node
-          }
-        />
-      ))}
-    </svg>
-  );
-}
-
 export function Landing() {
   return (
     <div className={`cy-landing ${styles.root}`}>
       {/* Hero */}
       <section className={styles.hero}>
-        <HeroGraph />
-        <div className={styles.container}>
-          <Link href="/migrations" className={styles.announce}>
-            <span className={styles.announceTag}>v0.2</span>
-            Migrations generated from schema diffs
-            <Arrow />
-          </Link>
-          <h1 className={styles.title}>
-            The typed ORM
-            <br />
-            for <span className={styles.titleAccent}>Neo4j</span>.
-          </h1>
-          <p className={styles.lede}>
-            Describe your graph in a <code>.cyphra</code> schema. Cyphra generates a fully typed
-            TypeScript client with nested writes, typed relationships and schema-diff migrations,
-            and keeps raw Cypher one call away.
-          </p>
-          <div className={styles.ctaRow}>
-            <Link href="/getting-started" className={styles.btnPrimary}>
-              Get started
+        <div className={styles.heroGrid} aria-hidden="true" />
+        <div className={`${styles.container} ${styles.heroInner}`}>
+          <div className={styles.heroCopy}>
+            <Link href="/migrations" className={styles.announce}>
+              <span className={styles.announceTag}>v0.2</span>
+              Migrations generated from schema diffs
               <Arrow />
             </Link>
-            <CopyCommand command="npm i cyphra" />
+            <h1 className={styles.title}>
+              The typed ORM <br className={styles.brDesktop} />
+              for Neo4j.
+            </h1>
+            <p className={styles.lede}>
+              Describe your graph in one <code>.cyphra</code> schema. Get a TypeScript client that
+              knows every node, relationship and property, and migrations from every change.
+            </p>
+            <div className={styles.ctaRow}>
+              <Link
+                href="/getting-started"
+                className={styles.btnPrimary}
+                data-event="cta_click"
+                data-event-target="get_started"
+                data-event-where="hero"
+              >
+                Get started
+                <Arrow />
+              </Link>
+              <CopyCommand command="npm i cyphra" />
+            </div>
+            <ul className={styles.meta}>
+              <li>Open source, MIT</li>
+              <li>Neo4j 5.6+</li>
+              <li>
+                <a href={LINKS.github}>Star on GitHub</a>
+              </li>
+            </ul>
           </div>
-          <ul className={styles.meta}>
-            <li>Open source, MIT</li>
-            <li>Neo4j 5.6+</li>
-            <li>
-              <a href={LINKS.github}>Star on GitHub</a>
-            </li>
-          </ul>
+          <HeroEditor />
         </div>
       </section>
 
-      {/* Showcase */}
-      <section className={styles.section} aria-labelledby="showcase-title">
+      {/* Pattern band */}
+      <div className={styles.band} aria-hidden="true">
+        <div className={styles.bandTrack}>
+          {[0, 1].map((k) => (
+            <span key={k} className={styles.bandRow}>
+              <span>(:Schema)</span>
+              <b>-[:GENERATES]-&gt;</b>
+              <span>(:TypedClient)</span>
+              <b>-[:QUERIES]-&gt;</b>
+              <span>(:Neo4j)</span>
+              <b>-[:MIGRATED_BY]-&gt;</b>
+              <span>(:Migration)</span>
+              <b>-[:RUNS_ON]-&gt;</b>
+              <span>(:Kubernetes)</span>
+              <b>-[:HOSTED_BY]-&gt;</b>
+              <span>(:CyphraCloud)</span>
+              <b>-[:STARTS_FROM]-&gt;</b>
+            </span>
+          ))}
+        </div>
+      </div>
+
+      {/* Schema → graph */}
+      <section className={styles.section} aria-labelledby="schema-title">
         <div className={styles.container}>
-          <header className={styles.sectionHead}>
-            <p className={styles.eyebrow}>Schema in, types out</p>
-            <h2 id="showcase-title" className={styles.h2}>
-              One schema file. A client that knows your graph.
+          <header className={`${styles.sectionHead} ${styles.reveal}`}>
+            <Eyebrow>Schema</Eyebrow>
+            <h2 id="schema-title" className={styles.h2}>
+              One file describes the whole graph.
             </h2>
             <p className={styles.sectionLede}>
-              Labels, relationships, constraints and TypeScript types all come from one{" "}
-              <code>.cyphra</code> file. Run <code>cyphra generate</code> and the client follows
-              every change.
+              Nodes, relationships, their direction and their properties live in{" "}
+              <code>schema.cyphra</code>. Constraints, indexes, migrations and TypeScript types all
+              come from it.
             </p>
           </header>
-          <div className={styles.showcase}>
-            <Window title="schema.cyphra">
+          <div className={styles.split}>
+            <Window title="schema.cyphra" className={styles.reveal}>
               <Code code={SCHEMA} lang="cyphra" />
             </Window>
-            <div className={styles.showcaseLink} aria-hidden="true">
-              <span>cyphra generate</span>
-              <Arrow />
+            <div className={`${styles.graphPanel} ${styles.reveal}`}>
+              <SchemaGraph />
+              <p className={styles.graphCaption}>
+                <code>Follows</code> is a relationship model, so <code>since</code> is typed on the
+                edge.
+              </p>
             </div>
-            <Window title="main.ts" badge="typed">
+          </div>
+        </div>
+      </section>
+
+      {/* Client */}
+      <section className={styles.section} aria-labelledby="client-title">
+        <div className={styles.container}>
+          <div className={styles.splitWide}>
+            <div className={styles.reveal}>
+              <Eyebrow>Typed client</Eyebrow>
+              <h2 id="client-title" className={styles.h2}>
+                A client that knows your graph.
+              </h2>
+              <p className={styles.sectionLede}>
+                <code>cyphra generate</code> writes one file, <code>cyphra.gen.ts</code>. Import it
+                and every query is checked against your schema.
+              </p>
+              <ul className={styles.points}>
+                {CLIENT_POINTS.map((p) => (
+                  <li key={p.title}>
+                    <Link href={p.href}>
+                      <span className={styles.pointTitle}>
+                        {p.title}
+                        <Arrow />
+                      </span>
+                      <span className={styles.pointBody}>{p.body}</span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <Window title="main.ts" badge="typed" className={styles.reveal}>
               <Code code={CLIENT} lang="ts" />
             </Window>
           </div>
-          <div className={styles.cypherRow}>
-            <div>
-              <h3 className={styles.h3}>Cypher is never hidden</h3>
-              <p className={styles.muted}>
-                When a query is easier to say in Cypher, say it in Cypher. Values are always sent as
-                parameters, and results come back as plain JavaScript: integers as{" "}
-                <code>number</code>, temporals as <code>Date</code>.
-              </p>
-              <Link href="/client#raw-cypher" className={styles.textLink}>
-                Raw Cypher in the client <Arrow />
-              </Link>
-            </div>
-            <Window title="report.ts">
-              <Code code={CYPHER} lang="ts" />
-            </Window>
-          </div>
         </div>
       </section>
 
-      {/* Features */}
-      <section className={styles.section} aria-labelledby="features-title">
+      {/* DX bento */}
+      <section className={styles.section} aria-labelledby="dx-title">
         <div className={styles.container}>
-          <header className={styles.sectionHead}>
-            <p className={styles.eyebrow}>What you get</p>
-            <h2 id="features-title" className={styles.h2}>
-              The ergonomics of a modern ORM, built for graphs.
+          <header className={`${styles.sectionHead} ${styles.reveal}`}>
+            <Eyebrow>Developer experience</Eyebrow>
+            <h2 id="dx-title" className={styles.h2}>
+              Built for the inner loop.
             </h2>
+            <p className={styles.sectionLede}>
+              Mistakes show up in your editor, schema changes become reviewable code, and a local
+              database is one command away.
+            </p>
           </header>
-          <div className={styles.grid}>
-            {FEATURES.map((f) => (
-              <Link key={f.title} href={f.href} className={styles.card}>
-                <span className={styles.cardIcon}>{f.icon}</span>
-                <h3 className={styles.cardTitle}>{f.title}</h3>
-                <p className={styles.cardBody}>{f.body}</p>
-              </Link>
-            ))}
+          <div className={styles.bento}>
+            <article className={`${styles.tile} ${styles.reveal}`}>
+              <div className={styles.tileHead}>
+                <h3 className={styles.h3}>Typos fail the build, not production</h3>
+                <p className={styles.muted}>Every filter is checked against the schema.</p>
+              </div>
+              <pre className={styles.tileCode}>
+                <code>
+                  <T k="kw">await</T> db.user.<T k="fn">findMany</T>({"{\n  where: { "}
+                  <span className={styles.squiggle}>emial</span>
+                  {": "}
+                  <T k="str">&quot;alice@example.com&quot;</T>
+                  {" },\n});"}
+                </code>
+                <span className={styles.diag}>
+                  <b>ts(2561)</b> Object literal may only specify known properties, but
+                  &apos;emial&apos; does not exist in type &apos;WhereInput&lt;…,
+                  &quot;User&quot;&gt;&apos;. Did you mean to write &apos;email&apos;?
+                </span>
+              </pre>
+            </article>
+
+            <article className={`${styles.tile} ${styles.reveal}`}>
+              <div className={styles.tileHead}>
+                <h3 className={styles.h3}>A local Neo4j in one command</h3>
+                <p className={styles.muted}>Docker, a data volume and your .env, ready.</p>
+              </div>
+              <pre className={styles.term}>
+                <code>
+                  <span className={styles.prompt}>$</span> npx cyphra dev{"\n"}
+                  <span className={styles.dim}>Started cyphra-dev-blog; waiting for Neo4j…</span>
+                  {"\n"}
+                  <span className={styles.dim}>Wrote .env</span>
+                  {"\n"}
+                  <span className={styles.ok}>✓</span> Neo4j is ready (browser:
+                  http://127.0.0.1:7474).
+                </code>
+              </pre>
+            </article>
+
+            <article className={`${styles.tile} ${styles.tileWide} ${styles.reveal}`}>
+              <div className={styles.tileHead}>
+                <h3 className={styles.h3}>Migrations you can review</h3>
+                <p className={styles.muted}>
+                  <code>cyphra migrate dev</code> diffs your schema and writes the steps: backfills,
+                  guards, constraints.{" "}
+                  <Link href="/migrations" className={styles.inlineLink}>
+                    How migrations work
+                  </Link>
+                </p>
+              </div>
+              <pre className={styles.term}>
+                <code>
+                  <span className={styles.prompt}>$</span> npx cyphra migrate dev --name add-roles
+                  {"\n"}
+                  <span className={styles.ok}>✓</span> Created
+                  migrations/20261118174710_add-roles.mjs (2 step(s))
+                </code>
+              </pre>
+              <div className={styles.tileWindow}>
+                <Code code={MIGRATION} lang="ts" />
+              </div>
+            </article>
+
+            <article className={`${styles.tile} ${styles.reveal}`}>
+              <div className={styles.tileHead}>
+                <h3 className={styles.h3}>Cypher is never hidden</h3>
+                <p className={styles.muted}>
+                  <code>db.$cypher</code> sends every value as a parameter and returns plain
+                  JavaScript.
+                </p>
+              </div>
+              <div className={styles.tileWindow}>
+                <Code code={CYPHER} lang="ts" />
+              </div>
+            </article>
+
+            <article className={`${styles.tile} ${styles.reveal}`}>
+              <div className={styles.tileHead}>
+                <h3 className={styles.h3}>Start from the database you have</h3>
+                <p className={styles.muted}>
+                  <code>cyphra pull</code> introspects a live Neo4j and writes the schema for you.
+                </p>
+              </div>
+              <pre className={styles.term}>
+                <code>
+                  <span className={styles.prompt}>$</span> npx cyphra pull{"\n"}
+                  <span className={styles.prompt}>$</span> npx cyphra generate{"\n"}
+                  <span className={styles.ok}>✓</span> Wrote cyphra.gen.ts
+                </code>
+              </pre>
+            </article>
           </div>
         </div>
       </section>
@@ -479,91 +614,163 @@ export function Landing() {
       {/* Workflow */}
       <section className={styles.section} aria-labelledby="workflow-title">
         <div className={styles.container}>
-          <header className={styles.sectionHead}>
-            <p className={styles.eyebrow}>Workflow</p>
+          <header className={`${styles.sectionHead} ${styles.reveal}`}>
+            <Eyebrow>Quickstart</Eyebrow>
             <h2 id="workflow-title" className={styles.h2}>
-              From an empty folder to a typed graph in three commands.
+              Empty folder to typed graph in three commands.
             </h2>
             <p className={styles.sectionLede}>
-              Install the CLI with <code>npm i -D @cyphra/cli</code>, write your schema, then:
+              Install <code>cyphra</code> and <code>@cyphra/cli</code>, write a schema, then run:
             </p>
           </header>
           <ol className={styles.steps}>
             {STEPS.map((s, i) => (
-              <li key={s.cmd} className={styles.step}>
+              <li key={s.cmd} className={`${styles.step} ${styles.reveal}`}>
                 <span className={styles.stepNum}>{String(i + 1).padStart(2, "0")}</span>
-                <h3 className={styles.cardTitle}>{s.title}</h3>
-                <p className={styles.cardBody}>{s.body}</p>
-                <code className={styles.stepCmd}>
-                  <span className={styles.prompt} aria-hidden="true">
-                    $
-                  </span>
-                  {s.cmd}
-                </code>
+                <h3 className={styles.h3}>{s.title}</h3>
+                <p className={styles.muted}>{s.body}</p>
+                <CopyCommand command={s.cmd} className={styles.stepCmd} />
               </li>
             ))}
           </ol>
+          <p className={`${styles.center} ${styles.reveal}`}>
+            <Link href="/getting-started" className={styles.textLink}>
+              Read the full getting started guide <Arrow />
+            </Link>
+          </p>
         </div>
       </section>
 
-      {/* Operator */}
-      <section className={styles.section} aria-labelledby="operator-title">
+      {/* Run it anywhere */}
+      <section className={styles.section} aria-labelledby="run-title">
         <div className={styles.container}>
-          <div className={styles.operator}>
-            <div className={styles.operatorCopy}>
-              <p className={styles.eyebrow}>Cyphra Operator</p>
-              <h2 id="operator-title" className={styles.h2}>
-                Run Neo4j on your own Kubernetes.
-              </h2>
-              <p className={styles.sectionLede}>
-                A Kubernetes operator and Helm chart for Neo4j Community. Declare an instance and
-                get persistent storage, generated credentials, TLS and scheduled S3 backups. It
-                works with any Neo4j client.
-              </p>
-              <dl className={styles.points}>
-                {OPERATOR_POINTS.map(([k, v]) => (
-                  <div key={k}>
-                    <dt>{k}</dt>
-                    <dd>{v}</dd>
-                  </div>
-                ))}
-              </dl>
+          <header className={`${styles.sectionHead} ${styles.reveal}`}>
+            <Eyebrow>Hosting</Eyebrow>
+            <h2 id="run-title" className={styles.h2}>
+              Run Neo4j yourself, or let us run it.
+            </h2>
+            <p className={styles.sectionLede}>
+              Cyphra works with any Neo4j 5.6+ database. When you need one, both options below run
+              Neo4j Community on Kubernetes.
+            </p>
+          </header>
+          <div className={styles.hosting}>
+            <article className={`${styles.hostCard} ${styles.reveal}`}>
+              <div>
+                <p className={styles.hostKicker}>Cyphra Operator · open source</p>
+                <h3 className={styles.h3Lg}>On your own Kubernetes.</h3>
+                <p className={styles.muted}>
+                  A Kubernetes operator and Helm chart for Neo4j Community. Declare an instance and
+                  get persistent storage, credentials, TLS and scheduled S3 backups.
+                </p>
+                <dl className={styles.defs}>
+                  {OPERATOR_POINTS.map(([k, v]) => (
+                    <div key={k}>
+                      <dt>{k}</dt>
+                      <dd>{v}</dd>
+                    </div>
+                  ))}
+                </dl>
+              </div>
+              <Window title="blog.yaml" badge="kubectl apply">
+                <Code code={OPERATOR_YAML} lang="yaml" />
+              </Window>
               <div className={styles.ctaRow}>
-                <a href={LINKS.operator} className={styles.btnSecondary}>
+                <a
+                  href={LINKS.operator}
+                  className={styles.btnSecondary}
+                  data-event="cta_click"
+                  data-event-target="operator"
+                  data-event-where="landing"
+                >
                   Operator on GitHub
                   <Arrow />
                 </a>
               </div>
-              <p className={styles.fineprint}>
-                Neo4j Community has no online backup, so a backup briefly stops the instance while
-                the dump runs.
-              </p>
-            </div>
-            <Window title="blog.yaml" badge="kubectl apply">
-              <Code code={OPERATOR_YAML} lang="yaml" />
-              <pre className={styles.kubectl}>
-                <span className={styles.prompt}>$</span>
-                {"kubectl get neo4jinstances\n"}
-                <span className={styles.muted}>
-                  {"NAME   PHASE   VERSION   LAST BACKUP   AGE\n"}
-                </span>
-                {"blog   "}
-                <span className={styles.ready}>Ready</span>
-                {"   5.26      3h            12d"}
-              </pre>
-            </Window>
+            </article>
+
+            <article className={`${styles.hostCard} ${styles.hostCloud} ${styles.reveal}`}>
+              <div>
+                <p className={styles.hostKicker}>
+                  Cyphra Cloud · <span className={styles.signalText}>early access</span>
+                </p>
+                <h3 className={styles.h3Lg}>Managed, one instance per database.</h3>
+                <p className={styles.muted}>
+                  A dedicated Neo4j Community instance with its own storage, generated credentials
+                  and a TLS endpoint. You get a <code>neo4j+s://</code> URI; we run the server.
+                </p>
+              </div>
+              <ul className={styles.cloudPlans}>
+                <li>
+                  <span>Free</span>
+                  <span>1 GB memory · 2 GB storage</span>
+                  <b>$0</b>
+                </li>
+                <li>
+                  <span>Starter</span>
+                  <span>2 GB memory · 10 GB storage</span>
+                  <b>$29</b>
+                </li>
+                <li>
+                  <span>Pro</span>
+                  <span>8 GB memory · 50 GB storage</span>
+                  <b>$99</b>
+                </li>
+                <li>
+                  <span>Team</span>
+                  <span>16 GB memory · 100 GB storage</span>
+                  <b>Custom</b>
+                </li>
+              </ul>
+              <ul className={styles.cloudIncl}>
+                <li>TLS endpoint, any Neo4j driver</li>
+                <li>Generated credentials</li>
+                <li>Daily backups on paid plans</li>
+                <li>Storage grows online</li>
+              </ul>
+              <Window title=".env" badge="from the dashboard">
+                <Code code={CLOUD_ENV} lang="bash" />
+              </Window>
+              <p className={styles.fineprint}>Coming soon to the Vercel Marketplace.</p>
+              <div className={styles.ctaRow}>
+                <a
+                  href={`${APP_URL}/signup`}
+                  className={styles.btnPrimary}
+                  data-event="cta_click"
+                  data-event-target="cloud_signup"
+                  data-event-where="landing"
+                >
+                  Create a free database
+                  <Arrow />
+                </a>
+                <Link href="/pricing" className={styles.btnGhost}>
+                  See pricing
+                </Link>
+              </div>
+            </article>
           </div>
         </div>
       </section>
 
       {/* Final CTA */}
       <section className={styles.final}>
-        <div className={styles.container}>
+        <div className={`${styles.container} ${styles.reveal}`}>
+          <svg className={styles.finalEdge} viewBox="0 0 400 24" aria-hidden="true">
+            <circle cx="8" cy="12" r="5" />
+            <path d="M13 12H390" />
+            <path d="M382 5 391 12 382 19" className={styles.finalHead} />
+          </svg>
           <h2 className={styles.finalTitle}>Give your graph a schema.</h2>
           <p className={styles.sectionLede}>Install, write a schema, run your first typed query.</p>
           <div className={`${styles.ctaRow} ${styles.ctaCenter}`}>
-            <Link href="/getting-started" className={styles.btnPrimary}>
-              Read the docs
+            <Link
+              href="/getting-started"
+              className={styles.btnPrimary}
+              data-event="cta_click"
+              data-event-target="get_started"
+              data-event-where="footer_cta"
+            >
+              Get started
               <Arrow />
             </Link>
             <CopyCommand command="npm i cyphra" />

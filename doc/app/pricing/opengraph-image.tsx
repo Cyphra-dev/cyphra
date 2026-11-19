@@ -5,5 +5,9 @@ export const size = OG_SIZE;
 export const contentType = OG_CONTENT_TYPE;
 
 export default function Image() {
-  return docsOgImage("pricing");
+  return docsOgImage("pricing", {
+    section: "pricing",
+    title: "Managed Neo4j, priced per database",
+    pattern: "(:Database)-[:ON]->(:Plan {from: 0})",
+  });
 }
