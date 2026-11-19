@@ -40,7 +40,8 @@
 .planHighlight {
   border-color: color-mix(in srgb, var(--cy-accent) 45%, var(--cy-border));
   background: var(--cy-bg);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--cy-accent) 25%, transparent),
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--cy-accent) 25%, transparent),
     0 12px 32px -12px color-mix(in srgb, var(--cy-accent) 30%, transparent);
 }
 

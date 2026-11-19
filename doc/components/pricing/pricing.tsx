@@ -63,7 +63,13 @@ const FAQ: [string, string][] = [
 function Check() {
   return (
     <svg viewBox="0 0 16 16" width="16" height="16" fill="none" aria-hidden="true">
-      <path d="M3.5 8.5l3 3 6-7" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" />
+      <path
+        d="M3.5 8.5l3 3 6-7"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
     </svg>
   );
 }
@@ -88,11 +94,17 @@ export function Pricing() {
             {PLANS.map((p) => (
               <article
                 key={p.name}
-                className={"highlight" in p && p.highlight ? `${styles.plan} ${styles.planHighlight}` : styles.plan}
+                className={
+                  "highlight" in p && p.highlight
+                    ? `${styles.plan} ${styles.planHighlight}`
+                    : styles.plan
+                }
               >
                 <h2 className={styles.planName}>
                   {p.name}
-                  {"highlight" in p && p.highlight ? <span className={styles.badge}>Popular</span> : null}
+                  {"highlight" in p && p.highlight ? (
+                    <span className={styles.badge}>Popular</span>
+                  ) : null}
                 </h2>
                 <p className={styles.planDesc}>{p.desc}</p>
                 <p className={styles.price}>
@@ -108,8 +120,14 @@ export function Pricing() {
                   ))}
                 </ul>
                 <a
-                  href={p.name === "Team" ? "https://github.com/Cyphra-dev/cyphra/issues" : `${APP_URL}/signup`}
-                  className={"highlight" in p && p.highlight ? landing.btnPrimary : landing.btnSecondary}
+                  href={
+                    p.name === "Team"
+                      ? "https://github.com/Cyphra-dev/cyphra/issues"
+                      : `${APP_URL}/signup`
+                  }
+                  className={
+                    "highlight" in p && p.highlight ? landing.btnPrimary : landing.btnSecondary
+                  }
                   data-event="cta_click"
                   data-event-target={p.name.toLowerCase()}
                   data-event-where="pricing"
@@ -120,8 +138,8 @@ export function Pricing() {
             ))}
           </div>
           <p className={styles.note}>
-            Prices in USD, per database per month, excluding taxes. Early-access plans and prices may
-            change; we will tell you before anything changes for an existing database.
+            Prices in USD, per database per month, excluding taxes. Early-access plans and prices
+            may change; we will tell you before anything changes for an existing database.
           </p>
         </div>
       </section>
@@ -143,7 +161,8 @@ export function Pricing() {
             ))}
           </dl>
           <p className={styles.more}>
-            How databases are created, connected and backed up: <Link href="/cloud">Cyphra Cloud docs</Link>.
+            How databases are created, connected and backed up:{" "}
+            <Link href="/cloud">Cyphra Cloud docs</Link>.
           </p>
         </div>
       </section>
