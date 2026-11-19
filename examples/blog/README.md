@@ -15,5 +15,5 @@ pnpm install && pnpm -r --filter './packages/*' run build
 # start a local Neo4j 5
 docker run -d --name neo4j -p 7687:7687 -e NEO4J_AUTH=neo4j/password neo4j:5
 
-NEO4J_URI=bolt://localhost:7687 NEO4J_USER=neo4j NEO4J_PASSWORD=password pnpm --filter cyphra-example-blog start
+NEO4J_URI=bolt://localhost:7687 NEO4J_USERNAME=neo4j NEO4J_PASSWORD=password pnpm --filter cyphra-example-blog start
 ```

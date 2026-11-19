@@ -7,7 +7,7 @@ const defaultSchema = `node Example {
 `;
 
 const defaultEnvExample = `# NEO4J_URI=neo4j+s://xxxx.databases.neo4j.io
-# NEO4J_USER=neo4j
+# NEO4J_USERNAME=neo4j
 # NEO4J_PASSWORD=secret
 # NEO4J_DATABASE=neo4j
 `;

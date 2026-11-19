@@ -27,7 +27,7 @@ export type CyphraClientOptions = {
  * ```ts
  * const client = new CyphraClient({
  *   uri: process.env.NEO4J_URI!,
- *   user: process.env.NEO4J_USER!,
+ *   user: process.env.NEO4J_USERNAME!,
  *   password: process.env.NEO4J_PASSWORD!,
  * });
  * const session = client.session();
