@@ -1,6 +1,6 @@
 {
   "name": "cyphra",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Cyphra monolith: schema DSL, Cypher helpers, Neo4j runtime, and migrations (re-exports @cyphra/*)",
   "type": "module",
   "sideEffects": false,

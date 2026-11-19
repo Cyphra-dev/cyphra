@@ -1,6 +1,6 @@
 {
   "name": "@cyphra/cli",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Cyphra CLI: init, migrate, push",
   "type": "module",
   "publishConfig": {

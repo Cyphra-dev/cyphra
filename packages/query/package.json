@@ -1,6 +1,6 @@
 {
   "name": "@cyphra/query",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Cypher-first query utilities: template tag and minimal fluent builder for Cyphra",
   "type": "module",
   "sideEffects": false,
