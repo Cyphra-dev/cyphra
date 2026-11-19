@@ -228,7 +228,7 @@ aside a.x\:bg-primary-100 {
 .cy-footer {
   width: 100%;
   display: grid;
-  grid-template-columns: 1.4fr repeat(3, 1fr);
+  grid-template-columns: 1.4fr repeat(4, 1fr);
   gap: 2.5rem;
   padding-top: 0.5rem;
   font-size: 0.875rem;
