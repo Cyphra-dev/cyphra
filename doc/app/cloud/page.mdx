@@ -1,0 +1,78 @@
+---
+title: "Cyphra Cloud: managed Neo4j hosting"
+sidebarTitle: Cyphra Cloud
+description: "Cyphra Cloud runs dedicated Neo4j Community databases for you: one isolated instance per database, TLS endpoints, generated credentials, daily backups and online storage growth."
+---
+
+import { Callout } from "nextra/components";
+
+# Cyphra Cloud
+
+Cyphra Cloud is **managed Neo4j hosting**. Every database is a dedicated Neo4j Community instance
+with its own storage, credentials and TLS endpoint. You get a connection string, and Cyphra runs the
+server for you.
+
+<Callout type="info">
+  Cyphra Cloud is in **early access**. [Create an account](https://app.cyphra.dev/signup) to try it,
+  and see [Pricing](/pricing) for the plans.
+</Callout>
+
+It runs on the open-source [Cyphra Operator](https://github.com/Cyphra-dev/operator), so everything
+a database does in Cyphra Cloud, you can also do on your own Kubernetes cluster.
+
+## What you get
+
+- **One instance per database.** Nothing is shared with other databases: no noisy neighbors, and
+  memory and storage are reserved for you.
+- **TLS endpoints.** Connect with `neo4j+s://` from any Neo4j driver, Cyphra included. Bolt
+  without TLS is not exposed.
+- **Generated credentials.** A strong password is generated when the database is created.
+- **Backups.** Paid plans include a daily backup, stored outside the cluster.
+- **Storage that grows.** Moving to a larger plan grows the volume online. Volumes never shrink.
+
+## Create a database
+
+1. Sign in at [app.cyphra.dev](https://app.cyphra.dev).
+2. Choose a name, a region and a [plan](/pricing).
+3. Wait for the database to become **ready**, usually within a few minutes.
+4. Copy the connection URI, username and password from the database page.
+
+## Connect
+
+Put the connection details in your environment:
+
+```bash filename=".env"
+NEO4J_URI=neo4j+s://<your-database-host>:7687
+NEO4J_USERNAME=neo4j
+NEO4J_PASSWORD=<your-password>
+```
+
+Then use them with the [typed client](/client):
+
+```ts filename="db.ts"
+import { createClient } from "./cyphra.gen.js";
+
+export const db = createClient({
+  uri: process.env.NEO4J_URI!,
+  user: process.env.NEO4J_USERNAME!,
+  password: process.env.NEO4J_PASSWORD!,
+});
+```
+
+Apply your schema with `cyphra migrate deploy`, as described in [Migrations](/migrations). Any other
+Neo4j driver, or Neo4j Browser, works with the same URI and credentials.
+
+## Lifecycle
+
+From the dashboard you can restart a database, rotate its password, change its plan or delete it.
+
+<Callout type="warning">
+  Neo4j Community has **no online backup**. To take a consistent dump, the database stops for the
+  length of the backup, usually a few seconds to a few minutes depending on its size.
+</Callout>
+
+## Limits
+
+Cyphra Cloud runs **Neo4j Community Edition**, single server. Clustering, role-based access control
+and multiple user databases are Neo4j Enterprise features and are not available. Neo4j is a trademark
+of Neo4j, Inc.; Cyphra is not affiliated with Neo4j, Inc.

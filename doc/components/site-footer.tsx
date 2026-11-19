@@ -30,6 +30,14 @@ const COLUMNS: { title: string; links: [string, string][] }[] = [
       ["Kubernetes operator", LINKS.operator],
     ],
   },
+  {
+    title: "Cloud",
+    links: [
+      ["Cyphra Cloud", "/cloud"],
+      ["Pricing", "/pricing"],
+      ["Dashboard", "https://app.cyphra.dev"],
+    ],
+  },
 ];
 
 export function SiteFooter() {
