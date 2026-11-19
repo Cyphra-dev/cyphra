@@ -4,7 +4,7 @@ sidebarTitle: Getting started
 description: "Install Cyphra, describe your Neo4j graph in a .cyphra schema, start a local database, generate a migration and a typed TypeScript client, and run your first query."
 ---
 
-import { Cards, Steps, Tabs } from "nextra/components";
+import { Callout, Cards, Steps, Tabs } from "nextra/components";
 
 # Getting started
 
@@ -22,14 +22,15 @@ Cyphra needs **Neo4j 5.6+** for the typed client.
 
 ## Install
 
-The `cyphra` package is everything your app imports. The CLI is a separate dev dependency.
+The `cyphra` package is everything your app imports. The CLI is a separate dev dependency, and
+[`tsx`](https://tsx.is) runs the TypeScript examples below.
 
 <Tabs items={["npm", "pnpm", "yarn"]}>
 <Tabs.Tab>
 
 ```bash
 npm i cyphra
-npm i -D @cyphra/cli
+npm i -D @cyphra/cli tsx
 ```
 
 </Tabs.Tab>
@@ -37,7 +38,7 @@ npm i -D @cyphra/cli
 
 ```bash
 pnpm add cyphra
-pnpm add -D @cyphra/cli
+pnpm add -D @cyphra/cli tsx
 ```
 
 </Tabs.Tab>
@@ -45,7 +46,7 @@ pnpm add -D @cyphra/cli
 
 ```bash
 yarn add cyphra
-yarn add -D @cyphra/cli
+yarn add -D @cyphra/cli tsx
 ```
 
 </Tabs.Tab>
@@ -110,7 +111,20 @@ const alice = await db.user.create({
   include: { posts: true },
 });
 // alice.posts: { id: string; title: string }[]
+
+await db.$disconnect();
 ```
+
+Run it with the database settings from `.env`:
+
+```bash
+node --env-file=.env --import tsx main.ts
+```
+
+<Callout type="info">
+  Cyphra is ESM-only, and the example uses top-level `await`. In a project created with `npm init`, set
+  `"type": "module"` in `package.json` first (`npm pkg set type=module`).
+</Callout>
 
 Prefer raw Cypher? It is one call away, still parameterized:
 
