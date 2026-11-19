@@ -105,7 +105,7 @@ export async function runDev(cwd: string, opts: DevOptions): Promise<void> {
   const hostPort = portLine.split(":").pop() || String(port);
   const env = [
     `NEO4J_URI=bolt://127.0.0.1:${hostPort}`,
-    `NEO4J_USER=${DEV_USER}`,
+    `NEO4J_USERNAME=${DEV_USER}`,
     `NEO4J_PASSWORD=${DEV_PASSWORD}`,
     "",
   ].join("\n");

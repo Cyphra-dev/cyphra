@@ -16,5 +16,5 @@ Migration files are ESM (`.mjs`) and should import `defineMigration` from **`cyp
 
 ## Environment
 
-- `NEO4J_URI`, `NEO4J_USER`, `NEO4J_PASSWORD`
+- `NEO4J_URI`, `NEO4J_USERNAME`, `NEO4J_PASSWORD`
 - Optional: `NEO4J_DATABASE`

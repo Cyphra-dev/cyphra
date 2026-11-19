@@ -1,12 +1,12 @@
 import { createClient } from "./cyphra.gen.js";
 
-const { NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD } = process.env;
-if (!NEO4J_URI || !NEO4J_USER || !NEO4J_PASSWORD) {
-  console.log("Set NEO4J_URI, NEO4J_USER and NEO4J_PASSWORD to run this example.");
+const { NEO4J_URI, NEO4J_USERNAME, NEO4J_PASSWORD } = process.env;
+if (!NEO4J_URI || !NEO4J_USERNAME || !NEO4J_PASSWORD) {
+  console.log("Set NEO4J_URI, NEO4J_USERNAME and NEO4J_PASSWORD to run this example.");
   process.exit(0);
 }
 
-const db = createClient({ uri: NEO4J_URI, user: NEO4J_USER, password: NEO4J_PASSWORD });
+const db = createClient({ uri: NEO4J_URI, user: NEO4J_USERNAME, password: NEO4J_PASSWORD });
 
 try {
   await db.$cypher`MATCH (n) WHERE n:User OR n:Post DETACH DELETE n`;
