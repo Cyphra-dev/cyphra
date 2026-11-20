@@ -79,6 +79,15 @@ describe("ORM types", () => {
       },
       orderBy: [{ createdAt: "desc" }],
     });
+    // Strings compare lexicographically (keyset pagination on a string tie-breaker).
+    await db.user.findMany({
+      where: { id: { lt: "m" }, email: { gte: "a", lte: "n", in: ["a"], notIn: ["b"] } },
+    });
+    await db.post.findMany({ where: { title: { gt: "A" }, author: { is: { id: { lt: "x" } } } } });
+    // @ts-expect-error — string bounds take strings
+    await db.user.findMany({ where: { email: { lt: 3 } } });
+    // @ts-expect-error — booleans have no lt
+    await db.post.findMany({ where: { published: { lt: true } } });
     // @ts-expect-error — numbers have no startsWith
     await db.user.findMany({ where: { age: { startsWith: "1" } } });
     // @ts-expect-error — to-one relations use is/isNot, not some

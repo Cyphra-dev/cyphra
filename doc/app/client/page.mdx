@@ -73,14 +73,14 @@ properties under **`$edge`**.
 
 ## Filters
 
-| Field type                         | Operators                                                       |
-| ---------------------------------- | --------------------------------------------------------------- |
-| any scalar                         | value (equals), `null` (absent), `equals`, `not`, `in`, `notIn` |
-| `Int`, `Float`, `DateTime`, `Date` | `lt`, `lte`, `gt`, `gte`                                        |
-| `String`                           | `contains`, `startsWith`, `endsWith`                            |
-| lists (`String[]`, …)              | `has`, `hasEvery`, `hasSome`, `isEmpty`, `equals`               |
-| to-many relation                   | `some`, `none`, `every`                                         |
-| to-one relation                    | `is`, `isNot`, `null` (no related node)                         |
+| Field type                                   | Operators                                                       |
+| -------------------------------------------- | --------------------------------------------------------------- |
+| any scalar                                   | value (equals), `null` (absent), `equals`, `not`, `in`, `notIn` |
+| `Int`, `Float`, `String`, `DateTime`, `Date` | `lt`, `lte`, `gt`, `gte` (strings compare lexicographically)    |
+| `String`                                     | `contains`, `startsWith`, `endsWith`                            |
+| lists (`String[]`, …)                        | `has`, `hasEvery`, `hasSome`, `isEmpty`, `equals`               |
+| to-many relation                             | `some`, `none`, `every`                                         |
+| to-one relation                              | `is`, `isNot`, `null` (no related node)                         |
 
 Combine with `AND`, `OR` and `NOT`.
 
@@ -118,6 +118,18 @@ await db.user.deleteMany({ where: { email: { endsWith: "@spam.io" } } });
 Relation operations: `create` and `connect` (on create and update), plus `disconnect` and `set`
 (to-many only, replaces all edges) on update. On a to-one relation, `connect` / `create` replace the
 existing edge.
+
+`connect` is idempotent: it `MERGE`s the relationship, so connecting a pair that is already linked
+keeps one edge. When the other side is declared to-one (connecting a post through `user.posts`
+while `Post.author` is `User?`), `connect` moves the post: its edge to the previous author is
+deleted in the same statement. Many-to-many relations are left alone. On a typed edge, `$edge` and the edge's schema defaults are set when the edge is
+created; on an existing edge only the `$edge` properties you pass are updated.
+
+`upsert` is one atomic `MERGE` on the unique key in `where` (`ON CREATE SET` the create data,
+`ON MATCH SET` the update), then any nested relation writes of the branch it took. Concurrent
+upserts of the same key yield one node as long as the key has a uniqueness constraint, which
+`@id` / `@unique` create through `cyphra push` or a migration. See
+[Upsert with MERGE](/cypher/upsert-merge#upsert-with-cyphra).
 
 A nested write runs in **one write transaction**: if any step fails (for example a `connect` target
 does not exist) nothing is written.
@@ -165,10 +177,29 @@ The [Cypher how-tos](/cypher) show common queries (upserts, pagination, counts) 
 | `T?`       | `T \| null`           | absent property                                                  |
 | `T[]`      | `T[]`                 | List (absent reads as `[]`)                                      |
 
+### DateTime values
+
+Cyphra writes every `DateTime` (including `@default(now())` and the values in `where` filters) at
+UTC offset `Z`, whatever the time zone of the server process, and reads it back as a `Date`. The
+offset matters in Cypher: `=` and `<` on datetimes take it into account, so the same instant stored
+as `2023-12-31T19:00-05:00` is not `=` to `2024-01-01T00:00Z`, and sorts just before it.
+
+Versions before 0.3 used the local offset of the process that wrote the value. If your servers did
+not run in UTC, such values still read back as the right `Date` and range filters still work, but
+`equals`, `in`, and `lte` / `gte` on that exact instant will not match them. Rewrite them in UTC
+once (per label and property):
+
+```cypher
+MATCH (n:User) WHERE n.createdAt.offsetSeconds <> 0
+SET n.createdAt = datetime({datetime: n.createdAt, timezone: "Z"})
+```
+
 ## Errors
 
 - `CyphraValidationError`: unknown field or operator, wrong value type, missing required field, or missing unique key.
 - `NotFoundError`: `update` / `delete` / `connect` / `findUniqueOrThrow` target not found.
+- `CyphraError` (the base class of both): for example an `upsert` whose `where` has extra conditions
+  that the existing node does not match.
 
 Field names, labels and relationship types always come from your schema and unknown keys are rejected,
 so arguments cannot inject Cypher. Every value is sent as a parameter.
