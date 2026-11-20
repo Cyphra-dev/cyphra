@@ -15,6 +15,17 @@ const COLUMNS: { title: string; links: [string, string][] }[] = [
     ],
   },
   {
+    title: "Guides",
+    links: [
+      ["All guides", "/guides"],
+      ["Next.js", "/guides/nextjs"],
+      ["Vercel", "/guides/vercel"],
+      ["NestJS", "/guides/nestjs"],
+      ["Bun", "/guides/bun"],
+      ["Cypher how-tos", "/cypher"],
+    ],
+  },
+  {
     title: "Project",
     links: [
       ["GitHub", LINKS.github],

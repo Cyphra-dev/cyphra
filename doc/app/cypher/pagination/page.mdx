@@ -1,0 +1,164 @@
+---
+title: "Neo4j pagination: SKIP/LIMIT vs keyset (cursor)"
+sidebarTitle: Pagination
+description: "Paginate Neo4j query results with ORDER BY, SKIP and LIMIT, or with a keyset cursor that stays stable while data changes, in Cypher and with Cyphra."
+---
+
+import { Callout } from "nextra/components";
+
+# Pagination in Neo4j: SKIP/LIMIT vs keyset
+
+To paginate in Cypher, sort with `ORDER BY` on something unique, then use `SKIP` and `LIMIT` for
+page numbers, or a `WHERE` on the last row you returned (keyset, or cursor, pagination) for "load
+more" and infinite scroll. Always include a unique tie-breaker such as `id` in the sort, or pages can
+repeat and skip rows.
+
+```cypher
+MATCH (p:Post)
+WHERE p.published = true
+RETURN p.id AS id, p.title AS title
+ORDER BY p.createdAt DESC, p.id DESC
+SKIP $skip LIMIT $limit
+```
+
+## Offset pagination: SKIP and LIMIT
+
+For page `n` of size `size`, pass `$skip = (n - 1) * size` and `$limit = size`. It is the simplest
+option and the only one that lets users jump to page 7. Two things to know:
+
+- **Order must be total.** `ORDER BY p.createdAt` alone is not enough: rows with the same
+  timestamp come back in no guaranteed order. When we created 25 posts with one `createMany`,
+  they shared only 2 or 3 distinct `createdAt` values. Add `p.id` as the last sort key.
+- **Pages drift when data changes.** If a post is published between page 1 and page 2, everything
+  shifts by one, and the last post of page 1 appears again at the top of page 2. We reproduced
+  exactly that: one duplicate on page 2 after one insert.
+
+`SKIP` also does not jump ahead: the rows it skips are still read, sorted and thrown away.
+
+<Callout type="warning">
+  From JavaScript, `SKIP` and `LIMIT` need **integer** parameters. A plain JS number is sent as a
+  float and Neo4j rejects it: "LIMIT: Invalid input. '10.0' is not a valid value. Must be a
+  non-negative integer." Pass `neo4j.int(10)` from `neo4j-driver`, or convert in the query: `SKIP
+  toInteger($skip) LIMIT toInteger($limit)`.
+</Callout>
+
+## Keyset pagination: WHERE on the last row
+
+Instead of counting rows to skip, remember the sort keys of the last row you returned and ask for
+the rows after it:
+
+```cypher
+MATCH (p:Post)
+WHERE p.published = true
+  AND (p.createdAt < $after.createdAt
+       OR (p.createdAt = $after.createdAt AND p.id < $after.id))
+RETURN p.id AS id, p.title AS title, p.createdAt AS createdAt
+ORDER BY p.createdAt DESC, p.id DESC
+LIMIT $limit
+```
+
+For the first page, drop the `$after` condition. For the next one, pass the `createdAt` and `id` of
+the last row as `$after`. The `OR` handles ties on `createdAt`, and the comparison direction (`<`)
+matches the sort (`DESC`). Walking 25 posts in pages of 10 this way returned all 25 exactly once,
+and a post inserted between two pages did not shift the next page.
+
+|                                           | `SKIP` / `LIMIT`              | Keyset (`WHERE` on last row)                     |
+| ----------------------------------------- | ----------------------------- | ------------------------------------------------ |
+| Jump to page n                            | yes                           | no, only next (or previous, comparison reversed) |
+| Stable while rows are inserted or deleted | no                            | yes                                              |
+| Can start from an index range seek        | no                            | yes, with an index on the sort property          |
+| Total page count                          | `count()` in a separate query | `count()` in a separate query                    |
+
+### What PROFILE showed
+
+We profiled both queries on 5,000 published posts (Neo4j 5.26 Community), reading the page after
+row 4,000:
+
+| Query                                         | Plan starts with       | db hits |
+| --------------------------------------------- | ---------------------- | ------- |
+| `SKIP 4000 LIMIT 10`                          | `NodeByLabelScan`      | 20,001  |
+| `SKIP 0 LIMIT 10` (first page, for reference) | `NodeByLabelScan`      | 20,001  |
+| Keyset, no index on `createdAt`               | `NodeByLabelScan`      | 22,930  |
+| Keyset, range index on `createdAt`            | `NodeIndexSeekByRange` | 9,674   |
+
+Two takeaways. Without a usable index, Neo4j reads and sorts every matching post for every page,
+whichever style you use, and keyset is not cheaper. With a range index on the sort property (in a
+Cyphra schema, `createdAt DateTime @index`), the keyset query starts from the cursor with an index
+seek. Your data and query shape will give different numbers: run `PROFILE` on your own query.
+
+## Paginate with Cyphra
+
+`findMany` takes `orderBy`, `skip` and `take`, and converts them to integers for you:
+
+```ts
+import { db } from "./db.js";
+
+const pageSize = 10;
+
+async function postsPage(page: number) {
+  return db.post.findMany({
+    where: { published: true },
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    skip: (page - 1) * pageSize,
+    take: pageSize,
+  });
+}
+
+const total = await db.post.count({ where: { published: true } });
+const pages = Math.ceil(total / pageSize);
+```
+
+Cyphra has no `cursor` argument, and its typed filters only offer `lt` / `gt` on numbers and
+dates, not on strings, so the `id` tie-breaker cannot be written in `where`. Run the keyset query
+with `db.$cypher` instead:
+
+```ts
+type Cursor = { at: string; id: string };
+type PostRow = Cursor & { title: string };
+
+async function postsAfter(after: Cursor | null) {
+  return db.$cypher<PostRow>`
+    MATCH (p:Post)
+    WHERE p.published = true
+      AND (${after} IS NULL
+           OR p.createdAt < datetime(${after}.at)
+           OR (p.createdAt = datetime(${after}.at) AND p.id < ${after}.id))
+    RETURN p.id AS id, p.title AS title, toString(p.createdAt) AS at
+    ORDER BY p.createdAt DESC, p.id DESC
+    LIMIT toInteger(${pageSize})
+  `;
+}
+
+let page = await postsAfter(null);
+while (page.length === pageSize) {
+  const last = page[page.length - 1];
+  page = await postsAfter({ at: last.at, id: last.id });
+}
+```
+
+The cursor keeps `createdAt` as the string Neo4j returns (`toString`), offset included, and turns it
+back into a `datetime` for the comparison. That matters: a JavaScript `Date` drops the stored UTC
+offset, and in our test `p.createdAt = datetime("…Z")` was `false` for the same instant stored with
+a `-05:00` offset, which breaks the tie-breaker. The cursor is a plain object of two strings, easy
+to hand to a browser and back.
+
+Nested relations paginate the same way: `include: { posts: { orderBy: { createdAt: "desc" }, take: 5 } }`.
+
+In raw Cypher through `db.$cypher`, values are passed as they are, so use `toInteger()` for limits:
+
+```ts
+const take = 5;
+const rows = await db.$cypher<{ title: string }>`
+  MATCH (p:Post) WHERE p.published = true
+  RETURN p.title AS title
+  ORDER BY p.createdAt DESC, p.id DESC
+  LIMIT toInteger(${take})
+`;
+```
+
+## Related
+
+- [Typed client: reading](/client#reading)
+- [Count relationships and aggregate](/cypher/count-relationships)
+- [Parameters and Cypher injection](/cypher/parameters), including integer parameters
+- Glossary: [Neo4j index](/glossary/neo4j-index)

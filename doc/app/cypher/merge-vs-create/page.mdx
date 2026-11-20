@@ -1,0 +1,109 @@
+---
+title: "MERGE vs CREATE in Neo4j Cypher"
+sidebarTitle: MERGE vs CREATE
+description: "CREATE always adds a new node or relationship; MERGE adds one only if the whole pattern is missing. When to use each in Neo4j, and the pitfalls."
+---
+
+# MERGE vs CREATE in Cypher
+
+`CREATE` always writes a new node or relationship, even if an identical one exists. `MERGE` first
+looks for the whole pattern and creates it only if it finds nothing, so running it twice leaves one
+copy. Use `CREATE` for things that are new by definition (an event, a log entry, a new post), and
+`MERGE` for things you want exactly once (a user by email, a tag by name, one `FOLLOWS` edge between
+two users).
+
+```cypher
+CREATE (:Tag {name: 'neo4j'})   // run twice: two Tag nodes
+MERGE (:Tag {name: 'neo4j'})    // run twice: one Tag node
+```
+
+## Side by side
+
+|                              | `CREATE`                                  | `MERGE`                                                |
+| ---------------------------- | ----------------------------------------- | ------------------------------------------------------ |
+| Pattern already exists       | creates another copy                      | uses the existing one                                  |
+| Pattern missing              | creates it                                | creates **all** of it                                  |
+| Reads before writing         | no                                        | yes: it looks the pattern up first                     |
+| Set properties conditionally | no                                        | `ON CREATE SET` / `ON MATCH SET`                       |
+| `null` in the pattern        | allowed (the property is just not stored) | error: "Cannot merge … because of null property value" |
+| Duplicate on a unique key    | fails with `ConstraintValidationFailed`   | matches the existing node instead                      |
+
+## Three MERGE pitfalls
+
+**Extra properties in the pattern.** Everything inside the braces is part of the match. If Alice
+exists with no `name`, this does not match her and tries to create a second Alice:
+
+```cypher
+// Don't: name is part of the lookup
+MERGE (u:User {email: 'alice@acme.io', name: 'Alice'})
+
+// Do: MERGE on the key, SET the rest
+MERGE (u:User {email: 'alice@acme.io'})
+SET u.name = 'Alice'
+```
+
+With a [uniqueness constraint](/cypher/unique-constraint) on `email` the first form fails with
+`Neo.ClientError.Schema.ConstraintValidationFailed`; without one it creates a duplicate.
+
+**Merging a path with new nodes in it.** `MERGE (u:User {email: $e})-[:AUTHORED]->(p:Post {title: $t})`
+creates the user again when only the post is missing. MERGE nodes separately, then the relationship.
+See [Don't MERGE a whole path](/cypher/upsert-merge#dont-merge-a-whole-path).
+
+**Concurrency without a constraint.** MERGE is "match, else create". Ten concurrent MERGEs of the
+same new key created between 5 and 10 nodes per run in our test (15 runs, Neo4j 5.26 Community)
+when the key had no constraint, and always exactly one when it had one. Pair every MERGE key with a uniqueness constraint.
+
+## Relationships: CREATE adds, MERGE deduplicates
+
+```cypher
+MATCH (a:User {email: 'alice@acme.io'}), (b:User {email: 'bob@acme.io'})
+CREATE (a)-[:FOLLOWS]->(b)   // run twice: two FOLLOWS relationships
+
+MATCH (a:User {email: 'alice@acme.io'}), (b:User {email: 'bob@acme.io'})
+MERGE (a)-[:FOLLOWS]->(b)    // run twice: one FOLLOWS relationship
+```
+
+Neo4j allows several relationships of the same type between the same two nodes, so `CREATE` never
+fails here. If you write `MERGE (a)-[:FOLLOWS]-(b)` without an arrow, it matches a relationship in
+either direction and only creates one when there is none (in our test, pointing from `a` to `b`).
+
+## In Cyphra
+
+The [typed client](/client) maps to these clauses as follows:
+
+| Cyphra                           | Cypher it runs                                                         |
+| -------------------------------- | ---------------------------------------------------------------------- |
+| `db.user.create`, `createMany`   | `CREATE`                                                               |
+| `db.user.upsert`                 | a lookup on the unique key, then `SET` or `CREATE`, in one transaction |
+| `connect` in `create` / `update` | `MATCH` the target, then `CREATE` the relationship                     |
+
+So, like `CREATE`, a duplicate `db.user.create` on a `@unique` field throws
+`Neo.ClientError.Schema.ConstraintValidationFailed`, and `connect` adds a new relationship every
+time it runs: calling it twice for the same pair leaves two `FOLLOWS` edges. To get `MERGE`
+semantics, check first or use `db.$cypher`, as shown in
+[Create a relationship between existing nodes](/cypher/create-relationship#in-cyphra). For the
+concurrency behavior of `upsert`, see [Upsert with MERGE](/cypher/upsert-merge#upsert-with-cyphra).
+
+```ts
+import { db } from "./db.js";
+
+await db.user.create({ data: { email: "bob@acme.io" } });
+for (let i = 0; i < 2; i++) {
+  await db.user.update({
+    where: { email: "alice@acme.io" },
+    data: { following: { connect: { email: "bob@acme.io" } } },
+  });
+}
+
+const [{ edges }] = await db.$cypher<{ edges: number }>`
+  MATCH (:User {email: ${"alice@acme.io"}})-[r:FOLLOWS]->(:User {email: ${"bob@acme.io"}})
+  RETURN count(r) AS edges
+`;
+// edges === 2
+```
+
+## Related
+
+- [Upsert with MERGE, ON CREATE and ON MATCH](/cypher/upsert-merge)
+- [Unique constraints](/cypher/unique-constraint)
+- Glossary: [relationship type](/glossary/relationship-type), [node label](/glossary/node-label)

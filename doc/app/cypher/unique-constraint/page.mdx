@@ -1,0 +1,151 @@
+---
+title: "How to create a unique constraint in Neo4j"
+sidebarTitle: Unique constraints
+description: "Create, list and drop Neo4j uniqueness constraints with Cypher, find duplicates that block them, and generate them from @unique in a Cyphra schema."
+---
+
+import { Callout } from "nextra/components";
+
+# Create a unique constraint in Neo4j
+
+Use `CREATE CONSTRAINT … REQUIRE … IS UNIQUE`. After it runs, Neo4j rejects any write that would
+give two nodes with that label the same value for the property:
+
+```cypher
+CREATE CONSTRAINT user_email_unique IF NOT EXISTS
+FOR (u:User) REQUIRE u.email IS UNIQUE
+```
+
+`IF NOT EXISTS` makes the statement safe to run again. A write that breaks the constraint fails with
+`Neo.ClientError.Schema.ConstraintValidationFailed`, for example "Node(24) already exists with label
+`User` and property `email` = 'dup@acme.io'".
+
+## What a uniqueness constraint does
+
+- It applies to nodes with the label that **have** the property. Nodes without it are not checked:
+  any number of `User` nodes may have no `email`.
+- It creates an index of its own (a range index named after the constraint), so lookups by that
+  property are index seeks. Don't add a separate index on the same property.
+- It is what makes [`MERGE`](/cypher/upsert-merge) safe under concurrent writes.
+
+See the [constraint](/glossary/constraint) glossary entry for the other constraint kinds.
+
+## If creating it fails: find the duplicates
+
+Neo4j checks existing data first. If two users already share an email, `CREATE CONSTRAINT` fails
+with `Neo.DatabaseError.Schema.ConstraintCreationFailed` ("Both Node(8) and Node(10) have the label
+`User` and property `email` = …"). List every duplicate before you fix them:
+
+```cypher
+MATCH (u:User)
+WHERE u.email IS NOT NULL
+WITH u.email AS email, collect(u) AS users
+WHERE size(users) > 1
+RETURN email, size(users) AS copies
+```
+
+Merge or delete the extra nodes, then create the constraint again.
+
+## List and drop constraints
+
+```cypher
+SHOW CONSTRAINTS
+YIELD name, type, labelsOrTypes, properties
+WHERE 'User' IN labelsOrTypes
+RETURN name, type, labelsOrTypes, properties
+```
+
+```cypher
+DROP CONSTRAINT user_email_unique IF EXISTS
+```
+
+`SHOW INDEXES` lists the index the constraint owns (its `owningConstraint` column is the constraint
+name). Dropping the constraint drops that index too.
+
+<Callout type="info">
+  `IF NOT EXISTS` also skips creation when an **equivalent** constraint exists under another name.
+  Without it, `CREATE CONSTRAINT other_name FOR (u:User) REQUIRE u.email IS UNIQUE` fails with
+  `Neo.ClientError.Schema.ConstraintAlreadyExists`.
+</Callout>
+
+## Composite and relationship uniqueness
+
+Several properties can be unique **together**:
+
+```cypher
+CREATE CONSTRAINT membership_unique IF NOT EXISTS
+FOR (m:Membership) REQUIRE (m.orgId, m.userId) IS UNIQUE
+```
+
+And since Neo4j 5.7, relationship properties can be unique too:
+
+```cypher
+CREATE CONSTRAINT follows_request_unique IF NOT EXISTS
+FOR ()-[f:FOLLOWS]-() REQUIRE f.requestId IS UNIQUE
+```
+
+## Community vs Enterprise
+
+All the statements above ran on Neo4j 5 **Community Edition**. These constraint types did not; each
+failed with "… requires Neo4j Enterprise Edition":
+
+| Constraint                    | Syntax                          |
+| ----------------------------- | ------------------------------- |
+| Node key                      | `REQUIRE u.handle IS NODE KEY`  |
+| Property existence (not null) | `REQUIRE u.handle IS NOT NULL`  |
+| Property type                 | `REQUIRE u.handle IS :: STRING` |
+
+On Community, enforce "required" in your application. Cyphra's typed client does that for
+required fields, and its migrations add a guard before a field becomes required (see
+[Migrations](/migrations)).
+
+## With Cyphra: `@unique` and `@id`
+
+In a Cyphra schema you declare the constraint next to the field:
+
+```cyphra filename="schema.cyphra"
+node User {
+  id    String @id @default(uuid())
+  email String @unique
+}
+```
+
+`cyphra migrate dev` turns each `@id` and `@unique` into a constraint in a reviewable migration, and
+`cyphra schema ddl` prints the statements without touching a database:
+
+```bash
+$ npx cyphra schema ddl
+CREATE CONSTRAINT User_id_id IF NOT EXISTS FOR (n:`User`) REQUIRE n.`id` IS UNIQUE
+CREATE CONSTRAINT User_email_unique IF NOT EXISTS FOR (n:`User`) REQUIRE n.`email` IS UNIQUE
+```
+
+On a `relationship { … }` model, `@unique` becomes a relationship uniqueness constraint (Neo4j
+5.7+). Cyphra has no syntax for composite uniqueness: write that constraint by hand in a migration
+created with `cyphra migration:create` (see [Migrations](/migrations)).
+
+The typed client also relies on these fields: `findUnique`, `update`, `upsert` and `delete` only
+accept `@id` / `@unique` fields in `where`. A duplicate write surfaces as the driver error, with its
+`code`:
+
+```ts
+import { db } from "./db.js";
+
+async function signUp(email: string) {
+  try {
+    return await db.user.create({ data: { email } });
+  } catch (e) {
+    if ((e as { code?: string }).code === "Neo.ClientError.Schema.ConstraintValidationFailed") {
+      throw new Error(`${email} is already registered`);
+    }
+    throw e;
+  }
+}
+```
+
+## Related
+
+- [Upsert with MERGE](/cypher/upsert-merge) and [MERGE vs CREATE](/cypher/merge-vs-create)
+- [Schema](/schema) decorators and [Migrations](/migrations)
+- [Neo4j migrations: constraints and indexes as code](/blog/neo4j-schema-migrations-constraints-as-code)
+- Glossary: [constraint](/glossary/constraint), [Neo4j index](/glossary/neo4j-index),
+  [schema migration](/glossary/schema-migration)

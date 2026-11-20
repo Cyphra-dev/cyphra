@@ -345,8 +345,8 @@ nav.nextra-toc a[data-active="true"],
 .cy-footer {
   width: 100%;
   display: grid;
-  grid-template-columns: 1.4fr repeat(5, 1fr);
-  gap: 2.5rem;
+  grid-template-columns: 1.2fr repeat(6, 1fr);
+  gap: 2rem;
   font-size: 0.875rem;
   color: var(--cy-fg-muted);
 }
@@ -391,6 +391,27 @@ nav.nextra-toc a[data-active="true"],
   border-top: 1px solid var(--cy-border);
   font-size: 0.8125rem;
   color: var(--cy-fg-subtle);
+}
+
+/* Six link columns: under 1280 px the brand takes its own row, under 1024 px three per row. */
+@media (max-width: 1279px) {
+  .cy-footer {
+    grid-template-columns: repeat(6, 1fr);
+  }
+
+  .cy-footer-brand {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 1023px) {
+  .cy-footer {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .cy-footer-brand {
+    grid-column: 1 / -1;
+  }
 }
 
 @media (max-width: 767px) {

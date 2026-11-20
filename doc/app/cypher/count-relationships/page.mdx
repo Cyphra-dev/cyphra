@@ -1,0 +1,136 @@
+---
+title: "Count relationships in Neo4j with Cypher"
+sidebarTitle: Count relationships
+description: "Count relationships per node in Neo4j with COUNT {} subqueries or OPTIONAL MATCH and count(), filter on counts, group by type, and count with Cyphra."
+---
+
+import { Callout } from "nextra/components";
+
+# Count relationships in Neo4j
+
+To count a node's relationships, use a `COUNT { … }` subquery on the pattern. It returns `0` for
+nodes with none, and it does not change the number of rows:
+
+```cypher
+MATCH (u:User)
+RETURN u.email AS email, COUNT { (u)-[:AUTHORED]->(:Post) } AS posts
+ORDER BY posts DESC
+```
+
+With Alice (3 posts), Bob (1) and Carol (none), this returns `3`, `1` and `0`. `COUNT { }`
+subqueries need Neo4j 5.3 or later.
+
+## The classic form: OPTIONAL MATCH and count()
+
+```cypher
+MATCH (u:User)
+OPTIONAL MATCH (u)-[:AUTHORED]->(p:Post)
+RETURN u.email AS email, count(p) AS posts
+```
+
+Same result. `count()` is an aggregation: every column that is not aggregated (`email` here)
+becomes a grouping key, as `GROUP BY` would be in SQL.
+
+<Callout type="warning">
+  Two easy mistakes with this form. `count(*)` counts rows, and `OPTIONAL MATCH` produces one row
+  (with `p = null`) for a user without posts, so Carol gets `1` instead of `0`: count the variable,
+  `count(p)`, which skips nulls. And with a plain `MATCH` instead of `OPTIONAL MATCH`, users with no
+  posts disappear from the result entirely.
+</Callout>
+
+## Filter on a count
+
+```cypher
+MATCH (u:User)
+WHERE COUNT { (u)<-[:FOLLOWS]-(:User) } >= 2
+RETURN u.email AS email
+```
+
+## Degree: all relationships of a node
+
+Leave out the type and direction to count everything attached to a node, or split it up:
+
+```cypher
+MATCH (u:User {email: $email})
+RETURN COUNT { (u)--() } AS degree,
+       COUNT { (u)<-[:FOLLOWS]-() } AS followers,
+       COUNT { (u)-[:FOLLOWS]->() } AS following
+```
+
+## Count every relationship of a type, or by type
+
+```cypher
+MATCH ()-[f:FOLLOWS]->()
+RETURN count(f) AS follows
+```
+
+```cypher
+MATCH ()-[r]->()
+RETURN type(r) AS type, count(*) AS total
+ORDER BY total DESC
+```
+
+Use a directed pattern (`->`) here: an undirected `()-[r]-()` matches each relationship twice, once
+from each end.
+
+## Several aggregates in one row
+
+```cypher
+MATCH (u:User)-[:AUTHORED]->(p:Post)
+RETURN u.email AS email,
+       count(p) AS posts,
+       count(CASE WHEN p.published THEN 1 END) AS published,
+       collect(p.title) AS titles
+```
+
+`count(DISTINCT x)` counts distinct values, for example how many different users are followed by
+anyone: `MATCH (:User)-[:FOLLOWS]->(followed:User) RETURN count(DISTINCT followed)`.
+
+## In Cyphra
+
+`count` counts nodes of one model, with the same `where` filters as `findMany`, including relation
+filters:
+
+```ts
+import { db } from "./db.js";
+
+await db.user.count(); // all users
+await db.user.count({ where: { posts: { some: { published: true } } } }); // users with a published post
+await db.user.count({ where: { posts: { none: {} } } }); // users with no posts
+await db.post.count({ where: { author: { is: { email: "alice@acme.io" } } } }); // Alice's posts
+```
+
+Cyphra has no `_count` or `groupBy` for per-row relation counts. Use `db.$cypher` with `COUNT { }`.
+It converts Neo4j integers to JavaScript numbers, so the result type is honest:
+
+```ts
+const rows = await db.$cypher<{ email: string; posts: number; followers: number }>`
+  MATCH (u:User)
+  RETURN u.email AS email,
+         COUNT { (u)-[:AUTHORED]->(:Post) } AS posts,
+         COUNT { (u)<-[:FOLLOWS]-(:User) } AS followers
+  ORDER BY followers DESC, email
+`;
+// [{ email: "alice@acme.io", posts: 3, followers: 2 }, …]
+```
+
+For small lists, loading the relation and reading `.length` also works, at the cost of fetching
+every related node:
+
+```ts
+const users = await db.user.findMany({ include: { posts: { where: { published: true } } } });
+const counts = users.map((u) => ({ email: u.email, published: u.posts.length }));
+```
+
+<Callout type="info">
+  With the plain `neo4j-driver`, `count()` comes back as a driver `Integer` object, not a number;
+  call `.toNumber()` on it. Cyphra's `db.$cypher` and `count()` do that for you, and throw instead
+  of losing precision if a value is outside JavaScript's safe integer range.
+</Callout>
+
+## Related
+
+- [Pagination](/cypher/pagination): the total page count is a `count()`
+- [Typed client: filters](/client#filters) for `some`, `none`, `every`, `is` and `isNot`
+- [Typed Neo4j queries in TypeScript](/blog/typed-neo4j-queries-in-typescript)
+- Glossary: [graph traversal](/glossary/graph-traversal)

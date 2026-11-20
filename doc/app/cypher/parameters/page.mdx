@@ -1,0 +1,134 @@
+---
+title: "Cypher parameters and Cypher injection in Neo4j"
+sidebarTitle: Parameters and injection
+description: "Pass values to Neo4j as $parameters instead of building Cypher strings, how Cypher injection works, what cannot be a parameter, and how Cyphra handles it."
+---
+
+import { Callout } from "nextra/components";
+
+# Cypher parameters and Cypher injection
+
+Write `$name` in the query and send the value separately. Neo4j then treats it as data, never as
+Cypher, which prevents Cypher injection:
+
+```ts
+import neo4j from "neo4j-driver";
+
+const driver = neo4j.driver(uri, neo4j.auth.basic(user, password));
+
+const { records } = await driver.executeQuery(
+  "MATCH (u:User) WHERE u.name = $name RETURN u.email AS email",
+  { name },
+);
+```
+
+The rule is simple: never put user input into the query string with `+` or `${…}`. Every value goes
+in the parameter map.
+
+## What Cypher injection looks like
+
+Build the query by concatenation, and the input becomes part of the query:
+
+```ts
+// Don't
+const name = "x' OR true DETACH DELETE u //";
+await driver.executeQuery(`MATCH (u:User) WHERE u.name = '${name}' RETURN u.email AS email`);
+```
+
+Neo4j receives `MATCH (u:User) WHERE u.name = 'x' OR true DETACH DELETE u //' RETURN …`. The quote
+closes the string, `OR true` matches every user, `DETACH DELETE u` deletes them, and `//` comments
+out the rest. We ran exactly this on a test database: it deleted both users. The parameterized query
+above, with the same input, returned no rows and changed nothing. A milder input,
+`x' OR 1=1 OR u.name = 'y`, returns every user instead of none.
+
+Escaping quotes by hand is not a fix: parameters are simpler and cover every case.
+
+## Parameter syntax
+
+- In a query: `$name`, `$limit`, or a map's key `$after.createdAt`.
+- In Neo4j Browser: `:param name => 'Alice'`, then run the query.
+- Values can be strings, numbers, booleans, lists and maps, and Neo4j temporal values. Lists are
+  handy with `IN` and `UNWIND`; maps with `SET n += $props`:
+
+```cypher
+MATCH (u:User) WHERE u.email IN $emails RETURN u.name AS name ORDER BY name
+```
+
+```cypher
+CREATE (u:User {id: randomUUID()}) SET u += $props
+```
+
+Neo4j's documentation also notes that parameters let it reuse cached query plans, because the
+query text stays the same when only the values change.
+
+<Callout type="warning">
+  **Integers from JavaScript.** The driver sends a JS `number` as a float. Where Neo4j requires an
+  integer, such as `SKIP` and `LIMIT`, that fails: "LIMIT: Invalid input. '10.0' is not a valid
+  value. Must be a non-negative integer." Send `neo4j.int(10)`, or write `LIMIT toInteger($limit)`.
+</Callout>
+
+## What cannot be a parameter
+
+Parameters hold **values**. Labels, relationship types and property **names** are part of the query
+structure, so `MATCH (n:$label)` is a syntax error. Your options:
+
+- **Dynamic labels and types**, added in Neo4j 5.26: `MATCH (n:$($label))` (we tested on 5.26).
+  Check your server version before relying on it.
+- **Dynamic property access** by key, in any Neo4j 5: `RETURN u[$key] AS value`.
+- **An allowlist**, when you must build the text: accept only names you know, and quote them with
+  backticks.
+
+```ts
+const LABELS = new Set(["User", "Post"]);
+
+function countQuery(label: string) {
+  if (!LABELS.has(label)) throw new Error(`unknown label ${label}`);
+  return `MATCH (n:\`${label}\`) RETURN count(n) AS c`;
+}
+```
+
+## In Cyphra
+
+**The typed client.** Arguments to `findMany`, `create`, `update` and the rest never become Cypher
+text. Field names, labels and relationship types come from your schema, unknown keys are rejected
+before anything runs (`CyphraValidationError: Unknown field "User.name = '' OR 1=1 //" in where.`),
+and every value is sent as a parameter. Searching for `"x' OR true DETACH DELETE u //"` with
+`db.user.findMany({ where: { name } })` just finds no user with that name.
+
+**Raw Cypher.** The `cypher` tag and `db.$cypher` turn every `${…}` into a parameter:
+
+```ts
+import { cypher } from "cyphra";
+import { db } from "./db.js";
+
+const { text, params } = cypher`MATCH (u:User) WHERE u.name = ${name} RETURN u.email AS email`;
+// text:   "MATCH (u:User) WHERE u.name = $p0 RETURN u.email AS email"
+// params: { p0: name }
+
+const rows = await db.$cypher<{ email: string }>`
+  MATCH (u:User) WHERE u.name = ${name} RETURN u.email AS email
+`;
+```
+
+So the template looks like string interpolation, but it is not: injection through `${…}` is not
+possible. The flip side is that `${…}` cannot insert a label either. ``db.$cypher`MATCH (n:${label})` ``
+becomes `MATCH (n:$p0)`, a syntax error. On Neo4j 5.26, use the dynamic label syntax, which takes a
+parameter:
+
+```ts
+const label = "User";
+const [{ c }] = await db.$cypher<{ c: number }>`MATCH (n:$(${label})) RETURN count(n) AS c`;
+```
+
+Values in `db.$cypher` are sent as they are, so the integer rule above applies: write
+`LIMIT toInteger(${take})`. The typed client converts `skip` and `take` itself.
+
+With `debug: true` in the client options, Cyphra logs each query with its parameter **names**,
+never their values.
+
+## Related
+
+- [Raw Cypher in the typed client](/client#raw-cypher) and the [query builder](/queries)
+- [Pagination](/cypher/pagination) for integer parameters in `SKIP` / `LIMIT`
+- [Typed Neo4j queries in TypeScript](/blog/typed-neo4j-queries-in-typescript)
+- Glossary: [Cypher](/glossary/cypher), [Bolt protocol](/glossary/bolt-protocol)

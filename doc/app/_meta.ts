@@ -29,6 +29,9 @@ const CONTENT_SECTION = {
 const meta: MetaRecord = {
   index: FULL_PAGE,
   docs: { type: "page", title: "Docs", href: "/getting-started" },
+  guides: { type: "page", title: "Guides" },
+  // Cypher how-tos: linked from Guides (sidebar, index) and the footer, not the navbar.
+  cypher: { type: "page", title: "Cypher how-tos", display: "hidden" },
   "cloud-nav": { type: "page", title: "Cloud", href: "/cloud" },
   pricing: { ...FULL_PAGE, display: "normal", title: "Pricing" },
   blog: { type: "page", title: "Blog", theme: CONTENT_SECTION },

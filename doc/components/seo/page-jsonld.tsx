@@ -5,6 +5,7 @@ import {
   cloudProduct,
   collectionPage,
   faqPage,
+  howTo,
   pricingFaq,
   softwareGraph,
 } from "./structured-data";
@@ -37,4 +38,9 @@ export function FaqJsonLd({ items }: { items: readonly (readonly [string, string
 /** An index page that lists other pages (for example /compare). */
 export function CollectionJsonLd(props: Parameters<typeof collectionPage>[0]) {
   return <JsonLd data={{ "@context": CONTEXT, ...collectionPage(props) }} />;
+}
+
+/** Guides: a HowTo whose steps are the visible `<Steps>` headings of the page. */
+export function HowToJsonLd(props: Parameters<typeof howTo>[0]) {
+  return <JsonLd data={howTo(props)} />;
 }

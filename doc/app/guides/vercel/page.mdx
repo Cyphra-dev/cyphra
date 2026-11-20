@@ -1,0 +1,186 @@
+---
+title: "Deploy a Neo4j app on Vercel with migrations"
+sidebarTitle: Vercel
+description: "Deploy a Neo4j-backed Next.js app on Vercel: environment variables, cyphra migrate deploy in the build, preview databases and serverless connections."
+---
+
+import { Callout, Steps } from "nextra/components";
+import { HowToJsonLd } from "../../../components/seo/page-jsonld";
+
+# Deploy a Neo4j app on Vercel
+
+To run a Neo4j-backed app on Vercel, point it at a Neo4j 5.6+ database that is reachable over the
+internet (Neo4j Aura, [Cyphra Cloud](/cloud) or your own server with TLS), set `NEO4J_URI`,
+`NEO4J_USERNAME` and `NEO4J_PASSWORD` in the project's environment variables, apply migrations in
+the build command (`cyphra migrate deploy && next build`), and create one database client per
+function instance instead of one per request.
+
+The fastest start is the [Next.js starter](https://github.com/Cyphra-dev/nextjs-starter), whose
+README has a **Deploy with Vercel** button that asks for those three variables. This guide explains
+each piece so you can apply it to your own app. The app side is covered in the
+[Next.js guide](/guides/nextjs).
+
+<Callout type="info">
+  What we tested: the build command, against a local Neo4j 5.26, including what happens when the
+  database is unreachable or a variable is missing, and the client code below on the Node.js
+  runtime. Vercel platform behavior (environment scopes, instance reuse) is described from Vercel's
+  documentation.
+</Callout>
+
+## Steps
+
+<Steps>
+
+### Get a database Vercel can reach
+
+Vercel's builds and functions connect from Vercel's infrastructure, not from your machine, so
+`bolt://127.0.0.1` from `cyphra dev` will not work. Use a database with a public, encrypted endpoint
+and a `neo4j+s://` URI:
+
+- [Neo4j Aura](/glossary/neo4j-aura), Neo4j's managed service.
+- [Cyphra Cloud](/cloud), a dedicated Neo4j Community instance per database.
+- Any self-hosted Neo4j **5.6 or later** with TLS on the Bolt port.
+
+Cyphra's typed client needs Neo4j 5.6+, because it compiles relations to `COLLECT { }` subqueries.
+
+### Set the environment variables
+
+In the Vercel project, under **Settings → Environment Variables**, add:
+
+| Name             | Value                                                                                          |
+| ---------------- | ---------------------------------------------------------------------------------------------- |
+| `NEO4J_URI`      | `neo4j+s://<your-host>`                                                                        |
+| `NEO4J_USERNAME` | usually `neo4j`                                                                                |
+| `NEO4J_PASSWORD` | the database password                                                                          |
+| `NEO4J_DATABASE` | optional, for a non-default database (CLI only; pass `database` to `createClient` in app code) |
+
+Vercel makes these available both during the build (which `cyphra migrate deploy` needs) and at
+runtime. Never prefix them with `NEXT_PUBLIC_`.
+
+Variables can be scoped to **Production**, **Preview** and **Development**. Give Preview its own
+database: every preview deployment runs the build, so with the setup below it also runs your
+migrations against whatever database Preview points to.
+
+<Callout type="warning">
+  `@cyphra/cli` versions before 0.2.1 read `NEO4J_USER`, not `NEO4J_USERNAME`. If the build fails
+  with "Set NEO4J_URI, NEO4J_USER, and NEO4J_PASSWORD", upgrade the CLI or also set `NEO4J_USER`.
+</Callout>
+
+### Run migrations in the build
+
+```json filename="package.json"
+{
+  "scripts": {
+    "build": "cyphra migrate deploy && next build",
+    "postinstall": "cyphra generate"
+  }
+}
+```
+
+- `postinstall` regenerates `lib/cyphra.gen.ts` after Vercel installs dependencies, so the
+  generated client does not need to be committed.
+- `cyphra migrate deploy` applies the migrations in `migrations/` that the database has not seen
+  yet, and does nothing when there are none. It never generates new migrations: create those
+  locally with `cyphra migrate dev` and commit them.
+- If it fails, the build fails and the previous deployment keeps serving. We checked both failure
+  modes: an unreachable database ("Failed to connect to server…") and a missing variable ("Set
+  NEO4J_URI, NEO4J_USERNAME and NEO4J_PASSWORD in the environment") each exit with code 1, so
+  `next build` never runs.
+
+Prefer to migrate outside the build, for example in a CI job before promoting a deployment? Run
+`npx cyphra migrate deploy` there with the same three variables and keep `next build` alone in the
+build command. See [Migrations](/migrations) for what a migration contains.
+
+### Reuse one client per function instance
+
+```ts filename="lib/db.ts"
+import "server-only";
+import { createClient } from "./cyphra.gen";
+
+const globalForDb = globalThis as unknown as {
+  cyphra?: ReturnType<typeof createClient>;
+};
+
+export function db() {
+  globalForDb.cyphra ??= createClient({
+    uri: process.env.NEO4J_URI!,
+    user: process.env.NEO4J_USERNAME!,
+    password: process.env.NEO4J_PASSWORD!,
+    driverConfig: { maxConnectionPoolSize: 10, connectionAcquisitionTimeout: 10_000 },
+  });
+  return globalForDb.cyphra;
+}
+```
+
+Vercel can serve many invocations from the same function instance. A client created at module
+scope (or cached on `globalThis`, as here and in the [Next.js guide](/guides/nextjs)) lives as long
+as the instance, so later requests reuse its open connections. Creating a client inside each request
+handler would open a new connection, with a TLS handshake and authentication, on every request.
+Don't call `db().$disconnect()` at the end of a request either: that closes the pool the next
+request would reuse.
+
+`driverConfig` is passed to the Neo4j driver. `maxConnectionPoolSize` caps the connections one
+instance can hold, which matters when many instances run at once against a database with a
+connection limit; `connectionAcquisitionTimeout` (milliseconds) bounds how long a query waits for a
+free connection. Size both for your database and traffic; the values above are only an example.
+
+Use the default **Node.js** runtime for anything that touches the database. The Neo4j JavaScript
+driver connects over Bolt sockets; we have not tested it on the Edge runtime.
+
+### Deploy and check
+
+Push to your Git provider or run `vercel deploy`. In the build logs, `cyphra migrate deploy`
+prints `Applied: <migration>` for each new migration before Next.js starts building. Then open a
+page or Route Handler that queries the database.
+
+</Steps>
+
+<HowToJsonLd
+  path="/guides/vercel"
+  name="Deploy a Neo4j-backed app on Vercel with Cyphra"
+  description="Use a reachable Neo4j 5.6+ database, set the NEO4J_* environment variables, run cyphra migrate deploy in the build, reuse one client per function instance, then deploy."
+  steps={[
+    {
+      name: "Get a database Vercel can reach",
+      anchor: "get-a-database-vercel-can-reach",
+      text: "Use a Neo4j 5.6 or later database with a public neo4j+s:// endpoint, such as Neo4j Aura, Cyphra Cloud or a self-hosted server with TLS.",
+    },
+    {
+      name: "Set the environment variables",
+      anchor: "set-the-environment-variables",
+      text: "Add NEO4J_URI, NEO4J_USERNAME and NEO4J_PASSWORD in the Vercel project settings, with a separate database for Preview.",
+    },
+    {
+      name: "Run migrations in the build",
+      anchor: "run-migrations-in-the-build",
+      text: "Set the build script to cyphra migrate deploy && next build, and generate the client on postinstall.",
+    },
+    {
+      name: "Reuse one client per function instance",
+      anchor: "reuse-one-client-per-function-instance",
+      text: "Create the client once at module scope or on globalThis, optionally with driverConfig limits, and do not disconnect after each request.",
+    },
+    {
+      name: "Deploy and check",
+      anchor: "deploy-and-check",
+      text: "Deploy, check the build logs for applied migrations, and open a page that queries Neo4j.",
+    },
+  ]}
+/>
+
+## Troubleshooting
+
+| Symptom in the build or function logs                                 | Likely cause                                                                                                        |
+| --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `Set NEO4J_URI, NEO4J_USERNAME and NEO4J_PASSWORD in the environment` | A variable is missing for this environment (Production / Preview), or misspelled                                    |
+| `Failed to connect to server`                                         | URI or port wrong, database paused or private, or `bolt://` used where TLS is required                              |
+| `The client is unauthorized due to authentication failure.`           | Wrong username or password                                                                                          |
+| `Module not found: Can't resolve './cyphra.gen'`                      | `cyphra generate` did not run: check the `postinstall` script and the `generate` path in `cyphra.json`              |
+| Data on a page is stale until the next deploy                         | The page was prerendered at build time: see [Read in a Server Component](/guides/nextjs#read-in-a-server-component) |
+
+## Related
+
+- [Next.js guide](/guides/nextjs)
+- [Cyphra Cloud](/cloud): managed Neo4j with `neo4j+s://` endpoints, and [pricing](/pricing)
+- [CLI](/cli): `migrate deploy`, `migrate status` and environment variables
+- [Neo4j migrations: constraints and indexes as code](/blog/neo4j-schema-migrations-constraints-as-code)

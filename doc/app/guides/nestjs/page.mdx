@@ -1,0 +1,300 @@
+---
+title: "Neo4j with NestJS: a typed module and provider"
+sidebarTitle: NestJS
+description: "Use Neo4j in NestJS with Cyphra: a global module that provides the typed client, ConfigService for credentials, injection into services, and clean shutdown."
+---
+
+import { Callout, Steps } from "nextra/components";
+import { HowToJsonLd } from "../../../components/seo/page-jsonld";
+
+# Neo4j with NestJS
+
+To use Neo4j in NestJS, register the database client as a provider in a global module, build it in
+a `useFactory` from `ConfigService`, inject it into services with `@Inject`, and close it in
+`onApplicationShutdown`. With Cyphra, the provider is the generated typed client, so services get
+`this.db.user.findMany(…)` with full types.
+
+<Callout type="info">
+  Tested with NestJS 12.6 (a project created by `nest new`), `@nestjs/config` 12.1, Node.js 24 and
+  Neo4j 5.26: the app started, served `GET` and `POST` requests, and `app.close()` called
+  `$disconnect()`.
+</Callout>
+
+<Callout type="warning">
+  Cyphra is **ESM-only**. `nest new` in NestJS 12 creates an ES module project (`"type": "module"`,
+  `"module": "nodenext"`), which works as is. In an older CommonJS Nest project, `require("cyphra")`
+  fails with `ERR_PACKAGE_PATH_NOT_EXPORTED`: switch the project to ESM first.
+</Callout>
+
+## Steps
+
+<Steps>
+
+### Install Cyphra and the config module
+
+```bash
+npm i cyphra @nestjs/config
+npm i -D @cyphra/cli
+```
+
+### Describe your graph and generate the client
+
+```cyphra filename="schema.cyphra"
+node User {
+  id    String @id @default(uuid())
+  email String @unique
+  name  String?
+  posts Post[] @relationship(type: "AUTHORED", direction: OUT)
+}
+
+node Post {
+  id     String @id @default(uuid())
+  title  String
+  author User?  @relationship(type: "AUTHORED", direction: IN)
+}
+```
+
+Generate the client inside `src/` so the Nest build compiles it:
+
+```json filename="cyphra.json"
+{
+  "schema": "./schema.cyphra",
+  "migrations": "./migrations",
+  "generate": "./src/cyphra/cyphra.gen.ts"
+}
+```
+
+```bash
+npx cyphra dev                       # local Neo4j 5 in Docker, writes .env
+npx cyphra migrate dev --name init   # constraints for @id and @unique
+npx cyphra generate                  # writes src/cyphra/cyphra.gen.ts
+```
+
+For an existing database, put `NEO4J_URI`, `NEO4J_USERNAME` and `NEO4J_PASSWORD` in `.env`
+instead of running `cyphra dev`.
+
+### Create the Cyphra module
+
+```ts filename="src/cyphra/cyphra.module.ts"
+import { Global, Inject, Module, type OnApplicationShutdown } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
+import { createClient, type Db } from "./cyphra.gen.js";
+
+export const CYPHRA = Symbol("CYPHRA");
+
+@Global()
+@Module({
+  providers: [
+    {
+      provide: CYPHRA,
+      inject: [ConfigService],
+      useFactory: (config: ConfigService): Db =>
+        createClient({
+          uri: config.getOrThrow("NEO4J_URI"),
+          user: config.getOrThrow("NEO4J_USERNAME"),
+          password: config.getOrThrow("NEO4J_PASSWORD"),
+        }),
+    },
+  ],
+  exports: [CYPHRA],
+})
+export class CyphraModule implements OnApplicationShutdown {
+  constructor(@Inject(CYPHRA) private readonly db: Db) {}
+
+  async onApplicationShutdown() {
+    await this.db.$disconnect();
+  }
+}
+```
+
+- `Db` is the client type exported by the generated file.
+- The provider is a singleton: one client and one Neo4j connection pool for the whole app.
+- `@Global()` makes `CYPHRA` injectable everywhere without importing the module again.
+- `getOrThrow` stops startup with a clear error when a variable is missing.
+
+### Register it in the app module
+
+```ts filename="src/app.module.ts"
+import { Module } from "@nestjs/common";
+import { ConfigModule } from "@nestjs/config";
+import { CyphraModule } from "./cyphra/cyphra.module.js";
+import { UsersModule } from "./users/users.module.js";
+
+@Module({
+  imports: [ConfigModule.forRoot({ isGlobal: true }), CyphraModule, UsersModule],
+})
+export class AppModule {}
+```
+
+`ConfigModule.forRoot()` loads `.env`, which is where `cyphra dev` writes the connection details.
+
+### Inject the client into a service
+
+```ts filename="src/users/users.service.ts"
+import { Inject, Injectable } from "@nestjs/common";
+import { CYPHRA } from "../cyphra/cyphra.module.js";
+import type { Db } from "../cyphra/cyphra.gen.js";
+
+@Injectable()
+export class UsersService {
+  constructor(@Inject(CYPHRA) private readonly db: Db) {}
+
+  list() {
+    return this.db.user.findMany({ include: { posts: true }, take: 20 });
+  }
+
+  create(email: string, name?: string) {
+    return this.db.user.create({ data: { email, name } });
+  }
+
+  postCounts() {
+    return this.db.$cypher<{ email: string; posts: number }>`
+      MATCH (u:User)
+      RETURN u.email AS email, COUNT { (u)-[:AUTHORED]->(:Post) } AS posts
+    `;
+  }
+}
+```
+
+```ts filename="src/users/users.controller.ts"
+import { Body, Controller, Get, Post } from "@nestjs/common";
+import { UsersService } from "./users.service.js";
+
+@Controller("users")
+export class UsersController {
+  constructor(private readonly users: UsersService) {}
+
+  @Get()
+  list() {
+    return this.users.list();
+  }
+
+  @Get("post-counts")
+  postCounts() {
+    return this.users.postCounts();
+  }
+
+  @Post()
+  create(@Body() body: { email: string; name?: string }) {
+    return this.users.create(body.email, body.name);
+  }
+}
+```
+
+```ts filename="src/users/users.module.ts"
+import { Module } from "@nestjs/common";
+import { UsersController } from "./users.controller.js";
+import { UsersService } from "./users.service.js";
+
+@Module({
+  controllers: [UsersController],
+  providers: [UsersService],
+})
+export class UsersModule {}
+```
+
+In a real app, validate the body (for example with `class-validator` and a `ValidationPipe`). The
+client already rejects unknown fields and sends every value as a
+[parameter](/cypher/parameters).
+
+### Enable shutdown hooks
+
+```ts filename="src/main.ts"
+import { NestFactory } from "@nestjs/core";
+import { AppModule } from "./app.module.js";
+
+async function bootstrap() {
+  const app = await NestFactory.create(AppModule);
+  app.enableShutdownHooks();
+  await app.listen(process.env.PORT ?? 3000);
+}
+await bootstrap();
+```
+
+Nest calls `onApplicationShutdown` on `app.close()`, and, with `enableShutdownHooks()`, when the
+process receives `SIGTERM` or `SIGINT`. The module then closes the Neo4j driver, so open connections
+are released before the process exits.
+
+</Steps>
+
+<HowToJsonLd
+  path="/guides/nestjs"
+  name="Use Neo4j in NestJS with Cyphra"
+  description="Install Cyphra, generate a typed client, provide it from a global Nest module, inject it into services and close it on shutdown."
+  steps={[
+    {
+      name: "Install Cyphra and the config module",
+      anchor: "install-cyphra-and-the-config-module",
+      text: "Install cyphra and @nestjs/config, and @cyphra/cli as a dev dependency.",
+    },
+    {
+      name: "Describe your graph and generate the client",
+      anchor: "describe-your-graph-and-generate-the-client",
+      text: "Write schema.cyphra, generate the client into src/cyphra, and run the first migration.",
+    },
+    {
+      name: "Create the Cyphra module",
+      anchor: "create-the-cyphra-module",
+      text: "Provide the generated client under a token with useFactory and ConfigService, export it from a global module and disconnect in onApplicationShutdown.",
+    },
+    {
+      name: "Register it in the app module",
+      anchor: "register-it-in-the-app-module",
+      text: "Import ConfigModule.forRoot and the Cyphra module in AppModule.",
+    },
+    {
+      name: "Inject the client into a service",
+      anchor: "inject-the-client-into-a-service",
+      text: "Inject the token with @Inject and call typed methods such as findMany and create, or $cypher.",
+    },
+    {
+      name: "Enable shutdown hooks",
+      anchor: "enable-shutdown-hooks",
+      text: "Call app.enableShutdownHooks() so the driver is closed on SIGTERM and SIGINT.",
+    },
+  ]}
+/>
+
+## Try it
+
+```bash
+npm run build && npm run start:prod
+curl -X POST localhost:3000/users -H 'content-type: application/json' \
+  -d '{"email":"alice@acme.io","name":"Alice"}'
+curl localhost:3000/users
+# [{"id":"…","email":"alice@acme.io","name":"Alice","posts":[]}]
+```
+
+## Transactions in a service
+
+`$transaction` gives a client whose operations commit together:
+
+```ts
+async transfer(fromId: string, toId: string, postId: string) {
+  await this.db.$transaction(async (tx) => {
+    await tx.post.update({ where: { id: postId }, data: { author: { connect: { id: toId } } } });
+    await tx.user.update({ where: { id: fromId }, data: { name: "Former author" } });
+  });
+}
+```
+
+The driver may retry the callback on transient errors, so keep it free of side effects such as
+sending email. More in [Typed client: transactions](/client#transactions).
+
+## Testing
+
+Override the provider in a testing module to swap in a client for a test database:
+
+```ts
+const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
+  .overrideProvider(CYPHRA)
+  .useValue(createClient({ uri: testUri, user: "neo4j", password: testPassword }))
+  .compile();
+```
+
+## Related
+
+- [Typed client](/client) and [Runtime](/runtime) (`db.$client` for sessions and the raw driver)
+- [Migrations](/migrations): run `cyphra migrate deploy` before starting the app in production
+- [Cypher how-tos](/cypher), each with the Cyphra equivalent
+- [Next.js guide](/guides/nextjs) and [Bun guide](/guides/bun)

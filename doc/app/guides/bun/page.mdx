@@ -1,0 +1,228 @@
+---
+title: "Neo4j with Bun: typed queries and Bun.serve"
+sidebarTitle: Bun
+description: "Use Neo4j from Bun with Cyphra: install with bun, run the CLI under Bun, query with the typed client in scripts and Bun.serve, and close the driver on shutdown."
+---
+
+import { Callout, Steps } from "nextra/components";
+import { HowToJsonLd } from "../../../components/seo/page-jsonld";
+
+# Neo4j with Bun
+
+Cyphra works on Bun: install it with `bun add`, run the CLI with `bun x`, and import the generated
+TypeScript client directly, with no build step. Bun runs the official Neo4j JavaScript driver that
+Cyphra uses, so queries, nested writes and transactions behave as they do on Node.js.
+
+<Callout type="info">
+  Tested with Bun 1.4.5 and Neo4j 5.26: `bun install`, the CLI under Bun's runtime (`bun --bun x
+  cyphra …` for validate, migrate dev, generate and migrate status), a script with a nested write
+  and `$cypher`, a `$transaction` that rolls back, a `Bun.serve` API, and `tsc` with `@types/bun`.
+</Callout>
+
+## Steps
+
+<Steps>
+
+### Install Cyphra with Bun
+
+```bash
+bun add cyphra
+bun add -d @cyphra/cli
+```
+
+### Describe your graph
+
+```cyphra filename="schema.cyphra"
+node User {
+  id    String @id @default(uuid())
+  email String @unique
+  name  String?
+  posts Post[] @relationship(type: "AUTHORED", direction: OUT)
+}
+
+node Post {
+  id     String @id @default(uuid())
+  title  String
+  author User?  @relationship(type: "AUTHORED", direction: IN)
+}
+```
+
+`bun x cyphra init` creates this file along with `cyphra.json` and `migrations/`.
+
+### Migrate and generate the client
+
+```bash
+bun x cyphra dev                       # local Neo4j 5 in Docker, writes .env
+bun x cyphra migrate dev --name init   # constraints for @id and @unique
+bun x cyphra generate                  # writes cyphra.gen.ts
+```
+
+The CLI's script starts with `#!/usr/bin/env node`, so `bun x cyphra` runs it with Node.js when
+Node is installed (we checked: `bun x` picked Node.js, `bun --bun x` picked Bun). To run it on Bun
+itself, use `bun --bun x cyphra …`; `migrate dev`, `generate`, `migrate status` and `validate` all
+worked that way in our test.
+
+### Create the client
+
+```ts filename="db.ts"
+import { createClient } from "./cyphra.gen";
+
+export const db = createClient({
+  uri: Bun.env.NEO4J_URI!,
+  user: Bun.env.NEO4J_USERNAME!,
+  password: Bun.env.NEO4J_PASSWORD!,
+});
+```
+
+Bun loads `.env` automatically, so the variables written by `cyphra dev` are there without
+`--env-file`.
+
+### Query from a script
+
+```ts filename="script.ts"
+import { db } from "./db";
+
+const alice = await db.user.upsert({
+  where: { email: "alice@acme.io" },
+  create: {
+    email: "alice@acme.io",
+    name: "Alice",
+    posts: { create: [{ title: "Hello from Bun" }] },
+  },
+  update: {},
+  include: { posts: true },
+});
+console.log(
+  alice.name,
+  alice.posts.map((p) => p.title),
+);
+
+const rows = await db.$cypher<{ email: string; posts: number }>`
+  MATCH (u:User)
+  RETURN u.email AS email, COUNT { (u)-[:AUTHORED]->(:Post) } AS posts
+`;
+console.log(rows);
+
+await db.$disconnect();
+```
+
+```bash
+$ bun run script.ts
+Alice [ "Hello from Bun" ]
+[
+  {
+    email: "alice@acme.io",
+    posts: 1,
+  }
+]
+```
+
+Call `$disconnect()` at the end of a script: the driver keeps its connections open, and without it
+the process does not exit (ours was still running when we stopped it after 8 seconds).
+
+### Serve an API with Bun.serve
+
+```ts filename="server.ts"
+import { db } from "./db";
+
+const server = Bun.serve({
+  port: 3000,
+  routes: {
+    "/users": {
+      GET: async () =>
+        Response.json(await db.user.findMany({ include: { posts: true }, take: 20 })),
+      POST: async (req) => {
+        const { email, name } = (await req.json()) as { email: string; name?: string };
+        const user = await db.user.create({ data: { email, name } });
+        return Response.json(user, { status: 201 });
+      },
+    },
+  },
+});
+console.log(`Listening on ${server.url}`);
+
+// Close the Neo4j driver when the process stops.
+for (const signal of ["SIGINT", "SIGTERM"] as const) {
+  process.on(signal, async () => {
+    await server.stop();
+    await db.$disconnect();
+    process.exit(0);
+  });
+}
+```
+
+```bash
+bun run server.ts
+curl -X POST localhost:3000/users -H 'content-type: application/json' -d '{"email":"bob@acme.io","name":"Bob"}'
+curl localhost:3000/users
+```
+
+One client for the whole server process: every request shares its connection pool.
+
+</Steps>
+
+<HowToJsonLd
+  path="/guides/bun"
+  name="Use Neo4j from Bun with Cyphra"
+  description="Install Cyphra with bun, describe the graph, migrate and generate the client, then query Neo4j from a Bun script and a Bun.serve API."
+  steps={[
+    {
+      name: "Install Cyphra with Bun",
+      anchor: "install-cyphra-with-bun",
+      text: "Run bun add cyphra and bun add -d @cyphra/cli.",
+    },
+    {
+      name: "Describe your graph",
+      anchor: "describe-your-graph",
+      text: "Write the nodes and relationships in schema.cyphra.",
+    },
+    {
+      name: "Migrate and generate the client",
+      anchor: "migrate-and-generate-the-client",
+      text: "Start Neo4j with cyphra dev, create constraints with cyphra migrate dev and write the typed client with cyphra generate.",
+    },
+    {
+      name: "Create the client",
+      anchor: "create-the-client",
+      text: "Call createClient with NEO4J_URI, NEO4J_USERNAME and NEO4J_PASSWORD from Bun.env.",
+    },
+    {
+      name: "Query from a script",
+      anchor: "query-from-a-script",
+      text: "Use the typed client and $cypher with top-level await, then $disconnect at the end.",
+    },
+    {
+      name: "Serve an API with Bun.serve",
+      anchor: "serve-an-api-with-bunserve",
+      text: "Share one client across Bun.serve routes and disconnect on SIGINT and SIGTERM.",
+    },
+  ]}
+/>
+
+## Type checking
+
+Bun runs TypeScript without checking types. To check them, add Bun's types and run `tsc`:
+
+```bash
+bun add -d @types/bun typescript
+bun x tsc --noEmit
+```
+
+with `"types": ["bun"]` and `"moduleResolution": "bundler"` in `tsconfig.json`.
+
+## Transactions
+
+`$transaction` works the same as on Node.js. Throwing inside the callback rolls everything back:
+
+```ts
+await db.$transaction(async (tx) => {
+  await tx.user.create({ data: { email: "temp@acme.io" } });
+  throw new Error("roll back"); // temp@acme.io is not saved
+});
+```
+
+## Related
+
+- [Typed client](/client) and [Cypher how-tos](/cypher)
+- [CLI](/cli) reference
+- [Next.js guide](/guides/nextjs) and [NestJS guide](/guides/nestjs)

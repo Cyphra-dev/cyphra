@@ -1,0 +1,90 @@
+---
+title: "Cypher how-tos: Neo4j queries from TypeScript"
+sidebarTitle: Cypher how-tos
+description: "Short answers to common Neo4j Cypher questions: upsert, MERGE vs CREATE, pagination, constraints, deletes, counts and parameters, in Cypher and in TypeScript."
+---
+
+import { Cards } from "nextra/components";
+import { CollectionJsonLd } from "../../components/seo/page-jsonld";
+import { CYPHER_COLLECTION } from "./collection";
+
+# Cypher how-tos
+
+Each page answers one question about [Cypher](/glossary/cypher), Neo4j's query language. The
+answer comes first, in plain Cypher you can paste into Neo4j Browser or `cypher-shell`. Then comes
+the same thing from TypeScript with Cyphra's [typed client](/client), and where Cyphra has no
+dedicated API, the page says so and uses raw Cypher through `db.$cypher`.
+
+<Cards>
+  <Cards.Card title="Upsert with MERGE, ON CREATE and ON MATCH" href="/cypher/upsert-merge" />
+  <Cards.Card title="MERGE vs CREATE" href="/cypher/merge-vs-create" />
+  <Cards.Card
+    title="Create a relationship between existing nodes"
+    href="/cypher/create-relationship"
+  />
+  <Cards.Card title="Delete a node and its relationships" href="/cypher/delete-node" />
+  <Cards.Card title="Pagination: SKIP/LIMIT vs keyset" href="/cypher/pagination" />
+  <Cards.Card title="Count relationships and aggregate" href="/cypher/count-relationships" />
+  <Cards.Card title="Unique constraints" href="/cypher/unique-constraint" />
+  <Cards.Card title="Parameters and Cypher injection" href="/cypher/parameters" />
+</Cards>
+
+## The example graph
+
+Every page uses the same small graph: users who write posts and follow each other.
+
+```cyphra filename="schema.cyphra"
+node User {
+  id         String   @id @default(uuid())
+  email      String   @unique
+  name       String?
+  loginCount Int      @default(0)
+  createdAt  DateTime @default(now())
+  posts      Post[]   @relationship(type: "AUTHORED", direction: OUT)
+  following  User[]   @relationship(type: "FOLLOWS", direction: OUT)
+  followers  User[]   @relationship(type: "FOLLOWS", direction: IN)
+}
+
+node Post {
+  id        String   @id @default(uuid())
+  title     String
+  published Boolean  @default(false)
+  createdAt DateTime @default(now())
+  author    User?    @relationship(type: "AUTHORED", direction: IN)
+}
+
+relationship Follows {
+  type  "FOLLOWS"
+  from  User
+  to    User
+  since DateTime?
+}
+```
+
+In Cypher terms: `(:User)-[:AUTHORED]->(:Post)` and `(:User)-[:FOLLOWS {since}]->(:User)`, with
+[uniqueness constraints](/cypher/unique-constraint) on `User.id`, `User.email` and `Post.id`
+(`cyphra migrate dev` creates them from `@id` and `@unique`).
+
+The TypeScript examples import the generated client from one module:
+
+```ts filename="db.ts"
+import { createClient } from "./cyphra.gen.js";
+
+export const db = createClient({
+  uri: process.env.NEO4J_URI!,
+  user: process.env.NEO4J_USERNAME!,
+  password: process.env.NEO4J_PASSWORD!,
+});
+```
+
+## How the examples were tested
+
+Every Cypher statement and every TypeScript snippet on these pages was run against Neo4j 5.26
+Community Edition (the `neo4j:5` Docker image) with the Cyphra version these docs describe. Where a
+page reports what happened under concurrency, it says how the test was run. Results on Neo4j
+Enterprise or Aura can differ where a page says so, for example on which constraint types exist.
+
+New to Cyphra? Start with [Getting started](/getting-started). Using a framework? See the
+[framework guides](/guides).
+
+<CollectionJsonLd {...CYPHER_COLLECTION} />
