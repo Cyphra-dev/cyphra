@@ -1992,3 +1992,94 @@
   font-size: 0.8125rem;
   color: var(--cy-fg-subtle);
 }
+
+/* ---------- Hero editor: clickable file tabs ---------- */
+
+button.tab {
+  appearance: none;
+  border-top: 0;
+  border-bottom: 0;
+  border-left: 0;
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+  transition: color 0.15s var(--cy-ease);
+}
+
+button.tab:hover {
+  color: var(--cy-fg);
+}
+
+button.tab:focus-visible {
+  outline: 2px solid var(--cy-signal);
+  outline-offset: -2px;
+}
+
+button.tabActive {
+  background: var(--cy-code-bg);
+}
+
+/* The live file sets the height; static files overlay it and scroll inside it. */
+.editorPanels {
+  position: relative;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.panelLive {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+}
+
+.panelStatic {
+  position: absolute;
+  inset: 0;
+  overflow: auto;
+  background: var(--cy-code-bg);
+  overscroll-behavior: contain;
+}
+
+.panelStatic:focus-visible {
+  outline: 2px solid var(--cy-signal);
+  outline-offset: -2px;
+}
+
+/* Hidden, not removed: the live file keeps its animation clock in sync with the graph. */
+.panelHidden {
+  visibility: hidden;
+}
+
+.editorStatic :global(pre) {
+  margin: 0;
+  padding: 1.25rem 1.25rem 1rem;
+  background: transparent !important;
+  font-family: var(--x-font-mono);
+  font-size: 0.8125rem;
+  line-height: 1.75;
+  font-variant-ligatures: none;
+  white-space: pre;
+}
+
+.editorStatic :global(code) {
+  counter-reset: sl;
+}
+
+.editorStatic :global(.line)::before {
+  counter-increment: sl;
+  content: counter(sl);
+  display: inline-block;
+  width: 2rem;
+  margin-right: 1.25rem;
+  text-align: right;
+  color: var(--cy-fg-subtle);
+  opacity: 0.6;
+}
+
+@media (max-width: 640px) {
+  .editorStatic :global(pre) {
+    font-size: 0.75rem;
+  }
+}
