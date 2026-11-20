@@ -108,39 +108,46 @@ const total = await db.post.count({ where: { published: true } });
 const pages = Math.ceil(total / pageSize);
 ```
 
-Cyphra has no `cursor` argument, and its typed filters only offer `lt` / `gt` on numbers and
-dates, not on strings, so the `id` tie-breaker cannot be written in `where`. Run the keyset query
-with `db.$cypher` instead:
+Cyphra has no `cursor` argument, but keyset pagination is a `where` like the Cypher above. String
+fields take `lt` / `lte` / `gt` / `gte` too (compared lexicographically), so the `id` tie-breaker
+fits in the typed filter:
 
 ```ts
-type Cursor = { at: string; id: string };
-type PostRow = Cursor & { title: string };
+type Cursor = { createdAt: Date; id: string };
 
 async function postsAfter(after: Cursor | null) {
-  return db.$cypher<PostRow>`
-    MATCH (p:Post)
-    WHERE p.published = true
-      AND (${after} IS NULL
-           OR p.createdAt < datetime(${after}.at)
-           OR (p.createdAt = datetime(${after}.at) AND p.id < ${after}.id))
-    RETURN p.id AS id, p.title AS title, toString(p.createdAt) AS at
-    ORDER BY p.createdAt DESC, p.id DESC
-    LIMIT toInteger(${pageSize})
-  `;
+  return db.post.findMany({
+    where: {
+      published: true,
+      ...(after && {
+        OR: [
+          { createdAt: { lt: after.createdAt } },
+          { createdAt: after.createdAt, id: { lt: after.id } },
+        ],
+      }),
+    },
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    take: pageSize,
+  });
 }
 
 let page = await postsAfter(null);
 while (page.length === pageSize) {
   const last = page[page.length - 1];
-  page = await postsAfter({ at: last.at, id: last.id });
+  page = await postsAfter({ createdAt: last.createdAt, id: last.id });
 }
 ```
 
-The cursor keeps `createdAt` as the string Neo4j returns (`toString`), offset included, and turns it
-back into a `datetime` for the comparison. That matters: a JavaScript `Date` drops the stored UTC
-offset, and in our test `p.createdAt = datetime("…Z")` was `false` for the same instant stored with
-a `-05:00` offset, which breaks the tie-breaker. The cursor is a plain object of two strings, easy
-to hand to a browser and back.
+To hand the cursor to a browser, send `createdAt.toISOString()` and `id`, and turn the string back
+into a `Date` on the way in.
+
+The `createdAt` equality in the tie-breaker relies on two things. Cyphra stores every `DateTime` at
+UTC offset `Z` and sends `Date` filter values the same way; this matters because Cypher's `=` on two
+datetimes compares the offset too (`datetime("2024-01-01T00:00Z") = datetime("2023-12-31T19:00-05:00")`
+is `false`). And a JavaScript `Date` has millisecond precision, which is what Cyphra writes; values
+written by other code with sub-millisecond precision, or by Cyphra before 0.3 (which used the
+server's local offset), will not compare equal. See
+[DateTime values](/client#datetime-values) to normalize them.
 
 Nested relations paginate the same way: `include: { posts: { orderBy: { createdAt: "desc" }, take: 5 } }`.
 

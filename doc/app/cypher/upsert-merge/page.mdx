@@ -128,56 +128,31 @@ const user = await db.user.upsert({
 `create` is type-checked like `db.user.create` (required fields, defaults from the schema) and
 `update` like `db.user.update`, including number operations such as `increment`.
 
+`upsert` compiles to one `MERGE` on the unique key from `where`, so it is the statement from the
+top of this page:
+
+```cypher
+MERGE (n:User {email: $p0})
+ON CREATE SET n += $p1                      // create data, plus id and createdAt from the schema defaults
+ON MATCH SET n.loginCount = n.loginCount + $p2
+RETURN elementId(n) AS id, n{.id, .email, .name, .loginCount, .createdAt} AS row
+```
+
+The key itself is never given a default: `where: { id }` with `create` omitting `id` creates the
+node with that `id`. If `create` sets the key, it must be the same value as in `where`.
+
 <Callout type="warning">
-  Cyphra's `upsert` is **not** compiled to `MERGE`. In one write transaction, it looks the node up
-  by the unique key, then updates it or creates it. When several requests upsert the **same new
-  key** at the same time, they can all see "not found" and all try to create it; the uniqueness
-  constraint from `@unique` lets one through and rejects the others with
-  `Neo.ClientError.Schema.ConstraintValidationFailed`. In our test (ten concurrent upserts of a new
-  email, 15 runs), 8 or 9 of the 10 failed in each run. No duplicate was ever created.
+  Like any `MERGE`, `upsert` is only safe under concurrency with a [uniqueness
+  constraint](/cypher/unique-constraint) on the key. Cyphra creates one for every `@id` and
+  `@unique` field when you run `cyphra push` or apply a migration. With it, fifteen concurrent
+  upserts of a new email (five runs) ended with one node, no errors and every `increment` applied.
+  Without it, concurrent calls can still create duplicates.
 </Callout>
 
-If that can happen in your app, either retry on the constraint error (the retry finds the node
-and takes the `update` branch):
-
-```ts
-async function upsertWithRetry<T>(op: () => Promise<T>, attempts = 3): Promise<T> {
-  for (let i = 1; ; i++) {
-    try {
-      return await op();
-    } catch (e) {
-      const code = (e as { code?: string }).code;
-      if (code !== "Neo.ClientError.Schema.ConstraintValidationFailed" || i >= attempts) throw e;
-    }
-  }
-}
-
-await upsertWithRetry(() =>
-  db.user.upsert({
-    where: { email },
-    create: { email, loginCount: 1 },
-    update: { loginCount: { increment: 1 } },
-  }),
-);
-```
-
-or run the `MERGE` yourself with `db.$cypher`, which still sends every value as a parameter:
-
-```ts
-async function mergeLogin(email: string) {
-  const [row] = await db.$cypher<{ loginCount: number }>`
-    MERGE (u:User {email: ${email}})
-    ON CREATE SET u.id = randomUUID(), u.createdAt = datetime(), u.loginCount = 1
-    ON MATCH SET u.loginCount = u.loginCount + 1
-    RETURN u.loginCount AS loginCount
-  `;
-  return row.loginCount;
-}
-```
-
-With either version, ten concurrent calls for a new email ended with one node and
-`loginCount = 10` in every run. When you write `MERGE` by hand, set the fields Cyphra would
-otherwise fill in (here `id` and `createdAt`, which the schema defaults with `uuid()` and `now()`).
+Nested writes still work: `upsert` runs the `MERGE` first, then the relation writes of the branch
+it took (`create` or `update`), in the same write transaction. Extra conditions in `where` (beyond
+the key) are checked on an existing node before it is updated; if they do not match, nothing is
+written and `upsert` throws, since creating a second node would duplicate the key.
 
 ## Related
 

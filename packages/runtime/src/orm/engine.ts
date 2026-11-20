@@ -28,7 +28,7 @@ import {
   relationPattern,
   scalarField,
 } from "./compile.js";
-import { CyphraValidationError, NotFoundError } from "./errors.js";
+import { CyphraError, CyphraValidationError, NotFoundError } from "./errors.js";
 import { encodeScalar, integerToNumber } from "./values.js";
 
 type AnyRecord = Record<string, unknown>;
@@ -58,6 +58,15 @@ export function createCuid(): string {
   let s = ALPHABET[bytes[0]! % 26]!;
   for (let i = 1; i < 24; i++) s += ALPHABET[bytes[i]! % 36]!;
   return s;
+}
+
+/** Temporary property marking a node created by an upsert's MERGE (removed in the same statement). */
+const UPSERT_FLAG = "__cyphraUpsertCreated";
+
+function sameValue(a: unknown, b: unknown): boolean {
+  if (a instanceof Date && b instanceof Date) return a.getTime() === b.getTime();
+  if (typeof a === "bigint" || typeof b === "bigint") return String(a) === String(b);
+  return a === b;
 }
 
 function asArray(v: unknown): unknown[] {
@@ -254,6 +263,18 @@ export class ModelEngine {
     return ModelEngine.createProps(edgeModel.name, edgeModel.properties, input);
   }
 
+  /** Only the `$edge` properties the caller set (no defaults), for updating an existing edge. */
+  private explicitEdgeProps(rel: ResolvedRelationField, input: unknown): AnyRecord {
+    if (!rel.edge || !isPlainObject(input)) return {};
+    const edgeModel = this.schema.relationships.find((r) => r.name === rel.edge)!;
+    const props: AnyRecord = {};
+    for (const f of edgeModel.properties) {
+      if (input[f.name] !== undefined)
+        props[f.name] = encodeScalar(f, input[f.name], edgeModel.name);
+    }
+    return props;
+  }
+
   private edgeText(
     ctx: QueryContext,
     rel: ResolvedRelationField,
@@ -283,6 +304,12 @@ export class ModelEngine {
     return id;
   }
 
+  /**
+   * Link `id` to one existing node. Idempotent: the edge is `MERGE`d, so connecting the same pair
+   * again keeps a single edge. On a typed edge, a new edge gets the given `$edge` properties plus
+   * schema defaults; an existing edge is updated with the given `$edge` properties only (its
+   * defaults, e.g. `@default(now())`, are kept).
+   */
   private async connect(
     exec: Executor,
     id: string,
@@ -294,15 +321,18 @@ export class ModelEngine {
     const { $edge, ...where } = item;
     const target = this.node(rel.target);
     this.engineFor(target).assertUnique(where, `${this.model.name}.${rel.name}.connect`);
+    const onCreate = this.edgeProps(rel, $edge);
+    const onMatch = this.explicitEdgeProps(rel, $edge);
     const ctx = this.ctx();
     const w = compileWhere(ctx, target, "b", where);
-    const edge = this.edgeText(ctx, rel, "a", "b", this.edgeProps(rel, $edge));
-    const rows = await exec(
+    const edge = `[r:${q(rel.relType)}]`;
+    let text =
       `MATCH (a) WHERE elementId(a) = ${ctx.param(id)} ` +
-        `MATCH (b:${q(target.label)})${w ? ` WHERE ${w}` : ""} ` +
-        `WITH a, b LIMIT 1 CREATE ${edge} RETURN count(r) AS c`,
-      ctx.params,
-    );
+      `MATCH (b:${q(target.label)})${w ? ` WHERE ${w}` : ""} ` +
+      `WITH a, b LIMIT 1 MERGE ${rel.direction === "OUT" ? `(a)-${edge}->(b)` : `(a)<-${edge}-(b)`}`;
+    if (Object.keys(onCreate).length) text += ` ON CREATE SET r += ${ctx.param(onCreate)}`;
+    if (Object.keys(onMatch).length) text += ` ON MATCH SET r += ${ctx.param(onMatch)}`;
+    const rows = await exec(`${text} RETURN count(r) AS c`, ctx.params);
     if (toCount(rows[0]?.c) === 0) {
       throw new NotFoundError(`connect: no ${target.name} matches ${JSON.stringify(where)}.`);
     }
@@ -523,15 +553,82 @@ export class ModelEngine {
     });
   }
 
-  upsert(args: AnyRecord): Promise<AnyRecord> {
+  /**
+   * Atomic upsert: one `MERGE` on a unique key of `where`, with the create data in
+   * `ON CREATE SET` and the update in `ON MATCH SET`. Under concurrency this yields exactly one
+   * node only when the key has a uniqueness constraint (`@id` / `@unique` + `cyphra db push` or a
+   * migration); without one, concurrent MERGEs can still create duplicates.
+   *
+   * Extra `where` filters (beyond the MERGE key) are checked on an existing node before it is
+   * updated; if it does not match them, nothing is written and a {@link CyphraError} is thrown
+   * (creating would duplicate the key). Nested relation writes run after the MERGE, in the same
+   * transaction.
+   */
+  async upsert(args: AnyRecord): Promise<AnyRecord> {
+    this.assertUnique(args.where, "upsert");
+    const where = args.where as AnyRecord;
+    const key = this.model.uniqueFields.find((k) => {
+      const v = where[k];
+      return v !== undefined && v !== null && !isPlainObject(v);
+    })!;
+    const keyField = scalarField(this.model, key)!;
+    const create = this.splitData(args.create, "upsert create");
+    const update = this.splitData(args.update, "upsert update");
+    if (create.scalars[key] !== undefined && !sameValue(create.scalars[key], where[key])) {
+      throw new CyphraValidationError(
+        `${this.model.name}.upsert: create.${key} must equal where.${key} (or be omitted).`,
+      );
+    }
+    // The MERGE pattern sets the key, so no default is generated for it.
+    const fields = this.model.fields.filter(
+      (f): f is ResolvedScalarField => f.kind === "scalar" && f.name !== key,
+    );
+    const props = ModelEngine.createProps(this.model.name, fields, create.scalars);
+    const nested = Object.keys(create.relations).length + Object.keys(update.relations).length > 0;
+
+    const ctx = this.ctx();
+    const keyParam = ctx.param(encodeScalar(keyField, where[key], this.model.name));
+    const onCreate = Object.keys(props).length ? [`n += ${ctx.param(props)}`] : [];
+    const rest = Object.fromEntries(Object.entries(where).filter(([k]) => k !== key));
+    const restWhere = compileWhere(ctx, this.model, "n", rest);
+    const sets = this.setClauses(ctx, update.scalars);
+    const flag = `n.${q(UPSERT_FLAG)}`;
+    const trackCreated = nested || restWhere !== null;
+
+    let text = `MERGE (n:${this.label} {${q(key)}: ${keyParam}})`;
+    if (trackCreated) onCreate.push(`${flag} = true`);
+    if (onCreate.length) text += ` ON CREATE SET ${onCreate.join(", ")}`;
+    if (restWhere) {
+      // Check the extra filters against the node as it was, then update it.
+      text += ` WITH n, ${flag} IS NOT NULL AS created REMOVE ${flag}`;
+      text += ` WITH n, created WHERE created OR (${restWhere})`;
+      if (sets.length) {
+        text += ` FOREACH (x IN CASE WHEN created THEN [] ELSE [1] END | SET ${sets.join(", ")})`;
+      }
+    } else {
+      if (sets.length) text += ` ON MATCH SET ${sets.join(", ")}`;
+      if (trackCreated) text += ` WITH n, ${flag} IS NOT NULL AS created REMOVE ${flag}`;
+    }
+    const projection = nested ? null : compileProjection(ctx, this.model, "n", args);
+    text += ` RETURN elementId(n) AS id`;
+    if (trackCreated) text += `, created`;
+    if (projection) text += `, ${projection.expr} AS row`;
+
     return this.runner.write(async (exec) => {
-      const existing = await this.findId(exec, args.where, "upsert");
-      let id: string;
-      if (existing) {
-        id = existing;
-        await this.updateNode(exec, id, args.update);
-      } else {
-        id = await this.createNode(exec, args.create);
+      const rows = await exec(text, ctx.params);
+      const row = rows[0];
+      if (!row) {
+        throw new CyphraError(
+          `${this.model.name}.upsert: a node with ${key} = ${JSON.stringify(where[key])} exists but does not match the rest of where; creating another would duplicate the key.`,
+        );
+      }
+      if (projection) return decodeRow(projection.shape, row.row)!;
+      const id = row.id as string;
+      const [relations, mode] = row.created
+        ? ([create.relations, "create"] as const)
+        : ([update.relations, "update"] as const);
+      for (const [k, v] of Object.entries(relations)) {
+        await this.writeRelation(exec, id, relationField(this.model, k)!, v, mode);
       }
       return this.readById(exec, id, args);
     });

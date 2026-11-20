@@ -71,18 +71,17 @@ either direction and only creates one when there is none (in our test, pointing 
 
 The [typed client](/client) maps to these clauses as follows:
 
-| Cyphra                           | Cypher it runs                                                         |
-| -------------------------------- | ---------------------------------------------------------------------- |
-| `db.user.create`, `createMany`   | `CREATE`                                                               |
-| `db.user.upsert`                 | a lookup on the unique key, then `SET` or `CREATE`, in one transaction |
-| `connect` in `create` / `update` | `MATCH` the target, then `CREATE` the relationship                     |
+| Cyphra                            | Cypher it runs                                                     |
+| --------------------------------- | ------------------------------------------------------------------ |
+| `db.user.create`, `createMany`    | `CREATE`                                                           |
+| `db.user.upsert`                  | `MERGE` on the unique key, with `ON CREATE SET` and `ON MATCH SET` |
+| `connect` in `create` / `update`  | `MATCH` the target, then `MERGE` the relationship                  |
+| nested `create` of a related node | `CREATE` the node and its relationship                             |
 
 So, like `CREATE`, a duplicate `db.user.create` on a `@unique` field throws
-`Neo.ClientError.Schema.ConstraintValidationFailed`, and `connect` adds a new relationship every
-time it runs: calling it twice for the same pair leaves two `FOLLOWS` edges. To get `MERGE`
-semantics, check first or use `db.$cypher`, as shown in
-[Create a relationship between existing nodes](/cypher/create-relationship#in-cyphra). For the
-concurrency behavior of `upsert`, see [Upsert with MERGE](/cypher/upsert-merge#upsert-with-cyphra).
+`Neo.ClientError.Schema.ConstraintValidationFailed`, while `upsert` matches the existing node (see
+[Upsert with MERGE](/cypher/upsert-merge#upsert-with-cyphra) for its concurrency behavior). And like
+`MERGE`, `connect` is idempotent: calling it twice for the same pair leaves one `FOLLOWS` edge.
 
 ```ts
 import { db } from "./db.js";
@@ -99,8 +98,11 @@ const [{ edges }] = await db.$cypher<{ edges: number }>`
   MATCH (:User {email: ${"alice@acme.io"}})-[r:FOLLOWS]->(:User {email: ${"bob@acme.io"}})
   RETURN count(r) AS edges
 `;
-// edges === 2
+// edges === 1
 ```
+
+When you need two parallel relationships of the same type between one pair (one per event, say),
+`connect` will not create them: use `CREATE` through `db.$cypher`, or model the event as a node.
 
 ## Related
 

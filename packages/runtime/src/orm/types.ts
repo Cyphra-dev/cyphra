@@ -48,7 +48,8 @@ type Simplify<T> = { [K in keyof T]: T[K] } & {};
 // Filters
 // ---------------------------------------------------------------------------
 
-type Comparable = number | Date;
+/** Types with `lt` / `lte` / `gt` / `gte` (strings compare lexicographically, by code point). */
+type Comparable = number | string | Date;
 
 /** Filter on one scalar field. A bare value means `equals`; `null` means "property absent". */
 export type ScalarFilter<T> = [NonNullable<T>] extends [readonly (infer E)[]]

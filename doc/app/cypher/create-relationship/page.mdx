@@ -100,43 +100,40 @@ Unlike the Cypher version, a missing target is an error: `connect` throws `NotFo
 (`connect: no User matches {"email":"nobody@acme.io"}.`). The update runs in one transaction, so
 other changes in the same call (say, a new `name`) are rolled back too.
 
-<Callout type="warning">
-  `connect` runs `CREATE`, not `MERGE`. Calling it twice for the same pair creates two `FOLLOWS`
-  relationships. On a **to-one** relation (`author User?`) that cannot happen: `connect` replaces
-  the existing edge. On a to-many relation, check first, or use `MERGE` through `db.$cypher`.
-</Callout>
+`connect` runs the `MERGE` version above, so it is idempotent: connecting the same pair again keeps
+one `FOLLOWS` relationship. In our test, ten concurrent `connect` calls for the same pair also left
+exactly one. For a typed edge, `$edge` and the schema defaults (here `since`, if it has
+`@default(now())`) are set when the relationship is created; on an existing one, only the `$edge`
+properties you pass are updated, so a repeat `connect` without `$edge` keeps the original `since`.
+On a **to-one** relation (`author User?`), `connect` replaces the existing edge.
 
-Check first with a relation filter:
+So "follow, but only once" needs no extra code:
 
 ```ts
 async function follow(from: string, to: string) {
-  const already = await db.user.count({
-    where: { email: from, following: { some: { email: to } } },
-  });
-  if (already > 0) return;
   await db.user.update({
     where: { email: from },
-    data: { following: { connect: { email: to, $edge: { since: new Date() } } } },
+    data: { following: { connect: { email: to } } },
   });
 }
 ```
 
-This is a read followed by a write, so two concurrent calls can still both create an edge. When
-that matters, let the database do it in one statement:
+If you need several relationships of the same type between one pair, use `CREATE` through
+`db.$cypher`.
 
-```ts
-async function followOnce(from: string, to: string) {
-  const rows = await db.$cypher<{ since: Date }>`
-    MATCH (a:User {email: ${from}})
-    MATCH (b:User {email: ${to}})
-    MERGE (a)-[f:FOLLOWS]->(b)
-    ON CREATE SET f.since = datetime()
-    RETURN f.since AS since
-  `;
-  if (rows.length === 0) throw new Error("one of the users does not exist");
-  return rows[0].since; // Date: db.$cypher converts Neo4j temporals
-}
+<Callout type="info">
+  Before Cyphra 0.3, `connect` used `CREATE`, so calling it twice left two edges. To find pairs
+  that were linked more than once, and keep one edge per pair:
+
+```cypher
+MATCH (a:User)-[r:FOLLOWS]->(b:User)
+WITH a, b, collect(r) AS rels
+WHERE size(rels) > 1
+UNWIND tail(rels) AS extra
+DELETE extra
 ```
+
+</Callout>
 
 You can also link while creating: `db.post.create({ data: { title, author: { connect: { email } } } })`.
 To remove a relationship but keep both nodes, use `disconnect` (see

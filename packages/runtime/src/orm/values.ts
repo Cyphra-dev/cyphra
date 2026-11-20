@@ -14,6 +14,27 @@ export function integerToNumber(v: Integer): number {
   return v.toNumber();
 }
 
+/**
+ * A driver `DateTime` for the instant `d`, always at UTC offset 0.
+ *
+ * `DateTime.fromStandardDate` uses the offset of the process's local time zone, and Cypher's `=`
+ * and ordering on datetimes take the offset into account: `2024-01-01T00:00Z` is not equal to the
+ * same instant written as `2023-12-31T19:00-05:00`. Writing every value (and every filter
+ * parameter) in UTC keeps comparisons independent of the server's `TZ`.
+ */
+export function utcDateTime(d: Date): InstanceType<typeof neo4j.types.DateTime> {
+  return new neo4j.types.DateTime(
+    d.getUTCFullYear(),
+    d.getUTCMonth() + 1,
+    d.getUTCDate(),
+    d.getUTCHours(),
+    d.getUTCMinutes(),
+    d.getUTCSeconds(),
+    d.getUTCMilliseconds() * 1_000_000,
+    0,
+  );
+}
+
 function encodeOne(type: ScalarTypeName, value: unknown, where: string): unknown {
   switch (type) {
     case "String":
@@ -32,7 +53,7 @@ function encodeOne(type: ScalarTypeName, value: unknown, where: string): unknown
     case "DateTime": {
       const d = typeof value === "string" ? new Date(value) : value;
       if (!(d instanceof Date) || Number.isNaN(d.getTime())) break;
-      return neo4j.types.DateTime.fromStandardDate(d);
+      return utcDateTime(d);
     }
     case "Date": {
       const d = typeof value === "string" ? new Date(value) : value;
