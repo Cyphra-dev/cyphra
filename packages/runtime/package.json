@@ -1,7 +1,7 @@
 {
   "name": "@cyphra/runtime",
   "version": "0.2.1",
-  "description": "Neo4j execution layer for Cyphra: typed ORM client, sessions, transactions, and cypher tag",
+  "description": "Cyphra runtime: typed Neo4j ORM client, sessions, transactions and the cypher tag",
   "type": "module",
   "sideEffects": false,
   "publishConfig": {
@@ -41,8 +41,19 @@
     "url": "git+https://github.com/Cyphra-dev/cyphra.git",
     "directory": "packages/runtime"
   },
-  "homepage": "https://cyphra-doc.vercel.app",
+  "homepage": "https://www.cyphra.dev/runtime",
   "bugs": {
     "url": "https://github.com/Cyphra-dev/cyphra/issues"
-  }
+  },
+  "keywords": [
+    "neo4j",
+    "neo4j-orm",
+    "orm",
+    "typescript",
+    "cypher",
+    "graph-database",
+    "cyphra",
+    "neo4j-driver",
+    "transactions"
+  ]
 }

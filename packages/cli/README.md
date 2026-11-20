@@ -1,5 +1,7 @@
 # @cyphra/cli
 
+> Part of [Cyphra](https://www.cyphra.dev), the TypeScript ORM for Neo4j. **CLI reference:** [www.cyphra.dev/cli](https://www.cyphra.dev/cli)
+
 Command-line interface for Cyphra.
 
 ## Commands

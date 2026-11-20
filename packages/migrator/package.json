@@ -1,7 +1,7 @@
 {
   "name": "@cyphra/migrator",
   "version": "0.2.1",
-  "description": "Versioned migrations, batch helpers, and schema push for Cyphra",
+  "description": "Versioned schema migrations for Neo4j: constraints, indexes and data migrations (Cyphra)",
   "type": "module",
   "sideEffects": false,
   "publishConfig": {
@@ -42,8 +42,19 @@
     "url": "git+https://github.com/Cyphra-dev/cyphra.git",
     "directory": "packages/migrator"
   },
-  "homepage": "https://cyphra-doc.vercel.app",
+  "homepage": "https://www.cyphra.dev/migrations",
   "bugs": {
     "url": "https://github.com/Cyphra-dev/cyphra/issues"
-  }
+  },
+  "keywords": [
+    "neo4j",
+    "neo4j-orm",
+    "orm",
+    "typescript",
+    "cypher",
+    "graph-database",
+    "cyphra",
+    "migrations",
+    "schema-migrations"
+  ]
 }

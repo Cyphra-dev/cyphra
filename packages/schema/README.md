@@ -1,5 +1,7 @@
 # @cyphra/schema
 
+> Part of [Cyphra](https://www.cyphra.dev), the TypeScript ORM for Neo4j. **Schema DSL docs:** [www.cyphra.dev/schema](https://www.cyphra.dev/schema)
+
 Parser and AST types for the Cyphra `.cyphra` schema DSL.
 
 ## Usage

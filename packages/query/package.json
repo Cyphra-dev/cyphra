@@ -1,7 +1,7 @@
 {
   "name": "@cyphra/query",
   "version": "0.2.1",
-  "description": "Cypher-first query utilities: template tag and minimal fluent builder for Cyphra",
+  "description": "Cypher-first query utilities for Neo4j: template tag and fluent builder (Cyphra)",
   "type": "module",
   "sideEffects": false,
   "publishConfig": {
@@ -36,8 +36,18 @@
     "url": "git+https://github.com/Cyphra-dev/cyphra.git",
     "directory": "packages/query"
   },
-  "homepage": "https://cyphra-doc.vercel.app",
+  "homepage": "https://www.cyphra.dev/queries",
   "bugs": {
     "url": "https://github.com/Cyphra-dev/cyphra/issues"
-  }
+  },
+  "keywords": [
+    "neo4j",
+    "neo4j-orm",
+    "orm",
+    "typescript",
+    "cypher",
+    "graph-database",
+    "cyphra",
+    "query-builder"
+  ]
 }
