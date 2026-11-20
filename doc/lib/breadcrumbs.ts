@@ -9,6 +9,12 @@ const BLOG: Crumb = { name: "Blog", path: "/blog" };
 const GLOSSARY: Crumb = { name: "Glossary", path: "/glossary" };
 const COMPARE: Crumb = { name: "Compare", path: "/compare" };
 
+// Sections with their own index page: a page under them gets Home > Section > Page.
+const SECTIONS: Record<string, Crumb> = {
+  guides: { name: "Guides", path: "/guides" },
+  cypher: { name: "Cypher how-tos", path: "/cypher" },
+};
+
 // Docs pages that sit at the top level of the navbar rather than under "Docs".
 const TOP_LEVEL = new Set(["/getting-started", "/pricing", "/cloud", "/neo4j-orm"]);
 
@@ -33,6 +39,9 @@ export function crumbsFor(filePath: string, title?: string): Crumb[] | null {
   if (route === "/compare") return [HOME, COMPARE];
   const page = getDocPage(route);
   const name = page?.title ?? title ?? dir;
+  const [top, ...rest] = dir.split("/");
+  const section = SECTIONS[top];
+  if (section) return rest.length ? [HOME, section, { name, path: route }] : [HOME, section];
   if (TOP_LEVEL.has(route)) return [HOME, { name, path: route }];
   if (route.startsWith("/compare/")) return [HOME, COMPARE, { name, path: route }];
   return [HOME, DOCS, { name, path: route }];

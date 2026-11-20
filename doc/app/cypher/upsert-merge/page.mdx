@@ -1,0 +1,187 @@
+---
+title: "Neo4j upsert: MERGE with ON CREATE and ON MATCH"
+sidebarTitle: Upsert with MERGE
+description: "Upsert a Neo4j node or relationship with MERGE, ON CREATE SET and ON MATCH SET, why it needs a unique constraint, and the typed upsert in Cyphra."
+---
+
+import { Callout } from "nextra/components";
+
+# Upsert in Neo4j with MERGE
+
+To upsert in Neo4j, `MERGE` the node on its unique key, then set properties with `ON CREATE SET`
+(only when the node is new) and `ON MATCH SET` (only when it already existed). Put a
+[uniqueness constraint](/cypher/unique-constraint) on the key, or concurrent upserts can create
+duplicates.
+
+```cypher
+MERGE (u:User {email: $email})
+ON CREATE SET u.id = randomUUID(), u.name = $name, u.loginCount = 1, u.createdAt = datetime()
+ON MATCH SET u.loginCount = u.loginCount + 1
+RETURN u.email AS email, u.loginCount AS loginCount
+```
+
+Run it twice with the same `$email`: the first run creates the user with `loginCount = 1`, the
+second finds it and sets `loginCount` to `2`. There is one `User` node either way.
+
+## How MERGE decides
+
+`MERGE` looks for the whole pattern you give it. If it finds a match, it uses it; if not, it
+creates the whole pattern. Three consequences:
+
+- The properties inside `MERGE (u:User {…})` are the lookup key. Keep only the unique key there and
+  set everything else with `ON CREATE SET`, `ON MATCH SET` or a plain `SET`. If you write
+  `MERGE (u:User {email: $email, name: $name})` and the name changed, MERGE finds no match and tries
+  to create a second user (which the constraint then rejects).
+- `ON CREATE SET` runs only when MERGE created the node, `ON MATCH SET` only when it found it. A
+  plain `SET` after them runs in both cases.
+- A `null` key fails: `MERGE (u:User {email: null})` is an error ("Cannot merge the following node
+  because of null property value"), so validate input first.
+
+[MERGE vs CREATE](/cypher/merge-vs-create) covers the differences in more detail.
+
+## Back the key with a uniqueness constraint
+
+```cypher
+CREATE CONSTRAINT user_email_unique IF NOT EXISTS
+FOR (u:User) REQUIRE u.email IS UNIQUE
+```
+
+The constraint is what makes MERGE safe when two requests upsert the same key at once. We sent ten
+concurrent MERGE statements for the same new email, each on its own connection, and repeated that
+15 times on Neo4j 5.26 Community:
+
+| Setup                       | Result                                                        |
+| --------------------------- | ------------------------------------------------------------- |
+| No constraint on the key    | duplicates in every run: between 5 and 10 `User` nodes        |
+| Uniqueness constraint (key) | always 1 node with `loginCount` = 10, and no statement failed |
+
+The constraint also creates an index on the key. `EXPLAIN` shows MERGE using it: the plan's lookup
+step is `NodeUniqueIndexSeek(Locking)`, an index seek that also locks the key, rather than a scan of
+every `User` node.
+
+## Upsert a relationship
+
+Match both endpoints first, then MERGE only the relationship:
+
+```cypher
+MATCH (a:User {email: $from})
+MATCH (b:User {email: $to})
+MERGE (a)-[f:FOLLOWS]->(b)
+ON CREATE SET f.since = datetime()
+RETURN f.since AS since
+```
+
+Running it again does not add a second `FOLLOWS` edge, and `since` keeps its first value. If either
+user does not exist, the query returns no rows and creates nothing. See
+[Create a relationship between existing nodes](/cypher/create-relationship).
+
+## Don't MERGE a whole path
+
+A common mistake is to upsert two nodes and their relationship in one pattern:
+
+```cypher
+// Don't: MERGE matches or creates the whole path, nodes included
+MERGE (u:User {email: $email})-[:AUTHORED]->(p:Post {title: $title})
+```
+
+If the user exists but has no post with that title, the path does not match, so MERGE creates all of
+it, including a new `User` with the same email. With the constraint this fails with
+`Neo.ClientError.Schema.ConstraintValidationFailed`; without one you silently get a duplicate user.
+MERGE each node on its own key, then the relationship:
+
+```cypher
+MERGE (u:User {email: $email})
+MERGE (p:Post {id: $postId})
+ON CREATE SET p.title = $title, p.published = false, p.createdAt = datetime()
+MERGE (u)-[:AUTHORED]->(p)
+```
+
+## Upsert many rows with UNWIND
+
+Send a list as one parameter and MERGE each row:
+
+```cypher
+UNWIND $rows AS row
+MERGE (u:User {email: row.email})
+ON CREATE SET u.id = randomUUID(), u.loginCount = 0, u.createdAt = datetime()
+SET u.name = row.name
+```
+
+With `$rows = [{email: "alice@acme.io", name: "Alice B."}, {email: "carol@acme.io", name: "Carol"}]`,
+Alice is updated and Carol is created, in one statement and one transaction.
+
+## Upsert with Cyphra
+
+The [typed client](/client) has `upsert`, keyed on any `@id` or `@unique` field:
+
+```ts
+import { db } from "./db.js";
+
+const user = await db.user.upsert({
+  where: { email: "alice@acme.io" },
+  create: { email: "alice@acme.io", name: "Alice", loginCount: 1 },
+  update: { loginCount: { increment: 1 } },
+});
+// user: { id: string; email: string; name: string | null; loginCount: number; createdAt: Date }
+```
+
+`create` is type-checked like `db.user.create` (required fields, defaults from the schema) and
+`update` like `db.user.update`, including number operations such as `increment`.
+
+<Callout type="warning">
+  Cyphra's `upsert` is **not** compiled to `MERGE`. In one write transaction, it looks the node up
+  by the unique key, then updates it or creates it. When several requests upsert the **same new
+  key** at the same time, they can all see "not found" and all try to create it; the uniqueness
+  constraint from `@unique` lets one through and rejects the others with
+  `Neo.ClientError.Schema.ConstraintValidationFailed`. In our test (ten concurrent upserts of a new
+  email, 15 runs), 8 or 9 of the 10 failed in each run. No duplicate was ever created.
+</Callout>
+
+If that can happen in your app, either retry on the constraint error (the retry finds the node
+and takes the `update` branch):
+
+```ts
+async function upsertWithRetry<T>(op: () => Promise<T>, attempts = 3): Promise<T> {
+  for (let i = 1; ; i++) {
+    try {
+      return await op();
+    } catch (e) {
+      const code = (e as { code?: string }).code;
+      if (code !== "Neo.ClientError.Schema.ConstraintValidationFailed" || i >= attempts) throw e;
+    }
+  }
+}
+
+await upsertWithRetry(() =>
+  db.user.upsert({
+    where: { email },
+    create: { email, loginCount: 1 },
+    update: { loginCount: { increment: 1 } },
+  }),
+);
+```
+
+or run the `MERGE` yourself with `db.$cypher`, which still sends every value as a parameter:
+
+```ts
+async function mergeLogin(email: string) {
+  const [row] = await db.$cypher<{ loginCount: number }>`
+    MERGE (u:User {email: ${email}})
+    ON CREATE SET u.id = randomUUID(), u.createdAt = datetime(), u.loginCount = 1
+    ON MATCH SET u.loginCount = u.loginCount + 1
+    RETURN u.loginCount AS loginCount
+  `;
+  return row.loginCount;
+}
+```
+
+With either version, ten concurrent calls for a new email ended with one node and
+`loginCount = 10` in every run. When you write `MERGE` by hand, set the fields Cyphra would
+otherwise fill in (here `id` and `createdAt`, which the schema defaults with `uuid()` and `now()`).
+
+## Related
+
+- [MERGE vs CREATE](/cypher/merge-vs-create)
+- [Unique constraints](/cypher/unique-constraint) and the [constraint](/glossary/constraint) glossary entry
+- [Migrations](/migrations): how `@unique` becomes a constraint, and
+  [Neo4j migrations: constraints and indexes as code](/blog/neo4j-schema-migrations-constraints-as-code)

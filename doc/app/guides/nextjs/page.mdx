@@ -1,0 +1,318 @@
+---
+title: "Neo4j with Next.js: App Router and Server Actions"
+sidebarTitle: Next.js
+description: "Query Neo4j from Next.js App Router Server Components and Server Actions with Cyphra: a typed client, one driver across hot reloads, and dynamic rendering."
+---
+
+import { Callout, Steps } from "nextra/components";
+import { HowToJsonLd } from "../../../components/seo/page-jsonld";
+
+# Neo4j with Next.js
+
+To use Neo4j in a Next.js App Router app, create **one** database client in a server-only module,
+cache it on `globalThis` so hot reloads in development reuse it, and call it from Server
+Components, Server Actions and Route Handlers. Never from Client Components: the driver and your
+credentials stay on the server. This guide does that with Cyphra's generated, typed client.
+
+The finished app is the official starter,
+[Cyphra-dev/nextjs-starter](https://github.com/Cyphra-dev/nextjs-starter): tagged notes, where each
+note links to its tags with a `TAGGED` relationship. Clone it, or follow the steps to add Neo4j to
+your own app.
+
+<Callout type="info">
+  Tested with Next.js 16.4 (App Router, Turbopack), React 19, Node.js 24 and Neo4j 5.26: `next dev`,
+  `next build` and `next start`, with notes created through the Server Action in a browser.
+</Callout>
+
+## Steps
+
+<Steps>
+
+### Install Cyphra
+
+```bash
+npm i cyphra server-only
+npm i -D @cyphra/cli
+```
+
+`cyphra` is the runtime your app imports; `@cyphra/cli` generates the client and runs migrations.
+`server-only` makes the build fail if a Client Component imports your database module.
+
+Generate the client on install and apply migrations before each build:
+
+```json filename="package.json"
+{
+  "scripts": {
+    "dev": "next dev",
+    "build": "cyphra migrate deploy && next build",
+    "start": "next start",
+    "postinstall": "cyphra generate"
+  }
+}
+```
+
+### Describe your graph
+
+```cyphra filename="schema.cyphra"
+node Note {
+  id        String   @id @default(uuid())
+  text      String
+  createdAt DateTime @default(now())
+  tags      Tag[]    @relationship(type: "TAGGED", direction: OUT)
+}
+
+node Tag {
+  id    String @id @default(uuid())
+  name  String @unique
+  notes Note[] @relationship(type: "TAGGED", direction: IN)
+}
+```
+
+```json filename="cyphra.json"
+{
+  "schema": "./schema.cyphra",
+  "migrations": "./migrations",
+  "generate": "./lib/cyphra.gen.ts"
+}
+```
+
+`lib/cyphra.gen.ts` is generated, so add it to `.gitignore` along with `.env`.
+
+### Start Neo4j and run the first migration
+
+```bash
+npx cyphra dev                       # Neo4j 5 in Docker on 127.0.0.1, writes .env
+npx cyphra migrate dev --name init   # constraints for @id and @unique, as a migration file
+npx cyphra generate                  # writes lib/cyphra.gen.ts
+```
+
+Already have a database (Neo4j Aura, [Cyphra Cloud](/cloud) or your own server, version 5.6 or
+later)? Skip `cyphra dev` and put its connection details in `.env` yourself:
+
+```bash filename=".env"
+NEO4J_URI=neo4j+s://<your-host>
+NEO4J_USERNAME=neo4j
+NEO4J_PASSWORD=<your-password>
+```
+
+Next.js loads `.env` for the server automatically. Do not prefix these with `NEXT_PUBLIC_`: that
+would ship them to the browser.
+
+### Create one client for the server
+
+```ts filename="lib/db.ts"
+import "server-only";
+import { createClient } from "./cyphra.gen";
+
+function env(...names: string[]): string {
+  for (const name of names) {
+    const value = process.env[name];
+    if (value) return value;
+  }
+  throw new Error(`Missing ${names.join(" or ")}.`);
+}
+
+const globalForDb = globalThis as unknown as {
+  cyphra?: ReturnType<typeof createClient>;
+};
+
+export function db() {
+  globalForDb.cyphra ??= createClient({
+    uri: env("NEO4J_URI"),
+    user: env("NEO4J_USERNAME", "NEO4J_USER"),
+    password: env("NEO4J_PASSWORD"),
+  });
+  return globalForDb.cyphra;
+}
+```
+
+Each client owns a Neo4j driver with its own connection pool, so you want exactly one per server
+process. A plain `const db = createClient(…)` at module level is not enough in development: we
+logged every client creation in `next dev` and got **2** clients on the first request (the module is
+evaluated in more than one server bundle) and **7** after editing `lib/db.ts` three times, each
+holding open connections. With the `globalThis` cache above, the same session created **one**.
+
+The function form, `db()`, also means environment variables are read on first use, not when the
+module is imported, so `next build` does not need them just to compile.
+
+### Read in a Server Component
+
+```tsx filename="app/page.tsx"
+import { Suspense } from "react";
+import { connection } from "next/server";
+import { db } from "@/lib/db";
+
+export default function Home() {
+  return (
+    <main>
+      <h1>Notes</h1>
+      <Suspense fallback={<p>Loading notes…</p>}>
+        <Notes />
+      </Suspense>
+    </main>
+  );
+}
+
+async function Notes() {
+  await connection(); // render at request time, not at build time
+  const notes = await db().note.findMany({
+    include: { tags: { orderBy: { name: "asc" } } },
+    orderBy: { createdAt: "desc" },
+    take: 50,
+  });
+  return (
+    <ul>
+      {notes.map((note) => (
+        <li key={note.id}>
+          {note.text} {note.tags.map((t) => `#${t.name}`).join(" ")}
+        </li>
+      ))}
+    </ul>
+  );
+}
+```
+
+`notes` is fully typed from the schema: `{ id: string; text: string; createdAt: Date; tags: Tag[] }[]`.
+
+`await connection()` tells Next.js this component needs a request. Next.js cannot see a database
+query the way it sees `fetch`, so without it a page can be prerendered once at build time. We
+checked with the default `next.config` (no `cacheComponents`): without `connection()`, `next build`
+marked the route static and the notes that existed during the build were baked into the HTML. With
+it, the route was dynamic and no note text was in the build output. The starter also enables
+`cacheComponents`, which is why the query sits inside `<Suspense>`.
+
+### Write with a Server Action
+
+```ts filename="app/actions.ts"
+"use server";
+
+import { revalidatePath } from "next/cache";
+import { db } from "@/lib/db";
+
+export async function addNote(formData: FormData) {
+  const text = String(formData.get("text") ?? "")
+    .trim()
+    .slice(0, 280);
+  if (!text) return;
+  const tags = String(formData.get("tags") ?? "")
+    .split(/[,\s]+/)
+    .map((t) => t.trim().toLowerCase())
+    .filter((t) => /^[a-z0-9-]{1,32}$/.test(t));
+
+  await db().$transaction(async (tx) => {
+    for (const name of new Set(tags)) {
+      await tx.tag.upsert({ where: { name }, create: { name }, update: {} });
+    }
+    await tx.note.create({
+      data: { text, tags: { connect: [...new Set(tags)].map((name) => ({ name })) } },
+    });
+  });
+  revalidatePath("/");
+}
+```
+
+```tsx
+<form action={addNote}>
+  <textarea name="text" required maxLength={280} />
+  <input name="tags" placeholder="neo4j, typescript" />
+  <button>Add note</button>
+</form>
+```
+
+`$transaction` makes the tag upserts and the note one unit: if anything throws, nothing is written.
+Treat Server Action input like any request body: validate it, then pass it to the client, which
+sends every value as a query [parameter](/cypher/parameters).
+
+</Steps>
+
+<HowToJsonLd
+  path="/guides/nextjs"
+  name="Use Neo4j in a Next.js App Router app with Cyphra"
+  description="Install Cyphra, describe the graph, start Neo4j, create one server-side client, read in a Server Component and write with a Server Action."
+  steps={[
+    {
+      name: "Install Cyphra",
+      anchor: "install-cyphra",
+      text: "Install cyphra and server-only, add @cyphra/cli as a dev dependency, generate the client on postinstall and run cyphra migrate deploy before next build.",
+    },
+    {
+      name: "Describe your graph",
+      anchor: "describe-your-graph",
+      text: "Write schema.cyphra with your nodes and relationships, and point cyphra.json at lib/cyphra.gen.ts.",
+    },
+    {
+      name: "Start Neo4j and run the first migration",
+      anchor: "start-neo4j-and-run-the-first-migration",
+      text: "Run cyphra dev for a local Neo4j, cyphra migrate dev to create constraints, and cyphra generate, or set NEO4J_URI, NEO4J_USERNAME and NEO4J_PASSWORD for an existing database.",
+    },
+    {
+      name: "Create one client for the server",
+      anchor: "create-one-client-for-the-server",
+      text: "In a server-only module, create the client once and cache it on globalThis so hot reloads reuse it.",
+    },
+    {
+      name: "Read in a Server Component",
+      anchor: "read-in-a-server-component",
+      text: "Call db() in an async Server Component inside Suspense, after await connection() so it renders at request time.",
+    },
+    {
+      name: "Write with a Server Action",
+      anchor: "write-with-a-server-action",
+      text: "Validate form input in a Server Action, write in a $transaction, then revalidatePath.",
+    },
+  ]}
+/>
+
+## Route Handlers
+
+The same client works in Route Handlers, which run on the Node.js runtime by default:
+
+```ts filename="app/api/notes-count/route.ts"
+import { db } from "@/lib/db";
+
+export async function GET() {
+  const notes = await db().note.count();
+  return Response.json({ notes });
+}
+```
+
+## Graph queries with `$cypher`
+
+When a question is easier to ask in Cypher, ask it in Cypher. The starter finds related notes
+(notes sharing tags, ranked by how many) with one traversal, still fully parameterized:
+
+```ts
+type Related = { id: string; related: { text: string; shared: number }[] };
+
+const rows = await db().$cypher<Related>`
+  MATCH (n:Note) WHERE n.id IN ${notes.map((n) => n.id)}
+  OPTIONAL MATCH (n)-[:TAGGED]->(:Tag)<-[:TAGGED]-(other:Note)
+  WITH n, other, count(*) AS shared WHERE other IS NOT NULL
+  ORDER BY shared DESC
+  RETURN n.id AS id, collect({ text: other.text, shared: shared })[0..3] AS related`;
+```
+
+See the [Cypher how-tos](/cypher) for counting, pagination and upserts in both styles.
+
+## Changing the schema
+
+Edit `schema.cyphra`, then:
+
+```bash
+npx cyphra migrate dev --name add-pinned   # writes and applies a reviewable migration
+```
+
+Commit the migration file and `migrations/schema.snapshot.json`. `npm run build` applies pending
+migrations with `cyphra migrate deploy` before `next build`, so the database is up to date when the
+new code ships. See [Migrations](/migrations).
+
+## Deploy
+
+Deploying to Vercel is covered in [Deploy a Neo4j app on Vercel](/guides/vercel): environment
+variables, running migrations in the build, and connections in serverless functions.
+
+## Related
+
+- [Typed client](/client): `findMany`, `include`, nested writes and `$transaction`
+- [NestJS guide](/guides/nestjs) and [Bun guide](/guides/bun)
+- [Typed Neo4j queries in TypeScript](/blog/typed-neo4j-queries-in-typescript)

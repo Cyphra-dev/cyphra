@@ -1,0 +1,149 @@
+---
+title: "Neo4j: create a relationship between existing nodes"
+sidebarTitle: Create a relationship
+description: "Create a relationship between two existing Neo4j nodes with MATCH, then CREATE or MERGE; check it happened, link many pairs with UNWIND, and use Cyphra."
+---
+
+import { Callout } from "nextra/components";
+
+# Create a relationship between existing nodes
+
+`MATCH` both nodes first, then `CREATE` the relationship between the variables you matched. Use
+`MERGE` instead of `CREATE` if the relationship should exist only once:
+
+```cypher
+MATCH (a:User {email: $from})
+MATCH (b:User {email: $to})
+CREATE (a)-[f:FOLLOWS {since: datetime()}]->(b)
+RETURN count(f) AS created
+```
+
+`created` is `1` when both users exist. When either one does not, `MATCH` finds no rows, nothing is
+created, and `created` is `0`. Cypher does not raise an error for that, so check the result.
+
+## Only once: MERGE the relationship
+
+```cypher
+MATCH (a:User {email: $from})
+MATCH (b:User {email: $to})
+MERGE (a)-[f:FOLLOWS]->(b)
+ON CREATE SET f.since = datetime()
+RETURN f.since AS since
+```
+
+Run it twice and there is still one `FOLLOWS` relationship. `CREATE` would have made two: Neo4j
+allows any number of relationships of the same type between the same nodes. If a user is missing,
+this query returns no rows. More in [MERGE vs CREATE](/cypher/merge-vs-create).
+
+## Don't put labels and properties in the CREATE pattern
+
+```cypher
+// Don't: this creates two NEW users, it does not find the existing ones
+CREATE (a:User {email: $from})-[:FOLLOWS]->(b:User {email: $to})
+```
+
+A label or property map inside `CREATE` describes a node to create. Only bare variables bound by
+`MATCH` (`(a)`, `(b)`) refer to existing nodes. With a uniqueness constraint on `email` the
+statement above fails with `ConstraintValidationFailed`; without one it creates duplicates.
+
+Write one `MATCH` per node, as above. `MATCH (a:User {email: $from}), (b:User {email: $to})` also
+works, but a comma between unrelated patterns makes Neo4j warn about a cartesian product.
+
+## Many relationships at once
+
+Pass the pairs as a list parameter:
+
+```cypher
+UNWIND $pairs AS pair
+MATCH (a:User {email: pair.from})
+MATCH (b:User {email: pair.to})
+MERGE (a)-[:FOLLOWS]->(b)
+```
+
+Pairs whose nodes do not exist are skipped silently, like the single version.
+
+## By internal id
+
+If you only have Neo4j's internal ids, use `elementId()` (Neo4j 5; `id()` is deprecated):
+
+```cypher
+MATCH (a), (b)
+WHERE elementId(a) = $fromId AND elementId(b) = $toId
+MERGE (a)-[:FOLLOWS]->(b)
+```
+
+Element ids can be reused after a node is deleted, so prefer your own unique key (`id`, `email`)
+for anything you store.
+
+## In Cyphra
+
+Relationships are fields in the schema (`following User[] @relationship(type: "FOLLOWS")`), and
+`connect` links existing nodes by any `@id` / `@unique` field. Edge properties declared in a
+`relationship { … }` model go in `$edge`:
+
+```ts
+import { db } from "./db.js";
+
+await db.user.update({
+  where: { email: "alice@acme.io" },
+  data: { following: { connect: { email: "bob@acme.io", $edge: { since: new Date() } } } },
+});
+
+const alice = await db.user.findUnique({
+  where: { email: "alice@acme.io" },
+  include: { following: true },
+});
+// alice.following: (User & { $edge: { since: Date | null } })[]
+```
+
+Unlike the Cypher version, a missing target is an error: `connect` throws `NotFoundError`
+(`connect: no User matches {"email":"nobody@acme.io"}.`). The update runs in one transaction, so
+other changes in the same call (say, a new `name`) are rolled back too.
+
+<Callout type="warning">
+  `connect` runs `CREATE`, not `MERGE`. Calling it twice for the same pair creates two `FOLLOWS`
+  relationships. On a **to-one** relation (`author User?`) that cannot happen: `connect` replaces
+  the existing edge. On a to-many relation, check first, or use `MERGE` through `db.$cypher`.
+</Callout>
+
+Check first with a relation filter:
+
+```ts
+async function follow(from: string, to: string) {
+  const already = await db.user.count({
+    where: { email: from, following: { some: { email: to } } },
+  });
+  if (already > 0) return;
+  await db.user.update({
+    where: { email: from },
+    data: { following: { connect: { email: to, $edge: { since: new Date() } } } },
+  });
+}
+```
+
+This is a read followed by a write, so two concurrent calls can still both create an edge. When
+that matters, let the database do it in one statement:
+
+```ts
+async function followOnce(from: string, to: string) {
+  const rows = await db.$cypher<{ since: Date }>`
+    MATCH (a:User {email: ${from}})
+    MATCH (b:User {email: ${to}})
+    MERGE (a)-[f:FOLLOWS]->(b)
+    ON CREATE SET f.since = datetime()
+    RETURN f.since AS since
+  `;
+  if (rows.length === 0) throw new Error("one of the users does not exist");
+  return rows[0].since; // Date: db.$cypher converts Neo4j temporals
+}
+```
+
+You can also link while creating: `db.post.create({ data: { title, author: { connect: { email } } } })`.
+To remove a relationship but keep both nodes, use `disconnect` (see
+[Delete a node and its relationships](/cypher/delete-node#in-cyphra)).
+
+## Related
+
+- [Typed client: writing](/client#writing), nested writes and `$edge`
+- [Count relationships and aggregate](/cypher/count-relationships)
+- Glossary: [relationship type](/glossary/relationship-type), [property graph](/glossary/property-graph)

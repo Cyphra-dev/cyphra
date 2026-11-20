@@ -32,14 +32,24 @@ function docLines(pages: DocPage[]): string[] {
 export function llmsTxt(): string {
   const pages = getDocPages();
   const isComparison = (p: DocPage) => p.route === "/neo4j-orm" || p.route.startsWith("/compare");
+  const under = (prefix: string) => (p: DocPage) =>
+    p.route === prefix || p.route.startsWith(`${prefix}/`);
+  const guides = pages.filter(under("/guides"));
+  const cypher = pages.filter(under("/cypher"));
   const docs = pages.filter(
-    (p) => !["/", "/pricing", "/cloud"].includes(p.route) && !isComparison(p),
+    (p) =>
+      !["/", "/pricing", "/cloud"].includes(p.route) &&
+      !isComparison(p) &&
+      !guides.includes(p) &&
+      !cypher.includes(p),
   );
   const cloud = pages.filter((p) => ["/cloud", "/pricing"].includes(p.route));
   const comparisons = pages.filter(isComparison);
   const sections = [
     HEADER,
     `## Docs\n\n${docLines(docs).join("\n")}`,
+    `## Guides\n\n${docLines(guides).join("\n")}`,
+    `## Cypher how-tos\n\n${docLines(cypher).join("\n")}`,
     `## Cyphra Cloud\n\n${docLines(cloud).join("\n")}`,
     `## Comparisons\n\n${docLines(comparisons).join("\n")}`,
     `## Blog\n\n${getPosts()

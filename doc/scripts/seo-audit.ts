@@ -7,8 +7,9 @@
  *   2. Robots: no noindex on a sitemap URL, at most one robots meta tag.
  *   3. Basics: one non-empty <title>, a meta description, exactly one <h1>, og:image (that loads),
  *      og:url equal to the canonical, a twitter:card, and the RSS <link rel="alternate">.
- *   4. JSON-LD: every block parses and has @context and @type; FAQPage questions and answers are
- *      visible on the page; a BreadcrumbList ends at the page itself.
+ *   4. JSON-LD: every block parses and has @context and @type; FAQPage questions and answers and
+ *      HowTo steps are visible on the page (and each step's #anchor exists); a BreadcrumbList ends
+ *      at the page itself.
  *   5. Internal links: every same-site link resolves (200), its #fragment exists on the target,
  *      and every indexable internal page that is linked is also in the sitemap.
  *   6. Site files: robots.txt points at the sitemap, the sitemap and feed are well-formed XML,
@@ -163,6 +164,17 @@ function auditJsonLd(url: string, html: string, canonical: string | undefined): 
           const answer = q?.acceptedAnswer?.text;
           if (answer && !visible.includes(normalizeText(answer))) {
             error(url, "jsonld-visible", `FAQ answer not visible: "${answer.slice(0, 60)}"`);
+          }
+        }
+      }
+      if (node["@type"] === "HowTo") {
+        for (const step of (node.step as { name?: string; url?: string }[] | undefined) ?? []) {
+          if (step?.name && !visible.includes(normalizeText(step.name))) {
+            error(url, "jsonld-visible", `HowTo step not visible: "${step.name.slice(0, 60)}"`);
+          }
+          const id = step?.url ? new URL(step.url).hash.slice(1) : "";
+          if (id && !new RegExp(`\\sid=["']${id}["']`).test(html)) {
+            error(url, "jsonld-visible", `HowTo step anchor #${id} not found`);
           }
         }
       }

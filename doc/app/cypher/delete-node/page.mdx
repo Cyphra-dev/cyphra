@@ -1,0 +1,140 @@
+---
+title: "Delete a Neo4j node and its relationships"
+sidebarTitle: Delete a node
+description: "Delete a Neo4j node that still has relationships with DETACH DELETE, remove only relationships, delete large sets in batches, and delete with Cyphra."
+---
+
+import { Callout } from "nextra/components";
+
+# Delete a node and its relationships
+
+Use `DETACH DELETE`. It deletes the node and every relationship attached to it, in either direction:
+
+```cypher
+MATCH (u:User {email: $email})
+DETACH DELETE u
+```
+
+A plain `DELETE u` only works on a node with no relationships. Otherwise Neo4j refuses with
+`Neo.ClientError.Schema.ConstraintValidationFailed`: `Cannot delete node<27>, because it still has relationships. To delete this node, you must first delete its relationships.`
+
+<Callout type="info">
+  `DETACH DELETE` removes the **relationships**, not the nodes at their other end. After deleting a
+  user, their posts are still there, just no longer `AUTHORED` by anyone.
+</Callout>
+
+## Delete a node and the nodes it owns
+
+To remove a user together with their posts, match the posts too and delete both:
+
+```cypher
+MATCH (u:User {email: $email})
+OPTIONAL MATCH (u)-[:AUTHORED]->(p:Post)
+DETACH DELETE u, p
+```
+
+`OPTIONAL MATCH` keeps the user in the result even when they have no posts, so they are still
+deleted.
+
+## Delete only relationships
+
+Match the relationship into a variable and `DELETE` it. Both nodes stay:
+
+```cypher
+MATCH (:User {email: $from})-[f:FOLLOWS]->(:User {email: $to})
+DELETE f
+```
+
+All relationships of one node, of any type and direction:
+
+```cypher
+MATCH (u:User {email: $email})-[r]-()
+DELETE r
+```
+
+## Delete many nodes and get a count
+
+```cypher
+MATCH (p:Post)
+WHERE p.published = false
+DETACH DELETE p
+RETURN count(*) AS deleted
+```
+
+## Delete large sets in batches
+
+One transaction holds everything it deletes in memory until it commits. For large deletes, split
+the work with `CALL { … } IN TRANSACTIONS`:
+
+```cypher
+MATCH (p:Post)
+WHERE p.published = false
+CALL (p) {
+  DETACH DELETE p
+} IN TRANSACTIONS OF 1000 ROWS
+```
+
+`CALL (p) { … }` is the variable-scope syntax of recent Neo4j 5 releases; on older 5.x versions
+write `CALL { WITH p DETACH DELETE p } IN TRANSACTIONS OF 1000 ROWS`. Either way, the statement must
+run in an **implicit (auto-commit) transaction**: in Neo4j Browser and `cypher-shell` that is the
+default, and from a driver it means `session.run`, not `executeWrite`. Inside an explicit
+transaction Neo4j rejects it: `A query with 'CALL { ... } IN TRANSACTIONS' can only be executed in an implicit transaction`.
+
+To empty a whole development database: `MATCH (n) DETACH DELETE n`. This also deletes data your
+tools keep in the graph, such as Cyphra's `__CyphraMigration` nodes, so the next
+`cyphra migrate deploy` re-runs every migration. Constraints and indexes are not deleted.
+
+## In Cyphra
+
+`delete` runs `DETACH DELETE` on one node, found by an `@id` or `@unique` field, and returns it as it
+was. `deleteMany` takes any filter and returns a count:
+
+```ts
+import { db } from "./db.js";
+
+const removed = await db.user.delete({ where: { email: "alice@acme.io" } });
+// removed.email === "alice@acme.io"; throws NotFoundError if no user matches
+
+const { count } = await db.post.deleteMany({ where: { published: false } });
+```
+
+Cyphra does not cascade: `db.user.delete` leaves the user's posts in place, like `DETACH DELETE`.
+Delete owned nodes yourself, in one transaction so both deletes succeed or neither does:
+
+```ts
+await db.$transaction(async (tx) => {
+  await tx.post.deleteMany({ where: { author: { is: { email: "alice@acme.io" } } } });
+  await tx.user.delete({ where: { email: "alice@acme.io" } });
+});
+```
+
+To remove a relationship and keep both nodes, `disconnect` it:
+
+```ts
+await db.user.update({
+  where: { email: "bob@acme.io" },
+  data: { following: { disconnect: { email: "alice@acme.io" } } },
+});
+```
+
+On a to-one relation, `disconnect: true` removes the edge: `db.post.update({ where: { id }, data: { author: { disconnect: true } } })`.
+
+### Batched deletes from TypeScript
+
+`db.$cypher` runs inside a managed write transaction, so `CALL { … } IN TRANSACTIONS` fails there
+with the "implicit transaction" error above. Run it on a session from the underlying client instead:
+
+```ts
+await db.$client.withSession((session) =>
+  session.run(`
+    MATCH (p:Post) WHERE p.published = false
+    CALL (p) { DETACH DELETE p } IN TRANSACTIONS OF 1000 ROWS
+  `),
+);
+```
+
+## Related
+
+- [Typed client: writing](/client#writing)
+- [Create a relationship between existing nodes](/cypher/create-relationship)
+- [Runtime](/runtime): sessions and transactions on `CyphraClient`

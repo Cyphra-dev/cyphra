@@ -1,0 +1,45 @@
+---
+title: "Neo4j guides for TypeScript frameworks"
+sidebarTitle: Guides
+description: "Step-by-step guides to use Neo4j from Next.js, NestJS and Bun with Cyphra's typed client, and to deploy a Neo4j-backed app on Vercel."
+---
+
+import { Cards } from "nextra/components";
+import { CollectionJsonLd } from "../../components/seo/page-jsonld";
+import { GUIDES_COLLECTION } from "./collection";
+
+# Guides
+
+How to use Neo4j from the TypeScript framework you already have, with Cyphra's
+[typed client](/client). Each guide was run end to end on a fresh project against Neo4j 5, and says
+which versions it was tested with.
+
+<Cards>
+  <Cards.Card title="Neo4j with Next.js" href="/guides/nextjs" />
+  <Cards.Card title="Deploy a Neo4j app on Vercel" href="/guides/vercel" />
+  <Cards.Card title="Neo4j with NestJS" href="/guides/nestjs" />
+  <Cards.Card title="Neo4j with Bun" href="/guides/bun" />
+</Cards>
+
+## What every guide has in common
+
+- **One client per process.** `createClient` opens a Neo4j driver with a connection pool. Create
+  it once and share it; each guide shows the idiomatic place for that in its framework.
+- **Credentials in the environment.** `NEO4J_URI`, `NEO4J_USERNAME` and `NEO4J_PASSWORD`, written
+  for you by `cyphra dev` locally, set by you in production.
+- **Server side only.** The driver and the credentials never reach a browser bundle.
+- **Migrations before the app.** `cyphra migrate deploy` applies pending
+  [migrations](/migrations) before new code starts using the schema.
+- **Neo4j 5.6 or later**, for example Neo4j Aura, [Cyphra Cloud](/cloud) or the `neo4j:5` Docker
+  image that `cyphra dev` starts.
+
+## Cypher how-tos
+
+Questions about Cypher itself, such as how to upsert, paginate or delete a node with its
+relationships, are answered in the [Cypher how-tos](/cypher), in plain Cypher first and then with
+Cyphra.
+
+New to Cyphra? Start with [Getting started](/getting-started), or see how it compares with other
+[Neo4j libraries for TypeScript](/compare).
+
+<CollectionJsonLd {...GUIDES_COLLECTION} />

@@ -200,4 +200,39 @@ export function collectionPage({
   };
 }
 
+export type HowToStep = { name: string; text: string; anchor: string };
+
+/**
+ * HowTo for a guide whose steps are visible on the page: each step's `name` is the text of an H3
+ * inside the page's `<Steps>`, and `anchor` its heading id, so every step links to what it describes.
+ */
+export function howTo({
+  path,
+  name,
+  description,
+  steps,
+}: {
+  path: string;
+  name: string;
+  description: string;
+  steps: HowToStep[];
+}) {
+  return {
+    "@context": CONTEXT,
+    "@type": "HowTo",
+    "@id": `${absoluteUrl(path)}#howto`,
+    name,
+    description,
+    inLanguage: SITE.language,
+    isPartOf: { "@id": WEBSITE_ID },
+    step: steps.map((s, i) => ({
+      "@type": "HowToStep",
+      position: i + 1,
+      name: s.name,
+      text: s.text,
+      url: `${absoluteUrl(path)}#${s.anchor}`,
+    })),
+  };
+}
+
 export { CONTEXT };
