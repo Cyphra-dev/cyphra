@@ -1,5 +1,16 @@
 # cyphra
 
+## 0.2.2
+
+### Patch Changes
+
+- e7419f9: Package metadata: npm pages now link to www.cyphra.dev (instead of the old cyphra-doc.vercel.app) and describe Cyphra as the TypeScript ORM for Neo4j, with matching keywords.
+- Updated dependencies [e7419f9]
+  - @cyphra/runtime@0.2.2
+  - @cyphra/schema@0.2.2
+  - @cyphra/migrator@0.2.2
+  - @cyphra/query@0.2.2
+
 ## 0.2.1
 
 ### Patch Changes
