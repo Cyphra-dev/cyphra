@@ -23,4 +23,11 @@ const withNextra = nextra({
 export default withNextra({
   reactStrictMode: true,
   eslint: { ignoreDuringBuilds: true },
+  // `<page>.md` serves the plain-Markdown version of a page (app/md/[...slug]/route.ts).
+  async rewrites() {
+    return [
+      { source: "/:a([a-z0-9-]+)\\.md", destination: "/md/:a" },
+      { source: "/:a([a-z0-9-]+)/:b([a-z0-9-]+)\\.md", destination: "/md/:a/:b" },
+    ];
+  },
 });

@@ -20,6 +20,8 @@
     "audit": "pnpm audit --audit-level=high",
     "doc:dev": "pnpm --filter cyphra-doc dev",
     "doc:build": "pnpm --filter cyphra-doc build",
+    "doc:lint-content": "pnpm --filter cyphra-doc lint:content",
+    "doc:seo-audit": "pnpm --filter cyphra-doc seo:audit",
     "example:basic": "pnpm --filter cyphra-example-basic start",
     "changeset": "changeset",
     "example:blog": "pnpm --filter cyphra-example-blog start"

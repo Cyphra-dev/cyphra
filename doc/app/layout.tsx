@@ -10,6 +10,8 @@ import { Analytics } from "@vercel/analytics/next";
 import { AutoEvents } from "../components/auto-events";
 import { LINKS, SITE_URL } from "../components/links";
 import { Logo } from "../components/logo";
+import { JsonLd } from "../components/seo/json-ld";
+import { siteGraph } from "../components/seo/structured-data";
 import { SiteFooter } from "../components/site-footer";
 
 // Type system (see DESIGN.md): Schibsted Grotesk for display, Inter for text, Geist Mono for code.
@@ -44,7 +46,10 @@ export const metadata: Metadata = {
   applicationName: "Cyphra",
   keywords: ["Neo4j", "ORM", "TypeScript", "Cypher", "graph database", "migrations", "Prisma"],
   // "./" resolves against each route, so every page gets its own canonical URL.
-  alternates: { canonical: "./" },
+  alternates: {
+    canonical: "./",
+    types: { "application/rss+xml": [{ url: "/feed.xml", title: "Cyphra blog" }] },
+  },
   openGraph: { type: "website", siteName: "Cyphra", url: "./", locale: "en_US" },
   twitter: { card: "summary_large_image" },
 };
@@ -83,6 +88,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
         backgroundColor={{ light: "#F6F5F1", dark: "#050505" }}
       />
       <body>
+        <JsonLd data={siteGraph()} />
         <Layout
           navbar={
             <Navbar logo={<Logo />} logoLink="/" projectLink={LINKS.github}>

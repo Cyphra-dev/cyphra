@@ -1,33 +1,40 @@
-import { readdirSync, statSync } from "node:fs";
-import { join, relative } from "node:path";
 import type { MetadataRoute } from "next";
+import { getPosts, getTerms } from "../lib/content";
+import { getDocPages } from "../lib/docs";
+import { absoluteUrl } from "../lib/site";
 
-const BASE = "https://www.cyphra.dev";
-const APP_DIR = join(process.cwd(), "app");
-
-// Every docs route is an app/**/page.mdx file; walk them at build time so new
-// pages land in the sitemap without editing this file.
-function routes(dir: string): string[] {
-  const out: string[] = [];
-  for (const name of readdirSync(dir)) {
-    const full = join(dir, name);
-    const st = statSync(full);
-    if (st.isDirectory()) out.push(...routes(full));
-    else if (/^page\.mdx?$/.test(name)) {
-      const rel = relative(APP_DIR, dir).split("\\").join("/");
-      out.push(rel ? `/${rel}` : "");
-    }
-  }
-  return out;
-}
-
+// Docs pages are every app/**/page.mdx (walked at build time, so new pages land here without
+// editing this file); blog posts and glossary terms come from content/.
 export default function sitemap(): MetadataRoute.Sitemap {
-  // No lastModified: file mtimes on Vercel are the checkout time, not edits.
-  return routes(APP_DIR)
-    .sort()
-    .map((path) => ({
-      url: `${BASE}${path}`,
+  const posts = getPosts();
+  const terms = getTerms();
+  // No lastModified on docs pages: file mtimes on Vercel are the checkout time, not edits.
+  const docs: MetadataRoute.Sitemap = getDocPages().map((p) => ({
+    url: absoluteUrl(p.route),
+    changeFrequency: "weekly",
+    priority: p.route === "/" ? 1 : 0.7,
+  }));
+  const latest = posts[0]?.updated ?? posts[0]?.date;
+  return [
+    ...docs,
+    {
+      url: absoluteUrl("/blog"),
+      ...(latest ? { lastModified: latest } : {}),
       changeFrequency: "weekly",
-      priority: path === "" ? 1 : 0.7,
-    }));
+      priority: 0.6,
+    },
+    ...posts.map((p) => ({
+      url: absoluteUrl(p.path),
+      lastModified: p.updated ?? p.date,
+      changeFrequency: "monthly" as const,
+      priority: 0.6,
+    })),
+    { url: absoluteUrl("/glossary"), changeFrequency: "monthly", priority: 0.5 },
+    ...terms.map((t) => ({
+      url: absoluteUrl(t.path),
+      lastModified: t.updated ?? t.date,
+      changeFrequency: "monthly" as const,
+      priority: 0.5,
+    })),
+  ];
 }
