@@ -154,8 +154,11 @@ Eyebrows start with `(→` in signal: the mark as a bullet.
 - **Window.** A code card with a 40 px bar showing the filename in mono, and an optional pill badge.
   No traffic-light dots.
 - **Editor.** Window + tabs (active tab has a 2 px signal top rule), line numbers, a status bar.
-- **Graph diagram.** Pill nodes `(name:Label)` in mono, hairline edges, signal arrowheads, relationship
-  types in small caps, typed edge properties as a signal-tinted chip.
+- **Property graph.** Small circle nodes (users filled ink, others hollow) with mono `name:Label`
+  labels, 1 px edges, signal chevron arrowheads, relationship types set along the edge in small mono
+  caps. Signal only on arrowheads and on the edges a query matches.
+- **Schema graph.** Node models as cards (`:User` with typed fields), relationships as 1 px arrows,
+  typed edge properties as a signal-tinted chip.
 - **Cards and bento tiles.** Surface fill, 1 px border, 14 px radius, border darkens on hover.
 - **Pricing plan.** Mono plan name, display price, a spec table (Memory / Storage / Backups) aligned
   across plans. The recommended plan gets an ink outline and a 2 px signal rule on top.
@@ -167,8 +170,13 @@ Eyebrows start with `(→` in signal: the mark as a bullet.
 
 Purposeful and quiet; CSS and SVG only, no JS libraries.
 
-- Hero editor: typing, an autocomplete popover, then the inferred type on hover. 11 s loop.
-- Graph edges draw in as they scroll into view; a short signal dash travels each edge.
+- Hero scene (`components/landing/hero-graph.tsx`): an editor and a property graph in one frame.
+  The graph draws itself in on load; idle pulses travel a few relationships; the query is typed
+  with autocomplete; when it "runs", the result appears and the matched
+  `(:User)-[:AUTHORED]->(:Post)` path turns signal while the rest steps back. Every timed animation
+  shares one `--cycle` (11 s) and starts on the same frame, so code and graph stay in sync with no
+  JavaScript. Under 640 px a smaller graph is used and the graph leads the editor.
+- Schema-section edges draw in as they scroll into view; a short signal dash travels each edge.
 - Sections fade up 18 px on entry (scroll-driven `animation-timeline: view()`, progressive).
 - The Cypher pattern band scrolls slowly.
 - Only `transform`, `opacity` and stroke properties animate: no layout shift.

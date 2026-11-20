@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { highlight, type CodeLang } from "../../lib/highlight";
 import { LINKS } from "../links";
 import { CopyCommand } from "./copy-command";
+import { DESKTOP_GRAPH, MOBILE_GRAPH, PropertyGraph } from "./hero-graph";
 import styles from "./landing.module.css";
 
 const APP_URL = "https://app.cyphra.dev";
@@ -143,173 +144,195 @@ function Eyebrow({ children }: { children: ReactNode }) {
   );
 }
 
-/* ---------- Hero editor: autocomplete, then the inferred type on hover ---------- */
+/* ---------- Hero scene: a query in the editor, the graph it matches ---------- */
 
 const T = ({ k, children }: { k: string; children: ReactNode }) => (
   <span className={styles[`t_${k}`]}>{children}</span>
 );
 
-function HeroEditor() {
+/** Editor + live graph in one frame. Both animate on the same CSS cycle (--cycle): the query is
+ *  typed with autocomplete, it "runs", the result appears, and the matched path lights up. */
+function HeroScene() {
   return (
-    <figure className={styles.editor} aria-label="Editor showing a typed Cyphra query">
-      <div className={styles.editorTabs}>
-        <span className={styles.tab}>schema.cyphra</span>
-        <span className={`${styles.tab} ${styles.tabActive}`}>main.ts</span>
-        <span className={styles.tab}>cyphra.gen.ts</span>
+    <figure
+      className={styles.scene}
+      aria-label="A typed Cyphra query next to the Neo4j graph it reads"
+    >
+      <div className={styles.sceneEditor}>
+        <div className={styles.editorTabs}>
+          <span className={styles.tab}>schema.cyphra</span>
+          <span className={`${styles.tab} ${styles.tabActive}`}>main.ts</span>
+          <span className={styles.tab}>cyphra.gen.ts</span>
+        </div>
+        <pre className={styles.editorCode}>
+          <code>
+            <span className={styles.ln}>
+              <T k="kw">import</T> {"{ createClient }"} <T k="kw">from</T>{" "}
+              <T k="str">&quot;./cyphra.gen.js&quot;</T>;
+            </span>
+            <span className={styles.ln}> </span>
+            <span className={styles.ln}>
+              <T k="kw">const</T> db = <T k="fn">createClient</T>
+              {"({ uri, user, password });"}
+            </span>
+            <span className={styles.ln}> </span>
+            <span className={`${styles.ln} ${styles.lnActive}`}>
+              <T k="kw">const</T> users = <T k="kw">await</T>{" "}
+              <span className={styles.typeA}>db.user.</span>
+              <span className={styles.typeB}>
+                <T k="fn">findMany</T>({"{"}
+              </span>
+              <span className={styles.caret} aria-hidden="true" />
+              <span className={styles.popover} aria-hidden="true">
+                <span className={`${styles.popItem} ${styles.popSel}`}>
+                  <i>ƒ</i>findMany<em>(args?) → Promise&lt;User[]&gt;</em>
+                </span>
+                <span className={styles.popItem}>
+                  <i>ƒ</i>findUnique<em>(args) → Promise&lt;User | null&gt;</em>
+                </span>
+                <span className={styles.popItem}>
+                  <i>ƒ</i>findFirst<em>(args?) → Promise&lt;User | null&gt;</em>
+                </span>
+                <span className={styles.popItem}>
+                  <i>ƒ</i>create<em>(args) → Promise&lt;User&gt;</em>
+                </span>
+              </span>
+            </span>
+            <span className={`${styles.ln} ${styles.rest}`}>
+              {"  include: { "}
+              <span className={styles.syncTarget}>posts</span>
+              {": "}
+              <T k="kw">true</T>
+              {" },"}
+            </span>
+            <span className={`${styles.ln} ${styles.rest}`}>{"});"}</span>
+          </code>
+        </pre>
+        <div className={styles.result} aria-hidden="true">
+          <div className={styles.resultHead}>
+            <span>users</span>
+            <span>3 rows</span>
+          </div>
+          <pre>
+            {"alice  posts: ["}
+            <T k="str">p1</T>
+            {", "}
+            <T k="str">p2</T>
+            {"]\nbob    posts: []\ncarol  posts: ["}
+            <T k="str">p3</T>
+            {"]"}
+          </pre>
+        </div>
+        <figcaption className={styles.editorStatus}>
+          <span>
+            <i className={styles.statusDot} aria-hidden="true" />
+            cyphra.gen.ts up to date
+          </span>
+          <span>TypeScript · 0 problems</span>
+        </figcaption>
       </div>
-      <pre className={styles.editorCode}>
-        <code>
-          <span className={styles.ln}>
-            <T k="kw">import</T> {"{ createClient }"} <T k="kw">from</T>{" "}
-            <T k="str">&quot;./cyphra.gen.js&quot;</T>;
+
+      <div className={styles.sceneGraph}>
+        <div className={styles.graphBar}>
+          <span>neo4j://localhost:7687</span>
+          <span className={styles.matchChip}>(:User)-[:AUTHORED]-&gt;(:Post)</span>
+        </div>
+        <div className={styles.graphCanvas}>
+          <PropertyGraph data={DESKTOP_GRAPH} className={styles.pgDesktop} />
+          <PropertyGraph data={MOBILE_GRAPH} className={styles.pgMobile} />
+        </div>
+        <div className={styles.graphFoot}>
+          <span>
+            <i className={styles.legendNode} aria-hidden="true" />
+            node
+            <i className={styles.legendEdge} aria-hidden="true" />
+            relationship
           </span>
-          <span className={styles.ln}> </span>
-          <span className={styles.ln}>
-            <T k="kw">const</T> db = <T k="fn">createClient</T>
-            {"({ uri, user, password });"}
-          </span>
-          <span className={styles.ln}> </span>
-          <span className={`${styles.ln} ${styles.lnActive}`}>
-            <T k="kw">const</T> <span className={styles.hoverTarget}>users</span> ={" "}
-            <T k="kw">await</T> <span className={styles.typeA}>db.user.</span>
-            <span className={styles.typeB}>
-              <T k="fn">findMany</T>({"{"}
-            </span>
-            <span className={styles.caret} aria-hidden="true" />
-            <span className={styles.popover} aria-hidden="true">
-              <span className={`${styles.popItem} ${styles.popSel}`}>
-                <i>ƒ</i>findMany<em>(args?) → Promise&lt;User[]&gt;</em>
-              </span>
-              <span className={styles.popItem}>
-                <i>ƒ</i>findUnique<em>(args) → Promise&lt;User | null&gt;</em>
-              </span>
-              <span className={styles.popItem}>
-                <i>ƒ</i>findFirst<em>(args?) → Promise&lt;User | null&gt;</em>
-              </span>
-              <span className={styles.popItem}>
-                <i>ƒ</i>create<em>(args) → Promise&lt;User&gt;</em>
-              </span>
-            </span>
-            <span className={styles.tooltip} aria-hidden="true">
-              <T k="kw">const</T> users: {"{"}
-              {"\n  "}id: <T k="type">string</T>; email: <T k="type">string</T>;{"\n  "}name:{" "}
-              <T k="type">string</T> | <T k="type">null</T>;{"\n  "}posts: <T k="type">Post</T>[];
-              {"\n"}
-              {"}[]"}
-            </span>
-          </span>
-          <span className={`${styles.ln} ${styles.rest}`}>
-            {"  where: { email: { "}
-            <T k="fn">endsWith</T>: <T k="str">&quot;@acme.dev&quot;</T>
-            {" } },"}
-          </span>
-          <span className={`${styles.ln} ${styles.rest}`}>
-            {"  include: { posts: "}
-            <T k="kw">true</T>
-            {" },"}
-          </span>
-          <span className={`${styles.ln} ${styles.rest}`}>{"});"}</span>
-        </code>
-      </pre>
-      <figcaption className={styles.editorStatus}>
-        <span>
-          <i className={styles.statusDot} aria-hidden="true" />
-          cyphra.gen.ts up to date
-        </span>
-        <span>TypeScript · 0 problems</span>
-      </figcaption>
+          <span className={styles.matchNote}>include.posts → [:AUTHORED]</span>
+        </div>
+      </div>
     </figure>
   );
 }
 
-/* ---------- The graph your schema describes ---------- */
+/* ---------- The schema as a graph of types ---------- */
 
-type GNode = { id: string; x: number; y: number; name: string; label: string };
-const GNODES: GNode[] = [
-  { id: "alice", x: 40, y: 56, name: "alice", label: ":User" },
-  { id: "bob", x: 40, y: 300, name: "bob", label: ":User" },
-  { id: "p1", x: 380, y: 56, name: "p1", label: ":Post" },
-  { id: "p2", x: 380, y: 300, name: "p2", label: ":Post" },
-];
-const NODE_W = 148;
-const NODE_H = 44;
-
-function SchemaGraph() {
-  const c = (n: GNode) => ({ x: n.x + NODE_W / 2, y: n.y + NODE_H / 2 });
-  const [alice, bob, p1, p2] = GNODES;
+function SchemaModel() {
+  const field = (x: number, y: number, name: string, type: string) => (
+    <text x={x} y={y} className={styles.smField}>
+      {name} <tspan className={styles.smType}>{type}</tspan>
+    </text>
+  );
   return (
     <svg
       className={styles.graph}
-      viewBox="24 36 528 324"
+      viewBox="12 24 496 220"
       role="img"
-      aria-label="Graph: alice AUTHORED p1, alice FOLLOWS bob since 2024, bob AUTHORED p2"
+      aria-label="Schema graph: User AUTHORED Post, and User FOLLOWS User with a since DateTime property"
     >
-      <defs>
-        <marker
-          id="cy-head"
-          viewBox="0 0 10 10"
-          refX="9"
-          refY="5"
-          markerWidth="9"
-          markerHeight="9"
-          orient="auto-start-reverse"
-        >
-          <path
-            d="M1 1 9 5 1 9"
-            fill="none"
-            stroke="var(--cy-signal)"
-            strokeWidth="1.8"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </marker>
-      </defs>
-      {/* Edges: drawn, then a signal packet travels along each one. */}
-      {[
-        {
-          d: `M${alice.x + NODE_W} ${c(alice).y}H${p1.x - 4}`,
-          label: "AUTHORED",
-          lx: 282,
-          ly: 66,
-          a: "middle" as const,
-        },
-        {
-          d: `M${bob.x + NODE_W} ${c(bob).y}H${p2.x - 4}`,
-          label: "AUTHORED",
-          lx: 282,
-          ly: 310,
-          a: "middle" as const,
-        },
-        {
-          d: `M${c(alice).x} ${alice.y + NODE_H}V${bob.y - 4}`,
-          label: "FOLLOWS",
-          lx: 128,
-          ly: 160,
-          a: "start" as const,
-        },
-      ].map((e, i) => (
-        <g key={e.d} className={styles.gEdge} style={{ ["--i" as string]: i }}>
-          <path d={e.d} className={styles.gLine} markerEnd="url(#cy-head)" pathLength={1} />
-          <path d={e.d} className={styles.gPacket} pathLength={1} />
-          <text x={e.lx} y={e.ly} className={styles.gRel} textAnchor={e.a}>
-            {e.label}
-          </text>
-        </g>
-      ))}
-      {/* A typed relationship property, read back as alice.following[0].$edge.since */}
-      <g className={styles.gProp}>
-        <rect x="126" y="176" width="112" height="30" rx="6" />
-        <text x="138" y="195">
-          since: <tspan className={styles.gPropType}>Date</tspan>
+      {/* AUTHORED: User → Post */}
+      <g className={styles.gEdge} style={{ ["--i" as string]: 0 }}>
+        <path d="M196 170H322" className={styles.gLine} pathLength={1} />
+        <path d="M196 170H322" className={styles.gPacket} pathLength={1} />
+        <path d="M315 164.5 322 170 315 175.5" className={styles.smHead} />
+        <text x="259" y="162" textAnchor="middle" className={styles.gRel}>
+          AUTHORED
         </text>
       </g>
-      {GNODES.map((n) => (
-        <g key={n.id} className={styles.gNode}>
-          <rect x={n.x} y={n.y} width={NODE_W} height={NODE_H} rx={NODE_H / 2} />
-          <text x={n.x + NODE_W / 2} y={n.y + 27} textAnchor="middle">
-            ({n.name}
-            <tspan className={styles.gLabel}>{n.label}</tspan>)
+      {/* FOLLOWS: User → User, a typed relationship */}
+      <g className={styles.gEdge} style={{ ["--i" as string]: 1 }}>
+        <path
+          d="M64 112V70a14 14 0 0 1 14-14h72a14 14 0 0 1 14 14v38"
+          className={styles.gLine}
+          pathLength={1}
+        />
+        <path
+          d="M64 112V70a14 14 0 0 1 14-14h72a14 14 0 0 1 14 14v38"
+          className={styles.gPacket}
+          pathLength={1}
+        />
+        <path d="M158.5 101 164 108 169.5 101" className={styles.smHead} />
+        <text x="192" y="60" className={styles.gRel}>
+          FOLLOWS
+        </text>
+      </g>
+      <g className={styles.gProp}>
+        <rect x="44" y="42" width="140" height="28" rx="6" />
+        <text x="56" y="60">
+          since: <tspan className={styles.gPropType}>DateTime</tspan>
+        </text>
+      </g>
+      {/* Node models */}
+      {[
+        {
+          x: 24,
+          label: "User",
+          fields: [
+            ["id", "String"],
+            ["email", "String"],
+            ["name", "String?"],
+          ],
+        },
+        {
+          x: 326,
+          label: "Post",
+          fields: [
+            ["id", "String"],
+            ["title", "String"],
+            ["published", "Boolean"],
+          ],
+        },
+      ].map((m) => (
+        <g key={m.label} className={styles.smNode}>
+          <rect x={m.x} y="112" width="170" height="120" rx="12" />
+          <path d={`M${m.x} 146H${m.x + 170}`} className={styles.smRule} />
+          <text x={m.x + 16} y="134" className={styles.smTitle}>
+            <tspan className={styles.smColon}>:</tspan>
+            {m.label}
           </text>
+          {m.fields.map(([n, t], i) => (
+            <g key={n}>{field(m.x + 16, 170 + i * 22, n, t)}</g>
+          ))}
         </g>
       ))}
     </svg>
@@ -377,20 +400,17 @@ export function Landing() {
       {/* Hero */}
       <section className={styles.hero}>
         <div className={styles.heroGrid} aria-hidden="true" />
-        <div className={`${styles.container} ${styles.heroInner}`}>
+        <div className={styles.container}>
           <div className={styles.heroCopy}>
             <Link href="/migrations" className={styles.announce}>
               <span className={styles.announceTag}>v0.2</span>
               Migrations generated from schema diffs
               <Arrow />
             </Link>
-            <h1 className={styles.title}>
-              The typed ORM <br className={styles.brDesktop} />
-              for Neo4j.
-            </h1>
+            <h1 className={styles.title}>The typed ORM for Neo4j.</h1>
             <p className={styles.lede}>
-              Describe your graph in one <code>.cyphra</code> schema. Get a TypeScript client that
-              knows every node, relationship and property, and migrations from every change.
+              Describe your graph in one <code>.cyphra</code> schema. Query its nodes and
+              relationships with a TypeScript client that knows every property.
             </p>
             <div className={styles.ctaRow}>
               <Link
@@ -413,7 +433,7 @@ export function Landing() {
               </li>
             </ul>
           </div>
-          <HeroEditor />
+          <HeroScene />
         </div>
       </section>
 
@@ -458,10 +478,10 @@ export function Landing() {
               <Code code={SCHEMA} lang="cyphra" />
             </Window>
             <div className={`${styles.graphPanel} ${styles.reveal}`}>
-              <SchemaGraph />
+              <SchemaModel />
               <p className={styles.graphCaption}>
-                <code>Follows</code> is a relationship model, so <code>since</code> is typed on the
-                edge.
+                Your schema is a graph too. <code>Follows</code> is a relationship model, so{" "}
+                <code>since</code> is typed on the edge.
               </p>
             </div>
           </div>
