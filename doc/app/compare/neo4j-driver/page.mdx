@@ -1,0 +1,154 @@
+---
+title: "Cyphra vs neo4j-driver: ORM or raw driver?"
+sidebarTitle: "Cyphra vs neo4j-driver"
+description: "Should you use the official neo4j-driver directly or an ORM like Cyphra? What the driver gives you, what Cyphra adds on top of it, and when the raw driver wins."
+---
+
+import { Callout, Cards } from "nextra/components";
+
+# Cyphra vs neo4j-driver
+
+**Use [`neo4j-driver`](https://neo4j.com/docs/javascript-manual/current/) directly when your code
+is mostly hand-written Cypher and you want no extra layer. Use Cyphra when you want typed
+queries generated from a schema, nested writes and migrations.** It is not either/or: Cyphra runs
+on top of the official driver, and its lower layers (`db.$cypher`, the query builder, the runtime)
+are there for the queries you would rather write by hand.
+
+## What the driver gives you
+
+`neo4j-driver` is Neo4j's official JavaScript driver (6.3.2 on npm, Apache-2.0). It speaks the
+[Bolt protocol](/glossary/bolt-protocol), handles connection pooling and routing, and offers
+`driver.executeQuery()`, sessions, and managed transactions with `executeRead` / `executeWrite`
+that retry on transient errors. It ships TypeScript declarations, and since 6.1 it has stable
+[object mapping](https://neo4j.com/docs/javascript-manual/current/object-mapping/): rules that
+hydrate records into your own classes.
+
+What it does not try to know is your graph. This runs with `neo4j-driver` 6.3.2:
+
+```ts
+import neo4j from "neo4j-driver";
+
+const driver = neo4j.driver(
+  process.env.NEO4J_URI!,
+  neo4j.auth.basic(process.env.NEO4J_USERNAME!, process.env.NEO4J_PASSWORD!),
+);
+
+const { records } = await driver.executeQuery(
+  `MATCH (p:Product)-[:PART_OF]->(c:Category)
+   RETURN c.categoryName AS category, count(p) AS products`,
+  {},
+  { routing: neo4j.routing.READ },
+);
+
+for (const record of records) {
+  const category = record.get("category"); // any
+  const products = record.get("products"); // any; at runtime an Integer object, not a number
+}
+
+records[0]?.get("categry"); // compiles; throws at runtime: "This record has no field with key 'categry'"
+```
+
+Three things to handle yourself:
+
+- **Types.** `Record` is generic, but without a type argument `record.get(key)` is `any`. You can
+  pass a record shape to `executeQuery`, or map to classes with object mapping rules; either way
+  you write the types next to the query, and nothing checks them against the database.
+- **Integers.** Cypher integers are 64-bit, so the driver returns its own `Integer` class by
+  default. The `disableLosslessIntegers` option returns JavaScript numbers instead, and the driver
+  docs warn that this "can lead to a loss of precision".
+- **Schema.** The driver has no notion of a model, constraints or migrations. You write the
+  `CREATE CONSTRAINT` statements and decide when they run.
+
+## What Cyphra adds
+
+Cyphra's runtime wraps the same driver (`neo4j-driver` `^5.28` in `@cyphra/runtime`), and adds:
+
+- **A typed client generated from a schema.** Arguments and results are checked against
+  `schema.cyphra`; a misspelled field is a compile error, not a runtime one
+  ([Typed client](/client)).
+- **Value mapping.** `Int` reads as `number` and throws if the value is outside the safe integer
+  range instead of losing precision; `DateTime` and `Date` read as JavaScript `Date`; absent
+  optional properties read as `null`.
+- **Nested writes in one transaction**, and `$transaction` for your own multi-step writes.
+- **Migrations** generated from schema changes, tracked in the database ([Migrations](/migrations)).
+- **A CLI** for a local Neo4j in Docker, introspection of an existing database, and schema DDL
+  ([CLI](/cli)).
+
+The same aggregation through Cyphra, when you want it as Cypher:
+
+```ts
+const rows = await db.$cypher<{ category: string; products: number }>`
+  MATCH (p:Product)-[:PART_OF]->(c:Category)
+  RETURN c.categoryName AS category, count(p) AS products
+`;
+// products is a number: integers are converted on read
+```
+
+The type argument of `$cypher` is a declaration, like a record shape on the driver. Where Cyphra's
+types are checked end to end is the generated client:
+
+```ts
+const categories = await db.category.findMany({
+  select: { categoryName: true, products: { select: { productName: true } } },
+});
+// { categoryName: string | null; products: { productName: string | null }[] }[]
+```
+
+## Cost of the extra layer
+
+Cyphra is not free, and it is fair to list what you take on:
+
+- **A generation step.** `cyphra generate` runs after every schema change, and the generated file
+  belongs in your build.
+- **Neo4j 5.6 or later** for the typed client, which compiles relations to `COLLECT {}` and
+  `EXISTS {}` subqueries.
+- **Generated Cypher.** The client writes the queries for its operations. When a query needs a
+  specific shape for performance, write it yourself with `db.$cypher` or the driver.
+- **A younger project.** `cyphra` is at 0.2.1; the driver is maintained by Neo4j, Inc.
+
+## When to choose the raw driver
+
+- Your workload is mostly complex Cypher (variable-length paths, graph algorithms, heavy
+  aggregations) that an ORM would only pass through.
+- You are writing a library, a script or a small service and want one dependency.
+- You run a Neo4j server older than 5.6, or need a driver feature that Cyphra does not expose.
+- You already have types and value mapping you are happy with, for example through the driver's
+  object mapping.
+
+## When to choose Cyphra
+
+- Most of your queries are reads and writes of nodes and their relationships, and you want them
+  typed from one schema.
+- You want constraints, indexes and data changes versioned with your code.
+- You want both: the client for everyday CRUD and `db.$cypher` (or `db.$client` for sessions and
+  the driver) for the rest. See [Runtime](/runtime) and [Queries](/queries).
+
+<Callout type="info">
+  The post [Typed Neo4j queries in TypeScript](/blog/typed-neo4j-queries-in-typescript) goes deeper
+  into where the driver's types stop and how Cyphra's generated types are built.
+</Callout>
+
+## More comparisons
+
+<Cards>
+  <Cards.Card title="Cyphra vs @neo4j/graphql" href="/compare/neo4j-graphql-library" />
+  <Cards.Card title="Cyphra vs neogma and neode" href="/compare/neogma-neode" />
+  <Cards.Card title="All comparisons" href="/compare" />
+</Cards>
+
+## Sources
+
+Checked on 2026-11-20.
+
+- Neo4j, [JavaScript driver manual](https://neo4j.com/docs/javascript-manual/current/):
+  [executeQuery](https://neo4j.com/docs/javascript-manual/current/query-simple/),
+  [transactions](https://neo4j.com/docs/javascript-manual/current/transactions/),
+  [data types](https://neo4j.com/docs/javascript-manual/current/data-types/) (`Integer`,
+  `disableLosslessIntegers`),
+  [object mapping](https://neo4j.com/docs/javascript-manual/current/object-mapping/)
+- GitHub, [neo4j-javascript-driver 6.1.0 release notes](https://github.com/neo4j/neo4j-javascript-driver/releases/tag/6.1.0):
+  "Stabilized Record Object Mapping"
+- npm registry, [`neo4j-driver`](https://www.npmjs.com/package/neo4j-driver): 6.3.2 published
+  2026-11-11, Apache-2.0, ships `types/index.d.ts`
+- The driver snippet above was type-checked and run with `neo4j-driver` 6.3.2 and TypeScript 5.9
+  against Neo4j 5; the comments show the observed types and runtime behavior.

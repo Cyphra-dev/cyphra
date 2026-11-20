@@ -1,0 +1,43 @@
+---
+title: "Neo4j libraries for TypeScript, compared"
+sidebarTitle: "Compare"
+description: "How Cyphra compares with Prisma, the Neo4j GraphQL Library, neogma, neode and the official neo4j-driver, and when each one is the better choice."
+---
+
+import { Cards } from "nextra/components";
+import { CollectionJsonLd } from "../../components/seo/page-jsonld";
+import { COMPARE_COLLECTION } from "./collection";
+
+# Neo4j libraries for TypeScript, compared
+
+There are a handful of ways to use Neo4j from TypeScript: the official driver, the Neo4j GraphQL
+Library, object-graph mappers such as neogma and neode, and Cyphra, a Prisma-style ORM with a
+schema file, a generated client and migrations. Each page below says what the other tool does
+well, where Cyphra differs, and when to choose the other one. Competitor facts are checked against
+their own docs, npm and GitHub, with sources at the bottom of each page.
+
+<Cards>
+  <Cards.Card title="Prisma for Neo4j: the Prisma-style ORM" href="/neo4j-orm" />
+  <Cards.Card title="Cyphra vs the Neo4j GraphQL Library" href="/compare/neo4j-graphql-library" />
+  <Cards.Card title="Cyphra vs neogma and neode" href="/compare/neogma-neode" />
+  <Cards.Card title="Cyphra vs neo4j-driver" href="/compare/neo4j-driver" />
+</Cards>
+
+## Which one fits
+
+| You want                                                      | Look at                                            |
+| ------------------------------------------------------------- | -------------------------------------------------- |
+| Prisma's workflow (schema, generate, migrate) on Neo4j        | [Cyphra](/neo4j-orm)                               |
+| A GraphQL API generated from type definitions                 | [`@neo4j/graphql`](/compare/neo4j-graphql-library) |
+| Models as TypeScript classes with value validation            | [neogma](/compare/neogma-neode)                    |
+| Hand-written Cypher with no extra layer                       | [`neo4j-driver`](/compare/neo4j-driver)            |
+| Constraints, indexes and data changes as versioned migrations | [Cyphra migrations](/migrations)                   |
+
+Prisma itself does not support Neo4j; the [Prisma-style ORM page](/neo4j-orm#prisma-and-neo4j)
+has the details and sources. Neo4j-OGM is a Java library, covered on the
+[neogma and neode page](/compare/neogma-neode#what-about-neo4j-ogm).
+
+New to the terms? Start with [ORM vs OGM](/glossary/orm-vs-ogm) and
+[property graph](/glossary/property-graph) in the glossary.
+
+<CollectionJsonLd {...COMPARE_COLLECTION} />

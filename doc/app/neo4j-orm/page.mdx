@@ -1,0 +1,288 @@
+---
+title: "Prisma for Neo4j: a TypeScript ORM for Neo4j"
+sidebarTitle: "Prisma-style ORM for Neo4j"
+description: "Prisma does not support Neo4j. Cyphra brings the same workflow to graphs: a schema file, a generated TypeScript client and migrations from schema changes."
+---
+
+import { Callout, Cards } from "nextra/components";
+import { FaqJsonLd } from "../../components/seo/page-jsonld";
+import { NEO4J_ORM_FAQ } from "./faq";
+
+# The Prisma-style ORM for Neo4j
+
+**Prisma does not support Neo4j**, and there is no official Prisma connector for graph databases.
+If you want the Prisma workflow on Neo4j (one schema file, a generated and fully typed TypeScript
+client, migrations generated from schema changes), that is what **Cyphra** is: an open-source
+TypeScript ORM for Neo4j, MIT licensed, with a client API that follows Prisma's naming
+(`findMany`, `include`, `select`, nested writes, `$transaction`).
+
+This page shows the whole flow with code taken from the Cyphra docs and the
+[blog example](https://github.com/Cyphra-dev/cyphra/tree/main/examples/blog), then maps the Prisma
+commands and calls you already know to their Cyphra equivalents.
+
+## Prisma and Neo4j
+
+Prisma ORM targets relational databases and MongoDB. Its
+[supported databases page](https://www.prisma.io/docs/orm/supported-databases), written
+for Prisma ORM 8, lists PostgreSQL, MongoDB, MySQL, MariaDB and SQLite, with SQL Server and
+CockroachDB marked "coming soon". Neo4j is not on it, and neither is any other graph database.
+
+The feature request for Neo4j support,
+[prisma/orm#1575](https://github.com/prisma/orm/issues/1575), was opened in January 2018 and closed
+as not planned in December 2024, with a maintainer writing that "supporting Neo4j is currently out
+of our foreseeable plans."
+
+The reasons are structural. Prisma's schema and query engine are built around tables (or documents)
+and foreign keys. A graph has things a table does not: relationships that are records of their own,
+with a type, a direction and properties. A Neo4j ORM has to model those directly, which is why
+Cyphra has its own schema language instead of reusing `schema.prisma`.
+
+## Schema, generate, query, migrate
+
+### 1. Describe the graph in `schema.cyphra`
+
+Nodes, the relationships between them, and decorators that become Neo4j constraints and indexes.
+A `relationship { … }` model types the properties stored on an edge. This is the schema of the
+blog example in the repository:
+
+```cyphra filename="schema.cyphra"
+node User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  createdAt DateTime @default(now())
+  posts     Post[]   @relationship(type: "AUTHORED", direction: OUT)
+  following User[]   @relationship(type: "FOLLOWS", direction: OUT)
+}
+
+node Post {
+  id        String   @id @default(uuid())
+  title     String
+  tags      String[]
+  published Boolean  @default(false)
+  author    User?    @relationship(type: "AUTHORED", direction: IN)
+}
+
+relationship Follows {
+  type "FOLLOWS"
+  from User
+  to User
+  since DateTime @default(now())
+}
+```
+
+The full syntax is on the [Schema](/schema) page.
+
+### 2. Generate the client
+
+```bash
+npm i cyphra
+npm i -D @cyphra/cli
+npx cyphra generate   # writes cyphra.gen.ts
+```
+
+`cyphra generate` writes one TypeScript file. Each node model becomes a delegate: `node User` is
+`db.user`, `node Post` is `db.post`.
+
+```ts
+import { createClient } from "./cyphra.gen.js";
+
+const db = createClient({
+  uri: process.env.NEO4J_URI!,
+  user: process.env.NEO4J_USERNAME!,
+  password: process.env.NEO4J_PASSWORD!,
+});
+```
+
+### 3. Query with types inferred from the schema
+
+```ts
+// One write transaction: a user, two posts, and a FOLLOWS edge with a typed `since`.
+const alice = await db.user.create({
+  data: {
+    email: "alice@acme.io",
+    name: "Alice",
+    posts: { create: [{ title: "Hello graph", published: true }, { title: "Draft" }] },
+    following: { connect: { email: "bob@acme.io" } },
+  },
+  include: { posts: true, following: true },
+});
+alice.posts[0]?.title; // string
+alice.following[0]?.$edge.since; // Date, from the Follows relationship model
+
+const authors = await db.user.findMany({
+  where: { posts: { some: { published: true } } },
+  select: { name: true, posts: { where: { published: true }, select: { title: true } } },
+  orderBy: { email: "asc" },
+});
+// { name: string | null; posts: { title: string }[] }[]
+
+await db.$transaction(async (tx) => {
+  const post = await tx.post.create({ data: { title: "Graphs in TypeScript" } });
+  await tx.post.update({
+    where: { id: post.id },
+    data: { author: { connect: { email: "alice@acme.io" } } },
+  });
+});
+```
+
+Typos are compile errors, and the result type follows `select` and `include`:
+
+```text
+error TS2561: Object literal may only specify known properties, but 'emial' does not exist
+in type 'WhereInput<CyphraTypeMap, "User">'. Did you mean to write 'email'?
+
+error TS2339: Property 'email' does not exist on type '{ name: string | null; }'.
+```
+
+Filters, nested writes, value mapping and errors are documented on the [Typed client](/client)
+page. The [typed queries post](/blog/typed-neo4j-queries-in-typescript) explains how the types are
+built.
+
+### 4. Generate migrations from schema changes
+
+Neo4j has no table schema, but it has [constraints](/glossary/constraint) and
+[indexes](/glossary/neo4j-index) that must follow your model, and existing data that must be fixed
+when the model changes. `cyphra migrate dev` diffs your schema against the last snapshot and writes
+a reviewable migration. For the schema above, the first one is:
+
+```js filename="migrations/20261120143911_init.mjs"
+// Generated by `cyphra migrate dev`. Review it before applying to shared databases.
+import { defineMigration } from "cyphra";
+
+export default defineMigration({
+  name: "20261120143911_init",
+  async up({ db }) {
+    // Create constraint User_id_id.
+    await db.execute(
+      "CREATE CONSTRAINT User_id_id IF NOT EXISTS FOR (n:`User`) REQUIRE n.`id` IS UNIQUE",
+    );
+
+    // Create constraint User_email_unique.
+    await db.execute(
+      "CREATE CONSTRAINT User_email_unique IF NOT EXISTS FOR (n:`User`) REQUIRE n.`email` IS UNIQUE",
+    );
+
+    // Create constraint Post_id_id.
+    await db.execute(
+      "CREATE CONSTRAINT Post_id_id IF NOT EXISTS FOR (n:`Post`) REQUIRE n.`id` IS UNIQUE",
+    );
+  },
+});
+```
+
+Later changes also generate data steps: a new field with a `@default` is backfilled on existing
+nodes, and a new required field without a default adds a guard that stops the migration if any
+node lacks it. Removed fields and models are written commented out, so deleting data is something
+you opt into. See [Migrations](/migrations) and the post on
+[constraints and indexes as code](/blog/neo4j-schema-migrations-constraints-as-code).
+
+```bash
+npx cyphra migrate dev --name init   # generate from schema changes, then apply
+npx cyphra migrate status            # pending, applied, modified; non-zero exit for CI
+npx cyphra migrate deploy            # production: apply pending migrations only
+```
+
+<Callout type="info">
+  Need a database? `npx cyphra dev` starts a local Neo4j 5 in Docker, bound to 127.0.0.1, and writes
+  `.env`. The [Getting started](/getting-started) guide walks through all of it from an empty
+  folder.
+</Callout>
+
+## Coming from Prisma
+
+The left column uses the names from the Prisma ORM 7
+[CLI](https://www.prisma.io/docs/orm/v7/reference/prisma-cli-reference) and
+[client](https://www.prisma.io/docs/orm/v7/reference/prisma-client-reference) references.
+
+| Prisma                                       | Cyphra                                                            |
+| -------------------------------------------- | ----------------------------------------------------------------- |
+| `schema.prisma`                              | `schema.cyphra`                                                   |
+| `model User { … }`                           | `node User { … }`                                                 |
+| `@relation(fields: […], references: […])`    | `@relationship(type: "AUTHORED", direction: OUT)`                 |
+| implicit or explicit many-to-many join table | a relationship; its properties go in a `relationship { … }` model |
+| `@id`, `@unique`, `@@index`                  | `@id`, `@unique`, `@index` (Neo4j constraints and range indexes)  |
+| `prisma generate`                            | `cyphra generate`                                                 |
+| `prisma migrate dev` / `deploy` / `status`   | `cyphra migrate dev` / `deploy` / `status`                        |
+| `prisma migrate diff`                        | `cyphra migrate diff`                                             |
+| `prisma db pull`                             | `cyphra pull`                                                     |
+| `prisma db push`                             | `cyphra push` (constraints and indexes only)                      |
+| `prisma.user.findMany({ where, include })`   | `db.user.findMany({ where, include })`                            |
+| `select`, `orderBy`, `skip`, `take`          | same names, also inside a nested relation                         |
+| `create` with nested `create` / `connect`    | same, plus `$edge` to set relationship properties                 |
+| `$transaction(async (tx) => …)`              | `db.$transaction(async (tx) => …)`                                |
+| `$queryRaw` tagged template                  | `` db.$cypher`…` `` (parameterized Cypher)                        |
+| `$disconnect()`                              | `db.$disconnect()`                                                |
+
+Some things do not map, and it is better to know before you start:
+
+- **No array form of `$transaction`.** Cyphra has the interactive form only.
+- **No `aggregate`, `groupBy` or cursor pagination** on the client yet. `count` is there;
+  aggregations are one `$cypher` query away.
+- **No down migrations.** Migrations are forward-only.
+- **No client extensions or middleware.**
+- **Relations are relationships, not foreign keys.** There is no `userId` field to keep in sync:
+  `connect` and `disconnect` create and delete edges.
+
+## When Cyphra is not the right tool
+
+- Your data is relational and you have no reason to move it into a graph: use Prisma (or another
+  SQL ORM) on PostgreSQL or MySQL.
+- You want a GraphQL API generated from your graph model: the
+  [Neo4j GraphQL Library](/compare/neo4j-graphql-library) is built for that.
+- Most of your queries are hand-tuned Cypher and you do not want generated code: use the
+  [official driver directly](/compare/neo4j-driver).
+
+The [comparisons](/compare) cover these trade-offs in more detail.
+
+## FAQ
+
+### Does Prisma support Neo4j?
+
+No. Prisma ORM supports relational databases and MongoDB, and Neo4j is not on its list of supported databases. The GitHub feature request for Neo4j support was closed as not planned in December 2024.
+
+### Is Cyphra a fork of Prisma?
+
+No. Cyphra is a separate open-source project under the MIT license. Its client follows Prisma's naming (findMany, include, select, $transaction) so the patterns carry over, but the schema language, the code generator and the migration engine are written for Neo4j.
+
+### Which Neo4j versions does Cyphra need?
+
+The typed client needs Neo4j 5.6 or later, because it compiles relations to COLLECT and EXISTS subqueries. Relationship property uniqueness constraints need Neo4j 5.7 or later.
+
+### Can I use Cyphra with an existing Neo4j database?
+
+Yes. cyphra pull reads labels, relationship types, property types, constraints and indexes from a live database and writes a .cyphra schema for you to review. cyphra generate then builds the typed client from it.
+
+### Can I still write Cypher?
+
+Yes. db.$cypher runs a parameterized tagged template and returns plain JavaScript values, and the query builder and the runtime under the client are exported from the same cyphra package.
+
+### Does Cyphra have down migrations?
+
+No. A Cyphra migration is a module with a single up function, and applied migrations are tracked in the database. To undo a change, generate or write a new migration.
+
+<FaqJsonLd items={NEO4J_ORM_FAQ} />
+
+## Next steps
+
+<Cards>
+  <Cards.Card title="Getting started" href="/getting-started" />
+  <Cards.Card title="Typed client" href="/client" />
+  <Cards.Card title="Migrations" href="/migrations" />
+  <Cards.Card title="ORM vs OGM" href="/glossary/orm-vs-ogm" />
+</Cards>
+
+## Sources
+
+Checked on 2026-11-20.
+
+- Prisma, [Supported databases](https://www.prisma.io/docs/orm/supported-databases)
+  (Prisma ORM 8)
+- Prisma, [CLI reference](https://www.prisma.io/docs/orm/v7/reference/prisma-cli-reference) and
+  [Prisma Client API reference](https://www.prisma.io/docs/orm/v7/reference/prisma-client-reference)
+  (Prisma ORM 7)
+- GitHub, [prisma/orm#1575 "Neo4j support"](https://github.com/prisma/orm/issues/1575): opened
+  2018-01-16, closed as not planned 2024-12-06
+- Cyphra, [`examples/blog`](https://github.com/Cyphra-dev/cyphra/tree/main/examples/blog): the
+  schema and queries above; the migration and compiler errors are the output of running it with
+  `cyphra` 0.2.1 against Neo4j 5 (code reformatted with Prettier).
