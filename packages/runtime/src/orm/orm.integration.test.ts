@@ -482,6 +482,41 @@ describe.skipIf(!hasNeo)("ORM write correctness (Neo4j)", () => {
     }
   });
 
+  it("to-one connect from the owning side: concurrent author changes leave one edge", async () => {
+    const users = await Promise.all(
+      Array.from({ length: 8 }, (_, i) => db.user.create({ data: { email: `o${i}@x.io` } })),
+    );
+    const post = await db.post.create({
+      data: { id: "p1", title: "t", author: { connect: { id: users[0]!.id } } },
+    });
+    const authorEdges = async () => {
+      const [row] = await db.$cypher<{ c: number }>`
+        MATCH (:Post {id: "p1"})<-[r:AUTHORED]-() RETURN count(r) AS c`;
+      return row!.c;
+    };
+    for (const size of [2, 2, 2, 2, 2, 8, 8, 8, 8, 8]) {
+      await Promise.all(
+        users
+          .slice(0, size)
+          .map((u) =>
+            db.post.update({ where: { id: post.id }, data: { author: { connect: { id: u.id } } } }),
+          ),
+      );
+      expect(await authorEdges()).toBe(1);
+    }
+    // Through upsert's update branch too.
+    await Promise.all(
+      users.map((u) =>
+        db.post.upsert({
+          where: { id: post.id },
+          create: { id: post.id, title: "t" },
+          update: { author: { connect: { id: u.id } } },
+        }),
+      ),
+    );
+    expect(await authorEdges()).toBe(1);
+  });
+
   it.each(["America/New_York", "Asia/Kolkata", "UTC"])(
     "stores DateTime in UTC and filters by instant (process TZ=%s)",
     async (tz) => {

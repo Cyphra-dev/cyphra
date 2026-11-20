@@ -146,14 +146,18 @@ describe("connect", () => {
     expect(text).toContain("MERGE (a)<-[r:`FOLLOWS`]-(b)");
   });
 
-  it("MERGEs incoming edges with the right direction", async () => {
+  it("to-one connect replaces the old edge in the same statement, under a lock", async () => {
     const { calls, e } = engine("Post", (text) =>
       text.includes("MERGE (a)") ? [{ c: 1 }] : [{ id: "4:x:0", c: 1, row: {} }],
     );
     await e.update({ where: { id: "p1" }, data: { author: { connect: { id: "u1" } } } });
-    expect(calls.some((c) => c.text.includes("DELETE r"))).toBe(true);
-    expect(calls.find((c) => c.text.includes("MERGE (a)"))!.text).toContain(
-      "MERGE (a)<-[r:`AUTHORED`]-(b) RETURN",
+    // No separate DELETE statement before the connect.
+    expect(calls.filter((c) => c.text.includes("DELETE"))).toHaveLength(1);
+    expect(calls.find((c) => c.text.includes("MERGE (a)"))!.text).toBe(
+      "MATCH (a) WHERE elementId(a) = $p1 MATCH (b:`User`) WHERE b.`id` = $p0 WITH a, b LIMIT 1" +
+        " SET a.`__cyphraLock` = true REMOVE a.`__cyphraLock` WITH a, b" +
+        " OPTIONAL MATCH (a)<-[old:`AUTHORED`]-(other:`User`) WHERE other <> b" +
+        " DELETE old WITH DISTINCT a, b MERGE (a)<-[r:`AUTHORED`]-(b) RETURN count(r) AS c",
     );
   });
 });

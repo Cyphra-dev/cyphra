@@ -350,14 +350,19 @@ export class ModelEngine {
     let text =
       `MATCH (a) WHERE elementId(a) = ${ctx.param(id)} ` +
       `MATCH (b:${q(target.label)})${w ? ` WHERE ${w}` : ""} WITH a, b LIMIT 1 `;
-    if (this.inverseIsToOne(rel)) {
-      // `b` can have only one such edge: lock `b` (so concurrent connects serialize), then drop
-      // its edge to any other node before linking it to `a`.
-      const lock = `b.${q(LOCK_FLAG)}`;
+    // A to-one side can hold only one such edge: lock that node (so concurrent connects
+    // serialize), then drop its edge to any other node before linking `a` and `b`.
+    const replace = (node: "a" | "b", old: string) => {
+      const lock = `${node}.${q(LOCK_FLAG)}`;
       text +=
         `SET ${lock} = true REMOVE ${lock} WITH a, b ` +
-        `OPTIONAL MATCH ${link(`other:${this.label}`, "old")} WHERE other <> a ` +
-        `DELETE old WITH DISTINCT a, b `;
+        `OPTIONAL MATCH ${old} DELETE old WITH DISTINCT a, b `;
+    };
+    if (!rel.many) {
+      replace("a", `${relationPattern(ctx, "a", rel, "other", "old")} WHERE other <> b`);
+    }
+    if (this.inverseIsToOne(rel)) {
+      replace("b", `${link(`other:${this.label}`, "old")} WHERE other <> a`);
     }
     text += `MERGE ${link("a", "r")}`;
     if (Object.keys(onCreate).length) text += ` ON CREATE SET r += ${ctx.param(onCreate)}`;
@@ -461,11 +466,8 @@ export class ModelEngine {
         await this.deleteEdges(exec, id, rel);
         for (const item of set) await this.connect(exec, id, rel, item);
       }
-    } else if (
-      disconnect === true ||
-      (mode === "update" && (create !== undefined || connect !== undefined))
-    ) {
-      // To-one: replace the existing edge.
+    } else if (disconnect === true || (mode === "update" && create !== undefined)) {
+      // To-one: replace the existing edge (`connect` replaces it in its own statement).
       await this.deleteEdges(exec, id, rel);
     } else if (disconnect !== undefined && disconnect !== false) {
       throw new CyphraValidationError(
