@@ -11,12 +11,14 @@ const COLUMNS: { title: string; links: [string, string][] }[] = [
       ["Typed client", "/client"],
       ["Migrations", "/migrations"],
       ["CLI", "/cli"],
+      ["Glossary", "/glossary"],
     ],
   },
   {
     title: "Project",
     links: [
       ["GitHub", LINKS.github],
+      ["Blog", "/blog"],
       ["Changelog", LINKS.changelog],
       ["Issues", LINKS.issues],
       ["Security", LINKS.security],

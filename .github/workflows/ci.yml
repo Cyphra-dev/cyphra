@@ -51,8 +51,19 @@ jobs:
       - name: Example app (smoke)
         run: pnpm example:basic
 
+      - name: Lint docs content (blog, glossary)
+        run: pnpm --filter cyphra-doc lint:content
+
       - name: Build docs
         run: pnpm doc:build
+
+      # Serve the built docs and check titles, canonicals, JSON-LD, links, sitemap, feed and
+      # security.txt (doc/scripts/seo-audit.ts).
+      - name: SEO audit
+        run: |
+          pnpm --filter cyphra-doc exec next start -p 3100 > next-start.log 2>&1 &
+          for i in $(seq 1 30); do curl -fsS -o /dev/null http://localhost:3100/sitemap.xml && break; sleep 1; done
+          pnpm --filter cyphra-doc seo:audit http://localhost:3100
 
   neo4j-integration:
     runs-on: ubuntu-latest
