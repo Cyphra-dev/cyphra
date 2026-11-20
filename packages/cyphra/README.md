@@ -1,5 +1,7 @@
 # cyphra
 
+> Part of [Cyphra](https://www.cyphra.dev), the TypeScript ORM for Neo4j. **Getting started:** [www.cyphra.dev/getting-started](https://www.cyphra.dev/getting-started)
+
 One install for the full Cyphra stack: **schema** (`.cyphra` DSL), **query** (`cypher` tag + `SelectQuery`), **runtime** (`CyphraClient`), and **migrator** (push DDL, versioned migrations).
 
 ```bash

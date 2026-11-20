@@ -1,7 +1,7 @@
 {
   "name": "cyphra",
   "version": "0.2.1",
-  "description": "Cyphra monolith: schema DSL, Cypher helpers, Neo4j runtime, and migrations (re-exports @cyphra/*)",
+  "description": "Cyphra — the TypeScript ORM for Neo4j: typed client, schema DSL, Cypher helpers and migrations",
   "type": "module",
   "sideEffects": false,
   "publishConfig": {
@@ -41,7 +41,13 @@
     "cypher",
     "graph",
     "schema",
-    "migrations"
+    "migrations",
+    "neo4j-orm",
+    "orm",
+    "typescript",
+    "graph-database",
+    "cyphra",
+    "type-safe"
   ],
   "license": "MIT",
   "repository": {
@@ -49,7 +55,7 @@
     "url": "git+https://github.com/Cyphra-dev/cyphra.git",
     "directory": "packages/cyphra"
   },
-  "homepage": "https://cyphra-doc.vercel.app",
+  "homepage": "https://www.cyphra.dev",
   "bugs": {
     "url": "https://github.com/Cyphra-dev/cyphra/issues"
   }

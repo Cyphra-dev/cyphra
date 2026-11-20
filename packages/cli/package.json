@@ -1,7 +1,7 @@
 {
   "name": "@cyphra/cli",
   "version": "0.2.1",
-  "description": "Cyphra CLI: init, migrate, push",
+  "description": "Cyphra CLI for the TypeScript Neo4j ORM: init, generate, migrate, push and pull",
   "type": "module",
   "publishConfig": {
     "access": "public"
@@ -36,8 +36,19 @@
     "url": "git+https://github.com/Cyphra-dev/cyphra.git",
     "directory": "packages/cli"
   },
-  "homepage": "https://cyphra-doc.vercel.app",
+  "homepage": "https://www.cyphra.dev/cli",
   "bugs": {
     "url": "https://github.com/Cyphra-dev/cyphra/issues"
-  }
+  },
+  "keywords": [
+    "neo4j",
+    "neo4j-orm",
+    "orm",
+    "typescript",
+    "cypher",
+    "graph-database",
+    "cyphra",
+    "cli",
+    "migrations"
+  ]
 }
