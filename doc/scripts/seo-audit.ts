@@ -7,8 +7,8 @@
  *   2. Robots: no noindex on a sitemap URL, at most one robots meta tag.
  *   3. Basics: one non-empty <title>, a meta description, exactly one <h1>, og:image (that loads),
  *      og:url equal to the canonical, a twitter:card, and the RSS <link rel="alternate">.
- *   4. JSON-LD: every block parses and has @context and @type; FAQPage questions are visible on
- *      the page; a BreadcrumbList ends at the page itself.
+ *   4. JSON-LD: every block parses and has @context and @type; FAQPage questions and answers are
+ *      visible on the page; a BreadcrumbList ends at the page itself.
  *   5. Internal links: every same-site link resolves (200), its #fragment exists on the target,
  *      and every indexable internal page that is linked is also in the sitemap.
  *   6. Site files: robots.txt points at the sitemap, the sitemap and feed are well-formed XML,
@@ -155,9 +155,14 @@ function auditJsonLd(url: string, html: string, canonical: string | undefined): 
     for (const node of nodes) {
       if (!node["@type"]) error(url, "jsonld", "JSON-LD node without @type");
       if (node["@type"] === "FAQPage") {
-        for (const q of (node.mainEntity as { name?: string }[] | undefined) ?? []) {
+        type Question = { name?: string; acceptedAnswer?: { text?: string } };
+        for (const q of (node.mainEntity as Question[] | undefined) ?? []) {
           if (q?.name && !visible.includes(normalizeText(q.name))) {
             error(url, "jsonld-visible", `FAQ question not visible: "${q.name.slice(0, 60)}"`);
+          }
+          const answer = q?.acceptedAnswer?.text;
+          if (answer && !visible.includes(normalizeText(answer))) {
+            error(url, "jsonld-visible", `FAQ answer not visible: "${answer.slice(0, 60)}"`);
           }
         }
       }

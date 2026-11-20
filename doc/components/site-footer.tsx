@@ -33,6 +33,16 @@ const COLUMNS: { title: string; links: [string, string][] }[] = [
     ],
   },
   {
+    title: "Compare",
+    links: [
+      ["Prisma for Neo4j", "/neo4j-orm"],
+      ["vs @neo4j/graphql", "/compare/neo4j-graphql-library"],
+      ["vs neogma and neode", "/compare/neogma-neode"],
+      ["vs neo4j-driver", "/compare/neo4j-driver"],
+      ["All comparisons", "/compare"],
+    ],
+  },
+  {
     title: "Cloud",
     links: [
       ["Cyphra Cloud", "/cloud"],

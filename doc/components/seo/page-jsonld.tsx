@@ -1,6 +1,13 @@
 // Page-level structured data, rendered from the MDX pages that need it.
 import { JsonLd } from "./json-ld";
-import { cloudProduct, pricingFaq, softwareGraph } from "./structured-data";
+import {
+  CONTEXT,
+  cloudProduct,
+  collectionPage,
+  faqPage,
+  pricingFaq,
+  softwareGraph,
+} from "./structured-data";
 
 /** Home: the ORM as a SoftwareApplication (free offer) and its SoftwareSourceCode. */
 export function HomeJsonLd() {
@@ -20,4 +27,14 @@ export function PricingJsonLd() {
 /** Cloud docs: the same Cyphra Cloud product and offers. */
 export function CloudJsonLd() {
   return <JsonLd data={cloudProduct()} />;
+}
+
+/** A page's FAQ, written out in its MDX too: the questions and answers must match what is shown. */
+export function FaqJsonLd({ items }: { items: readonly (readonly [string, string])[] }) {
+  return <JsonLd data={faqPage(items)} />;
+}
+
+/** An index page that lists other pages (for example /compare). */
+export function CollectionJsonLd(props: Parameters<typeof collectionPage>[0]) {
+  return <JsonLd data={{ "@context": CONTEXT, ...collectionPage(props) }} />;
 }

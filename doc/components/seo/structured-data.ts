@@ -151,17 +151,22 @@ export function cloudProduct() {
   };
 }
 
-/** FAQPage for the questions rendered on the pricing page (same text, same order). */
-export function pricingFaq() {
+/** FAQPage from [question, answer] pairs; the page must show the same text. */
+export function faqPage(items: readonly (readonly [string, string])[]) {
   return {
     "@context": CONTEXT,
     "@type": "FAQPage",
-    mainEntity: FAQ.map(([q, a]) => ({
+    mainEntity: items.map(([q, a]) => ({
       "@type": "Question",
       name: q,
       acceptedAnswer: { "@type": "Answer", text: a },
     })),
   };
+}
+
+/** FAQPage for the questions rendered on the pricing page (same text, same order). */
+export function pricingFaq() {
+  return faqPage(FAQ);
 }
 
 export function collectionPage({
