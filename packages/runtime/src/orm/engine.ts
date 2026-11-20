@@ -63,6 +63,9 @@ export function createCuid(): string {
 /** Temporary property marking a node created by an upsert's MERGE (removed in the same statement). */
 const UPSERT_FLAG = "__cyphraUpsertCreated";
 
+/** Property set and removed at once to take a write lock on a node. */
+const LOCK_FLAG = "__cyphraLock";
+
 function sameValue(a: unknown, b: unknown): boolean {
   if (a instanceof Date && b instanceof Date) return a.getTime() === b.getTime();
   if (typeof a === "bigint" || typeof b === "bigint") return String(a) === String(b);
@@ -263,6 +266,21 @@ export class ModelEngine {
     return ModelEngine.createProps(edgeModel.name, edgeModel.properties, input);
   }
 
+  /**
+   * Whether the target model declares the other side of `rel` (same type, opposite direction,
+   * pointing back at this model) as a to-one relation, e.g. `Post.author` for `User.posts`.
+   */
+  private inverseIsToOne(rel: ResolvedRelationField): boolean {
+    return this.node(rel.target).fields.some(
+      (f) =>
+        f.kind === "relation" &&
+        !f.many &&
+        f.relType === rel.relType &&
+        f.direction !== rel.direction &&
+        f.target === this.model.name,
+    );
+  }
+
   /** Only the `$edge` properties the caller set (no defaults), for updating an existing edge. */
   private explicitEdgeProps(rel: ResolvedRelationField, input: unknown): AnyRecord {
     if (!rel.edge || !isPlainObject(input)) return {};
@@ -325,11 +343,23 @@ export class ModelEngine {
     const onMatch = this.explicitEdgeProps(rel, $edge);
     const ctx = this.ctx();
     const w = compileWhere(ctx, target, "b", where);
-    const edge = `[r:${q(rel.relType)}]`;
+    const link = (from: string, r: string) => {
+      const e = `[${r}:${q(rel.relType)}]`;
+      return rel.direction === "OUT" ? `(${from})-${e}->(b)` : `(${from})<-${e}-(b)`;
+    };
     let text =
       `MATCH (a) WHERE elementId(a) = ${ctx.param(id)} ` +
-      `MATCH (b:${q(target.label)})${w ? ` WHERE ${w}` : ""} ` +
-      `WITH a, b LIMIT 1 MERGE ${rel.direction === "OUT" ? `(a)-${edge}->(b)` : `(a)<-${edge}-(b)`}`;
+      `MATCH (b:${q(target.label)})${w ? ` WHERE ${w}` : ""} WITH a, b LIMIT 1 `;
+    if (this.inverseIsToOne(rel)) {
+      // `b` can have only one such edge: lock `b` (so concurrent connects serialize), then drop
+      // its edge to any other node before linking it to `a`.
+      const lock = `b.${q(LOCK_FLAG)}`;
+      text +=
+        `SET ${lock} = true REMOVE ${lock} WITH a, b ` +
+        `OPTIONAL MATCH ${link(`other:${this.label}`, "old")} WHERE other <> a ` +
+        `DELETE old WITH DISTINCT a, b `;
+    }
+    text += `MERGE ${link("a", "r")}`;
     if (Object.keys(onCreate).length) text += ` ON CREATE SET r += ${ctx.param(onCreate)}`;
     if (Object.keys(onMatch).length) text += ` ON MATCH SET r += ${ctx.param(onMatch)}`;
     const rows = await exec(`${text} RETURN count(r) AS c`, ctx.params);

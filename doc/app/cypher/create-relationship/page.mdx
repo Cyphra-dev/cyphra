@@ -105,7 +105,10 @@ one `FOLLOWS` relationship. In our test, ten concurrent `connect` calls for the 
 exactly one. For a typed edge, `$edge` and the schema defaults (here `since`, if it has
 `@default(now())`) are set when the relationship is created; on an existing one, only the `$edge`
 properties you pass are updated, so a repeat `connect` without `$edge` keeps the original `since`.
-On a **to-one** relation (`author User?`), `connect` replaces the existing edge.
+On a **to-one** relation (`author User?`), `connect` replaces the existing edge, and the same holds
+from the other side: `user.posts` → `connect` on a post that has another author moves it (the old
+`AUTHORED` edge is deleted in the same statement, with the post locked, so two concurrent connects
+still leave one author).
 
 So "follow, but only once" needs no extra code:
 

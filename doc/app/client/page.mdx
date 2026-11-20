@@ -120,7 +120,9 @@ Relation operations: `create` and `connect` (on create and update), plus `discon
 existing edge.
 
 `connect` is idempotent: it `MERGE`s the relationship, so connecting a pair that is already linked
-keeps one edge. On a typed edge, `$edge` and the edge's schema defaults are set when the edge is
+keeps one edge. When the other side is declared to-one (connecting a post through `user.posts`
+while `Post.author` is `User?`), `connect` moves the post: its edge to the previous author is
+deleted in the same statement. Many-to-many relations are left alone. On a typed edge, `$edge` and the edge's schema defaults are set when the edge is
 created; on an existing edge only the `$edge` properties you pass are updated.
 
 `upsert` is one atomic `MERGE` on the unique key in `where` (`ON CREATE SET` the create data,

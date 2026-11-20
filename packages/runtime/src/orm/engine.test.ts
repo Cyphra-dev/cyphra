@@ -123,6 +123,29 @@ describe("connect", () => {
     expect(connects[1]!.params.p3).toEqual(connects[1]!.params.p2);
   });
 
+  it("moves the target off its previous node when the inverse side is to-one", async () => {
+    const { calls, e } = engine("User", (text) =>
+      text.includes("MERGE (a)") ? [{ c: 1 }] : [{ id: "4:x:0", row: userRow }],
+    );
+    await e.update({ where: { id: "u1" }, data: { posts: { connect: { id: "p1" } } } });
+    expect(calls.find((c) => c.text.includes("MERGE (a)"))!.text).toBe(
+      "MATCH (a) WHERE elementId(a) = $p1 MATCH (b:`Post`) WHERE b.`id` = $p0 WITH a, b LIMIT 1" +
+        " SET b.`__cyphraLock` = true REMOVE b.`__cyphraLock` WITH a, b" +
+        " OPTIONAL MATCH (other:`User`)-[old:`AUTHORED`]->(b) WHERE other <> a" +
+        " DELETE old WITH DISTINCT a, b MERGE (a)-[r:`AUTHORED`]->(b) RETURN count(r) AS c",
+    );
+  });
+
+  it("leaves many-to-many edges of the target alone", async () => {
+    const { calls, e } = engine("User", (text) =>
+      text.includes("MERGE (a)") ? [{ c: 1 }] : [{ id: "4:x:0", row: userRow }],
+    );
+    await e.update({ where: { id: "u1" }, data: { followers: { connect: { id: "u2" } } } });
+    const text = calls.find((c) => c.text.includes("MERGE (a)"))!.text;
+    expect(text).not.toContain("DELETE");
+    expect(text).toContain("MERGE (a)<-[r:`FOLLOWS`]-(b)");
+  });
+
   it("MERGEs incoming edges with the right direction", async () => {
     const { calls, e } = engine("Post", (text) =>
       text.includes("MERGE (a)") ? [{ c: 1 }] : [{ id: "4:x:0", c: 1, row: {} }],

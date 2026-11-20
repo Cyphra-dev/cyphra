@@ -431,6 +431,57 @@ describe.skipIf(!hasNeo)("ORM write correctness (Neo4j)", () => {
     expect((await db.post.findFirst({ include: { author: true } }))!.author!.id).toBe(b.id);
   });
 
+  it("connect from the many side moves a node whose inverse is to-one (Post.author)", async () => {
+    const a = await db.user.create({ data: { email: "a@x.io" } });
+    const b = await db.user.create({ data: { email: "b@x.io" } });
+    const post = await db.post.create({
+      data: { id: "p1", title: "t", author: { connect: { id: a.id } } },
+    });
+    const authorEdges = async () => {
+      const [row] = await db.$cypher<{ c: number }>`
+        MATCH (:Post {id: "p1"})<-[r:AUTHORED]-() RETURN count(r) AS c`;
+      return row!.c;
+    };
+    const author = async () =>
+      (await db.post.findUniqueOrThrow({ where: { id: post.id }, include: { author: true } }))
+        .author?.email;
+
+    await db.user.update({ where: { id: b.id }, data: { posts: { connect: { id: post.id } } } });
+    expect([await authorEdges(), await author()]).toEqual([1, "b@x.io"]);
+    // Reconnecting the current author keeps the edge.
+    await db.user.update({ where: { id: b.id }, data: { posts: { connect: { id: post.id } } } });
+    expect([await authorEdges(), await author()]).toEqual([1, "b@x.io"]);
+    // set, nested create-connect and upsert all go through connect.
+    await db.user.update({ where: { id: a.id }, data: { posts: { set: [{ id: post.id }] } } });
+    expect([await authorEdges(), await author()]).toEqual([1, "a@x.io"]);
+    await db.user.create({ data: { email: "c@x.io", posts: { connect: { id: post.id } } } });
+    expect([await authorEdges(), await author()]).toEqual([1, "c@x.io"]);
+    await db.user.upsert({
+      where: { email: "a@x.io" },
+      create: { email: "a@x.io" },
+      update: { posts: { connect: [{ id: post.id }] } },
+    });
+    expect([await authorEdges(), await author()]).toEqual([1, "a@x.io"]);
+    expect(
+      (await db.user.findUniqueOrThrow({ where: { id: b.id }, include: { posts: true } })).posts,
+    ).toEqual([]);
+
+    // Concurrent connects of one post from different users: exactly one author edge.
+    const users = await Promise.all(
+      Array.from({ length: 8 }, (_, i) => db.user.create({ data: { email: `w${i}@x.io` } })),
+    );
+    for (const size of [2, 2, 2, 2, 2, 8, 8, 8, 8, 8]) {
+      await Promise.all(
+        users
+          .slice(0, size)
+          .map((u) =>
+            db.user.update({ where: { id: u.id }, data: { posts: { connect: { id: post.id } } } }),
+          ),
+      );
+      expect(await authorEdges()).toBe(1);
+    }
+  });
+
   it.each(["America/New_York", "Asia/Kolkata", "UTC"])(
     "stores DateTime in UTC and filters by instant (process TZ=%s)",
     async (tz) => {
