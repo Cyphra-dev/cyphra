@@ -4,7 +4,7 @@ import { getPageMap } from "nextra/page-map";
 import "nextra-theme-docs/style.css";
 import "./globals.css";
 import type { Metadata, Viewport } from "next";
-import { Instrument_Sans, JetBrains_Mono } from "next/font/google";
+import { Geist_Mono, Inter, Schibsted_Grotesk } from "next/font/google";
 import type { ReactNode } from "react";
 import { Analytics } from "@vercel/analytics/next";
 import { AutoEvents } from "../components/auto-events";
@@ -12,13 +12,20 @@ import { LINKS, SITE_URL } from "../components/links";
 import { Logo } from "../components/logo";
 import { SiteFooter } from "../components/site-footer";
 
-const sans = Instrument_Sans({
+// Type system (see DESIGN.md): Schibsted Grotesk for display, Inter for text, Geist Mono for code.
+const display = Schibsted_Grotesk({
+  subsets: ["latin"],
+  variable: "--font-display",
+  display: "swap",
+});
+
+const sans = Inter({
   subsets: ["latin"],
   variable: "--font-sans",
   display: "swap",
 });
 
-const mono = JetBrains_Mono({
+const mono = Geist_Mono({
   subsets: ["latin"],
   variable: "--font-mono",
   display: "swap",
@@ -44,8 +51,8 @@ export const metadata: Metadata = {
 
 export const viewport: Viewport = {
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#ffffff" },
-    { media: "(prefers-color-scheme: dark)", color: "#09090b" },
+    { media: "(prefers-color-scheme: light)", color: "#F6F5F1" },
+    { media: "(prefers-color-scheme: dark)", color: "#050505" },
   ],
 };
 
@@ -64,20 +71,21 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
       lang="en"
       dir="ltr"
       suppressHydrationWarning
-      className={`${sans.variable} ${mono.variable}`}
+      className={`${display.variable} ${sans.variable} ${mono.variable}`}
     >
       <Head
         color={{
-          hue: { light: 159, dark: 156 },
-          saturation: { light: 94, dark: 73 },
-          lightness: { light: 25, dark: 59 },
+          // Signal vermilion: #C2370C on paper (5:1), #FF7A50 on black (7.9:1).
+          hue: 14,
+          saturation: { light: 88, dark: 100 },
+          lightness: { light: 40, dark: 66 },
         }}
-        backgroundColor={{ light: "#ffffff", dark: "#09090b" }}
+        backgroundColor={{ light: "#F6F5F1", dark: "#050505" }}
       />
       <body>
         <Layout
           navbar={
-            <Navbar logo={<Logo />} projectLink={LINKS.github}>
+            <Navbar logo={<Logo />} logoLink="/" projectLink={LINKS.github}>
               <a href={LINKS.npm} className="cy-nav-icon" aria-label="cyphra on npm">
                 <NpmIcon />
               </a>
