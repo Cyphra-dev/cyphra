@@ -1,0 +1,11 @@
+Not converted (2):
+  Post.legacyScore  Type.Union: a union of different types is not converted (Cyphra fields have one type); pick one, or use Json
+  Post              beforeDelete: hook: not converted; port it to a query hook: db.$extends({ query: { post: { delete, deleteMany } } })
+
+Converted with differences (6):
+  Person.age      Integer: became Int (a Neo4j INTEGER), but the driver stored neogma's JS numbers as FLOAT: convert them with toInteger() when you move the data
+  Person.Friends  direction: 'none': became OUT: a Cyphra field follows one direction, while neogma's 'none' matches edges either way; check how the stored edges point
+  Post.revision   Integer: became Int (a Neo4j INTEGER), but the driver stored neogma's JS numbers as FLOAT: convert them with toInteger() when you move the data
+  Follows.since   format: "date-time": a date-time string became a DateTime (a Neo4j DATETIME): convert the stored strings with datetime() when you move the data
+  Follows.muted   alias: the alias Muted (on Person.Following) is not kept: Cyphra uses the stored name, $edge: { muted }
+  Liked.at        format: "date-time": a date-time string became a DateTime (a Neo4j DATETIME): convert the stored strings with datetime() when you move the data

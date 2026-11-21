@@ -1,5 +1,5 @@
 import { CyphraClient } from "@cyphra/runtime";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import {
   compareSchemaObjects,
   isDriftFree,
@@ -9,6 +9,9 @@ import {
 } from "./drift.js";
 import type { LoadedMigration } from "./runner.js";
 import { runPendingMigrations } from "./runner.js";
+
+// Each test makes many round trips to Neo4j: the default 5 s is too tight on a busy CI runner.
+vi.setConfig({ testTimeout: 30_000, hookTimeout: 30_000 });
 
 const hasNeo = Boolean(
   process.env.NEO4J_TEST_URI && process.env.NEO4J_TEST_USER && process.env.NEO4J_TEST_PASSWORD,

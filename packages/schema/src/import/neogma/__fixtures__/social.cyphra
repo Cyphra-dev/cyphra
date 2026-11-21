@@ -1,0 +1,58 @@
+// Imported from neogma models with `cyphra import neogma`.
+// Review before use (run the import again to see the full report):
+// - Person.age: became Int (a Neo4j INTEGER), but the driver stored neogma's JS numbers as FLOAT: convert them with toInteger() when you move the data
+// - Person.Friends: became OUT: a Cyphra field follows one direction, while neogma's 'none' matches edges either way; check how the stored edges point
+// - Post.revision: became Int (a Neo4j INTEGER), but the driver stored neogma's JS numbers as FLOAT: convert them with toInteger() when you move the data
+// - Post.legacyScore: a union of different types is not converted (Cyphra fields have one type); pick one, or use Json
+// - Post: hook: not converted; port it to a query hook: db.$extends({ query: { post: { delete, deleteMany } } })
+// - Follows.since: a date-time string became a DateTime (a Neo4j DATETIME): convert the stored strings with datetime() when you move the data
+// - Follows.muted: the alias Muted (on Person.Following) is not kept: Cyphra uses the stored name, $edge: { muted }
+// - Liked.at: a date-time string became a DateTime (a Neo4j DATETIME): convert the stored strings with datetime() when you move the data
+
+enum LikedReaction {
+  like
+  love
+  laugh
+}
+
+interface Account {
+}
+
+node Person implements Account {
+  id String @id
+  handle String @length(3, 30) @regex("^[a-z0-9_]+$")
+  bio String? @length(max: 280)
+  interests String[] @size(0, 5)
+  age Int? @min(13)
+  avatarUrl String?
+  Following Person[] @relationship(type: "FOLLOWS", direction: OUT)
+  Followers Person[] @relationship(type: "FOLLOWS", direction: IN)
+  Friends Person[] @relationship(type: "FRIENDS_WITH", direction: OUT)
+  LikedPosts Post[] @relationship(type: "LIKED", direction: OUT)
+  Posts Post[] @relationship(type: "WROTE", direction: OUT)
+}
+
+node Post {
+  id String @id
+  body String @length(1, 5000)
+  revision Int @min(1)
+  Author Person[] @relationship(type: "WROTE", direction: IN)
+  LikedBy Person[] @relationship(type: "LIKED", direction: IN)
+  // legacyScore (not converted: Type.Union)
+}
+
+relationship Follows {
+  type "FOLLOWS"
+  from Person
+  to Person
+  since DateTime
+  muted Boolean?
+}
+
+relationship Liked {
+  type "LIKED"
+  from Person
+  to Post
+  at DateTime
+  reaction LikedReaction
+}

@@ -70,7 +70,7 @@ function asErrorLike(e: unknown): ErrorLike | undefined {
  * its causes), or `undefined` for any other error. Other `ConstraintValidationFailed` errors
  * (deleting a node that still has relationships, a missing required property) are not matched.
  */
-function uniqueViolation(err: unknown): (ErrorLike & { message: string }) | undefined {
+function uniqueViolation(err: unknown): ErrorLike | undefined {
   let e = asErrorLike(err);
   for (let depth = 0; e && depth < 5; depth++) {
     const message = typeof e.message === "string" ? e.message : "";
@@ -78,7 +78,7 @@ function uniqueViolation(err: unknown): (ErrorLike & { message: string }) | unde
       (e.code === CONSTRAINT_VALIDATION_FAILED && UNIQUE_MESSAGE.test(message)) ||
       (typeof e.gqlStatus === "string" && UNIQUE_GQL_STATUSES.has(e.gqlStatus))
     ) {
-      return e as ErrorLike & { message: string };
+      return e;
     }
     e = asErrorLike(e.cause);
   }
@@ -148,10 +148,14 @@ export function uniqueConstraintError(
   if (!violation) return undefined;
   const code = typeof violation.code === "string" ? violation.code : CONSTRAINT_VALIDATION_FAILED;
   const gqlStatus = typeof violation.gqlStatus === "string" ? violation.gqlStatus : undefined;
-  const parsed = parseUniqueViolation(violation.message);
+  // A GQL status alone identifies the violation: the server may send no message at all.
+  const message = typeof violation.message === "string" ? violation.message.trim() : "";
+  const parsed = parseUniqueViolation(message);
   if (!parsed) {
     return new UniqueConstraintError(
-      `Unique constraint failed: ${violation.message}`,
+      message
+        ? `Unique constraint failed: ${message}`
+        : `Unique constraint failed${gqlStatus ? ` (GQL status ${gqlStatus})` : ""}: a node or relationship with the same value already exists.`,
       { code, gqlStatus },
       { cause: err },
     );

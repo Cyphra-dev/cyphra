@@ -5,7 +5,7 @@
  */
 import { cypher } from "@cyphra/query";
 import neo4j from "neo4j-driver";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { CyphraClient } from "../client.js";
 import {
   CypherDate,
@@ -21,6 +21,9 @@ import {
   CypherTime,
 } from "../cypher-values.js";
 import { Neo4jHttpError, type HttpResult } from "./driver.js";
+
+// Each test makes many round trips to Neo4j: the default 5 s is too tight on a busy CI runner.
+vi.setConfig({ testTimeout: 30_000, hookTimeout: 30_000 });
 
 const uri = process.env.NEO4J_TEST_HTTP_URI;
 const user = process.env.NEO4J_TEST_USER;

@@ -1,5 +1,5 @@
 ---
-description: "Cyphra CLI reference for Neo4j: init, validate, generate with watch mode, migrations, reset, seed, push, and import from @neo4j/graphql type definitions."
+description: "Cyphra CLI reference for Neo4j: init, validate, generate with watch mode, migrations, seed, push, and import from @neo4j/graphql, Prisma or neogma."
 ---
 
 # CLI
@@ -28,6 +28,7 @@ App code depends on **`cyphra`** separately (see [Getting started](/getting-star
 | `cyphra pull`                    | Introspect the database and write `schema.cyphra` (`--print`, `--force`)                                                                                            |
 | `cyphra import graphql <files>`  | Convert `@neo4j/graphql` v7 type definitions to `schema.cyphra` (`--out`, `--merge`, `--force`, `--print`)                                                          |
 | `cyphra import prisma <schema>`  | Convert a Prisma schema to `schema.cyphra`, foreign keys to edges ([details](#import-from-prisma); `--out`, `--merge`, `--force`, `--print`)                        |
+| `cyphra import neogma <files>`   | Convert neogma models (decorator classes or `ModelFactory`) to `schema.cyphra` ([details](#import-from-neogma); `--out`, `--merge`, `--force`, `--print`)           |
 | `cyphra push`                    | Apply constraints and range, vector and full-text indexes directly (prototyping)                                                                                    |
 | `cyphra validate`                | Parse and validate the schema                                                                                                                                       |
 | `cyphra format`                  | Format the schema in place, keeping comments (`--check` exits with 1 instead of writing)                                                                            |
@@ -349,6 +350,103 @@ Converted with differences (13):
   OrderItem            join model: became relationship OrderItem: (Order)-[:ORDER_ITEM]->(Product) edges with its other fields as properties; Order.items and Product.orderItems now list Product and Order nodes (the properties are on $edge)
   Product.price        Decimal: became Float: a 64-bit float keeps about 15 significant digits, so exact decimals (money) can round; use a String or an Int of cents to keep them exact
   Product.categoryId   foreign key: dropped: the HAS_PRODUCTS edge of category replaces the key (Neo4j links nodes with edges, not key columns)
+  …
+```
+
+Run `cyphra validate` after the import, then `cyphra migrate dev` for the constraints and indexes.
+
+## Import from neogma
+
+Moving from [neogma](/compare/neogma-neode) to Cyphra? Convert its models to a Cyphra schema:
+
+```bash
+cyphra import neogma src/models              # every model file under a folder
+cyphra import neogma src/models/user.ts src/models/order.ts --print
+```
+
+Pass model files (`.ts`, `.js`, `.mts`, `.cjs`, …) or folders. In a folder, files that do not mention
+neogma or TypeBox, tests, `.d.ts` files and `node_modules` are skipped. The options are the ones of
+[`cyphra import graphql`](#import-from-neo4jgraphql): `--out <path>`, `--force`, `--merge` and
+`--print`.
+
+The importer reads the files with the TypeScript compiler and **never runs them**: no connection to
+Neo4j, no import of your app. It follows constants (`const email = Type.String({ … })`, a
+`defineRelationshipProperties({ … })` object, a static class field) within the files you pass, so
+pass the files that hold the shared schemas too.
+
+What it reads (checked against neogma 2.0.5, November 2026):
+
+- **neogma 2 decorator classes**: `@Node({ label })`, `@PrimaryKey(schema)`, `@Property(schema)` and
+  `@Relationship({ name, direction, model, properties })`, from `neogma` (TC39 decorators) or
+  `neogma/legacy` (experimental decorators). Without a `label`, the class name is the label, as in
+  neogma.
+- **`ModelFactory({ label, schema, primaryKeyField, relationships, statics, methods }, neogma)`**,
+  the neogma 1 API that neogma 2 still accepts, with revalidator schemas
+  (`{ type: 'string', required: true }`) or TypeBox ones, plus `Model.addRelationships({ … })` and hooks or methods assigned to the
+  model afterwards.
+
+**Models and properties**
+
+| neogma                                                         | Cyphra                                                             |
+| -------------------------------------------------------------- | ------------------------------------------------------------------ |
+| `label: 'User'`                                                | `node User` (a Cyphra model's name is its label)                   |
+| `label: ['User', 'Account']`                                   | `node User implements Account`, with an empty `interface Account`  |
+| `@PrimaryKey(…)`, `primaryKeyField`                            | `@id`; `format: 'uuid'` also gets `@default(uuid())`, reported     |
+| `Type.String()`, `Type.Boolean()`, `Type.BigInt()`             | `String`, `Boolean`, `BigInt`                                      |
+| `Type.Number()`                                                | `Float`                                                            |
+| `Type.Integer()`, `type: 'integer'`                            | `Int`, reported: the driver stored the JS numbers as `FLOAT`       |
+| `Type.String({ format: 'date-time' })`, `format: 'date'`       | `DateTime`, `Date`, reported: stored as strings until you convert  |
+| `Type.Array(T)`                                                | `T[]`                                                              |
+| `Type.Optional(T)`, `Type.Union([T, Type.Null()])`             | `T?` (an optional list becomes a list, reported)                   |
+| revalidator without `required: true`                           | `T?` (revalidator properties are optional by default)              |
+| `Type.Union([Type.Literal('a'), …])`, `Type.Enum([…])`, `enum` | an `enum` (values that are not identifiers: a `String` + `@regex`) |
+| `Type.Object(…)`, `Type.Record(…)`, `type: 'object'`           | `Json`, reported                                                   |
+| no schema (`@Property()`, `Type.Any()`)                        | the type of the field's annotation (`string`, `number[]`, …)       |
+| `minLength` / `maxLength`, `allowEmpty: false`                 | `@length(min, max)`                                                |
+| `minimum` / `maximum` (`exclusive…` on integers)               | `@min` / `@max`                                                    |
+| `format: 'email'`, `'url'` / `'uri'`, `'uuid'`                 | `@email`, `@url`, `@regex` (UUID)                                  |
+| `pattern` (a string or a `/…/i` literal)                       | `@regex(pattern, flags)`                                           |
+| `minItems` / `maxItems`                                        | `@size(min, max)`                                                  |
+| `default`                                                      | `@default(…)`, reported: neogma validates but never fills defaults |
+
+**Relationships**
+
+- Each alias becomes a list field: `Orders: { name: 'PLACED', direction: 'out', model: Orders }`
+  gives `Orders Order[] @relationship(type: "PLACED", direction: OUT)`. Field names are the aliases,
+  unchanged. `'self'` points to the same node.
+- neogma declares each side on its own model. When both sides are declared (`direction: 'out'` on
+  one, `'in'` on the other, same `name`), they become two fields over the same edges, which Cyphra
+  reads as inverses of each other. A side declared only once stays one field; add the other side to
+  the schema if you want it.
+- `direction: 'none'` becomes `OUT`, reported: a Cyphra field follows one direction.
+- Relationship `properties` (object, array or function form, on either side or both) become one
+  [`relationship` model](/schema#relationships) per type and pair of nodes, named after the type
+  (`RATED` gives `Rated`). Cyphra uses the stored property name (`rating`), not the neogma alias
+  (`Rating`), and the report says so.
+
+Not converted, and reported: hooks (`beforeCreate`, `beforeDelete`; port them to
+[query hooks](/client#query-hooks)), statics and instance methods (port them to
+[client extensions](/client#extensions)), custom validators (`Type.Refine`, revalidator `conform`),
+unions of different types, formats other than the ones above, `multipleOf`, `uniqueItems`, rules on
+list elements, and anything the importer cannot read statically (a schema built by a function, a
+label from a variable defined elsewhere). Custom error `messages` are listed as ignored.
+
+neogma creates no constraints, while `@id` does: before the first `cyphra migrate dev`, check that the
+existing primary keys have no duplicates. The report has the same sections as the other importers:
+
+```text
+Wrote schema.cyphra (3 node(s), 1 relationship model(s))
+
+Not converted (6):
+  Customer       beforeCreate: hook: not converted; port it to a query hook: db.$extends({ query: { customer: { create, createMany } } })
+  Customer       static findByEmail: static method: not converted; add it as a model method: db.$extends({ model: { customer: { findByEmail } } })
+  Product.price  Type.Refine: custom validator: not converted; check the value in a query hook (db.$extends({ query }))
+  …
+
+Converted with differences (13):
+  Customer.id          format: "uuid": neogma does not generate keys: Cyphra now sets a uuid() when create gets no id (you can still pass one)
+  Customer.createdAt   format: "date-time": a date-time string became a DateTime (a Neo4j DATETIME): convert the stored strings with datetime() when you move the data
+  Contains.quantity    alias: the alias Quantity (on Order.Products) is not kept: Cyphra uses the stored name, $edge: { quantity }
   …
 ```
 

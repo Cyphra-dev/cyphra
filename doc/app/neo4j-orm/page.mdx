@@ -225,6 +225,7 @@ The left column uses the names from the Prisma ORM 7
 | `@@fulltext` and the full-text `search` filter | `@@fulltext` and `db.post.search({ index, query, where })` ([Full-text search](/client#full-text-search)) |
 | `$transaction(async (tx) => …)`                | `db.$transaction(async (tx) => …)`                                                                        |
 | `$queryRaw` tagged template                    | `` db.$cypher`…` `` (parameterized Cypher)                                                                |
+| `$extends({ query, result, model, client })`   | `db.$extends({ query, result, model, client })` ([Extensions](/client#extensions))                        |
 | `$disconnect()`                                | `db.$disconnect()`                                                                                        |
 
 Some things do not map, and it is better to know before you start:
@@ -232,7 +233,6 @@ Some things do not map, and it is better to know before you start:
 - **No array form of `$transaction`.** Cyphra has the interactive form only.
 - **No cursor pagination** on the client yet: use `skip` / `take`, or a `where` on the last key.
 - **No down migrations.** Migrations are forward-only.
-- **No client extensions or middleware.**
 - **Relations are relationships, not foreign keys.** There is no `userId` field to keep in sync:
   `connect` and `disconnect` create and delete edges (`connect` is idempotent: one edge per pair).
 

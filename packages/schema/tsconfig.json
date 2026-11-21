@@ -7,5 +7,7 @@
     "allowJs": true,
     "types": ["node"]
   },
-  "include": ["src/**/*.ts", "vitest.config.ts"]
+  "include": ["src/**/*.ts", "vitest.config.ts"],
+  // neogma model fixtures: type-checked by golden.test.ts with their own decorator settings.
+  "exclude": ["src/import/neogma/__fixtures__/**"]
 }

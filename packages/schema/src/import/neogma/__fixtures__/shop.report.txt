@@ -1,0 +1,22 @@
+Not converted (6):
+  Customer       beforeCreate: hook: not converted; port it to a query hook: db.$extends({ query: { customer: { create, createMany } } })
+  Customer       static findByEmail: static method: not converted; add it as a model method: db.$extends({ model: { customer: { findByEmail } } })
+  Customer       method displayName: instance method: not converted; Cyphra returns plain objects: use a computed field (db.$extends({ result })) or a function
+  Product.tags   items: rules on the list elements (@length) are not converted: Cyphra rules check a list's size, not its elements
+  Product.price  Type.Refine: custom validator: not converted; check the value in a query hook (db.$extends({ query }))
+  Product.price  exclusiveMinimum: > 0 is not converted (Cyphra's @min is inclusive): set @min to the closest value you accept
+
+Converted with differences (13):
+  Customer.id          format: "uuid": neogma does not generate keys: Cyphra now sets a uuid() when create gets no id (you can still pass one)
+  Customer.website     format: "uri": became @url, which accepts absolute http and https URLs only
+  Customer.tier        default: neogma only validates (it does not fill defaults): Cyphra now sets "bronze" on create when the value is missing
+  Customer.newsletter  default: neogma only validates (it does not fill defaults): Cyphra now sets false on create when the value is missing
+  Customer.createdAt   format: "date-time": a date-time string became a DateTime (a Neo4j DATETIME): convert the stored strings with datetime() when you move the data
+  Order.id             format: "uuid": neogma does not generate keys: Cyphra now sets a uuid() when create gets no id (you can still pass one)
+  Order.status         enum: values that are not identifiers ("pending", "paid", "shipped", "in-transit") became a String checked by @regex
+  Order.deliveryDate   format: "date": a date string became a Date (a Neo4j DATE): convert the stored strings with date() when you move the data
+  Product.stock        Integer: became Int (a Neo4j INTEGER), but the driver stored neogma's JS numbers as FLOAT: convert them with toInteger() when you move the data
+  Product.stock        default: neogma only validates (it does not fill defaults): Cyphra now sets 0 on create when the value is missing
+  Product.dimensions   Type.Object: an object became a Json field (one JSON text property): its keys are not typed or validated by Cyphra
+  Contains.quantity    Integer: became Int (a Neo4j INTEGER), but the driver stored neogma's JS numbers as FLOAT: convert them with toInteger() when you move the data
+  Contains.quantity    alias: the alias Quantity (on Order.Products) is not kept: Cyphra uses the stored name, $edge: { quantity }

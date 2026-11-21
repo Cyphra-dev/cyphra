@@ -16,20 +16,20 @@ you searched for Neo4j-OGM: that is a Java library, not an option for a TypeScri
 
 ## At a glance
 
-|                         | Cyphra                                  | neogma                                      | neode (npm 0.4.9)                             |
-| ----------------------- | --------------------------------------- | ------------------------------------------- | --------------------------------------------- |
-| Model defined in        | `.cyphra` schema, client generated      | TypeScript classes with decorators          | JavaScript schema objects                     |
-| Written in              | TypeScript                              | TypeScript                                  | JavaScript, with hand-written `.d.ts` typings |
-| Value validation        | Types, unknown keys and required fields | TypeBox schemas (`minLength`, `minimum`, …) | Joi                                           |
-| Relationship properties | Typed, as `$edge`                       | Yes, on `Related<…>` fields                 | Yes, in the relationship schema               |
-| Eager loading           | `include` / `select`, nested            | `relationships` option                      | `eager: true` on a relationship               |
-| Query builder / raw     | Builder and `` db.$cypher`…` ``         | `QueryBuilder` and raw Cypher               | `query()` builder and `cypher()`              |
-| Constraints and indexes | Generated, versioned migrations         | Not covered in its docs                     | `schema.install()` from model definitions     |
-| Data migrations         | Backfills and guards, generated         | Not covered in its docs                     | Not covered in its README                     |
-| Introspect a database   | `cyphra pull`                           | Not covered in its docs                     | Not in 0.4.9 (1.0: `neode-generate`)          |
-| Bundled `neo4j-driver`  | `^5.28`                                 | `^6.3`                                      | `^4.2`                                        |
-| Latest npm release      | 0.2.1                                   | 2.0.5 (2026-11-14)                          | 0.4.9 (2023-02-21)                            |
-| License                 | MIT                                     | MIT                                         | MIT                                           |
+|                         | Cyphra                                     | neogma                                      | neode (npm 0.4.9)                             |
+| ----------------------- | ------------------------------------------ | ------------------------------------------- | --------------------------------------------- |
+| Model defined in        | `.cyphra` schema, client generated         | TypeScript classes with decorators          | JavaScript schema objects                     |
+| Written in              | TypeScript                                 | TypeScript                                  | JavaScript, with hand-written `.d.ts` typings |
+| Value validation        | Types, plus `@length`, `@min`, `@email`, … | TypeBox schemas (`minLength`, `minimum`, …) | Joi                                           |
+| Relationship properties | Typed, as `$edge`                          | Yes, on `Related<…>` fields                 | Yes, in the relationship schema               |
+| Eager loading           | `include` / `select`, nested               | `relationships` option                      | `eager: true` on a relationship               |
+| Query builder / raw     | Builder and `` db.$cypher`…` ``            | `QueryBuilder` and raw Cypher               | `query()` builder and `cypher()`              |
+| Constraints and indexes | Generated, versioned migrations            | Not covered in its docs                     | `schema.install()` from model definitions     |
+| Data migrations         | Backfills and guards, generated            | Not covered in its docs                     | Not covered in its README                     |
+| Introspect a database   | `cyphra pull`                              | Not covered in its docs                     | Not in 0.4.9 (1.0: `neode-generate`)          |
+| Bundled `neo4j-driver`  | `^5.28.3 \|\| ^6.0.0`                      | `^6.3`                                      | `^4.2`                                        |
+| Latest npm release      | 0.12.0 (2026-11-21)                        | 2.0.5 (2026-11-14)                          | 0.4.9 (2023-02-21)                            |
+| License                 | MIT                                        | MIT                                         | MIT                                           |
 
 ## Models: decorators vs a schema file
 
@@ -100,9 +100,11 @@ const user = await db.user.findUnique({
 // { name: string; orders: { status: string }[] } | null
 ```
 
-Cyphra does not validate value ranges or formats the way TypeBox (neogma) or Joi (neode) do. It
-rejects unknown fields and operators, wrong value types and missing required fields
-(`CyphraValidationError`), and leaves business rules such as "name is not empty" to your code.
+Cyphra rejects unknown fields and operators, wrong value types and missing required fields
+(`CyphraValidationError`), and checks the rules declared in the schema on every write: `@length`,
+`@min` / `@max`, `@email`, `@url`, `@regex`, `@size` and `@nonEmpty` (see [Schema](/schema)). That
+covers the common TypeBox keywords; custom validators (TypeBox `Type.Refine`, Joi custom rules) go in
+a [query hook](/client#query-hooks).
 
 ## Schema and migrations
 
@@ -119,6 +121,20 @@ and [indexes](/glossary/neo4j-index), and real projects change data when the mod
   tracked in the database and checked in CI with `cyphra migrate status`. See
   [Migrations](/migrations) and [constraints and indexes as code](/blog/neo4j-schema-migrations-constraints-as-code).
 
+## Moving from neogma
+
+`cyphra import neogma src/models` reads neogma 2 decorator classes and neogma 1 `ModelFactory`
+models without running them, and writes `schema.cyphra`: labels become nodes, TypeBox or revalidator
+schemas become types and rules (`minLength` to `@length`, `format: 'email'` to `@email`, …), each
+relationship alias becomes a field and relationship properties become a `relationship` model. Hooks,
+statics, instance methods and custom validators are listed in a report, to port to
+[client extensions](/client#extensions). The [CLI reference](/cli#import-from-neogma) has the full
+mapping; it was checked against neogma 2.0.5.
+
+```bash
+npx cyphra import neogma src/models
+```
+
 ## What about Neo4j-OGM?
 
 [Neo4j-OGM](https://github.com/neo4j/neo4j-ogm) is a Java library ("like JPA, it uses annotations on
@@ -130,7 +146,7 @@ Neo4j-OGM." For the terms themselves, see [ORM vs OGM](/glossary/orm-vs-ogm).
 ## When to choose neogma instead
 
 - You want models as TypeScript classes, with no schema file and no code generation step.
-- You want value validation (lengths, ranges, patterns) declared on the model with TypeBox.
+- You want the full set of TypeBox (JSON Schema) keywords and custom validators on the model.
 - You use NestJS: neogma ships a `@neogma/nest` module.
 
 ## When to choose neode instead
@@ -145,6 +161,7 @@ Neo4j-OGM." For the terms themselves, see [ORM vs OGM](/glossary/orm-vs-ogm).
 - You want Prisma-style queries (`findMany`, `include`, `select`, nested writes) with result types
   that follow your arguments ([Prisma-style ORM for Neo4j](/neo4j-orm)).
 - You are adopting an existing database: `cyphra pull` writes the schema for you ([CLI](/cli)).
+- You are on neogma already: `cyphra import neogma` converts the models and reports the rest.
 
 <Callout type="info">
   Cyphra's typed client needs Neo4j 5.6 or later. Check your server version before you plan a
@@ -161,7 +178,7 @@ Neo4j-OGM." For the terms themselves, see [ORM vs OGM](/glossary/orm-vs-ogm).
 
 ## Sources
 
-Checked on 2026-11-20.
+Checked on 2026-11-21.
 
 - GitHub, [themetalfleece/neogma](https://github.com/themetalfleece/neogma): README (code reformatted with Prettier; decorator
   example, TypeBox validation, eager loading, query builder, raw Cypher, `@neogma/nest`); not
@@ -171,6 +188,9 @@ Checked on 2026-11-20.
   relationship properties, the v1 to v2 migration guide
 - npm registry, [`neogma`](https://www.npmjs.com/package/neogma): 2.0.5 published 2026-11-14, MIT,
   depends on `neo4j-driver` `^6.3.0`
+- npm registry, [`cyphra`](https://www.npmjs.com/package/cyphra): 0.12.0 published 2026-11-21
+- neogma 2.0.5 type definitions (`@Node`, `@PrimaryKey`, `@Property`, `@Relationship`,
+  `ModelFactory`): the shapes `cyphra import neogma` reads
 - npm registry, [`neode`](https://www.npmjs.com/package/neode): `latest` 0.4.9 published 2023-02-21,
   MIT, depends on `neo4j-driver` `^4.2.2` and `@hapi/joi`, no `next` tag published
 - GitHub, [neode 0.4.9 README](https://github.com/adam-cowley/neode/blob/v0.4.9/README.md): schema
@@ -180,5 +200,5 @@ Checked on 2026-11-20.
   `v1.0.0-next.2` on 2026-11-13, last push 2026-11-14
 - GitHub, [neo4j/neo4j-ogm](https://github.com/neo4j/neo4j-ogm): Java, release v5.1.1 on 2026-11-18
 - Spring, [Spring Data Neo4j FAQ](https://docs.spring.io/spring-data/neo4j/reference/faq.html)
-- Cyphra's dependency on `neo4j-driver` `^5.28` is in
-  [`packages/runtime/package.json`](https://github.com/Cyphra-dev/cyphra/blob/main/packages/runtime/package.json).
+- Cyphra's dependency on `neo4j-driver` `^5.28.3 || ^6.0.0` is in
+  [`packages/cyphra/package.json`](https://github.com/Cyphra-dev/cyphra/blob/main/packages/cyphra/package.json).
