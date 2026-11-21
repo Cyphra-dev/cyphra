@@ -4,7 +4,7 @@
  */
 import { describe, expectTypeOf, it } from "vitest";
 import type { CyphraTypeMap, Db } from "./__fixtures__/blog.gen.js";
-import type { ModelPath, Path, PathEdge, SelfRelations } from "./types.js";
+import type { ModelPath, Path, PathEdge, SelfRelations, ShortestPathResult } from "./types.js";
 
 // Type-only test file: checked by `tsc` (pnpm typecheck), not executed by Vitest.
 
@@ -319,6 +319,84 @@ describe("ORM types", () => {
     await db.user.traverse({ from: {}, via: "following", direction: "up", depth: { max: 2 } });
     // @ts-expect-error — where is typed by the model
     await db.user.traverse({ from: {}, via: "following", depth: { max: 2 }, where: { age: "x" } });
+  });
+
+  it("types shortest paths", async () => {
+    const path = await db.user.shortestPath({
+      from: { id: "u1" },
+      to: { email: "b@x.io" },
+      via: "following",
+      maxDepth: 4,
+      where: { age: { gte: 18 } },
+      edgeWhere: { since: { gte: new Date("2024-01-01") } },
+    });
+    expectTypeOf(path).toEqualTypeOf<ModelPath<CyphraTypeMap, "User", "following"> | null>();
+    expectTypeOf(path!.edges[0]!.properties.since).toEqualTypeOf<Date>();
+
+    const _picked = await db.user.allShortestPaths({
+      from: { id: "u1" },
+      to: { id: "u2" },
+      via: ["following", "followers"],
+      direction: "both",
+      maxDepth: 3,
+      take: 5,
+      select: { email: true, _count: { select: { posts: true } } },
+    });
+    expectTypeOf<(typeof _picked)[number]["nodes"]>().toEqualTypeOf<
+      { email: string; _count: { posts: number } }[]
+    >();
+    expectTypeOf<(typeof _picked)[number]["edges"][number]["properties"]>().toEqualTypeOf<{
+      since: Date;
+    }>();
+
+    const _included = await db.user.shortestPath({
+      from: { id: "u1" },
+      to: { id: "u2" },
+      via: "following",
+      maxDepth: 2,
+      include: { posts: true },
+    });
+    expectTypeOf<
+      NonNullable<typeof _included>["nodes"][number]["posts"][number]["title"]
+    >().toEqualTypeOf<string>();
+    expectTypeOf<NonNullable<typeof _included>>().toMatchTypeOf<
+      ShortestPathResult<CyphraTypeMap, "User", "following", { email: string }>
+    >();
+
+    // @ts-expect-error — maxDepth is required
+    await db.user.shortestPath({ from: { id: "u1" }, to: { id: "u2" }, via: "following" });
+    // @ts-expect-error — to is required
+    await db.user.shortestPath({ from: { id: "u1" }, via: "following", maxDepth: 2 });
+    // @ts-expect-error — posts leads to Post, not back to User
+    await db.user.shortestPath({ from: {}, to: {}, via: "posts", maxDepth: 2 });
+    // @ts-expect-error — Post has no relation back to Post
+    await db.post.allShortestPaths({ from: {}, to: {}, via: "author", maxDepth: 2 });
+    // @ts-expect-error — take is for allShortestPaths
+    await db.user.shortestPath({ from: {}, to: {}, via: "following", maxDepth: 2, take: 1 });
+    await db.user.shortestPath({
+      from: {},
+      to: {},
+      via: "following",
+      maxDepth: 2,
+      // @ts-expect-error — edge filters are typed by the relationship model
+      edgeWhere: { since: "yesterday" },
+    });
+    await db.user.shortestPath({
+      from: {},
+      to: {},
+      via: "following",
+      maxDepth: 2,
+      // @ts-expect-error — where is typed by the model
+      where: { age: "x" },
+    });
+    await db.user.shortestPath({
+      from: {},
+      to: {},
+      via: "following",
+      maxDepth: 2,
+      // @ts-expect-error — depth is a traverse option
+      depth: { max: 2 },
+    });
   });
 
   it("types paths generically (for traversals and shortest paths)", () => {

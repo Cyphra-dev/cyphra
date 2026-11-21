@@ -30,6 +30,7 @@ import {
 } from "./compile.js";
 import { compileAggregate, compileGroupBy } from "./aggregate.js";
 import { DEFAULT_MAX_TRAVERSAL_DEPTH, compileTraverse } from "./traverse.js";
+import { compileShortestPath } from "./shortest.js";
 import { CyphraError, CyphraValidationError, NotFoundError } from "./errors.js";
 import { encodeScalar, integerToNumber } from "./values.js";
 
@@ -215,6 +216,29 @@ export class ModelEngine {
       if (!isPlainObject(args)) throw new CyphraValidationError("traverse args must be an object.");
       const max = this.options.maxTraversalDepth ?? DEFAULT_MAX_TRAVERSAL_DEPTH;
       const c = compileTraverse(this.ctx(), this.model, args, max);
+      return c.decode(await exec(c.text, c.params));
+    });
+  }
+
+  /** One statement; see {@link compileShortestPath}. */
+  async shortestPath(args: AnyRecord): Promise<unknown> {
+    return (await this.shortest(args, false))[0] ?? null;
+  }
+
+  /** One statement; see {@link compileShortestPath}. */
+  allShortestPaths(args: AnyRecord): Promise<unknown[]> {
+    return this.shortest(args, true);
+  }
+
+  private shortest(args: AnyRecord, all: boolean): Promise<unknown[]> {
+    return this.runner.read(async (exec) => {
+      if (!isPlainObject(args)) {
+        throw new CyphraValidationError(
+          `${all ? "allShortestPaths" : "shortestPath"} args must be an object.`,
+        );
+      }
+      const max = this.options.maxTraversalDepth ?? DEFAULT_MAX_TRAVERSAL_DEPTH;
+      const c = compileShortestPath(this.ctx(), this.model, args, max, all);
       return c.decode(await exec(c.text, c.params));
     });
   }

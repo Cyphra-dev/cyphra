@@ -61,13 +61,20 @@ export type CompiledTraversal = {
   readonly decode: (rows: readonly AnyRecord[]) => unknown[];
 };
 
-function hopBound(v: unknown, name: string, min: number, cap?: number): number {
+/** Validate a hop bound (inlined in the statement, so it must be a checked integer). */
+export function hopBound(
+  v: unknown,
+  name: string,
+  min: number,
+  cap?: number,
+  op = "traverse",
+): number {
   if (typeof v !== "number" || !Number.isInteger(v) || v < min) {
-    throw new CyphraValidationError(`traverse: ${name} must be an integer >= ${min}.`);
+    throw new CyphraValidationError(`${op}: ${name} must be an integer >= ${min}.`);
   }
   if (cap !== undefined && v > cap) {
     throw new CyphraValidationError(
-      `traverse: ${name} is ${v}, above the maximum traversal depth of ${cap} (client option maxTraversalDepth).`,
+      `${op}: ${name} is ${v}, above the maximum traversal depth of ${cap} (client option maxTraversalDepth).`,
     );
   }
   return v;
@@ -94,11 +101,15 @@ export function parseDepth(depth: unknown, cap: number): { min: number; max: num
 }
 
 /** Resolve `via` to relation fields of `model` that lead back to `model`. */
-function viaRelations(model: ResolvedNodeModel, via: unknown): ResolvedRelationField[] {
+export function viaRelations(
+  model: ResolvedNodeModel,
+  via: unknown,
+  op = "traverse",
+): ResolvedRelationField[] {
   const names = Array.isArray(via) ? via : [via];
   if (via === undefined || names.length === 0) {
     throw new CyphraValidationError(
-      `traverse on ${model.name}: via is required (a relation name or a list of them).`,
+      `${op} on ${model.name}: via is required (a relation name or a list of them).`,
     );
   }
   const out: ResolvedRelationField[] = [];
@@ -106,12 +117,12 @@ function viaRelations(model: ResolvedNodeModel, via: unknown): ResolvedRelationF
     const rel = typeof name === "string" ? relationField(model, name) : undefined;
     if (!rel) {
       throw new CyphraValidationError(
-        `traverse: unknown relation "${model.name}.${String(name)}" in via.`,
+        `${op}: unknown relation "${model.name}.${String(name)}" in via.`,
       );
     }
     if (rel.target !== model.name) {
       throw new CyphraValidationError(
-        `traverse: ${model.name}.${rel.name} leads to ${rel.target}; via takes relations from ${model.name} to ${model.name}.`,
+        `${op}: ${model.name}.${rel.name} leads to ${rel.target}; via takes relations from ${model.name} to ${model.name}.`,
       );
     }
     if (!out.includes(rel)) out.push(rel);
@@ -122,14 +133,17 @@ function viaRelations(model: ResolvedNodeModel, via: unknown): ResolvedRelationF
 /**
  * The hop of the quantified path pattern, e.g. `(:User)-[e:FOLLOWS]->(:User)`. Several relations
  * with the same arrow direction share one pattern (`[e:A|B]`); mixed directions use an undirected
- * pattern with a predicate on each relationship type.
+ * pattern with a predicate on each relationship type. `target` names the node each hop steps to,
+ * so that it can be read as a group variable (the list of every node of the path but the first).
  */
-function compileHop(
+export function compileHop(
   ctx: QueryContext,
   model: ResolvedNodeModel,
   rels: readonly ResolvedRelationField[],
   direction: unknown,
   edgePredicate: (edge: string) => string | null,
+  target?: string,
+  op = "traverse",
 ): string {
   if (
     direction !== undefined &&
@@ -137,7 +151,7 @@ function compileHop(
     direction !== "in" &&
     direction !== "both"
   ) {
-    throw new CyphraValidationError('traverse: direction must be "out", "in" or "both".');
+    throw new CyphraValidationError(`${op}: direction must be "out", "in" or "both".`);
   }
   const byType = new Map<string, Set<RelationDirection>>();
   for (const rel of rels) {
@@ -156,10 +170,10 @@ function compileHop(
     const kind = [...kinds][0];
     const edge = `[${e}:${types}]`;
     const arrow = kind === "OUT" ? `-${edge}->` : kind === "IN" ? `<-${edge}-` : `-${edge}-`;
-    pattern = `(${label})${arrow}(${label})`;
+    pattern = `(${label})${arrow}(${target ?? ""}${label})`;
   } else {
     const x = ctx.variable("x");
-    const y = ctx.variable("y");
+    const y = target ?? ctx.variable("y");
     pattern = `(${x}${label})-[${e}:${types}]-(${y}${label})`;
     const alts = [...byType].map(([type, dirs]) => {
       const t = `type(${e}) = ${ctx.param(type)}`;
@@ -175,17 +189,18 @@ function compileHop(
 }
 
 /** The `relationship { … }` model shared by every relation of `via`, as a model for `compileWhere`. */
-function edgeWhereModel(
+export function edgeWhereModel(
   schema: SchemaModel,
   model: ResolvedNodeModel,
   rels: readonly ResolvedRelationField[],
+  op = "traverse",
 ): ResolvedNodeModel {
   const names = new Set(rels.map((r) => r.edge));
   const name = rels[0]!.edge;
   const edge = name ? schema.relationships.find((r) => r.name === name) : undefined;
   if (!edge || names.size !== 1) {
     throw new CyphraValidationError(
-      `traverse: edgeWhere needs every relation in via (${rels.map((r) => `${model.name}.${r.name}`).join(", ")}) to share one relationship { … } model.`,
+      `${op}: edgeWhere needs every relation in via (${rels.map((r) => `${model.name}.${r.name}`).join(", ")}) to share one relationship { … } model.`,
     );
   }
   return { name: edge.name, label: edge.relType, uniqueFields: [], fields: edge.properties };
