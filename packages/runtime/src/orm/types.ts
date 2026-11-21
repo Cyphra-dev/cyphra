@@ -36,6 +36,13 @@ export type ModelTypeDef = {
    * usable in `findUnique`, `connect`, … as `where: { a_b: { a, b } }` (absent when none).
    */
   readonly compoundUniques?: Record<string, string>;
+  /**
+   * `true` for an `interface`: queries return its {@link ModelTypeDef.implementations} as a union
+   * discriminated by `__typename`, and it has no `create` / `createMany` / `upsert`.
+   */
+  readonly abstract?: true;
+  /** Names of the models implementing this interface (only on an interface). */
+  readonly implementations?: string;
 };
 
 export type TypeMap = Record<string, ModelTypeDef>;
@@ -54,6 +61,18 @@ type Target<TM extends TypeMap, M extends keyof TM, R extends keyof Relations<TM
   keyof TM;
 
 type Simplify<T> = { [K in keyof T]: T[K] } & {};
+
+/** `true` when model `M` is an `interface`. */
+type IsAbstract<TM extends TypeMap, M extends keyof TM> = TM[M] extends { abstract: true }
+  ? true
+  : false;
+
+/** Models implementing the interface `M` (`never` for a node). */
+export type Implementations<TM extends TypeMap, M extends keyof TM> = TM[M] extends {
+  implementations: infer I extends string;
+}
+  ? I & keyof TM
+  : never;
 
 /** `Vector(N)` scalar keys of model `M`. */
 export type VectorKeys<TM extends TypeMap, M extends keyof TM> = TM[M] extends {
@@ -470,7 +489,10 @@ type SelectPayload<TM extends TypeMap, M extends keyof TM, S> = {
   >;
 } & CountPart<TM, M, S>;
 
-type IncludePayload<TM extends TypeMap, M extends keyof TM, I> = Scalars<TM, M> & {
+type IncludePayload<TM extends TypeMap, M extends keyof TM, I> = Scalars<TM, M> &
+  IncludedRelations<TM, M, I>;
+
+type IncludedRelations<TM extends TypeMap, M extends keyof TM, I> = {
   [R in TrueKeys<I> & keyof Relations<TM, M>]: RelationPayload<
     TM,
     Rel<TM, M, R>,
@@ -478,14 +500,33 @@ type IncludePayload<TM extends TypeMap, M extends keyof TM, I> = Scalars<TM, M> 
   >;
 } & CountPart<TM, M, I>;
 
+/**
+ * Result of a query on the interface `M`: a union over its implementations, discriminated by
+ * `__typename`. Without `select`, each member has its implementation's scalar fields (and the
+ * interface relations `include` loads); with `select`, the selected interface fields.
+ */
+type InterfacePayload<TM extends TypeMap, M extends keyof TM, A> = {
+  [T in Implementations<TM, M>]: Simplify<
+    { __typename: T } & (IsObject<ArgOf<A, "select">> extends true
+      ? SelectPayload<TM, M, ArgOf<A, "select">>
+      : Scalars<TM, T> &
+          (IsObject<ArgOf<A, "include">> extends true
+            ? IncludedRelations<TM, M, ArgOf<A, "include">>
+            : unknown))
+  >;
+}[Implementations<TM, M>];
+
 /** Result type of a query on model `M` with args `A` (honours `select` / `include`). */
-export type Payload<TM extends TypeMap, M extends keyof TM, A> = Simplify<
-  IsObject<ArgOf<A, "select">> extends true
-    ? SelectPayload<TM, M, ArgOf<A, "select">>
-    : IsObject<ArgOf<A, "include">> extends true
-      ? IncludePayload<TM, M, ArgOf<A, "include">>
-      : Scalars<TM, M>
->;
+export type Payload<TM extends TypeMap, M extends keyof TM, A> =
+  IsAbstract<TM, M> extends true
+    ? InterfacePayload<TM, M, A>
+    : Simplify<
+        IsObject<ArgOf<A, "select">> extends true
+          ? SelectPayload<TM, M, ArgOf<A, "select">>
+          : IsObject<ArgOf<A, "include">> extends true
+            ? IncludePayload<TM, M, ArgOf<A, "include">>
+            : Scalars<TM, M>
+      >;
 
 type IsObject<X> = [X] extends [never] ? false : [X] extends [object] ? true : false;
 type ArgOf<A, K extends string> = A extends { [P in K]?: infer V } ? Exclude<V, undefined> : never;
@@ -505,7 +546,12 @@ type ScalarCreate<TM extends TypeMap, M extends keyof TM> = {
   [K in Exclude<keyof Scalars<TM, M>, TM[M]["createRequired"]>]?: Scalars<TM, M>[K];
 };
 
-type RelationCreate<TM extends TypeMap, D extends RelationTypeDef> = {
+type RelationCreate<TM extends TypeMap, D extends RelationTypeDef> =
+  IsAbstract<TM, D["target"] & keyof TM> extends true
+    ? Omit<RelationCreateAny<TM, D>, "create">
+    : RelationCreateAny<TM, D>;
+
+type RelationCreateAny<TM extends TypeMap, D extends RelationTypeDef> = {
   /** Create related node(s) and link them. */
   create?: OneOrMany<D, CreateInput<TM, D["target"] & keyof TM> & EdgeInput<D>>;
   /** Link existing node(s); throws if a target does not exist. */
@@ -1028,9 +1074,14 @@ type Inc<TM extends TypeMap, M extends keyof TM> = IncludeInput<TM, M> | undefin
 type Out<TM extends TypeMap, M extends keyof TM, S, I> = Payload<TM, M, { select: S; include: I }>;
 
 /** Operations available on `db.<model>`. */
-export type ModelDelegate<TM extends TypeMap, M extends keyof TM> = BaseModelDelegate<TM, M> &
+export type ModelDelegate<TM extends TypeMap, M extends keyof TM> = (IsAbstract<TM, M> extends true
+  ? Omit<BaseModelDelegate<TM, M>, CreateOperations>
+  : BaseModelDelegate<TM, M>) &
   VectorDelegate<TM, M> &
   FulltextDelegate<TM, M>;
+
+/** Operations an interface has not: create one of its implementations instead. */
+type CreateOperations = "create" | "createMany" | "upsert";
 
 type BaseModelDelegate<TM extends TypeMap, M extends keyof TM> = {
   findMany<S extends Sel<TM, M> = undefined, I extends Inc<TM, M> = undefined>(

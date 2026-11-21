@@ -82,6 +82,25 @@ describe.skipIf(!hasNeo)("schema migrations and pull (Neo4j)", () => {
     expect(src).toContain("n Int");
   });
 
+  it("pulls a shared label as an interface", async () => {
+    const clean = "MATCH (n:PullPerson) DETACH DELETE n";
+    await run(clean);
+    try {
+      await run(
+        "CREATE (:PullEmp:PullPerson {pid: 'e', pname: 'E', salary: 1}), (:PullCust:PullPerson {pid: 'c', pname: 'C', tier: 'gold'})",
+      );
+      const src = printSchemaDocument(
+        schemaFromIntrospection(await introspectDatabase(client)).doc,
+      );
+      expect(src).toContain("interface PullPerson {\n  pid String\n  pname String\n}");
+      expect(src).toContain("node PullEmp implements PullPerson {\n  salary Int\n}");
+      expect(src).toContain("node PullCust implements PullPerson {\n  tier String\n}");
+      expect(() => resolveSchema(parseSchema(src))).not.toThrow();
+    } finally {
+      await run(clean);
+    }
+  });
+
   it("creates vector indexes, recreates them on change, and pulls them back", async () => {
     const v1 = `node MigVector {
   id String @id
@@ -346,6 +365,60 @@ describe.skipIf(!hasNeo)("schema migrations and pull (Neo4j)", () => {
       ]);
     } finally {
       await cleanup();
+    }
+  });
+
+  it("backfills an interface label, moves the constraint to it, and removes it again", async () => {
+    const constraints = [
+      "MigEmp_id_id",
+      "MigEmp_email_unique",
+      "MigCust_id_id",
+      "MigPerson_id_id",
+      "MigPerson_email_unique",
+    ];
+    const clean = async () => {
+      await run("MATCH (n) WHERE n:MigEmp OR n:MigCust OR n:MigPerson DETACH DELETE n");
+      for (const name of constraints) await run(`DROP CONSTRAINT ${name} IF EXISTS`);
+    };
+    await clean();
+    try {
+      const v1 = resolveSchema(
+        parseSchema(`
+          node MigEmp { id String @id
+            email String @unique }
+          node MigCust { id String @id
+            email String }
+        `),
+      );
+      await applyPlan(client, diffSchemaModels(EMPTY_SCHEMA_MODEL, v1));
+      await run("CREATE (:MigEmp {id: 'e1', email: 'a@x'}), (:MigCust {id: 'c1', email: 'b@x'})");
+
+      const v2 = resolveSchema(
+        parseSchema(`
+          interface MigPerson { id String @id
+            email String @unique }
+          node MigEmp implements MigPerson {}
+          node MigCust implements MigPerson {}
+        `),
+      );
+      await applyPlan(client, diffSchemaModels(v1, v2));
+      const rows = await run("MATCH (n:MigPerson) RETURN n.id AS id ORDER BY id");
+      expect(rows.map((r) => r.get("id"))).toEqual(["c1", "e1"]);
+      // The email constraint now spans both implementations.
+      await expect(run("CREATE (:MigCust:MigPerson {id: 'c2', email: 'a@x'})")).rejects.toThrow();
+      const names = (await run("SHOW CONSTRAINTS YIELD name RETURN name")).map((r) =>
+        r.get("name"),
+      );
+      expect(names).toContain("MigPerson_email_unique");
+      expect(names).not.toContain("MigEmp_email_unique");
+
+      await applyPlan(client, diffSchemaModels(v2, v1));
+      const count = async (label: string) =>
+        Number((await run(`MATCH (n:${label}) RETURN count(n) AS c`))[0]!.get("c"));
+      expect(await count("MigPerson")).toBe(0);
+      expect(await count("MigEmp")).toBe(1);
+    } finally {
+      await clean();
     }
   });
 });

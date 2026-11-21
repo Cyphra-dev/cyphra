@@ -65,6 +65,18 @@ describe("TextMate grammar", () => {
     ).toContain('"LocalTime" support.type.primitive.cyphra');
   });
 
+  it("highlights interfaces and implements lists", async () => {
+    const tokens = await tokenize(
+      "interface P {\n  x Int\n}\nnode A implements P, Q {\n  y Int\n}",
+    );
+    expect(tokens).toContain('"interface" keyword.declaration.interface.cyphra');
+    expect(tokens).toContain('"P" entity.name.type.interface.cyphra');
+    expect(tokens).toContain('"implements" keyword.other.implements.cyphra');
+    expect(tokens).toContain('"Q" entity.name.type.interface.cyphra');
+    expect(tokens).toContain('"x" variable.other.property.cyphra');
+    expect(tokens).toContain('"y" variable.other.property.cyphra');
+  });
+
   it("does not end a block on a brace inside a string or a comment", async () => {
     const tokens = await tokenize('node A {\n  x String @default("}") // }\n  y Int\n}');
     expect(tokens).toContain('"y" variable.other.property.cyphra');

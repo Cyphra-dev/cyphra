@@ -99,7 +99,9 @@ export function constraintStatementsFromSchema(doc: SchemaDocument): string[] {
     }
   }
   for (const n of compoundNodes(doc)) {
-    for (const c of n.compoundUniques ?? []) statements.push(compoundUniqueStatement(n.label, c));
+    for (const c of n.compoundUniques ?? []) {
+      if (!c.inheritedFrom) statements.push(compoundUniqueStatement(n.label, c));
+    }
   }
   return statements;
 }
@@ -175,7 +177,9 @@ export function vectorIndexStatementsFromSchema(doc: SchemaDocument): string[] {
   const statements: string[] = [];
   for (const n of resolveSchema(doc).nodes) {
     for (const f of n.fields) {
-      const stmt = f.kind === "scalar" ? vectorIndexStatement(n.label, f) : null;
+      // An inherited vector field is indexed on its interface's label.
+      const stmt =
+        f.kind === "scalar" && !f.inheritedFrom ? vectorIndexStatement(n.label, f) : null;
       if (stmt) statements.push(stmt);
     }
   }
@@ -193,7 +197,7 @@ export function fulltextIndexStatementsFromSchema(doc: SchemaDocument): string[]
   const statements: string[] = [];
   for (const n of resolveSchema(doc).nodes) {
     for (const index of n.fulltextIndexes ?? []) {
-      statements.push(fulltextIndexStatement(n.label, index));
+      if (!index.inheritedFrom) statements.push(fulltextIndexStatement(n.label, index));
     }
   }
   return statements;

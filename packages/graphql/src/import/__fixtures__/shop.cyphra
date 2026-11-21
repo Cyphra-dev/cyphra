@@ -1,7 +1,7 @@
 // Imported from @neo4j/graphql type definitions with `cyphra import graphql`.
 // Review before use (run the import again to see the full report):
 // - JSON: custom scalars are not supported by Cyphra: fields of this type are not converted
-// - Purchasable: interfaces are not supported by Cyphra yet: implementing @node types are converted with their own fields; relationships to the interface are not
+// - Purchasable: @neo4j/graphql interfaces are not labels (Cyphra interfaces are): implementing @node types are converted with their own fields, relationships to the interface are not; to share a label, declare a Cyphra `interface`, implement it and backfill the label
 // - Product: a Cyphra node's name is its label: renamed to "Item"
 // - Product.sku: @unique was removed in @neo4j/graphql v7; Cyphra keeps it and creates the uniqueness constraint
 // - Product.attributes: custom scalars are not supported by Cyphra: not converted

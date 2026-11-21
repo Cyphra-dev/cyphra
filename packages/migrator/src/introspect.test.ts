@@ -349,3 +349,113 @@ describe("schemaFromIntrospection: composite constraints and indexes", () => {
     expect(w).toMatch(/Skipped composite constraint withTags: Account\.tags not found/);
   });
 });
+
+describe("schemaFromIntrospection: interfaces", () => {
+  const str = (name: string, mandatory = true) => ({
+    propertyName: name,
+    propertyTypes: ["String"],
+    mandatory,
+  });
+  const input: IntrospectionResult = {
+    nodeTypes: [
+      {
+        labels: ["Employee", "Person"],
+        properties: [str("id"), str("email"), str("name"), str("badge")],
+      },
+      {
+        labels: ["Customer", "Person"],
+        properties: [str("id"), str("email"), str("name", false), str("tier")],
+      },
+      { labels: ["Team"], properties: [str("id")] },
+      // Not an interface layout: :Tagged also appears alone.
+      { labels: ["Note", "Tagged"], properties: [str("text")] },
+      { labels: ["Tagged"], properties: [str("tag")] },
+    ],
+    relTypes: [
+      {
+        type: "MANAGES",
+        properties: [],
+        endpoints: [
+          { from: ["Employee", "Person"], to: ["Employee", "Person"] },
+          { from: ["Employee", "Person"], to: ["Customer", "Person"] },
+        ],
+      },
+      {
+        type: "MEMBER_OF",
+        properties: [],
+        endpoints: [{ from: ["Employee", "Person"], to: ["Team"] }],
+      },
+    ],
+    constraints: [
+      {
+        name: "Person_id_id",
+        type: "UNIQUENESS",
+        entityType: "NODE",
+        labelsOrTypes: ["Person"],
+        properties: ["id"],
+      },
+      {
+        name: "Employee_email_unique",
+        type: "UNIQUENESS",
+        entityType: "NODE",
+        labelsOrTypes: ["Employee"],
+        properties: ["email"],
+      },
+      {
+        name: "Employee_badge_unique",
+        type: "UNIQUENESS",
+        entityType: "NODE",
+        labelsOrTypes: ["Employee"],
+        properties: ["badge"],
+      },
+    ],
+    indexes: [],
+  };
+  const { doc, warnings } = schemaFromIntrospection(input);
+  const printed = printSchemaDocument(doc);
+
+  it("detects interfaces and keeps constraints on the label that has them", () => {
+    // email stays on the implementations: Employee constrains it, Person does not.
+    expect(printed).toBe(`node Customer implements Person {
+  email String
+  tier String
+}
+
+node Employee implements Person {
+  badge String @unique
+  email String @unique
+  manages Person[] @relationship(type: "MANAGES", direction: OUT)
+  memberOf Team[] @relationship(type: "MEMBER_OF", direction: OUT)
+}
+
+node Note {
+  text String
+}
+
+interface Person {
+  id String @id
+  name String?
+  managesBy Employee[] @relationship(type: "MANAGES", direction: IN)
+}
+
+node Tagged {
+  tag String?
+  text String?
+}
+
+node Team {
+  id String
+  memberOfBy Employee[] @relationship(type: "MEMBER_OF", direction: IN)
+}
+`);
+  });
+
+  it("produces a schema that parses and resolves", () => {
+    const model = resolveSchema(parseSchema(printed));
+    expect(model.nodes.find((n) => n.name === "Employee")?.labels).toEqual(["Employee", "Person"]);
+  });
+
+  it("lists the label combinations it could not turn into interfaces", () => {
+    expect(warnings.join("\n")).toMatch(/:Note:Tagged became one model per label/);
+  });
+});

@@ -20,6 +20,7 @@ import {
   relationField,
   relationPattern,
   scalarField,
+  labelExpr,
 } from "./compile.js";
 import { CyphraValidationError } from "./errors.js";
 import { decodeCount, decodeScalar, integerToNumber } from "./values.js";
@@ -231,7 +232,7 @@ export function compileAggregate(
   const cols = new AggColumns(ctx, "n");
   const outputs = compileSelection(model, args, cols);
   const paging = compilePaging(ctx, model, "n", args);
-  let text = `MATCH (n:${q(model.label)})`;
+  let text = `MATCH (n:${labelExpr(model)})`;
   if (whereClause) text += ` WHERE ${whereClause}`;
   if (paging) text += ` WITH n${paging}`;
   text += ` RETURN ${cols.columns.length ? cols.columns.join(", ") : "count(n) AS _"}`;
@@ -498,7 +499,7 @@ export function compileGroupBy(
   // Without any aggregate the WITH would not group; count(n) makes the grouping explicit.
   if (cols.columns.length === 0) cols.add("_count", "_all");
 
-  let text = `MATCH (n:${q(model.label)})`;
+  let text = `MATCH (n:${labelExpr(model)})`;
   if (whereClause) text += ` WHERE ${whereClause}`;
   if (related.length) text += ` WITH n, ${related.join(", ")}`;
   text += ` WITH ${[...keyColumns, ...cols.columns].join(", ")}`;

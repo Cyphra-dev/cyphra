@@ -30,3 +30,13 @@ relationship Authored {
   to Post
   since DateTime @index
 }
+
+interface Archivable {}
+
+interface Person {
+  name String
+}
+
+node Employee implements Person, Archivable {
+  salary Int
+}

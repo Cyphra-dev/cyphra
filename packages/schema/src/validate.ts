@@ -222,7 +222,7 @@ function validateCompound(where: string, decl: NodeDeclaration, attr: ModelAttri
  * arguments; no two `@@unique` (or two `@@index`) over the same fields.
  */
 export function validateModelAttributes(decl: NodeDeclaration | RelationshipDeclaration): void {
-  const owner = `${decl.kind === "Node" ? "Node" : "Relationship"} "${decl.name}"`;
+  const owner = decl.kind === "Node" ? nodeOwner(decl) : `Relationship "${decl.name}"`;
   for (const attr of decl.attributes ?? []) {
     const where = `${owner} @@${attr.name}`;
     if (!(MODEL_ATTRIBUTES as readonly string[]).includes(attr.name)) {
@@ -381,6 +381,83 @@ export function validateEnum(decl: EnumDeclaration): void {
   }
 }
 
+/** `Node "X"` or `Interface "X"`: how errors name a node declaration. */
+export function nodeOwner(decl: NodeDeclaration): string {
+  return `${decl.abstract ? "Interface" : "Node"} "${decl.name}"`;
+}
+
+/**
+ * `node X implements A, B`: every name is a declared `interface` (named once), interfaces do not
+ * implement others, no field is declared twice (by the node and an interface, or by two
+ * interfaces), and at most one `@id` across them.
+ */
+export function validateImplements(doc: SchemaDocument, decl: NodeDeclaration): void {
+  const names = decl.implements ?? [];
+  if (names.length === 0) return;
+  const owner = nodeOwner(decl);
+  if (decl.abstract) {
+    throw new SchemaValidationError(
+      `${owner}: an interface cannot implement other interfaces (implements ${names.join(", ")}).`,
+    );
+  }
+  const seen = new Set<string>();
+  const fieldFrom = new Map<string, string>();
+  let idFrom: string | undefined;
+  for (const n of names) {
+    if (seen.has(n)) throw new SchemaValidationError(`${owner}: implements ${n} twice.`);
+    seen.add(n);
+    const target = doc.declarations.find((d) => d.name === n);
+    if (!target || target.kind !== "Node" || !target.abstract) {
+      throw new SchemaValidationError(
+        `${owner}: implements ${n}, which is not an interface${target ? "" : " (not declared)"}.`,
+      );
+    }
+    for (const f of target.fields) {
+      const other = fieldFrom.get(f.name);
+      if (other) {
+        throw new SchemaValidationError(
+          `${owner}: field "${f.name}" is declared by both ${other} and ${n}.`,
+        );
+      }
+      fieldFrom.set(f.name, n);
+      if (f.kind === "Scalar" && hasDecoratorNamed(f.decorators, "id")) {
+        if (idFrom) {
+          throw new SchemaValidationError(
+            `${owner}: ${idFrom} and ${n} both declare an @id field (a node has at most one).`,
+          );
+        }
+        idFrom = n;
+      }
+    }
+  }
+  for (const f of decl.fields) {
+    const from = fieldFrom.get(f.name);
+    if (from) {
+      throw new SchemaValidationError(
+        `${owner} field "${f.name}": already inherited from interface ${from} (inherited fields cannot be redeclared).`,
+      );
+    }
+    if (idFrom && f.kind === "Scalar" && hasDecoratorNamed(f.decorators, "id")) {
+      throw new SchemaValidationError(
+        `${owner} field "${f.name}": @id conflicts with the @id inherited from ${idFrom}.`,
+      );
+    }
+  }
+}
+
+/**
+ * `decl` with the fields it inherits from the interfaces it implements (first, in `implements`
+ * order), as model attributes see them: `@@unique([email, tenant])` may name inherited fields.
+ */
+export function withInheritedFields(doc: SchemaDocument, decl: NodeDeclaration): NodeDeclaration {
+  if (!decl.implements?.length) return decl;
+  const inherited = decl.implements.flatMap((n) => {
+    const d = doc.declarations.find((x) => x.name === n);
+    return d?.kind === "Node" ? d.fields : [];
+  });
+  return { ...decl, fields: [...inherited, ...decl.fields] };
+}
+
 /**
  * Applies semantic rules that the grammar cannot express (e.g. a single `@id` per node).
  *
@@ -393,23 +470,28 @@ export function validateSchema(doc: SchemaDocument): void {
       validateEnum(decl);
       continue;
     }
-    validateModelAttributes(decl);
+    if (decl.kind === "Node") {
+      validateImplements(doc, decl);
+      validateModelAttributes(withInheritedFields(doc, decl));
+    } else {
+      validateModelAttributes(decl);
+    }
     if (decl.kind === "Node") {
       const idCount = countIdFields(decl);
       if (idCount > 1) {
         throw new SchemaValidationError(
-          `Node "${decl.name}" must have at most one @id field (found ${idCount}).`,
+          `${nodeOwner(decl)} must have at most one @id field (found ${idCount}).`,
         );
       }
       for (const f of decl.fields) {
         if (f.kind !== "Scalar") {
           continue;
         }
-        validateVectorField(`Node "${decl.name}"`, f, true);
+        validateVectorField(nodeOwner(decl), f, true);
         const idx = decoratorCount(f.decorators, "index");
         if (idx > 1) {
           throw new SchemaValidationError(
-            `Node "${decl.name}" field "${f.name}": at most one @index allowed (found ${idx}).`,
+            `${nodeOwner(decl)} field "${f.name}": at most one @index allowed (found ${idx}).`,
           );
         }
         if (idx === 0) {
@@ -417,12 +499,12 @@ export function validateSchema(doc: SchemaDocument): void {
         }
         if (hasDecoratorNamed(f.decorators, "unique")) {
           throw new SchemaValidationError(
-            `Node "${decl.name}" field "${f.name}": @index is redundant with @unique (unique constraints are indexed).`,
+            `${nodeOwner(decl)} field "${f.name}": @index is redundant with @unique (unique constraints are indexed).`,
           );
         }
         if (hasDecoratorNamed(f.decorators, "id")) {
           throw new SchemaValidationError(
-            `Node "${decl.name}" field "${f.name}": @index is redundant with @id (id uniqueness is indexed).`,
+            `${nodeOwner(decl)} field "${f.name}": @index is redundant with @id (id uniqueness is indexed).`,
           );
         }
       }

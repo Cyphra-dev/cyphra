@@ -27,6 +27,30 @@ export function buildGrammar(scalarTypes: readonly string[]): Rule {
       8: { name: "keyword.operator.type.modifier.cyphra" },
     },
   };
+  // `node X implements A, B { … }` / `interface A { … }`: same body, with an optional
+  // `implements` list in the header.
+  const nodeLike = (keyword: "node" | "interface") => ({
+    begin: `\\b(${keyword})\\b\\s*(${IDENT})?(?:\\s+(implements)\\b\\s*((?:${IDENT})(?:\\s*,\\s*${IDENT})*)?)?`,
+    beginCaptures: {
+      1: { name: `keyword.declaration.${keyword}.cyphra` },
+      2: { name: `entity.name.type.${keyword}.cyphra` },
+      3: { name: "keyword.other.implements.cyphra" },
+      4: {
+        patterns: [
+          { match: IDENT, name: "entity.name.type.interface.cyphra" },
+          { match: ",", name: "punctuation.separator.cyphra" },
+        ],
+      },
+    },
+    end: "\\}",
+    endCaptures: { 0: { name: "punctuation.definition.block.end.cyphra" } },
+    patterns: [
+      { include: "#comment" },
+      { match: "\\{", name: "punctuation.definition.block.begin.cyphra" },
+      { include: "#field" },
+      { include: "#attributes" },
+    ],
+  });
   return {
     $schema: "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
     name: "Cyphra",
@@ -36,6 +60,7 @@ export function buildGrammar(scalarTypes: readonly string[]): Rule {
       { include: "#comment" },
       { include: "#enum" },
       { include: "#node" },
+      { include: "#interface" },
       { include: "#relationship" },
     ],
     repository: {
@@ -63,21 +88,8 @@ export function buildGrammar(scalarTypes: readonly string[]): Rule {
           { match: IDENT, name: "variable.other.enummember.cyphra" },
         ],
       },
-      node: {
-        begin: `\\b(node)\\b\\s*(${IDENT})?`,
-        beginCaptures: {
-          1: { name: "keyword.declaration.node.cyphra" },
-          2: { name: "entity.name.type.node.cyphra" },
-        },
-        end: "\\}",
-        endCaptures: { 0: { name: "punctuation.definition.block.end.cyphra" } },
-        patterns: [
-          { include: "#comment" },
-          { match: "\\{", name: "punctuation.definition.block.begin.cyphra" },
-          { include: "#field" },
-          { include: "#attributes" },
-        ],
-      },
+      node: nodeLike("node"),
+      interface: nodeLike("interface"),
       relationship: {
         begin: `\\b(relationship)\\b\\s*(${IDENT})?`,
         beginCaptures: {

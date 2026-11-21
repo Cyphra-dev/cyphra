@@ -26,6 +26,23 @@ export function q(id: string): string {
   return "`" + id.replace(/`/g, "``") + "`";
 }
 
+/**
+ * Label expression of a node model's nodes: `` `Employee`:`Person` `` for a node implementing
+ * interfaces (written and matched with every label), `` `Person` `` for an interface.
+ */
+export function labelExpr(model: ResolvedNodeModel): string {
+  return (model.labels ?? [model.label]).map(q).join(":");
+}
+
+/** Throw unless `model` can be created (an interface cannot: create one of its implementations). */
+export function assertCreatable(model: ResolvedNodeModel, op: string): void {
+  if (!model.abstract) return;
+  const impls = model.implementations ?? [];
+  throw new CyphraValidationError(
+    `${op}: ${model.name} is an interface and cannot be created; create ${impls.length ? `one of its implementations (${impls.join(", ")})` : "a node implementing it"} instead.`,
+  );
+}
+
 /** Collects parameters and fresh variable names for one statement. */
 export class QueryContext {
   readonly params: Record<string, unknown> = {};
@@ -91,7 +108,7 @@ export function relationPattern(
 ): string {
   const target = ctx.node(rel.target);
   const edge = `[${relVar}:${q(rel.relType)}]`;
-  const end = `(${to}:${q(target.label)})`;
+  const end = `(${to}:${labelExpr(target)})`;
   return rel.direction === "OUT" ? `(${from})-${edge}->${end}` : `(${from})<-${edge}-${end}`;
 }
 
@@ -115,8 +132,9 @@ const SCALAR_OPS = new Set([
 ]);
 const LIST_OPS = new Set(["has", "hasEvery", "hasSome", "isEmpty", "equals"]);
 
-function and(parts: readonly string[]): string | null {
-  const p = parts.filter(Boolean);
+/** `(a) AND (b)` of the non-empty parts, or `null` when there are none. */
+export function and(parts: readonly (string | null)[]): string | null {
+  const p = parts.filter((x): x is string => Boolean(x));
   if (p.length === 0) return null;
   return p.length === 1 ? p[0]! : p.map((x) => `(${x})`).join(" AND ");
 }
@@ -669,10 +687,26 @@ export function intParam(n: number): unknown {
 // Projection (select / include) and decoding
 // ---------------------------------------------------------------------------
 
+/** One implementation of an interface, in the {@link Shape} of an interface query. */
+export type ShapeVariant = {
+  readonly name: string;
+  readonly label: string;
+  /** Its scalars to decode (absent with `select`: the selected interface fields). */
+  readonly scalars?: readonly ResolvedScalarField[];
+};
+
+/** Key of the labels projected next to an interface's properties (to pick `__typename`). */
+const LABELS_KEY = "__labels";
+
 /** How to decode one projected row back into JS. */
 export type Shape = {
   readonly model: ResolvedNodeModel;
   readonly scalars: readonly ResolvedScalarField[];
+  /**
+   * On an interface: its implementations. The row then carries the node's labels, the result a
+   * `__typename` and (without `select`) the scalars of the implementation it is.
+   */
+  readonly variants?: readonly ShapeVariant[];
   readonly relations: readonly {
     readonly field: ResolvedRelationField;
     readonly shape: Shape;
@@ -742,7 +776,31 @@ export function compileProjection(
     }
   }
 
-  const entries: string[] = scalars.map((f) => `.${q(f.name)}`);
+  // An interface reads the fields of every implementation (without `select`) and the labels that
+  // tell which one each node is.
+  let variants: ShapeVariant[] | undefined;
+  let projected: readonly ResolvedScalarField[] = scalars;
+  if (model.abstract) {
+    const selected = args.select !== undefined;
+    variants = (model.implementations ?? []).map((name) => {
+      const impl = ctx.node(name);
+      const own = impl.fields.filter((f): f is ResolvedScalarField => f.kind === "scalar");
+      return selected ? { name, label: impl.label } : { name, label: impl.label, scalars: own };
+    });
+    if (!selected) {
+      const names = new Set(scalars.map((f) => f.name));
+      const extra = variants
+        .flatMap((v) => v.scalars ?? [])
+        .filter((f) => {
+          if (names.has(f.name)) return false;
+          names.add(f.name);
+          return true;
+        });
+      projected = [...scalars, ...extra];
+    }
+  }
+  const entries: string[] = projected.map((f) => `.${q(f.name)}`);
+  if (variants) entries.push(`${q(LABELS_KEY)}: labels(${alias})`);
   const relShapes: Shape["relations"][number][] = [];
   for (const { field, args: sub } of rels) {
     const target = ctx.node(field.target);
@@ -786,6 +844,7 @@ export function compileProjection(
     shape: {
       model,
       scalars,
+      ...(variants ? { variants } : {}),
       relations: relShapes,
       ...(counts ? { counts: counts.map((c) => c.field) } : {}),
     },
@@ -845,7 +904,16 @@ export function decodeRow(shape: Shape, row: unknown): AnyRecord | null {
   if (row === null || row === undefined) return null;
   const src = row as AnyRecord;
   const out: AnyRecord = {};
-  for (const f of shape.scalars) out[f.name] = decodeScalar(f, src[f.name]);
+  let scalars = shape.scalars;
+  if (shape.variants) {
+    // The implementation whose label the node carries; a node with none of them (written outside
+    // Cyphra) is reported as the interface itself, with the interface's fields.
+    const labels = (src[LABELS_KEY] ?? []) as unknown[];
+    const variant = shape.variants.find((v) => labels.includes(v.label));
+    out.__typename = variant?.name ?? shape.model.name;
+    if (variant?.scalars) scalars = variant.scalars;
+  }
+  for (const f of scalars) out[f.name] = decodeScalar(f, src[f.name]);
   for (const r of shape.relations) {
     const decodeItem = (v: unknown) => {
       const item = decodeRow(r.shape, v);

@@ -41,6 +41,7 @@ migration and the snapshot.
 | changed fields, analyzer, consistency or name      | `DROP INDEX … IF EXISTS`, then `CREATE FULLTEXT INDEX`              |
 | new field with a `@default` on an existing model   | backfill: `MATCH (n:User) WHERE n.role IS NULL SET n.role = $value` |
 | field becomes required and has a default           | backfill of the missing values                                      |
+| node starts / stops implementing an interface      | `SET n:Person` / `REMOVE n:Person` on its existing nodes            |
 | new required field without a default               | **guard**: the migration fails if any existing node lacks it        |
 | removed field / model                              | `REMOVE` / `DETACH DELETE`, **commented out**: you opt in           |
 | type change, or a likely rename                    | a review warning at the top of the file                             |
@@ -162,6 +163,23 @@ uniqueness constraint fails if existing nodes already share a key: deduplicate t
 before it. `cyphra push` and `cyphra schema ddl` emit the same statements, and
 [`cyphra pull`](/cli#cyphra-pull) maps composite uniqueness constraints (and node keys) back to
 `@@unique` and composite range indexes to `@@index`.
+
+## Interfaces and labels
+
+When a node starts implementing an [interface](/schema#interfaces-and-multiple-labels), its
+existing nodes get the interface label, before the interface's constraints and indexes are
+created (so a uniqueness constraint on the interface checks every implementation):
+
+```cypher
+MATCH (n:`Employee`) WHERE NOT n:`Person` SET n:`Person`
+```
+
+A node that stops implementing an interface loses the label
+(`MATCH (n:Employee) WHERE n:Person REMOVE n:Person`); removing an interface never deletes
+nodes. Inherited fields are fields of the implementation, so the usual backfills and guards run on
+its label when it starts implementing an interface; a new field of an interface is migrated once,
+on the interface's label. Constraint names follow the declaring label: moving `email @unique` from
+`Employee` into `interface Person` drops `Employee_email_unique` and creates `Person_email_unique`.
 
 ## Writing migrations by hand
 
