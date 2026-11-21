@@ -1,0 +1,1 @@
+{ "prefix": "A\") RETURN 1 AS t UNION MATCH (n) DETACH DELETE n RETURN 1 AS t //" }

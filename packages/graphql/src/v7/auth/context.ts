@@ -13,7 +13,13 @@
  */
 
 import { GraphQLError } from "graphql";
-import type { AuthenticationAnnotation, AuthOperation, NodeType, V7Model } from "../model.js";
+import type {
+  AuthenticationAnnotation,
+  AuthOperation,
+  CypherRootField,
+  NodeType,
+  V7Model,
+} from "../model.js";
 import type { JwtDecoder } from "./jwt.js";
 
 type AnyRecord = Record<string, unknown>;
@@ -234,4 +240,25 @@ export function checkAuthentication(
     const attr = node.attributes.find((a) => a.name === field);
     applyAuthentication(attr?.auth?.authentication, operations, auth);
   }
+}
+
+/**
+ * `@authentication` of a `Query` / `Mutation` `@cypher` field (v7 7.6): the schema-level, the
+ * `type Query` / `type Mutation` and the field annotations, for READ (queries) or CREATE, UPDATE,
+ * DELETE (mutations).
+ */
+export function checkRootAuthentication(
+  model: V7Model,
+  auth: AuthContext,
+  type: "Query" | "Mutation",
+  field: CypherRootField,
+): void {
+  const operations: AuthOperation[] = type === "Query" ? ["READ"] : ["CREATE", "UPDATE", "DELETE"];
+  applyAuthentication(model.authentication, operations, auth);
+  applyAuthentication(
+    (type === "Query" ? model.query : model.mutation).authentication,
+    operations,
+    auth,
+  );
+  applyAuthentication(field.authentication, operations, auth);
 }

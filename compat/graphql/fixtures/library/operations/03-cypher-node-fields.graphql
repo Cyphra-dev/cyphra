@@ -1,0 +1,22 @@
+# features: cypher, cypher.nodes, cypher.arguments
+query {
+  books(where: { year: { lt: 2010 } }) {
+    title
+    related {
+      title
+      firstAuthor {
+        name
+      }
+    }
+    sameAuthors: related(minShared: 2) {
+      title
+    }
+    firstAuthor {
+      name
+      bookCount
+    }
+    writers {
+      name
+    }
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "data": {
+    "booksByTitle": {
+      "totalCount": 2,
+      "edges": [
+        {
+          "score": 0.432613193989,
+          "node": {
+            "title": "A Wizard of Earthsea",
+            "reviewCount": 2
+          }
+        },
+        {
+          "score": 0.432613193989,
+          "node": {
+            "title": "The Wizard Next Door",
+            "reviewCount": 0
+          }
+        }
+      ]
+    },
+    "nothing": {
+      "totalCount": 0,
+      "pageInfo": {
+        "hasNextPage": false,
+        "startCursor": null
+      },
+      "edges": []
+    }
+  }
+}

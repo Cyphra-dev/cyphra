@@ -1,0 +1,12 @@
+# features: cypher, cypher.arguments, sort
+# ordered
+query {
+  books(sort: [{ title: ASC }]) {
+    title
+    reviewCount
+    averageRating
+    keywords
+    first3: keywords(limit: 3)
+    none: keywords(limit: 0)
+  }
+}

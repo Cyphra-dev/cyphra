@@ -1,0 +1,64 @@
+{
+  "data": {
+    "bornAfter1950": [
+      {
+        "title": "American Gods"
+      },
+      {
+        "title": "Good Omens"
+      }
+    ],
+    "allBorn": [
+      {
+        "title": "A Wizard of Earthsea"
+      },
+      {
+        "title": "The Colour of Magic"
+      },
+      {
+        "title": "The Tombs of Atuan"
+      }
+    ],
+    "noGaiman": [
+      {
+        "title": "A Wizard of Earthsea"
+      },
+      {
+        "title": "The Colour of Magic"
+      },
+      {
+        "title": "The Tombs of Atuan"
+      },
+      {
+        "title": "The Wizard Next Door"
+      }
+    ],
+    "singleBefore1950": [
+      {
+        "title": "A Wizard of Earthsea"
+      },
+      {
+        "title": "Good Omens"
+      },
+      {
+        "title": "The Colour of Magic"
+      },
+      {
+        "title": "The Tombs of Atuan"
+      }
+    ],
+    "byLeGuin": [
+      {
+        "title": "A Wizard of Earthsea"
+      },
+      {
+        "title": "The Tombs of Atuan"
+      }
+    ],
+    "secondAuthorGaiman": [
+      {
+        "title": "Good Omens"
+      }
+    ]
+  }
+}

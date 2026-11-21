@@ -1,0 +1,25 @@
+# features: cypher, cypher.nodes, filter.cypher
+# A @cypher field returning one node (firstAuthor) is filtered on its first node; `null` when none.
+query {
+  # v7 7.6 fails when the inner filter is itself on a @cypher field (bookCount): not compared.
+  bornAfter1950: books(where: { writers: { some: { born: { gt: 1950 } } } }) {
+    title
+  }
+  allBorn: books(where: { writers: { all: { born: { lt: 1950 } } } }) {
+    title
+  }
+  noGaiman: books(where: { writers_NONE: { name: { eq: "Neil Gaiman" } } }) {
+    title
+  }
+  singleBefore1950: books(where: { writers: { single: { born: { lt: 1950 } } } }) {
+    title
+  }
+  byLeGuin: books(where: { firstAuthor: { name: { startsWith: "Ursula" } } }) {
+    title
+  }
+  secondAuthorGaiman: books(
+    where: { firstAuthor: { born: { lt: 1950 } }, writers_SOME: { name: { eq: "Neil Gaiman" } } }
+  ) {
+    title
+  }
+}

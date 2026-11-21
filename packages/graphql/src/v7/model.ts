@@ -55,6 +55,56 @@ export type TypeRef = {
 
 export type CypherAnnotation = { readonly statement: string; readonly columnName: string };
 
+/** An argument of a `@cypher` field (scalar or enum, list or not), e.g. `tags(prefix: String = "x")`. */
+export type FieldArgument = {
+  readonly name: string;
+  readonly type: TypeRef;
+  readonly kind: "scalar" | "enum";
+  readonly description?: string;
+  /** The raw default value AST, printed in the SDL and applied by GraphQL. */
+  readonly defaultAst?: ConstValueNode;
+};
+
+/** A `@cypher` field of a node type returning nodes (`[Person!]!` or `Person`). */
+export type CypherNodeField = {
+  readonly name: string;
+  /** Node type of the returned nodes. */
+  readonly target: string;
+  readonly type: TypeRef;
+  readonly cypher: CypherAnnotation;
+  readonly args: readonly FieldArgument[];
+  readonly description?: string;
+  readonly deprecated?: string;
+};
+
+/** A `@cypher` field of `Query` or `Mutation`. */
+export type CypherRootField = {
+  readonly name: string;
+  readonly type: TypeRef;
+  /** `node` when the named type is a `@node` type. */
+  readonly kind: "scalar" | "enum" | "node";
+  readonly cypher: CypherAnnotation;
+  readonly args: readonly FieldArgument[];
+  readonly description?: string;
+  readonly deprecated?: string;
+  /** Field-level `@authentication`. */
+  readonly authentication?: AuthenticationAnnotation;
+};
+
+/** The custom fields of `Query` or `Mutation`, with the type-level `@authentication`. */
+export type CypherRootType = {
+  readonly fields: readonly CypherRootField[];
+  readonly authentication?: AuthenticationAnnotation;
+};
+
+/** One index of `@fulltext(indexes: [{ indexName, queryName, fields }])`. */
+export type FulltextIndex = {
+  readonly indexName: string;
+  /** Root query field, e.g. `moviesByTitle`. */
+  readonly queryName: string;
+  readonly fields: readonly string[];
+};
+
 export type Attribute = {
   readonly name: string;
   /** Property key in Neo4j (`@alias(property)`), defaults to the field name. */
@@ -71,6 +121,8 @@ export type Attribute = {
   /** `@timestamp(operations)`. */
   readonly timestamp?: readonly ("CREATE" | "UPDATE")[];
   readonly cypher?: CypherAnnotation;
+  /** Arguments of a `@cypher` field (other fields have none). */
+  readonly args: readonly FieldArgument[];
   /** User `@deprecated(reason)` on the field. */
   readonly deprecated?: string;
   /** Field-level `@authentication` / `@authorization`. */
@@ -171,6 +223,10 @@ export type NodeType = {
   readonly pascalPlural: string;
   readonly attributes: readonly Attribute[];
   readonly relationships: readonly Relationship[];
+  /** `@cypher` fields returning nodes. */
+  readonly cypherNodes: readonly CypherNodeField[];
+  /** `@fulltext` indexes. */
+  readonly fulltext: readonly FulltextIndex[];
   readonly auth: AuthAnnotations;
 };
 
@@ -196,6 +252,9 @@ export type V7Model = {
   readonly jwtClaims: ReadonlyMap<string, string>;
   readonly properties: ReadonlyMap<string, PropertiesType>;
   readonly enums: ReadonlyMap<string, EnumType>;
+  /** `@cypher` fields of `type Query` / `type Mutation`. */
+  readonly query: CypherRootType;
+  readonly mutation: CypherRootType;
   node(name: string): NodeType;
 };
 
@@ -274,6 +333,7 @@ const ACCEPTED_FIELD_DIRECTIVES = new Set([
 ]);
 const ACCEPTED_TYPE_DIRECTIVES = new Set([
   "node",
+  "fulltext",
   "plural",
   "authentication",
   "authorization",
@@ -299,9 +359,10 @@ function readAttribute(
       );
     }
   }
-  if (f.arguments?.length) {
+  const cypher = readCypher(`${owner}.${f.name.value}`, directive(f.directives, "cypher"));
+  if (f.arguments?.length && !cypher) {
     throw new UnsupportedTypeDefsError(
-      `${owner}.${f.name.value}: field arguments are not supported by @cyphra/graphql yet.`,
+      `${owner}.${f.name.value}: field arguments are only supported on @cypher fields.`,
     );
   }
   const type = typeRef(f.type);
@@ -320,7 +381,6 @@ function readAttribute(
   const def = directive(dirs, "default");
   const defaultAst = arg(def, "value");
   const ts = directive(dirs, "timestamp");
-  const cypher = directive(dirs, "cypher");
   const alias = directive(dirs, "alias");
   return {
     name: f.name.value,
@@ -334,15 +394,58 @@ function readAttribute(
     timestamp: ts
       ? ((listArg(ts, "operations") ?? ["CREATE", "UPDATE"]) as ("CREATE" | "UPDATE")[])
       : undefined,
-    cypher: cypher
-      ? {
-          statement: stringArg(cypher, "statement") ?? "",
-          columnName: stringArg(cypher, "columnName") ?? "",
-        }
-      : undefined,
+    cypher,
+    args: readArguments(`${owner}.${f.name.value}`, f, enums),
     deprecated: deprecationReason(dirs),
     auth: readAuthAnnotations(`${owner}.${f.name.value}`, dirs),
   };
+}
+
+function readCypher(
+  where: string,
+  d: ConstDirectiveNode | undefined,
+): CypherAnnotation | undefined {
+  if (!d) return undefined;
+  for (const a of d.arguments ?? []) {
+    if (!["statement", "columnName"].includes(a.name.value)) {
+      throw new UnsupportedTypeDefsError(`${where}: @cypher(${a.name.value}) is not supported.`);
+    }
+  }
+  const statement = stringArg(d, "statement");
+  const columnName = stringArg(d, "columnName");
+  if (!statement || !columnName) {
+    throw new UnsupportedTypeDefsError(`${where}: @cypher needs a statement and a columnName.`);
+  }
+  return { statement, columnName };
+}
+
+/** Arguments of a `@cypher` field: scalars and enums (lists of them too). */
+function readArguments(
+  where: string,
+  f: FieldDefinitionNode,
+  enums: ReadonlySet<string>,
+): FieldArgument[] {
+  return (f.arguments ?? []).map((a) => {
+    if (a.directives?.length) {
+      throw new UnsupportedTypeDefsError(
+        `${where}(${a.name.value}): directives on arguments are not supported.`,
+      );
+    }
+    const type = typeRef(a.type);
+    const isEnum = enums.has(type.name);
+    if (!isEnum && !(SUPPORTED_SCALARS as readonly string[]).includes(type.name)) {
+      throw new UnsupportedTypeDefsError(
+        `${where}(${a.name.value}): arguments of type ${type.name} are not supported by @cyphra/graphql yet (scalars and enums only).`,
+      );
+    }
+    return {
+      name: a.name.value,
+      type,
+      kind: isEnum ? "enum" : "scalar",
+      description: a.description?.value,
+      defaultAst: a.defaultValue,
+    };
+  });
 }
 
 function isRecord(v: unknown): v is AnyRecord {
@@ -528,6 +631,125 @@ function readJwtClaims(o: ObjectTypeDefinitionNode): Map<string, string> {
   return claims;
 }
 
+const CYPHER_FIELD_DIRECTIVES = new Set(["cypher", "deprecated"]);
+
+/** A `@cypher` field of a node type returning nodes. */
+function readCypherNodeField(
+  owner: string,
+  f: FieldDefinitionNode,
+  enums: ReadonlySet<string>,
+): CypherNodeField {
+  const where = `${owner}.${f.name.value}`;
+  for (const d of f.directives ?? []) {
+    if (!CYPHER_FIELD_DIRECTIVES.has(d.name.value)) {
+      throw new UnsupportedTypeDefsError(
+        `${where}: @${d.name.value} on a @cypher field returning nodes is not supported by @cyphra/graphql yet.`,
+      );
+    }
+  }
+  const type = typeRef(f.type);
+  return {
+    name: f.name.value,
+    target: type.name,
+    type,
+    cypher: readCypher(where, directive(f.directives, "cypher"))!,
+    args: readArguments(where, f, enums),
+    description: f.description?.value,
+    deprecated: deprecationReason(f.directives),
+  };
+}
+
+/** `type Query` / `type Mutation`: every field must be a `@cypher` field. */
+function readRootType(
+  o: ObjectTypeDefinitionNode | undefined,
+  enums: ReadonlySet<string>,
+  nodes: ReadonlySet<string>,
+): CypherRootType {
+  if (!o) return { fields: [] };
+  const type = o.name.value;
+  let authentication: AuthenticationAnnotation | undefined;
+  for (const d of o.directives ?? []) {
+    if (d.name.value !== "authentication") {
+      throw new UnsupportedTypeDefsError(
+        `type ${type}: @${d.name.value} is not supported by @cyphra/graphql yet.`,
+      );
+    }
+    authentication = readAuthentication(`type ${type}`, d);
+  }
+  const fields = (o.fields ?? []).map((f): CypherRootField => {
+    const where = `${type}.${f.name.value}`;
+    for (const d of f.directives ?? []) {
+      if (!["cypher", "deprecated", "authentication"].includes(d.name.value)) {
+        throw new UnsupportedTypeDefsError(
+          `${where}: @${d.name.value} is not supported on ${type} fields by @cyphra/graphql yet.`,
+        );
+      }
+    }
+    const cypher = readCypher(where, directive(f.directives, "cypher"));
+    if (!cypher) {
+      throw new UnsupportedTypeDefsError(
+        `${where}: custom ${type} fields need @cypher (custom resolvers are not supported by @cyphra/graphql).`,
+      );
+    }
+    const t = typeRef(f.type);
+    const kind = nodes.has(t.name) ? "node" : enums.has(t.name) ? "enum" : "scalar";
+    if (kind === "scalar" && !(SUPPORTED_SCALARS as readonly string[]).includes(t.name)) {
+      throw new UnsupportedTypeDefsError(
+        `${where}: type ${t.name} is not supported by @cyphra/graphql yet (@node types, scalars and enums only).`,
+      );
+    }
+    return {
+      name: f.name.value,
+      type: t,
+      kind,
+      cypher,
+      args: readArguments(where, f, enums),
+      description: f.description?.value,
+      deprecated: deprecationReason(f.directives),
+      authentication: readAuthentication(where, directive(f.directives, "authentication")),
+    };
+  });
+  return { fields, authentication };
+}
+
+/** `@fulltext(indexes: [{ indexName, queryName, fields }])`. */
+function readFulltext(
+  owner: string,
+  d: ConstDirectiveNode | undefined,
+  attributes: readonly Attribute[],
+): FulltextIndex[] {
+  if (!d) return [];
+  const where = `type ${owner} @fulltext`;
+  const value = arg(d, "indexes");
+  const indexes = value ? (valueFromASTUntyped(value) as unknown) : undefined;
+  if (!Array.isArray(indexes))
+    throw new UnsupportedTypeDefsError(`${where}: indexes must be a list.`);
+  return indexes.map((ix: unknown, i) => {
+    if (!isRecord(ix))
+      throw new UnsupportedTypeDefsError(`${where}: indexes[${i}] must be an object.`);
+    for (const k of Object.keys(ix)) {
+      if (!["indexName", "queryName", "fields"].includes(k)) {
+        throw new UnsupportedTypeDefsError(`${where}: unknown index argument ${k}.`);
+      }
+    }
+    const { indexName, queryName, fields } = ix;
+    if (typeof indexName !== "string" || typeof queryName !== "string" || !Array.isArray(fields)) {
+      throw new UnsupportedTypeDefsError(
+        `${where}: indexes[${i}] needs indexName, queryName and fields.`,
+      );
+    }
+    for (const field of fields) {
+      const a = attributes.find((x) => x.name === field);
+      if (!a || a.cypher || (a.type.name !== "String" && a.type.name !== "ID")) {
+        throw new UnsupportedTypeDefsError(
+          `${where}: field ${String(field)} must be a String or ID field of ${owner}.`,
+        );
+      }
+    }
+    return { indexName, queryName, fields: fields as string[] };
+  });
+}
+
 /**
  * Read v7 type definitions. Throws {@link UnsupportedTypeDefsError} for features `@cyphra/graphql`
  * does not serve yet (interfaces, unions, spatial and some temporal types, …), so the generated
@@ -593,13 +815,21 @@ export function readTypeDefs(typeDefs: string): V7Model {
 
   const properties = new Map<string, PropertiesType>();
   const nodeDefs: ObjectTypeDefinitionNode[] = [];
+  const rootDefs = new Map<string, ObjectTypeDefinitionNode>();
   let jwtClaims: Map<string, string> | undefined;
   for (const o of objects) {
     const name = o.name.value;
-    if (["Query", "Mutation", "Subscription"].includes(name)) {
+    if (name === "Subscription") {
       throw new UnsupportedTypeDefsError(
-        `type ${name}: custom root fields are not supported by @cyphra/graphql yet.`,
+        "type Subscription: subscriptions are not supported by @cyphra/graphql yet.",
       );
+    }
+    if (name === "Query" || name === "Mutation") {
+      if (rootDefs.has(name)) {
+        throw new UnsupportedTypeDefsError(`type ${name}: defined more than once.`);
+      }
+      rootDefs.set(name, o);
+      continue;
     }
     if (o.interfaces?.length) {
       throw new UnsupportedTypeDefsError(
@@ -647,8 +877,14 @@ export function readTypeDefs(typeDefs: string): V7Model {
     const name = o.name.value;
     const attributes: Attribute[] = [];
     const relationships: Relationship[] = [];
+    const cypherNodes: CypherNodeField[] = [];
     for (const f of o.fields ?? []) {
       const rel = directive(f.directives, "relationship");
+      const cypher = directive(f.directives, "cypher");
+      if (cypher && !rel && nodeNames.has(typeRef(f.type).name)) {
+        cypherNodes.push(readCypherNodeField(name, f, enumNames));
+        continue;
+      }
       if (!rel) {
         attributes.push(readAttribute(name, f, enumNames));
         continue;
@@ -705,9 +941,49 @@ export function readTypeDefs(typeDefs: string): V7Model {
       pascalPlural: upperFirst(plural),
       attributes,
       relationships,
+      cypherNodes,
+      fulltext: readFulltext(name, directive(o.directives, "fulltext"), attributes),
       auth: readAuthAnnotations(`type ${name}`, o.directives) ?? {},
     };
   });
+
+  const byName0 = new Map(nodes.map((n) => [n.name, n]));
+  const root = (type: "Query" | "Mutation"): CypherRootType =>
+    readRootType(rootDefs.get(type), enumNames, nodeNames);
+  const query = root("Query");
+  const mutation = root("Mutation");
+  const generated = new Set<string>();
+  for (const n of byName0.values()) {
+    generated.add(n.plural);
+    generated.add(`${n.plural}Connection`);
+    for (const ft of n.fulltext) {
+      if (generated.has(ft.queryName)) {
+        throw new UnsupportedTypeDefsError(
+          `type ${n.name} @fulltext: queryName ${ft.queryName} is already a Query field.`,
+        );
+      }
+      generated.add(ft.queryName);
+    }
+  }
+  for (const f of query.fields) {
+    if (generated.has(f.name)) {
+      throw new UnsupportedTypeDefsError(
+        `Query.${f.name}: conflicts with a generated Query field.`,
+      );
+    }
+  }
+  const generatedMutations = new Set(
+    [...byName0.values()].flatMap((n) =>
+      ["create", "update", "delete"].map((k) => `${k}${n.pascalPlural}`),
+    ),
+  );
+  for (const f of mutation.fields) {
+    if (generatedMutations.has(f.name)) {
+      throw new UnsupportedTypeDefsError(
+        `Mutation.${f.name}: conflicts with a generated Mutation field.`,
+      );
+    }
+  }
 
   const byName = new Map(nodes.map((n) => [n.name, n]));
   return {
@@ -716,6 +992,8 @@ export function readTypeDefs(typeDefs: string): V7Model {
     jwtClaims: jwtClaims ?? new Map(),
     properties,
     enums,
+    query,
+    mutation,
     node(name: string): NodeType {
       const n = byName.get(name);
       if (!n) throw new Error(`Unknown node type ${name}`);

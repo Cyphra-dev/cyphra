@@ -1,0 +1,19 @@
+# features: cypher, sort, filter.cypher, pagination.offset
+# ordered
+query {
+  authors(sort: [{ bookCount: DESC }, { name: ASC }], limit: 3) {
+    name
+    bookCount
+    books(where: { reviewCount: { gt: 0 } }, sort: [{ averageRating: DESC }]) {
+      title
+      averageRating
+    }
+  }
+  reviewed: books(
+    where: { OR: [{ averageRating: { gte: 4 } }, { reviewCount_EQ: 1 }] }
+    sort: [{ reviewCount: ASC }, { title: ASC }]
+    offset: 1
+  ) {
+    title
+  }
+}

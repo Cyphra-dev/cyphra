@@ -1,0 +1,120 @@
+{
+  "data": {
+    "books": [
+      {
+        "title": "A Wizard of Earthsea",
+        "related": [
+          {
+            "title": "The Tombs of Atuan",
+            "firstAuthor": {
+              "name": "Ursula Le Guin"
+            }
+          }
+        ],
+        "sameAuthors": [],
+        "firstAuthor": {
+          "name": "Ursula Le Guin",
+          "bookCount": 2
+        },
+        "writers": [
+          {
+            "name": "Ursula Le Guin"
+          }
+        ]
+      },
+      {
+        "title": "American Gods",
+        "related": [
+          {
+            "title": "Good Omens",
+            "firstAuthor": {
+              "name": "Terry Pratchett"
+            }
+          }
+        ],
+        "sameAuthors": [],
+        "firstAuthor": {
+          "name": "Neil Gaiman",
+          "bookCount": 2
+        },
+        "writers": [
+          {
+            "name": "Neil Gaiman"
+          }
+        ]
+      },
+      {
+        "title": "Good Omens",
+        "related": [
+          {
+            "title": "American Gods",
+            "firstAuthor": {
+              "name": "Neil Gaiman"
+            }
+          },
+          {
+            "title": "The Colour of Magic",
+            "firstAuthor": {
+              "name": "Terry Pratchett"
+            }
+          }
+        ],
+        "sameAuthors": [],
+        "firstAuthor": {
+          "name": "Terry Pratchett",
+          "bookCount": 2
+        },
+        "writers": [
+          {
+            "name": "Neil Gaiman"
+          },
+          {
+            "name": "Terry Pratchett"
+          }
+        ]
+      },
+      {
+        "title": "The Colour of Magic",
+        "related": [
+          {
+            "title": "Good Omens",
+            "firstAuthor": {
+              "name": "Terry Pratchett"
+            }
+          }
+        ],
+        "sameAuthors": [],
+        "firstAuthor": {
+          "name": "Terry Pratchett",
+          "bookCount": 2
+        },
+        "writers": [
+          {
+            "name": "Terry Pratchett"
+          }
+        ]
+      },
+      {
+        "title": "The Tombs of Atuan",
+        "related": [
+          {
+            "title": "A Wizard of Earthsea",
+            "firstAuthor": {
+              "name": "Ursula Le Guin"
+            }
+          }
+        ],
+        "sameAuthors": [],
+        "firstAuthor": {
+          "name": "Ursula Le Guin",
+          "bookCount": 2
+        },
+        "writers": [
+          {
+            "name": "Ursula Le Guin"
+          }
+        ]
+      }
+    ]
+  }
+}

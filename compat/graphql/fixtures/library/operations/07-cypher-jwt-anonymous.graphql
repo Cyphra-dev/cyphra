@@ -1,0 +1,7 @@
+# features: cypher, cypher.jwt
+query {
+  books(where: { isbn: { in: ["b1", "b2"] } }) {
+    title
+    reviewedByViewer
+  }
+}

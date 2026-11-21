@@ -1,0 +1,96 @@
+type Book
+  @node
+  @fulltext(
+    indexes: [
+      { indexName: "BookTitle", queryName: "booksByTitle", fields: ["title"] }
+      { indexName: "BookText", queryName: "searchBooks", fields: ["title", "summary"] }
+    ]
+  ) {
+  isbn: ID!
+  title: String!
+  summary: String
+  year: Int!
+  authors: [Author!]! @relationship(type: "WROTE", direction: IN, properties: "Wrote")
+  reviews: [Review!]! @relationship(type: "REVIEWS", direction: IN)
+  reviewCount: Int!
+    @cypher(statement: "MATCH (this)<-[:REVIEWS]-(r:Review) RETURN count(r) AS n", columnName: "n")
+  averageRating: Float
+    @cypher(
+      statement: "MATCH (this)<-[:REVIEWS]-(r:Review) RETURN avg(r.rating) AS avg"
+      columnName: "avg"
+    )
+  "First words of the title, in alphabetical order"
+  keywords(limit: Int = 2): [String!]!
+    @cypher(
+      statement: "UNWIND split(toLower(this.title), ' ') AS w WITH w ORDER BY w RETURN collect(w)[0..$limit] AS words"
+      columnName: "words"
+    )
+  "Books sharing at least minShared authors"
+  related(minShared: Int = 1): [Book!]!
+    @cypher(
+      statement: "MATCH (this)<-[:WROTE]-(:Author)-[:WROTE]->(b:Book) WHERE b <> this WITH b, count(*) AS shared WHERE shared >= $minShared RETURN b ORDER BY b.title"
+      columnName: "b"
+    )
+  firstAuthor: Author
+    @cypher(
+      statement: "MATCH (this)<-[w:WROTE]-(a:Author) RETURN a ORDER BY w.position LIMIT 1"
+      columnName: "a"
+    )
+  writers: [Author!]!
+    @cypher(statement: "MATCH (this)<-[:WROTE]-(a:Author) RETURN a", columnName: "a")
+  reviewedByViewer: Boolean!
+    @cypher(
+      statement: "RETURN EXISTS { MATCH (this)<-[:REVIEWS]-(r:Review) WHERE r.by = $jwt.sub } AS reviewed"
+      columnName: "reviewed"
+    )
+}
+
+type Author @node {
+  name: String!
+  born: Int
+  books: [Book!]! @relationship(type: "WROTE", direction: OUT, properties: "Wrote")
+  bookCount: Int!
+    @cypher(statement: "MATCH (this)-[:WROTE]->(b:Book) RETURN count(b) AS n", columnName: "n")
+}
+
+type Review @node {
+  rating: Int!
+  by: String!
+  book: [Book!]! @relationship(type: "REVIEWS", direction: OUT)
+}
+
+type Wrote @relationshipProperties {
+  position: Int!
+  credit: String
+    @cypher(
+      statement: "RETURN 'author #' + toString(this.position) AS credit"
+      columnName: "credit"
+    )
+}
+
+type Query {
+  bookTotal: Int! @cypher(statement: "MATCH (b:Book) RETURN count(b) AS n", columnName: "n")
+  booksSince(year: Int!): [Book!]!
+    @cypher(
+      statement: "MATCH (b:Book) WHERE b.year >= $year RETURN b ORDER BY b.year"
+      columnName: "b"
+    )
+  titlesStartingWith(prefix: String!): [String!]!
+    @cypher(
+      statement: "MATCH (b:Book) WHERE b.title STARTS WITH $prefix RETURN b.title AS t ORDER BY t"
+      columnName: "t"
+    )
+  oldestAuthor: Author
+    @cypher(
+      statement: "MATCH (a:Author) WHERE a.born IS NOT NULL RETURN a ORDER BY a.born LIMIT 1"
+      columnName: "a"
+    )
+}
+
+type Mutation {
+  rateBook(isbn: ID!, rating: Int!): Book
+    @cypher(
+      statement: "MATCH (b:Book {isbn: $isbn}) CREATE (:Review {rating: $rating, by: $jwt.sub})-[:REVIEWS]->(b) RETURN b"
+      columnName: "b"
+    )
+}

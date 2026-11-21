@@ -1,0 +1,12 @@
+# features: cypher, cypher.root, cypher.jwt, mutation
+mutation {
+  rateBook(isbn: "b2", rating: 4) {
+    title
+    reviewCount
+    averageRating
+    reviewedByViewer
+  }
+  missing: rateBook(isbn: "nope", rating: 1) {
+    title
+  }
+}

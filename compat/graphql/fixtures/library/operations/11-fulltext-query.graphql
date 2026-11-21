@@ -1,0 +1,25 @@
+# features: fulltext
+query {
+  booksByTitle(phrase: "wizard") {
+    totalCount
+    edges {
+      score
+      node {
+        title
+        reviewCount
+      }
+    }
+  }
+  nothing: booksByTitle(phrase: "zeppelin") {
+    totalCount
+    pageInfo {
+      hasNextPage
+      startCursor
+    }
+    edges {
+      node {
+        title
+      }
+    }
+  }
+}

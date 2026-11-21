@@ -132,9 +132,10 @@ jobs:
           pnpm --filter @cyphra/migrator --fail-if-no-match exec vitest run src/push.integration.test.ts src/migrate.integration.test.ts
           # Better Auth conformance suites + adapter, typed-client and migration tests.
           pnpm --filter @cyphra/better-auth --fail-if-no-match exec vitest run test/
-          # @cyphra/graphql mutations (counters, nested writes, rollback, concurrent connect) and
-          # adversarial authorization tests (tokens, nested reads, aggregates, rolled-back writes).
-          pnpm --filter @cyphra/graphql --fail-if-no-match exec vitest run test/mutations.integration.test.ts test/auth.integration.test.ts
+          # @cyphra/graphql mutations (counters, nested writes, rollback, concurrent connect),
+          # adversarial authorization tests (tokens, nested reads, aggregates, rolled-back writes)
+          # and @cypher / @fulltext (aggregating statements, injection attempts through arguments).
+          pnpm --filter @cyphra/graphql --fail-if-no-match exec vitest run test/mutations.integration.test.ts test/auth.integration.test.ts test/cypher.integration.test.ts
 
       # @neo4j/graphql v7 compatibility suite: goldens must still match (compat/graphql). It does
       # not exercise Cyphra's driver handling, so it runs once.

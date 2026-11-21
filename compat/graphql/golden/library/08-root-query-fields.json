@@ -1,0 +1,40 @@
+{
+  "data": {
+    "bookTotal": 6,
+    "booksSince": [
+      {
+        "title": "Good Omens",
+        "year": 1990,
+        "reviewCount": 3,
+        "firstAuthor": {
+          "name": "Terry Pratchett"
+        }
+      },
+      {
+        "title": "American Gods",
+        "year": 2001,
+        "reviewCount": 0,
+        "firstAuthor": {
+          "name": "Neil Gaiman"
+        }
+      },
+      {
+        "title": "The Wizard Next Door",
+        "year": 2015,
+        "reviewCount": 0,
+        "firstAuthor": {
+          "name": "Jane Doe"
+        }
+      }
+    ],
+    "titlesStartingWith": [
+      "The Colour of Magic",
+      "The Tombs of Atuan",
+      "The Wizard Next Door"
+    ],
+    "oldestAuthor": {
+      "name": "Ursula Le Guin",
+      "born": 1929
+    }
+  }
+}

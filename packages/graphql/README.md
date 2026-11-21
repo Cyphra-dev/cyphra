@@ -31,8 +31,14 @@ Status (early release):
 - `@authentication` / `@authorization` (type, field and `extend schema` level), `@jwt` and
   `@jwtClaim`: rules are compiled into the Cypher statement (filters in its `WHERE`, `validate`
   checks inside it, a failed check rolls the statement back), never applied in JavaScript.
+- `@cypher` fields on node types, relationship properties, `Query` and `Mutation`: scalar and
+  node results, arguments (always passed as parameters), `this`, `$jwt`, `where` and `sort` on
+  scalar fields, filters on node results, the READ rules of returned nodes.
+- `@fulltext` queries (`score`, `where`, `sort`, `first` / `after`) on full-text indexes you
+  create, as in v7.
 - One Cypher statement per root field, in its own transaction. Needs Neo4j 5.23+.
-- Not yet: `@cypher` fields (#75). They are in the schema and return a `Not implemented yet` error.
+- Not yet: interfaces, unions, subscriptions, `@vector`, `Point` / `Duration` and custom scalars
+  (`makeSchema` throws `UnsupportedTypeDefsError`).
 
 JWTs are verified like v7, with `features.authorization` and the request's `Authorization` header
 as `token` in the context (a decoded `jwt` in the context is trusted as it is):
