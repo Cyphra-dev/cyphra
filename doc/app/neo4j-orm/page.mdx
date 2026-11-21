@@ -235,8 +235,9 @@ Some things do not map, and it is better to know before you start:
 
 - Your data is relational and you have no reason to move it into a graph: use Prisma (or another
   SQL ORM) on PostgreSQL or MySQL.
-- You want a GraphQL API generated from your graph model: the
-  [Neo4j GraphQL Library](/compare/neo4j-graphql-library) is built for that.
+- You want a GraphQL API generated from your graph model with subscriptions, Apollo Federation or
+  interfaces: use the [Neo4j GraphQL Library](/compare/neo4j-graphql-library). For the rest of its
+  v7 API, [`@cyphra/graphql`](/graphql) serves the same API from the same type definitions.
 - Most of your queries are hand-tuned Cypher and you do not want generated code: use the
   [official driver directly](/compare/neo4j-driver).
 

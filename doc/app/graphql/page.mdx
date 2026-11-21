@@ -411,6 +411,7 @@ queries). The full report is [`compat/graphql/REPORT.md`](https://github.com/Cyp
 | `@cypher` fields: scalars and nodes, arguments, `$jwt`, `where` and `sort`, relationship properties, `Query` and `Mutation` fields            | Works ([details](#custom-cypher-fields))                |
 | `@fulltext` queries: `score`, `where`, `sort`, `first` / `after`                                                                              | Works ([details](#full-text-search))                    |
 | Interfaces, unions, subscriptions, `@vector`, `Point`, `Duration`, custom scalars and custom resolvers                                        | Not yet: `makeSchema` throws `UnsupportedTypeDefsError` |
+| `@populatedBy`, `@relayId`, `@query`, `@mutation`, `@subscription`, `@selectable`, `@settable`, `@filterable`, `@sortable`, `@limit`          | Not yet: `makeSchema` throws `UnsupportedTypeDefsError` |
 
 ### v7 behaviour you get as well
 
@@ -463,3 +464,6 @@ The GraphQL API and the Cyphra ORM can work on the same graph. To get a `schema.
 type definitions, run [`cyphra import graphql`](/cli#import-from-neo4jgraphql). In code,
 `compat.v7.cyphraSchema(typeDefs)` returns the same conversion as a schema model, with the list of
 what Cyphra models differently.
+
+The [migration guide](/guides/migrate-from-neo4j-graphql) goes through the whole switch: import,
+migrations, the server swap and a script that compares both libraries on your operations.

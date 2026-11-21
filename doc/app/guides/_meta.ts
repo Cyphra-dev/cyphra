@@ -10,6 +10,8 @@ const meta: MetaRecord = {
   vercel: "Vercel",
   "--ai": { type: "separator", title: "AI" },
   graphrag: "GraphRAG",
+  "--migrate": { type: "separator", title: "Migrate" },
+  "migrate-from-neo4j-graphql": "From @neo4j/graphql",
   "--cypher": { type: "separator", title: "Cypher" },
   "cypher-howtos": { title: "Cypher how-tos", href: "/cypher" },
 };

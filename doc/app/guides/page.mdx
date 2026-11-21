@@ -1,7 +1,7 @@
 ---
 title: "Neo4j guides for TypeScript frameworks"
 sidebarTitle: Guides
-description: "Step-by-step guides to use Neo4j from Next.js, NestJS and Bun with Cyphra's typed client, deploy on Vercel, and build GraphRAG retrieval."
+description: "Step-by-step guides for Neo4j with Cyphra: Next.js, NestJS and Bun, deploying on Vercel, GraphRAG retrieval, and migrating from @neo4j/graphql."
 ---
 
 import { Cards } from "nextra/components";
@@ -20,10 +20,18 @@ which versions it was tested with.
   <Cards.Card title="Neo4j with NestJS" href="/guides/nestjs" />
   <Cards.Card title="Neo4j with Bun" href="/guides/bun" />
   <Cards.Card title="GraphRAG with Neo4j and TypeScript" href="/guides/graphrag" />
+  <Cards.Card
+    title="Migrate from @neo4j/graphql to Cyphra"
+    href="/guides/migrate-from-neo4j-graphql"
+  />
 </Cards>
 
 The [GraphRAG guide](/guides/graphrag) builds retrieval for a question-answering app: vector and
 full-text search over document chunks, then expansion through the chunks' entities.
+
+[Migrate from @neo4j/graphql](/guides/migrate-from-neo4j-graphql) is a checklist to serve an
+existing `@neo4j/graphql` 7 API with `@cyphra/graphql`, with the same type definitions and frontend
+queries, and to add migrations and the typed client on the same graph.
 
 ## What every framework guide has in common
 
