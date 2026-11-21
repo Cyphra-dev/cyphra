@@ -14,7 +14,54 @@ export type CyphraConfig = {
    * from the project root. Absent when not configured.
    */
   readonly seed?: string;
+  /**
+   * The zod generator (`"generators": { "zod": { … } }`): `cyphra generate` also writes zod schemas
+   * of the models to `output`. Absent when not configured.
+   */
+  readonly zod?: ZodGeneratorConfig;
 };
+
+/** `"generators": { "zod": { "output", "coerce", "import" } }` in `cyphra.json`. */
+export type ZodGeneratorConfig = {
+  /** Absolute path of the zod schemas module (default `./cyphra.zod.ts`). */
+  readonly output: string;
+  /** Accept ISO 8601 strings for `DateTime` / `Date` and decimal strings for `BigInt` (default `false`). */
+  readonly coerce: boolean;
+  /** Module the schemas import `z` from (default `"zod"`). */
+  readonly import: string;
+};
+
+/** Default output of the zod generator, relative to the project root. */
+export const DEFAULT_ZOD_OUTPUT = "./cyphra.zod.ts";
+
+function zodConfig(cwd: string, raw: unknown): ZodGeneratorConfig | undefined {
+  if (raw === undefined || raw === false) return undefined;
+  const o = raw === true ? {} : raw;
+  if (!o || typeof o !== "object" || Array.isArray(o)) {
+    throw new Error('cyphra.json "generators.zod" must be true or an object');
+  }
+  const { output, coerce, import: zodImport, ...rest } = o as Record<string, unknown>;
+  const unknown = Object.keys(rest);
+  if (unknown.length) {
+    throw new Error(
+      `cyphra.json "generators.zod": unknown option "${unknown[0]}" (expected output, coerce, import)`,
+    );
+  }
+  if (output !== undefined && (typeof output !== "string" || output === "")) {
+    throw new Error('cyphra.json "generators.zod.output" must be a path string');
+  }
+  if (coerce !== undefined && typeof coerce !== "boolean") {
+    throw new Error('cyphra.json "generators.zod.coerce" must be a boolean');
+  }
+  if (zodImport !== undefined && (typeof zodImport !== "string" || zodImport === "")) {
+    throw new Error('cyphra.json "generators.zod.import" must be a module name (e.g. "zod")');
+  }
+  return {
+    output: resolveUnderRoot(cwd, output ?? DEFAULT_ZOD_OUTPUT),
+    coerce: coerce ?? false,
+    import: zodImport ?? "zod",
+  };
+}
 
 /**
  * Load `cyphra.json` from the working directory.
@@ -43,11 +90,17 @@ export async function loadConfig(cwd: string): Promise<CyphraConfig> {
   if (seedRaw !== undefined && (typeof seedRaw !== "string" || seedRaw.trim() === "")) {
     throw new Error('cyphra.json "seed" must be a non-empty command string (e.g. "tsx seed.ts")');
   }
+  const generators = (data as Record<string, unknown>).generators;
+  if (generators !== undefined && (!generators || typeof generators !== "object")) {
+    throw new Error('cyphra.json "generators" must be an object');
+  }
+  const zod = zodConfig(cwd, (generators as Record<string, unknown> | undefined)?.zod);
   return {
     schema: resolveUnderRoot(cwd, schema),
     migrations: resolveUnderRoot(cwd, migrations),
     generate: resolveUnderRoot(cwd, generatePath),
     runtimeImport: runtimeImportRaw ?? "cyphra",
     ...(seedRaw !== undefined ? { seed: seedRaw.trim() } : {}),
+    ...(zod ? { zod } : {}),
   };
 }

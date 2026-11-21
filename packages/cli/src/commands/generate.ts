@@ -1,25 +1,87 @@
-import { readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { parseSchema, renderCyphraGenSource, validateSchema } from "@cyphra/schema";
-import type { CyphraConfig } from "../config.js";
+import {
+  parseSchema,
+  renderCyphraGenSource,
+  renderZodSource,
+  validateSchema,
+} from "@cyphra/schema";
+import { DEFAULT_ZOD_OUTPUT, type CyphraConfig } from "../config.js";
+import { resolveUnderRoot } from "../paths.js";
 import { untilInterrupted, watchFile, type WatchFn } from "../watch.js";
 
-function generateFrom(source: string, config: CyphraConfig): string {
+/** A generated file: absolute path and content. */
+type Output = { readonly path: string; readonly content: string };
+
+/** Every file `cyphra generate` writes for `source`: the client, then the zod schemas if configured. */
+function generateFrom(source: string, config: CyphraConfig): Output[] {
   const doc = parseSchema(source);
   validateSchema(doc);
-  return renderCyphraGenSource(doc, { runtimeImport: config.runtimeImport });
+  const out: Output[] = [
+    {
+      path: config.generate,
+      content: renderCyphraGenSource(doc, { runtimeImport: config.runtimeImport }),
+    },
+  ];
+  if (config.zod) {
+    out.push({
+      path: config.zod.output,
+      content: renderZodSource(doc, { coerce: config.zod.coerce, zodImport: config.zod.import }),
+    });
+  }
+  return out;
+}
+
+async function writeOutputs(outputs: readonly Output[]): Promise<void> {
+  for (const o of outputs) {
+    await mkdir(path.dirname(o.path), { recursive: true });
+    await writeFile(o.path, o.content, "utf8");
+  }
+}
+
+function relList(cwd: string, outputs: readonly Output[]): string {
+  return outputs.map((o) => path.relative(cwd, o.path)).join(" and ");
+}
+
+/** `cyphra generate` flags of the zod generator. */
+export type ZodFlags = {
+  /** `--zod` (`true`) or `--zod <output>`. */
+  readonly zod?: string | boolean;
+  /** `--zod-coerce`. */
+  readonly zodCoerce?: boolean;
+};
+
+/**
+ * `config` with the zod generator flags applied: `--zod [output]` turns the generator on (and sets
+ * its output), `--zod-coerce` turns it on with coercion. Other options come from `cyphra.json`.
+ */
+export function withZodFlags(cwd: string, config: CyphraConfig, flags: ZodFlags): CyphraConfig {
+  if (!flags.zod && !flags.zodCoerce) return config;
+  const output =
+    typeof flags.zod === "string"
+      ? resolveUnderRoot(cwd, flags.zod)
+      : (config.zod?.output ?? resolveUnderRoot(cwd, DEFAULT_ZOD_OUTPUT));
+  return {
+    ...config,
+    zod: {
+      output,
+      coerce: flags.zodCoerce ?? config.zod?.coerce ?? false,
+      import: config.zod?.import ?? "zod",
+    },
+  };
 }
 
 /**
- * Emit `cyphra.gen.ts` (or configured path) from the schema file.
+ * Emit `cyphra.gen.ts` (or configured path) from the schema file, and the zod schemas when the zod
+ * generator is configured (`config.zod`).
  *
  * @param cwd - Project root.
  * @param config - Loaded config with absolute schema and output paths.
  */
 export async function runGenerate(cwd: string, config: CyphraConfig): Promise<void> {
-  const out = generateFrom(await readFile(config.schema, "utf8"), config);
-  await writeFile(config.generate, out, "utf8");
-  console.log(`Wrote ${path.relative(cwd, config.generate)}`);
+  const outputs = generateFrom(await readFile(config.schema, "utf8"), config);
+  await writeOutputs(outputs);
+  console.log(`Wrote ${relList(cwd, outputs)}`);
 }
 
 export type GenerateWatchOptions = {
@@ -34,7 +96,8 @@ function time(): string {
 }
 
 /**
- * `cyphra generate --watch`: generate once, then regenerate whenever the schema file changes.
+ * `cyphra generate --watch`: generate once, then regenerate (the client and the zod schemas, when
+ * configured) whenever the schema file changes.
  * Invalid schemas print their error and the watcher keeps going; an unchanged file is skipped.
  *
  * @param cwd - Project root.
@@ -47,7 +110,6 @@ export async function runGenerateWatch(
   opts: GenerateWatchOptions = {},
 ): Promise<void> {
   const rel = path.relative(cwd, config.schema);
-  const outRel = path.relative(cwd, config.generate);
   let last: string | undefined;
 
   const regenerate = async (): Promise<void> => {
@@ -63,15 +125,15 @@ export async function runGenerateWatch(
     }
     if (source === last) return;
     last = source;
-    let out: string;
+    let outputs: Output[];
     try {
-      out = generateFrom(source, config);
+      outputs = generateFrom(source, config);
     } catch (err) {
       console.error(`[${time()}] ${rel}: ${err instanceof Error ? err.message : String(err)}`);
       return;
     }
-    await writeFile(config.generate, out, "utf8");
-    console.log(`[${time()}] Wrote ${outRel}`);
+    await writeOutputs(outputs);
+    console.log(`[${time()}] Wrote ${relList(cwd, outputs)}`);
   };
 
   await regenerate();

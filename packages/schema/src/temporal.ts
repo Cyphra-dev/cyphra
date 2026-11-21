@@ -42,10 +42,16 @@ export type DurationParts = {
 };
 
 const TIME = String.raw`(\d{2}):(\d{2})(?::(\d{2})(?:[.,](\d{1,9}))?)?`;
-const LOCAL_TIME_RE = new RegExp(`^${TIME}$`);
-const TIME_RE = new RegExp(`^${TIME}(Z|z|[+-]\\d{2}(?::?\\d{2}(?::?\\d{2})?)?)$`);
-const LOCAL_DATE_TIME_RE = new RegExp(String.raw`^([+-]\d{6}|\d{4})-(\d{2})-(\d{2})T${TIME}$`);
-const DURATION_RE =
+/** `LocalTime` text (the clock parts are range-checked separately); also used by the zod generator. */
+export const LOCAL_TIME_RE = new RegExp(`^${TIME}$`);
+/** `Time` text: a clock time and a required UTC offset. */
+export const TIME_RE = new RegExp(`^${TIME}(Z|z|[+-]\\d{2}(?::?\\d{2}(?::?\\d{2})?)?)$`);
+/** `LocalDateTime` text (the date and clock parts are range-checked separately). */
+export const LOCAL_DATE_TIME_RE = new RegExp(
+  String.raw`^([+-]\d{6}|\d{4})-(\d{2})-(\d{2})T${TIME}$`,
+);
+/** `Duration` text (at least one component, no trailing `T`). */
+export const DURATION_RE =
   /^([+-])?P(?:([+-]?\d+)Y)?(?:([+-]?\d+)M)?(?:([+-]?\d+)W)?(?:([+-]?\d+)D)?(?:T(?:([+-]?\d+)H)?(?:([+-]?\d+)M)?(?:([+-]?\d+)(?:[.,](\d{1,9}))?S)?)?$/;
 
 function nanos(fraction: string | undefined): number {

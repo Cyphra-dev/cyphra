@@ -1,0 +1,56 @@
+// Fixture for the zod generator: every scalar type and every validation rule (golden files
+// zod*.zod.gen.ts and the runtime parity tests in zod.test.ts).
+enum ZdRole {
+  ADMIN
+  MEMBER
+}
+
+node ZdUser {
+  id        String          @id @default(uuid())
+  email     String          @unique @email
+  name      String          @length(2, 10) @nonEmpty
+  nick      String?         @length(max: 4)
+  website   String?         @url
+  handle    String?         @regex("^[a-z0-9_]+$", "i")
+  bio       String?
+  role      ZdRole          @default(MEMBER)
+  roles     ZdRole[]
+  age       Int?            @min(13) @max(130)
+  count     Int             @default(0)
+  score     Float           @default(0) @min(0) @max(100)
+  ratio     Float?
+  active    Boolean         @default(true)
+  balance   BigInt          @default(0) @min(0)
+  big       BigInt?
+  seenAt    DateTime        @default(now()) @min("2020-01-01T00:00:00Z") @max("2030-01-01T00:00:00Z")
+  updatedAt DateTime?
+  born      Date?           @min("1900-01-01") @max("2020-12-31")
+  meta      Json?
+  prefs     Json            @default("{}")
+  tags      String[]        @size(1, 3)
+  labels    String[]        @nonEmpty
+  scores    Int[]
+  location  Point?
+  grid      CartesianPoint?
+  route     Point[]
+  embedding Vector(3)?
+  opens     LocalTime?
+  slot      Time?
+  starts    LocalDateTime?
+  stay      Duration?
+  windows   Duration[]      @size(max: 2)
+  follows   ZdUser[]        @relationship(type: "ZD_FOLLOWS", direction: OUT)
+}
+
+node ZdTag {
+  name String @id
+}
+
+relationship ZdFollows {
+  type "ZD_FOLLOWS"
+  from ZdUser
+  to   ZdUser
+  since DateTime @default(now())
+  note  String?  @length(max: 5)
+  level ZdRole
+}
