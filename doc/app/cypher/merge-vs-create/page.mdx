@@ -78,8 +78,8 @@ The [typed client](/client) maps to these clauses as follows:
 | `connect` in `create` / `update`  | `MATCH` the target, then `MERGE` the relationship                  |
 | nested `create` of a related node | `CREATE` the node and its relationship                             |
 
-So, like `CREATE`, a duplicate `db.user.create` on a `@unique` field throws
-`Neo.ClientError.Schema.ConstraintValidationFailed`, while `upsert` matches the existing node (see
+So, like `CREATE`, a duplicate `db.user.create` on a `@unique` field fails (with a
+[`UniqueConstraintError`](/client#unique-constraint-errors)), while `upsert` matches the existing node (see
 [Upsert with MERGE](/cypher/upsert-merge#upsert-with-cyphra) for its concurrency behavior). And like
 `MERGE`, `connect` is idempotent: calling it twice for the same pair leaves one `FOLLOWS` edge.
 

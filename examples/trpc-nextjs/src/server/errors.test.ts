@@ -1,5 +1,5 @@
 import { TRPCClientError } from "@trpc/client";
-import { CyphraValidationError, NotFoundError } from "cyphra";
+import { CyphraValidationError, NotFoundError, UniqueConstraintError } from "cyphra";
 import { describe, expect, it } from "vitest";
 import type { Db } from "./cyphra.gen";
 import { httpClient } from "./http-client";
@@ -69,7 +69,10 @@ describe("error mapping", () => {
         throw new NotFoundError("No Post matches {}.");
       }),
       duplicate: publicProcedure.mutation(() => {
-        throw Object.assign(new Error("already exists with label `User`"), {
+        throw new UniqueConstraintError("Unique constraint failed on User(email).", {
+          model: "User",
+          fields: ["email"],
+          constraint: "User_email_unique",
           code: "Neo.ClientError.Schema.ConstraintValidationFailed",
         });
       }),
@@ -89,7 +92,7 @@ describe("error mapping", () => {
 
     const duplicate = await rejection(client.duplicate.mutate());
     expect(duplicate.data).toMatchObject({ code: "CONFLICT", httpStatus: 409 });
-    expect(duplicate.message).toBe("Already exists.");
+    expect(duplicate.message).toBe("Already exists (email).");
 
     const broken = await rejection(client.broken.query());
     expect(broken.data).toMatchObject({ code: "INTERNAL_SERVER_ERROR", httpStatus: 500 });
