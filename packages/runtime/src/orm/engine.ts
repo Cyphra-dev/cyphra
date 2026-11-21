@@ -8,8 +8,7 @@
  * @packageDocumentation
  */
 
-import { randomUUID, getRandomValues } from "node:crypto";
-import { isInt } from "neo4j-driver";
+import { isInt } from "../cypher-values.js";
 import type {
   ResolvedNodeModel,
   ResolvedRelationField,
@@ -60,7 +59,7 @@ const ALPHABET = "abcdefghijklmnopqrstuvwxyz0123456789";
 
 /** Collision-resistant, URL-safe id (cuid2-style: a letter followed by 23 base-36 chars). */
 export function createCuid(): string {
-  const bytes = getRandomValues(new Uint8Array(24));
+  const bytes = globalThis.crypto.getRandomValues(new Uint8Array(24));
   let s = ALPHABET[bytes[0]! % 26]!;
   for (let i = 1; i < 24; i++) s += ALPHABET[bytes[i]! % 36]!;
   return s;
@@ -354,7 +353,7 @@ export class ModelEngine {
           d.kind === "literal"
             ? defaultLiteralValue(f, d)
             : d.fn === "uuid"
-              ? randomUUID()
+              ? globalThis.crypto.randomUUID()
               : d.fn === "cuid"
                 ? createCuid()
                 : nowValue(f);

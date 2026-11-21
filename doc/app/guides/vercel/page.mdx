@@ -1,7 +1,7 @@
 ---
 title: "Deploy a Neo4j app on Vercel with migrations"
 sidebarTitle: Vercel
-description: "Deploy a Neo4j-backed Next.js app on Vercel: environment variables, cyphra migrate deploy in the build, preview databases and serverless connections."
+description: "Deploy a Neo4j-backed Next.js app on Vercel: environment variables, cyphra migrate deploy in the build, preview databases, Node.js and Edge connections."
 ---
 
 import { Callout, Steps } from "nextra/components";
@@ -22,9 +22,10 @@ each piece so you can apply it to your own app. The app side is covered in the
 
 <Callout type="info">
   What we tested: the build command, against a local Neo4j 5.26, including what happens when the
-  database is unreachable or a variable is missing, and the client code below on the Node.js
-  runtime. Vercel platform behavior (environment scopes, instance reuse) is described from Vercel's
-  documentation.
+  database is unreachable or a variable is missing, the client code below on the Node.js runtime,
+  and the HTTP transport (the ORM suite against Neo4j 5.26 and an Edge-style bundle with no Node.js
+  built-ins). Vercel platform behavior (environment scopes, instance reuse) is described from
+  Vercel's documentation.
 </Callout>
 
 ## Steps
@@ -124,8 +125,34 @@ instance can hold, which matters when many instances run at once against a datab
 connection limit; `connectionAcquisitionTimeout` (milliseconds) bounds how long a query waits for a
 free connection. Size both for your database and traffic; the values above are only an example.
 
-Use the default **Node.js** runtime for anything that touches the database. The Neo4j JavaScript
-driver connects over Bolt sockets; we have not tested it on the Edge runtime.
+The default **Node.js** runtime connects over Bolt, with the pool above. The **Edge** runtime has
+no TCP sockets, so there the client talks to Neo4j over HTTPS with the
+[HTTP transport](/runtime#http-transport-edge-workers) (Neo4j 5.19+ Query API, available on Aura):
+pass `transport: "http"` and keep the same `neo4j+s://` `NEO4J_URI`, which maps to `https://` on
+the same host. The generated client needs no change: the Edge bundle picks Cyphra's build without
+`neo4j-driver`.
+
+```ts filename="app/api/posts/route.ts"
+import { createClient } from "@/lib/cyphra.gen";
+
+export const runtime = "edge";
+
+const db = createClient({
+  uri: process.env.NEO4J_URI!,
+  transport: "http",
+  user: process.env.NEO4J_USERNAME!,
+  password: process.env.NEO4J_PASSWORD!,
+});
+
+export async function GET() {
+  return Response.json(await db.post.findMany({ take: 20 }));
+}
+```
+
+Over HTTP every statement is a request and a write transaction adds a commit request, so Edge
+routes suit short reads and small writes close to the database's region. Keep heavy or
+multi-statement work on the Node.js runtime, and `cyphra migrate deploy` in the build (it uses
+Bolt). See the [limitations](/runtime#limitations).
 
 ### Deploy and check
 

@@ -16,7 +16,7 @@ import type {
   ResolvedScalarField,
   SchemaModel,
 } from "@cyphra/schema";
-import neo4j from "neo4j-driver";
+import { CypherInteger } from "../cypher-values.js";
 import { CyphraValidationError } from "./errors.js";
 import { decodeCount, decodeScalar, encodeFilterValue, isPointValue } from "./values.js";
 import type { QueryMode } from "./types.js";
@@ -662,7 +662,7 @@ export function compilePaging(
 
 // SKIP/LIMIT must be integers on the wire; the driver sends JS numbers as floats.
 export function intParam(n: number): unknown {
-  return neo4j.int(n);
+  return new CypherInteger(n);
 }
 
 // ---------------------------------------------------------------------------

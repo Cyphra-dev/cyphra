@@ -1,4 +1,3 @@
-import { Buffer } from "node:buffer";
 import type { ParseSchemaOptions, SchemaDocument } from "./ast.js";
 import { SchemaValidationError } from "./errors.js";
 import { parse as pegParse } from "./generated/parser.js";
@@ -18,7 +17,7 @@ export const MAX_SCHEMA_BYTES = 512 * 1024;
  * @throws {SchemaValidationError} When the source exceeds {@link MAX_SCHEMA_BYTES}.
  */
 export function parseSchemaSyntax(source: string, options?: ParseSchemaOptions): SchemaDocument {
-  const bytes = Buffer.byteLength(source, "utf8");
+  const bytes = new TextEncoder().encode(source).byteLength;
   if (bytes > MAX_SCHEMA_BYTES) {
     throw new SchemaValidationError(
       `Schema exceeds maximum size of ${MAX_SCHEMA_BYTES} bytes (got ${bytes}).`,

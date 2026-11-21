@@ -95,6 +95,8 @@ jobs:
         image: neo4j:5-community
         ports:
           - 7687:7687
+          # Query API (HTTP transport). Enabled by default on Neo4j 5.19+.
+          - 7474:7474
         env:
           NEO4J_AUTH: neo4j/cyphra_ci_test
           # @neo4j/graphql (compat/graphql reference) needs APOC: apoc.util.validate(Predicate)
@@ -154,6 +156,18 @@ jobs:
           pnpm --filter @cyphra/graphql --fail-if-no-match exec vitest run test/mutations.integration.test.ts test/auth.integration.test.ts test/cypher.integration.test.ts
           # `cyphra migrate reset` empties the whole database, so it runs on its own (opt-in flag).
           CYPHRA_TEST_RESET_DB=1 pnpm --filter @cyphra/cli --fail-if-no-match exec vitest run src/commands/migrateReset.integration.test.ts
+
+      # The same ORM suite over the HTTP transport (Neo4j Query API, what edge runtimes use), plus
+      # the transport's own tests (typed values through the server, explicit transactions, error
+      # codes). HTTP does not go through neo4j-driver, so it runs once.
+      - name: Neo4j integration tests (HTTP transport)
+        if: matrix.neo4j-driver == '5'
+        env:
+          NEO4J_TEST_URI: http://127.0.0.1:7474
+          NEO4J_TEST_HTTP_URI: http://127.0.0.1:7474
+          NEO4J_TEST_USER: neo4j
+          NEO4J_TEST_PASSWORD: cyphra_ci_test
+        run: pnpm --filter @cyphra/runtime --fail-if-no-match exec vitest run src/client.integration.test.ts src/orm/orm.integration.test.ts src/http/http.integration.test.ts
 
       # examples/graphrag: ingest the sample documents and check hybrid retrieval and graph
       # expansion. Its `cyphra generate` needs the workspace bins, linked once dist/ exists.
