@@ -544,3 +544,23 @@ describe("onDelete rule changes", () => {
     expect(diffSchemaModels(schema(", onDelete: Restrict"), schema("")).notes).toHaveLength(1);
   });
 });
+
+describe("validation rule changes", () => {
+  const schema = (rules: string) =>
+    model(`
+      node User {
+        id   String @id
+        name String ${rules}
+      }
+    `);
+
+  it("are noted, with no migration step", () => {
+    const plan = diffSchemaModels(schema(""), schema("@length(2, 40) @nonEmpty"));
+    expect(isEmptyPlan(plan)).toBe(true);
+    expect(plan.notes).toEqual([
+      "User.name: validation rules none → @length(2, 40) @nonEmpty (no migration step: the client checks the values it writes; existing values are not re-checked).",
+    ]);
+    expect(diffSchemaModels(schema("@email"), schema("@email")).notes).toBeUndefined();
+    expect(diffSchemaModels(schema("@length(1)"), schema("@length(2)")).notes).toHaveLength(1);
+  });
+});

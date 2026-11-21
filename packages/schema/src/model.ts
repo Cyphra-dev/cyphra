@@ -21,6 +21,13 @@ import type {
 import { SchemaValidationError } from "./errors.js";
 import { validateEnum, validateModelAttributes, validateVectorField } from "./validate.js";
 import {
+  VALIDATION_RULES,
+  assertNamedArgs,
+  checkRules,
+  resolveFieldRules,
+  type ValidationRule,
+} from "./rules.js";
+import {
   TEMPORAL_EXAMPLES,
   formatDuration,
   formatLocalDateTime,
@@ -150,6 +157,11 @@ export type ResolvedScalarField = {
   readonly enum?: string;
   /** Allowed values of an `Enum` field (copied from its `enum`, checked on every write). */
   readonly enumValues?: readonly string[];
+  /**
+   * Validation rules (`@length`, `@min`, `@email`, …) in declaration order, checked on every
+   * write (absent when the field has none).
+   */
+  readonly rules?: readonly ValidationRule[];
 };
 
 export type RelationDirection = "OUT" | "IN";
@@ -378,9 +390,12 @@ function resolveScalar(
       `${owner} field "${f.name}": an @id field cannot be optional or a list.`,
     );
   }
+  assertNamedArgs(`${owner} field "${f.name}"`, f.decorators);
   validateVectorField(owner, f, allowId);
   for (const d of f.decorators) {
-    if (!["id", "unique", "index", "default", "vectorIndex"].includes(d.name)) {
+    if (
+      !["id", "unique", "index", "default", "vectorIndex", ...VALIDATION_RULES].includes(d.name)
+    ) {
       throw new SchemaValidationError(`${owner} field "${f.name}": unknown decorator @${d.name}.`);
     }
   }
@@ -398,8 +413,19 @@ function resolveScalar(
     return { ...field, dimensions: f.type.dimensions ?? 0 };
   }
   const def = resolveDefault(owner, f, enumDef?.values);
+  const rules = resolveFieldRules(owner, f);
+  if (def?.kind === "literal" && rules.length) {
+    const value = f.type.name === "BigInt" ? BigInt(def.value as string) : def.value;
+    const broken = checkRules({ type: f.type.name, list, rules }, value)[0];
+    if (broken) {
+      throw new SchemaValidationError(
+        `${owner} field "${f.name}": default ${JSON.stringify(def.value)} breaks @${broken.rule}: it ${broken.message}`,
+      );
+    }
+  }
   const typed = enumDef ? { ...field, enum: enumDef.name, enumValues: enumDef.values } : field;
-  return def ? { ...typed, default: def } : typed;
+  const ruled = rules.length ? { ...typed, rules } : typed;
+  return def ? { ...ruled, default: def } : ruled;
 }
 
 function resolveVectorIndex(label: string, f: ScalarNodeField): ResolvedVectorIndex | undefined {
@@ -554,6 +580,7 @@ export function resolveSchema(doc: SchemaDocument): SchemaModel {
         continue;
       }
       const where = `${owner} field "${f.name}"`;
+      assertNamedArgs(where, f.decorators);
       if (!nodeNames.has(f.target)) {
         throw new SchemaValidationError(
           `${where}: unknown node "${f.target}" (not a node model or an enum).`,

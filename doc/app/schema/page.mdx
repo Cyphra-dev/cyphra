@@ -1,5 +1,5 @@
 ---
-description: "The .cyphra schema DSL for Neo4j: nodes, relationships, enums, spatial, temporal, Json, BigInt and Vector fields, constraints and indexes, composite ones too."
+description: "The .cyphra schema DSL for Neo4j: nodes, relationships, enums, spatial, temporal, Json, BigInt and Vector fields, constraints, indexes and validation rules."
 ---
 
 # Schema DSL
@@ -297,6 +297,57 @@ LocalTime, Time), or a literal matching the field type: `@default("draft")`, `@d
 fields take no default.
 The [typed client](/client) applies them on create.
 
+## Validation rules
+
+Rules say what a value must look like beyond its type. They live next to the field, so the schema
+stays the one place that defines your data:
+
+```cyphra
+node User {
+  id      String   @id @default(cuid())
+  email   String   @unique @email
+  name    String   @length(2, 40) @nonEmpty
+  handle  String?  @regex("^[a-z0-9_]+$", "i")
+  website String?  @url
+  age     Int?     @min(13) @max(130)
+  born    Date?    @min("1900-01-01")
+  tags    String[] @size(max: 10)
+}
+```
+
+| Rule                         | Fields                                       | The value must be …                                                       |
+| ---------------------------- | -------------------------------------------- | ------------------------------------------------------------------------- |
+| `@length(min, max)`          | `String`                                     | from `min` to `max` characters long, counted in Unicode code points.      |
+| `@size(min, max)`            | lists (`String[]`, `Int[]`, …)               | a list of `min` to `max` elements.                                        |
+| `@min(value)`, `@max(value)` | `Int`, `Float`, `BigInt`, `DateTime`, `Date` | at least / at most `value`, inclusive.                                    |
+| `@email`                     | `String`                                     | an email address (`local@domain.tld`).                                    |
+| `@url`                       | `String`                                     | an absolute `http:` or `https:` URL.                                      |
+| `@regex(pattern, flags)`     | `String`                                     | a string the JavaScript regular expression matches.                       |
+| `@nonEmpty`                  | `String`, lists                              | a string with something other than whitespace, or a list with an element. |
+
+- **Arguments** are positional or named: `@length(3, 20)` is `@length(min: 3, max: 20)`, and
+  `@length(max: 280)` sets only a maximum. `@size` works the same way.
+- **Bounds** are inclusive. On `Int` / `Float` / `BigInt` they are numbers (`@min(-1.5)`,
+  `@max(9223372036854775807)`); on `DateTime` and `Date` they are ISO 8601 strings
+  (`@min("2020-01-01")`, `@max("2100-01-01T00:00:00Z")`).
+- **`@regex`** uses JavaScript syntax and matches anywhere in the string: anchor it with `^…$` to
+  match the whole value. A backslash is written `\\` inside a `.cyphra` string
+  (`@regex("^\\d+$")`). The optional flags are among `i`, `m`, `s` and `u`.
+- **Absent and `null` values** break no rule (use a required type to demand a value). A list that
+  is not given on create is stored empty, so `@nonEmpty` or `@size(1, …)` on a list makes it
+  required in practice.
+- **Checked at schema time**: a rule on a type it does not fit (`@min` on a `String`, `@length` on
+  a list), a wrong argument (`@length(-1)`, `@min(1.5)` on an `Int`), `min` above `max`, a regex
+  that does not compile and a `@default` that breaks the field's rules are validation errors in
+  `cyphra validate` and in the editor.
+
+The [typed client](/client#validation-rules) checks the rules on every write (`create`,
+`createMany`, `update`, `updateMany`, `upsert`, nested `create`, `$edge` properties) before it
+sends anything to Neo4j, and reports every broken rule at once. `cyphra validate --verbose` lists
+the rules of the schema, and the generated types show them in each field's doc comment. Rules
+need no DDL: `cyphra migrate dev` notes rule changes without a step, and existing data is not
+re-checked. They are enforced by the Cyphra client only: raw Cypher writes skip them.
+
 ## Relationships
 
 `posts Post[] @relationship(type: "AUTHORED", direction: OUT)`. `direction` defaults to
@@ -341,7 +392,8 @@ node Session {
 
 ## Decorators
 
-`@id`, `@unique`, `@vectorIndex(…)` (on `Vector(N)` fields, see above), `@@fulltext([…])`, `@@unique([…])` and `@@index([…])` (model attributes, see above), `@index` (Neo4j 5+ **range** index, or a **point** index on a `Point` / `CartesianPoint` field: on nodes via `(n:Label)`, on rich relationships via `()-[r:TYPE]-()`), `@default(…)`, `@relationship(…)`. On **nodes**, you cannot combine `@index` with `@id` or `@unique` on the same field (those constraints already imply an index). On **relationship** models, `@unique` maps to a **relationship property uniqueness** constraint (Neo4j **5.7+**); `@id` is not allowed on relationship fields.
+`@id`, `@unique`, `@vectorIndex(…)` (on `Vector(N)` fields, see above), `@@fulltext([…])`, `@@unique([…])` and `@@index([…])` (model attributes, see above), `@index` (Neo4j 5+ **range** index, or a **point** index on a `Point` / `CartesianPoint` field: on nodes via `(n:Label)`, on rich relationships via `()-[r:TYPE]-()`), `@default(…)`, `@relationship(…)`, and the [validation rules](#validation-rules) `@length`, `@size`,
+`@min`, `@max`, `@email`, `@url`, `@regex` and `@nonEmpty`. On **nodes**, you cannot combine `@index` with `@id` or `@unique` on the same field (those constraints already imply an index). On **relationship** models, `@unique` maps to a **relationship property uniqueness** constraint (Neo4j **5.7+**); `@id` is not allowed on relationship fields.
 
 ## Programmatic API
 

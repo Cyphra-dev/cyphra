@@ -1,0 +1,29 @@
+// Validation rules (`@length`, `@min`, `@email`, …): runtime unit and integration tests.
+
+node VrUser {
+  id      String   @id @default(cuid())
+  email   String   @unique @email
+  name    String   @length(2, 40) @nonEmpty
+  website String?  @url
+  handle  String?  @regex("^[a-z0-9_]+$", "i")
+  age     Int?     @min(13) @max(130)
+  balance BigInt   @default(0) @min(0)
+  score   Float    @default(0) @min(0) @max(100)
+  born    Date?    @min("1900-01-01")
+  tags    String[] @size(max: 3)
+  posts   VrPost[] @relationship(type: "VR_WROTE", direction: OUT)
+}
+
+node VrPost {
+  id     String   @id @default(cuid())
+  title  String   @length(3, 100)
+  labels String[] @nonEmpty
+  author VrUser?  @relationship(type: "VR_WROTE", direction: IN)
+}
+
+relationship VrWrote {
+  type "VR_WROTE"
+  from VrUser
+  to VrPost
+  role String? @length(max: 5)
+}

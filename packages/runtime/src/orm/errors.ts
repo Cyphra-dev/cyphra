@@ -1,3 +1,5 @@
+import type { ValidationRuleName } from "@cyphra/schema";
+
 /** Base class for errors raised by the Cyphra ORM client. */
 export class CyphraError extends Error {
   constructor(message: string) {
@@ -6,8 +8,38 @@ export class CyphraError extends Error {
   }
 }
 
-/** Invalid arguments: unknown field, wrong value type, missing unique key, … */
-export class CyphraValidationError extends CyphraError {}
+/**
+ * One value of a write that breaks a validation rule of the schema (`@length`, `@min`, …).
+ */
+export type ValidationIssue = {
+  /**
+   * Where the value is in the operation's arguments, e.g. `["data", "posts", "create", 0, "title"]`
+   * for `create({ data: { posts: { create: [{ title }] } } })`.
+   */
+  readonly path: readonly (string | number)[];
+  /** Model (node or relationship model) of the field. */
+  readonly model: string;
+  /** Field name (the last string of `path`). */
+  readonly field: string;
+  /** The rule broken: its decorator name without `@` (`length`, `min`, `email`, …). */
+  readonly rule: ValidationRuleName;
+  /** What the value must be, e.g. `must be at least 3 characters long (got 1).` */
+  readonly message: string;
+};
+
+/**
+ * Invalid arguments: unknown field, wrong value type, missing unique key, … When values break
+ * the schema's validation rules, `issues` lists every one of them (and no statement was run).
+ */
+export class CyphraValidationError extends CyphraError {
+  /** Every value that breaks a validation rule (empty for other invalid arguments). */
+  readonly issues: readonly ValidationIssue[];
+
+  constructor(message: string, issues: readonly ValidationIssue[] = []) {
+    super(message);
+    this.issues = issues;
+  }
+}
 
 /** A node required by the operation does not exist (`update`, `delete`, `connect`, `…OrThrow`). */
 export class NotFoundError extends CyphraError {}

@@ -22,6 +22,7 @@ import type {
   ResolvedScalarField,
   SchemaModel,
 } from "@cyphra/schema";
+import { formatRule } from "@cyphra/schema";
 
 function q(id: string): string {
   return "`" + id.replace(/`/g, "``") + "`";
@@ -435,8 +436,44 @@ export function diffSchemaModels(prev: SchemaModel, next: SchemaModel): Migratio
     relationshipDataSteps(p, r, steps, warnings);
   }
 
-  const notes = onDeleteNotes(prev, next);
+  const notes = [...onDeleteNotes(prev, next), ...ruleNotes(prev, next)];
   return { steps: [...drops, ...steps, ...creates], warnings, ...(notes.length ? { notes } : {}) };
+}
+
+/**
+ * Validation-rule changes (`@length`, `@min`, …) on scalar fields present on both sides: no DDL,
+ * and existing values are not re-checked (the client checks the values it writes).
+ */
+function ruleNotes(prev: SchemaModel, next: SchemaModel): string[] {
+  const notes: string[] = [];
+  const text = (f: ResolvedScalarField | undefined) =>
+    f?.rules?.length ? f.rules.map(formatRule).join(" ") : "none";
+  const scalarsOf = (fields: readonly (ResolvedScalarField | ResolvedRelationField)[]) =>
+    new Map(
+      fields.filter((f): f is ResolvedScalarField => f.kind === "scalar").map((f) => [f.name, f]),
+    );
+  const models = (m: SchemaModel) =>
+    new Map([
+      ...m.nodes.map((n) => [n.name, scalarsOf(n.fields)] as const),
+      ...m.relationships.map((r) => [r.name, scalarsOf(r.properties)] as const),
+    ]);
+  const before = models(prev);
+  for (const [name, fields] of models(next)) {
+    const old = before.get(name);
+    if (!old) continue;
+    for (const [field, f] of fields) {
+      const o = old.get(field);
+      if (!o) continue;
+      const a = text(o);
+      const b = text(f);
+      if (a !== b) {
+        notes.push(
+          `${name}.${field}: validation rules ${a} → ${b} (no migration step: the client checks the values it writes; existing values are not re-checked).`,
+        );
+      }
+    }
+  }
+  return notes;
 }
 
 /** `onDelete` rule changes on relation fields present on both sides (no DDL: the client applies them). */

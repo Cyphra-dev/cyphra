@@ -154,10 +154,11 @@ program
 program
   .command("validate")
   .description("Parse and validate schema.cyphra")
-  .action(async () => {
+  .option("-v, --verbose", "also list the validation rules of every field")
+  .action(async (opts: { verbose?: boolean }) => {
     const cwd = process.cwd();
     const config = await loadConfig(cwd);
-    await runValidateSchema(cwd, config);
+    await runValidateSchema(cwd, config, opts);
   });
 
 program

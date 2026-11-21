@@ -786,6 +786,48 @@ properties) and throws a `CyphraValidationError` before reaching Neo4j. On a `Bi
 `{ increment: 1n }` (and `decrement`, `multiply`) takes a `bigint`. On a `Json` field, an object is
 the new value, not an update: `{ settings: { increment: 1 } }` stores that object.
 
+### Validation rules
+
+Fields with [validation rules](/schema#validation-rules) (`@length`, `@min`, `@email`, …) are
+checked on every write: `create`, `createMany`, `update`, `updateMany`, `upsert` (its `create`,
+`update` and the key in `where`), nested `create` at any depth, and `$edge` properties of
+`create`, `connect` and `set`. Every value is checked before the first statement is sent, so a
+write that breaks a rule sends nothing to Neo4j, and the `CyphraValidationError` lists every
+broken rule in `issues`:
+
+```ts
+// schema: User.name String @length(2, 40), User.email String @email,
+//         Post.title String @length(3, 100)
+try {
+  await db.user.create({
+    data: {
+      name: "A",
+      email: "alice@example.com",
+      posts: { create: [{ title: "Hello graph" }, { title: "Hi" }] },
+    },
+  });
+} catch (e) {
+  if (e instanceof CyphraValidationError) console.log(e.issues);
+}
+// [
+//   { path: ["data", "name"], model: "User", field: "name", rule: "length",
+//     message: "must be at least 2 characters long (got 1)." },
+//   { path: ["data", "posts", "create", 1, "title"], model: "Post", field: "title",
+//     rule: "length", message: "must be at least 3 characters long (got 2)." },
+// ]
+```
+
+- `path` leads to the value in the operation's arguments: it starts with `data` (`create`,
+  `update`, …, and the row index for `createMany`), or with `create`, `update` or `where` for
+  `upsert`. `rule` is the decorator name without `@`, and `message` says what the value must be,
+  ready to show next to a form field.
+- `null` and absent values break no rule. On create, an absent list counts as empty (it is stored
+  empty), so `@nonEmpty` and `@size(1, …)` lists must be given.
+- Numeric operators (`increment`, `decrement`, `multiply`) on a `@min` / `@max` field are checked
+  against the value they produce, in the update statement itself: when the result is out of range
+  nothing is updated (for `updateMany`, no node is) and the error has one issue per field. This is
+  the one case where a statement runs; it changes nothing.
+
 ## Transactions
 
 ```ts
@@ -888,7 +930,10 @@ SET n.createdAt = datetime({datetime: n.createdAt, timezone: "Z"})
 
 ## Errors
 
-- `CyphraValidationError`: unknown field or operator, wrong value type, missing required field, or missing unique key.
+- `CyphraValidationError`: unknown field or operator, wrong value type, missing required field,
+  missing unique key, or values that break the schema's [validation rules](#validation-rules).
+  For the rules, `issues` lists every broken one as `{ path, model, field, rule, message }`
+  (empty for the other cases).
 - `NotFoundError`: `update` / `delete` / `connect` / `findUniqueOrThrow` target not found.
 - `RestrictError`: a `delete` / `deleteMany` refused by an
   [`onDelete: Restrict`](/schema#ondelete-rules) rule, with `model`, `relation`, `target` and

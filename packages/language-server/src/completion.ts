@@ -120,13 +120,15 @@ function decoratorCompletions(
   inRelationship: boolean,
   withAt: boolean,
   used: readonly string[],
+  field?: { type: string; list: boolean },
 ): Completion[] {
   return DECORATORS.filter(
     (d) =>
       d.on !== "model" &&
       !used.includes(d.name) &&
       (kind === "unknown" || d.on === kind) &&
-      !(inRelationship && (d.name === "id" || d.on !== "scalar")),
+      !(inRelationship && (d.name === "id" || d.on !== "scalar")) &&
+      !(d.fits && field && kind === "scalar" && !d.fits(field.type, field.list)),
   ).map((d) => ({
     label: `@${d.name}`,
     kind: "decorator" as const,
@@ -254,6 +256,9 @@ export function completionsAt(a: Analysis, offset: number): Completion[] {
     else if (t.text === ")" || t.text === "]") stack.pop();
   });
   const fieldTypeName = stmt[0]?.kind === "ident" ? stmt[1]?.text : undefined;
+  const field = fieldTypeName
+    ? { type: fieldTypeName, list: stmt[2]?.text === "[" && stmt[3]?.text === "]" }
+    : undefined;
   if (stack.length) {
     const open = stack[stack.length - 1]!;
     const outerParen = stack.find((i) => stmt[i]!.text === "(");
@@ -332,7 +337,14 @@ export function completionsAt(a: Analysis, offset: number): Completion[] {
   const last = stmt[stmt.length - 1];
   if (last?.kind === "at") {
     const used = stmt.filter((_t, i) => stmt[i - 1]?.kind === "at").map((t) => t.text);
-    return decoratorCompletions(ctx, fieldKind(a, fieldTypeName), inRelationship, false, used);
+    return decoratorCompletions(
+      ctx,
+      fieldKind(a, fieldTypeName),
+      inRelationship,
+      false,
+      used,
+      field,
+    );
   }
   if (last?.kind === "atat") return inRelationship ? [] : attributeCompletions(ctx, false);
   if (stmt.length === 0) {
@@ -367,7 +379,14 @@ export function completionsAt(a: Analysis, offset: number): Completion[] {
     !["type", "from", "to"].includes(stmt[0]!.text)
   ) {
     const used = stmt.filter((_t, i) => stmt[i - 1]?.kind === "at").map((t) => t.text);
-    return decoratorCompletions(ctx, fieldKind(a, fieldTypeName), inRelationship, true, used);
+    return decoratorCompletions(
+      ctx,
+      fieldKind(a, fieldTypeName),
+      inRelationship,
+      true,
+      used,
+      field,
+    );
   }
   return [];
 }

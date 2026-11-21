@@ -99,7 +99,16 @@ export type DecoratorDoc = {
   /** Snippet inserted after `@` (or `@@`). */
   readonly snippet: string;
   readonly args?: readonly ArgDoc[];
+  /** Field types it fits (absent: every field of its `on` kind). */
+  readonly fits?: (type: string, list: boolean) => boolean;
+  /** A validation rule (documented under "Validation rules"). */
+  readonly rule?: boolean;
 };
+
+const string = (type: string, list: boolean) => type === "String" && !list;
+const ORDERED = ["Int", "Float", "BigInt", "DateTime", "Date"];
+const BOUND_DOC =
+  "The bound, inclusive: a number (`Int`, `Float`, `BigInt`) or an ISO 8601 string (`DateTime`, `Date`).";
 
 export const DECORATORS: readonly DecoratorDoc[] = [
   {
@@ -125,6 +134,88 @@ export const DECORATORS: readonly DecoratorDoc[] = [
     on: "scalar",
     doc: "Default applied on create: `cuid()`, `uuid()` (String), `now()` (DateTime / Date), a literal of the field type, an enum value, or JSON text on a Json field.",
     snippet: "default($1)",
+  },
+  {
+    name: "length",
+    on: "scalar",
+    rule: true,
+    doc: "Validation rule: the number of characters of a `String`, from `min` to `max` (inclusive, counted in Unicode code points): `@length(3, 20)`, `@length(max: 280)`.",
+    snippet: "length(${1:1}, ${2:100})",
+    fits: string,
+    args: [
+      { name: "min", doc: "Fewest characters (a non-negative integer)." },
+      { name: "max", doc: "Most characters (a non-negative integer)." },
+    ],
+  },
+  {
+    name: "size",
+    on: "scalar",
+    rule: true,
+    doc: "Validation rule: the number of elements of a list, from `min` to `max` (inclusive): `@size(1, 10)`, `@size(max: 5)`.",
+    snippet: "size(${1:1}, ${2:10})",
+    fits: (_type, list) => list,
+    args: [
+      { name: "min", doc: "Fewest elements (a non-negative integer)." },
+      { name: "max", doc: "Most elements (a non-negative integer)." },
+    ],
+  },
+  {
+    name: "min",
+    on: "scalar",
+    rule: true,
+    doc: 'Validation rule: the smallest value, inclusive, of an `Int`, `Float`, `BigInt`, `DateTime` or `Date` field: `@min(0)`, `@min("2020-01-01")`. Numeric `increment` / `decrement` / `multiply` updates are checked too.',
+    snippet: "min(${1:0})",
+    fits: (type, list) => !list && ORDERED.includes(type),
+    args: [{ name: "value", doc: BOUND_DOC }],
+  },
+  {
+    name: "max",
+    on: "scalar",
+    rule: true,
+    doc: 'Validation rule: the largest value, inclusive, of an `Int`, `Float`, `BigInt`, `DateTime` or `Date` field: `@max(100)`, `@max("2100-01-01T00:00:00Z")`. Numeric `increment` / `decrement` / `multiply` updates are checked too.',
+    snippet: "max(${1:100})",
+    fits: (type, list) => !list && ORDERED.includes(type),
+    args: [{ name: "value", doc: BOUND_DOC }],
+  },
+  {
+    name: "email",
+    on: "scalar",
+    rule: true,
+    doc: "Validation rule: a `String` holding an email address (`local@domain.tld`).",
+    snippet: "email",
+    fits: string,
+  },
+  {
+    name: "url",
+    on: "scalar",
+    rule: true,
+    doc: "Validation rule: a `String` holding an absolute `http:` or `https:` URL.",
+    snippet: "url",
+    fits: string,
+  },
+  {
+    name: "regex",
+    on: "scalar",
+    rule: true,
+    doc: 'Validation rule: a `String` matching a JavaScript regular expression, anywhere in the string (anchor it with `^…$` to match all of it): `@regex("^[a-z0-9_]+$", "i")`.',
+    snippet: 'regex("${1:pattern}")',
+    fits: string,
+    args: [
+      {
+        name: "pattern",
+        doc: "The regular expression (a string; `\\\\` for a backslash).",
+        string: true,
+      },
+      { name: "flags", doc: "Flags among `i`, `m`, `s`, `u`.", string: true },
+    ],
+  },
+  {
+    name: "nonEmpty",
+    on: "scalar",
+    rule: true,
+    doc: "Validation rule: a `String` that is not empty or only whitespace, or a list with at least one element.",
+    snippet: "nonEmpty",
+    fits: (type, list) => list || type === "String",
   },
   {
     name: "relationship",
@@ -237,7 +328,9 @@ export function decoratorMarkdown(d: DecoratorDoc): string {
         : "composite-constraints-and-indexes"
       : d.on === "vector"
         ? "vector-fields"
-        : "decorators";
+        : d.rule
+          ? "validation-rules"
+          : "decorators";
   return `**${sigil}${d.name}**\n\n${d.doc}${args}\n\n[Schema reference](${DOCS_URL}#${anchor})`;
 }
 
