@@ -192,6 +192,30 @@ describe("relation counts", () => {
     );
   });
 
+  it("orders by a filtered relation count", () => {
+    const ctx = new QueryContext(schemaModel);
+    expect(
+      compileOrderBy(ctx, user, "n", {
+        posts: { _count: "desc", where: { published: true, author: { is: { age: { gt: 1 } } } } },
+      }),
+    ).toBe(
+      "COUNT { MATCH (n)-[:`AUTHORED`]->(m0:`Post`) WHERE (m0.`published` = $p0) AND " +
+        "(EXISTS { MATCH (m0)<-[:`AUTHORED`]-(m1:`User`) WHERE m1.`age` > $p1 }) } DESC",
+    );
+    expect(ctx.params.p0).toBe(true);
+    // An empty filter counts every related node; a where alone does not sort.
+    expect(compileOrderBy(ctx, user, "n", { posts: { _count: "asc", where: {} } })).toBe(
+      "COUNT { MATCH (n)-[:`AUTHORED`]->(m2:`Post`) } ASC",
+    );
+    expect(compileOrderBy(ctx, user, "n", { posts: { where: { published: true } } })).toBeNull();
+    expect(() =>
+      compileOrderBy(ctx, user, "n", { posts: { _count: "asc", where: { nope: 1 } } }),
+    ).toThrow('Unknown field "Post.nope"');
+    expect(() => compileOrderBy(ctx, user, "n", { posts: { _count: "asc", take: 1 } })).toThrow(
+      'takes { _count: "asc" | "desc", where? }',
+    );
+  });
+
   it("orders by a scalar of a to-one related node", () => {
     const ctx = new QueryContext(schemaModel);
     expect(compileOrderBy(ctx, post, "n", [{ author: { email: "desc" } }, { title: "asc" }])).toBe(
@@ -227,6 +251,7 @@ describe("generated fixture", () => {
     "rules",
     "zod",
     "interfaces",
+    "graph",
   ])("is in sync with %s.cyphra (run the generator if this fails)", async (name) => {
     const { readFile } = await import("node:fs/promises");
     const { parseSchema, renderCyphraGenSource } = await import("@cyphra/schema");

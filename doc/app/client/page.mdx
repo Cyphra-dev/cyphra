@@ -250,6 +250,22 @@ const mostFollowed = await db.user.findMany({
 });
 ```
 
+To count only some of the related nodes, add a `where` next to `_count` (a normal filter on the
+related model, as in `_count.select`). Users with the most published posts first, and each user's
+followers by how many of their own followers are adults:
+
+```ts
+const prolific = await db.user.findMany({
+  orderBy: [{ posts: { _count: "desc", where: { published: true } } }, { email: "asc" }],
+  include: {
+    followers: { orderBy: { followers: { _count: "desc", where: { age: { gte: 18 } } } } },
+  },
+});
+```
+
+It compiles to `ORDER BY COUNT { MATCH (n)-[:AUTHORED]->(m:Post) WHERE m.published = $p0 } DESC`.
+Prisma has no equivalent; `where` alone, without `_count`, does not sort.
+
 To **sort by a field of a to-one relation**, nest it under the relation:
 `orderBy: { author: { name: "asc" } }`. Nodes without the related node sort as `null` (last
 ascending, first descending).
@@ -411,8 +427,9 @@ RETURN n{.`id`, .`email`, .`name`, .`age`} AS row ORDER BY n.`name` ASC
   see it, and a `CyphraValidationError` at run time.
 - **Cycles.** Neo4j never uses the same relationship twice in one path, so cycles end on their own. A
   path that comes back to its own start node is skipped: Alice is not her own friend of a friend.
-- **Same model only.** Each relation in `via` must lead back to the model (`User` to `User`). Chains
-  over different models (`User` to `Post` to `Tag`) are not supported yet; use `db.$cypher` for those.
+- **Same model.** With relation names, each relation in `via` must lead back to the model (`User`
+  to `User`). For chains over different models (`Chunk` to `Entity` to `Chunk`), give a list of
+  hops: see [Multi-hop traversals](#multi-hop-traversals).
 - `traverse` works in [`$transaction`](#transactions) and sees the transaction's own writes.
 
 Edge filters apply to every hop. Only follows made since 2024, both directions, exactly two hops away:
@@ -427,6 +444,89 @@ const recent = await db.user.traverse({
 });
 // { email: string; _count: { followers: number } }[]
 ```
+
+### Multi-hop traversals
+
+`via` also takes a list of **hops**, followed in order. Each hop names relation(s) of the model the
+previous hop reached, so a traversal can cross models: from a chunk to the entities it mentions, to
+related entities, to the other chunks that mention them. The results are nodes of the last hop's
+model.
+
+```cyphra filename="schema.cyphra"
+node Chunk {
+  id       String   @id
+  text     String
+  draft    Boolean  @default(false)
+  entities Entity[] @relationship(type: "MENTIONS", direction: OUT)
+}
+
+node Entity {
+  id          String   @id
+  name        String
+  kind        String
+  chunks      Chunk[]  @relationship(type: "MENTIONS", direction: IN)
+  related     Entity[] @relationship(type: "RELATED_TO", direction: OUT)
+  relatedFrom Entity[] @relationship(type: "RELATED_TO", direction: IN)
+}
+
+relationship RelatedTo {
+  type "RELATED_TO"
+  from Entity
+  to   Entity
+  weight Int @default(0)
+}
+```
+
+```ts
+const context = await db.chunk.traverse({
+  from: { id: "c1" },
+  via: [
+    { rel: "entities", where: { kind: "person" } }, // the people c1 mentions
+    {
+      rel: "related",
+      direction: "both",
+      depth: { min: 0, max: 2 }, // zero to two RELATED_TO hops
+      edgeWhere: { weight: { gte: 2 } },
+    },
+    { rel: "chunks" }, // the chunks that mention them
+  ],
+  where: { draft: false }, // on the reached chunks
+  orderBy: { entities: { _count: "desc", where: { kind: "person" } } },
+  take: 5,
+  select: { id: true, text: true },
+});
+// { id: string; text: string }[]
+```
+
+It compiles to one statement, a quantified path pattern per hop:
+
+```cypher
+MATCH (s:`Chunk`) WHERE s.`id` = $p0
+MATCH (s)((:`Chunk`)-[e0:`MENTIONS`]->(t1:`Entity`) WHERE (t1.`kind` = $p1)){1,1}
+         ((:`Entity`)-[e2:`RELATED_TO`]-(:`Entity`) WHERE (e2.`weight` >= $p2)){0,2}
+         ((:`Entity`)<-[e3:`MENTIONS`]-(:`Chunk`)){1,1}(n:`Chunk`)
+WHERE (n <> s) AND (n.`draft` = $p3)
+…
+```
+
+| Hop option  | Meaning                                                                                                                                      |
+| ----------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `rel`       | A relation of the model the previous hop reached (the start model for the first hop), or a list of them leading to the same model. Required. |
+| `direction` | `"out"`, `"in"` or `"both"` for this hop. Default: each relation's declared `direction`.                                                     |
+| `depth`     | `{ min?, max }`: repeat this hop. Only on a relation back to the same model (`Entity.related`); without it, the hop is taken once.           |
+| `where`     | Filter on every node this hop steps to (relation filters included). A hop repeated zero times checks nothing.                                |
+| `edgeWhere` | Filter on the edges of this hop, typed from their `relationship { … }` model.                                                                |
+
+- Everything else works as above: `from` filters the start model, `where`, `orderBy`, `select` /
+  `include` and the result type are those of the last hop's model, and `distinct`, `skip`, `take`
+  and `returnPaths` keep their meaning. `depth`, `direction` and `edgeWhere` go on the hops.
+- Every hop is typed: an unknown relation, a `depth` on a hop to another model, or a `where` with a
+  field of the wrong model is a compile error, and a `CyphraValidationError` at run time.
+- The hops' `depth.max` (1 for a hop without `depth`) add up to at most `maxTraversalDepth`.
+- A path that comes back to its start node is skipped, unless every hop allows zero repetitions.
+- With `returnPaths`, `path.nodes` holds the models met along the way (`Chunk | Entity` above) and
+  `path.edges` their typed edges; the type is exported as `HopPath`.
+- Computed fields from [`$extends`](#computed-fields) apply to the last hop's model.
 
 ### Paths
 
@@ -767,14 +867,33 @@ await db.user.deleteMany({ where: { email: { endsWith: "@spam.io" } } });
 ```
 
 Relation operations: `create` and `connect` (on create and update), plus `disconnect` and `set`
-(to-many only, replaces all edges) on update. On a to-one relation, `connect` / `create` replace the
-existing edge.
+(to-many only) on update. `set` makes the listed nodes the only linked ones: edges to other nodes
+are deleted, edges to the listed nodes are kept (and updated with their `$edge`) or created. On a
+to-one relation, `connect` / `create` replace the existing edge.
 
 `connect` is idempotent: it `MERGE`s the relationship, so connecting a pair that is already linked
 keeps one edge. When the other side is declared to-one (connecting a post through `user.posts`
 while `Post.author` is `User?`), `connect` moves the post: its edge to the previous author is
 deleted in the same statement. Many-to-many relations are left alone. On a typed edge, `$edge` and the edge's schema defaults are set when the edge is
 created; on an existing edge only the `$edge` properties you pass are updated.
+
+On `connect` and `set`, a number property of `$edge` also takes `{ increment, decrement, multiply }`,
+applied by the same statement as the `MERGE`: to the current value on an existing edge (a missing
+value counts as `0`), to the schema default (or `0`) on a new one. Counting co-occurrences is one
+call per pair, safe under concurrent writes:
+
+```ts
+await db.entity.update({
+  where: { id: "ada" },
+  data: { related: { connect: { id: "babbage", $edge: { weight: { increment: 1 } } } } },
+});
+// … MERGE (a)-[r:RELATED_TO]->(b) ON CREATE SET r += $p4 SET r.weight = (coalesce(r.weight, $p0) + $p1)
+```
+
+`@min` / `@max` on the edge property are checked on the value the update produces, as for node
+fields ([validation rules](#validation-rules)): a broken rule throws a `CyphraValidationError` and
+the write (or the whole `$transaction`) is rolled back. `create` makes a new edge, so its `$edge`
+takes values only.
 
 `upsert` is one atomic `MERGE` on the unique key in `where` (`ON CREATE SET` the create data,
 `ON MATCH SET` the update), then any nested relation writes of the branch it took. Concurrent
@@ -865,7 +984,9 @@ try {
 - Numeric operators (`increment`, `decrement`, `multiply`) on a `@min` / `@max` field are checked
   against the value they produce, in the update statement itself: when the result is out of range
   nothing is updated (for `updateMany`, no node is) and the error has one issue per field. This is
-  the one case where a statement runs; it changes nothing.
+  the one case where a statement runs; it changes nothing. The same goes for operators on `$edge`
+  properties of `connect` and `set` (`path` ends with `"$edge", "<field>"`): the write is rolled
+  back.
 
 ## Validating API input with zod
 

@@ -10,6 +10,14 @@ import { TyRole, type Db as TypesDb } from "./__fixtures__/types.gen.js";
 import type { Db as GeoDb } from "./__fixtures__/geo.gen.js";
 import type { Db as CompoundDb } from "./__fixtures__/compound.gen.js";
 import type {
+  Db as GraphDb,
+  GrChunk,
+  GrDoc,
+  GrEntity,
+  GrMentions,
+  GrRelated,
+} from "./__fixtures__/graph.gen.js";
+import type {
   CartesianPoint,
   Duration,
   JsonValue,
@@ -318,18 +326,18 @@ describe("ORM types", () => {
     await db.user.traverse({ from: { id: "u1" }, via: "posts", depth: { max: 2 } });
     // @ts-expect-error — Post has no relation back to Post
     await db.post.traverse({ from: { id: "p1" }, via: "author", depth: { max: 2 } });
+    // @ts-expect-error — edge filters are typed by the relationship model
     await db.user.traverse({
       from: { id: "u1" },
       via: "following",
       depth: { max: 2 },
-      // @ts-expect-error — edge filters are typed by the relationship model
       edgeWhere: { since: "yesterday" },
     });
+    // @ts-expect-error — unknown edge property
     await db.user.traverse({
       from: { id: "u1" },
       via: "following",
       depth: { max: 2 },
-      // @ts-expect-error — unknown edge property
       edgeWhere: { weight: 1 },
     });
     // @ts-expect-error — unknown direction
@@ -423,6 +431,123 @@ describe("ORM types", () => {
     >().toEqualTypeOf<{ since: Date }>();
     expectTypeOf<SelfRelations<CyphraTypeMap, "User">>().toEqualTypeOf<"following" | "followers">();
     expectTypeOf<SelfRelations<CyphraTypeMap, "Post">>().toEqualTypeOf<never>();
+  });
+});
+
+declare const grdb: GraphDb;
+
+describe("ORM multi-hop traversal, filtered count ordering and edge update types", () => {
+  it("types the reached nodes as the last hop's model, and per-hop filters by each model", async () => {
+    const chunks = await grdb.grChunk.traverse({
+      from: { id: "c1" },
+      via: [
+        { rel: "entities", where: { kind: "person" }, edgeWhere: { count: { gte: 1 } } },
+        {
+          rel: "related",
+          direction: "both",
+          depth: { min: 0, max: 2 },
+          edgeWhere: { weight: { gt: 0 } },
+        },
+        { rel: "chunks" },
+      ],
+      where: { draft: false },
+      orderBy: [{ entities: { _count: "desc", where: { kind: "person" } } }, { id: "asc" }],
+      take: 3,
+    });
+    expectTypeOf(chunks).toEqualTypeOf<GrChunk[]>();
+
+    const entities = await grdb.grChunk.traverse({
+      from: { id: "c1" },
+      via: [{ rel: "entities" }],
+      select: { name: true, _count: { select: { chunks: true } } },
+    });
+    expectTypeOf(entities).toEqualTypeOf<{ name: string; _count: { chunks: number } }[]>();
+
+    // A list of relations on one hop (same target model).
+    const either = await grdb.grEntity.traverse({
+      from: { id: "e1" },
+      via: [{ rel: ["related", "relatedFrom"], depth: { max: 2 } }, { rel: "chunks" }],
+      include: { doc: true },
+    });
+    expectTypeOf(either[0]!.doc).toEqualTypeOf<GrDoc | null>();
+  });
+
+  it("types paths with every model and edge met along the hops", async () => {
+    const _rows = await grdb.grChunk.traverse({
+      from: { id: "c1" },
+      via: [{ rel: "entities" }, { rel: "related", depth: { max: 2 } }, { rel: "chunks" }],
+      select: { id: true },
+      returnPaths: true,
+    });
+    type Row = (typeof _rows)[number];
+    expectTypeOf<Row["node"]>().toEqualTypeOf<{ id: string }>();
+    expectTypeOf<Row["path"]["nodes"][number]>().toEqualTypeOf<GrChunk | GrEntity>();
+    expectTypeOf<Row["path"]["edges"][number]["properties"]>().toEqualTypeOf<
+      GrMentions | GrRelated
+    >();
+    const _docPath = await grdb.grDoc.traverse({
+      from: {},
+      via: [{ rel: "chunks" }],
+      returnPaths: true,
+    });
+    // An untyped edge has no properties.
+    expectTypeOf<(typeof _docPath)[number]["path"]["edges"][number]["properties"]>().toEqualTypeOf<
+      Record<string, never>
+    >();
+  });
+
+  it("rejects hops that do not follow the schema", async () => {
+    // @ts-expect-error — GrEntity has no relation "entities"
+    await grdb.grChunk.traverse({ from: {}, via: [{ rel: "entities" }, { rel: "entities" }] });
+    // @ts-expect-error — depth repeats a hop: only on a relation back to the same model
+    await grdb.grChunk.traverse({ from: {}, via: [{ rel: "entities", depth: { max: 2 } }] });
+    // @ts-expect-error — a hop's where is typed by the model it steps to (GrEntity)
+    await grdb.grChunk.traverse({ from: {}, via: [{ rel: "entities", where: { draft: true } }] });
+    // @ts-expect-error — edgeWhere is typed by the hop's relationship model
+    await grdb.grChunk.traverse({ from: {}, via: [{ rel: "entities", edgeWhere: { weight: 1 } }] });
+    // @ts-expect-error — an untyped edge has no edgeWhere
+    await grdb.grDoc.traverse({ from: {}, via: [{ rel: "chunks", edgeWhere: {} }] });
+    // @ts-expect-error — where is on the last hop's model (GrEntity), not the start model
+    await grdb.grChunk.traverse({ from: {}, via: [{ rel: "entities" }], where: { draft: true } });
+    // @ts-expect-error — select is on the last hop's model
+    await grdb.grChunk.traverse({ from: {}, via: [{ rel: "entities" }], select: { text: true } });
+    // @ts-expect-error — depth goes on each hop
+    await grdb.grChunk.traverse({ from: {}, via: [{ rel: "entities" }], depth: { max: 2 } });
+  });
+
+  it("types filtered relation count ordering, top-level and nested", async () => {
+    await grdb.grEntity.findMany({
+      orderBy: { chunks: { _count: "desc", where: { draft: false } } },
+      include: {
+        related: { orderBy: [{ chunks: { _count: "asc", where: { text: { contains: "x" } } } }] },
+      },
+    });
+    // @ts-expect-error — the filter is typed by the related model
+    await grdb.grEntity.findMany({ orderBy: { chunks: { _count: "desc", where: { kind: "x" } } } });
+    // @ts-expect-error — to-one relations have no _count
+    await grdb.grChunk.findMany({ orderBy: { doc: { _count: "desc", where: {} } } });
+  });
+
+  it("types $edge number updates on connect and set", async () => {
+    await grdb.grEntity.update({
+      where: { id: "e1" },
+      data: {
+        related: {
+          connect: [{ id: "e2", $edge: { weight: { increment: 1 }, score: { multiply: 2 } } }],
+          set: [{ id: "e3", $edge: { weight: { decrement: 1 }, note: "n" } }],
+        },
+      },
+    });
+    await grdb.grEntity.update({
+      where: { id: "e1" },
+      // @ts-expect-error — number updates are only for number properties
+      data: { related: { connect: { id: "e2", $edge: { note: { increment: 1 } } } } },
+    });
+    await grdb.grEntity.update({
+      where: { id: "e1" },
+      // @ts-expect-error — create makes a new edge: give the value itself
+      data: { related: { create: { id: "e3", name: "x", $edge: { weight: { increment: 1 } } } } },
+    });
   });
 });
 

@@ -1,0 +1,41 @@
+// Multi-hop traversals across models, filtered relation counts and edge number updates
+// (GraphRAG-shaped): runtime unit, type and integration tests.
+
+node GrDoc {
+  id     String    @id
+  title  String
+  chunks GrChunk[] @relationship(type: "GR_HAS", direction: OUT)
+}
+
+node GrChunk {
+  id       String     @id
+  text     String
+  draft    Boolean    @default(false)
+  doc      GrDoc?     @relationship(type: "GR_HAS", direction: IN)
+  entities GrEntity[] @relationship(type: "GR_MENTIONS", direction: OUT)
+}
+
+node GrEntity {
+  id          String     @id
+  name        String
+  kind        String     @default("thing")
+  chunks      GrChunk[]  @relationship(type: "GR_MENTIONS", direction: IN)
+  related     GrEntity[] @relationship(type: "GR_RELATED", direction: OUT)
+  relatedFrom GrEntity[] @relationship(type: "GR_RELATED", direction: IN)
+}
+
+relationship GrRelated {
+  type "GR_RELATED"
+  from GrEntity
+  to GrEntity
+  weight Int    @default(0) @min(0) @max(5)
+  score  Float?
+  note   String?
+}
+
+relationship GrMentions {
+  type "GR_MENTIONS"
+  from GrChunk
+  to GrEntity
+  count Int @default(1)
+}

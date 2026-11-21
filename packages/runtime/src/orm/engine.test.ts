@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import neo4j from "neo4j-driver";
 import { schemaModel } from "./__fixtures__/blog.gen.js";
+import { schemaModel as graphSchema } from "./__fixtures__/graph.gen.js";
 import { ModelEngine, type Executor, type Runner } from "./engine.js";
 import { CyphraValidationError } from "./errors.js";
 
@@ -159,5 +160,97 @@ describe("connect", () => {
         " OPTIONAL MATCH (a)<-[old:`AUTHORED`]-(other:`User`) WHERE other <> b" +
         " DELETE old WITH DISTINCT a, b MERGE (a)<-[r:`AUTHORED`]-(b) RETURN count(r) AS c",
     );
+  });
+});
+
+describe("$edge number updates", () => {
+  function graphEngine(name: string, answer: (text: string) => Record<string, unknown>[]) {
+    const { calls, runner } = fakeRunner(answer);
+    const model = graphSchema.nodes.find((n) => n.name === name)!;
+    return { calls, e: new ModelEngine(graphSchema, model, runner) };
+  }
+  const entityRow = { id: "e1", name: "Ada", kind: "person" };
+  const answer = (bad: string[]) => (text: string) =>
+    text.includes("MERGE (a)") ? [{ c: 1, bad }] : [{ id: "4:x:0", c: 1, row: entityRow }];
+
+  it("SETs the new value after the MERGE, checking @min / @max on the result", async () => {
+    const { calls, e } = graphEngine("GrEntity", answer([]));
+    await e.update({
+      where: { id: "e1" },
+      data: {
+        related: {
+          connect: {
+            id: "e2",
+            $edge: { weight: { increment: 1 }, score: { multiply: 2 }, note: "n" },
+          },
+        },
+      },
+    });
+    const c = calls.find((x) => x.text.includes("MERGE (a)"))!;
+    expect(c.text).toBe(
+      "MATCH (a) WHERE elementId(a) = $p7 MATCH (b:`GrEntity`) WHERE b.`id` = $p6 WITH a, b LIMIT 1" +
+        " MERGE (a)-[r:`GR_RELATED`]->(b) ON CREATE SET r += $p8 ON MATCH SET r += $p9" +
+        " SET r.`weight` = (coalesce(r.`weight`, $p0) + $p1), r.`score` = (coalesce(r.`score`, $p4) * $p5)" +
+        " RETURN count(r) AS c, collect([x IN [" +
+        'CASE WHEN r.`weight` < $p2 THEN "weight:min" END, ' +
+        'CASE WHEN r.`weight` > $p3 THEN "weight:max" END] WHERE x IS NOT NULL])[0] AS bad',
+    );
+    // A new edge: defaults, then the operators (score has no default: it starts from 0).
+    const created = c.params.p8 as Record<string, unknown>;
+    expect([String(created.weight), created.score, created.note]).toEqual(["0", 0, "n"]);
+    expect(c.params.p9).toEqual({ note: "n" });
+  });
+
+  it("throws (rolling the write back) when the result breaks @min / @max", async () => {
+    const { e } = graphEngine("GrEntity", answer(["weight:max"]));
+    const err = await e
+      .update({
+        where: { id: "e1" },
+        data: { related: { connect: [{ id: "e2", $edge: { weight: { increment: 9 } } }] } },
+      })
+      .catch((x: unknown) => x);
+    expect(err).toBeInstanceOf(CyphraValidationError);
+    expect((err as CyphraValidationError).issues).toEqual([
+      expect.objectContaining({
+        path: ["data", "related", "connect", 0, "$edge", "weight"],
+        model: "GrRelated",
+        field: "weight",
+        rule: "max",
+      }),
+    ]);
+  });
+
+  it("set keeps the edges to listed nodes, so updates apply to them", async () => {
+    const { calls, e } = graphEngine("GrEntity", answer([]));
+    await e.update({
+      where: { id: "e1" },
+      data: { related: { set: [{ id: "e2", $edge: { weight: { decrement: 1 } } }] } },
+    });
+    const del = calls.find((x) => x.text.includes("DELETE r"))!;
+    expect(del.text).toBe(
+      "MATCH (a)-[r:`GR_RELATED`]->(b:`GrEntity`) WHERE elementId(a) = $p1 AND NOT ((b.`id` = $p0))" +
+        " DELETE r RETURN count(*) AS c",
+    );
+    expect(calls.find((x) => x.text.includes("MERGE (a)"))!.text).toContain(
+      "SET r.`weight` = (coalesce(r.`weight`, $p0) - $p1)",
+    );
+  });
+
+  it("rejects number updates on create and unknown operators", async () => {
+    const { e } = graphEngine("GrEntity", answer([]));
+    await expect(
+      e.update({
+        where: { id: "e1" },
+        data: {
+          related: { create: { id: "e3", name: "x", $edge: { weight: { increment: 1 } } } },
+        },
+      }),
+    ).rejects.toThrow("$edge number updates ({ increment, … }) are for connect and set");
+    await expect(
+      e.update({
+        where: { id: "e1" },
+        data: { related: { connect: { id: "e2", $edge: { weight: { divide: 2 } } } } },
+      }),
+    ).rejects.toThrow('GrEntity.related.$edge.weight: unknown number update "divide"');
   });
 });

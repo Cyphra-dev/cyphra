@@ -66,12 +66,20 @@ node Entity {
   related     Entity[] @relationship(type: "RELATED_TO", direction: OUT)
   relatedFrom Entity[] @relationship(type: "RELATED_TO", direction: IN)
 }
+
+relationship RelatedTo {
+  type "RELATED_TO"
+  from Entity
+  to   Entity
+  weight Int @default(0) @min(0) // chunks that mention both entities
+}
 ```
 
 - `(Document)-[:HAS_CHUNK]->(Chunk)` gives every chunk its citation: document title and source.
 - `(Chunk)-[:NEXT]->(Chunk)` keeps reading order, so the chunks around a match are one hop away.
 - `(Chunk)-[:MENTIONS]->(Entity)` and `(Entity)-[:RELATED_TO]->(Entity)` connect chunks of different
-  sections and documents that are about the same things.
+  sections and documents that are about the same things. The `RelatedTo` model types the edge: its
+  `weight` counts the chunks that mention both entities.
 - `Vector(256)` must match the size of your embeddings. The `english` analyzer stems words, so a
   search for "count" also finds "counted".
 
@@ -174,16 +182,23 @@ await db.$transaction(async (tx) => {
     });
   }
 
-  // `connect` MERGEs the edge, so a pair mentioned together many times keeps one edge.
+  // `connect` MERGEs the edge, so a pair mentioned together many times keeps one edge; its
+  // weight counts the chunks that relate them (a new edge starts from the default, 0).
   for (const r of extractions.flatMap((x) => x.relations)) {
     const [from, to] = [entityId(r.from), entityId(r.to)].sort();
-    await tx.entity.update({ where: { id: from! }, data: { related: { connect: { id: to! } } } });
+    await tx.entity.update({
+      where: { id: from! },
+      data: { related: { connect: { id: to!, $edge: { weight: { increment: 1 } } } } },
+    });
   }
 });
 ```
 
-Running ingestion again for a document replaces its chunks and keeps one edge per entity pair. The
-example's test checks it.
+`{ increment: 1 }` on `$edge` is applied by the same `MERGE` statement
+(`SET r.weight = coalesce(r.weight, 0) + 1`), so concurrent ingestions never lose a count, and `@min` / `@max` on the edge property are
+checked on the result ([nested writes](/client#writing)). Running ingestion again for a document
+replaces its chunks and keeps one edge per entity pair (the example's test checks it); its chunks
+are counted again in the weights.
 
 ## Hybrid retrieval
 
@@ -249,47 +264,66 @@ The example keeps the three best fused chunks (`k`) as matches and adds two kind
 The previous and next chunks were loaded with each hit, so adding them for the best match
 (`neighboursOf`, default 1) costs nothing.
 
-**Entities.** The matches' entities are the seeds. `traverse` follows `RELATED_TO` from them for up
-to two hops, in both directions because co-occurrence has no direction. `depth.min: 0` returns the
-seeds too, and `returnPaths` gives each entity's distance, which becomes its weight: 1 for a seed,
-1/2 one hop away, 1/3 two hops away.
+**Entities.** The matches' entities are the seeds. One `traverse` [across models](/client#multi-hop-traversals)
+goes from them to the chunks: zero to two `RELATED_TO` hops between entities (in both directions,
+because co-occurrence has no direction, and only along edges of at least `minWeight`, default 1),
+then the `chunks` relation. The chunks already retrieved are left out, and the best two
+(`entityChunks`) come back ranked in the database:
 
 ```ts filename="src/retrieve.ts"
-const reached = await db.entity.traverse({
-  from: { id: { in: [...seeds] } },
-  via: "related",
-  direction: "both",
-  depth: { min: 0, max: 2 },
-  select: { id: true },
-  returnPaths: true,
-});
-const weights = new Map<string, number>();
-for (const { node, path } of reached) {
-  const w = 1 / (1 + path.edges.length);
-  weights.set(node.id, Math.max(weights.get(node.id) ?? 0, w));
+/** Entities within `hops` RELATED_TO hops (either direction) of the seeds, as a filter. */
+export function nearEntities(
+  seeds: readonly string[],
+  hops: number,
+): WhereInput<CyphraTypeMap, "Entity"> {
+  if (hops === 0) return { id: { in: [...seeds] } };
+  const closer = nearEntities(seeds, hops - 1);
+  return { OR: [closer, { related: { some: closer } }, { relatedFrom: { some: closer } }] };
 }
-```
 
-Then one `findMany` loads the chunks that mention any of those entities and were not retrieved yet,
-with a [relation filter](/client#filters). Each scores the sum of the weights of its entities, and
-the best two (`entityChunks`) are added:
-
-```ts filename="src/retrieve.ts"
-const mentioning = await db.chunk.findMany({
-  where: {
-    id: { notIn: [...included] },
-    entities: { some: { id: { in: [...weights.keys()] } } },
+const chunks = await db.entity.traverse({
+  from: { id: { in: [...seeds] } },
+  via: [
+    {
+      rel: "related",
+      direction: "both",
+      depth: { min: 0, max: 2 },
+      edgeWhere: { weight: { gte: minWeight } },
+    },
+    { rel: "chunks" },
+  ],
+  where: { id: { notIn: [...included] } },
+  // Most seeds mentioned first, then most entities one hop away, then two hops away.
+  orderBy: [
+    { entities: { _count: "desc", where: nearEntities(seeds, 0) } },
+    { entities: { _count: "desc", where: nearEntities(seeds, 1) } },
+    { entities: { _count: "desc", where: nearEntities(seeds, 2) } },
+    { id: "asc" },
+  ],
+  take: 2,
+  select: {
+    ...chunkSelect,
+    // The entities that link each chunk to the seeds.
+    entities: {
+      where: nearEntities(seeds, 2),
+      orderBy: { name: "asc" },
+      select: { id: true, name: true },
+    },
   },
-  select: chunkSelect,
 });
 ```
+
+The result is typed as `Chunk` (the last hop's model), with the `select` applied. `orderBy` on a
+relation count takes a `where` ([ordering](/client#counting-related-nodes)), here the distance
+filters built with [relation filters](/client#filters), so the ranking runs in the same statement
+as the expansion: no entity list or scores to compute in JavaScript.
 
 For "What did Menabrea publish?" with `k: 1` and no neighbours, the match is the paragraph about Ada
 Lovelace translating Luigi Menabrea's paper. With `entityHops: 0`, the expansion adds the two other
 paragraphs of the same article, which mention Ada Lovelace and the Analytical Engine. With one hop,
-Charles Babbage, related to both, adds weight to the chunks that mention him, and the section on the
-Analytical Engine's design, in another article that never mentions Menabrea, takes one of the two
-places. The example's integration test asserts both cases.
+entities related to the seeds, such as Charles Babbage, count in the second tier, and the section on
+the Analytical Engine's design, in another article that never mentions Menabrea, takes one of the
+two places. The example's integration test asserts both cases.
 
 Each retrieved chunk says how it was found (`via: "match" | "neighbour" | "entity"`, and for matches
 `matchedBy: ["vector", "fulltext"]`), which makes retrieval easy to debug and to test.
@@ -414,7 +448,7 @@ chunk at ingestion time.
     {
       name: "Expand through the graph",
       anchor: "expand-through-the-graph",
-      text: "Add the chunks around the best matches, and chunks that mention the same or related entities found with traverse.",
+      text: "Add the chunks around the best matches, and chunks that mention the same or related entities, found and ranked with one traverse across models.",
     },
     {
       name: "Build the prompt with citations",

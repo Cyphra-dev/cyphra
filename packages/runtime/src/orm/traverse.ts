@@ -1,7 +1,7 @@
 /**
  * Compiles `traverse` arguments into one Cypher statement: a quantified path pattern
  * (`(s)((:User)-[e:FOLLOWS]->(:User)){1,3}(n:User)`, Neo4j 5.9+) from the start nodes to the
- * reached nodes.
+ * reached nodes, or a sequence of them for a list of hops across models.
  *
  * Same rules as `compile.ts`: values are parameters, identifiers come from the resolved schema and
  * are backtick-quoted. The only inlined numbers are the hop bounds (quantifiers cannot be
@@ -146,6 +146,24 @@ export function compileHop(
   target?: string,
   op = "traverse",
 ): string {
+  return hopPattern(ctx, model, model, rels, direction, edgePredicate, undefined, target, op);
+}
+
+/**
+ * {@link compileHop} from `from` nodes to `to` nodes (models may differ), with a predicate on the
+ * node each hop steps to.
+ */
+function hopPattern(
+  ctx: QueryContext,
+  from: ResolvedNodeModel,
+  to: ResolvedNodeModel,
+  rels: readonly ResolvedRelationField[],
+  direction: unknown,
+  edgePredicate: (edge: string) => string | null,
+  nodePredicate: ((node: string) => string | null) | undefined,
+  target: string | undefined,
+  op: string,
+): string {
   if (
     direction !== undefined &&
     direction !== "out" &&
@@ -164,24 +182,33 @@ export function compileHop(
   const kinds = new Set([...byType.values()].map((d) => (d.size === 2 ? "BOTH" : [...d][0]!)));
   const e = ctx.variable("e");
   const types = [...byType.keys()].map(q).join("|");
-  const label = `:${labelExpr(model)}`;
+  const fromLabel = `:${labelExpr(from)}`;
+  const toLabel = `:${labelExpr(to)}`;
   const preds: string[] = [];
   let pattern: string;
+  // The node each hop steps to gets a name when something refers to it.
+  const t = target ?? (nodePredicate ? ctx.variable("t") : undefined);
+  const nodeWhere = (v: string) => {
+    const w = nodePredicate?.(v);
+    if (w) preds.push(w);
+  };
   if (kinds.size === 1) {
     const kind = [...kinds][0];
     const edge = `[${e}:${types}]`;
     const arrow = kind === "OUT" ? `-${edge}->` : kind === "IN" ? `<-${edge}-` : `-${edge}-`;
-    pattern = `(${label})${arrow}(${target ?? ""}${label})`;
+    pattern = `(${fromLabel})${arrow}(${t ?? ""}${toLabel})`;
+    if (t) nodeWhere(t);
   } else {
     const x = ctx.variable("x");
-    const y = target ?? ctx.variable("y");
-    pattern = `(${x}${label})-[${e}:${types}]-(${y}${label})`;
+    const y = t ?? ctx.variable("y");
+    pattern = `(${x}${fromLabel})-[${e}:${types}]-(${y}${toLabel})`;
     const alts = [...byType].map(([type, dirs]) => {
-      const t = `type(${e}) = ${ctx.param(type)}`;
-      if (dirs.size === 2) return t;
-      return `${t} AND ${dirs.has("OUT") ? "startNode" : "endNode"}(${e}) = ${x}`;
+      const tp = `type(${e}) = ${ctx.param(type)}`;
+      if (dirs.size === 2) return tp;
+      return `${tp} AND ${dirs.has("OUT") ? "startNode" : "endNode"}(${e}) = ${x}`;
     });
     preds.push(alts.map((a) => `(${a})`).join(" OR "));
+    nodeWhere(y);
   }
   const edgeWhere = edgePredicate(e);
   if (edgeWhere) preds.push(edgeWhere);
@@ -207,6 +234,106 @@ export function edgeWhereModel(
   return { name: edge.name, label: edge.relType, uniqueFields: [], fields: edge.properties };
 }
 
+const HOP_KEYS = new Set(["rel", "direction", "depth", "where", "edgeWhere"]);
+
+/** Whether `via` is a list of hops (`[{ rel }, …]`) rather than relation names. */
+export function isHopList(via: unknown): via is readonly unknown[] {
+  return Array.isArray(via) && via.some((h) => isPlainObject(h));
+}
+
+/** One resolved hop of a multi-hop traversal. */
+type Hop = {
+  readonly from: ResolvedNodeModel;
+  readonly to: ResolvedNodeModel;
+  readonly rels: readonly ResolvedRelationField[];
+  readonly spec: AnyRecord;
+  readonly min: number;
+  readonly max: number;
+};
+
+/**
+ * Resolve the hops of `via: [{ rel, direction?, depth?, where?, edgeWhere? }, …]` from `model`:
+ * each hop's relations must exist on the model the previous hop reached and lead to one model;
+ * `depth` is only for relations leading back to the same model; the hops' `depth.max` (1 for a
+ * hop without `depth`) add up to at most `maxDepth`.
+ */
+export function resolveHops(
+  schema: SchemaModel,
+  model: ResolvedNodeModel,
+  via: readonly unknown[],
+  maxDepth: number,
+): Hop[] {
+  const hops: Hop[] = [];
+  let at = model;
+  let total = 0;
+  via.forEach((spec, i) => {
+    const where = `traverse: via[${i}]`;
+    if (!isPlainObject(spec)) {
+      throw new CyphraValidationError(
+        `${where}: a list of hops takes objects only ({ rel, direction?, depth?, where?, edgeWhere? }).`,
+      );
+    }
+    for (const k of Object.keys(spec)) {
+      if (!HOP_KEYS.has(k)) throw new CyphraValidationError(`${where}: unknown hop option "${k}".`);
+    }
+    const names = Array.isArray(spec.rel) ? spec.rel : [spec.rel];
+    if (spec.rel === undefined || names.length === 0) {
+      throw new CyphraValidationError(`${where}: rel is required (a relation of ${at.name}).`);
+    }
+    const rels: ResolvedRelationField[] = [];
+    for (const name of names) {
+      const rel = typeof name === "string" ? relationField(at, name) : undefined;
+      if (!rel) {
+        throw new CyphraValidationError(
+          `${where}: unknown relation "${at.name}.${String(name)}" (each hop follows relations of the model the previous hop reached).`,
+        );
+      }
+      if (!rels.includes(rel)) rels.push(rel);
+    }
+    const targets = new Set(rels.map((r) => r.target));
+    if (targets.size !== 1) {
+      throw new CyphraValidationError(
+        `${where}: the relations of one hop must lead to one model (${rels.map((r) => `${at.name}.${r.name} → ${r.target}`).join(", ")}).`,
+      );
+    }
+    const to = schema.nodes.find((n) => n.name === rels[0]!.target);
+    if (!to) throw new CyphraValidationError(`Unknown model "${rels[0]!.target}".`);
+    let min = 1;
+    let max = 1;
+    if (spec.depth !== undefined) {
+      if (to !== at) {
+        throw new CyphraValidationError(
+          `${where}: depth repeats a hop, so its relations must lead back to ${at.name} (${at.name}.${rels[0]!.name} leads to ${to.name}).`,
+        );
+      }
+      ({ min, max } = parseDepth(spec.depth, maxDepth));
+    }
+    total += max;
+    if (total > maxDepth) {
+      throw new CyphraValidationError(
+        `traverse: the hops of via add up to more than the maximum traversal depth of ${maxDepth} (client option maxTraversalDepth).`,
+      );
+    }
+    hops.push({ from: at, to, rels, spec, min, max });
+    at = to;
+  });
+  if (hops.length === 0) {
+    throw new CyphraValidationError(`traverse on ${model.name}: via is an empty list of hops.`);
+  }
+  return hops;
+}
+
+/** The model a traversal's results are of: the last hop's for a list of hops, else `model`. */
+export function traverseEndModel(
+  schema: SchemaModel,
+  model: ResolvedNodeModel,
+  args: unknown,
+  maxDepth = Number.MAX_SAFE_INTEGER,
+): ResolvedNodeModel {
+  if (!isPlainObject(args) || !isHopList(args.via)) return model;
+  return resolveHops(schema, model, args.via, maxDepth).at(-1)!.to;
+}
+
 /**
  * Compile a traversal from the nodes matching `from` along the relations `via`.
  *
@@ -216,6 +343,10 @@ export function edgeWhereModel(
  *   with one of its shortest paths. Without `distinct`, one result per path.
  * - A path that comes back to its own start node is skipped (with `depth.min: 0`, the start node
  *   itself is a result, at zero hops).
+ * - `via` can also be a list of hops (`[{ rel, direction?, depth?, where?, edgeWhere? }, …]`),
+ *   possibly across models: one quantified path pattern per hop, in sequence
+ *   (`(s)((:Chunk)-[e:MENTIONS]->(:Entity)){1,1}((:Entity)-[e2:RELATED_TO]-(:Entity)){0,2}…`), a
+ *   hop's `where` checked on every node it steps to. The results are of the last hop's model.
  */
 export function compileTraverse(
   ctx: QueryContext,
@@ -231,8 +362,16 @@ export function compileTraverse(
       `traverse on ${model.name}: from is required (a where filter on the start nodes).`,
     );
   }
-  const rels = viaRelations(model, args.via);
-  const { min, max } = parseDepth(args.depth, maxDepth);
+  const hops = isHopList(args.via) ? resolveHops(ctx.schema, model, args.via, maxDepth) : null;
+  if (hops) {
+    for (const k of ["depth", "direction", "edgeWhere"]) {
+      if (args[k] !== undefined) {
+        throw new CyphraValidationError(
+          `traverse: with a list of hops in via, ${k} goes on each hop ({ rel, ${k} }).`,
+        );
+      }
+    }
+  }
   const distinct = args.distinct ?? true;
   const returnPaths = args.returnPaths ?? false;
   if (typeof distinct !== "boolean") throw new CyphraValidationError("distinct must be a boolean.");
@@ -240,22 +379,58 @@ export function compileTraverse(
     throw new CyphraValidationError("returnPaths must be a boolean.");
   }
 
-  const label = labelExpr(model);
   const from = compileWhere(ctx, model, "s", args.from);
-  const hop = compileHop(ctx, model, rels, args.direction, (e) =>
-    args.edgeWhere === undefined
-      ? null
-      : compileWhere(ctx, edgeWhereModel(ctx.schema, model, rels), e, args.edgeWhere),
-  );
-  const reached = [min > 0 ? "n <> s" : null, compileWhere(ctx, model, "n", args.where)].filter(
+  let segments: string;
+  let end: ResolvedNodeModel;
+  let min: number;
+  if (hops) {
+    segments = hops
+      .map((h, i) => {
+        const pattern = hopPattern(
+          ctx,
+          h.from,
+          h.to,
+          h.rels,
+          h.spec.direction,
+          (e) =>
+            h.spec.edgeWhere === undefined
+              ? null
+              : compileWhere(
+                  ctx,
+                  edgeWhereModel(ctx.schema, h.from, h.rels, `traverse: via[${i}]`),
+                  e,
+                  h.spec.edgeWhere,
+                ),
+          h.spec.where === undefined ? undefined : (t) => compileWhere(ctx, h.to, t, h.spec.where),
+          undefined,
+          `traverse: via[${i}]`,
+        );
+        return `(${pattern}){${h.min},${h.max}}`;
+      })
+      .join("");
+    end = hops.at(-1)!.to;
+    min = hops.reduce((sum, h) => sum + h.min, 0);
+  } else {
+    const rels = viaRelations(model, args.via);
+    const depth = parseDepth(args.depth, maxDepth);
+    const hop = compileHop(ctx, model, rels, args.direction, (e) =>
+      args.edgeWhere === undefined
+        ? null
+        : compileWhere(ctx, edgeWhereModel(ctx.schema, model, rels), e, args.edgeWhere),
+    );
+    segments = `(${hop}){${depth.min},${depth.max}}`;
+    end = model;
+    min = depth.min;
+  }
+  const reached = [min > 0 ? "n <> s" : null, compileWhere(ctx, end, "n", args.where)].filter(
     (x): x is string => Boolean(x),
   );
 
-  let text = `MATCH (s:${label})${from ? ` WHERE ${from}` : ""} `;
-  text += `MATCH ${returnPaths ? "p = " : ""}(s)(${hop}){${min},${max}}(n:${label})`;
+  let text = `MATCH (s:${labelExpr(model)})${from ? ` WHERE ${from}` : ""} `;
+  text += `MATCH ${returnPaths ? "p = " : ""}(s)${segments}(n:${labelExpr(end)})`;
   if (reached.length) text += ` WHERE ${reached.map((x) => `(${x})`).join(" AND ")}`;
 
-  const paging = compilePaging(ctx, model, "n", args);
+  const paging = compilePaging(ctx, end, "n", args);
   const keep = returnPaths ? "n, p" : "n";
   if (returnPaths && distinct) {
     // One shortest path per reached node: deterministic, unlike head(collect()) after ORDER BY.
@@ -267,11 +442,11 @@ export function compileTraverse(
     text += ` WITH ${distinct ? "DISTINCT " : ""}${keep}${paging}`;
   }
 
-  const { expr, shape } = compileProjection(ctx, model, "n", args);
+  const { expr, shape } = compileProjection(ctx, end, "n", args);
   text += ` RETURN ${expr} AS row`;
   if (returnPaths) text += `, ${compilePath(ctx, "p")} AS path`;
   // Re-apply the order on the projected rows (WITH … ORDER BY only orders that clause).
-  const order = compileOrderBy(ctx, model, "n", args.orderBy);
+  const order = compileOrderBy(ctx, end, "n", args.orderBy);
   if (order) text += ` ORDER BY ${order}`;
 
   return {

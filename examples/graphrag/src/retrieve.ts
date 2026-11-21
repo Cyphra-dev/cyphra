@@ -1,4 +1,5 @@
-import type { Db } from "./cyphra.gen.js";
+import type { OrderByInput, WhereInput } from "cyphra";
+import type { CyphraTypeMap, Db } from "./cyphra.gen.js";
 import type { Embedder } from "./embeddings.js";
 import { entityId, type EntityExtractor } from "./entities.js";
 
@@ -47,7 +48,10 @@ export interface RetrievedChunk {
   via: "match" | "neighbour" | "entity";
   /** Which searches found a `match` chunk. */
   matchedBy: ("vector" | "fulltext")[];
-  /** Fused rank score for matches, entity score for `entity` chunks, 0 for neighbours. */
+  /**
+   * Fused rank score for matches; for `entity` chunks, the number of entities linking them to the
+   * matches; 0 for neighbours.
+   */
   score: number;
   /** Entity names that connect an `entity` chunk to the matches. */
   entities: string[];
@@ -72,6 +76,8 @@ export interface RetrieveOptions {
   neighboursOf?: number;
   /** Entity hops followed over RELATED_TO (default 2, 0 = only the matches' own entities). */
   entityHops?: number;
+  /** Only follow RELATED_TO edges of at least this weight, chunks relating both (default 1). */
+  minWeight?: number;
   /** Chunks added through entities (default 2, 0 = off). */
   entityChunks?: number;
 }
@@ -83,7 +89,7 @@ export interface RetrieveOptions {
  *    reciprocal rank fusion. Each hit loads its document, neighbours and entities in the same query.
  * 2. Graph expansion: the chunks right before and after the best matches (same document), and the
  *    chunks of other sections that mention the matches' entities, or entities related to them
- *    within `entityHops` RELATED_TO hops (`traverse`).
+ *    within `entityHops` RELATED_TO hops (one `traverse` across models, see {@link expandEntities}).
  * 3. A numbered context block with a citation for every chunk.
  */
 export async function retrieve(
@@ -92,7 +98,7 @@ export async function retrieve(
   options: RetrieveOptions,
 ): Promise<Retrieval> {
   const { embedder, extractor, k = 3, candidates = 10, neighboursOf = 1 } = options;
-  const { entityHops = 2, entityChunks = 2 } = options;
+  const { entityHops = 2, entityChunks = 2, minWeight = 1 } = options;
   const [vector] = await embedder.embed([question]);
 
   // 1. Two searches, run in parallel, fused by rank.
@@ -144,25 +150,17 @@ export async function retrieve(
     if (extractor) {
       for (const e of (await extractor.extract(question)).entities) seeds.add(entityId(e.name));
     }
-    const weights = await entityWeights(db, [...seeds], entityHops);
-    const mentioning = await db.chunk.findMany({
-      where: {
-        id: { notIn: [...included] },
-        entities: { some: { id: { in: [...weights.keys()] } } },
-      },
-      select: chunkSelect,
+    const expansion = await expandEntities(db, [...seeds], {
+      hops: entityHops,
+      minWeight,
+      exclude: [...included],
+      take: entityChunks,
     });
-    const ranked = mentioning
-      .map((c) => {
-        const linked = c.entities.filter((e) => weights.has(e.id));
-        const score = linked.reduce((sum, e) => sum + weights.get(e.id)!, 0);
-        return { c, linked, score };
-      })
-      .sort((a, b) => b.score - a.score || a.c.id.localeCompare(b.c.id))
-      .slice(0, entityChunks);
-    for (const { c, linked, score } of ranked) {
-      const entities = linked.map((e) => e.name);
-      add(toChunk(c, c.document!, { via: "entity", matchedBy: [], score, entities }));
+    for (const c of expansion) {
+      const entities = c.entities.map((e) => e.name);
+      add(
+        toChunk(c, c.document!, { via: "entity", matchedBy: [], score: entities.length, entities }),
+      );
     }
   }
 
@@ -187,32 +185,70 @@ function toChunk(
   };
 }
 
-/**
- * Weight of every entity within `hops` RELATED_TO hops of the seeds: 1 for a seed, 1/2 one hop
- * away, 1/3 two hops away. `traverse` with `min: 0` returns the seeds too, and `returnPaths` gives
- * the length of the shortest path to each entity.
- */
-export async function entityWeights(
-  db: Db,
+/** Entities within `hops` RELATED_TO hops (either direction) of the seeds, as a filter. */
+export function nearEntities(
   seeds: readonly string[],
   hops: number,
-): Promise<Map<string, number>> {
-  if (seeds.length === 0) return new Map();
-  if (hops === 0) return new Map(seeds.map((id) => [id, 1]));
-  const reached = await db.entity.traverse({
+): WhereInput<CyphraTypeMap, "Entity"> {
+  if (hops === 0) return { id: { in: [...seeds] } };
+  const closer = nearEntities(seeds, hops - 1);
+  return { OR: [closer, { related: { some: closer } }, { relatedFrom: { some: closer } }] };
+}
+
+export interface ExpandOptions {
+  /** RELATED_TO hops followed from the seeds (0: only the chunks mentioning a seed). */
+  hops: number;
+  /** Only follow RELATED_TO edges of at least this weight (default 1: all of them). */
+  minWeight?: number;
+  /** Chunk ids to leave out (the ones already in the context). */
+  exclude?: readonly string[];
+  take: number;
+}
+
+/**
+ * The chunks that mention a seed entity, or an entity related to one within `hops` RELATED_TO
+ * hops, in one statement: a `traverse` across models, Entity → (RELATED_TO × 0..hops) → Entity →
+ * Chunk. They are ranked by how many seeds they mention, then how many entities one hop away, two
+ * hops away… (`orderBy` on relation counts filtered by distance), and each comes with the
+ * entities that link it to the seeds. The distance tiers count RELATED_TO edges of any weight.
+ */
+export async function expandEntities(db: Db, seeds: readonly string[], options: ExpandOptions) {
+  const { hops, minWeight = 1, exclude = [], take } = options;
+  if (seeds.length === 0 || take === 0) return [];
+  const tiers: OrderByInput<CyphraTypeMap, "Chunk"> = [
+    ...Array.from({ length: hops + 1 }, (_, d) => ({
+      entities: { _count: "desc" as const, where: nearEntities(seeds, d) },
+    })),
+    { id: "asc" },
+  ];
+  const args = {
     from: { id: { in: [...seeds] } },
-    via: "related",
-    direction: "both", // co-occurrence has no direction
-    depth: { min: 0, max: hops },
-    select: { id: true },
-    returnPaths: true,
-  });
-  const weights = new Map<string, number>();
-  for (const { node, path } of reached) {
-    const w = 1 / (1 + path.edges.length);
-    weights.set(node.id, Math.max(weights.get(node.id) ?? 0, w));
-  }
-  return weights;
+    where: { id: { notIn: [...exclude] } },
+    orderBy: tiers,
+    take,
+    select: {
+      ...chunkSelect,
+      entities: {
+        where: nearEntities(seeds, hops),
+        orderBy: { name: "asc" as const },
+        select: { id: true, name: true },
+      },
+    },
+  };
+  return hops === 0
+    ? db.entity.traverse({ ...args, via: [{ rel: "chunks" }] })
+    : db.entity.traverse({
+        ...args,
+        via: [
+          {
+            rel: "related",
+            direction: "both", // co-occurrence has no direction
+            depth: { min: 0, max: hops },
+            edgeWhere: { weight: { gte: minWeight } },
+          },
+          { rel: "chunks" },
+        ],
+      });
 }
 
 /** `[n] Document › Section (source)` then the text, one block per chunk. */

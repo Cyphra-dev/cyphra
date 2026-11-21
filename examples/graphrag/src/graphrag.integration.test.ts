@@ -3,7 +3,7 @@ import { createClient, type Db } from "./cyphra.gen.js";
 import { hashingEmbedder } from "./embeddings.js";
 import { dictionaryExtractor } from "./entities.js";
 import { ingest } from "./ingest.js";
-import { entityWeights, retrieve } from "./retrieve.js";
+import { expandEntities, retrieve } from "./retrieve.js";
 import { loadSampleDocuments, sampleDictionary } from "./sample.js";
 import { applySchema } from "./setup.js";
 
@@ -92,19 +92,39 @@ describe.skipIf(!hasNeo)("GraphRAG example (Neo4j)", () => {
     expect(r.chunks[0]!.id).toBe(expected);
   });
 
-  it("follows RELATED_TO for up to two hops, weighting entities by distance", async () => {
-    expect(await entityWeights(db, ["luigi-menabrea"], 0)).toEqual(
-      new Map([["luigi-menabrea", 1]]),
-    );
-    const oneHop = await entityWeights(db, ["luigi-menabrea"], 1);
-    expect([...oneHop].sort()).toEqual([
-      ["ada-lovelace", 0.5],
-      ["analytical-engine", 0.5],
+  it("weights RELATED_TO edges by the chunks that mention both entities", async () => {
+    const engine = await db.entity.findUniqueOrThrow({
+      where: { id: "analytical-engine" },
+      select: { related: { where: { id: { in: ["charles-babbage", "luigi-menabrea"] } } } },
+    });
+    expect(engine.related.map((e) => [e.id, e.$edge.weight]).sort()).toEqual([
+      ["charles-babbage", 2],
       ["luigi-menabrea", 1],
     ]);
-    const twoHops = await entityWeights(db, ["luigi-menabrea"], 2);
-    expect(twoHops.get("charles-babbage")).toBeCloseTo(1 / 3);
-    expect(twoHops.get("herman-hollerith")).toBeUndefined(); // three hops away
+  });
+
+  it("expands from entities to the chunks mentioning them or related ones, nearest first", async () => {
+    const expand = (hops: number, minWeight?: number) =>
+      expandEntities(db, ["luigi-menabrea"], { hops, minWeight, take: 3 });
+    const ids = async (hops: number, minWeight?: number) =>
+      (await expand(hops, minWeight)).map((c) => c.id);
+    expect(await ids(0)).toEqual(["ada-lovelace#1"]);
+    // One hop away: Ada Lovelace and the Analytical Engine (ties by chunk id).
+    const oneHop = await expand(1);
+    expect(oneHop.map((c) => [c.id, c.entities.map((e) => e.name)])).toEqual([
+      ["ada-lovelace#1", ["Ada Lovelace", "Analytical Engine", "Luigi Menabrea"]],
+      ["ada-lovelace#0", ["Ada Lovelace"]],
+      ["ada-lovelace#2", ["Analytical Engine"]],
+    ]);
+    // Menabrea's relations all have weight 1: a stronger threshold follows none of them.
+    expect(await ids(1, 2)).toEqual(["ada-lovelace#1"]);
+    const twoHops = await expandEntities(db, ["luigi-menabrea"], { hops: 2, take: 20 });
+    expect(twoHops).toHaveLength(12);
+    expect(twoHops.slice(0, 3).map((c) => c.id)).toEqual([
+      "ada-lovelace#1",
+      "ada-lovelace#0",
+      "analytical-engine#1",
+    ]);
   });
 
   it("adds chunks of other documents through shared and related entities", async () => {

@@ -591,8 +591,9 @@ function compileRelatedScalar(
 
 /**
  * Compile `orderBy` into `a.x ASC, a.y DESC` (or `null`). A to-many relation sorts by its number
- * of related nodes: `{ posts: { _count: "desc" } }`; a to-one relation by a scalar of the related
- * node: `{ author: { name: "asc" } }` (nodes without one sort as `null`: last ascending).
+ * of related nodes: `{ posts: { _count: "desc" } }`, optionally only those matching a filter
+ * (`{ posts: { _count: "desc", where: { published: true } } }`); a to-one relation by a scalar of
+ * the related node: `{ author: { name: "asc" } }` (nodes without one sort as `null`: last ascending).
  */
 export function compileOrderBy(
   ctx: QueryContext,
@@ -627,14 +628,14 @@ export function compileOrderBy(
         continue;
       }
       if (rel) {
-        if (!isPlainObject(dir) || Object.keys(dir).some((k) => k !== "_count")) {
+        if (!isPlainObject(dir) || Object.keys(dir).some((k) => k !== "_count" && k !== "where")) {
           throw new CyphraValidationError(
-            `orderBy ${model.name}.${key} takes { _count: "asc" | "desc" }.`,
+            `orderBy ${model.name}.${key} takes { _count: "asc" | "desc", where? }.`,
           );
         }
         if (dir._count === undefined) continue;
         const d = sortDirection(dir._count, `${model.name}.${key}._count`);
-        parts.push(`${compileRelationCount(ctx, model, alias, rel)} ${d}`);
+        parts.push(`${compileRelationCount(ctx, model, alias, rel, dir.where)} ${d}`);
         continue;
       }
       const sortField = scalarOrThrow(model, key);
