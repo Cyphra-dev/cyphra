@@ -19,7 +19,7 @@ const client = new CyphraClient({
   user: process.env.NEO4J_USERNAME!,
   password: process.env.NEO4J_PASSWORD!,
   database: "neo4j", // optional, Neo4j 4+
-  debug: false, // when true: logs Cypher text and parameter keys (never values)
+  log: ["warn", "error"], // optional: see Logging and tracing below
 });
 
 await client.withSession(async (session) => {
@@ -104,7 +104,143 @@ Each of the above has a **`*Tx(tx, …)`** counterpart for use inside **`withWri
 
 Lower-level helpers **`toPlainRecords`** and **`toPlainRecord`** map a driver `Result` (or compatible) to plain objects if you call `session.run` yourself.
 
+## Logging and tracing
+
+Both `new CyphraClient(...)` and the typed `createClient(...)` take the same observability options.
+They are all off by default, and with none of them set statements run exactly as before.
+
+```ts
+import { trace } from "@opentelemetry/api";
+import { createClient } from "./cyphra.gen.js";
+
+const db = createClient({
+  uri: process.env.NEO4J_URI!,
+  user: process.env.NEO4J_USERNAME!,
+  password: process.env.NEO4J_PASSWORD!,
+  log: ["query", "warn", "error"], // print to the console, or pass (event) => void
+  tracer: trace.getTracer("my-app"), // optional OpenTelemetry spans
+});
+
+const off = db.$on("query", (e) => {
+  metrics.histogram("neo4j.query", e.durationMs, { model: e.model, op: e.operation });
+});
+off(); // remove the listener
+```
+
+- **`log`**: an array of levels (`"query"`, `"warn"`, `"error"`) printed with `console.log` /
+  `console.warn` / `console.error`, or a function that receives every event.
+- **`db.$on(level, fn)`** (typed client) and **`client.on(level, fn)`** (`CyphraClient`): add a
+  listener at any time; they return an unsubscribe function. Listeners run whatever `log` says, and
+  a listener that throws never fails the query.
+- **`logParams`** (default `false`): include parameter values in events.
+- **`tracer`**: an OpenTelemetry `Tracer` (see [OpenTelemetry](#opentelemetry)).
+- **`traceQueryText`** (default `false`): add the Cypher text to statement spans.
+- **`warnMissingIndexes`** (default `false`): see [Missing index warnings](#missing-index-warnings).
+- **`debug`** is deprecated: it is the same as `log: ["query"]`, printed with `console.debug`.
+
+A `query` event is emitted for each statement that completes:
+
+```ts
+type QueryEvent = {
+  type: "query";
+  model?: string; // "Post"
+  operation?: string; // "findMany", "$cypher", "graphql.read", ...
+  text: string; // the Cypher sent to Neo4j
+  params: Record<string, unknown>; // { p0: "<string>" } unless logParams: true
+  durationMs: number; // until every record was received
+  rows?: number; // records returned
+  database?: string;
+  transaction: boolean; // true inside $transaction / withWriteTransaction
+  timestamp: Date;
+};
+```
+
+An `error` event has the same fields (without `rows`) plus `message`, `code` (the Neo4j status code,
+for example `Neo.ClientError.Statement.SyntaxError`), `gqlStatus` when the driver reports one, and
+`error` (the original error, which is still thrown to your code). One ORM operation can run several
+statements (a nested create, an upsert), so it can emit several `query` events, all with the same
+`model` and `operation`. The driver may retry a transaction on transient errors, and each attempt
+emits its own events.
+
+### Parameter redaction
+
+By default every parameter value is replaced by a type placeholder: `"<string>"`, `"<number>"`,
+`"<boolean>"`, `"<null>"`, `"<list(3)>"`, `"<Date>"`, `"<Integer>"`, `"<Float32Array(1536)>"`, and
+maps are described key by key (`{ email: "<string>", age: "<number>" }`). With `logParams: true`
+the values are included, except for keys that look like secrets (`password`, `token`, `secret`,
+`apiKey`, `authorization`, `credential`), which stay `"<redacted>"`. Cyphra always sends values as
+parameters, so the query text itself holds no user data. Events never include the connection URI,
+user or password.
+
+### OpenTelemetry
+
+Cyphra does not depend on OpenTelemetry. `@opentelemetry/api` is an optional peer dependency: pass
+any `Tracer` from it (1.x) as `tracer`, and register a tracer provider with a context manager as
+usual (the Node.js SDK does both):
+
+```ts
+import { NodeSDK } from "@opentelemetry/sdk-node";
+import { trace } from "@opentelemetry/api";
+
+new NodeSDK({ serviceName: "my-app" /* exporter, ... */ }).start();
+const db = createClient({ uri, user, password, tracer: trace.getTracer("my-app") });
+```
+
+Each ORM operation is a span named `cyphra.<Model>.<operation>` (`cyphra.Post.findMany`,
+`cyphra.$transaction`, `cyphra.$cypher`), made active so that its statements and any span you start
+inside `$transaction` are its children. Each statement is a child span of kind `CLIENT`, named after
+its first clause and model (`MATCH Post`), with the database semantic conventions:
+
+| Attribute                   | Value                                                               |
+| --------------------------- | ------------------------------------------------------------------- |
+| `db.system.name`            | `neo4j`                                                             |
+| `db.namespace`              | the database (`database` option, or the one the server reports)     |
+| `db.operation.name`         | `MATCH`, `CREATE`, `UNWIND`, … (`findMany` etc. on operation spans) |
+| `db.query.text`             | only with `traceQueryText: true`; string literals are masked        |
+| `db.response.returned_rows` | records returned                                                    |
+| `server.address`            | host, from the URI (or from the server for `{ driver }`)            |
+| `server.port`               | port                                                                |
+| `error.type`                | the Neo4j status code, or the error class                           |
+
+A failed statement records the exception and sets the span status to `ERROR`, on the statement span
+and on its operation span. Operation spans also carry `cyphra.model`.
+
+`@cyphra/graphql` emits the same events and spans (`graphql.read` / `graphql.write`) when you give it
+a `client` rather than a raw `driver`.
+
+## Missing index warnings
+
+In development, `warnMissingIndexes: true` tells you which filters scan a whole label:
+
+```ts
+const db = createClient({
+  uri,
+  user,
+  password,
+  warnMissingIndexes: process.env.NODE_ENV === "development",
+});
+
+await db.post.findMany({ where: { title: "Hello" } });
+// [cyphra:warn] Post.title is filtered without an index (label scan + filter):
+//   add @index to Post.title in your schema.
+```
+
+For each distinct statement text that has a `WHERE`, Cyphra runs `EXPLAIN` once, in a separate
+session and without delaying the query. When the plan filters a property right on top of a
+`NodeByLabelScan` or `AllNodesScan`, and `SHOW INDEXES` lists no index on that label and property,
+it emits a `warn` event (`kind: "missing-index"`, with `label`, `property`, `model`, `operation` and
+the statement `text`). Each property is reported once per client. When the field is already
+declared `@id`, `@unique` or `@index`, the warning says the database is missing it instead, so you
+know to apply your [migrations](/migrations). With no `warn` listener and no `log`, warnings are
+printed with `console.warn`.
+
+It is off by default and you should keep it off in production: the cost is one `EXPLAIN` round trip
+per distinct statement (at most 1,000 per client) and one `SHOW INDEXES` every few seconds while
+new statements appear. A property that has an index is never reported, even when the planner chose
+a label scan for that statement (it can, on a small development database). `client.close()` and `$disconnect()` wait for pending checks.
+
 ## See also
 
 - [Queries](/queries) — `cypher` tag and `SelectQuery` builder
+- [Migrations](/migrations) — create the indexes the warnings ask for
 - [Example app](/example) — optional live round-trip with `NEO4J_*` env vars

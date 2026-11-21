@@ -732,6 +732,14 @@ const rows = await db.$cypher<{ name: string; n: number }>`
 ```
 
 The low-level [runtime](/runtime) (`db.$client`) and the [query builder](/queries) remain available.
+
+## Logging and tracing
+
+`createClient({ log: ["query", "warn", "error"] })` prints every statement with its duration, row
+count and redacted parameters; `db.$on("query", fn)` subscribes to the same events, `tracer` adds
+OpenTelemetry spans per operation and statement, and `warnMissingIndexes: true` (development only)
+reports filters that scan a whole label. See [Logging and tracing](/runtime#logging-and-tracing) and
+[Missing index warnings](/runtime#missing-index-warnings).
 The [Cypher how-tos](/cypher) show common queries (upserts, pagination, counts) both ways.
 
 ## Types and values

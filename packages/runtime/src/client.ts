@@ -6,6 +6,14 @@ import neo4j, {
 } from "neo4j-driver";
 import { compileCypher, type CompiledCypher, type SelectQuery } from "@cyphra/query";
 import { toPlainRecord, toPlainRecords } from "./records.js";
+import {
+  Instrumentation,
+  serverFromUri,
+  type CyphraEvent,
+  type LogLevel,
+  type ObservabilityOptions,
+  type QueryMeta,
+} from "./observability.js";
 
 type Params = Record<string, unknown>;
 
@@ -35,11 +43,9 @@ export interface DriverLike {
   close(): Promise<void>;
 }
 
-type CommonClientOptions = {
+type CommonClientOptions = ObservabilityOptions & {
   /** Optional database name (Neo4j 4+). */
   database?: string;
-  /** When true, logs compiled Cypher and parameter keys (never values). */
-  debug?: boolean;
 };
 
 /** Connect with a URI and credentials: the client creates (and owns) its own driver. */
@@ -95,7 +101,11 @@ export class CyphraClient {
   private readonly driver: Driver;
   private readonly ownsDriver: boolean;
   private readonly database?: string;
-  private readonly debug: boolean;
+  /**
+   * Query events, spans and index warnings for this client. Used by the ORM and
+   * `@cyphra/graphql`; prefer {@link CyphraClient.on} in application code.
+   */
+  readonly instrumentation: Instrumentation;
 
   constructor(opts: CyphraClientOptions) {
     if (opts.driver) {
@@ -113,7 +123,33 @@ export class CyphraClient {
       this.ownsDriver = true;
     }
     this.database = opts.database;
-    this.debug = opts.debug ?? false;
+    this.instrumentation = new Instrumentation({
+      log: opts.log,
+      logParams: opts.logParams,
+      tracer: opts.tracer,
+      traceQueryText: opts.traceQueryText,
+      warnMissingIndexes: opts.warnMissingIndexes,
+      debug: opts.debug,
+      database: opts.database,
+      server: opts.uri ? serverFromUri(opts.uri) : undefined,
+      openSession: () => this.driver.session({ database: this.database }),
+    });
+  }
+
+  /**
+   * Listen to `"query"`, `"warn"` or `"error"` events (see {@link ObservabilityOptions.log}).
+   * Returns a function that removes the listener.
+   *
+   * @example
+   * ```ts
+   * client.on("query", (e) => metrics.observe(e.durationMs, { op: e.operation }));
+   * ```
+   */
+  on<L extends LogLevel>(
+    level: L,
+    listener: (event: Extract<CyphraEvent, { type: L }>) => void,
+  ): () => void {
+    return this.instrumentation.on(level, listener);
   }
 
   /** Underlying driver for advanced use. */
@@ -127,16 +163,18 @@ export class CyphraClient {
   }
 
   /**
-   * Run a compiled query. Parameter **values** are never logged when `debug` is on.
+   * Run a compiled query (auto-commit). Emits a `query` / `error` event and a statement span when
+   * logging or tracing is on; parameter values are redacted unless `logParams` is set.
    */
   async runCompiled(
     session: Session,
     compiled: CompiledCypher,
+    meta: QueryMeta = {},
   ): Promise<ReturnType<Session["run"]>> {
-    if (this.debug) {
-      console.debug("[cyphra] cypher:", compiled.text, "param keys:", Object.keys(compiled.params));
-    }
-    return session.run(compiled.text, compiled.params);
+    const params = compiled.params as Record<string, unknown>;
+    return this.instrumentation.run(compiled.text, params, { transaction: false, ...meta }, () =>
+      session.run(compiled.text, params),
+    ) as unknown as ReturnType<Session["run"]>;
   }
 
   /**
@@ -144,13 +182,14 @@ export class CyphraClient {
    * {@link withReadTransaction}.
    */
   async runCompiledTx(
-    tx: ManagedTransaction,
+    tx: TransactionLike,
     compiled: CompiledCypher,
+    meta: QueryMeta = {},
   ): Promise<ReturnType<ManagedTransaction["run"]>> {
-    if (this.debug) {
-      console.debug("[cyphra] cypher:", compiled.text, "param keys:", Object.keys(compiled.params));
-    }
-    return tx.run(compiled.text, compiled.params);
+    const params = compiled.params as Record<string, unknown>;
+    return this.instrumentation.run(compiled.text, params, { transaction: true, ...meta }, () =>
+      tx.run(compiled.text, params),
+    ) as unknown as ReturnType<ManagedTransaction["run"]>;
   }
 
   /**
@@ -297,6 +336,7 @@ export class CyphraClient {
    * owner closes it.
    */
   async close(): Promise<void> {
+    await this.instrumentation.flush();
     if (this.ownsDriver) await this.driver.close();
   }
 }

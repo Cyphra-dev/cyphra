@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createClient, type Db } from "./__fixtures__/blog.gen.js";
 import { CyphraValidationError, NotFoundError } from "./errors.js";
 import {
@@ -16,6 +16,10 @@ import {
 } from "./__fixtures__/types.gen.js";
 import { createClient as createGeoClient, type Db as GeoDb } from "./__fixtures__/geo.gen.js";
 import { escapeLucene } from "./fulltext.js";
+import neo4j5 from "neo4j-driver-5";
+import neo4j6 from "neo4j-driver-6";
+import type { DriverLike } from "../client.js";
+import type { CyphraEvent, ErrorEvent, QueryEvent, WarnEvent } from "../observability.js";
 
 const hasNeo = Boolean(
   process.env.NEO4J_TEST_URI && process.env.NEO4J_TEST_USER && process.env.NEO4J_TEST_PASSWORD,
@@ -2720,5 +2724,128 @@ describe.skipIf(!hasNeo)("ORM points and temporal types (Neo4j)", () => {
         data: { id: "x", name: "x", location: PARIS, slot: "10:00" as never },
       }),
     ).rejects.toThrow(/expected Time/);
+  });
+});
+
+describe.skipIf(!hasNeo)("ORM logging and missing-index warnings (Neo4j)", () => {
+  type DriverModule = {
+    driver(uri: string, auth: unknown): DriverLike;
+    auth: { basic(user: string, password: string): unknown };
+  };
+  const majors: [string, DriverModule][] = [
+    ["5", neo4j5 as unknown as DriverModule],
+    ["6", neo4j6 as unknown as DriverModule],
+  ];
+  const conn = () => ({
+    uri: process.env.NEO4J_TEST_URI!,
+    user: process.env.NEO4J_TEST_USER!,
+    password: process.env.NEO4J_TEST_PASSWORD!,
+  });
+  let admin: Db;
+
+  beforeAll(async () => {
+    admin = createClient(conn());
+    await admin.$cypher`MATCH (n) WHERE n:User OR n:Post DETACH DELETE n`;
+    await schemaCommand(
+      admin,
+      "CREATE INDEX obs_post_views IF NOT EXISTS FOR (n:Post) ON (n.views)",
+    );
+    await schemaCommand(admin, "CALL db.awaitIndexes(60)");
+  });
+
+  afterAll(async () => {
+    if (!admin) return;
+    await admin.$cypher`MATCH (n) WHERE n:User OR n:Post DETACH DELETE n`;
+    await schemaCommand(admin, "DROP INDEX obs_post_views IF EXISTS");
+    await admin.$disconnect();
+  });
+
+  for (const [major, mod] of majors) {
+    it(`reports durations, rows and errors (neo4j-driver ${major})`, async () => {
+      const { uri, user, password } = conn();
+      const driver = mod.driver(uri, mod.auth.basic(user, password));
+      const events: CyphraEvent[] = [];
+      const db = createClient({ driver, log: (e) => events.push(e) });
+      try {
+        await db.$cypher`MATCH (n) WHERE n:User OR n:Post DETACH DELETE n`;
+        await db.post.createMany({ data: [{ title: "a" }, { title: "b" }, { title: "c" }] });
+        events.length = 0;
+
+        const posts = await db.post.findMany({ where: { published: false } });
+        expect(posts).toHaveLength(3);
+        const q = events.find((e): e is QueryEvent => e.type === "query")!;
+        expect(q).toMatchObject({
+          model: "Post",
+          operation: "findMany",
+          rows: 3,
+          transaction: false,
+          database: "neo4j",
+          params: { p0: "<boolean>" },
+        });
+        expect(q.durationMs).toBeGreaterThan(0);
+
+        events.length = 0;
+        await expect(db.$cypher`RETURN ${1} +* 2`).rejects.toThrow();
+        const err = events.find((e): e is ErrorEvent => e.type === "error")!;
+        expect(err.code).toBe("Neo.ClientError.Statement.SyntaxError");
+        expect(err.operation).toBe("$cypher");
+        expect(err.params).toEqual({ p0: "<number>" });
+      } finally {
+        await db.$disconnect();
+        await driver.close();
+      }
+    });
+  }
+
+  it("warns once about a filtered property without an index, not about indexed ones", async () => {
+    const warns: WarnEvent[] = [];
+    const db = createClient({ ...conn(), warnMissingIndexes: true });
+    db.$on("warn", (e) => warns.push(e));
+    try {
+      await db.post.create({ data: { title: "Hello", views: 3 } });
+      await db.post.findMany({ where: { title: "Hello" } });
+      await db.post.findMany({ where: { title: "Hello" } }); // same statement: no second EXPLAIN
+      await db.post.findMany({ where: { title: { startsWith: "He" } } }); // same property
+      await db.post.findMany({ where: { views: 3 } }); // indexed (obs_post_views)
+      await db.post.findMany({ where: { id: "nope" } }); // @id without its constraint
+      await db.user.findMany({ where: { posts: { some: { title: "Hello" } } } }); // expanded node
+      await db.$client.instrumentation.flush();
+
+      // Post.id is @id, but this block does not create its constraint.
+      expect(warns.map((w) => `${w.label}.${w.property}`).sort()).toEqual([
+        "Post.id",
+        "Post.title",
+      ]);
+      const title = warns.find((w) => w.property === "title")!;
+      expect(title).toMatchObject({
+        type: "warn",
+        kind: "missing-index",
+        label: "Post",
+        property: "title",
+        model: "Post",
+        operation: "findMany",
+      });
+      expect(title.message).toBe(
+        "Post.title is filtered without an index (label scan + filter): add @index to Post.title in your schema.",
+      );
+      expect(warns.find((w) => w.property === "id")!.message).toMatch(
+        /declared @id but the database has no index on Post\.id\. Apply your migrations/,
+      );
+    } finally {
+      await db.$disconnect();
+    }
+  });
+
+  it("does not EXPLAIN anything by default", async () => {
+    const db = createClient(conn());
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      await db.post.findMany({ where: { title: "Hello" } });
+      await db.$client.instrumentation.flush();
+      expect(warn).not.toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+      await db.$disconnect();
+    }
   });
 });
