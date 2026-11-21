@@ -3,6 +3,7 @@ import { createRequire } from "node:module";
 import { Command } from "commander";
 import { runDev } from "./commands/dev.js";
 import { runGenerate } from "./commands/generate.js";
+import { runImportGraphql } from "./commands/importGraphql.js";
 import { runInit } from "./commands/init.js";
 import { runMigrate } from "./commands/migrate.js";
 import { createMigrationFromSchema, runMigrateDiff } from "./commands/migrateDev.js";
@@ -142,6 +143,27 @@ program
     const config = await loadConfig(cwd);
     await runGenerate(cwd, config);
   });
+
+const importCmd = program.command("import").description("Import a schema from another tool");
+
+importCmd
+  .command("graphql")
+  .argument("<typeDefs...>", "@neo4j/graphql v7 type definitions (.graphql files)")
+  .description(
+    "Convert @neo4j/graphql v7 type definitions to schema.cyphra and report what was not converted",
+  )
+  .option("-o, --out <path>", "schema file to write (default: schema from cyphra.json)")
+  .option("--merge", "merge into the existing schema, keeping its models, fields and comments")
+  .option("--force", "overwrite an existing schema file")
+  .option("--print", "write the schema to stdout instead of a file")
+  .action(
+    async (
+      files: string[],
+      opts: { out?: string; merge?: boolean; force?: boolean; print?: boolean },
+    ) => {
+      process.exitCode = await runImportGraphql(process.cwd(), files, opts);
+    },
+  );
 
 const schemaCmd = program.command("schema").description("Schema utilities");
 

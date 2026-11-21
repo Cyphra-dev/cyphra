@@ -1,0 +1,50 @@
+// Imported from @neo4j/graphql type definitions with `cyphra import graphql`.
+// Review before use (run the import again to see the full report):
+// - Role: enums are not supported by Cyphra yet: mapped to String, allowed values are not enforced
+// - Query: custom Query fields (@cypher, resolvers) are not converted: write them as Cyphra queries
+// - User: authorization rules are not part of a Cyphra schema: enforce them in your resolvers or services
+// - Post: fulltext indexes are not supported: create them in a migration
+// - User.id: became @id @default(uuid()); Cyphra also adds a uniqueness constraint, which v7 @id does not
+// - User.email: @unique was removed in @neo4j/graphql v7; Cyphra keeps it and creates the uniqueness constraint
+// - User.displayName: Cyphra field names are the Neo4j property names: renamed to "display_name"
+// - User.updatedAt: became @default(now()) (set on create); Cyphra does not refresh it on update, set it when you update
+// - Post.id: became @id @default(uuid()); Cyphra also adds a uniqueness constraint, which v7 @id does not
+// - Post.createdAt: became @default(now()) (set on create); Cyphra does not refresh it on update, set it when you update
+// - Tag.name: @unique was removed in @neo4j/graphql v7; Cyphra keeps it and creates the uniqueness constraint
+// - Tag.posts: queryDirection UNDIRECTED is not supported: Cyphra follows direction IN
+// - Comment.id: became @id @default(uuid()); Cyphra also adds a uniqueness constraint, which v7 @id does not
+
+node User {
+  id String @id @default(uuid())
+  email String @unique
+  display_name String?
+  role String @default("READER")
+  createdAt DateTime @default(now())
+  updatedAt DateTime? @default(now())
+  posts Post[] @relationship(type: "WROTE", direction: OUT)
+}
+
+node Post {
+  id String @id @default(uuid())
+  title String
+  body String
+  published Boolean @default(false)
+  publishedOn Date?
+  createdAt DateTime @default(now())
+  author User @relationship(type: "WROTE", direction: IN)
+  tags Tag[] @relationship(type: "TAGGED", direction: OUT)
+  comments Comment[] @relationship(type: "ON", direction: IN)
+}
+
+node Tag {
+  name String @unique
+  posts Post[] @relationship(type: "TAGGED", direction: IN)
+}
+
+node Comment {
+  id String @id @default(uuid())
+  text String
+  createdAt DateTime @default(now())
+  post Post @relationship(type: "ON", direction: OUT)
+  author User? @relationship(type: "COMMENTED", direction: IN)
+}

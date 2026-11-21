@@ -1,0 +1,66 @@
+scalar JSON
+
+interface Purchasable {
+  sku: String!
+  price: Float!
+}
+
+type Product implements Purchasable @node(labels: ["Item"]) {
+  sku: String! @unique
+  name: String!
+  price: Float!
+  stock: BigInt
+  weightKg: Float
+  attributes: JSON
+  location: Point
+  tags: [String!]
+  categories: [Category!]! @relationship(type: "IN_CATEGORY", direction: OUT)
+  reviews: [Review!]! @relationship(type: "REVIEWS", direction: IN)
+}
+
+type Category @node {
+  id: ID! @id
+  name: String!
+  parent: Category @relationship(type: "CHILD_OF", direction: OUT)
+  products: [Product!]! @relationship(type: "IN_CATEGORY", direction: IN)
+}
+
+type Customer @node {
+  id: ID! @id
+  email: String!
+  orders: [Order!]! @relationship(type: "PLACED", direction: OUT)
+  wishlist: [Purchasable!]! @relationship(type: "WANTS", direction: OUT)
+}
+
+type Order @node {
+  id: ID! @id
+  status: OrderStatus! @default(value: PENDING)
+  placedAt: DateTime! @timestamp(operations: [CREATE])
+  deliveryWindow: LocalTime
+  customer: Customer! @relationship(type: "PLACED", direction: IN)
+  lines: [Product!]! @relationship(type: "CONTAINS", direction: OUT, properties: "OrderLine")
+  total: Float
+    @cypher(
+      statement: "MATCH (this)-[l:CONTAINS]->(p:Item) RETURN sum(l.quantity * p.price) AS total"
+      columnName: "total"
+    )
+}
+
+type Review @node {
+  id: ID! @id
+  stars: Int!
+  body: String
+  product: Product! @relationship(type: "REVIEWS", direction: OUT)
+}
+
+type OrderLine @relationshipProperties {
+  quantity: Int! @default(value: 1)
+  unitPrice: Float!
+  addedAt: DateTime @timestamp(operations: [CREATE])
+}
+
+enum OrderStatus {
+  PENDING
+  PAID
+  SHIPPED
+}

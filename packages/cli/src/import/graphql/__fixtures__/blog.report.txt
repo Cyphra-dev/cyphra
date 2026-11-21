@@ -1,0 +1,23 @@
+Not converted (3):
+  Query  Query: custom Query fields (@cypher, resolvers) are not converted: write them as Cyphra queries
+  User   @authorization: authorization rules are not part of a Cyphra schema: enforce them in your resolvers or services
+  Post   @fulltext: fulltext indexes are not supported: create them in a migration
+
+Converted with differences (10):
+  Role              enum: enums are not supported by Cyphra yet: mapped to String, allowed values are not enforced
+  User.id           @id: became @id @default(uuid()); Cyphra also adds a uniqueness constraint, which v7 @id does not
+  User.email        @unique: @unique was removed in @neo4j/graphql v7; Cyphra keeps it and creates the uniqueness constraint
+  User.displayName  @alias: Cyphra field names are the Neo4j property names: renamed to "display_name"
+  User.updatedAt    @timestamp: became @default(now()) (set on create); Cyphra does not refresh it on update, set it when you update
+  Post.id           @id: became @id @default(uuid()); Cyphra also adds a uniqueness constraint, which v7 @id does not
+  Post.createdAt    @timestamp: became @default(now()) (set on create); Cyphra does not refresh it on update, set it when you update
+  Tag.name          @unique: @unique was removed in @neo4j/graphql v7; Cyphra keeps it and creates the uniqueness constraint
+  Tag.posts         @relationship(queryDirection): queryDirection UNDIRECTED is not supported: Cyphra follows direction IN
+  Comment.id        @id: became @id @default(uuid()); Cyphra also adds a uniqueness constraint, which v7 @id does not
+
+Ignored (GraphQL API only) (5):
+  JWT           @jwt: JWT payload type, used by authorization rules only
+  User          @plural: API setting of @neo4j/graphql, no effect on the data model
+  Post.title    @filterable: API setting of @neo4j/graphql, no effect on the data model
+  Post.tags     @relationship(nestedOperations): API setting of @neo4j/graphql, no effect on the data model
+  Comment.text  @settable: API setting of @neo4j/graphql, no effect on the data model
