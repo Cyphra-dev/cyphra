@@ -17,6 +17,7 @@ fixtures/<app>/
 golden/<app>/schema.graphql   lexicographicSortSchema + printSchema of the reference schema
 golden/<app>/NN-name.json     normalized result of each operation
 src/implementations.ts        the GraphQLImplementation adapters (@neo4j/graphql, @cyphra/graphql)
+cyphra-expected.json          checks @cyphra/graphql must pass (progress mode, see below)
 REPORT.md                     generated compatibility report
 ```
 
@@ -36,6 +37,7 @@ pnpm --filter compat-graphql test     # goldens still match (CI: neo4j-integrati
 pnpm --filter compat-graphql golden   # regenerate goldens from @neo4j/graphql, then REPORT.md
 pnpm --filter compat-graphql report   # compare every implementation, write REPORT.md
 pnpm --filter compat-graphql golden movies   # only some fixtures (REPORT.md not written)
+pnpm --filter compat-graphql report --update-expected   # also rewrite cyphra-expected.json
 ```
 
 `test` is skipped when the `NEO4J_TEST_*` variables are unset. Scripts run with `TZ=UTC`:
@@ -76,8 +78,21 @@ type GraphQLImplementation = {
 };
 ```
 
-`@cyphra/graphql` is registered and skipped until the package exists and exports
-`compat.v7 = { buildSchema, contextFor }`. Once it does, `test` checks it against the same goldens.
+`@cyphra/graphql` is registered with `compat.v7.makeSchema({ typeDefs, driver })` and checked
+against the same goldens. `skipReason` lets an adapter opt out (the check is then `skipped`).
+
+## Progress mode
+
+The reference must pass every check. Other implementations are measured against
+`cyphra-expected.json`, the list of checks (`<fixture>/schema` or `<fixture>/<operation>`) they must
+pass:
+
+- a listed check that fails is a regression: `test` fails;
+- a check that passes but is not listed also fails `test`, with a hint to add it, so the list always
+  matches reality.
+
+After making more operations pass, run `report --update-expected` and commit the list with
+`REPORT.md`. `report` prints regressions and new passes and exits with 1 when there are any.
 
 ## Reading the report
 

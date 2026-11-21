@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { compat } from "@cyphra/graphql";
 import { Neo4jGraphQL } from "@neo4j/graphql";
 import type { GraphQLSchema } from "graphql";
 import type { Driver } from "neo4j-driver";
@@ -41,48 +42,13 @@ export const neo4jGraphQL: GraphQLImplementation = {
   contextFor: (op) => (op.jwt ? { jwt: op.jwt } : {}),
 };
 
-const CYPHRA_GRAPHQL = "@cyphra/graphql";
-
-type CyphraGraphQLModule = {
-  compat?: { v7?: Omit<GraphQLImplementation, "name" | "skipReason"> };
-};
-
-let cyphraModule: CyphraGraphQLModule | undefined;
-
-async function loadCyphraGraphQL(): Promise<CyphraGraphQLModule | undefined> {
-  if (cyphraModule) return cyphraModule;
-  try {
-    // Variable specifier: the package does not exist yet and must not be resolved at typecheck.
-    const specifier: string = CYPHRA_GRAPHQL;
-    cyphraModule = (await import(specifier)) as CyphraGraphQLModule;
-    return cyphraModule;
-  } catch {
-    return undefined;
-  }
-}
-
-/**
- * Placeholder for `@cyphra/graphql` (#71–#75). It is skipped until the package exists and
- * exports `compat.v7` with `buildSchema` / `contextFor`.
- */
+/** `@cyphra/graphql` (#71-#75): the same type definitions, served on the Cyphra runtime. */
 export const cyphraGraphQL: GraphQLImplementation = {
-  name: CYPHRA_GRAPHQL,
-  async skipReason() {
-    const mod = await loadCyphraGraphQL();
-    if (!mod) return `${CYPHRA_GRAPHQL} is not implemented yet (#71-#75)`;
-    if (!mod.compat?.v7) return `${CYPHRA_GRAPHQL} does not export compat.v7 yet`;
-    return undefined;
+  name: "@cyphra/graphql",
+  async buildSchema(typeDefs, { driver }) {
+    return compat.v7.makeSchema({ typeDefs, driver });
   },
-  async buildSchema(typeDefs, options) {
-    const mod = await loadCyphraGraphQL();
-    if (!mod?.compat?.v7) throw new Error(`${CYPHRA_GRAPHQL} is not available`);
-    return mod.compat.v7.buildSchema(typeDefs, options);
-  },
-  contextFor(op) {
-    const v7 = cyphraModule?.compat?.v7;
-    if (!v7) throw new Error(`${CYPHRA_GRAPHQL} is not available`);
-    return v7.contextFor(op);
-  },
+  contextFor: (op) => compat.v7.contextFor({ jwt: op.jwt }),
 };
 
 /** The reference implementation; goldens are generated from it. */

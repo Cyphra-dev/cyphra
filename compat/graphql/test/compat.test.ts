@@ -9,6 +9,7 @@ import type { GraphQLSchema } from "graphql";
 import type { Driver } from "neo4j-driver";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { goldenResultPath, goldenSchemaPath, loadFixtures } from "../src/fixtures.js";
+import { checkId, mustPass, unlistedPassHint } from "../src/expected.js";
 import { implementations } from "../src/implementations.js";
 import {
   buildFixtureSchema,
@@ -49,19 +50,52 @@ describe.skipIf(!env)("GraphQL compatibility (goldens from @neo4j/graphql)", () 
       }
       for (const fixture of fixtures) {
         describe(fixture.name, () => {
-          let schema: GraphQLSchema;
+          let schema: GraphQLSchema | undefined;
+          let buildError: unknown;
           beforeAll(async () => {
-            schema = await buildFixtureSchema(impl, fixture, driver);
+            try {
+              schema = await buildFixtureSchema(impl, fixture, driver);
+            } catch (err) {
+              buildError = err;
+            }
           });
 
-          it("schema (SDL)", () => {
-            expect(printSortedSchema(schema)).toBe(golden(goldenSchemaPath(fixture.name)));
+          /**
+           * The reference must match every golden. Other implementations run in progress mode:
+           * checks listed in cyphra-expected.json must match; any other check must not (a new
+           * pass has to be added to the list).
+           */
+          async function check(name: string, actual: () => Promise<string>, expected: string) {
+            const id = checkId(fixture.name, name);
+            if (mustPass(impl, fixture.name, name)) {
+              if (!schema) throw buildError;
+              expect(await actual()).toBe(expected);
+              return;
+            }
+            let passes = false;
+            try {
+              passes = !!schema && (await actual()) === expected;
+            } catch {
+              passes = false;
+            }
+            if (passes) throw new Error(unlistedPassHint(impl.name, id));
+          }
+
+          it("schema (SDL)", async () => {
+            await check(
+              "schema",
+              async () => printSortedSchema(schema!),
+              golden(goldenSchemaPath(fixture.name)),
+            );
           });
 
           for (const op of fixture.operations) {
             it(op.name, async () => {
-              const actual = await runOperation(impl, schema, fixture, op, driver);
-              expect(actual).toBe(golden(goldenResultPath(fixture.name, op.name)));
+              await check(
+                op.name,
+                () => runOperation(impl, schema!, fixture, op, driver),
+                golden(goldenResultPath(fixture.name, op.name)),
+              );
             });
           }
         });

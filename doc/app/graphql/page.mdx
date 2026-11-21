@@ -1,0 +1,160 @@
+---
+title: "GraphQL for Neo4j: a drop-in for @neo4j/graphql v7"
+sidebarTitle: GraphQL
+description: "Serve the GraphQL API that @neo4j/graphql v7 generates, from the same type definitions, on the Cyphra runtime. Your frontend queries do not change."
+---
+
+import { Callout } from "nextra/components";
+
+# GraphQL
+
+**`@cyphra/graphql`** serves the API that `@neo4j/graphql` 7.6 generates from your type definitions:
+the same types, fields, filters, sorting, pagination and results. You keep your `typeDefs` and your
+frontend queries, and the API runs on the Cyphra runtime.
+
+<Callout type="warning">
+  This is an early release. The full v7 schema is generated and the read API works. Mutations,
+  aggregations, authorization and `@cypher` fields are in the schema but return a `Not implemented
+  yet` error for now. See [what works today](#what-works-today).
+</Callout>
+
+## Install
+
+```bash
+npm i @cyphra/graphql graphql neo4j-driver
+```
+
+It needs Neo4j 5.6 or later and `graphql` 16.
+
+## Create the schema
+
+`compat.v7.makeSchema` takes the type definitions you pass to `new Neo4jGraphQL(...)` and returns a
+`GraphQLSchema` with its resolvers. Any GraphQL server can serve it.
+
+```ts filename="lib/graphql.ts"
+import { compat } from "@cyphra/graphql";
+import neo4j from "neo4j-driver";
+import { typeDefs } from "./typeDefs";
+
+const driver = neo4j.driver(
+  process.env.NEO4J_URI!,
+  neo4j.auth.basic(process.env.NEO4J_USERNAME!, process.env.NEO4J_PASSWORD!),
+);
+
+// Before: await new Neo4jGraphQL({ typeDefs, driver }).getSchema()
+export const schema = compat.v7.makeSchema({ typeDefs, driver });
+```
+
+| Option     | Description                                                                 |
+| ---------- | --------------------------------------------------------------------------- |
+| `typeDefs` | Your v7 type definitions (`@node`, `@relationship`, …), as a string.        |
+| `driver`   | A `neo4j-driver` driver.                                                    |
+| `client`   | A `CyphraClient`, instead of `driver`, to share the connection of your app. |
+| `database` | Database name used with `driver`. Default: the default database.            |
+| `debug`    | Log each generated Cypher statement and its parameter names (not values).   |
+
+`makeSchema` throws an `UnsupportedTypeDefsError` when the type definitions use something it cannot
+serve yet (interfaces, unions, `Point`, `Duration`, custom scalars, …). It never serves an API that
+differs from v7 without telling you.
+
+## Serve it from a Next.js route
+
+With GraphQL Yoga:
+
+```ts filename="app/api/graphql/route.ts"
+import { createYoga } from "graphql-yoga";
+import { schema } from "@/lib/graphql";
+
+const { handleRequest } = createYoga({
+  schema,
+  graphqlEndpoint: "/api/graphql",
+  fetchAPI: { Response },
+});
+
+export { handleRequest as GET, handleRequest as POST, handleRequest as OPTIONS };
+```
+
+With Apollo Server:
+
+```ts filename="app/api/graphql/route.ts"
+import { ApolloServer } from "@apollo/server";
+import { startServerAndCreateNextHandler } from "@as-integrations/next";
+import type { NextRequest } from "next/server";
+import { schema } from "@/lib/graphql";
+
+const server = new ApolloServer({ schema });
+const handler = startServerAndCreateNextHandler<NextRequest>(server);
+
+export { handler as GET, handler as POST };
+```
+
+Queries written for `@neo4j/graphql` work as they are:
+
+```graphql
+query {
+  movies(
+    where: { actors: { some: { name: { eq: "Keanu Reeves" } } } }
+    sort: [{ released: DESC }]
+  ) {
+    title
+    actorsConnection(first: 2, sort: [{ edge: { screenTime: DESC } }]) {
+      totalCount
+      edges {
+        cursor
+        properties {
+          roles
+        }
+        node {
+          name
+        }
+      }
+      pageInfo {
+        hasNextPage
+        endCursor
+      }
+    }
+  }
+}
+```
+
+Each root field runs as one Cypher statement. Values are always parameters, and labels, property
+keys and relationship types come from your type definitions.
+
+## What works today
+
+Compatibility is checked by a suite of 5 apps and 47 operations. Its expected results come from the
+real `@neo4j/graphql` 7.6.8. Today 22 of its 52 checks pass: the printed schema of all 5 apps, and
+the 17 read operations that use no aggregation, authorization or `@cypher` field. The full report is
+[`compat/graphql/REPORT.md`](https://github.com/Cyphra-dev/cyphra/blob/main/compat/graphql/REPORT.md).
+
+| Feature                                                                                                                                    | Status                                                          |
+| ------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------- |
+| Generated schema: queries, connections, every `where` / `sort` / mutation input, aggregate types, deprecated `field_OPERATOR` fields       | Works: the printed SDL is identical to v7                       |
+| List queries: `movies(where, sort, limit, offset)`, pluralization like v7, `@plural`                                                       | Works                                                           |
+| Filters on `String`, `ID`, `Int`, `Float`, `BigInt`, `Boolean`, `Date`, `DateTime`, enums and lists, with `AND` / `OR` / `NOT`             | Works                                                           |
+| Relationship filters `some` / `all` / `none` / `single`, connection filters on `node` and `edge`                                           | Works                                                           |
+| Connections: `totalCount`, `pageInfo`, cursors with `first` / `after`, nested connections with edge `properties`, sort and filter on edges | Works                                                           |
+| Nested relationship fields with `where`, `sort`, `limit`, `offset`                                                                         | Works                                                           |
+| Aggregations: `aggregate { … }` and aggregation filters                                                                                    | Not yet ([#72](https://github.com/Cyphra-dev/cyphra/issues/72)) |
+| Mutations: `create`, `update`, `delete`, nested `connect` / `disconnect`                                                                   | Not yet ([#73](https://github.com/Cyphra-dev/cyphra/issues/73)) |
+| `@authentication` / `@authorization`                                                                                                       | Not yet ([#74](https://github.com/Cyphra-dev/cyphra/issues/74)) |
+| `@cypher` fields                                                                                                                           | Not yet ([#75](https://github.com/Cyphra-dev/cyphra/issues/75)) |
+
+A type with `@authentication` or `@authorization` rules for reads is never read without them: the
+query returns a `Not implemented yet` error instead of unfiltered data.
+
+### v7 behaviour you get as well
+
+- `{ eq: null }` matches nodes where the property is missing.
+- An empty filter in `some`, `none` or `single` (`actors: { some: {} }`) is ignored: it matches every
+  node. `all` is not true for a node with no related nodes.
+- A cursor is `base64("arrayconnection:<offset>")`. An invalid `after` cursor returns the first page.
+- `BigInt` values are returned as strings, `Date` as `yyyy-mm-dd` and `DateTime` as ISO-8601 strings.
+  As in v7, `Date` inputs are read in the time zone of the process: run the server with `TZ=UTC`.
+
+## Move the data model to Cyphra
+
+The GraphQL API and the Cyphra ORM can work on the same graph. To get a `schema.cyphra` from the same
+type definitions, run [`cyphra import graphql`](/cli#import-from-neo4jgraphql). In code,
+`compat.v7.cyphraSchema(typeDefs)` returns the same conversion as a schema model, with the list of
+what Cyphra models differently.
