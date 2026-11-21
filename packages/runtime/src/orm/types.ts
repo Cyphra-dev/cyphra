@@ -43,6 +43,11 @@ export type ModelTypeDef = {
   readonly abstract?: true;
   /** Names of the models implementing this interface (only on an interface). */
   readonly implementations?: string;
+  /**
+   * Computed fields added by `$extends({ result })`, each mapped to its type (absent when none).
+   * Never emitted by `cyphra generate`: the extended client's type map carries them.
+   */
+  readonly computed?: Record<string, unknown>;
 };
 
 export type TypeMap = Record<string, ModelTypeDef>;
@@ -61,6 +66,22 @@ type Target<TM extends TypeMap, M extends keyof TM, R extends keyof Relations<TM
   keyof TM;
 
 type Simplify<T> = { [K in keyof T]: T[K] } & {};
+
+/** Computed fields of model `M` (from `$extends({ result })`; `{}` when none). */
+export type ComputedFields<TM extends TypeMap, M extends keyof TM> = TM[M] extends {
+  computed: infer C extends Record<string, unknown>;
+}
+  ? C
+  : Record<never, never>;
+
+/** `A` with the keys of `B` replaced by those of `B` (a computed field can shadow a scalar). */
+type Overwrite<A, B> = [keyof B] extends [never] ? A : Omit<A, keyof B> & B;
+
+/** What a query on `M` returns without `select`: its scalars and computed fields. */
+type NodeFields<TM extends TypeMap, M extends keyof TM> = Overwrite<
+  Scalars<TM, M>,
+  ComputedFields<TM, M>
+>;
 
 /** `true` when model `M` is an `interface`. */
 type IsAbstract<TM extends TypeMap, M extends keyof TM> = TM[M] extends { abstract: true }
@@ -441,7 +462,7 @@ export type RelationCountInput<TM extends TypeMap, M extends keyof TM> =
     };
 
 export type SelectInput<TM extends TypeMap, M extends keyof TM> = {
-  [K in keyof Scalars<TM, M>]?: boolean;
+  [K in keyof Scalars<TM, M> | keyof ComputedFields<TM, M>]?: boolean;
 } & {
   [R in keyof Relations<TM, M>]?: boolean | RelationLoadArgs<TM, Target<TM, M, R>>;
 } & {
@@ -480,7 +501,12 @@ type CountPart<TM extends TypeMap, M extends keyof TM, A> =
     : unknown;
 
 type SelectPayload<TM extends TypeMap, M extends keyof TM, S> = {
-  [K in TrueKeys<S> & keyof Scalars<TM, M>]: Scalars<TM, M>[K];
+  [K in Exclude<TrueKeys<S> & keyof Scalars<TM, M>, keyof ComputedFields<TM, M>>]: Scalars<
+    TM,
+    M
+  >[K];
+} & {
+  [K in TrueKeys<S> & keyof ComputedFields<TM, M>]: ComputedFields<TM, M>[K];
 } & {
   [R in TrueKeys<S> & keyof Relations<TM, M>]: RelationPayload<
     TM,
@@ -489,7 +515,7 @@ type SelectPayload<TM extends TypeMap, M extends keyof TM, S> = {
   >;
 } & CountPart<TM, M, S>;
 
-type IncludePayload<TM extends TypeMap, M extends keyof TM, I> = Scalars<TM, M> &
+type IncludePayload<TM extends TypeMap, M extends keyof TM, I> = NodeFields<TM, M> &
   IncludedRelations<TM, M, I>;
 
 type IncludedRelations<TM extends TypeMap, M extends keyof TM, I> = {
@@ -502,14 +528,15 @@ type IncludedRelations<TM extends TypeMap, M extends keyof TM, I> = {
 
 /**
  * Result of a query on the interface `M`: a union over its implementations, discriminated by
- * `__typename`. Without `select`, each member has its implementation's scalar fields (and the
- * interface relations `include` loads); with `select`, the selected interface fields.
+ * `__typename`. Without `select`, each member has its implementation's scalar fields, the
+ * computed fields of the interface and of the implementation (and the interface relations
+ * `include` loads); with `select`, the selected interface fields.
  */
 type InterfacePayload<TM extends TypeMap, M extends keyof TM, A> = {
   [T in Implementations<TM, M>]: Simplify<
     { __typename: T } & (IsObject<ArgOf<A, "select">> extends true
       ? SelectPayload<TM, M, ArgOf<A, "select">>
-      : Scalars<TM, T> &
+      : Overwrite<Overwrite<Scalars<TM, T>, ComputedFields<TM, M>>, ComputedFields<TM, T>> &
           (IsObject<ArgOf<A, "include">> extends true
             ? IncludedRelations<TM, M, ArgOf<A, "include">>
             : unknown))
@@ -525,7 +552,7 @@ export type Payload<TM extends TypeMap, M extends keyof TM, A> =
           ? SelectPayload<TM, M, ArgOf<A, "select">>
           : IsObject<ArgOf<A, "include">> extends true
             ? IncludePayload<TM, M, ArgOf<A, "include">>
-            : Scalars<TM, M>
+            : NodeFields<TM, M>
       >;
 
 type IsObject<X> = [X] extends [never] ? false : [X] extends [object] ? true : false;
