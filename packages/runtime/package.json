@@ -1,6 +1,6 @@
 {
   "name": "@cyphra/runtime",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Cyphra runtime: typed Neo4j ORM client, sessions, transactions and the cypher tag",
   "type": "module",
   "sideEffects": false,
