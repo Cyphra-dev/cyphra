@@ -25,7 +25,7 @@ App code depends on **`cyphra`** separately (see [Getting started](/getting-star
 | `cyphra migration:create <name>` | Empty `.mjs` migration to write by hand                                                                                   |
 | `cyphra pull`                    | Introspect the database and write `schema.cyphra` (`--print`, `--force`)                                                  |
 | `cyphra import graphql <files>`  | Convert `@neo4j/graphql` v7 type definitions to `schema.cyphra` (`--out`, `--merge`, `--force`, `--print`)                |
-| `cyphra push`                    | Apply constraints, range indexes and vector indexes directly (prototyping)                                                |
+| `cyphra push`                    | Apply constraints and range, vector and full-text indexes directly (prototyping)                                          |
 | `cyphra validate`                | Parse and validate the schema                                                                                             |
 | `cyphra schema print`            | Canonical pretty-print of the schema                                                                                      |
 | `cyphra schema ddl`              | Print the constraint and index DDL (no database)                                                                          |
@@ -73,6 +73,10 @@ their endpoints. Review the result:
   indexes become `@index`.
 - Node vector indexes become `Vector(N)` fields with `@vectorIndex(similarity: …)`, keeping the index
   name when it is not the default one (and `quantization: false` when it is off).
+- Node full-text indexes become `@@fulltext([…])` attributes, keeping the name, analyzer and
+  `eventuallyConsistent: true` when they are not the defaults. Indexes over several labels, on
+  relationships, or on properties that were not pulled as `String` / `String[]` fields are skipped
+  with a warning.
 - Unsupported types (e.g. `Point`) and names that are not identifiers are skipped with a warning.
 
 ## Import from @neo4j/graphql

@@ -12,6 +12,7 @@ export {
 } from "./migrationDb.js";
 export {
   constraintStatementsFromSchema,
+  fulltextIndexStatementsFromSchema,
   indexStatementsFromSchema,
   vectorIndexStatementsFromSchema,
 } from "./push.js";
@@ -22,6 +23,7 @@ export {
   EMPTY_SCHEMA_MODEL,
   ddlObjectsFromModel,
   diffSchemaModels,
+  fulltextIndexStatement,
   vectorIndexStatement,
   isEmptyPlan,
   type DdlObject,

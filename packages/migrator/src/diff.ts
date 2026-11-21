@@ -3,7 +3,8 @@
  * current schema) and plan the migration that takes a database from one to the other.
  *
  * Neo4j is schemaless, so the plan has two parts:
- * - **DDL**: uniqueness constraints and range indexes, named exactly like `cyphra push` names them.
+ * - **DDL**: uniqueness constraints and range, vector and full-text indexes, named exactly like
+ *   `cyphra push` names them.
  * - **Data steps**: backfills for new defaults, guards for newly required fields, and
  *   (commented-out) destructive cleanups for removed fields and models.
  *
@@ -11,6 +12,7 @@
  */
 
 import type {
+  ResolvedFulltextIndex,
   ResolvedNodeModel,
   ResolvedRelationshipModel,
   ResolvedScalarField,
@@ -41,6 +43,24 @@ export function vectorIndexStatement(label: string, f: ResolvedScalarField): str
   }
   const config = `{${entries.join(", ")}}`;
   return `CREATE VECTOR INDEX ${f.vectorIndex.name} IF NOT EXISTS FOR (n:${q(label)}) ON n.${q(f.name)} OPTIONS {indexConfig: ${config}}`;
+}
+
+/**
+ * `CREATE FULLTEXT INDEX … IF NOT EXISTS` for a `@@fulltext([...])` model attribute. Fields,
+ * analyzer and consistency are part of the statement, so changing any of them makes the diff drop
+ * and recreate the index.
+ */
+export function fulltextIndexStatement(label: string, index: ResolvedFulltextIndex): string {
+  const props = index.fields.map((f) => `n.${q(f)}`).join(", ");
+  const entries: string[] = [];
+  if (index.analyzer !== undefined) {
+    entries.push(`\`fulltext.analyzer\`: '${index.analyzer}'`);
+  }
+  if (index.eventuallyConsistent !== undefined) {
+    entries.push(`\`fulltext.eventually_consistent\`: ${index.eventuallyConsistent}`);
+  }
+  const options = entries.length ? ` OPTIONS {indexConfig: {${entries.join(", ")}}}` : "";
+  return `CREATE FULLTEXT INDEX ${index.name} IF NOT EXISTS FOR (n:${q(label)}) ON EACH [${props}]${options}`;
 }
 
 /** One named schema object (constraint or index) and the statement that creates it. */
@@ -87,6 +107,11 @@ export function ddlObjectsFromModel(model: SchemaModel): DdlObject[] {
           create: `CREATE RANGE INDEX ${name} IF NOT EXISTS ${target} ON (n.${q(f.name)})`,
         });
       }
+    }
+  }
+  for (const n of model.nodes) {
+    for (const index of n.fulltextIndexes ?? []) {
+      out.push({ name: index.name, kind: "index", create: fulltextIndexStatement(n.label, index) });
     }
   }
   for (const r of model.relationships) {

@@ -34,6 +34,8 @@ migration and the snapshot.
 | removed or changed `@id` / `@unique` / `@index`  | `DROP CONSTRAINT / INDEX … IF EXISTS`                               |
 | new `@vectorIndex`                               | `CREATE VECTOR INDEX … IF NOT EXISTS … OPTIONS { indexConfig }`     |
 | changed dimensions, similarity or index name     | `DROP INDEX … IF EXISTS`, then `CREATE VECTOR INDEX`                |
+| new `@@fulltext`                                 | `CREATE FULLTEXT INDEX … IF NOT EXISTS … ON EACH [ … ]`             |
+| changed fields, analyzer, consistency or name    | `DROP INDEX … IF EXISTS`, then `CREATE FULLTEXT INDEX`              |
 | new field with a `@default` on an existing model | backfill: `MATCH (n:User) WHERE n.role IS NULL SET n.role = $value` |
 | field becomes required and has a default         | backfill of the missing values                                      |
 | new required field without a default             | **guard**: the migration fails if any existing node lacks it        |
@@ -102,6 +104,23 @@ of the index, so re-embed them (in this migration or a backfill job) before rely
 A new index is built in the background. `cyphra schema ddl` prints the statement and `cyphra push`
 applies it directly. Wait for it to be `ONLINE` before querying it, for example in a test setup:
 `CALL db.awaitIndexes(300)`.
+
+## Full-text indexes
+
+A `@@fulltext([…])` model attribute becomes a full-text index, with its analyzer and consistency in
+`OPTIONS` when the schema sets them:
+
+```cypher
+CREATE FULLTEXT INDEX postSearch IF NOT EXISTS
+FOR (n:`Post`) ON EACH [n.`title`, n.`body`]
+OPTIONS {indexConfig: {`fulltext.analyzer`: 'english', `fulltext.eventually_consistent`: false}}
+```
+
+Neo4j cannot alter a full-text index either, so adding or removing a field, or changing `analyzer`,
+`eventuallyConsistent` or `name`, drops the index first and creates the new one at the end of the
+migration. Neo4j then indexes the existing nodes again in the background; like a vector index, wait
+for it to be `ONLINE` (`CALL db.awaitIndexes(300)`) before relying on [`search`](/client#full-text-search).
+`cyphra schema ddl` prints the statement and `cyphra push` applies it directly.
 
 ## Writing migrations by hand
 

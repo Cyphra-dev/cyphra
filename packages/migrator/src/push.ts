@@ -4,7 +4,7 @@ import {
   type ScalarNodeField,
   type SchemaDocument,
 } from "@cyphra/schema";
-import { vectorIndexStatement } from "./diff.js";
+import { fulltextIndexStatement, vectorIndexStatement } from "./diff.js";
 
 function isScalarWithDecorator(
   field: { readonly kind: string; readonly decorators: readonly { readonly name: string }[] },
@@ -142,6 +142,23 @@ export function vectorIndexStatementsFromSchema(doc: SchemaDocument): string[] {
     for (const f of n.fields) {
       const stmt = f.kind === "scalar" ? vectorIndexStatement(n.label, f) : null;
       if (stmt) statements.push(stmt);
+    }
+  }
+  return statements;
+}
+
+/**
+ * Generate `CREATE FULLTEXT INDEX … IF NOT EXISTS` for every `@@fulltext([...])` node attribute,
+ * with `fulltext.analyzer` / `fulltext.eventually_consistent` in `OPTIONS` when set.
+ *
+ * @param doc - Parsed schema AST.
+ * @returns Cypher DDL strings, named like migrations name them.
+ */
+export function fulltextIndexStatementsFromSchema(doc: SchemaDocument): string[] {
+  const statements: string[] = [];
+  for (const n of resolveSchema(doc).nodes) {
+    for (const index of n.fulltextIndexes ?? []) {
+      statements.push(fulltextIndexStatement(n.label, index));
     }
   }
   return statements;

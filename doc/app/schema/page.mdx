@@ -1,5 +1,5 @@
 ---
-description: "The .cyphra schema DSL for Neo4j: nodes, relationships, Vector(N) embeddings, and decorators that become constraints, range indexes and vector indexes."
+description: "The .cyphra schema DSL for Neo4j: nodes, relationships, Vector(N) embeddings, and decorators that become constraints, range, vector and full-text indexes."
 ---
 
 # Schema DSL
@@ -63,6 +63,45 @@ node Chunk {
   (`{ embedding: null }`, `{ embedding: { not: null } }`). Vectors are supported on node models,
   not on relationship properties.
 
+## Full-text indexes
+
+A full-text index spans one or more text fields of a model, so it is declared on the model with a
+**model attribute**: a line starting with `@@` inside the node block, usually after the fields.
+`@@fulltext` declares the index that [`search`](/client#full-text-search) queries:
+
+```cyphra
+node Post {
+  id    String   @id @default(cuid())
+  title String
+  body  String?
+  tags  String[]
+
+  @@fulltext([title, body], name: "postSearch", analyzer: "english")
+  @@fulltext([tags], analyzer: "keyword")
+}
+```
+
+- **Fields.** The leading list names `String` or `String[]` fields of the model (each value of a list
+  is indexed). It cannot be empty or name a field twice.
+- **`name: "…"`** defaults to `<Label>_<field>_<field>…_fulltext` (`Post_tags_fulltext` above). Index
+  and constraint names share one namespace in Neo4j, so the schema rejects a name already taken by
+  another full-text or vector index, or by a constraint or range index the schema implies.
+- **`analyzer: "…"`** sets `fulltext.analyzer`: how text is split into terms, lower-cased, stemmed and
+  filtered. When left out, Neo4j's default applies, `standard-no-stop-words`. The schema accepts the
+  built-in analyzers of Neo4j 5 (`CALL db.index.fulltext.listAvailableAnalyzers()`): `standard`,
+  `standard-folding` (also folds accents), `simple`, `whitespace`, `keyword` (the whole value is one
+  token: tags, codes), `email`, `url`, `url_or_email`, `classic`, `stop`, `unicode_whitespace`, `cjk`
+  and the language analyzers (`english`, `french`, `german`, `spanish` and 30 others, which stem
+  words and drop stop words). The list is exported as `FULLTEXT_ANALYZERS`.
+- **`eventuallyConsistent: true | false`** sets `fulltext.eventually_consistent` (default `false`).
+  An eventually consistent index is updated in the background after commit: writes are faster, but
+  a search right after a write can miss it.
+- `cyphra push` and [migrations](/migrations#full-text-indexes) create the index with
+  `CREATE FULLTEXT INDEX`. Full-text indexes are supported on node models, not on relationships.
+
+Model attributes are a general syntax, `@@name([fields], key: value, …)`; `@@fulltext` is the only one
+so far.
+
 ## Defaults
 
 `@default(cuid())`, `@default(uuid())` (String), `@default(now())` (DateTime / Date), or a
@@ -77,7 +116,7 @@ The [typed client](/client) applies them on create.
 
 ## Decorators
 
-`@id`, `@unique`, `@vectorIndex(…)` (on `Vector(N)` fields, see above), `@index` (Neo4j 5+ **range** index: on nodes via `(n:Label)`, on rich relationships via `()-[r:TYPE]-()`), `@default(…)`, `@relationship(…)`. On **nodes**, you cannot combine `@index` with `@id` or `@unique` on the same field (those constraints already imply an index). On **relationship** models, `@unique` maps to a **relationship property uniqueness** constraint (Neo4j **5.7+**); `@id` is not allowed on relationship fields.
+`@id`, `@unique`, `@vectorIndex(…)` (on `Vector(N)` fields, see above), `@@fulltext([…])` (a model attribute, see above), `@index` (Neo4j 5+ **range** index: on nodes via `(n:Label)`, on rich relationships via `()-[r:TYPE]-()`), `@default(…)`, `@relationship(…)`. On **nodes**, you cannot combine `@index` with `@id` or `@unique` on the same field (those constraints already imply an index). On **relationship** models, `@unique` maps to a **relationship property uniqueness** constraint (Neo4j **5.7+**); `@id` is not allowed on relationship fields.
 
 ## Programmatic API
 

@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import {
   applyConstraintStatements,
   constraintStatementsFromSchema,
+  fulltextIndexStatementsFromSchema,
   indexStatementsFromSchema,
   vectorIndexStatementsFromSchema,
 } from "@cyphra/migrator";
@@ -21,12 +22,13 @@ export async function runPush(cwd: string): Promise<void> {
   const constraints = constraintStatementsFromSchema(doc);
   const indexes = indexStatementsFromSchema(doc);
   const vectorIndexes = vectorIndexStatementsFromSchema(doc);
-  const statements = [...constraints, ...indexes, ...vectorIndexes];
+  const fulltextIndexes = fulltextIndexStatementsFromSchema(doc);
+  const statements = [...constraints, ...indexes, ...vectorIndexes, ...fulltextIndexes];
   const client = clientFromEnv(false);
   try {
     await applyConstraintStatements(client, statements);
     console.log(
-      `Applied ${constraints.length} constraint statement(s), ${indexes.length} range index statement(s) and ${vectorIndexes.length} vector index statement(s)`,
+      `Applied ${constraints.length} constraint statement(s), ${indexes.length} range index statement(s), ${vectorIndexes.length} vector index statement(s) and ${fulltextIndexes.length} full-text index statement(s)`,
     );
   } finally {
     await client.close();

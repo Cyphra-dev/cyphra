@@ -80,6 +80,9 @@ export function renderClientSection(model: SchemaModel): string[] {
         `    vectorIndexes: ${union(vectors.filter((f) => f.vectorIndex).map((f) => f.name))};`,
       );
     }
+    if (n.fulltextIndexes?.length) {
+      lines.push(`    fulltextIndexes: ${union(n.fulltextIndexes.map((i) => i.name))};`);
+    }
     const relations = n.fields.filter((f): f is ResolvedRelationField => f.kind === "relation");
     if (relations.length === 0) {
       // Not `{}`: an empty object type trips @typescript-eslint/no-empty-object-type.

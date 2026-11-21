@@ -12,12 +12,14 @@
 import type {
   Decorator,
   DecoratorValue,
+  ModelAttribute,
+  NodeDeclaration,
   ScalarNodeField,
   ScalarTypeName,
   SchemaDocument,
 } from "./ast.js";
 import { SchemaValidationError } from "./errors.js";
-import { validateVectorField } from "./validate.js";
+import { validateModelAttributes, validateVectorField } from "./validate.js";
 
 /** Bump when the shape of {@link SchemaModel} changes incompatibly. */
 export const SCHEMA_MODEL_VERSION = 1 as const;
@@ -42,6 +44,21 @@ export type ResolvedVectorIndex = {
    * compressed vectors and makes index scores approximate.
    */
   readonly quantization?: boolean;
+};
+
+/** A `@@fulltext([...])` full-text index on a node model. */
+export type ResolvedFulltextIndex = {
+  /** Neo4j index name (default `<Label>_<field>_<field>…_fulltext`). */
+  readonly name: string;
+  /** Indexed `String` / `String[]` fields, in declaration order of the attribute. */
+  readonly fields: readonly string[];
+  /** `fulltext.analyzer` (absent: Neo4j's default, `standard-no-stop-words`). */
+  readonly analyzer?: string;
+  /**
+   * `fulltext.eventually_consistent` (absent: `false`). An eventually consistent index is updated
+   * in the background after commit, so queries can miss recent writes.
+   */
+  readonly eventuallyConsistent?: boolean;
 };
 
 export type ResolvedScalarField = {
@@ -90,6 +107,8 @@ export type ResolvedNodeModel = {
   readonly uniqueFields: readonly string[];
   /** Fields in declaration order. */
   readonly fields: readonly ResolvedField[];
+  /** `@@fulltext` indexes (absent when the model has none). */
+  readonly fulltextIndexes?: readonly ResolvedFulltextIndex[];
 };
 
 export type ResolvedRelationshipModel = {
@@ -215,6 +234,53 @@ function resolveVectorIndex(label: string, f: ScalarNodeField): ResolvedVectorIn
   };
 }
 
+function sanitizeIndexName(name: string): string {
+  return name.replace(/[^A-Za-z0-9_]/g, "_");
+}
+
+function resolveFulltext(decl: NodeDeclaration, attr: ModelAttribute): ResolvedFulltextIndex {
+  const fields = attr.fields ?? [];
+  const name = attr.args.find((a) => a.key === "name")?.value;
+  const analyzer = attr.args.find((a) => a.key === "analyzer")?.value;
+  const eventually = attr.args.find((a) => a.key === "eventuallyConsistent")?.value;
+  return {
+    name:
+      name?.kind === "string"
+        ? name.value
+        : sanitizeIndexName(`${decl.name}_${fields.join("_")}_fulltext`),
+    fields,
+    ...(analyzer && analyzer.kind !== "number" && analyzer.kind !== "boolean"
+      ? { analyzer: analyzer.value }
+      : {}),
+    ...(eventually?.kind === "boolean" ? { eventuallyConsistent: eventually.value } : {}),
+  };
+}
+
+/**
+ * Names of the constraints and range indexes migrations derive from the schema (they share
+ * Neo4j's index/constraint namespace with vector and full-text index names).
+ */
+function impliedDdlNames(doc: SchemaDocument): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const d of doc.declarations) {
+    for (const f of d.fields) {
+      if (f.kind !== "Scalar") continue;
+      const has = (n: string) => f.decorators.some((x) => x.name === n);
+      const base = d.kind === "Node" ? `${d.name}_${f.name}` : `${d.name}_${f.name}_rel`;
+      const suffix =
+        has("id") && d.kind === "Node"
+          ? "id"
+          : has("unique")
+            ? "unique"
+            : has("index")
+              ? "idx"
+              : null;
+      if (suffix) out.set(sanitizeIndexName(`${base}_${suffix}`), `${d.name}.${f.name}`);
+    }
+  }
+  return out;
+}
+
 function assertUniqueNames(owner: string, names: readonly string[]): void {
   const seen = new Set<string>();
   for (const n of names) {
@@ -241,6 +307,7 @@ export function resolveSchema(doc: SchemaDocument): SchemaModel {
       throw new SchemaValidationError(`Duplicate declaration "${d.name}".`);
     }
     set.add(d.name);
+    validateModelAttributes(d);
   }
 
   const relationships: ResolvedRelationshipModel[] = [];
@@ -268,7 +335,8 @@ export function resolveSchema(doc: SchemaDocument): SchemaModel {
   }
 
   const nodes: ResolvedNodeModel[] = [];
-  const vectorIndexNames = new Map<string, string>();
+  // Index and constraint names share one namespace in Neo4j: track every name the schema implies.
+  const indexNames = impliedDdlNames(doc);
   for (const d of doc.declarations) {
     if (d.kind !== "Node") {
       continue;
@@ -284,13 +352,13 @@ export function resolveSchema(doc: SchemaDocument): SchemaModel {
         const field = resolveScalar(owner, f, true);
         const vectorIndex = resolveVectorIndex(d.name, f);
         if (vectorIndex) {
-          const clash = vectorIndexNames.get(vectorIndex.name);
+          const clash = indexNames.get(vectorIndex.name);
           if (clash) {
             throw new SchemaValidationError(
               `${owner} field "${f.name}": vector index name "${vectorIndex.name}" is already used by ${clash}.`,
             );
           }
-          vectorIndexNames.set(vectorIndex.name, `${d.name}.${f.name}`);
+          indexNames.set(vectorIndex.name, `${d.name}.${f.name}`);
         }
         fields.push(vectorIndex ? { ...field, vectorIndex } : field);
         continue;
@@ -336,12 +404,26 @@ export function resolveSchema(doc: SchemaDocument): SchemaModel {
     }
     const scalars = fields.filter((f): f is ResolvedScalarField => f.kind === "scalar");
     const idField = scalars.find((f) => f.id)?.name;
+    const fulltextIndexes: ResolvedFulltextIndex[] = [];
+    for (const attr of d.attributes ?? []) {
+      if (attr.name !== "fulltext") continue;
+      const index = resolveFulltext(d, attr);
+      const clash = indexNames.get(index.name);
+      if (clash) {
+        throw new SchemaValidationError(
+          `${owner} @@fulltext: index name "${index.name}" is already used by ${clash}.`,
+        );
+      }
+      indexNames.set(index.name, `@@fulltext on ${d.name}`);
+      fulltextIndexes.push(index);
+    }
     nodes.push({
       name: d.name,
       label: d.name,
       ...(idField ? { idField } : {}),
       uniqueFields: scalars.filter((f) => f.id || f.unique).map((f) => f.name),
       fields,
+      ...(fulltextIndexes.length ? { fulltextIndexes } : {}),
     });
   }
 

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { EMPTY_SCHEMA_MODEL, ddlObjectsFromModel, diffSchemaModels, isEmptyPlan } from "./diff.js";
 import {
   constraintStatementsFromSchema,
+  fulltextIndexStatementsFromSchema,
   indexStatementsFromSchema,
   vectorIndexStatementsFromSchema,
 } from "./push.js";
@@ -209,5 +210,80 @@ describe("vector indexes", () => {
     const plan = diffSchemaModels(chunk("embedding Vector(3)?"), chunk("embedding Vector(3)"));
     expect(plan.steps.map((s) => s.kind)).toEqual(["guard"]);
     expect(plan.warnings).toEqual([]);
+  });
+});
+
+describe("full-text indexes", () => {
+  const post = (attrs: string) =>
+    model(
+      `node Post {\n id String @id\n title String\n body String?\n tags String[]\n ${attrs}\n}`,
+    );
+  const fulltext = (attrs: string) =>
+    ddlObjectsFromModel(post(attrs)).filter((o) => o.create.startsWith("CREATE FULLTEXT"));
+
+  it("emits CREATE FULLTEXT INDEX with fields and options", () => {
+    expect(
+      fulltext(
+        '@@fulltext([title, body], name: "postSearch", analyzer: "standard-no-stop-words", eventuallyConsistent: false)',
+      ),
+    ).toEqual([
+      {
+        name: "postSearch",
+        kind: "index",
+        create:
+          "CREATE FULLTEXT INDEX postSearch IF NOT EXISTS FOR (n:`Post`) ON EACH [n.`title`, n.`body`] OPTIONS {indexConfig: {`fulltext.analyzer`: 'standard-no-stop-words', `fulltext.eventually_consistent`: false}}",
+      },
+    ]);
+    expect(fulltext("@@fulltext([tags])")).toEqual([
+      {
+        name: "Post_tags_fulltext",
+        kind: "index",
+        create:
+          "CREATE FULLTEXT INDEX Post_tags_fulltext IF NOT EXISTS FOR (n:`Post`) ON EACH [n.`tags`]",
+      },
+    ]);
+    expect(fulltext("")).toEqual([]);
+  });
+
+  it("matches cyphra push and schema ddl", () => {
+    const doc = parseSchema(
+      `node Post { id String @id\n title String\n @@fulltext([title], analyzer: "english") }`,
+    );
+    const fromDiff = ddlObjectsFromModel(resolveSchema(doc))
+      .filter((o) => o.create.startsWith("CREATE FULLTEXT"))
+      .map((o) => o.create);
+    expect(fulltextIndexStatementsFromSchema(doc)).toEqual(fromDiff);
+    expect(fromDiff).toHaveLength(1);
+  });
+
+  it("detects added, removed and changed full-text indexes", () => {
+    const v1 = post('@@fulltext([title, body], name: "postSearch")');
+    const comments = (a: typeof v1, b: typeof v1) =>
+      diffSchemaModels(a, b).steps.map((s) => s.comment);
+
+    expect(comments(post(""), v1)).toEqual(["Create index postSearch."]);
+    expect(comments(v1, post(""))).toEqual(["Drop index postSearch."]);
+    expect(isEmptyPlan(diffSchemaModels(v1, v1))).toBe(true);
+
+    // Changed fields or analyzer recreate the index (drop first, create last).
+    const wider = post('@@fulltext([title, body, tags], name: "postSearch")');
+    expect(
+      diffSchemaModels(v1, wider).steps.map((s) => s.kind === "statement" && s.cypher),
+    ).toEqual([
+      "DROP INDEX postSearch IF EXISTS",
+      expect.stringContaining("ON EACH [n.`title`, n.`body`, n.`tags`]"),
+    ]);
+    const english = post('@@fulltext([title, body], name: "postSearch", analyzer: "english")');
+    expect(comments(v1, english)).toEqual(["Drop index postSearch.", "Create index postSearch."]);
+    const eventual = post(
+      '@@fulltext([title, body], name: "postSearch", eventuallyConsistent: true)',
+    );
+    expect(comments(v1, eventual)).toEqual(["Drop index postSearch.", "Create index postSearch."]);
+
+    // A rename drops the old index and creates the new one.
+    expect(comments(v1, post('@@fulltext([title, body], name: "search")'))).toEqual([
+      "Drop index postSearch.",
+      "Create index search.",
+    ]);
   });
 });

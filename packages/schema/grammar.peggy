@@ -8,9 +8,18 @@ declaration
   / relationshipDeclaration
 
 nodeDeclaration
-  = "node" __ name:identifier _ "{" _ fields:nodeField* _ "}" {
-      return { kind: "Node", name, fields };
+  = "node" __ name:identifier _ "{" _ items:nodeItem* _ "}" {
+      const fields = items.filter((i) => i.kind !== "ModelAttribute");
+      const attributes = items.filter((i) => i.kind === "ModelAttribute");
+      // `attributes` only when present, so schemas without `@@…` parse to the same AST as before.
+      return attributes.length
+        ? { kind: "Node", name, fields, attributes }
+        : { kind: "Node", name, fields };
     }
+
+nodeItem
+  = modelAttribute
+  / nodeField
 
 relationshipDeclaration
   = "relationship" __ name:identifier _ "{" _ body:relationshipBody _ "}" {
@@ -21,13 +30,48 @@ relationshipDeclaration
         from: body.from,
         to: body.to,
         fields: body.fields,
+        ...(body.attributes ? { attributes: body.attributes } : {}),
       };
     }
 
 relationshipBody
-  = "type" __ rt:stringLiteral _ fromLine:fromLine _ toLine:toLine _ fields:scalarFieldInRel* {
-      return { relType: rt, from: fromLine, to: toLine, fields };
+  = "type" __ rt:stringLiteral _ fromLine:fromLine _ toLine:toLine _ items:relationshipItem* {
+      const fields = items.filter((i) => i.kind !== "ModelAttribute");
+      const attributes = items.filter((i) => i.kind === "ModelAttribute");
+      return attributes.length
+        ? { relType: rt, from: fromLine, to: toLine, fields, attributes }
+        : { relType: rt, from: fromLine, to: toLine, fields };
     }
+
+relationshipItem
+  = modelAttribute
+  / scalarFieldInRel
+
+// Model-level attribute: `@@name`, `@@name([a, b])`, `@@name([a, b], key: value, …)` or
+// `@@name(key: value, …)`. The optional leading list names fields of the enclosing model.
+modelAttribute
+  = "@@" name:identifier "(" _ body:modelAttributeBody _ ")" _ {
+      return body.fields
+        ? { kind: "ModelAttribute", name, fields: body.fields, args: body.args }
+        : { kind: "ModelAttribute", name, args: body.args };
+    }
+  / "@@" name:identifier _ {
+      return { kind: "ModelAttribute", name, args: [] };
+    }
+
+modelAttributeBody
+  = fields:fieldList args:(_ "," _ @decoratorArg)* {
+      return { fields, args };
+    }
+  / args:decoratorArgs {
+      return { fields: null, args };
+    }
+
+fieldList
+  = "[" _ head:identifier tail:(_ "," _ @identifier)* _ "]" {
+      return [head, ...tail];
+    }
+  / "[" _ "]" { return []; }
 
 fromLine
   = "from" __ id:identifier _ { return id; }

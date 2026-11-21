@@ -1,4 +1,4 @@
-import type { Decorator, NodeField, ScalarTypeRef, SchemaDocument } from "./ast.js";
+import type { Decorator, ModelAttribute, NodeField, ScalarTypeRef, SchemaDocument } from "./ast.js";
 
 function formatScalarType(t: ScalarTypeRef): string {
   if (t.name === "Vector") {
@@ -40,6 +40,25 @@ export function formatDecorator(d: Decorator): string {
   return `@${d.name}(${inner})`;
 }
 
+/**
+ * Serialize a model-level attribute back to `.cyphra` surface syntax, e.g.
+ * `@@fulltext([title, body], name: "postSearch")`.
+ *
+ * @param a - Parsed model attribute.
+ */
+export function formatModelAttribute(a: ModelAttribute): string {
+  const parts = [
+    ...(a.fields ? [`[${a.fields.join(", ")}]`] : []),
+    ...a.args.map((x) => `${x.key}: ${formatDecoratorValue(x.value)}`),
+  ];
+  return parts.length ? `@@${a.name}(${parts.join(", ")})` : `@@${a.name}`;
+}
+
+function attributeLines(attributes: readonly ModelAttribute[] | undefined): string[] {
+  if (!attributes?.length) return [];
+  return ["", ...attributes.map((a) => `  ${formatModelAttribute(a)}`)];
+}
+
 function formatScalarField(f: Extract<NodeField, { kind: "Scalar" }>): string {
   const decs = f.decorators.map(formatDecorator).join(" ");
   const base = `${f.name} ${formatScalarType(f.type)}`;
@@ -71,7 +90,12 @@ export function printSchemaDocument(doc: SchemaDocument): string {
   const blocks: string[] = [];
   for (const d of doc.declarations) {
     if (d.kind === "Node") {
-      const lines = [`node ${d.name} {`, ...d.fields.map((f) => `  ${formatNodeField(f)}`), "}"];
+      const lines = [
+        `node ${d.name} {`,
+        ...d.fields.map((f) => `  ${formatNodeField(f)}`),
+        ...attributeLines(d.attributes),
+        "}",
+      ];
       blocks.push(lines.join("\n"));
     } else {
       const fieldLines = d.fields.map((f) => `  ${formatScalarField(f)}`);
@@ -81,6 +105,7 @@ export function printSchemaDocument(doc: SchemaDocument): string {
         `  from ${d.from}`,
         `  to ${d.to}`,
         ...fieldLines,
+        ...attributeLines(d.attributes),
         "}",
       ];
       blocks.push(lines.join("\n"));

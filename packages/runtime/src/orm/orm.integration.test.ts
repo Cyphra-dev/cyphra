@@ -5,6 +5,11 @@ import {
   createClient as createVectorClient,
   type Db as VectorDb,
 } from "./__fixtures__/vector.gen.js";
+import {
+  createClient as createSearchClient,
+  type Db as SearchDb,
+} from "./__fixtures__/search.gen.js";
+import { escapeLucene } from "./fulltext.js";
 
 const hasNeo = Boolean(
   process.env.NEO4J_TEST_URI && process.env.NEO4J_TEST_USER && process.env.NEO4J_TEST_PASSWORD,
@@ -1908,5 +1913,225 @@ describe.skipIf(!hasNeo)("ORM vector search (Neo4j)", () => {
     });
     expect(ids(viaIndex)).not.toContain("new");
     expect(ids(exact)).toEqual(["new"]);
+  });
+});
+
+describe.skipIf(!hasNeo)("ORM full-text search (Neo4j)", () => {
+  let db: SearchDb;
+
+  // Same statements as `cyphra push` / migrations generate for __fixtures__/search.cyphra.
+  const ddl = [
+    "CREATE FULLTEXT INDEX ftPostSearch IF NOT EXISTS FOR (n:`FtPost`) ON EACH [n.`title`, n.`body`] OPTIONS {indexConfig: {`fulltext.eventually_consistent`: false}}",
+    "CREATE FULLTEXT INDEX ftPostTags IF NOT EXISTS FOR (n:`FtPost`) ON EACH [n.`tags`] OPTIONS {indexConfig: {`fulltext.analyzer`: 'keyword'}}",
+    "CREATE FULLTEXT INDEX ftPostTitleEnglish IF NOT EXISTS FOR (n:`FtPost`) ON EACH [n.`title`] OPTIONS {indexConfig: {`fulltext.analyzer`: 'english'}}",
+  ];
+
+  const posts = [
+    {
+      id: "p1",
+      title: "Graph databases",
+      body: "Neo4j stores graphs. Graph graph graph.",
+      tags: ["neo4j", "Graph DB"],
+      published: true,
+      author: "ada",
+    },
+    {
+      id: "p2",
+      title: "Running a graph in production",
+      body: "Operations notes",
+      tags: ["ops"],
+      published: true,
+      author: "bob",
+    },
+    {
+      id: "p3",
+      title: "C++ (beta) notes",
+      body: "Templates AND macros",
+      tags: ["cpp"],
+      published: false,
+      author: "bob",
+    },
+    {
+      id: "p4",
+      title: "Cooking",
+      body: "A graph of recipes",
+      tags: [],
+      published: true,
+      author: "ada",
+    },
+    { id: "p5", title: "Untitled", body: null, tags: [], published: true, author: "ada" },
+  ];
+
+  beforeAll(async () => {
+    db = createSearchClient({
+      uri: process.env.NEO4J_TEST_URI!,
+      user: process.env.NEO4J_TEST_USER!,
+      password: process.env.NEO4J_TEST_PASSWORD!,
+    });
+    await db.$client.withSession(async (s) => {
+      for (const stmt of ddl) await s.run(stmt);
+      await s.run("CALL db.awaitIndexes(120)");
+    });
+  });
+
+  beforeEach(async () => {
+    await db.$cypher`MATCH (n) WHERE n:FtAuthor OR n:FtPost DETACH DELETE n`;
+    await db.ftAuthor.create({ data: { id: "ada", name: "Ada", country: "UK" } });
+    await db.ftAuthor.create({ data: { id: "bob", name: "Bob", country: "FR" } });
+    for (const p of posts) {
+      const { author, ...data } = p;
+      await db.ftPost.create({ data: { ...data, author: { connect: { id: author } } } });
+    }
+  });
+
+  afterAll(async () => {
+    if (!db) return;
+    await db.$cypher`MATCH (n) WHERE n:FtAuthor OR n:FtPost DETACH DELETE n`;
+    await db.$disconnect();
+  });
+
+  const ids = (rows: readonly { id: string }[]) => rows.map((r) => r.id);
+
+  it("creates ONLINE full-text indexes", async () => {
+    const indexes = await db.$cypher<{ name: string; state: string }>`
+      SHOW FULLTEXT INDEXES YIELD name, state WHERE name STARTS WITH 'ftPost'
+      RETURN name, state ORDER BY name`;
+    expect(indexes).toEqual([
+      { name: "ftPostSearch", state: "ONLINE" },
+      { name: "ftPostTags", state: "ONLINE" },
+      { name: "ftPostTitleEnglish", state: "ONLINE" },
+    ]);
+  });
+
+  it("ranks matches across the indexed fields, best first, with $score", async () => {
+    const hits = await db.ftPost.search({ index: "ftPostSearch", query: "graph" });
+    // p1 mentions "graph" most often; p5 (no match) is absent.
+    expect(ids(hits)[0]).toBe("p1");
+    expect(ids(hits).sort()).toEqual(["p1", "p2", "p4"]);
+    expect(hits.every((h) => h.$score > 0)).toBe(true);
+    expect(hits.map((h) => h.$score)).toEqual([...hits.map((h) => h.$score)].sort((a, b) => b - a));
+    expect(hits[0]).toMatchObject({
+      id: "p1",
+      title: "Graph databases",
+      tags: ["neo4j", "Graph DB"],
+      published: true,
+    });
+    // A boosted title match outranks body matches.
+    const boosted = await db.ftPost.search({
+      index: "ftPostSearch",
+      query: "title:graph^10 OR graph",
+    });
+    expect(ids(boosted).slice(0, 2).sort()).toEqual(["p1", "p2"]);
+  });
+
+  it("filters with where after the index call and pages with skip / take", async () => {
+    const byBob = await db.ftPost.search({
+      index: "ftPostSearch",
+      query: "graph OR notes",
+      where: { author: { is: { country: "FR" } }, published: true },
+      select: { id: true, author: { select: { name: true } } },
+    });
+    expect(byBob).toEqual([{ id: "p2", author: { name: "Bob" }, $score: expect.any(Number) }]);
+
+    const all = await db.ftPost.search({ index: "ftPostSearch", query: "graph" });
+    const page = await db.ftPost.search({
+      index: "ftPostSearch",
+      query: "graph",
+      skip: 1,
+      take: 1,
+    });
+    expect(ids(page)).toEqual([all[1]!.id]);
+    const filteredPage = await db.ftPost.search({
+      index: "ftPostSearch",
+      query: "graph",
+      where: { author: { is: { id: "ada" } } },
+      take: 1,
+      skip: 1,
+    });
+    expect(ids(filteredPage)).toEqual(["p4"]);
+
+    const top = all[0]!.$score;
+    const strong = await db.ftPost.search({ index: "ftPostSearch", query: "graph", minScore: top });
+    expect(ids(strong)).toEqual(["p1"]);
+    expect(await db.ftPost.search({ index: "ftPostSearch", query: "graph", take: 0 })).toEqual([]);
+  });
+
+  it("passes Lucene syntax through and escapes user input", async () => {
+    expect(ids(await db.ftPost.search({ index: "ftPostSearch", query: "prod*" }))).toEqual(["p2"]);
+    expect(
+      ids(
+        await db.ftPost.search({
+          index: "ftPostSearch",
+          query: "title:cooking OR body:operations",
+        }),
+      ).sort(),
+    ).toEqual(["p2", "p4"]);
+    // Unbalanced syntax is a Lucene parse error in lucene mode…
+    await expect(db.ftPost.search({ index: "ftPostSearch", query: "C++ (beta" })).rejects.toThrow();
+    // …and plain words in terms / phrase mode or after escapeLucene.
+    expect(
+      ids(await db.ftPost.search({ index: "ftPostSearch", query: "C++ (beta", mode: "terms" })),
+    ).toEqual(["p3"]);
+    expect(
+      ids(await db.ftPost.search({ index: "ftPostSearch", query: escapeLucene("(beta) AND") })),
+    ).toEqual(["p3"]);
+    // "AND" is a word here, not an operator: it matches p3's body, and only p3 has "macros".
+    expect(
+      ids(await db.ftPost.search({ index: "ftPostSearch", query: "macros AND", mode: "terms" })),
+    ).toEqual(["p3"]);
+    expect(
+      ids(
+        await db.ftPost.search({ index: "ftPostSearch", query: "graph databases", mode: "phrase" }),
+      ),
+    ).toEqual(["p1"]);
+    expect(
+      await db.ftPost.search({ index: "ftPostSearch", query: "databases graph", mode: "phrase" }),
+    ).toEqual([]);
+    expect(await db.ftPost.search({ index: "ftPostSearch", query: "  " })).toEqual([]);
+  });
+
+  it("follows each index's analyzer", async () => {
+    // keyword: the whole value is one token, case-sensitive; String[] values are indexed each.
+    const tag = (query: string) =>
+      db.ftPost.search({ index: "ftPostTags", query, mode: "phrase" }).then(ids);
+    expect(await tag("Graph DB")).toEqual(["p1"]);
+    expect(await tag("graph db")).toEqual([]);
+    expect(await tag("Graph")).toEqual([]);
+    expect(await tag("ops")).toEqual(["p2"]);
+    // english: stems ("running" ~ "run") and drops stop words; the default analyzer does neither.
+    expect(ids(await db.ftPost.search({ index: "ftPostTitleEnglish", query: "run" }))).toEqual([
+      "p2",
+    ]);
+    expect(await db.ftPost.search({ index: "ftPostSearch", query: "run" })).toEqual([]);
+    expect(await db.ftPost.search({ index: "ftPostTitleEnglish", query: "a" })).toEqual([]);
+  });
+
+  it("runs inside $transaction and sees the transaction's own writes", async () => {
+    const hits = await db.$transaction(async (tx) => {
+      await tx.ftPost.create({
+        data: { id: "new", title: "Fresh graph news", tags: [], published: true },
+      });
+      await tx.ftPost.update({ where: { id: "p4" }, data: { body: "Recipes only" } });
+      return tx.ftPost.search({ index: "ftPostSearch", query: "graph", select: { id: true } });
+    });
+    // Full-text indexes that are not eventually consistent include uncommitted changes.
+    expect(ids(hits)).toContain("new");
+    expect(ids(hits)).not.toContain("p4");
+
+    await expect(
+      db.$transaction(async (tx) => {
+        await tx.ftPost.create({
+          data: { id: "gone", title: "Ephemeral graph", tags: [], published: true },
+        });
+        throw new Error("rollback");
+      }),
+    ).rejects.toThrow("rollback");
+    expect(ids(await db.ftPost.search({ index: "ftPostSearch", query: "ephemeral" }))).toEqual([]);
+  });
+
+  it("validates arguments before querying", async () => {
+    await expect(
+      db.ftPost.search({ index: "nope" as "ftPostSearch", query: "x" }),
+    ).rejects.toBeInstanceOf(CyphraValidationError);
   });
 });

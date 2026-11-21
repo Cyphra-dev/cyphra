@@ -9,10 +9,13 @@
  */
 
 import {
+  DEFAULT_FULLTEXT_ANALYZER,
+  FULLTEXT_ANALYZERS,
   MAX_VECTOR_DIMENSIONS,
   VECTOR_SIMILARITIES,
   type Decorator,
   type DecoratorArg,
+  type ModelAttribute,
   type NodeDeclaration,
   type RelationalNodeField,
   type RelationshipDeclaration,
@@ -307,7 +310,32 @@ export function schemaFromIntrospection(input: IntrospectionResult): {
     string,
     { name: string; dimensions: number; similarity: string; quantization: false | undefined }
   >();
+  const fulltext: {
+    name: string;
+    label: string;
+    properties: readonly string[];
+    config: Record<string, unknown>;
+  }[] = [];
   for (const i of input.indexes) {
+    if (i.type === "FULLTEXT") {
+      const where = `full-text index ${i.name}`;
+      if (i.entityType !== "NODE") {
+        warnings.push(`Skipped ${where}: relationship full-text indexes are not supported.`);
+      } else if (i.labelsOrTypes.length !== 1) {
+        warnings.push(`Skipped ${where}: only single-label full-text indexes are supported.`);
+      } else if (!IDENT.test(i.name)) {
+        warnings.push(`Skipped ${where}: its name is not a valid identifier.`);
+      } else {
+        fulltext.push({
+          name: i.name,
+          label: i.labelsOrTypes[0]!,
+          properties: i.properties,
+          config:
+            ((i.options ?? {}) as { indexConfig?: Record<string, unknown> }).indexConfig ?? {},
+        });
+      }
+      continue;
+    }
     if (i.type === "VECTOR" && i.entityType === "NODE") {
       const where = `vector index ${i.name}`;
       if (i.properties.length !== 1 || i.labelsOrTypes.length !== 1) {
@@ -503,11 +531,49 @@ export function schemaFromIntrospection(input: IntrospectionResult): {
     }
   }
 
-  const nodes: NodeDeclaration[] = [...nodeFields].map(([name, fields]) => ({
-    kind: "Node",
-    name,
-    fields,
-  }));
+  // --- full-text indexes → @@fulltext ----------------------------------------------
+  const attributesOf = new Map<string, ModelAttribute[]>();
+  for (const ft of fulltext) {
+    const where = `full-text index ${ft.name}`;
+    const fields = nodeFields.get(ft.label);
+    if (!fields) {
+      warnings.push(`Skipped ${where}: label ${ft.label} has no nodes in the database.`);
+      continue;
+    }
+    const missing = ft.properties.filter(
+      (p) => !fields.some((f) => f.kind === "Scalar" && f.name === p && f.type.name === "String"),
+    );
+    if (missing.length) {
+      warnings.push(
+        `Skipped ${where}: ${missing.map((p) => `${ft.label}.${p}`).join(", ")} not found as String / String[] properties.`,
+      );
+      continue;
+    }
+    const args: DecoratorArg[] = [];
+    if (ft.name !== `${ft.label}_${ft.properties.join("_")}_fulltext`) {
+      args.push({ key: "name", value: { kind: "string", value: ft.name } });
+    }
+    const analyzer = String(ft.config["fulltext.analyzer"] ?? DEFAULT_FULLTEXT_ANALYZER);
+    if (analyzer !== DEFAULT_FULLTEXT_ANALYZER) {
+      if (!(FULLTEXT_ANALYZERS as readonly string[]).includes(analyzer)) {
+        warnings.push(`Skipped ${where}: unsupported analyzer "${analyzer}".`);
+        continue;
+      }
+      args.push({ key: "analyzer", value: { kind: "string", value: analyzer } });
+    }
+    // Neo4j's default is false: only an explicit "on" is worth keeping.
+    if (ft.config["fulltext.eventually_consistent"] === true) {
+      args.push({ key: "eventuallyConsistent", value: { kind: "boolean", value: true } });
+    }
+    const list = attributesOf.get(ft.label) ?? [];
+    list.push({ kind: "ModelAttribute", name: "fulltext", fields: [...ft.properties], args });
+    attributesOf.set(ft.label, list);
+  }
+
+  const nodes: NodeDeclaration[] = [...nodeFields].map(([name, fields]) => {
+    const attributes = attributesOf.get(name);
+    return attributes ? { kind: "Node", name, fields, attributes } : { kind: "Node", name, fields };
+  });
   for (const n of nodes) {
     if (!n.fields.some((f) => f.kind === "Scalar")) {
       warnings.push(`Node ${n.name} has no properties in the database.`);

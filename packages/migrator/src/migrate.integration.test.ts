@@ -3,7 +3,7 @@ import { CyphraClient } from "@cyphra/runtime";
 import { afterAll, describe, expect, it } from "vitest";
 import { diffSchemaModels, EMPTY_SCHEMA_MODEL } from "./diff.js";
 import { introspectDatabase, schemaFromIntrospection } from "./introspect.js";
-import { vectorIndexStatementsFromSchema } from "./push.js";
+import { fulltextIndexStatementsFromSchema, vectorIndexStatementsFromSchema } from "./push.js";
 import { applyConstraintStatements } from "./runner.js";
 import { createMigrationDb } from "./migrationDb.js";
 
@@ -151,6 +151,78 @@ describe.skipIf(!hasNeo)("schema migrations and pull (Neo4j)", () => {
     } finally {
       await run("MATCH (n:MigVector) DETACH DELETE n");
       await run("DROP INDEX mig_vector IF EXISTS");
+    }
+  });
+
+  it("creates full-text indexes, recreates them on change, and pulls them back", async () => {
+    const v1 = `node MigText {
+  id    String   @id
+  title String
+  body  String?
+  tags  String[]
+
+  @@fulltext([title, body], name: "mig_text", analyzer: "english")
+}
+`;
+    const v2 = v1.replace("[title, body]", "[title, body, tags]").replace("english", "whitespace");
+    const indexInfo = async () =>
+      client.withSession(async (s) => {
+        await s.run("CALL db.awaitIndexes(120)");
+        const res = await s.run(
+          "SHOW FULLTEXT INDEXES YIELD name, state, labelsOrTypes, properties, options WHERE name = 'mig_text' RETURN *",
+        );
+        return res.records.map((r) => {
+          const config = (r.get("options") as { indexConfig: Record<string, unknown> }).indexConfig;
+          return {
+            state: r.get("state") as string,
+            on: [...(r.get("labelsOrTypes") as string[]), ...(r.get("properties") as string[])],
+            analyzer: config["fulltext.analyzer"],
+            eventuallyConsistent: config["fulltext.eventually_consistent"],
+          };
+        });
+      });
+    try {
+      await run("DROP INDEX mig_text IF EXISTS");
+      const stmts = fulltextIndexStatementsFromSchema(parseSchema(v1));
+      await applyConstraintStatements(client, stmts);
+      await applyConstraintStatements(client, stmts); // IF NOT EXISTS: idempotent
+      expect(await indexInfo()).toEqual([
+        {
+          state: "ONLINE",
+          on: ["MigText", "title", "body"],
+          analyzer: "english",
+          eventuallyConsistent: false,
+        },
+      ]);
+
+      // `cyphra pull` maps the index back to the same attribute.
+      await run(
+        "CREATE (:MigText {id: 'a', title: 'Graphs', body: 'x', tags: ['t']}), (:MigText {id: 'b', title: 'Trees'})",
+      );
+      const pulled = printSchemaDocument(
+        schemaFromIntrospection(await introspectDatabase(client)).doc,
+      );
+      expect(pulled).toContain(
+        '  @@fulltext([title, body], name: "mig_text", analyzer: "english")',
+      );
+
+      // A migration from v1 to v2 drops and recreates the index with the new fields and analyzer.
+      const plan = diffSchemaModels(resolveSchema(parseSchema(v1)), resolveSchema(parseSchema(v2)));
+      await applyConstraintStatements(
+        client,
+        plan.steps.flatMap((step) => (step.kind === "statement" ? [step.cypher] : [])),
+      );
+      expect(await indexInfo()).toEqual([
+        {
+          state: "ONLINE",
+          on: ["MigText", "title", "body", "tags"],
+          analyzer: "whitespace",
+          eventuallyConsistent: false,
+        },
+      ]);
+    } finally {
+      await run("MATCH (n:MigText) DETACH DELETE n");
+      await run("DROP INDEX mig_text IF EXISTS");
     }
   });
 });

@@ -164,3 +164,72 @@ describe("schemaFromIntrospection (vector indexes)", () => {
     );
   });
 });
+
+describe("schemaFromIntrospection (full-text indexes)", () => {
+  const fulltextIndex = (
+    name: string,
+    properties: string[],
+    indexConfig: Record<string, unknown>,
+    extra: Partial<IntrospectionResult["indexes"][number]> = {},
+  ): IntrospectionResult["indexes"][number] => ({
+    name,
+    type: "FULLTEXT",
+    entityType: "NODE",
+    labelsOrTypes: ["Post"],
+    properties,
+    owningConstraint: null,
+    options: { indexProvider: "fulltext-1.0", indexConfig },
+    ...extra,
+  });
+  const { doc, warnings } = schemaFromIntrospection({
+    nodeTypes: [
+      {
+        labels: ["Post"],
+        properties: [
+          { propertyName: "title", propertyTypes: ["String"], mandatory: true },
+          { propertyName: "body", propertyTypes: ["String"], mandatory: false },
+          { propertyName: "tags", propertyTypes: ["StringArray"], mandatory: false },
+          { propertyName: "views", propertyTypes: ["Long"], mandatory: false },
+        ],
+      },
+    ],
+    relTypes: [],
+    constraints: [],
+    indexes: [
+      fulltextIndex("postSearch", ["title", "body"], {
+        "fulltext.analyzer": "english",
+        "fulltext.eventually_consistent": false,
+      }),
+      fulltextIndex("Post_tags_fulltext", ["tags"], {
+        "fulltext.analyzer": "standard-no-stop-words",
+        "fulltext.eventually_consistent": true,
+      }),
+      fulltextIndex("byViews", ["views"], {}),
+      fulltextIndex("custom", ["title"], { "fulltext.analyzer": "my-analyzer" }),
+      fulltextIndex("multi", ["title"], {}, { labelsOrTypes: ["Post", "Page"] }),
+      fulltextIndex("rels", ["note"], {}, { entityType: "RELATIONSHIP", labelsOrTypes: ["R"] }),
+      fulltextIndex("ghost", ["name"], {}, { labelsOrTypes: ["Ghost"] }),
+    ],
+  });
+  const printed = printSchemaDocument(doc);
+
+  it("maps node full-text indexes to @@fulltext attributes", () => {
+    expect(printed).toBe(`node Post {
+  body String?
+  tags String[]
+  title String
+  views Int?
+
+  @@fulltext([title, body], name: "postSearch", analyzer: "english")
+  @@fulltext([tags], eventuallyConsistent: true)
+}
+`);
+    expect(() => resolveSchema(parseSchema(printed))).not.toThrow();
+    const w = warnings.join("\n");
+    expect(w).toMatch(/Skipped full-text index byViews: Post\.views not found as String/);
+    expect(w).toMatch(/Skipped full-text index custom: unsupported analyzer "my-analyzer"/);
+    expect(w).toMatch(/Skipped full-text index multi: only single-label/);
+    expect(w).toMatch(/Skipped full-text index rels: relationship full-text indexes/);
+    expect(w).toMatch(/Skipped full-text index ghost: label Ghost has no nodes/);
+  });
+});
