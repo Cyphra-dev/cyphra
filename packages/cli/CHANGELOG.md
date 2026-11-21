@@ -1,5 +1,25 @@
 # @cyphra/cli
 
+## 0.8.0
+
+### Minor Changes
+
+- e22de55: `cyphra import graphql` (and `cyphraSchema`) map GraphQL enums to Cyphra enums with the same values
+  (only the enums a converted field uses; `@default(value: X)` becomes `@default(X)`), and `BigInt` to
+  `BigInt` (defaults keep every digit), instead of `String` and "not converted".
+- ba56ddc: `cyphra import graphql` (and `convertGraphQLTypeDefs`) now converts `@fulltext(indexes: [{ indexName, queryName, fields }])` to one `@@fulltext([fields], name: indexName)` per index, so `cyphra migrate` creates the full-text indexes the v7 API queries. Field names follow `@alias`; `queryName` is listed as ignored (it names a GraphQL query field, which `compat.v7` still serves); an index on a field that was not converted, or that is not a `String` / `ID` field, is reported and left out. `--merge` adds the indexes an existing node lacks. `@vector` stays reported (v7 type definitions carry neither the dimensions nor the similarity), with a hint to declare a `Vector(N)` field with `@vectorIndex`. Report messages for `@cypher` fields and authorization rules now say that `compat.v7` still serves them.
+
+### Patch Changes
+
+- Updated dependencies [e22de55]
+- Updated dependencies [ba56ddc]
+- Updated dependencies [f51239c]
+- Updated dependencies [e22de55]
+  - @cyphra/graphql@0.8.0
+  - @cyphra/runtime@0.8.0
+  - @cyphra/schema@0.8.0
+  - @cyphra/migrator@0.8.0
+
 ## 0.7.0
 
 ### Minor Changes
