@@ -154,6 +154,23 @@ export type ResolvedScalarField = {
 
 export type RelationDirection = "OUT" | "IN";
 
+/**
+ * What deleting a node does to the nodes a relation field links it to
+ * (`@relationship(…, onDelete: …)`): `Cascade` deletes them too (following their own rules),
+ * `Restrict` refuses the delete while any exist, `SetNull` (the default) only removes the edges.
+ */
+export type OnDeleteRule = "Cascade" | "Restrict" | "SetNull";
+
+/** Rules accepted by `@relationship(onDelete: …)`, in the order the docs list them. */
+export const ON_DELETE_RULES = [
+  "Cascade",
+  "Restrict",
+  "SetNull",
+] as const satisfies readonly OnDeleteRule[];
+
+/** Arguments accepted by `@relationship(…)`. */
+const RELATIONSHIP_ARGS = ["type", "direction", "onDelete"] as const;
+
 export type ResolvedRelationField = {
   readonly kind: "relation";
   readonly name: string;
@@ -167,6 +184,11 @@ export type ResolvedRelationField = {
   readonly optional: boolean;
   /** Name of the `relationship { … }` model that types this edge's properties, if any. */
   readonly edge?: string;
+  /**
+   * What deleting a node of this model does to the nodes this field links it to (absent when the
+   * schema sets none, which means `SetNull`: the edges are removed, the nodes stay).
+   */
+  readonly onDelete?: OnDeleteRule;
 };
 
 export type ResolvedField = ResolvedScalarField | ResolvedRelationField;
@@ -552,6 +574,31 @@ export function resolveSchema(doc: SchemaDocument): SchemaModel {
         }
         direction = dirArg.value;
       }
+      const seenArgs = new Set<string>();
+      for (const a of rel.args) {
+        if (!(RELATIONSHIP_ARGS as readonly string[]).includes(a.key)) {
+          throw new SchemaValidationError(
+            `${where}: unknown @relationship argument "${a.key}" (expected ${RELATIONSHIP_ARGS.join(", ")}).`,
+          );
+        }
+        if (seenArgs.has(a.key)) {
+          throw new SchemaValidationError(`${where}: @relationship ${a.key} given twice.`);
+        }
+        seenArgs.add(a.key);
+      }
+      const ruleArg = argValue(rel, "onDelete");
+      let onDelete: OnDeleteRule | undefined;
+      if (ruleArg) {
+        if (
+          ruleArg.kind !== "identifier" ||
+          !(ON_DELETE_RULES as readonly string[]).includes(ruleArg.value)
+        ) {
+          throw new SchemaValidationError(
+            `${where}: onDelete must be ${ON_DELETE_RULES.join(", ")} (got ${ruleArg.kind === "string" ? JSON.stringify(ruleArg.value) : String(ruleArg.value)}).`,
+          );
+        }
+        onDelete = ruleArg.value as OnDeleteRule;
+      }
       const [start, end] = direction === "OUT" ? [d.name, f.target] : [f.target, d.name];
       const edges = relationships.filter(
         (r) => r.relType === typeArg.value && r.from === start && r.to === end,
@@ -569,8 +616,25 @@ export function resolveSchema(doc: SchemaDocument): SchemaModel {
         direction,
         many: f.cardinality === "many",
         optional: f.cardinality === "many" ? false : f.optional,
+        ...(edges[0] ? { edge: edges[0].name } : {}),
+        ...(onDelete ? { onDelete } : {}),
       };
-      fields.push(edges[0] ? { ...field, edge: edges[0].name } : field);
+      // Two fields of one model on the same edges (type, direction, target) would give one delete
+      // two rules: they must agree.
+      const twin = fields.find(
+        (o): o is ResolvedRelationField =>
+          o.kind === "relation" &&
+          o.relType === field.relType &&
+          o.direction === field.direction &&
+          o.target === field.target &&
+          (o.onDelete ?? "SetNull") !== (field.onDelete ?? "SetNull"),
+      );
+      if (twin) {
+        throw new SchemaValidationError(
+          `${where}: onDelete ${field.onDelete ?? "SetNull"} conflicts with field "${twin.name}" (onDelete ${twin.onDelete ?? "SetNull"}) on the same :${field.relType} edges.`,
+        );
+      }
+      fields.push(field);
     }
     const scalars = fields.filter((f): f is ResolvedScalarField => f.kind === "scalar");
     const idField = scalars.find((f) => f.id)?.name;

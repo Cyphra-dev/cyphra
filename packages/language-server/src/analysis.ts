@@ -248,6 +248,18 @@ function locateFieldError(rest: string, f: NodeField): Span | undefined {
     const r = dec("relationship");
     return r ? (argSpan(r, "direction") ?? decoratorSpan(r)) : undefined;
   }
+  const relArg =
+    /^(?:onDelete must be|@relationship (\w+) given twice|onDelete \w+ conflicts)/.exec(rest);
+  if (relArg) {
+    const r = dec("relationship");
+    const key = relArg[1] ?? "onDelete";
+    return r ? (argSpan(r, key, relArg[1] ? 1 : 0) ?? decoratorSpan(r)) : undefined;
+  }
+  const unknownRelArg = /^unknown @relationship argument "(\w+)"/.exec(rest);
+  if (unknownRelArg) {
+    const a = dec("relationship")?.args.find((x) => x.key === unknownRelArg[1]);
+    return span(a?.keyLoc ?? a?.loc);
+  }
   if (/^several relationship models match/.test(rest)) {
     const r = dec("relationship");
     return r ? decoratorSpan(r) : undefined;

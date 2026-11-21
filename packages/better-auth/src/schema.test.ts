@@ -45,6 +45,42 @@ describe("authSchema", () => {
     expect(verification.fields.find((f) => f.name === "identifier")).toMatchObject({ index: true });
   });
 
+  it("carries references.onDelete as onDelete rules on the parent's list fields", () => {
+    const ref = (onDelete?: string) => ({
+      type: "string" as const,
+      required: false,
+      references: { model: "user", field: "id", ...(onDelete ? { onDelete } : {}) },
+    });
+    const tables = {
+      user: { modelName: "user", fields: {} },
+      a: { modelName: "a", fields: { userId: ref() } },
+      b: { modelName: "b", fields: { userId: ref("restrict") } },
+      c: { modelName: "c", fields: { userId: ref("no action") } },
+      d: { modelName: "d", fields: { userId: ref("set null") } },
+      e: { modelName: "e", fields: { userId: ref("cascade") } },
+    } as unknown as BetterAuthDBSchema;
+    const graph = deriveAuthGraph({
+      schema: tables,
+      getModelName: (m) => m,
+      getFieldName: ({ field }) => field,
+    });
+    const user = graph.schema.nodes.find((n) => n.name === "User")!;
+    const rule = (name: string) =>
+      (user.fields.find((f) => f.name === name) as { onDelete?: string } | undefined)?.onDelete;
+    expect([rule("as"), rule("bs"), rule("cs"), rule("ds"), rule("es")]).toEqual([
+      "Cascade",
+      "Restrict",
+      "Restrict",
+      undefined,
+      "Cascade",
+    ]);
+    const text = printSchemaDocument(graph.document);
+    expect(text).toContain(
+      'as A[] @relationship(type: "HAS_A", direction: OUT, onDelete: Cascade)',
+    );
+    expect(text).toContain('ds D[] @relationship(type: "HAS_D", direction: OUT)');
+  });
+
   it("turns foreign keys into edges, not properties", () => {
     const graph = authSchema({});
     const session = graph.schema.nodes.find((n) => n.name === "Session")!;
@@ -101,7 +137,9 @@ describe("authSchema", () => {
       'organization Organization @relationship(type: "HAS_MEMBER", direction: IN)',
     );
     expect(text).toContain('inviter User @relationship(type: "HAS_INVITATION", direction: IN)');
-    expect(text).toContain('members Member[] @relationship(type: "HAS_MEMBER", direction: OUT)');
+    expect(text).toContain(
+      'members Member[] @relationship(type: "HAS_MEMBER", direction: OUT, onDelete: Cascade)',
+    );
   });
 
   it("gives distinct edge types and names when a model references the same parent twice", () => {

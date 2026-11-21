@@ -10,7 +10,7 @@ import {
   type JoinConfig,
 } from "better-auth/adapters";
 import type { BetterAuthOptions } from "better-auth/types";
-import { createOrm, type CyphraClient } from "@cyphra/runtime";
+import { RestrictError, createOrm, type CyphraClient } from "@cyphra/runtime";
 import { mergeAuthSchema } from "./merge.js";
 import {
   deriveAuthGraph,
@@ -177,31 +177,23 @@ function createOperations(
     }
 
     /**
-     * Delete the nodes of `m` matching `where`. Children are handled first, in the same
-     * transaction, according to `references.onDelete`: `cascade` (Better Auth's default) deletes
-     * them, `restrict` / `no action` refuse the delete, `set null` / `set default` just lose the
-     * edge (DETACH DELETE removes it).
+     * Delete the nodes of `m` matching `where`. The schema carries each foreign key's
+     * `references.onDelete` as an `onDelete` rule on the parent's list field, and the ORM applies
+     * it in the same transaction: `cascade` (Better Auth's default) deletes the children,
+     * `restrict` / `no action` refuse the delete, `set null` / `set default` just lose the edge.
      */
-    async function deleteWhere(
-      tx: Db,
-      m: ModelMapping,
-      where: Args,
-      lineage: ReadonlySet<string> = new Set(),
-    ): Promise<number> {
-      const next = new Set([...lineage, m.key]);
-      for (const { child, fk } of childrenOf(m)) {
-        const childWhere = { [fk.relation]: { is: where } };
-        if (fk.onDelete === "restrict" || fk.onDelete === "no action") {
-          if ((await delegate(tx, child).count({ where: childWhere })) > 0) {
-            fail(
-              `cannot delete ${m.dbName}: ${child.dbName}.${fk.name} references it (onDelete: "${fk.onDelete}").`,
-            );
-          }
-        } else if (fk.onDelete === "cascade" && !lineage.has(child.key)) {
-          await deleteWhere(tx, child, childWhere, next);
-        }
+    async function deleteWhere(tx: Db, m: ModelMapping, where: Args): Promise<number> {
+      try {
+        return (await delegate(tx, m).deleteMany({ where })).count;
+      } catch (e) {
+        if (!(e instanceof RestrictError)) throw e;
+        const parent = [...graph.models.values()].find((x) => x.node === e.model);
+        const hit = parent && childrenOf(parent).find(({ fk }) => fk.inverse === e.relation);
+        if (!parent || !hit) throw e;
+        fail(
+          `cannot delete ${parent.dbName}: ${hit.child.dbName}.${hit.fk.name} references it (onDelete: "${hit.fk.onDelete}").`,
+        );
       }
-      return (await delegate(tx, m).deleteMany({ where })).count;
     }
 
     /** Find one matching node and take its write lock; `null` if it is gone by then. */

@@ -721,7 +721,7 @@ await db.post.update({ where: { id }, data: { author: { connect: { id: alice.id 
 await db.post.update({ where: { id }, data: { author: { disconnect: true } } });
 
 await db.user.upsert({ where: { email }, create: { email }, update: { name: "again" } });
-await db.user.delete({ where: { id } }); // DETACH DELETE, returns the deleted node
+await db.user.delete({ where: { id } }); // returns the deleted node
 await db.user.createMany({ data: [{ email: "a@x.io" }, { email: "b@x.io" }] });
 await db.user.updateMany({ where: { name: null }, data: { name: "anonymous" } });
 await db.user.deleteMany({ where: { email: { endsWith: "@spam.io" } } });
@@ -742,6 +742,37 @@ created; on an existing edge only the `$edge` properties you pass are updated.
 upserts of the same key yield one node as long as the key has a uniqueness constraint, which
 `@id` / `@unique` / `@@unique` create through `cyphra push` or a migration. See
 [Upsert with MERGE](/cypher/upsert-merge#upsert-with-cyphra).
+
+### Deleting
+
+`delete` removes one node (by a unique key, `NotFoundError` when none matches) and returns it as it
+was; `deleteMany` removes every match and returns `{ count }`. Edges are removed with the node
+(`DETACH DELETE`). [`onDelete` rules](/schema#ondelete-rules) in the schema decide what happens to
+the linked nodes:
+
+```ts
+// schema: sessions Session[] @relationship(type: "HAS_SESSION", onDelete: Cascade)
+//         invoices Invoice[] @relationship(type: "BILLED", onDelete: Restrict)
+try {
+  await db.user.delete({ where: { id } }); // deletes the user's sessions too
+} catch (e) {
+  if (e instanceof RestrictError) console.log(e.model, e.relation, e.target, e.count);
+  // "User", "invoices", "Invoice", 2: nothing was deleted
+}
+```
+
+- `Cascade` deletes the linked nodes, then applies their own rules, recursively. Each node is
+  visited once, so cycles (a node linked to itself, a ring of nodes) end.
+- `Restrict` throws a `RestrictError` while linked nodes exist, before anything is deleted, on the
+  root nodes as well as on nodes a cascade reaches. Linked nodes that the same operation deletes
+  (a `deleteMany` matching both ends, a cascade) do not count.
+- `SetNull`, the default, only removes the edges.
+- `deleteMany` counts the nodes its `where` matched, not the cascaded ones.
+
+Everything happens in the delete's transaction (or your `$transaction`). The nodes are
+write-locked before their edges are read: a concurrent write that links a new node to one of them
+waits for the delete, so a cascade or a `Restrict` check never misses it. A model with no rule (on
+itself or on the models its cascades reach) is deleted in a single statement, as before.
 
 A nested write runs in **one write transaction**: if any step fails (for example a `connect` target
 does not exist) nothing is written.
@@ -859,7 +890,10 @@ SET n.createdAt = datetime({datetime: n.createdAt, timezone: "Z"})
 
 - `CyphraValidationError`: unknown field or operator, wrong value type, missing required field, or missing unique key.
 - `NotFoundError`: `update` / `delete` / `connect` / `findUniqueOrThrow` target not found.
-- `CyphraError` (the base class of both): for example an `upsert` whose `where` has extra conditions
+- `RestrictError`: a `delete` / `deleteMany` refused by an
+  [`onDelete: Restrict`](/schema#ondelete-rules) rule, with `model`, `relation`, `target` and
+  `count`.
+- `CyphraError` (the base class of all three): for example an `upsert` whose `where` has extra conditions
   that the existing node does not match.
 
 Field names, labels and relationship types always come from your schema and unknown keys are rejected,

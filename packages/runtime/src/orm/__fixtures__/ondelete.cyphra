@@ -1,0 +1,58 @@
+// onDelete rules: cascade chains, cycles, restrict and set-null.
+
+node OdUser {
+  id       String      @id @default(cuid())
+  email    String      @unique
+  sessions OdSession[] @relationship(type: "OD_HAS_SESSION", direction: OUT, onDelete: Cascade)
+  posts    OdPost[]    @relationship(type: "OD_AUTHORED", direction: OUT, onDelete: Cascade)
+  invoices OdInvoice[] @relationship(type: "OD_BILLED", direction: OUT, onDelete: Restrict)
+  reviews  OdPost[]    @relationship(type: "OD_REVIEWED", direction: OUT)
+  manager  OdUser?     @relationship(type: "OD_MANAGES", direction: IN, onDelete: Restrict)
+}
+
+node OdSession {
+  id    String  @id @default(cuid())
+  token String  @unique
+  user  OdUser? @relationship(type: "OD_HAS_SESSION", direction: IN)
+}
+
+node OdPost {
+  id       String      @id @default(cuid())
+  title    String
+  author   OdUser?     @relationship(type: "OD_AUTHORED", direction: IN)
+  reviewer OdUser?     @relationship(type: "OD_REVIEWED", direction: IN)
+  comments OdComment[] @relationship(type: "OD_ON", direction: IN, onDelete: Cascade)
+  invoice  OdInvoice?  @relationship(type: "OD_FOR", direction: IN, onDelete: Restrict)
+}
+
+node OdComment {
+  id      String      @id @default(cuid())
+  body    String
+  post    OdPost?     @relationship(type: "OD_ON", direction: OUT)
+  replies OdComment[] @relationship(type: "OD_REPLY", direction: IN, onDelete: Cascade)
+  parent  OdComment?  @relationship(type: "OD_REPLY", direction: OUT)
+}
+
+node OdInvoice {
+  id     String  @id @default(cuid())
+  amount Int
+  user   OdUser? @relationship(type: "OD_BILLED", direction: IN)
+  post   OdPost? @relationship(type: "OD_FOR", direction: OUT)
+}
+
+// A cycle: deleting any ring node deletes the whole ring.
+node OdRing {
+  id   String  @id @default(cuid())
+  name String  @unique
+  next OdRing? @relationship(type: "OD_NEXT", direction: OUT, onDelete: Cascade)
+}
+
+// No rules: the plain DETACH DELETE path.
+node OdPlain {
+  id   String   @id @default(cuid())
+  tags OdTag[]  @relationship(type: "OD_TAGGED", direction: OUT)
+}
+
+node OdTag {
+  id String @id @default(cuid())
+}

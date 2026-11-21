@@ -158,6 +158,17 @@ describe("diagnostics", () => {
       "dot",
     ],
     ["Json list", BASE.replace("bio   String?", "bio   Json[]"), "Json"],
+    ["onDelete rule", BASE.replace("direction: IN)", "direction: IN, onDelete: Drop)"), "Drop"],
+    [
+      "unknown @relationship argument",
+      BASE.replace("direction: IN)", "direction: IN, ondelete: Cascade)"),
+      "ondelete",
+    ],
+    [
+      "@relationship argument given twice",
+      BASE.replace("direction: IN)", "direction: IN, onDelete: Cascade, onDelete: Restrict)"),
+      "Restrict",
+    ],
   ];
 
   it.each(cases)("%s: same message as cyphra validate, exact range", (_name, text, underlined) => {
@@ -227,10 +238,15 @@ describe("completion", () => {
           "posts Post[] @relationship(|",
         ),
       ),
-    ).toEqual(["type", "direction"]);
+    ).toEqual(["type", "direction", "onDelete"]);
     expect(labels(BASE.replace("direction: OUT", "direction: |"))).toEqual(["OUT", "IN"]);
+    expect(labels(BASE.replace("direction: OUT", "direction: OUT, onDelete: |"))).toEqual([
+      "Cascade",
+      "Restrict",
+      "SetNull",
+    ]);
     expect(labels(BASE.replace('type: "AUTHORED", direction: OUT', 'type: "AUTHORED", |'))).toEqual(
-      ["direction"],
+      ["direction", "onDelete"],
     );
     expect(labels(BASE.replace('type: "AUTHORED", direction: OUT', "type: |"))).toEqual([
       '"AUTHORED"',
@@ -326,6 +342,9 @@ describe("hover", () => {
     expect(hover(BASE.replace("since DateTime", "since Date|Time"))).toContain("ZONED DATETIME");
     expect(hover(BASE.replace("@unique", "@uni|que"))).toContain("**@unique**");
     expect(hover(BASE.replace("direction: IN", "direc|tion: IN"))).toContain("`OUT`");
+    expect(hover(BASE.replace("direction: OUT)", "direction: OUT, onDel|ete: Cascade)"))).toContain(
+      "`Restrict` refuses",
+    );
     expect(hover(BASE.replace("@@fulltext", "@@full|text"))).toContain("full-text index");
   });
 
@@ -341,6 +360,15 @@ describe("hover", () => {
   it("summarizes relation targets and enums", () => {
     const h = hover(BASE.replace("posts Post[]", "po|sts Post[]"))!;
     expect(h).toContain("Relation to many **Post** through `AUTHORED` (OUT)");
+    expect(h).toContain("On delete: **SetNull**");
+    expect(
+      hover(
+        BASE.replace("posts Post[]", "po|sts Post[]").replace(
+          "direction: OUT)",
+          "direction: OUT, onDelete: Cascade)",
+        ),
+      ),
+    ).toContain("On delete: **Cascade** (deleting a User deletes its Post nodes)");
     expect(h).toContain("node Post {");
     expect(hover(BASE.replace("author User?", "author Us|er?"))).toContain("node User {");
     expect(hover(BASE.replace("role  Role", "role  Ro|le"))).toContain("enum Role { ADMIN USER }");

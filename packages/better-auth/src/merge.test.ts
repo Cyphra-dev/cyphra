@@ -55,7 +55,7 @@ describe("mergeAuthSchema", () => {
     // Better Auth fields are added to User, and the missing auth nodes are appended.
     expect(out).toContain("  emailVerified Boolean\n");
     expect(out).toContain(
-      '  sessions Session[] @relationship(type: "HAS_SESSION", direction: OUT)',
+      '  sessions Session[] @relationship(type: "HAS_SESSION", direction: OUT, onDelete: Cascade)',
     );
     expect(out).toMatch(/node Session \{[\s\S]*user User @relationship\(type: "HAS_SESSION"/);
 
@@ -93,7 +93,7 @@ describe("mergeAuthSchema", () => {
     expect(out).toContain("  image String? // custom comment\n");
     expect(out).toContain("  twoFactorEnabled Boolean?\n");
     expect(out).toContain(
-      '  twoFactors TwoFactor[] @relationship(type: "HAS_TWO_FACTOR", direction: OUT)',
+      '  twoFactors TwoFactor[] @relationship(type: "HAS_TWO_FACTOR", direction: OUT, onDelete: Cascade)',
     );
     expect(out).toContain("node TwoFactor {");
     expect(out).toContain('  projects Project[] @relationship(type: "OWNS", direction: OUT)');
@@ -155,7 +155,7 @@ node Ghost {
 }
 `;
     expect(mergeAuthSchema(clash, core)).toContain(
-      '  sessions Session[] @relationship(type: "HAS_SESSION", direction: OUT)',
+      '  sessions Session[] @relationship(type: "HAS_SESSION", direction: OUT, onDelete: Cascade)',
     );
     expect(() => mergeAuthSchema("node User {", core)).toThrow();
   });

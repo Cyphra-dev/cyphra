@@ -232,7 +232,8 @@ export const schemaModel: SchemaModel = {
           "relType": "HAS_SESSION",
           "direction": "OUT",
           "many": true,
-          "optional": false
+          "optional": false,
+          "onDelete": "Cascade"
         },
         {
           "kind": "relation",
@@ -241,7 +242,8 @@ export const schemaModel: SchemaModel = {
           "relType": "HAS_ACCOUNT",
           "direction": "OUT",
           "many": true,
-          "optional": false
+          "optional": false,
+          "onDelete": "Cascade"
         }
       ]
     },

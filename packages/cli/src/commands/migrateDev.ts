@@ -41,7 +41,12 @@ function timestamp(d = new Date()): string {
   return `${d.getUTCFullYear()}${p(d.getUTCMonth() + 1)}${p(d.getUTCDate())}${p(d.getUTCHours())}${p(d.getUTCMinutes())}${p(d.getUTCSeconds())}`;
 }
 
+function printNotes(plan: MigrationPlan): void {
+  for (const n of plan.notes ?? []) console.log(`note: ${n}`);
+}
+
 function printWarnings(plan: MigrationPlan): void {
+  printNotes(plan);
   for (const w of plan.warnings) console.warn(`warning: ${w}`);
   const destructive = plan.steps.filter((s) => s.kind === "destructive").length;
   if (destructive) {
@@ -56,6 +61,7 @@ export async function runMigrateDiff(config: CyphraConfig): Promise<void> {
   const { plan } = await planMigration(config);
   if (isEmptyPlan(plan)) {
     console.log("No schema changes since the last migration.");
+    printNotes(plan);
     return;
   }
   console.log(
@@ -77,6 +83,7 @@ export async function createMigrationFromSchema(
   const { plan, next } = await planMigration(config);
   if (isEmptyPlan(plan)) {
     console.log("No schema changes since the last migration.");
+    printNotes(plan);
     return null;
   }
   const safe = (name ?? "schema").replace(/[^a-zA-Z0-9_-]/g, "_") || "schema";

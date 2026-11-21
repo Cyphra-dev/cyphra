@@ -8,8 +8,8 @@ node User {
   image String?
   createdAt DateTime
   updatedAt DateTime
-  sessions Session[] @relationship(type: "HAS_SESSION", direction: OUT)
-  accounts Account[] @relationship(type: "HAS_ACCOUNT", direction: OUT)
+  sessions Session[] @relationship(type: "HAS_SESSION", direction: OUT, onDelete: Cascade)
+  accounts Account[] @relationship(type: "HAS_ACCOUNT", direction: OUT, onDelete: Cascade)
 }
 
 node Project {

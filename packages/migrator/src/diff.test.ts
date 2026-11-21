@@ -517,3 +517,30 @@ describe("composite constraints and indexes", () => {
     ]);
   });
 });
+
+describe("onDelete rule changes", () => {
+  const schema = (rule: string) =>
+    model(`
+      node User {
+        id       String    @id
+        sessions Session[] @relationship(type: "HAS_SESSION"${rule})
+        posts    Post[]    @relationship(type: "WROTE")
+      }
+      node Session { id String @id }
+      node Post { id String @id }
+    `);
+
+  it("are noted, with no migration step", () => {
+    const plan = diffSchemaModels(schema(""), schema(", onDelete: Cascade"));
+    expect(isEmptyPlan(plan)).toBe(true);
+    expect(plan.notes).toEqual([
+      "User.sessions: onDelete SetNull → Cascade (no migration step: the client applies onDelete rules when it deletes).",
+    ]);
+    expect(renderMigrationSource(plan, { name: "x" })).toContain(
+      "// NOTES:\n// - User.sessions: onDelete SetNull → Cascade",
+    );
+    // An explicit SetNull is the default: nothing to note.
+    expect(diffSchemaModels(schema(""), schema(", onDelete: SetNull")).notes).toBeUndefined();
+    expect(diffSchemaModels(schema(", onDelete: Restrict"), schema("")).notes).toHaveLength(1);
+  });
+});
