@@ -9,7 +9,7 @@ export type Occurrence = Span & {
 
 export const IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
-/** Declaration names and every place a field type, `from` or `to` names them. */
+/** Declaration names and every place a field type, `from`, `to` or `implements` names them. */
 export function occurrences(doc: SchemaDocument): Occurrence[] {
   const out: Occurrence[] = [];
   const add = (name: string, s: Span | undefined, declaration = false) => {
@@ -21,6 +21,8 @@ export function occurrences(doc: SchemaDocument): Occurrence[] {
     if (d.kind === "Relationship") {
       add(d.from, span(d.fromLoc));
       add(d.to, span(d.toLoc));
+    } else {
+      (d.implements ?? []).forEach((n, i) => add(n, span(d.implementsLocs?.[i])));
     }
     for (const f of d.fields) {
       if (f.kind === "Relational") add(f.target, typeNameSpan(f));

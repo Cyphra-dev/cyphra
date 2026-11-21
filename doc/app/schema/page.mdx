@@ -1,5 +1,5 @@
 ---
-description: "The .cyphra schema DSL for Neo4j: nodes, relationships, enums, spatial, temporal, Json, BigInt and Vector fields, constraints, indexes and validation rules."
+description: "The .cyphra schema DSL for Neo4j: nodes, interfaces, relationships, enums, spatial, temporal, Json and Vector fields, constraints, indexes and validation."
 ---
 
 # Schema DSL
@@ -389,6 +389,70 @@ node Session {
   different rules are a validation error.
 - Rules need no DDL: `cyphra migrate dev` notes rule changes but generates no step for them. They
   are enforced by the Cyphra client only: a raw Cypher `DETACH DELETE` ignores them.
+
+## Interfaces and multiple labels
+
+A node often belongs to several kinds at once: an employee and a customer are both people. Declare
+the shared part as an `interface` and let nodes implement it:
+
+```cyphra
+interface Person {
+  id      String  @id @default(cuid())
+  email   String  @unique
+  name    String
+  manager Person? @relationship(type: "MANAGES", direction: IN)
+
+  @@fulltext([name])
+}
+
+node Employee implements Person {
+  salary Int @default(0)
+}
+
+node Customer implements Person {
+  tier String @default("free")
+}
+```
+
+- **Labels.** An interface is a label named like it. A node carries its own label and the label of
+  every interface it implements: Cyphra writes an `Employee` as `(:Employee:Person)` and matches it
+  on both labels. An interface is abstract: it can be queried
+  ([`db.person.findMany()`](/client#querying-interfaces) returns every employee and customer) but
+  never created.
+- **Inherited fields.** `node X implements A, B` gets every field of `A`, then of `B`, before its
+  own fields: scalars, relations, and their decorators. `Employee` above has `id`, `email`, `name`,
+  `manager` and `salary`. Model attributes of the node can name inherited fields
+  (`@@unique([email, salary])`).
+- **The body** of an interface is the body of a node: scalar and relation fields, `@@unique`,
+  `@@index` and `@@fulltext`. Relations can target an interface (`manager Person?`,
+  `members Person[]`), and a `relationship { … }` model can name one in `from` / `to`.
+- **Constraints and indexes** are created once, on the label that declares them. `@unique` on
+  `Person.email` is one constraint, `Person_email_unique`, on `:Person`: an email is unique across
+  employees and customers. Implementations get no copy. An inherited `@@unique` stays a
+  [unique key](/client#composite-unique-keys) of the implementation, and an inherited `@@fulltext`
+  or `@vectorIndex` can be searched from the implementation (`db.employee.search(…)` keeps the
+  nodes labelled `:Employee`).
+- **Extra labels.** An interface without fields is just a label that its implementations carry:
+
+  ```cyphra
+  interface Archivable {}
+
+  node Document implements Archivable {
+    id String @id
+  }
+  ```
+
+These are validation errors: implementing something that is not an interface (or the same one
+twice), redeclaring an inherited field, two interfaces of one node declaring the same field, more
+than one `@id` across a node and its interfaces, and an interface implementing another.
+
+[Migrations](/migrations#interfaces-and-labels) add the interface label to existing nodes when a
+node starts implementing it, and [`cyphra pull`](/cli#cyphra-pull) recognizes shared labels as
+interfaces.
+
+Not supported yet: interfaces that extend other interfaces, narrowing an inherited field on an
+implementation, filtering an interface query by implementation (query the implementation
+instead), labels added or removed at runtime, and unions of unrelated models.
 
 ## Decorators
 

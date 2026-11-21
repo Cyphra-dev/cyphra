@@ -73,12 +73,14 @@ export function tokenize(text: string): Token[] {
   return tokens;
 }
 
-/** A `node` / `relationship` / `enum` block found by {@link scanDeclarations}. */
+/** A `node` / `interface` / `relationship` / `enum` block found by {@link scanDeclarations}. */
 export type ScannedDeclaration = {
-  readonly kind: "node" | "relationship" | "enum";
+  readonly kind: "node" | "interface" | "relationship" | "enum";
   readonly name: string;
   readonly keyword: Token;
   readonly nameToken: Token;
+  /** Interface names after `implements` (`node X implements A, B { … }`), possibly empty. */
+  readonly implements: readonly Token[];
   /** Index of the `{` token (or -1 when not typed yet). */
   readonly open: number;
   /** Index of the matching `}` token (or -1 when not closed). */
@@ -96,7 +98,32 @@ export type ScannedField = {
   readonly list: boolean;
 };
 
-const DECL_KEYWORDS = new Set(["node", "relationship", "enum"]);
+const DECL_KEYWORDS = new Set(["node", "interface", "relationship", "enum"]);
+
+/**
+ * Skip an `implements A, B` clause starting at `from` (the token after a declaration's name):
+ * returns the interface name tokens and the index of the first token after the clause.
+ */
+export function scanImplements(
+  tokens: readonly Token[],
+  from: number,
+): { names: Token[]; next: number } {
+  const names: Token[] = [];
+  const kw = nextSignificant(tokens, from);
+  if (!kw || kw.token.kind !== "ident" || kw.token.text !== "implements") {
+    return { names, next: from };
+  }
+  let i = kw.index + 1;
+  for (;;) {
+    const n = nextSignificant(tokens, i);
+    if (!n || n.token.kind !== "ident") return { names, next: i };
+    names.push(n.token);
+    i = n.index + 1;
+    const comma = nextSignificant(tokens, i);
+    if (!comma || comma.token.text !== ",") return { names, next: i };
+    i = comma.index + 1;
+  }
+}
 
 /** Find top-level declarations, tolerating unclosed blocks. */
 export function scanDeclarations(tokens: readonly Token[]): ScannedDeclaration[] {
@@ -111,15 +138,16 @@ export function scanDeclarations(tokens: readonly Token[]): ScannedDeclaration[]
     if (t.kind !== "ident" || !DECL_KEYWORDS.has(t.text) || (depth > 0 && !atLineStart)) continue;
     const nameToken = tokens[i + 1];
     if (!nameToken || nameToken.kind !== "ident") continue;
+    const header = scanImplements(tokens, i + 2);
     if (depth > 0) {
       // Only when followed by `{` on the same line (`node X {`), so a field named `node` is safe.
-      const next = nextSignificant(tokens, i + 2);
+      const next = nextSignificant(tokens, header.next);
       if (!next || next.token.text !== "{") continue;
       depth = 0;
     }
     let open = -1;
     let close = -1;
-    let j = i + 2;
+    let j = header.next;
     const next = nextSignificant(tokens, j);
     if (next && next.token.text === "{") {
       open = next.index;
@@ -138,19 +166,25 @@ export function scanDeclarations(tokens: readonly Token[]): ScannedDeclaration[]
           DECL_KEYWORDS.has(u.text) &&
           tokens[j - 1]?.kind === "newline" &&
           tokens[j + 1]?.kind === "ident" &&
-          nextSignificant(tokens, j + 2)?.token.text === "{"
+          nextSignificant(tokens, scanImplements(tokens, j + 2).next)?.token.text === "{"
         ) {
           break;
         }
       }
     }
+    const lastHeader = header.names[header.names.length - 1] ?? nameToken;
     const end =
-      close >= 0 ? tokens[close]!.end : (tokens[open >= 0 ? j - 1 : i + 1]?.end ?? nameToken.end);
+      close >= 0
+        ? tokens[close]!.end
+        : open >= 0
+          ? (tokens[j - 1]?.end ?? nameToken.end)
+          : lastHeader.end;
     out.push({
       kind: t.text as ScannedDeclaration["kind"],
       name: nameToken.text,
       keyword: t,
       nameToken,
+      implements: header.names,
       open,
       close,
       end,

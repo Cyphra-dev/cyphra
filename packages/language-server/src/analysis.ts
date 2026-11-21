@@ -131,14 +131,17 @@ export function locateValidationError(message: string, doc: SchemaDocument): Spa
     const d = declNamed(doc, dup[1]!, 1) ?? declNamed(doc, dup[1]!);
     return span(d?.nameLoc);
   }
-  const owner = /^(Node|Relationship|Enum) "([^"]+)"/.exec(message);
+  const owner = /^(Node|Interface|Relationship|Enum) "([^"]+)"/.exec(message);
   if (!owner) return undefined;
-  const decl = doc.declarations.find(
-    (d) => d.name === owner[2] && d.kind === (owner[1] as Declaration["kind"]),
-  );
+  const kind = owner[1] === "Interface" ? "Node" : (owner[1] as Declaration["kind"]);
+  const decl = doc.declarations.find((d) => d.name === owner[2] && d.kind === kind);
   if (!decl) return undefined;
   const rest = message.slice(owner[0].length);
   const fallback = span(decl.nameLoc);
+  if (decl.kind === "Node") {
+    const s = locateImplementsError(rest, decl);
+    if (s) return s;
+  }
 
   if (decl.kind === "Enum") {
     const value = /duplicate value (\S+?)\.?$/.exec(rest);
@@ -175,6 +178,25 @@ export function locateValidationError(message: string, doc: SchemaDocument): Spa
     return locateFieldError(rest.slice(field[0].length), f) ?? span(f.nameLoc) ?? fallback;
   }
   return fallback;
+}
+
+/** `implements` errors: the interface name in the list the message is about. */
+function locateImplementsError(rest: string, decl: NodeDeclaration): Span | undefined {
+  const names = decl.implements ?? [];
+  const at = (name: string | undefined, nth = 0) => {
+    const idx = names.map((n, i) => (n === name ? i : -1)).filter((i) => i >= 0);
+    return span(decl.implementsLocs?.[idx[nth] ?? idx[0] ?? -1]);
+  };
+  const notInterface = /^: implements (\w+), which is not an interface/.exec(rest);
+  if (notInterface) return at(notInterface[1]);
+  const twice = /^: implements (\w+) twice/.exec(rest);
+  if (twice) return at(twice[1], 1);
+  if (/^: an interface cannot implement/.test(rest)) return at(names[0]);
+  const both = /^: field "[^"]+" is declared by both \w+ and (\w+)/.exec(rest);
+  if (both) return at(both[1]);
+  const ids = /^: \w+ and (\w+) both declare an @id/.exec(rest);
+  if (ids) return at(ids[1]);
+  return undefined;
 }
 
 function locateAttributeError(

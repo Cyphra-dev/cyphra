@@ -696,6 +696,45 @@ index, a full-text index sees the nodes created or changed earlier in the same t
 is `eventuallyConsistent`, in which case it only sees committed writes, a moment after commit). The
 `SearchArgs`, `SearchMode` and `SearchResult` types are exported.
 
+## Querying interfaces
+
+An [interface](/schema#interfaces-and-multiple-labels) has a delegate like a node (`db.person`
+for `interface Person`) with every read operation: `findMany`, `findFirst`, `findUnique`, `count`,
+`aggregate`, `groupBy`, `traverse`, `shortestPath`, `search` and `findSimilar`. It matches every
+node with the interface's label, so the results are its implementations, as a union discriminated
+by `__typename`:
+
+```ts
+// schema: interface Person { … }  node Employee implements Person { salary Int }
+//         node Customer implements Person { tier String }
+const people = await db.person.findMany({ where: { name: { startsWith: "A" } } });
+
+for (const p of people) {
+  if (p.__typename === "Employee")
+    console.log(p.name, p.salary); // salary: number
+  else console.log(p.name, p.tier); // "Customer": tier: string
+}
+```
+
+- `__typename` comes from the node's labels. It is only on results of interface queries (and of
+  relations whose target is an interface, such as `include: { manager: true }`); results of
+  `db.employee` keep their shape, inherited fields included.
+- Without `select`, each result has every scalar field of its implementation. `include` loads the
+  interface's relations; an implementation's own relations (`Employee.team`) are loaded through
+  `db.employee`.
+- `select` picks interface fields and relations only; `__typename` is always returned.
+- `where`, `orderBy` and `_count` take the interface's fields and relations.
+- A node that has the interface label but no implementation label (written outside Cyphra) comes
+  back with `__typename` set to the interface name and only the interface's fields.
+
+Writes: an interface has no `create`, `createMany` or `upsert` (they are not in its type and throw
+a `CyphraValidationError`), and a nested `create` into a relation that targets an interface is
+rejected: create an implementation instead. `connect` works by the interface's unique fields
+(`manager: { connect: { email: "boss@acme.io" } }`), and `update`, `updateMany`, `delete` and
+`deleteMany` work through the interface on its fields. Deleting through an interface applies the
+[`onDelete` rules](#deleting) of each node's implementation, so `db.person.delete(…)` on an
+employee still cascades along the employee's own `Cascade` relations.
+
 ## Writing
 
 ```ts

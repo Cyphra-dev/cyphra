@@ -217,8 +217,8 @@ describe("diagnostics", () => {
 
 describe("completion", () => {
   it("offers declaration keywords at the top level", () => {
-    expect(labels("|")).toEqual(["node", "relationship", "enum"]);
-    expect(labels(BASE + "\nno|")).toEqual(["node", "relationship", "enum"]);
+    expect(labels("|")).toEqual(["node", "interface", "relationship", "enum"]);
+    expect(labels(BASE + "\nno|")).toEqual(["node", "interface", "relationship", "enum"]);
     expect(labels("node |")).toEqual([]);
   });
 
@@ -530,5 +530,124 @@ describe("formatting", () => {
     );
     expect(formatText("node A {\n  id String @id\n}\n")).toBeUndefined();
     expect(formatText("node A {")).toBeUndefined();
+  });
+});
+
+const IFACE = `interface Person {
+  id      String  @id @default(cuid())
+  email   String  @unique
+  name    String
+  manager Person? @relationship(type: "MANAGES", direction: IN)
+}
+
+interface Archivable {}
+
+node Employee implements Person, Archivable {
+  salary Int
+  team   Team? @relationship(type: "MEMBER_OF", direction: OUT)
+
+  @@index([name, salary])
+}
+
+node Team {
+  id    String  @id
+  owner Person? @relationship(type: "OWNS", direction: IN)
+}
+`;
+
+describe("interfaces", () => {
+  const hover = (marked: string) => {
+    const { text, offset } = at(marked);
+    return hoverAt(analyze(text), offset)?.markdown;
+  };
+
+  it("analyzes interfaces without problems", () => {
+    expect(analyze(IFACE).problem).toBeUndefined();
+  });
+
+  it("scans the implements clause, also while the text does not parse", () => {
+    const a = analyze(IFACE.replace("salary Int", "salary @"));
+    const e = a.scanned.find((d) => d.name === "Employee")!;
+    expect(e.kind).toBe("node");
+    expect(e.open).toBeGreaterThan(0);
+    expect(e.implements.map((t) => t.text)).toEqual(["Person", "Archivable"]);
+    expect(a.scanned.find((d) => d.name === "Person")!.kind).toBe("interface");
+    expect(outline(a).map((s) => `${s.kind} ${s.name}`)).toEqual([
+      "interface Person",
+      "interface Archivable",
+      "node Employee",
+      "node Team",
+    ]);
+  });
+
+  it("offers implements after a node name, then interface names", () => {
+    expect(labels(IFACE + "\nnode Customer |")).toEqual(["implements"]);
+    expect(labels(IFACE + "\nnode Customer implements |")).toEqual(["Person", "Archivable"]);
+    expect(labels(IFACE + "\nnode Customer implements Person, A|")).toEqual(["Archivable"]);
+    expect(labels(IFACE + "\nnode Customer implements Person |")).toEqual([]);
+  });
+
+  it("offers interfaces as relation targets and inherited fields in @@index([…])", () => {
+    const l = labels(IFACE.replace("  salary Int", "  salary Int\n  boss |"));
+    expect(l).toEqual(expect.arrayContaining(["Person", "Employee", "Team"]));
+    expect(labels(IFACE.replace("@@index([name, salary])", "@@index([|])"))).toEqual([
+      "id",
+      "email",
+      "name",
+      "salary",
+    ]);
+    expect(labels(IFACE.replace("@@index([name, salary])", "@@fulltext([|])"))).toEqual([
+      "id",
+      "email",
+      "name",
+    ]);
+  });
+
+  it("goes to, finds and renames interfaces named by implements", () => {
+    const { text, offset } = at(IFACE.replace("implements Person", "implements Per|son"));
+    const a = analyze(text);
+    const def = definitionAt(a, offset)!;
+    expect(def.start).toBe(text.indexOf("interface Person") + "interface ".length);
+    expect(referencesAt(a, offset, false)).toHaveLength(3);
+    const edits = renameEdits(a, offset, "Human", BUILTIN_TYPES)!;
+    const out = [...edits]
+      .sort((x, y) => y.start - x.start)
+      .reduce((t, s) => t.slice(0, s.start) + "Human" + t.slice(s.end), text);
+    expect(out).toContain("node Employee implements Human, Archivable {");
+    expect(analyze(out).problem).toBeUndefined();
+  });
+
+  it("documents interface and implements keywords and interface fields", () => {
+    expect(hover(IFACE.replace("interface Person", "inter|face Person"))).toContain(
+      "abstract node model",
+    );
+    expect(hover(IFACE.replace("implements Person", "imple|ments Person"))).toContain(
+      "inherits the fields",
+    );
+    expect(hover(IFACE.replace("  email   String", "  em|ail   String"))).toContain(
+      "Field of interface **Person**",
+    );
+    const symbols = outline(analyze(IFACE));
+    expect(symbols[2]!.detail).toBe("implements Person, Archivable");
+  });
+
+  it.each([
+    [IFACE.replace("Person, Archivable", "Person, Team"), "Team"],
+    [IFACE.replace("Person, Archivable", "Person, Person"), "Person"],
+    [IFACE.replace("  salary Int", "  name String"), "name"],
+    [
+      IFACE.replace("interface Archivable {}", "interface Archivable implements Person {}"),
+      "Person",
+    ],
+  ])("points implements errors at the name they are about (%#)", (text, underlined) => {
+    const p = problem(text)!;
+    expect(p.message).toBe(cliError(text));
+    expect(p.underlined).toBe(underlined);
+  });
+
+  it("points a duplicated interface at its second occurrence", () => {
+    const text = IFACE.replace("Person, Archivable", "Person, Person");
+    const p = analyze(text).problem!;
+    expect(p.span.start).toBe(text.indexOf("Person, Person") + "Person, ".length);
   });
 });

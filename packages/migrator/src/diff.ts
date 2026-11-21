@@ -116,8 +116,12 @@ export type DdlObject = {
  */
 export function ddlObjectsFromModel(model: SchemaModel): DdlObject[] {
   const out: DdlObject[] = [];
+  // What a node inherits from an interface is indexed and constrained on the interface's label,
+  // which covers every implementation: only the declaring model gets the DDL.
+  const own = <T extends { readonly inheritedFrom?: string }>(xs: readonly T[] | undefined) =>
+    (xs ?? []).filter((x) => !x.inheritedFrom);
   for (const n of model.nodes) {
-    const scalars = n.fields.filter((f): f is ResolvedScalarField => f.kind === "scalar");
+    const scalars = own(n.fields).filter((f): f is ResolvedScalarField => f.kind === "scalar");
     for (const f of scalars) {
       const target = `FOR (n:${q(n.label)})`;
       const vector = vectorIndexStatement(n.label, f);
@@ -150,7 +154,7 @@ export function ddlObjectsFromModel(model: SchemaModel): DdlObject[] {
     }
   }
   for (const n of model.nodes) {
-    for (const c of n.compoundUniques ?? []) {
+    for (const c of own(n.compoundUniques)) {
       out.push({ name: c.name, kind: "constraint", create: compoundUniqueStatement(n.label, c) });
     }
     for (const i of n.compoundIndexes ?? []) {
@@ -158,7 +162,7 @@ export function ddlObjectsFromModel(model: SchemaModel): DdlObject[] {
     }
   }
   for (const n of model.nodes) {
-    for (const index of n.fulltextIndexes ?? []) {
+    for (const index of own(n.fulltextIndexes)) {
       out.push({ name: index.name, kind: "index", create: fulltextIndexStatement(n.label, index) });
     }
   }
@@ -392,6 +396,9 @@ export function diffSchemaModels(prev: SchemaModel, next: SchemaModel): Migratio
   const removedNodes = prev.nodes.filter((n) => !nextNodes.has(n.name));
   const addedNodes = next.nodes.filter((n) => !prevNodes.has(n.name));
   for (const r of removedNodes) {
+    // An interface's nodes are its implementations' nodes: losing the interface only drops the
+    // label (see labelSteps), never the nodes.
+    if (r.abstract) continue;
     steps.push({
       kind: "destructive",
       comment: `Model ${r.name} was removed. Uncomment to delete its nodes (or rename the label instead: db.migrate.renameLabel).`,
@@ -407,11 +414,21 @@ export function diffSchemaModels(prev: SchemaModel, next: SchemaModel): Migratio
   for (const n of next.nodes) {
     const p = prevNodes.get(n.name);
     if (!p) continue; // new model: no existing nodes to fix up
+    labelSteps(p, n, prevNodes, nextNodes, steps);
     const ps = scalarsOf(p);
     const ns = scalarsOf(n);
-    const removed = [...ps.keys()].filter((k) => !ns.has(k));
-    const added = [...ns.keys()].filter((k) => !ps.has(k));
+    // A field inherited from an interface the node already implemented is migrated on the
+    // interface's label, which its nodes carry: no second step on the node's own label.
+    const viaInterface = (f: ResolvedScalarField | undefined) =>
+      Boolean(
+        f?.inheritedFrom &&
+        (p.interfaces ?? []).includes(f.inheritedFrom) &&
+        (n.interfaces ?? []).includes(f.inheritedFrom),
+      );
+    const removed = [...ps.keys()].filter((k) => !ns.has(k) && !viaInterface(ps.get(k)));
+    const added = [...ns.keys()].filter((k) => !ps.has(k) && !viaInterface(ns.get(k)));
     for (const [name, f] of ns) {
+      if (viaInterface(f) && (!ps.has(name) || viaInterface(ps.get(name)))) continue;
       nodeDataSteps(n.label, n.name, name, ps.get(name), f, steps, warnings);
     }
     for (const name of removed) {
@@ -546,6 +563,41 @@ function relationshipDataSteps(
         `${next.name}.${f.name} is now required without a default; existing :${next.relType} edges may lack it.`,
       );
     }
+  }
+}
+
+/**
+ * A node that starts implementing an interface gets its label on existing nodes (before the
+ * interface's constraints are created, so they validate every implementation); one that stops
+ * implementing it loses the label. Labels come from each side's own model (`label`).
+ */
+function labelSteps(
+  prev: ResolvedNodeModel,
+  next: ResolvedNodeModel,
+  prevNodes: ReadonlyMap<string, ResolvedNodeModel>,
+  nextNodes: ReadonlyMap<string, ResolvedNodeModel>,
+  steps: MigrationStep[],
+): void {
+  const labelOf = (nodes: ReadonlyMap<string, ResolvedNodeModel>, name: string) =>
+    nodes.get(name)?.label ?? name;
+  const before = new Set((prev.interfaces ?? []).map((i) => labelOf(prevNodes, i)));
+  const after = new Set((next.interfaces ?? []).map((i) => labelOf(nextNodes, i)));
+  const match = `MATCH (n:${q(prev.label)})`;
+  for (const label of after) {
+    if (before.has(label)) continue;
+    steps.push({
+      kind: "statement",
+      comment: `${next.name} now implements ${label}: add the :${label} label to existing ${prev.label} nodes.`,
+      cypher: `${match} WHERE NOT n:${q(label)} SET n:${q(label)}`,
+    });
+  }
+  for (const label of before) {
+    if (after.has(label)) continue;
+    steps.push({
+      kind: "statement",
+      comment: `${next.name} no longer implements ${label}: remove the :${label} label from existing ${prev.label} nodes.`,
+      cypher: `${match} WHERE n:${q(label)} REMOVE n:${q(label)}`,
+    });
   }
 }
 

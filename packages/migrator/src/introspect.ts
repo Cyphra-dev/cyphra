@@ -293,6 +293,10 @@ const dec = (name: string): Decorator => ({ name, args: [] });
  * - Single-property uniqueness constraints become `@id` (property `id` or constraint `…_id`) / `@unique`;
  *   single-property range and point indexes become `@index`. Composite node uniqueness constraints
  *   (and node keys) become `@@unique([...])`, composite range indexes `@@index([...])`.
+ * - A label that never appears alone, on nodes that each carry exactly one other label (whose
+ *   nodes all carry it), becomes an `interface` with the properties all its nodes have (and the
+ *   ones constrained or indexed on it); each other label becomes a `node … implements` it with the
+ *   rest. Other label combinations give one model per label (and a warning).
  * - Every sampled `(start)-[:TYPE]->(end)` pair becomes an `OUT` field on the start node and an `IN`
  *   field (`…By`) on the end node, both to-many. Relationship types with properties also get a
  *   `relationship { … }` model.
@@ -476,9 +480,87 @@ export function schemaFromIntrospection(input: IntrospectionResult): {
     indexOn.add(`${i.entityType}:${i.labelsOrTypes[0]}.${i.properties[0]}`);
   }
 
+  // --- interfaces ------------------------------------------------------------------
+  // A label P that never appears alone, whose nodes each carry exactly one other label X, every X
+  // node carrying P, becomes `interface P` implemented by each X (`node X implements P`).
+  const combos = input.nodeTypes
+    .map((nt) => nt.labels.filter((l) => !skipLabel(l)))
+    .filter((c) => c.length > 0);
+  const combosWith = (l: string) => combos.filter((c) => c.includes(l));
+  const implementationsIf = (p: string): string[] | null => {
+    const cs = combosWith(p);
+    if (cs.length === 0 || cs.some((c) => c.length !== 2)) return null;
+    const xs = [...new Set(cs.map((c) => c.find((l) => l !== p)!))];
+    return xs.every((x) => combosWith(x).length === 1) ? xs.sort() : null;
+  };
+  const implsOf = new Map<string, string[]>();
+  for (const p of labels.keys()) {
+    const xs = implementationsIf(p);
+    if (xs && !xs.some((x) => implementationsIf(x))) implsOf.set(p, xs);
+  }
+  /** Interface of each implementation label. */
+  const ifaceOf = new Map<string, string>();
+  for (const [p, xs] of implsOf) for (const x of xs) ifaceOf.set(x, p);
+  for (const c of combos) {
+    if (c.length < 2) continue;
+    if (c.length === 2 && (ifaceOf.get(c[0]!) === c[1] || ifaceOf.get(c[1]!) === c[0])) continue;
+    warnings.push(
+      `Nodes labelled ${c.map((l) => `:${l}`).join("")} became one model per label (${c.join(", ")}): an interface needs a label that never appears alone, on nodes with exactly one other label each.`,
+    );
+  }
+  /** Whether `label` declares a constraint or an index on `prop` (kept on that label). */
+  const declaresOn = (label: string, prop: string) =>
+    (uniqueOn.get(label) ?? []).some((u) => u.prop === prop) ||
+    indexOn.has(`NODE:${label}.${prop}`) ||
+    vectorOn.has(`${label}.${prop}`);
+  /** Properties of each interface: on every one of its nodes, or constrained / indexed on it. */
+  const interfaceProps = new Map<string, Set<string>>();
+  for (const [p, xs] of implsOf) {
+    const e = labels.get(p)!;
+    const props = new Set<string>();
+    for (const [prop, acc] of e.props) {
+      const own = declaresOn(p, prop);
+      if (!own && acc.presentIn !== e.combos) continue;
+      if (
+        !own &&
+        !vectorOn.has(`${p}.${prop}`) &&
+        !mapType([...acc.types], acc.pointCrs && [...acc.pointCrs])
+      ) {
+        continue;
+      }
+      const onImpl = xs.filter((x) => declaresOn(x, prop));
+      if (onImpl.length && !own) continue;
+      for (const x of onImpl) {
+        warnings.push(
+          `Dropped the constraint / index on ${x}.${prop}: ${prop} is a field of interface ${p}, whose constraints and indexes are on :${p}.`,
+        );
+      }
+      props.add(prop);
+    }
+    interfaceProps.set(p, props);
+  }
+  /** Whether `prop` of `label` belongs to the model of `label` (not to an interface, or inherited). */
+  const ownsProp = (label: string, prop: string) => {
+    const iface = interfaceProps.get(label);
+    if (iface) return iface.has(prop);
+    const parent = ifaceOf.get(label);
+    return !parent || !interfaceProps.get(parent)!.has(prop);
+  };
+
   // --- node declarations ---------------------------------------------------------
   const nodeFields = new Map<string, (ScalarNodeField | RelationalNodeField)[]>();
   const taken = new Map<string, Set<string>>();
+  /** Claim a field name on `label`, unused by it and by the models it shares fields with. */
+  const claim = (label: string, base: string) => {
+    const parent = ifaceOf.get(label);
+    const related = parent ? [parent] : (implsOf.get(label) ?? []);
+    const sets = [taken.get(label)!, ...related.map((r) => taken.get(r)!)];
+    let name = base;
+    let i = 2;
+    while (sets.some((t) => t.has(name))) name = `${base}${i++}`;
+    taken.get(label)!.add(name);
+    return name;
+  };
   for (const [label, e] of [...labels].sort(([a], [b]) => a.localeCompare(b))) {
     const uniques = uniqueOn.get(label) ?? [];
     const idProp =
@@ -488,6 +570,7 @@ export function schemaFromIntrospection(input: IntrospectionResult): {
       a === idProp ? -1 : b === idProp ? 1 : a.localeCompare(b),
     );
     for (const [prop, acc] of ordered) {
+      if (!ownsProp(label, prop)) continue;
       if (!IDENT.test(prop)) {
         warnings.push(`Skipped ${label}.${prop}: not a valid identifier.`);
         continue;
@@ -542,12 +625,29 @@ export function schemaFromIntrospection(input: IntrospectionResult): {
   const relationships: RelationshipDeclaration[] = [];
   const declNames = new Set(labels.keys());
   for (const rt of [...input.relTypes].sort((a, b) => a.type.localeCompare(b.type))) {
-    const pairs: { from: string; to: string }[] = [];
+    let pairs: { from: string; to: string }[] = [];
+    // A node of an implementation is that implementation (not also its interface)...
+    const modelLabels = (ls: readonly string[]) => {
+      const valid = ls.filter((l) => !skipLabel(l));
+      return valid.filter((l) => !(implsOf.has(l) && valid.some((x) => ifaceOf.get(x) === l)));
+    };
     for (const ep of rt.endpoints) {
-      for (const from of ep.from) {
-        for (const to of ep.to) {
-          if (skipLabel(from) || skipLabel(to)) continue;
+      for (const from of modelLabels(ep.from)) {
+        for (const to of modelLabels(ep.to)) {
           if (!pairs.some((p) => p.from === from && p.to === to)) pairs.push({ from, to });
+        }
+      }
+    }
+    // ...and edges seen on every implementation of an interface become a relation of the interface.
+    for (const side of ["from", "to"] as const) {
+      const other = side === "from" ? "to" : "from";
+      for (const [p, xs] of implsOf) {
+        for (const v of [...new Set(pairs.map((x) => x[other]))]) {
+          const covered = xs.every((x) => pairs.some((q) => q[side] === x && q[other] === v));
+          if (!covered) continue;
+          pairs = pairs.filter((q) => !(q[other] === v && xs.includes(q[side])));
+          const lifted = { [side]: p, [other]: v } as { from: string; to: string };
+          if (!pairs.some((q) => q.from === lifted.from && q.to === lifted.to)) pairs.push(lifted);
         }
       }
     }
@@ -567,10 +667,7 @@ export function schemaFromIntrospection(input: IntrospectionResult): {
       ],
     });
     for (const { from, to } of pairs) {
-      const outName = uniqueName(
-        camel(rt.type) + (outTargets(from) > 1 ? to : ""),
-        taken.get(from)!,
-      );
+      const outName = claim(from, camel(rt.type) + (outTargets(from) > 1 ? to : ""));
       nodeFields.get(from)!.push({
         kind: "Relational",
         name: outName,
@@ -579,10 +676,7 @@ export function schemaFromIntrospection(input: IntrospectionResult): {
         optional: false,
         decorators: [relDecorator("OUT")],
       });
-      const inName = uniqueName(
-        `${camel(rt.type)}By${inSources(to) > 1 ? from : ""}`,
-        taken.get(to)!,
-      );
+      const inName = claim(to, `${camel(rt.type)}By${inSources(to) > 1 ? from : ""}`);
       nodeFields.get(to)!.push({
         kind: "Relational",
         name: inName,
@@ -633,10 +727,16 @@ export function schemaFromIntrospection(input: IntrospectionResult): {
   }
 
   // --- full-text indexes → @@fulltext ----------------------------------------------
+  /** Fields of the model of `label`, with the ones it inherits (`undefined` for no model). */
+  const fieldsOf = (label: string) => {
+    const own = nodeFields.get(label);
+    const parent = ifaceOf.get(label);
+    return own && parent ? [...nodeFields.get(parent)!, ...own] : own;
+  };
   const attributesOf = new Map<string, ModelAttribute[]>();
   for (const ft of fulltext) {
     const where = `full-text index ${ft.name}`;
-    const fields = nodeFields.get(ft.label);
+    const fields = fieldsOf(ft.label);
     if (!fields) {
       warnings.push(`Skipped ${where}: label ${ft.label} has no nodes in the database.`);
       continue;
@@ -674,7 +774,7 @@ export function schemaFromIntrospection(input: IntrospectionResult): {
   // --- composite constraints / indexes → @@unique / @@index ----------------------
   for (const c of composite) {
     const where = `${c.attr === "unique" ? "composite constraint" : "composite index"} ${c.name}`;
-    const fields = nodeFields.get(c.label);
+    const fields = fieldsOf(c.label);
     if (!fields) {
       warnings.push(`Skipped ${where}: label ${c.label} has no nodes in the database.`);
       continue;
@@ -707,10 +807,18 @@ export function schemaFromIntrospection(input: IntrospectionResult): {
 
   const nodes: NodeDeclaration[] = [...nodeFields].map(([name, fields]) => {
     const attributes = attributesOf.get(name);
-    return attributes ? { kind: "Node", name, fields, attributes } : { kind: "Node", name, fields };
+    const parent = ifaceOf.get(name);
+    return {
+      kind: "Node",
+      name,
+      ...(implsOf.has(name) ? { abstract: true as const } : {}),
+      ...(parent ? { implements: [parent] } : {}),
+      fields,
+      ...(attributes ? { attributes } : {}),
+    };
   });
   for (const n of nodes) {
-    if (!n.fields.some((f) => f.kind === "Scalar")) {
+    if (!n.abstract && !fieldsOf(n.name)!.some((f) => f.kind === "Scalar")) {
       warnings.push(`Node ${n.name} has no properties in the database.`);
     }
   }

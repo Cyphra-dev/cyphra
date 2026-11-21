@@ -192,6 +192,11 @@ their endpoints. Review the result:
   `eventuallyConsistent: true` when they are not the defaults. Indexes over several labels, on
   relationships, or on properties that were not pulled as `String` / `String[]` fields are skipped
   with a warning.
+- A label `P` that never appears alone, and only ever as `[X, P]` pairs where each `X` always
+  carries `P`, becomes an [`interface P`](/schema#interfaces-and-multiple-labels) with the
+  properties all its nodes share (and those `P`'s constraints cover), and each `X` becomes
+  `node X implements P` with the rest. Other label combinations stay one model per label, with a
+  warning.
 - Unsupported or mixed types (e.g. a property that is a string on some nodes and an integer on
   others) and names that are not identifiers are skipped with a warning.
 - Integers are pulled as `Int` and strings as `String`: the database cannot tell a `BigInt`, an enum
@@ -245,7 +250,7 @@ Converted with differences (3):
   Person.name  @unique: @unique was removed in @neo4j/graphql v7; Cyphra keeps it and creates the uniqueness constraint
 ```
 
-Not converted today: custom scalars, interfaces and unions, extra labels, `@cypher` and
+Not converted today: custom scalars, interfaces and unions (`@neo4j/graphql` interfaces are not labels, so they do not map to [Cyphra interfaces](/schema#interfaces-and-multiple-labels); declare one and backfill its label if you want that layout), extra labels, `@cypher` and
 `@customResolver` fields, `@authentication` and `@authorization` rules, `@vector` indexes (the type
 definitions carry neither the dimensions nor the similarity: declare a
 [`Vector(N)` field with `@vectorIndex`](/schema#vector-fields) by hand), and update timestamps. API-only settings such as `@plural`, `@selectable` or `@filterable`

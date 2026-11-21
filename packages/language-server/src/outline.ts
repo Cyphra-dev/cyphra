@@ -1,7 +1,8 @@
 import { formatSchema } from "@cyphra/schema";
 import { span, type Analysis, type Span } from "./analysis.js";
 
-export type OutlineKind = "node" | "relationship" | "enum" | "field" | "enumMember" | "attribute";
+export type OutlineKind =
+  "node" | "interface" | "relationship" | "enum" | "field" | "enumMember" | "attribute";
 
 /** An editor-neutral document symbol (the server maps it to an LSP `DocumentSymbol`). */
 export type OutlineSymbol = {
@@ -66,10 +67,23 @@ export function outline(a: Analysis): OutlineSymbol[] {
         });
       }
     }
+    const detail =
+      d.kind === "Relationship"
+        ? `${d.from} -[${d.relType}]-> ${d.to}`
+        : d.kind === "Node" && d.implements?.length
+          ? `implements ${d.implements.join(", ")}`
+          : undefined;
     out.push({
       name: d.name,
-      kind: d.kind === "Node" ? "node" : d.kind === "Relationship" ? "relationship" : "enum",
-      ...(d.kind === "Relationship" ? { detail: `${d.from} -[${d.relType}]-> ${d.to}` } : {}),
+      kind:
+        d.kind === "Node"
+          ? d.abstract
+            ? "interface"
+            : "node"
+          : d.kind === "Relationship"
+            ? "relationship"
+            : "enum",
+      ...(detail ? { detail } : {}),
       span: whole,
       selection: name,
       children,
