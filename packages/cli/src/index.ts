@@ -18,6 +18,7 @@ import { runPush } from "./commands/push.js";
 import { runSchemaDdl } from "./commands/schemaDdl.js";
 import { runSchemaPrint } from "./commands/schemaPrint.js";
 import { runDbSeed } from "./commands/seed.js";
+import { DEFAULT_STUDIO_HOST, DEFAULT_STUDIO_PORT, runStudio } from "./commands/studio.js";
 import { runValidateSchema } from "./commands/validateSchema.js";
 import { DEFAULT_ZOD_OUTPUT, loadConfig } from "./config.js";
 
@@ -222,6 +223,27 @@ dbCmd
   .action(async () => {
     const cwd = process.cwd();
     process.exitCode = await runDbSeed(cwd, await loadConfig(cwd));
+  });
+
+program
+  .command("studio")
+  .description(
+    "Browse and edit the database in a local web UI built from schema.cyphra (models, relations, raw Cypher)",
+  )
+  .option("--port <port>", `port to listen on (default ${DEFAULT_STUDIO_PORT})`, (v) => Number(v))
+  .option(
+    "--host <host>",
+    `address to bind (default ${DEFAULT_STUDIO_HOST}; anything else exposes the studio to the network)`,
+  )
+  .option("--no-open", "do not open the browser")
+  .option("--read-only", "browse only: no edits, creates, deletes or Cypher writes")
+  .action(async (opts: { port?: number; host?: string; open?: boolean; readOnly?: boolean }) => {
+    const studio = await runStudio(await loadConfig(process.cwd()), opts, version);
+    const stop = () => {
+      void studio.close().finally(() => process.exit(0));
+    };
+    process.once("SIGINT", stop);
+    process.once("SIGTERM", stop);
   });
 
 const importCmd = program.command("import").description("Import a schema from another tool");

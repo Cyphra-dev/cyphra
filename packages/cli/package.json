@@ -1,7 +1,7 @@
 {
   "name": "@cyphra/cli",
   "version": "0.12.0",
-  "description": "Cyphra CLI for the TypeScript Neo4j ORM: init, generate, migrate, push and pull",
+  "description": "Cyphra CLI for the TypeScript Neo4j ORM: init, generate, migrate, push, pull and a local data browser (studio)",
   "type": "module",
   "publishConfig": {
     "access": "public"
@@ -14,8 +14,8 @@
     "cyphra": "./dist/index.js"
   },
   "scripts": {
-    "build": "tsup",
-    "typecheck": "tsc --noEmit",
+    "build": "tsup && node scripts/build-studio.mjs",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p src/studio/ui",
     "test": "vitest run"
   },
   "dependencies": {
@@ -30,6 +30,7 @@
   },
   "devDependencies": {
     "@types/node": "^22.20.5",
+    "esbuild": "^0.27.7",
     "tsup": "^8.5.1",
     "vitest": "^4.1.12"
   },
