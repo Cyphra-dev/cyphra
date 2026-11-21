@@ -12,6 +12,7 @@ Command-line interface for Cyphra.
 - `cyphra push` — apply `@id` / `@unique` constraints from the schema
 - `cyphra migrate reset` — empty a local database, reapply every migration, run the seed (`--yes`, `--force`, `--skip-seed`)
 - `cyphra db seed` — run the `"seed"` command from `cyphra.json` (e.g. `"tsx seed.ts"`)
+- `cyphra studio` — browse and edit the data in a local web UI built from the schema (`--port`, `--host`, `--no-open`, `--read-only`; see [the docs](https://www.cyphra.dev/cli#cyphra-studio))
 - `cyphra generate` — generate the typed client (`--watch` regenerates on schema changes; `--zod` also writes zod schemas of the models)
 
 ## Migrations

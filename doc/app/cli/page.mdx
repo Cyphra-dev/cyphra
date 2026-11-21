@@ -1,5 +1,5 @@
 ---
-description: "Cyphra CLI reference for Neo4j: init, validate, generate with watch mode, migrations, seed, push, and import from @neo4j/graphql, Prisma or neogma."
+description: "Cyphra CLI reference for Neo4j: init, generate, migrations, seed, push, a local data browser (studio), and import from @neo4j/graphql, Prisma or neogma."
 ---
 
 # CLI
@@ -24,6 +24,7 @@ App code depends on **`cyphra`** separately (see [Getting started](/getting-star
 | `cyphra migrate status`          | Applied / pending / modified migrations, uncaptured changes and [drift](/migrations#drift-detection) (`--json`, `--schema`; exit 1)                                 |
 | `cyphra migrate reset`           | Empty a local database, reapply every migration, then run the seed (`--yes`, `--force`, `--skip-seed`)                                                              |
 | `cyphra db seed`                 | Run the `seed` command from `cyphra.json`                                                                                                                           |
+| `cyphra studio`                  | Browse and edit the data in a local web UI built from the schema ([details](#cyphra-studio); `--port`, `--host`, `--no-open`, `--read-only`)                        |
 | `cyphra migration:create <name>` | Empty `.mjs` migration to write by hand                                                                                                                             |
 | `cyphra pull`                    | Introspect the database and write `schema.cyphra` (`--print`, `--force`)                                                                                            |
 | `cyphra import graphql <files>`  | Convert `@neo4j/graphql` v7 type definitions to `schema.cyphra` (`--out`, `--merge`, `--force`, `--print`)                                                          |
@@ -180,6 +181,76 @@ await db.$disconnect();
 command's exit code; without a `seed` entry, `cyphra db seed` fails with 1.
 [`cyphra migrate reset`](/migrations#reset-a-development-database) runs the seed after reapplying
 migrations.
+
+## cyphra studio
+
+A local data browser built from `schema.cyphra`: no Neo4j Browser, no codegen. It reads `cyphra.json`
+and the `NEO4J_*` settings (including `./.env`), starts a web server on `127.0.0.1` and opens your
+browser:
+
+```text
+$ cyphra studio
+Cyphra Studio on http://127.0.0.1:5555/?token=Qk3…
+The token in the URL is required: keep it private. Stop with Ctrl+C.
+```
+
+<img
+  src="/cli/cyphra-studio.webp"
+  width={1360}
+  height={800}
+  alt="Cyphra Studio: the User model as a table with typed columns, a karma ≥ 600 filter and a descending sort"
+/>
+
+- **Models.** The sidebar lists node models, interfaces and relationship models with their counts.
+  Each model opens as a table with the field types in the header, pagination, sorting by column
+  (to-many relations sort by their count) and a filter builder whose operators follow the field type
+  (`contains` and case-insensitive matches on strings, ranges on numbers and dates, `has` and
+  `isEmpty` on lists, `some` / `none` on relations, `is null` everywhere).
+- **Editing.** Double-click a cell to edit it, or open the record to edit every field with typed
+  inputs: a select for enums and booleans, date and time pickers, a JSON editor that validates as
+  you type, item lists for `String[]` and friends, coordinates for points. Writes go through the
+  ORM, so [validation rules](/schema#validation-rules) and unique constraints apply and their messages show next to
+  the field.
+- **Relations.** Relation columns show the related node's key or the count of related nodes; click
+  one to open the related records, and keep following from there (a breadcrumb leads back). Edge
+  properties of a `relationship { … }` model show next to the related nodes and in the
+  relationship model's own table, where they can be edited.
+- **Delete.** Before deleting, the studio lists what the [`onDelete` rules](/client#deleting) will do:
+  nodes deleted by a cascade, edges removed, or a `Restrict` relation that blocks the delete.
+- **Cypher.** A raw Cypher tab with JSON parameters. Queries run in a **read transaction**; tick
+  _Allow writes_ to run one in a write transaction.
+- **Interfaces.** An interface lists the nodes of every implementation, with their `__typename`;
+  edits go to the implementation.
+
+Records of a model without an `@id`, `@unique` or `@@unique` field can be browsed but not edited
+(nothing identifies one record).
+
+| Option        | Description                                                                          |
+| ------------- | ------------------------------------------------------------------------------------ |
+| `--port <n>`  | Port to listen on (default `5555`)                                                   |
+| `--host <h>`  | Address to bind (default `127.0.0.1`); any other address prints a warning            |
+| `--no-open`   | Print the URL without opening a browser                                              |
+| `--read-only` | No edits, creates, deletes or Cypher writes: the API refuses them, the UI hides them |
+
+### Security
+
+The studio holds your database credentials, so it only answers the page it served:
+
+- **Loopback only by default.** It binds `127.0.0.1`. Exposing it to the network takes an explicit
+  `--host`, and prints a warning.
+- **Session token.** Each run creates a random token. The URL carries it once: the studio moves it to
+  an `HttpOnly`, `SameSite=Strict` cookie and drops it from the address bar. Every API call needs
+  that cookie and a custom header, which other sites cannot send without a CORS preflight the studio
+  never grants (CSRF).
+- **DNS rebinding.** Requests whose `Host` is not an IP address, `localhost` or the `--host` name are
+  refused, as are requests from another `Origin`.
+- **No credentials in the browser.** The page gets the schema and the database address without user
+  name, password or query string. Queries run on the server.
+- **Strict page.** The UI is bundled in the CLI (no CDN) and served with a Content-Security-Policy
+  that allows only its own scripts and styles, and no framing.
+
+Treat the printed URL like a password, and prefer `--read-only` against shared or production
+databases.
 
 ## cyphra pull
 

@@ -163,6 +163,8 @@ jobs:
           # adversarial authorization tests (tokens, nested reads, aggregates, rolled-back writes)
           # and @cypher / @fulltext (aggregating statements, injection attempts through arguments).
           pnpm --filter @cyphra/graphql --fail-if-no-match exec vitest run test/mutations.integration.test.ts test/auth.integration.test.ts test/cypher.integration.test.ts
+          # `cyphra studio` API through the ORM (own Sd* labels: safe alongside the other suites).
+          pnpm --filter @cyphra/cli --fail-if-no-match exec vitest run src/studio/studio.integration.test.ts
           # `cyphra migrate reset` empties the whole database, so it runs on its own (opt-in flag).
           CYPHRA_TEST_RESET_DB=1 pnpm --filter @cyphra/cli --fail-if-no-match exec vitest run src/commands/migrateReset.integration.test.ts
           # `cyphra migrate status` compares the whole database with the migrations: same opt-in flag.
