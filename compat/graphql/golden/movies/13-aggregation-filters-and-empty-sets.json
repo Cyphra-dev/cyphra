@@ -1,0 +1,232 @@
+{
+  "data": {
+    "people": [
+      {
+        "id": "p-jack",
+        "actedInConnection": {
+          "aggregate": {
+            "count": {
+              "nodes": 1,
+              "edges": 1
+            },
+            "node": {
+              "released": {
+                "min": 1992,
+                "max": 1992,
+                "average": 1992,
+                "sum": 1992
+              },
+              "rating": {
+                "min": 7.7,
+                "sum": 7.7,
+                "average": 7.7
+              },
+              "title": {
+                "shortest": "A Few Good Men",
+                "longest": "A Few Good Men"
+              }
+            },
+            "edge": {
+              "screenTime": {
+                "min": null,
+                "max": null,
+                "sum": 0,
+                "average": null
+              }
+            }
+          }
+        }
+      },
+      {
+        "id": "p-keanu",
+        "actedInConnection": {
+          "aggregate": {
+            "count": {
+              "nodes": 4,
+              "edges": 4
+            },
+            "node": {
+              "released": {
+                "min": 1995,
+                "max": 2003,
+                "average": 1998.5,
+                "sum": 7994
+              },
+              "rating": {
+                "min": 5.7,
+                "sum": 29.1,
+                "average": 7.275
+              },
+              "title": {
+                "shortest": "The Matrix",
+                "longest": "The Devil's Advocate"
+              }
+            },
+            "edge": {
+              "screenTime": {
+                "min": 90,
+                "max": 120,
+                "sum": 420,
+                "average": 105
+              }
+            }
+          }
+        }
+      },
+      {
+        "id": "p-lana",
+        "actedInConnection": {
+          "aggregate": {
+            "count": {
+              "nodes": 0,
+              "edges": 0
+            },
+            "node": {
+              "released": {
+                "min": null,
+                "max": null,
+                "average": null,
+                "sum": 0
+              },
+              "rating": {
+                "min": null,
+                "sum": 0,
+                "average": null
+              },
+              "title": {
+                "shortest": null,
+                "longest": null
+              }
+            },
+            "edge": {
+              "screenTime": {
+                "min": null,
+                "max": null,
+                "sum": 0,
+                "average": null
+              }
+            }
+          }
+        }
+      }
+    ],
+    "emptyRoot": {
+      "aggregate": {
+        "count": {
+          "nodes": 0
+        },
+        "node": {
+          "released": {
+            "min": null,
+            "max": null,
+            "average": null,
+            "sum": 0
+          },
+          "rating": {
+            "sum": 0,
+            "average": null
+          },
+          "title": {
+            "shortest": null,
+            "longest": null
+          }
+        }
+      }
+    },
+    "filteredNested": [
+      {
+        "actorsConnection": {
+          "totalCount": 2,
+          "aggregate": {
+            "count": {
+              "nodes": 2,
+              "edges": 2
+            },
+            "node": {
+              "born": {
+                "min": 1964,
+                "max": 1967
+              }
+            }
+          }
+        }
+      }
+    ],
+    "deprecatedCount": [
+      {
+        "title": "A Few Good Men"
+      },
+      {
+        "title": "The Devil's Advocate"
+      },
+      {
+        "title": "The Matrix Reloaded"
+      },
+      {
+        "title": "The Matrix"
+      }
+    ],
+    "deprecatedLegacyCount": [
+      {
+        "title": "The Matrix"
+      }
+    ],
+    "deprecatedNode": [
+      {
+        "title": "The Devil's Advocate"
+      }
+    ],
+    "deprecatedEdge": [
+      {
+        "title": "A Few Good Men"
+      }
+    ],
+    "stringLength": [
+      {
+        "title": "The Matrix"
+      }
+    ],
+    "notCount": [
+      {
+        "title": "Johnny Mnemonic"
+      }
+    ],
+    "noDirectors": [
+      {
+        "title": "Johnny Mnemonic"
+      }
+    ],
+    "orAggregate": [
+      {
+        "title": "Johnny Mnemonic"
+      }
+    ],
+    "notMin": [
+      {
+        "name": "Carrie-Anne Moss"
+      },
+      {
+        "name": "Laurence Fishburne"
+      }
+    ],
+    "nestedAggregate": [
+      {
+        "name": "Carrie-Anne Moss"
+      },
+      {
+        "name": "Keanu Reeves"
+      },
+      {
+        "name": "Laurence Fishburne"
+      }
+    ],
+    "avgReleased": [
+      {
+        "name": "Carrie-Anne Moss"
+      },
+      {
+        "name": "Laurence Fishburne"
+      }
+    ]
+  }
+}

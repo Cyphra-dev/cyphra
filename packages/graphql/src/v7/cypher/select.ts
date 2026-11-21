@@ -6,6 +6,12 @@
  * (for `totalCount` / `pageInfo`) and a `COLLECT { … }` of edges. Cursors are v7 offset cursors:
  * `base64("arrayconnection:<offset>")`.
  *
+ * Connection `aggregate` selections follow v7 7.6: `count.nodes` / `count.edges` count distinct
+ * nodes / relationships; each `node.<field>` / `edge.<field>` aggregate runs over the distinct nodes
+ * (relationships) matching the connection `where` (not `first` / `after`); `shortest` / `longest` are
+ * the last / first values ordered by `size(…)` descending; `sum` of an empty set is `0`, the other
+ * aggregates are `null`. Int `average` is a Float, BigInt values (including `average`) are strings.
+ *
  * @packageDocumentation
  */
 
@@ -32,7 +38,14 @@ import {
   type Relationship,
   type V7Model,
 } from "../model.js";
-import { CypherContext, labels, q } from "./context.js";
+import {
+  CypherContext,
+  labels,
+  listAggregate,
+  q,
+  withList,
+  type ListAggregate,
+} from "./context.js";
 import { WhereCompiler, relationshipPattern } from "./where.js";
 
 type AnyRecord = Record<string, unknown>;
@@ -152,6 +165,32 @@ function paging(ctx: CypherContext, offset: unknown, limit: unknown): string {
 function withClause(vars: string, order: string, page: string): string {
   if (!order && !page) return "";
   return ["WITH", vars, order, page].filter(Boolean).join(" ");
+}
+
+const AGGREGATE_FUNCTIONS: Record<string, ListAggregate> = {
+  min: "min",
+  max: "max",
+  average: "avg",
+  sum: "sum",
+};
+
+/**
+ * Result of one aggregate (`IntAggregateSelection.average`, …): Int min / max / sum are Int and
+ * `average` a Float; BigInt values are strings (the `BigInt` scalar serializes an `average` float).
+ */
+function aggregateValueDecoder(type: string): Decoder {
+  if (type === "Int" || type === "Float") return (v) => mapValue(v, integerToNumber);
+  if (type === "BigInt") return (v) => mapValue(v, (x) => (isInt(x) ? x.toString() : x));
+  return (v) => v ?? null;
+}
+
+function mapDecoder(decoders: readonly [string, Decoder][]): Decoder {
+  return (raw) => {
+    const r = (raw ?? {}) as AnyRecord;
+    const out: AnyRecord = {};
+    for (const [key, dec] of decoders) out[key] = dec(r[key]);
+    return out;
+  };
 }
 
 export class SelectionCompiler {
@@ -344,6 +383,9 @@ export class SelectionCompiler {
     relVar?: string;
     projectNode: (fieldNodes: readonly FieldNode[]) => { expr: string; decode: Decoder };
     projectProperties?: (fieldNodes: readonly FieldNode[]) => { expr: string; decode: Decoder };
+    /** Node type and relationship properties the `aggregate` selection aggregates over. */
+    node: NodeType;
+    props?: PropertiesType;
     args: AnyRecord;
     fieldNodes: readonly FieldNode[];
     owner: string;
@@ -355,11 +397,31 @@ export class SelectionCompiler {
     const edgeEntries: string[] = [];
     const edgeDecoders: [string, (raw: AnyRecord, index: number) => unknown][] = [];
     const edgeFieldNodes: FieldNode[] = [];
-    for (const [, nodes] of conn) {
+    const aggregates: [string, Decoder][] = [];
+    const aggregateEntries: string[] = [];
+    let needsTotal = false;
+    let needsEdges = false;
+    const where = opts.predicate ? ` WHERE ${opts.predicate}` : "";
+    for (const [key, nodes] of conn) {
       const name = nodes[0]!.name.value;
-      if (name === "aggregate")
-        throw notImplemented(`${opts.owner}.aggregate`, FOLLOW_UP.aggregations);
+      if (name === "aggregate") {
+        const p = this.aggregate(
+          {
+            base: `MATCH ${opts.match}${where}`,
+            nodeVar: opts.nodeVar,
+            relVar: opts.relVar,
+            node: opts.node,
+            props: opts.props,
+            owner: opts.owner,
+          },
+          nodes,
+        );
+        aggregateEntries.push(`${q(key)}: ${p.expr}`);
+        aggregates.push([key, p.decode]);
+      }
       if (name === "edges") edgeFieldNodes.push(...nodes);
+      if (name === "edges" || name === "pageInfo") needsEdges = true;
+      if (name === "totalCount" || name === "pageInfo") needsTotal = true;
     }
     for (const [key, nodes] of collectFields(this.info, subSelections(edgeFieldNodes))) {
       const name = nodes[0]!.name.value;
@@ -376,7 +438,6 @@ export class SelectionCompiler {
       }
     }
 
-    const where = opts.predicate ? ` WHERE ${opts.predicate}` : "";
     const withVars = opts.relVar ? `${opts.relVar}, ${opts.nodeVar}` : opts.nodeVar;
     const page = paging(this.ctx, offset || undefined, opts.args.first);
     const edgesBody = [
@@ -386,7 +447,11 @@ export class SelectionCompiler {
     ]
       .filter(Boolean)
       .join(" ");
-    const expr = `{ total: COUNT { MATCH ${opts.match}${where} }, edges: COLLECT { ${edgesBody} } }`;
+    const parts: string[] = [];
+    if (needsTotal) parts.push(`total: COUNT { MATCH ${opts.match}${where} }`);
+    if (needsEdges) parts.push(`edges: COLLECT { ${edgesBody} }`);
+    if (aggregateEntries.length) parts.push(`aggregate: { ${aggregateEntries.join(", ")} }`);
+    const expr = `{ ${parts.join(", ")} }`;
 
     return {
       expr,
@@ -404,7 +469,10 @@ export class SelectionCompiler {
           const name = nodes[0]!.name.value;
           if (name === "totalCount") out[key] = total;
           else if (name === "edges") out[key] = edges;
-          else if (name === "pageInfo") {
+          else if (name === "aggregate") {
+            const agg = (r.aggregate ?? {}) as AnyRecord;
+            out[key] = aggregates.find(([k]) => k === key)![1](agg[key]);
+          } else if (name === "pageInfo") {
             const info: AnyRecord = {};
             for (const [pk, pn] of collectFields(this.info, subSelections(nodes))) {
               switch (pn[0]!.name.value) {
@@ -430,6 +498,114 @@ export class SelectionCompiler {
     };
   }
 
+  /**
+   * `{ count: …, node: { field: … }, edge: { field: … } }` for a connection `aggregate` selection:
+   * one `COUNT { … }` per count and one `COLLECT { … }` of the values per field (reduced with list
+   * expressions, see `listAggregate`), like v7's one subquery per field.
+   */
+  private aggregate(
+    scope: {
+      /** `MATCH <pattern> [WHERE <connection where>]`. */
+      base: string;
+      nodeVar: string;
+      relVar?: string;
+      node: NodeType;
+      props?: PropertiesType;
+      owner: string;
+    },
+    fieldNodes: readonly FieldNode[],
+  ): { expr: string; decode: Decoder } {
+    const entries: string[] = [];
+    const decoders: [string, Decoder][] = [];
+    for (const [key, nodes] of collectFields(this.info, subSelections(fieldNodes))) {
+      const name = nodes[0]!.name.value;
+      if (name === "__typename") continue;
+      if (name === "count") {
+        const counts: string[] = [];
+        const keys: string[] = [];
+        for (const [ck, cn] of collectFields(this.info, subSelections(nodes))) {
+          const what = cn[0]!.name.value;
+          const v = what === "nodes" ? scope.nodeVar : what === "edges" ? scope.relVar : undefined;
+          if (!v) continue;
+          counts.push(`${q(ck)}: COUNT { ${scope.base} WITH DISTINCT ${v} RETURN ${v} }`);
+          keys.push(ck);
+        }
+        entries.push(`${q(key)}: { ${counts.join(", ")} }`);
+        decoders.push([
+          key,
+          (raw) => {
+            const r = (raw ?? {}) as AnyRecord;
+            return Object.fromEntries(keys.map((k) => [k, toNumber(r[k] ?? 0)]));
+          },
+        ]);
+        continue;
+      }
+      const isEdge = name === "edge";
+      if (name !== "node" && !isEdge)
+        throw new Error(`Unknown field ${scope.owner}.aggregate.${name}`);
+      const variable = isEdge ? scope.relVar : scope.nodeVar;
+      const attributes = isEdge ? scope.props?.attributes : scope.node.attributes;
+      if (!variable || !attributes)
+        throw new Error(`Unknown field ${scope.owner}.aggregate.${name}`);
+      this.assertReadable(scope.node);
+      const fieldEntries: string[] = [];
+      const fieldDecoders: [string, Decoder][] = [];
+      for (const [fk, fn] of collectFields(this.info, subSelections(nodes))) {
+        const field = fn[0]!.name.value;
+        if (field === "__typename") continue;
+        const attr = attributes.find((a) => a.name === field);
+        if (!attr) throw new Error(`Unknown field ${scope.owner}.aggregate.${name}.${field}`);
+        const p = this.aggregateAttribute(scope.base, variable, attr, fn);
+        fieldEntries.push(`${q(fk)}: ${p.expr}`);
+        fieldDecoders.push([fk, p.decode]);
+      }
+      entries.push(`${q(key)}: { ${fieldEntries.join(", ")} }`);
+      decoders.push([key, mapDecoder(fieldDecoders)]);
+    }
+    return { expr: `{ ${entries.join(", ")} }`, decode: mapDecoder(decoders) };
+  }
+
+  /** `min` / `max` / `average` / `sum` / `shortest` / `longest` of one attribute, v7 semantics. */
+  private aggregateAttribute(
+    base: string,
+    variable: string,
+    attr: Attribute,
+    fieldNodes: readonly FieldNode[],
+  ): { expr: string; decode: Decoder } {
+    const prop = `${variable}.${q(attr.property)}`;
+    const type = attr.type.name;
+    const ops: [string, string][] = [];
+    for (const [k, n] of collectFields(this.info, subSelections(fieldNodes))) {
+      const op = n[0]!.name.value;
+      if (op !== "__typename") ops.push([k, op]);
+    }
+    if (ops.length === 0) return { expr: "{}", decode: () => ({}) };
+    const decoders: [string, Decoder][] = ops.map(([k]) => [k, aggregateValueDecoder(type)]);
+    const l = this.ctx.variable("list");
+    const values = `${base} WITH DISTINCT ${variable} WHERE ${prop} IS NOT NULL`;
+    if (type === "String") {
+      // v7: ordered by size descending, `longest` is the first value and `shortest` the last.
+      const list = `COLLECT { ${values} WITH ${variable} ORDER BY size(${prop}) DESC RETURN ${prop} }`;
+      const items = ops.map(
+        ([k, op]) =>
+          `${q(k)}: ${op === "longest" ? `head(${l})` : op === "shortest" ? `last(${l})` : "null"}`,
+      );
+      return {
+        expr: withList(list, l, () => `{ ${items.join(", ")} }`),
+        decode: mapDecoder(decoders),
+      };
+    }
+    const list = `COLLECT { ${values} RETURN ${prop} }`;
+    const items = ops.map(([k, op]) => {
+      const fn = AGGREGATE_FUNCTIONS[op];
+      return `${q(k)}: ${fn ? listAggregate(fn, l) : "null"}`;
+    });
+    return {
+      expr: withList(list, l, () => `{ ${items.join(", ")} }`),
+      decode: mapDecoder(decoders),
+    };
+  }
+
   private relationshipConnection(
     variable: string,
     rel: Relationship,
@@ -449,6 +625,8 @@ export class SelectionCompiler {
       relVar: r,
       projectNode: (nodes) => this.projectNode(m, target, nodes),
       projectProperties: props ? (nodes) => this.projectProperties(r, props, nodes) : undefined,
+      node: target,
+      props,
       args,
       fieldNodes,
       owner: `${rel.source}.${rel.name}Connection`,
@@ -484,6 +662,7 @@ export class SelectionCompiler {
       order: this.nodeOrder(v, node, args.sort),
       nodeVar: v,
       projectNode: (nodes) => this.projectNode(v, node, nodes),
+      node,
       args,
       fieldNodes,
       owner: `${node.plural}Connection`,

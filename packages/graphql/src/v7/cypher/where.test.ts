@@ -117,11 +117,76 @@ describe("where: relationship quantifiers", () => {
       "EXISTS { MATCH (this)<-[r1:`ACTED_IN`]-(n0:`Person`) WHERE (n0.`name` = $p0) AND (r1.`screenTime` >= $p1) }",
     );
   });
+});
 
-  it("aggregation filters are not implemented yet (#72)", () => {
-    expect(() => compile({ actorsAggregate: { count: { eq: 1 } } })).toThrow(/see #72/);
-    expect(() =>
-      compile({ actorsConnection: { aggregate: { count: { nodes: { eq: 1 } } } } }),
-    ).toThrow(/see #72/);
+describe("where: aggregation filters", () => {
+  const pattern = "(this)<-[r1:`ACTED_IN`]-(n0:`Person`)";
+
+  it("connection form: count.nodes over distinct nodes, count.edges per relationship", () => {
+    const { predicate, params } = compile({
+      actorsConnection: { aggregate: { count: { nodes: { gte: 2 }, edges: { lt: 5 } } } },
+    });
+    expect(predicate).toBe(
+      `(COUNT { MATCH ${pattern} WITH DISTINCT n0 RETURN n0 } >= $p0) AND (COUNT { MATCH ${pattern} } < $p1)`,
+    );
+    expect(params).toEqual({ p0: 2, p1: 5 });
+  });
+
+  it("node and edge aggregates reduce the collected values", () => {
+    expect(
+      compile({
+        actorsConnection: {
+          aggregate: {
+            node: { born: { min: { lt: 1945 } } },
+            edge: { screenTime: { sum: { gt: 200 } } },
+          },
+        },
+      }).predicate,
+    ).toBe(
+      `([list2 IN [COLLECT { MATCH ${pattern} WITH DISTINCT n0 WITH n0 WHERE n0.\`born\` IS NOT NULL RETURN n0.\`born\` }] | reduce(acc = null, x IN list2 | CASE WHEN acc IS NULL OR x < acc THEN x ELSE acc END)][0] < $p0)` +
+        ` AND ([list3 IN [COLLECT { MATCH ${pattern} WITH r1 WHERE r1.\`screenTime\` IS NOT NULL RETURN r1.\`screenTime\` }] | reduce(acc = 0, x IN list3 | acc + x)][0] > $p1)`,
+    );
+  });
+
+  it("string aggregates compare lengths; AND / OR / NOT nest", () => {
+    const { predicate } = compile({
+      actorsConnection: {
+        aggregate: {
+          OR: [
+            { node: { name: { shortestLength: { lt: 5 } } } },
+            { NOT: { count: { nodes: { eq: 0 } } } },
+          ],
+        },
+      },
+    });
+    expect(predicate).toContain("RETURN size(n0.`name`) }] | reduce(acc = null");
+    expect(predicate).toMatch(/ OR \(NOT \(COUNT \{ MATCH .* \} = \$p1\)\)$/);
+  });
+
+  it("deprecated actorsAggregate: no DISTINCT, count filters and legacy keys", () => {
+    const { predicate, params } = compile({
+      actorsAggregate: {
+        count: { gte: 1 },
+        count_LT: 4,
+        node: { name_AVERAGE_LENGTH_GT: 8.5 },
+        edge: { screenTime_MAX_EQUAL: 120 },
+      },
+    });
+    expect(predicate).toContain(
+      `(COUNT { MATCH ${pattern} } >= $p0) AND (COUNT { MATCH ${pattern} } < $p1)`,
+    );
+    expect(predicate).not.toContain("DISTINCT");
+    expect(predicate).toContain("toFloat(reduce(acc = 0, x IN list2 | acc + x)) / size(list2)");
+    expect(params).toEqual({ p0: 1, p1: 4, p2: 8.5, p3: 120 });
+  });
+
+  it("DateTime aggregate values go through datetime()", () => {
+    const ctx = new CypherContext();
+    const predicate = new WhereCompiler(model, ctx).node("this", model.node("Person"), {
+      moviesConnection: {
+        aggregate: { node: { published: { max: { gt: "2020-01-01T00:00:00Z" } } } },
+      },
+    });
+    expect(predicate).toMatch(/\]\[0\] > datetime\(\$p0\)$/);
   });
 });

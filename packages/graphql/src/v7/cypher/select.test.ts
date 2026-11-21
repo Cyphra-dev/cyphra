@@ -119,7 +119,7 @@ describe("root fields compile to one statement each", () => {
     });
     expect(statements).toHaveLength(1);
     expect(statements[0]!.cypher).toContain(
-      "`actorsConnection`: { total: COUNT { MATCH (this0)<-[edge2:`ACTED_IN`]-(this1:`Person`) WHERE edge2.`screenTime` > $p0 }",
+      "`actorsConnection`: { edges: COLLECT { MATCH (this0)<-[edge2:`ACTED_IN`]-(this1:`Person`) WHERE edge2.`screenTime` > $p0 ",
     );
     expect(statements[0]!.cypher).toContain("ORDER BY edge2.`screenTime` DESC");
   });
@@ -144,11 +144,123 @@ describe("root fields compile to one statement each", () => {
     expect(mutation.errors?.[0]?.message).toMatch(
       /^Not implemented yet in @cyphra\/graphql \(see #73\)/,
     );
-    const aggregate = await execute({
-      schema,
-      document: parse("{ moviesConnection { aggregate { count { nodes } } } }"),
-    });
-    expect(aggregate.errors?.[0]?.message).toMatch(/see #72/);
     expect(statements).toHaveLength(0);
+  });
+});
+
+describe("connection aggregate selections", () => {
+  it("root aggregate: counts and field aggregates in the connection statement", async () => {
+    const neo4j = (await import("neo4j-driver")).default;
+    const { driver, statements } = fakeDriver(() => [
+      {
+        aggregate: {
+          agg: {
+            count: { n: neo4j.int(2) },
+            node: {
+              released: {
+                min: neo4j.int(1999),
+                avg: 2001,
+                total: neo4j.int(4002),
+              },
+              title: { longest: "The Matrix Reloaded", shortest: "The Matrix" },
+            },
+          },
+        },
+      },
+    ]);
+    const schema = makeSchema({ typeDefs, driver });
+    const result = await execute({
+      schema,
+      document: parse(`{
+        moviesConnection(where: { title: { startsWith: "The" } }) {
+          agg: aggregate {
+            count { n: nodes }
+            node {
+              released { min avg: average total: sum }
+              title { longest shortest }
+            }
+          }
+        }
+      }`),
+    });
+    expect(result.errors).toBeUndefined();
+    expect(statements).toHaveLength(1);
+    const base = "MATCH (this0:`Movie`) WHERE this0.`title` STARTS WITH $p0";
+    expect(statements[0]!.cypher).toBe(
+      "RETURN { aggregate: { `agg`: { " +
+        `\`count\`: { \`n\`: COUNT { ${base} WITH DISTINCT this0 RETURN this0 } }, ` +
+        "`node`: { " +
+        `\`released\`: [list1 IN [COLLECT { ${base} WITH DISTINCT this0 WHERE this0.\`released\` IS NOT NULL RETURN this0.\`released\` }] | { ` +
+        "`min`: reduce(acc = null, x IN list1 | CASE WHEN acc IS NULL OR x < acc THEN x ELSE acc END), " +
+        "`avg`: CASE size(list1) WHEN 0 THEN null ELSE toFloat(reduce(acc = 0, x IN list1 | acc + x)) / size(list1) END, " +
+        "`total`: reduce(acc = 0, x IN list1 | acc + x) }][0], " +
+        `\`title\`: [list2 IN [COLLECT { ${base} WITH DISTINCT this0 WHERE this0.\`title\` IS NOT NULL WITH this0 ORDER BY size(this0.\`title\`) DESC RETURN this0.\`title\` }] | { ` +
+        "`longest`: head(list2), `shortest`: last(list2) }][0] } } } } AS this",
+    );
+    expect(result.data).toEqual({
+      moviesConnection: {
+        agg: {
+          count: { n: 2 },
+          node: {
+            released: { min: 1999, avg: 2001, total: 4002 },
+            title: { longest: "The Matrix Reloaded", shortest: "The Matrix" },
+          },
+        },
+      },
+    });
+  });
+
+  it("nested aggregate: edges, edge properties, BigInt as strings, empty sets", async () => {
+    const neo4j = (await import("neo4j-driver")).default;
+    const { driver, statements } = fakeDriver(() => [
+      {
+        actorsConnection: {
+          aggregate: {
+            aggregate: {
+              count: { nodes: neo4j.int(0), edges: neo4j.int(0) },
+              node: { budget: { min: null, sum: neo4j.int(0), average: null } },
+              edge: { screenTime: { max: null, sum: neo4j.int(0) } },
+            },
+          },
+        },
+      },
+    ]);
+    const schema = makeSchema({ typeDefs, driver });
+    const result = await execute({
+      schema,
+      document: parse(`{
+        movies {
+          actorsConnection {
+            aggregate {
+              count { nodes edges }
+              node { budget { min sum average } }
+              edge { screenTime { max sum } }
+            }
+          }
+        }
+      }`),
+    });
+    expect(result.errors).toBeUndefined();
+    expect(statements).toHaveLength(1);
+    const cypher = statements[0]!.cypher;
+    const pattern = "MATCH (this0)<-[edge2:`ACTED_IN`]-(this1:`Person`)";
+    expect(cypher).toContain(`\`edges\`: COUNT { ${pattern} WITH DISTINCT edge2 RETURN edge2 }`);
+    expect(cypher).toContain(
+      `COLLECT { ${pattern} WITH DISTINCT edge2 WHERE edge2.\`screenTime\` IS NOT NULL RETURN edge2.\`screenTime\` }`,
+    );
+    expect(cypher).not.toContain("total:");
+    expect(result.data).toEqual({
+      movies: [
+        {
+          actorsConnection: {
+            aggregate: {
+              count: { nodes: 0, edges: 0 },
+              node: { budget: { min: null, sum: "0", average: null } },
+              edge: { screenTime: { max: null, sum: 0 } },
+            },
+          },
+        },
+      ],
+    });
   });
 });

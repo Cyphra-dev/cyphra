@@ -13,9 +13,9 @@ the same types, fields, filters, sorting, pagination and results. You keep your 
 frontend queries, and the API runs on the Cyphra runtime.
 
 <Callout type="warning">
-  This is an early release. The full v7 schema is generated and the read API works. Mutations,
-  aggregations, authorization and `@cypher` fields are in the schema but return a `Not implemented
-  yet` error for now. See [what works today](#what-works-today).
+  This is an early release. The full v7 schema is generated and the read API works, aggregations
+  included. Mutations, authorization and `@cypher` fields are in the schema but return a `Not
+  implemented yet` error for now. See [what works today](#what-works-today).
 </Callout>
 
 ## Install
@@ -122,23 +122,23 @@ keys and relationship types come from your type definitions.
 
 ## What works today
 
-Compatibility is checked by a suite of 5 apps and 47 operations. Its expected results come from the
-real `@neo4j/graphql` 7.6.8. Today 22 of its 52 checks pass: the printed schema of all 5 apps, and
-the 17 read operations that use no aggregation, authorization or `@cypher` field. The full report is
-[`compat/graphql/REPORT.md`](https://github.com/Cyphra-dev/cyphra/blob/main/compat/graphql/REPORT.md).
+Compatibility is checked by a suite of 5 apps and 48 operations. Its expected results come from the
+real `@neo4j/graphql` 7.6.8. Today 27 of its 53 checks pass: the printed schema of all 5 apps, and
+the 22 read operations (aggregations included) that use no authorization or `@cypher` field. The
+full report is [`compat/graphql/REPORT.md`](https://github.com/Cyphra-dev/cyphra/blob/main/compat/graphql/REPORT.md).
 
-| Feature                                                                                                                                    | Status                                                          |
-| ------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------- |
-| Generated schema: queries, connections, every `where` / `sort` / mutation input, aggregate types, deprecated `field_OPERATOR` fields       | Works: the printed SDL is identical to v7                       |
-| List queries: `movies(where, sort, limit, offset)`, pluralization like v7, `@plural`                                                       | Works                                                           |
-| Filters on `String`, `ID`, `Int`, `Float`, `BigInt`, `Boolean`, `Date`, `DateTime`, enums and lists, with `AND` / `OR` / `NOT`             | Works                                                           |
-| Relationship filters `some` / `all` / `none` / `single`, connection filters on `node` and `edge`                                           | Works                                                           |
-| Connections: `totalCount`, `pageInfo`, cursors with `first` / `after`, nested connections with edge `properties`, sort and filter on edges | Works                                                           |
-| Nested relationship fields with `where`, `sort`, `limit`, `offset`                                                                         | Works                                                           |
-| Aggregations: `aggregate { … }` and aggregation filters                                                                                    | Not yet ([#72](https://github.com/Cyphra-dev/cyphra/issues/72)) |
-| Mutations: `create`, `update`, `delete`, nested `connect` / `disconnect`                                                                   | Not yet ([#73](https://github.com/Cyphra-dev/cyphra/issues/73)) |
-| `@authentication` / `@authorization`                                                                                                       | Not yet ([#74](https://github.com/Cyphra-dev/cyphra/issues/74)) |
-| `@cypher` fields                                                                                                                           | Not yet ([#75](https://github.com/Cyphra-dev/cyphra/issues/75)) |
+| Feature                                                                                                                                       | Status                                                          |
+| --------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| Generated schema: queries, connections, every `where` / `sort` / mutation input, aggregate types, deprecated `field_OPERATOR` fields          | Works: the printed SDL is identical to v7                       |
+| List queries: `movies(where, sort, limit, offset)`, pluralization like v7, `@plural`                                                          | Works                                                           |
+| Filters on `String`, `ID`, `Int`, `Float`, `BigInt`, `Boolean`, `Date`, `DateTime`, enums and lists, with `AND` / `OR` / `NOT`                | Works                                                           |
+| Relationship filters `some` / `all` / `none` / `single`, connection filters on `node` and `edge`                                              | Works                                                           |
+| Connections: `totalCount`, `pageInfo`, cursors with `first` / `after`, nested connections with edge `properties`, sort and filter on edges    | Works                                                           |
+| Nested relationship fields with `where`, `sort`, `limit`, `offset`                                                                            | Works                                                           |
+| Aggregations: `aggregate { count, node, edge }` on root and nested connections, aggregation filters (`aggregate` and deprecated `xAggregate`) | Works                                                           |
+| Mutations: `create`, `update`, `delete`, nested `connect` / `disconnect`                                                                      | Not yet ([#73](https://github.com/Cyphra-dev/cyphra/issues/73)) |
+| `@authentication` / `@authorization`                                                                                                          | Not yet ([#74](https://github.com/Cyphra-dev/cyphra/issues/74)) |
+| `@cypher` fields                                                                                                                              | Not yet ([#75](https://github.com/Cyphra-dev/cyphra/issues/75)) |
 
 A type with `@authentication` or `@authorization` rules for reads is never read without them: the
 query returns a `Not implemented yet` error instead of unfiltered data.
@@ -150,6 +150,11 @@ query returns a `Not implemented yet` error instead of unfiltered data.
   node. `all` is not true for a node with no related nodes.
 - A cursor is `base64("arrayconnection:<offset>")`. An invalid `after` cursor returns the first page.
 - `BigInt` values are returned as strings, `Date` as `yyyy-mm-dd` and `DateTime` as ISO-8601 strings.
+  BigInt aggregates are strings too, `average` included. An Int `average` is a Float.
+- Aggregates ignore `first` / `after` but apply the connection `where`. `count.nodes` and `node`
+  aggregates count each related node once. On an empty set, `count` and `sum` are `0` and the other
+  aggregates are `null`. An aggregation filter that compares a `null` aggregate matches nothing, even
+  under `NOT`.
   As in v7, `Date` inputs are read in the time zone of the process: run the server with `TZ=UTC`.
 
 ## Move the data model to Cyphra

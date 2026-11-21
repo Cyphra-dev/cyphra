@@ -1,0 +1,144 @@
+# features: aggregate, aggregate.edge, filter.aggregate
+query {
+  people(where: { id: { in: ["p-lana", "p-jack", "p-keanu"] } }) {
+    id
+    actedInConnection {
+      aggregate {
+        count {
+          nodes
+          edges
+        }
+        node {
+          released {
+            min
+            max
+            average
+            sum
+          }
+          rating {
+            min
+            sum
+            average
+          }
+          title {
+            shortest
+            longest
+          }
+        }
+        edge {
+          screenTime {
+            min
+            max
+            sum
+            average
+          }
+        }
+      }
+    }
+  }
+  emptyRoot: moviesConnection(where: { title: { eq: "nope" } }) {
+    aggregate {
+      count {
+        nodes
+      }
+      node {
+        released {
+          min
+          max
+          average
+          sum
+        }
+        rating {
+          sum
+          average
+        }
+        title {
+          shortest
+          longest
+        }
+      }
+    }
+  }
+  filteredNested: movies(where: { id: { eq: "m-matrix" } }) {
+    actorsConnection(where: { node: { born: { gt: 1962 } } }, first: 1) {
+      totalCount
+      aggregate {
+        count {
+          nodes
+          edges
+        }
+        node {
+          born {
+            min
+            max
+          }
+        }
+      }
+    }
+  }
+  deprecatedCount: movies(where: { actorsAggregate: { count: { gte: 2 } } }) {
+    title
+  }
+  deprecatedLegacyCount: movies(where: { actorsAggregate: { count_GT: 2 } }) {
+    title
+  }
+  deprecatedNode: movies(where: { actorsAggregate: { node: { name_SHORTEST_LENGTH_LT: 10 } } }) {
+    title
+  }
+  deprecatedEdge: movies(where: { actorsAggregate: { edge: { screenTime_AVERAGE_GTE: 100 } } }) {
+    title
+  }
+  stringLength: movies(
+    where: {
+      actorsConnection: {
+        aggregate: { node: { name: { averageLength: { gt: 14 }, longestLength: { gte: 18 } } } }
+      }
+    }
+  ) {
+    title
+  }
+  notCount: movies(
+    where: { NOT: { actorsConnection: { aggregate: { count: { nodes: { gte: 2 } } } } } }
+  ) {
+    title
+  }
+  noDirectors: movies(
+    where: { directorsConnection: { aggregate: { count: { nodes: { eq: 0 } } } } }
+  ) {
+    title
+  }
+  orAggregate: movies(
+    where: {
+      actorsConnection: {
+        aggregate: {
+          OR: [{ count: { edges: { eq: 1 } } }, { edge: { screenTime: { max: { lt: 90 } } } }]
+        }
+      }
+    }
+  ) {
+    title
+  }
+  notMin: people(
+    where: {
+      actedInConnection: { aggregate: { NOT: { node: { released: { min: { lt: 1998 } } } } } }
+    }
+  ) {
+    name
+  }
+  nestedAggregate: people(
+    where: {
+      actedIn: {
+        some: {
+          actorsConnection: { aggregate: { edge: { screenTime: { sum: { gt: 200 } } } } }
+        }
+      }
+    }
+  ) {
+    name
+  }
+  avgReleased: people(
+    where: { actedInConnection: { aggregate: { node: { released: { average: { gt: 1998.5 } } } } } }
+  ) {
+    name
+  }
+}

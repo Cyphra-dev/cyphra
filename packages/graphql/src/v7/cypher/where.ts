@@ -6,7 +6,12 @@
  * - `{ eq: null }` matches a missing property (`IS NULL`);
  * - relationship quantifiers: `some`, `none` and `single` with an empty filter (`{}`) are ignored
  *   (they match every node); `all` requires at least one related node and is not vacuously true;
- * - deprecated `field_OPERATOR` keys (`title_CONTAINS`, `actors_SOME`, …) behave like the generic form.
+ * - deprecated `field_OPERATOR` keys (`title_CONTAINS`, `actors_SOME`, …) behave like the generic form;
+ * - aggregation filters (`actorsConnection: { aggregate: … }` and the deprecated `actorsAggregate`):
+ *   each comparison aggregates the related nodes / relationships in its own subquery and compares
+ *   the result (an empty set gives `count` 0, `sum` 0 and `null` for the other aggregates, which
+ *   matches nothing, even under `NOT`). In the connection form, `count.nodes` and `node` aggregates
+ *   run over distinct nodes; `count.edges`, `edge` and the deprecated form do not deduplicate.
  *
  * Every value becomes a parameter; every identifier comes from the type definitions and is quoted.
  *
@@ -16,7 +21,14 @@
 import neo4j from "neo4j-driver";
 import { FOLLOW_UP, notImplemented } from "../errors.js";
 import type { Attribute, NodeType, PropertiesType, Relationship, V7Model } from "../model.js";
-import { type CypherContext, labels, q } from "./context.js";
+import {
+  type CypherContext,
+  labels,
+  listAggregate,
+  q,
+  withList,
+  type ListAggregate,
+} from "./context.js";
 
 type AnyRecord = Record<string, unknown>;
 
@@ -207,6 +219,66 @@ function quantified(
   }
 }
 
+type AggregateScope = { pattern: string; nodeVar: string; relVar: string };
+
+/** Comparison keys of aggregation filters, generic and deprecated (`_EQUAL`, `count_EQ`). */
+const AGGREGATION_COMPARISON: Record<string, string> = {
+  EQ: "eq",
+  EQUAL: "eq",
+  GT: "gt",
+  GTE: "gte",
+  LT: "lt",
+  LTE: "lte",
+};
+
+const GENERIC_AGGREGATES: Record<string, ListAggregate> = {
+  average: "avg",
+  averageLength: "avg",
+  min: "min",
+  shortest: "min",
+  shortestLength: "min",
+  max: "max",
+  longest: "max",
+  longestLength: "max",
+  sum: "sum",
+};
+
+const LEGACY_AGGREGATES: Record<string, ListAggregate> = {
+  AVERAGE: "avg",
+  MIN: "min",
+  SHORTEST: "min",
+  MAX: "max",
+  LONGEST: "max",
+  SUM: "sum",
+};
+
+const COMPARISON_OPERATORS: Record<string, string> = {
+  eq: "=",
+  gt: ">",
+  gte: ">=",
+  lt: "<",
+  lte: "<=",
+};
+
+/**
+ * `expr <op> $p` for an aggregation filter. Numbers are passed as they come (an `average` filter
+ * on an Int field takes a Float); DateTime values go through `datetime()`.
+ */
+function comparison(
+  ctx: CypherContext,
+  expr: string,
+  op: string,
+  value: unknown,
+  attr: Attribute | undefined,
+): string | undefined {
+  if (value === undefined || value === null) return undefined;
+  const cmp = COMPARISON_OPERATORS[op];
+  if (!cmp) throw new Error(`Invalid aggregation filter operator ${op}`);
+  const p = ctx.param(value);
+  const isDateTime = attr?.kind === "scalar" && attr.type.name === "DateTime";
+  return `${expr} ${cmp} ${isDateTime ? `datetime(${p})` : p}`;
+}
+
 export class WhereCompiler {
   constructor(
     private readonly model: V7Model,
@@ -256,17 +328,13 @@ export class WhereCompiler {
       if (!isPlainObject(value)) return undefined;
       return and(
         Object.entries(value).map(([q, w]) => {
-          if (q === "aggregate") {
-            if (w === null || w === undefined) return undefined;
-            throw notImplemented(`aggregation filter ${key}.aggregate`, FOLLOW_UP.aggregations);
-          }
+          if (q === "aggregate") return this.aggregate(variable, rel!, w, false);
           return this.relatedConnection(variable, rel!, q as Quantifier, w);
         }),
       );
     }
-    if (key.endsWith("Aggregate") && find(key.slice(0, -"Aggregate".length))) {
-      if (value === null) return undefined;
-      throw notImplemented(`aggregation filter ${key}`, FOLLOW_UP.aggregations);
+    if (key.endsWith("Aggregate") && (rel = find(key.slice(0, -"Aggregate".length)))) {
+      return this.aggregate(variable, rel, value, true);
     }
     // Deprecated `actors_SOME` / `actorsConnection_SOME`.
     const m = /^(.+)_(ALL|NONE|SINGLE|SOME)$/.exec(key);
@@ -312,6 +380,147 @@ export class WhereCompiler {
       quantifier,
       this.connection(r, m, rel, where),
     );
+  }
+
+  /**
+   * Predicate for a `${Source}${Rel}ConnectionAggregateInput` (`deprecated`: `${…}AggregateInput`,
+   * the `actorsAggregate` form): `count`, `node`, `edge`, combined with AND / OR / NOT.
+   */
+  private aggregate(
+    variable: string,
+    rel: Relationship,
+    where: unknown,
+    deprecated: boolean,
+  ): string | undefined {
+    if (!isPlainObject(where)) return undefined;
+    const target = this.model.node(rel.target);
+    this.onTraverse(target);
+    const m = this.ctx.variable("n");
+    const r = this.ctx.variable("r");
+    const pattern = relationshipPattern(this.model, variable, rel, m, r);
+    const scope: AggregateScope = { pattern, nodeVar: m, relVar: r };
+    const compile = (w: AnyRecord): string | undefined => {
+      const parts: (string | undefined)[] = [];
+      for (const [key, value] of Object.entries(w)) {
+        if (value === undefined || value === null) continue;
+        const l = logical(w, key, compile);
+        if (l.handled) {
+          parts.push(l.predicate);
+          continue;
+        }
+        if (key === "count") {
+          if (!isPlainObject(value)) continue;
+          if (deprecated) {
+            parts.push(this.countFilter(scope, false, value));
+            continue;
+          }
+          for (const [what, filters] of Object.entries(value)) {
+            if (!isPlainObject(filters)) continue;
+            if (what === "nodes") parts.push(this.countFilter(scope, true, filters));
+            else if (what === "edges") parts.push(this.countFilter(scope, false, filters));
+            else throw new Error(`Unknown aggregation count filter ${what}`);
+          }
+          continue;
+        }
+        const legacyCount = /^count_(EQ|GT|GTE|LT|LTE)$/.exec(key);
+        if (legacyCount) {
+          parts.push(
+            this.countFilter(scope, false, {
+              [AGGREGATION_COMPARISON[legacyCount[1]!]!]: value,
+            }),
+          );
+          continue;
+        }
+        if (key === "node") {
+          parts.push(this.aggregationWhere(scope, target.attributes, "node", !deprecated, value));
+          continue;
+        }
+        if (key === "edge") {
+          const props = this.model.properties.get(rel.properties ?? "");
+          if (!props) throw new Error(`Unknown aggregation filter ${key}`);
+          parts.push(this.aggregationWhere(scope, props.attributes, "edge", false, value));
+          continue;
+        }
+        throw new Error(`Unknown aggregation filter ${key}`);
+      }
+      return and(parts);
+    };
+    return compile(where);
+  }
+
+  /** `count` filters: `COUNT { … } >= $p` (one row per relationship, or per distinct node). */
+  private countFilter(
+    scope: AggregateScope,
+    distinct: boolean,
+    filters: AnyRecord,
+  ): string | undefined {
+    const count = distinct
+      ? `COUNT { MATCH ${scope.pattern} WITH DISTINCT ${scope.nodeVar} RETURN ${scope.nodeVar} }`
+      : `COUNT { MATCH ${scope.pattern} }`;
+    return and(
+      Object.entries(filters).map(([op, v]) => comparison(this.ctx, count, op, v, undefined)),
+    );
+  }
+
+  /** `${…}NodeAggregationWhereInput` / `${Properties}AggregationWhereInput`. */
+  private aggregationWhere(
+    scope: AggregateScope,
+    attributes: readonly Attribute[],
+    on: "node" | "edge",
+    distinct: boolean,
+    where: unknown,
+  ): string | undefined {
+    if (!isPlainObject(where)) return undefined;
+    const parts: (string | undefined)[] = [];
+    for (const [key, value] of Object.entries(where)) {
+      if (value === undefined || value === null) continue;
+      const l = logical(where, key, (w) =>
+        this.aggregationWhere(scope, attributes, on, distinct, w),
+      );
+      if (l.handled) {
+        parts.push(l.predicate);
+        continue;
+      }
+      const direct = attributes.find((a) => a.name === key);
+      if (direct) {
+        if (!isPlainObject(value)) continue;
+        for (const [aggOp, filters] of Object.entries(value)) {
+          if (!isPlainObject(filters)) continue;
+          const fn = GENERIC_AGGREGATES[aggOp];
+          if (!fn) throw new Error(`Invalid aggregation operator ${aggOp}`);
+          const agg = this.aggregated(scope, direct, on, distinct, fn);
+          for (const [op, v] of Object.entries(filters)) {
+            parts.push(comparison(this.ctx, agg, op, v, direct));
+          }
+        }
+        continue;
+      }
+      const m =
+        /^(.+?)_(AVERAGE|MAX|MIN|SUM|SHORTEST|LONGEST)(?:_LENGTH)?_(EQUAL|GT|GTE|LT|LTE)$/.exec(
+          key,
+        );
+      const attr = m && attributes.find((a) => a.name === m[1]);
+      if (!m || !attr) throw new Error(`Unknown aggregation filter ${key}`);
+      const agg = this.aggregated(scope, attr, on, distinct, LEGACY_AGGREGATES[m[2]!]!);
+      parts.push(comparison(this.ctx, agg, AGGREGATION_COMPARISON[m[3]!]!, value, attr));
+    }
+    return and(parts);
+  }
+
+  /** `min` / `max` / … of the related values (`COLLECT { MATCH … RETURN n.born }`); strings: `size()`. */
+  private aggregated(
+    scope: AggregateScope,
+    attr: Attribute,
+    on: "node" | "edge",
+    distinct: boolean,
+    fn: ListAggregate,
+  ): string {
+    const v = on === "node" ? scope.nodeVar : scope.relVar;
+    const prop = `${v}.${q(attr.property)}`;
+    const expr = attr.kind === "scalar" && attr.type.name === "String" ? `size(${prop})` : prop;
+    const dedupe = distinct ? ` WITH DISTINCT ${v}` : "";
+    const list = `COLLECT { MATCH ${scope.pattern}${dedupe} WITH ${v} WHERE ${prop} IS NOT NULL RETURN ${expr} }`;
+    return withList(list, this.ctx.variable("list"), (l) => listAggregate(fn, l));
   }
 
   /** Predicate for a `${Source}${Rel}ConnectionWhere` input (`node` / `edge`, AND / OR / NOT). */
