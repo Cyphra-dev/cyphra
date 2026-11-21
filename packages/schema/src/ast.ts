@@ -29,13 +29,23 @@ export type RelationshipDeclaration = {
 
 export type NodeField = ScalarNodeField | RelationalNodeField;
 
-export type ScalarTypeName = "String" | "Int" | "Float" | "Boolean" | "DateTime" | "Date";
+export type ScalarTypeName =
+  | "String"
+  | "Int"
+  | "Float"
+  | "Boolean"
+  | "DateTime"
+  | "Date"
+  /** `Vector(N)`: an embedding of `N` floats, stored as `LIST<FLOAT>`. */
+  | "Vector";
 
 export type ScalarTypeRef = {
   readonly name: ScalarTypeName;
   readonly optional: boolean;
   /** `String[]`-style scalar list (lists are never optional; an absent list reads as `[]`). */
   readonly list?: boolean;
+  /** Number of dimensions of a `Vector(N)` type (only set when `name` is `"Vector"`). */
+  readonly dimensions?: number;
 };
 
 export type ScalarNodeField = {

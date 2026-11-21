@@ -67,7 +67,10 @@ scalarNodeField
     }
 
 fieldType
-  = n:scalarTypeName "[]" {
+  = "Vector" _ "(" _ d:$([0-9]+) _ ")" opt:"?"? {
+      return { name: "Vector", optional: opt === "?", dimensions: Number(d) };
+    }
+  / n:scalarTypeName "[]" {
       return { name: n, optional: false, list: true };
     }
   / n:scalarTypeName opt:"?"? {

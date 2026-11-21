@@ -216,6 +216,7 @@ The left column uses the names from the Prisma ORM 7
 | `_count` in `select` / `include`, `orderBy`  | same shapes ([Counting](/client#counting-related-nodes))                                     |
 | no equivalent (no multi-hop queries)         | `db.user.traverse({ from, via, depth })` ([Traversals](/client#traversals))                  |
 | no equivalent (no path queries)              | `db.user.shortestPath({ from, to, via, maxDepth })` ([Shortest path](/client#shortest-path)) |
+| no equivalent (no vector search)             | `db.chunk.findSimilar({ field, vector, k, where })` ([Vector search](/client#vector-search)) |
 | `$transaction(async (tx) => …)`              | `db.$transaction(async (tx) => …)`                                                           |
 | `$queryRaw` tagged template                  | `` db.$cypher`…` `` (parameterized Cypher)                                                   |
 | `$disconnect()`                              | `db.$disconnect()`                                                                           |
@@ -252,7 +253,7 @@ No. Cyphra is a separate open-source project under the MIT license. Its client f
 
 ### Which Neo4j versions does Cyphra need?
 
-The typed client needs Neo4j 5.6 or later, because it compiles relations to COLLECT and EXISTS subqueries. Relationship property uniqueness constraints need Neo4j 5.7 or later, traversals (traverse) need Neo4j 5.9 or later, and shortest paths (shortestPath, allShortestPaths) need Neo4j 5.21 or later.
+The typed client needs Neo4j 5.6 or later, because it compiles relations to COLLECT and EXISTS subqueries. Relationship property uniqueness constraints need Neo4j 5.7 or later, traversals (traverse) need Neo4j 5.9 or later, vector indexes and findSimilar need Neo4j 5.15 or later, and shortest paths (shortestPath, allShortestPaths) need Neo4j 5.21 or later.
 
 ### Can I use Cyphra with an existing Neo4j database?
 

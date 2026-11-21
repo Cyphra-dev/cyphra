@@ -107,3 +107,60 @@ relationship Authored {
     expect(printed).not.toContain("__CyphraMigration");
   });
 });
+
+describe("schemaFromIntrospection (vector indexes)", () => {
+  const vectorIndex = (
+    name: string,
+    property: string,
+    indexConfig: Record<string, unknown>,
+  ): IntrospectionResult["indexes"][number] => ({
+    name,
+    type: "VECTOR",
+    entityType: "NODE",
+    labelsOrTypes: ["Chunk"],
+    properties: [property],
+    owningConstraint: null,
+    options: { indexProvider: "vector-2.0", indexConfig },
+  });
+  const { doc, warnings } = schemaFromIntrospection({
+    nodeTypes: [
+      {
+        labels: ["Chunk"],
+        properties: [
+          { propertyName: "embedding", propertyTypes: ["DoubleArray"], mandatory: false },
+          { propertyName: "title", propertyTypes: ["FloatArray"], mandatory: true },
+          { propertyName: "weird", propertyTypes: ["DoubleArray"], mandatory: false },
+        ],
+      },
+    ],
+    relTypes: [],
+    constraints: [],
+    indexes: [
+      vectorIndex("Chunk_embedding_vector", "embedding", {
+        "vector.dimensions": 1536,
+        "vector.similarity_function": "COSINE",
+        "vector.quantization.enabled": true,
+      }),
+      vectorIndex("titles", "title", {
+        "vector.dimensions": 384,
+        "vector.similarity_function": "EUCLIDEAN",
+        "vector.quantization.enabled": false,
+      }),
+      vectorIndex("weird_idx", "weird", { "vector.similarity_function": "COSINE" }),
+    ],
+  });
+  const printed = printSchemaDocument(doc);
+
+  it("maps vector indexes to Vector(N) fields with @vectorIndex", () => {
+    expect(printed).toBe(`node Chunk {
+  embedding Vector(1536)? @vectorIndex(similarity: cosine)
+  title Vector(384) @vectorIndex(similarity: euclidean, name: "titles", quantization: false)
+  weird Float[]
+}
+`);
+    expect(() => resolveSchema(parseSchema(printed))).not.toThrow();
+    expect(warnings.join("\n")).toMatch(
+      /Skipped vector index weird_idx: no supported vector\.dimensions/,
+    );
+  });
+});

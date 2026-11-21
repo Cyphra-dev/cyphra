@@ -3,6 +3,7 @@ import {
   applyConstraintStatements,
   constraintStatementsFromSchema,
   indexStatementsFromSchema,
+  vectorIndexStatementsFromSchema,
 } from "@cyphra/migrator";
 import { parseSchema } from "@cyphra/schema";
 import { loadConfig } from "../config.js";
@@ -19,12 +20,13 @@ export async function runPush(cwd: string): Promise<void> {
   const doc = parseSchema(source);
   const constraints = constraintStatementsFromSchema(doc);
   const indexes = indexStatementsFromSchema(doc);
-  const statements = [...constraints, ...indexes];
+  const vectorIndexes = vectorIndexStatementsFromSchema(doc);
+  const statements = [...constraints, ...indexes, ...vectorIndexes];
   const client = clientFromEnv(false);
   try {
     await applyConstraintStatements(client, statements);
     console.log(
-      `Applied ${constraints.length} constraint statement(s) and ${indexes.length} range index statement(s)`,
+      `Applied ${constraints.length} constraint statement(s), ${indexes.length} range index statement(s) and ${vectorIndexes.length} vector index statement(s)`,
     );
   } finally {
     await client.close();

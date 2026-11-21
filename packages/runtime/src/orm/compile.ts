@@ -151,6 +151,29 @@ function compileListFilter(
   return and(parts);
 }
 
+/** Vector fields only filter on presence: `null`, `{ equals: null }`, `{ not: null }`. */
+function compileVectorFilter(
+  model: ResolvedNodeModel,
+  field: ResolvedScalarField,
+  ref: string,
+  filter: unknown,
+): string | null {
+  if (filter === null) return `${ref} IS NULL`;
+  const keys = isPlainObject(filter)
+    ? Object.keys(filter).filter((k) => filter[k] !== undefined)
+    : [];
+  if (
+    isPlainObject(filter) &&
+    keys.every((k) => (k === "equals" || k === "not") && filter[k] === null)
+  ) {
+    const parts = keys.map((k) => (k === "equals" ? `${ref} IS NULL` : `${ref} IS NOT NULL`));
+    return and(parts);
+  }
+  throw new CyphraValidationError(
+    `${model.name}.${field.name}: Vector fields can only be filtered on null (null, { equals: null }, { not: null }); use findSimilar to search them.`,
+  );
+}
+
 type StringFilterMode = QueryMode;
 
 /**
@@ -166,6 +189,7 @@ export function compileScalarFilter(
   inheritedMode: StringFilterMode = "default",
 ): string | null {
   if (filter === undefined) return null;
+  if (field.type === "Vector") return compileVectorFilter(model, field, ref, filter);
   if (field.list) return compileListFilter(ctx, model, field, ref, filter);
   const enc = (v: unknown) => encodeFilterValue(field, v, model.name);
   if (filter === null) return `${ref} IS NULL`;
@@ -396,7 +420,11 @@ export function compileOrderBy(
         parts.push(`${compileRelationCount(ctx, model, alias, rel)} ${d}`);
         continue;
       }
-      scalarOrThrow(model, key);
+      if (scalarOrThrow(model, key).type === "Vector") {
+        throw new CyphraValidationError(
+          `orderBy ${model.name}.${key}: Vector fields cannot be sorted.`,
+        );
+      }
       parts.push(`${alias}.${q(key)} ${sortDirection(dir, `${model.name}.${key}`)}`);
     }
   }

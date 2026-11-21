@@ -1,4 +1,10 @@
-import type { NodeDeclaration, ScalarNodeField, SchemaDocument } from "@cyphra/schema";
+import {
+  resolveSchema,
+  type NodeDeclaration,
+  type ScalarNodeField,
+  type SchemaDocument,
+} from "@cyphra/schema";
+import { vectorIndexStatement } from "./diff.js";
 
 function isScalarWithDecorator(
   field: { readonly kind: string; readonly decorators: readonly { readonly name: string }[] },
@@ -118,6 +124,24 @@ export function indexStatementsFromSchema(doc: SchemaDocument): string[] {
       statements.push(
         `CREATE RANGE INDEX ${escapeConstraintName(`${decl.name}_${f.name}_rel_idx`)} IF NOT EXISTS FOR ()-[r:${typeTok}]-() ON (r.\`${f.name}\`)`,
       );
+    }
+  }
+  return statements;
+}
+
+/**
+ * Generate `CREATE VECTOR INDEX … IF NOT EXISTS` for every `Vector(N) @vectorIndex(...)` node field,
+ * with `vector.dimensions` and `vector.similarity_function` in `OPTIONS` (Neo4j 5.15+).
+ *
+ * @param doc - Parsed schema AST.
+ * @returns Cypher DDL strings, named like migrations name them.
+ */
+export function vectorIndexStatementsFromSchema(doc: SchemaDocument): string[] {
+  const statements: string[] = [];
+  for (const n of resolveSchema(doc).nodes) {
+    for (const f of n.fields) {
+      const stmt = f.kind === "scalar" ? vectorIndexStatement(n.label, f) : null;
+      if (stmt) statements.push(stmt);
     }
   }
   return statements;

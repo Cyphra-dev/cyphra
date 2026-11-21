@@ -25,7 +25,7 @@ App code depends on **`cyphra`** separately (see [Getting started](/getting-star
 | `cyphra migration:create <name>` | Empty `.mjs` migration to write by hand                                                                                   |
 | `cyphra pull`                    | Introspect the database and write `schema.cyphra` (`--print`, `--force`)                                                  |
 | `cyphra import graphql <files>`  | Convert `@neo4j/graphql` v7 type definitions to `schema.cyphra` (`--out`, `--merge`, `--force`, `--print`)                |
-| `cyphra push`                    | Apply constraints and range indexes directly (prototyping)                                                                |
+| `cyphra push`                    | Apply constraints, range indexes and vector indexes directly (prototyping)                                                |
 | `cyphra validate`                | Parse and validate the schema                                                                                             |
 | `cyphra schema print`            | Canonical pretty-print of the schema                                                                                      |
 | `cyphra schema ddl`              | Print the constraint and index DDL (no database)                                                                          |
@@ -71,6 +71,8 @@ their endpoints. Review the result:
 - A property is required only if every node with that label had it at pull time.
 - Single-property uniqueness constraints become `@id` (on a property named `id`) or `@unique`; range
   indexes become `@index`.
+- Node vector indexes become `Vector(N)` fields with `@vectorIndex(similarity: …)`, keeping the index
+  name when it is not the default one (and `quantization: false` when it is off).
 - Unsupported types (e.g. `Point`) and names that are not identifiers are skipped with a warning.
 
 ## Import from @neo4j/graphql

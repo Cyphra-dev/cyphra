@@ -22,6 +22,7 @@ const TS_SCALAR: Record<ScalarTypeName, string> = {
   Boolean: "boolean",
   DateTime: "Date",
   Date: "Date",
+  Vector: "number[]",
 };
 
 function tsFieldType(f: ResolvedScalarField): string {
@@ -71,6 +72,14 @@ export function renderClientSection(model: SchemaModel): string[] {
     lines.push(`    scalars: ${n.name};`);
     lines.push(`    createRequired: ${union(required)};`);
     lines.push(`    unique: ${union(n.uniqueFields)};`);
+    // Only emitted when present, so schemas without vectors generate the same code as before.
+    const vectors = scalars.filter((f) => f.type === "Vector");
+    if (vectors.length > 0) {
+      lines.push(`    vectors: ${union(vectors.map((f) => f.name))};`);
+      lines.push(
+        `    vectorIndexes: ${union(vectors.filter((f) => f.vectorIndex).map((f) => f.name))};`,
+      );
+    }
     const relations = n.fields.filter((f): f is ResolvedRelationField => f.kind === "relation");
     if (relations.length === 0) {
       // Not `{}`: an empty object type trips @typescript-eslint/no-empty-object-type.
