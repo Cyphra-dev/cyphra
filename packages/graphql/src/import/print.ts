@@ -6,10 +6,12 @@
  */
 
 import {
+  formatModelAttribute,
   parseSchema,
   printSchemaDocument,
   resolveSchema,
   type Declaration,
+  type ModelAttribute,
   type NodeDeclaration,
   type NodeField,
   type SchemaDocument,
@@ -24,7 +26,9 @@ function printDeclaration(decl: Declaration, notes: readonly string[] | undefine
   const text = printSchemaDocument({ kind: "Document", declarations: [decl] }).trimEnd();
   if (!notes?.length) return text;
   const lines = text.split("\n");
-  lines.splice(lines.length - 1, 0, ...notes.map((n) => `  // ${n}`));
+  // After the last field: before the closing brace, or before the blank line and `@@…` attributes.
+  const attrs = decl.attributes?.length ? decl.attributes.length + 1 : 0;
+  lines.splice(lines.length - 1 - attrs, 0, ...notes.map((n) => `  // ${n}`));
   return lines.join("\n");
 }
 
@@ -142,14 +146,25 @@ export function mergeImportedSchema(
       else if (formatField(mine) !== formatField(f))
         kept(`${decl.name}.${f.name}`, `field ${f.name}`);
     }
+    // Full-text indexes the existing node lacks (matched by index name).
+    const nameOf = (a: ModelAttribute) => a.args.find((x) => x.key === "name")?.value.value;
+    const attrs: string[] = [];
+    for (const a of decl.attributes ?? []) {
+      const mine = (current as NodeDeclaration).attributes?.find(
+        (x) => x.name === a.name && nameOf(x) === nameOf(a),
+      );
+      if (!mine) attrs.push(formatModelAttribute(a));
+      else if (formatModelAttribute(mine) !== formatModelAttribute(a))
+        kept(decl.name, `@@${a.name} ${String(nameOf(a))}`);
+    }
     // Skip notes already in the file (importing the same type definitions again).
     const notes = (result.notes.get(decl.name) ?? []).filter((n) => !out.includes(`// ${n}`));
-    if (missing.length === 0 && notes.length === 0) continue;
+    if (missing.length === 0 && notes.length === 0 && attrs.length === 0) continue;
     const close = nodeCloseBrace(out, decl.name);
     if (close < 0) throw new Error(`Could not find the block of node "${decl.name}".`);
     const lineStart = out.lastIndexOf("\n", close - 1) + 1;
     const onOwnLine = out.slice(lineStart, close).trim() === "";
-    const added = [...missing.map(formatField), ...notes.map((n) => `// ${n}`)]
+    const added = [...missing.map(formatField), ...attrs, ...notes.map((n) => `// ${n}`)]
       .map((l) => `  ${l}\n`)
       .join("");
     out = onOwnLine

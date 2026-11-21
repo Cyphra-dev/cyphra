@@ -19,6 +19,7 @@ import {
 } from "graphql";
 import type {
   Decorator,
+  ModelAttribute,
   NodeDeclaration,
   NodeField,
   RelationshipDeclaration,
@@ -34,6 +35,7 @@ import {
   TYPE_DIRECTIVES,
   enumListArg,
   stringArg,
+  type FulltextDraft,
   type ImportIssue,
   type IssueDraft,
   type ScalarMapping,
@@ -300,7 +302,7 @@ export function convertGraphQLTypeDefs(
           report(t.name, {
             severity: "unsupported",
             feature: t.name,
-            message: `custom ${t.name} fields (@cypher, resolvers) are not converted: write them as Cyphra queries`,
+            message: `custom ${t.name} fields (@cypher, resolvers) are not converted (compat.v7 still serves @cypher fields); with the typed client, write them as queries`,
           });
         } else if (directive(t.directives, "jwt")) {
           report(t.name, {
@@ -321,6 +323,7 @@ export function convertGraphQLTypeDefs(
   }
 
   const usedNames = new Set<string>(types.keys());
+  const fulltextOf = new Map<string, FulltextDraft[]>();
   for (const t of nodeTypes) {
     let name = t.name;
     for (const d of t.directives) {
@@ -344,6 +347,9 @@ export function convertGraphQLTypeDefs(
       }
       const effect = rule(d, t.name);
       for (const i of effect.issues ?? []) report(t.name, i);
+      if (effect.fulltext?.length) {
+        fulltextOf.set(t.name, [...(fulltextOf.get(t.name) ?? []), ...effect.fulltext]);
+      }
       if (effect.rename && effect.rename !== name) {
         if (usedNames.has(effect.rename) || [...nodeName.values()].includes(effect.rename)) {
           report(t.name, {
@@ -365,6 +371,8 @@ export function convertGraphQLTypeDefs(
   for (const t of nodeTypes) {
     const declName = nodeName.get(t.name)!;
     const fields: NodeField[] = [];
+    /** GraphQL field name → converted scalar field (its name may differ after `@alias`). */
+    const scalarOf = new Map<string, ScalarNodeField>();
     let hasId = false;
     for (const f of t.fields) {
       const at = `${t.name}.${f.name.value}`;
@@ -395,11 +403,23 @@ export function convertGraphQLTypeDefs(
       }
       if (scalar.takesId) hasId = true;
       fields.push(scalar.field);
+      scalarOf.set(f.name.value, scalar.field);
     }
+    const kept = dedupeNames(fields, t.name, report);
+    const attributes = fulltextAttributes(
+      t.name,
+      fulltextOf.get(t.name) ?? [],
+      (name) => {
+        const f = scalarOf.get(name);
+        return f && kept.includes(f) ? f : undefined;
+      },
+      report,
+    );
     declarations.push({
       kind: "Node",
       name: declName,
-      fields: dedupeNames(fields, t.name, report),
+      fields: kept,
+      ...(attributes.length ? { attributes } : {}),
     });
   }
 
@@ -495,6 +515,56 @@ export function convertGraphQLTypeDefs(
     issues,
     notes,
   };
+}
+
+/**
+ * `@@fulltext([fields], name: "…")` attributes for the `@fulltext` indexes of one type. An index
+ * whose fields were not all converted to `String` fields is reported and left out.
+ */
+function fulltextAttributes(
+  typeName: string,
+  drafts: readonly FulltextDraft[],
+  fieldOf: (graphqlName: string) => ScalarNodeField | undefined,
+  report: (at: string, d: IssueDraft) => void,
+): ModelAttribute[] {
+  const out: ModelAttribute[] = [];
+  const names = new Set<string>();
+  for (const ix of drafts) {
+    if (names.has(ix.name)) {
+      report(typeName, {
+        severity: "unsupported",
+        feature: "@fulltext",
+        message: `index "${ix.name}" is declared twice: kept the first`,
+      });
+      continue;
+    }
+    const fields: string[] = [];
+    let problem: string | undefined;
+    for (const name of ix.fields) {
+      const f = fieldOf(name);
+      if (!f) problem = `field "${name}" was not converted`;
+      else if (f.type.name !== "String") problem = `field "${name}" is not a String or ID field`;
+      else if (fields.includes(f.name)) problem = `field "${name}" is listed twice`;
+      else fields.push(f.name);
+      if (problem) break;
+    }
+    if (problem) {
+      report(typeName, {
+        severity: "unsupported",
+        feature: "@fulltext",
+        message: `index "${ix.name}": ${problem}; not converted`,
+      });
+      continue;
+    }
+    names.add(ix.name);
+    out.push({
+      kind: "ModelAttribute",
+      name: "fulltext",
+      fields,
+      args: [{ key: "name", value: { kind: "string", value: ix.name } }],
+    });
+  }
+  return out;
 }
 
 function skippedLine(f: FieldDefinitionNode, why: string): string {

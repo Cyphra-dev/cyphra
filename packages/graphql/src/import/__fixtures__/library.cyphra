@@ -1,0 +1,53 @@
+// Imported from @neo4j/graphql type definitions with `cyphra import graphql`.
+// Review before use (run the import again to see the full report):
+// - Query: custom Query fields (@cypher, resolvers) are not converted (compat.v7 still serves @cypher fields); with the typed client, write them as queries
+// - Mutation: custom Mutation fields (@cypher, resolvers) are not converted (compat.v7 still serves @cypher fields); with the typed client, write them as queries
+// - Book.reviewCount: @cypher fields are computed by a Cypher query: not converted (compat.v7 still serves it); with the typed client, write it as a query
+// - Book.averageRating: @cypher fields are computed by a Cypher query: not converted (compat.v7 still serves it); with the typed client, write it as a query
+// - Book.keywords: @cypher fields are computed by a Cypher query: not converted (compat.v7 still serves it); with the typed client, write it as a query
+// - Book.related: @cypher fields are computed by a Cypher query: not converted (compat.v7 still serves it); with the typed client, write it as a query
+// - Book.firstAuthor: @cypher fields are computed by a Cypher query: not converted (compat.v7 still serves it); with the typed client, write it as a query
+// - Book.writers: @cypher fields are computed by a Cypher query: not converted (compat.v7 still serves it); with the typed client, write it as a query
+// - Book.reviewedByViewer: @cypher fields are computed by a Cypher query: not converted (compat.v7 still serves it); with the typed client, write it as a query
+// - Author.bookCount: @cypher fields are computed by a Cypher query: not converted (compat.v7 still serves it); with the typed client, write it as a query
+// - Wrote.credit: @cypher fields are computed by a Cypher query: not converted (compat.v7 still serves it); with the typed client, write it as a query
+
+node Book {
+  isbn String
+  title String
+  summary String?
+  year Int
+  authors Author[] @relationship(type: "WROTE", direction: IN)
+  reviews Review[] @relationship(type: "REVIEWS", direction: IN)
+  // reviewCount: Int! (not converted: computed field)
+  // averageRating: Float (not converted: computed field)
+  // keywords: [String!]! (not converted: computed field)
+  // related: [Book!]! (not converted: computed field)
+  // firstAuthor: Author (not converted: computed field)
+  // writers: [Author!]! (not converted: computed field)
+  // reviewedByViewer: Boolean! (not converted: computed field)
+
+  @@fulltext([title], name: "BookTitle")
+  @@fulltext([title, summary], name: "BookText")
+}
+
+node Author {
+  name String
+  born Int?
+  books Book[] @relationship(type: "WROTE", direction: OUT)
+  // bookCount: Int! (not converted: computed field)
+}
+
+node Review {
+  rating Int
+  by String
+  book Book[] @relationship(type: "REVIEWS", direction: OUT)
+}
+
+relationship Wrote {
+  type "WROTE"
+  from Author
+  to Book
+  position Int
+  // credit: String (not converted: computed field)
+}

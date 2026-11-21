@@ -1,4 +1,4 @@
-import { parseSchema, printSchemaDocument, resolveSchema } from "@cyphra/schema";
+import { parseSchema, printSchemaDocument, resolveSchema, validateSchema } from "@cyphra/schema";
 import { describe, expect, it } from "vitest";
 import { GraphQLImportError, convertGraphQLTypeDefs } from "./convert.js";
 import type { ImportIssue } from "./mappings.js";
@@ -290,13 +290,88 @@ describe("convertGraphQLTypeDefs: type directives", () => {
 
   it.each([
     ['plural(value: "Ts")', "ignored"],
-    ["fulltext(indexes: [])", "unsupported"],
+    [
+      'vector(indexes: [{ indexName: "v", embeddingProperty: "e", queryName: "q" }])',
+      "unsupported",
+    ],
     ["authorization(filter: [])", "unsupported"],
     ["limit(default: 10)", "ignored"],
     ["query(read: true)", "ignored"],
   ])("@%s is reported as %s", (dir, severity) => {
     const { issues } = convert(`type T @node @${dir} { x: Int }`);
     expect(issueAt(issues, "T")?.severity).toBe(severity);
+  });
+});
+
+describe("convertGraphQLTypeDefs: @fulltext", () => {
+  it("becomes @@fulltext with the index name; queryName is reported as ignored", () => {
+    const result = convertGraphQLTypeDefs(`
+      type Book
+        @node
+        @fulltext(
+          indexes: [
+            { indexName: "BookTitle", queryName: "booksByTitle", fields: ["title"] }
+            { indexName: "BookText", queryName: "searchBooks", fields: ["title", "summary"] }
+          ]
+        ) {
+        isbn: ID!
+        title: String!
+        summary: String
+      }
+    `);
+    const schema = printSchemaDocument(result.document);
+    expect(schema).toContain(`  @@fulltext([title], name: "BookTitle")
+  @@fulltext([title, summary], name: "BookText")`);
+    const doc = parseSchema(schema);
+    validateSchema(doc);
+    expect(resolveSchema(doc).nodes[0]?.fulltextIndexes?.map((i) => i.name)).toEqual([
+      "BookTitle",
+      "BookText",
+    ]);
+    expect(result.issues.filter((i) => i.feature.startsWith("@fulltext"))).toEqual([
+      expect.objectContaining({ severity: "ignored", feature: "@fulltext(queryName)" }),
+      expect.objectContaining({ severity: "ignored", feature: "@fulltext(queryName)" }),
+    ]);
+  });
+
+  it("uses the Cyphra field names after @alias and accepts ID fields", () => {
+    const { schema } = convert(`
+      type T @node @fulltext(indexes: [{ indexName: "t_text", queryName: "q", fields: ["code", "label"] }]) {
+        code: ID!
+        label: String @alias(property: "display_label")
+      }
+    `);
+    expect(schema).toContain('@@fulltext([code, display_label], name: "t_text")');
+  });
+
+  it("reports and leaves out indexes it cannot convert", () => {
+    const { schema, issues } = convert(`
+      type T
+        @node
+        @fulltext(
+          indexes: [
+            { indexName: "ok", queryName: "q1", fields: ["a"] }
+            { indexName: "badField", queryName: "q2", fields: ["n"] }
+            { indexName: "missing", queryName: "q3", fields: ["nope"] }
+            { indexName: "bad-name", queryName: "q4", fields: ["a"] }
+            { queryName: "q5", fields: ["a"] }
+          ]
+        ) {
+        a: String
+        n: Int
+      }
+    `);
+    expect(schema).toContain('@@fulltext([a], name: "ok")');
+    expect(schema.match(/@@fulltext/g)).toHaveLength(1);
+    const messages = issues
+      .filter((i) => i.feature === "@fulltext" && i.severity === "unsupported")
+      .map((i) => i.message);
+    expect(messages).toEqual([
+      expect.stringMatching(/"bad-name"/),
+      expect.stringMatching(/indexName and fields/),
+      expect.stringMatching(/"badField": field "n" is not a String/),
+      expect.stringMatching(/"missing": field "nope" was not converted/),
+    ]);
   });
 });
 

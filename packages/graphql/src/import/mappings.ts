@@ -18,7 +18,7 @@
  */
 
 import type { ConstDirectiveNode, ConstValueNode } from "graphql";
-import { Kind } from "graphql";
+import { Kind, valueFromASTUntyped } from "graphql";
 import type { Decorator, ScalarTypeName } from "@cyphra/schema";
 
 /** How serious a report entry is. */
@@ -166,7 +166,7 @@ export type FieldDirectiveRule =
 
 const API_ONLY = "API setting of @neo4j/graphql, no effect on the data model";
 const AUTH =
-  "authorization rules are not part of a Cyphra schema: enforce them in your resolvers or services";
+  "authorization rules are not part of a Cyphra schema: compat.v7 still applies them; enforce them yourself around the typed client";
 
 function issue(severity: ImportSeverity, feature: string, message: string): IssueDraft {
   return { severity, feature, message };
@@ -349,7 +349,8 @@ export const FIELD_DIRECTIVES: Readonly<Record<string, FieldDirectiveRule>> = {
   },
   cypher: {
     kind: "drop",
-    message: "@cypher fields are computed by a Cypher query: not converted, write it as a query",
+    message:
+      "@cypher fields are computed by a Cypher query: not converted (compat.v7 still serves it); with the typed client, write it as a query",
   },
   customResolver: {
     kind: "drop",
@@ -381,10 +382,18 @@ export const FIELD_DIRECTIVES: Readonly<Record<string, FieldDirectiveRule>> = {
 // Type directives
 // ---------------------------------------------------------------------------------------------
 
+/**
+ * A full-text index read from `@fulltext`, with the GraphQL field names. The converter maps them
+ * to Cyphra field names (after `@alias`) and writes `@@fulltext([fields], name: "…")`.
+ */
+export type FulltextDraft = { readonly name: string; readonly fields: readonly string[] };
+
 /** What a type-level directive does to the Cyphra node. */
 export type TypeEffect = {
   /** Rename the Cyphra node (its name is its Neo4j label). */
   readonly rename?: string;
+  /** `@@fulltext` indexes to add to the node. */
+  readonly fulltext?: readonly FulltextDraft[];
   readonly issues?: readonly IssueDraft[];
 };
 
@@ -433,11 +442,52 @@ export const TYPE_DIRECTIVES: Readonly<Record<string, TypeDirectiveRule>> = {
     }
     return rename ? { rename, issues } : { issues };
   },
-  fulltext: reportType(
+  fulltext: (d) => {
+    const raw = arg(d, "indexes");
+    const indexes = raw ? (valueFromASTUntyped(raw) as unknown) : undefined;
+    const list = Array.isArray(indexes) ? indexes : indexes === undefined ? [] : [indexes];
+    const fulltext: FulltextDraft[] = [];
+    const issues: IssueDraft[] = [];
+    for (const ix of list) {
+      const { indexName, queryName, fields } = (ix ?? {}) as Record<string, unknown>;
+      if (
+        typeof indexName !== "string" ||
+        !Array.isArray(fields) ||
+        fields.length === 0 ||
+        !fields.every((f) => typeof f === "string")
+      ) {
+        issues.push(
+          issue("unsupported", "@fulltext", "an index needs indexName and fields: not converted"),
+        );
+        continue;
+      }
+      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(indexName)) {
+        issues.push(
+          issue(
+            "unsupported",
+            "@fulltext",
+            `index name "${indexName}" is not letters, digits and underscores: not converted`,
+          ),
+        );
+        continue;
+      }
+      fulltext.push({ name: indexName, fields: fields as string[] });
+      if (typeof queryName === "string") {
+        issues.push(
+          issue(
+            "ignored",
+            "@fulltext(queryName)",
+            `query field "${queryName}" is part of the GraphQL API (compat.v7 still serves it)`,
+          ),
+        );
+      }
+    }
+    return { fulltext, issues };
+  },
+  vector: reportType(
     "unsupported",
-    "fulltext indexes are not supported: create them in a migration",
+    "vector indexes are not converted: the type definitions carry neither the dimensions nor the similarity; declare the embedding as a Vector(N) field with @vectorIndex(name: ...)",
   ),
-  vector: reportType("unsupported", "vector indexes are not supported: create them in a migration"),
   authentication: reportType("unsupported", AUTH),
   authorization: reportType("unsupported", AUTH),
   subscriptionsAuthorization: reportType("unsupported", AUTH),
