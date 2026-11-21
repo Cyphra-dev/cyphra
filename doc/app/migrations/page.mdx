@@ -142,6 +142,38 @@ export default defineMigration({
 });
 ```
 
+## Reset a development database
+
+`cyphra migrate reset` starts a local database over from your migrations:
+
+```bash
+cyphra migrate reset            # asks for confirmation
+cyphra migrate reset --yes      # no prompt (scripts, local CI)
+cyphra migrate reset --skip-seed
+```
+
+It runs against the database from `NEO4J_URI` (and `NEO4J_DATABASE` when set) and:
+
+1. drops every constraint, then every index: range, text, point, vector and full-text. The `LOOKUP`
+   indexes Neo4j creates by default are kept;
+2. deletes all nodes and relationships, in batches of 10,000 (`CALL { … } IN TRANSACTIONS`). This also
+   removes the `__CyphraMigration` records;
+3. applies every migration in `migrations/`, in order;
+4. runs the [`seed` command](/cli#cyphra-db-seed) from `cyphra.json`, unless `--skip-seed` is passed
+   or no seed is configured. A failing seed makes the command exit with its code.
+
+Without `--yes` (or `-y`) it asks before deleting anything, and refuses to run when the shell is not
+interactive. It also refuses databases that do not look local, even with `--yes`:
+
+- local: `localhost` and `*.localhost`, loopback addresses (`127.x.x.x`, `::1`), `0.0.0.0`,
+  `host.docker.internal`, and host names without a dot (Docker or Compose service names such as
+  `neo4j`), over `bolt://` or `neo4j://`;
+- not local: encrypted schemes (`neo4j+s://`, `bolt+s://`, `+ssc`), Neo4j Aura hosts
+  (`*.databases.neo4j.io`), any other host name with a dot, and private or public IP addresses.
+
+`--force` skips both the prompt and this check. Never use it in a script that could point at a shared
+database.
+
 ## Tracking
 
 Applied migrations are recorded as `(:__CyphraMigration { name, appliedAt, checksum })`.

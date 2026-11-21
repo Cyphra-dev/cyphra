@@ -3,17 +3,19 @@ import { createRequire } from "node:module";
 import { Command } from "commander";
 import { runDev } from "./commands/dev.js";
 import { runFormat } from "./commands/format.js";
-import { runGenerate } from "./commands/generate.js";
+import { runGenerate, runGenerateWatch } from "./commands/generate.js";
 import { runImportGraphql } from "./commands/importGraphql.js";
 import { runInit } from "./commands/init.js";
 import { runMigrate } from "./commands/migrate.js";
 import { createMigrationFromSchema, runMigrateDiff } from "./commands/migrateDev.js";
 import { runMigrateStatus } from "./commands/migrateStatus.js";
+import { runMigrateReset } from "./commands/migrateReset.js";
 import { runMigrationCreate } from "./commands/migrationCreate.js";
 import { runPull } from "./commands/pull.js";
 import { runPush } from "./commands/push.js";
 import { runSchemaDdl } from "./commands/schemaDdl.js";
 import { runSchemaPrint } from "./commands/schemaPrint.js";
+import { runDbSeed } from "./commands/seed.js";
 import { runValidateSchema } from "./commands/validateSchema.js";
 import { loadConfig } from "./config.js";
 
@@ -49,6 +51,7 @@ program
   .option("--port <port>", "host Bolt port (default 7687)", (v) => Number(v))
   .option("--http-port <port>", "host HTTP/browser port (default 7474)", (v) => Number(v))
   .option("--image <image>", "Docker image (default neo4j:5)")
+  .option("-w, --watch", "once Neo4j is ready, regenerate the client on schema changes")
   .action(
     async (opts: {
       stop?: boolean;
@@ -56,8 +59,16 @@ program
       port?: number;
       httpPort?: number;
       image?: string;
+      watch?: boolean;
     }) => {
-      await runDev(process.cwd(), opts);
+      const cwd = process.cwd();
+      // Read the config first so a broken cyphra.json fails before Docker starts.
+      const config = opts.watch && !opts.stop && !opts.reset ? await loadConfig(cwd) : null;
+      await runDev(cwd, opts);
+      if (config) {
+        await runGenerateWatch(cwd, config);
+        console.log("Neo4j keeps running; stop it with `cyphra dev --stop`.");
+      }
     },
   );
 
@@ -75,6 +86,19 @@ migrate
     const config = await loadConfig(cwd);
     await createMigrationFromSchema(cwd, config, opts.name);
     if (!opts.createOnly) await runMigrate(cwd, true);
+  });
+
+migrate
+  .command("reset")
+  .description(
+    "Delete all data, constraints and indexes, reapply every migration, then run the seed (local databases only)",
+  )
+  .option("-y, --yes", "skip the confirmation prompt")
+  .option("--force", "skip the prompt and reset even a database that does not look local")
+  .option("--skip-seed", "do not run the seed command afterwards")
+  .action(async (opts: { yes?: boolean; force?: boolean; skipSeed?: boolean }) => {
+    const cwd = process.cwd();
+    process.exitCode = await runMigrateReset(cwd, await loadConfig(cwd), opts);
   });
 
 migrate
@@ -149,10 +173,22 @@ program
 program
   .command("generate")
   .description("Generate the typed client (cyphra.gen.ts) from the schema")
-  .action(async () => {
+  .option("-w, --watch", "regenerate whenever the schema file changes")
+  .action(async (opts: { watch?: boolean }) => {
     const cwd = process.cwd();
     const config = await loadConfig(cwd);
-    await runGenerate(cwd, config);
+    if (opts.watch) await runGenerateWatch(cwd, config);
+    else await runGenerate(cwd, config);
+  });
+
+const dbCmd = program.command("db").description("Database commands");
+
+dbCmd
+  .command("seed")
+  .description('Run the "seed" command from cyphra.json (e.g. "tsx seed.ts")')
+  .action(async () => {
+    const cwd = process.cwd();
+    process.exitCode = await runDbSeed(cwd, await loadConfig(cwd));
   });
 
 const importCmd = program.command("import").description("Import a schema from another tool");

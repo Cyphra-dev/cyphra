@@ -9,6 +9,11 @@ export type CyphraConfig = {
   readonly generate: string;
   /** Module the generated client imports from (default `"cyphra"`). */
   readonly runtimeImport: string;
+  /**
+   * Shell command run by `cyphra db seed` and after `cyphra migrate reset` (e.g. `"tsx seed.ts"`),
+   * from the project root. Absent when not configured.
+   */
+  readonly seed?: string;
 };
 
 /**
@@ -34,10 +39,15 @@ export async function loadConfig(cwd: string): Promise<CyphraConfig> {
   if (runtimeImportRaw !== undefined && typeof runtimeImportRaw !== "string") {
     throw new Error('cyphra.json "runtimeImport" must be a string');
   }
+  const seedRaw = (data as Record<string, unknown>).seed;
+  if (seedRaw !== undefined && (typeof seedRaw !== "string" || seedRaw.trim() === "")) {
+    throw new Error('cyphra.json "seed" must be a non-empty command string (e.g. "tsx seed.ts")');
+  }
   return {
     schema: resolveUnderRoot(cwd, schema),
     migrations: resolveUnderRoot(cwd, migrations),
     generate: resolveUnderRoot(cwd, generatePath),
     runtimeImport: runtimeImportRaw ?? "cyphra",
+    ...(seedRaw !== undefined ? { seed: seedRaw.trim() } : {}),
   };
 }

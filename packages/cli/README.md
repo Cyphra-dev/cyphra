@@ -10,7 +10,9 @@ Command-line interface for Cyphra.
 - `cyphra migrate deploy` / `cyphra migrate dev` — run pending `.mjs` migrations
 - `cyphra migration:create <name>` — add a migration stub
 - `cyphra push` — apply `@id` / `@unique` constraints from the schema
-- `cyphra generate` — reserved (not implemented)
+- `cyphra migrate reset` — empty a local database, reapply every migration, run the seed (`--yes`, `--force`, `--skip-seed`)
+- `cyphra db seed` — run the `"seed"` command from `cyphra.json` (e.g. `"tsx seed.ts"`)
+- `cyphra generate` — generate the typed client (`--watch` regenerates on schema changes)
 
 ## Migrations
 

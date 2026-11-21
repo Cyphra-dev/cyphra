@@ -95,6 +95,9 @@ Already have a database? `npx cyphra pull` writes `schema.cyphra` from it.
 npx cyphra generate                  # writes cyphra.gen.ts
 ```
 
+Run it again after each schema change, or keep `npx cyphra generate --watch` running to regenerate
+on save (see [Watch mode](/cli#watch-mode)).
+
 ### Query
 
 ```ts filename="main.ts"

@@ -1,5 +1,5 @@
 ---
-description: "Cyphra CLI reference for Neo4j projects: init, validate, generate, migrations, push, and import from @neo4j/graphql type definitions."
+description: "Cyphra CLI reference for Neo4j: init, validate, generate with watch mode, migrations, reset, seed, push, and import from @neo4j/graphql type definitions."
 ---
 
 # CLI
@@ -13,23 +13,25 @@ pnpm add -D @cyphra/cli
 
 App code depends on **`cyphra`** separately (see [Getting started](/getting-started#install)). The CLI loads `./.env` automatically.
 
-| Command                          | Description                                                                                                               |
-| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| `cyphra init`                    | Scaffold `cyphra.json`, `schema.cyphra`, `migrations/`, `.env.example` (existing files are kept)                          |
-| `cyphra dev`                     | Run a local Neo4j 5 in Docker for this project and write `.env` (`--stop`, `--reset`, `--port`, `--http-port`, `--image`) |
-| `cyphra generate`                | Generate the [typed client](/client) (`cyphra.gen.ts`)                                                                    |
-| `cyphra migrate dev`             | Generate a migration from schema changes, then apply pending ones (`--name`, `--create-only`)                             |
-| `cyphra migrate diff`            | Print the migration `migrate dev` would generate                                                                          |
-| `cyphra migrate deploy`          | Apply pending migrations                                                                                                  |
-| `cyphra migrate status`          | Applied / pending / modified migrations and uncaptured schema changes (non-zero exit if any)                              |
-| `cyphra migration:create <name>` | Empty `.mjs` migration to write by hand                                                                                   |
-| `cyphra pull`                    | Introspect the database and write `schema.cyphra` (`--print`, `--force`)                                                  |
-| `cyphra import graphql <files>`  | Convert `@neo4j/graphql` v7 type definitions to `schema.cyphra` (`--out`, `--merge`, `--force`, `--print`)                |
-| `cyphra push`                    | Apply constraints and range, vector and full-text indexes directly (prototyping)                                          |
-| `cyphra validate`                | Parse and validate the schema                                                                                             |
-| `cyphra format`                  | Format the schema in place, keeping comments (`--check` exits with 1 instead of writing)                                  |
-| `cyphra schema print`            | Canonical pretty-print of the schema                                                                                      |
-| `cyphra schema ddl`              | Print the constraint and index DDL (no database)                                                                          |
+| Command                          | Description                                                                                                                          |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `cyphra init`                    | Scaffold `cyphra.json`, `schema.cyphra`, `migrations/`, `.env.example` (existing files are kept)                                     |
+| `cyphra dev`                     | Run a local Neo4j 5 in Docker for this project and write `.env` (`--stop`, `--reset`, `--port`, `--http-port`, `--image`, `--watch`) |
+| `cyphra generate`                | Generate the [typed client](/client) (`cyphra.gen.ts`); `--watch` regenerates on every schema change                                 |
+| `cyphra migrate dev`             | Generate a migration from schema changes, then apply pending ones (`--name`, `--create-only`)                                        |
+| `cyphra migrate diff`            | Print the migration `migrate dev` would generate                                                                                     |
+| `cyphra migrate deploy`          | Apply pending migrations                                                                                                             |
+| `cyphra migrate status`          | Applied / pending / modified migrations and uncaptured schema changes (non-zero exit if any)                                         |
+| `cyphra migrate reset`           | Empty a local database, reapply every migration, then run the seed (`--yes`, `--force`, `--skip-seed`)                               |
+| `cyphra db seed`                 | Run the `seed` command from `cyphra.json`                                                                                            |
+| `cyphra migration:create <name>` | Empty `.mjs` migration to write by hand                                                                                              |
+| `cyphra pull`                    | Introspect the database and write `schema.cyphra` (`--print`, `--force`)                                                             |
+| `cyphra import graphql <files>`  | Convert `@neo4j/graphql` v7 type definitions to `schema.cyphra` (`--out`, `--merge`, `--force`, `--print`)                           |
+| `cyphra push`                    | Apply constraints and range, vector and full-text indexes directly (prototyping)                                                     |
+| `cyphra validate`                | Parse and validate the schema                                                                                                        |
+| `cyphra format`                  | Format the schema in place, keeping comments (`--check` exits with 1 instead of writing)                                             |
+| `cyphra schema print`            | Canonical pretty-print of the schema                                                                                                 |
+| `cyphra schema ddl`              | Print the constraint and index DDL (no database)                                                                                     |
 
 ## cyphra.json
 
@@ -38,17 +40,20 @@ App code depends on **`cyphra`** separately (see [Getting started](/getting-star
   "schema": "./schema.cyphra",
   "migrations": "./migrations",
   "generate": "./cyphra.gen.ts",
-  "runtimeImport": "cyphra"
+  "runtimeImport": "cyphra",
+  "seed": "tsx seed.ts"
 }
 ```
 
 `runtimeImport` is the module that generated files (the client and migrations) import from. Set it to
-`@cyphra/runtime` if you depend on the scoped packages instead of `cyphra`.
+`@cyphra/runtime` if you depend on the scoped packages instead of `cyphra`. `seed` is optional: see
+[cyphra db seed](#cyphra-db-seed).
 
 ## Environment
 
-Commands that talk to Neo4j (`migrate dev | deploy | status`, `pull`, `push`) read `NEO4J_URI`,
-`NEO4J_USERNAME` (`NEO4J_USER` also works), `NEO4J_PASSWORD` and optionally `NEO4J_DATABASE`.
+Commands that talk to Neo4j (`migrate dev | deploy | status | reset`, `pull`, `push`) read
+`NEO4J_URI`, `NEO4J_USERNAME` (`NEO4J_USER` also works), `NEO4J_PASSWORD` and optionally
+`NEO4J_DATABASE`. The seed command inherits the same environment.
 
 ## cyphra dev
 
@@ -59,7 +64,62 @@ in a named Docker volume. It waits until Neo4j accepts connections and writes `.
 cyphra dev            # start (or restart) and wait until ready
 cyphra dev --stop     # stop, keep data
 cyphra dev --reset    # remove the container and its data
+cyphra dev --watch    # start, then regenerate the client on schema changes (see below)
 ```
+
+`cyphra dev --reset` deletes the container. To keep it and only empty the database, use
+[`cyphra migrate reset`](/migrations#reset-a-development-database).
+
+## Watch mode
+
+`cyphra generate --watch` (or `-w`) generates the client, then watches the schema file from
+`cyphra.json` and regenerates `cyphra.gen.ts` each time you save it:
+
+```text
+$ cyphra generate --watch
+[10:42:01] Wrote cyphra.gen.ts
+Watching schema.cyphra for changes (Ctrl+C to stop).
+[10:42:17] schema.cyphra: Node "Post" field "author": unknown node "Usr" (not a node model or an enum).
+[10:42:25] Wrote cyphra.gen.ts
+```
+
+- Saves are debounced (100 ms), so one save triggers one regeneration.
+- An invalid schema prints its error and the previous `cyphra.gen.ts` stays in place; the watcher
+  keeps running until the next save.
+- The schema's directory is watched rather than the file, so editors that save by writing a
+  temporary file and renaming it over the original (vim, JetBrains IDEs) are picked up. It uses
+  `fs.watch` and works on Linux, macOS and Windows.
+- Ctrl+C stops watching and exits with 0.
+
+`cyphra dev --watch` starts Neo4j first, then watches the same way. Ctrl+C stops the watcher; the
+container keeps running until `cyphra dev --stop`.
+
+## cyphra db seed
+
+Set `seed` in `cyphra.json` to the command that loads your data. It is a shell command, run from the
+project root, so it can use any runtime:
+
+```json
+{ "seed": "tsx seed.ts" }
+```
+
+```ts filename="seed.ts"
+import { createClient } from "./cyphra.gen.js";
+
+const db = createClient({
+  uri: process.env.NEO4J_URI!,
+  user: process.env.NEO4J_USERNAME!,
+  password: process.env.NEO4J_PASSWORD!,
+});
+await db.user.create({ data: { email: "ada@example.com" } });
+await db.$disconnect();
+```
+
+`cyphra db seed` runs it with the CLI's environment (including `./.env`) and with
+`node_modules/.bin` on `PATH`, so a locally installed `tsx` is found. The seed's exit code becomes the
+command's exit code; without a `seed` entry, `cyphra db seed` fails with 1.
+[`cyphra migrate reset`](/migrations#reset-a-development-database) runs the seed after reapplying
+migrations.
 
 ## cyphra pull
 
