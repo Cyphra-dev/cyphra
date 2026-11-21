@@ -97,3 +97,5 @@ export {
   listRequiresElements,
 } from "./rules.js";
 export { ON_DELETE_RULES, SCHEMA_MODEL_VERSION, getNodeModel, resolveSchema } from "./model.js";
+export type { RenderZodOptions } from "./renderZod.js";
+export { renderZodFromModel, renderZodSource } from "./renderZod.js";

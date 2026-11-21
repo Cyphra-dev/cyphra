@@ -3,7 +3,7 @@ import { createRequire } from "node:module";
 import { Command } from "commander";
 import { runDev } from "./commands/dev.js";
 import { runFormat } from "./commands/format.js";
-import { runGenerate, runGenerateWatch } from "./commands/generate.js";
+import { runGenerate, runGenerateWatch, withZodFlags } from "./commands/generate.js";
 import { runImportGraphql } from "./commands/importGraphql.js";
 import { runInit } from "./commands/init.js";
 import { runMigrate } from "./commands/migrate.js";
@@ -17,7 +17,7 @@ import { runSchemaDdl } from "./commands/schemaDdl.js";
 import { runSchemaPrint } from "./commands/schemaPrint.js";
 import { runDbSeed } from "./commands/seed.js";
 import { runValidateSchema } from "./commands/validateSchema.js";
-import { loadConfig } from "./config.js";
+import { DEFAULT_ZOD_OUTPUT, loadConfig } from "./config.js";
 
 // Load ./.env (Node 20.12+) so NEO4J_* settings written by `cyphra dev` are picked up.
 try {
@@ -184,11 +184,19 @@ program
 
 program
   .command("generate")
-  .description("Generate the typed client (cyphra.gen.ts) from the schema")
+  .description("Generate the typed client (cyphra.gen.ts) and, if configured, zod schemas")
   .option("-w, --watch", "regenerate whenever the schema file changes")
-  .action(async (opts: { watch?: boolean }) => {
+  .option(
+    "--zod [output]",
+    `also write zod schemas of the models (default: generators.zod.output in cyphra.json, else ${DEFAULT_ZOD_OUTPUT})`,
+  )
+  .option(
+    "--zod-coerce",
+    "zod schemas read ISO 8601 strings as Dates and decimal strings as bigints",
+  )
+  .action(async (opts: { watch?: boolean; zod?: string | boolean; zodCoerce?: boolean }) => {
     const cwd = process.cwd();
-    const config = await loadConfig(cwd);
+    const config = withZodFlags(cwd, await loadConfig(cwd), opts);
     if (opts.watch) await runGenerateWatch(cwd, config);
     else await runGenerate(cwd, config);
   });

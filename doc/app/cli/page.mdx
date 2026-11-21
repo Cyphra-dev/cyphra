@@ -13,25 +13,25 @@ pnpm add -D @cyphra/cli
 
 App code depends on **`cyphra`** separately (see [Getting started](/getting-started#install)). The CLI loads `./.env` automatically.
 
-| Command                          | Description                                                                                                                          |
-| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `cyphra init`                    | Scaffold `cyphra.json`, `schema.cyphra`, `migrations/`, `.env.example` (existing files are kept)                                     |
-| `cyphra dev`                     | Run a local Neo4j 5 in Docker for this project and write `.env` (`--stop`, `--reset`, `--port`, `--http-port`, `--image`, `--watch`) |
-| `cyphra generate`                | Generate the [typed client](/client) (`cyphra.gen.ts`); `--watch` regenerates on every schema change                                 |
-| `cyphra migrate dev`             | Generate a migration from schema changes, then apply pending ones (`--name`, `--create-only`)                                        |
-| `cyphra migrate diff`            | Print the migration `migrate dev` would generate                                                                                     |
-| `cyphra migrate deploy`          | Apply pending migrations                                                                                                             |
-| `cyphra migrate status`          | Applied / pending / modified migrations, uncaptured changes and [drift](/migrations#drift-detection) (`--json`, `--schema`; exit 1)  |
-| `cyphra migrate reset`           | Empty a local database, reapply every migration, then run the seed (`--yes`, `--force`, `--skip-seed`)                               |
-| `cyphra db seed`                 | Run the `seed` command from `cyphra.json`                                                                                            |
-| `cyphra migration:create <name>` | Empty `.mjs` migration to write by hand                                                                                              |
-| `cyphra pull`                    | Introspect the database and write `schema.cyphra` (`--print`, `--force`)                                                             |
-| `cyphra import graphql <files>`  | Convert `@neo4j/graphql` v7 type definitions to `schema.cyphra` (`--out`, `--merge`, `--force`, `--print`)                           |
-| `cyphra push`                    | Apply constraints and range, vector and full-text indexes directly (prototyping)                                                     |
-| `cyphra validate`                | Parse and validate the schema                                                                                                        |
-| `cyphra format`                  | Format the schema in place, keeping comments (`--check` exits with 1 instead of writing)                                             |
-| `cyphra schema print`            | Canonical pretty-print of the schema                                                                                                 |
-| `cyphra schema ddl`              | Print the constraint and index DDL (no database)                                                                                     |
+| Command                          | Description                                                                                                                                 |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `cyphra init`                    | Scaffold `cyphra.json`, `schema.cyphra`, `migrations/`, `.env.example` (existing files are kept)                                            |
+| `cyphra dev`                     | Run a local Neo4j 5 in Docker for this project and write `.env` (`--stop`, `--reset`, `--port`, `--http-port`, `--image`, `--watch`)        |
+| `cyphra generate`                | Generate the [typed client](/client) (`cyphra.gen.ts`) and, if configured, [zod schemas](#zod-schemas) (`--watch`, `--zod`, `--zod-coerce`) |
+| `cyphra migrate dev`             | Generate a migration from schema changes, then apply pending ones (`--name`, `--create-only`)                                               |
+| `cyphra migrate diff`            | Print the migration `migrate dev` would generate                                                                                            |
+| `cyphra migrate deploy`          | Apply pending migrations                                                                                                                    |
+| `cyphra migrate status`          | Applied / pending / modified migrations, uncaptured changes and [drift](/migrations#drift-detection) (`--json`, `--schema`; exit 1)         |
+| `cyphra migrate reset`           | Empty a local database, reapply every migration, then run the seed (`--yes`, `--force`, `--skip-seed`)                                      |
+| `cyphra db seed`                 | Run the `seed` command from `cyphra.json`                                                                                                   |
+| `cyphra migration:create <name>` | Empty `.mjs` migration to write by hand                                                                                                     |
+| `cyphra pull`                    | Introspect the database and write `schema.cyphra` (`--print`, `--force`)                                                                    |
+| `cyphra import graphql <files>`  | Convert `@neo4j/graphql` v7 type definitions to `schema.cyphra` (`--out`, `--merge`, `--force`, `--print`)                                  |
+| `cyphra push`                    | Apply constraints and range, vector and full-text indexes directly (prototyping)                                                            |
+| `cyphra validate`                | Parse and validate the schema                                                                                                               |
+| `cyphra format`                  | Format the schema in place, keeping comments (`--check` exits with 1 instead of writing)                                                    |
+| `cyphra schema print`            | Canonical pretty-print of the schema                                                                                                        |
+| `cyphra schema ddl`              | Print the constraint and index DDL (no database)                                                                                            |
 
 ## cyphra.json
 
@@ -41,13 +41,42 @@ App code depends on **`cyphra`** separately (see [Getting started](/getting-star
   "migrations": "./migrations",
   "generate": "./cyphra.gen.ts",
   "runtimeImport": "cyphra",
-  "seed": "tsx seed.ts"
+  "seed": "tsx seed.ts",
+  "generators": {
+    "zod": { "output": "./src/cyphra.zod.ts", "coerce": true }
+  }
 }
 ```
 
 `runtimeImport` is the module that generated files (the client and migrations) import from. Set it to
 `@cyphra/runtime` if you depend on the scoped packages instead of `cyphra`. `seed` is optional: see
-[cyphra db seed](#cyphra-db-seed).
+[cyphra db seed](#cyphra-db-seed). `generators` is optional: see [zod schemas](#zod-schemas).
+
+## Zod schemas
+
+With `generators.zod` in `cyphra.json`, `cyphra generate` (and `--watch`, and `cyphra dev --watch`)
+also writes a module of [zod](https://zod.dev) schemas, to validate API input against the schema
+before it reaches the client. Install zod in your project (`pnpm add zod`); the generated code works
+with zod 4 and zod 3.
+
+| Option   | Default             | Description                                                                                                        |
+| -------- | ------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `output` | `"./cyphra.zod.ts"` | File to write, under the project root                                                                              |
+| `coerce` | `false`             | Read ISO 8601 strings as `Date`s (`DateTime`, `Date`) and decimal strings or safe integers as `bigint`s (`BigInt`) |
+| `import` | `"zod"`             | Module to import `z` from (`"zod/v4"` to use zod 4 from zod 3.25)                                                  |
+
+`"zod": true` takes every default. Without the config, `cyphra generate --zod [output]` writes the
+schemas for that run (`--zod-coerce` adds coercion); the flags also override `cyphra.json`.
+
+```bash
+cyphra generate --zod                       # cyphra.gen.ts and cyphra.zod.ts
+cyphra generate --zod src/db/zod.ts --zod-coerce
+```
+
+For each node model `User` the module exports `UserSchema` (the properties the client returns),
+`UserCreateInputSchema` and `UserUpdateInputSchema`; the same three for each relationship model
+(its edge properties), and `RoleSchema` (`z.enum([...])`) for each enum. See
+[Validating API input with zod](/client#validating-api-input-with-zod) for what they check.
 
 ## Environment
 
@@ -92,7 +121,8 @@ cyphra dev --watch    # start, then regenerate the client on schema changes (see
 ## Watch mode
 
 `cyphra generate --watch` (or `-w`) generates the client, then watches the schema file from
-`cyphra.json` and regenerates `cyphra.gen.ts` each time you save it:
+`cyphra.json` and regenerates `cyphra.gen.ts` (and the [zod schemas](#zod-schemas), when configured)
+each time you save it:
 
 ```text
 $ cyphra generate --watch

@@ -828,6 +828,67 @@ try {
   nothing is updated (for `updateMany`, no node is) and the error has one issue per field. This is
   the one case where a statement runs; it changes nothing.
 
+## Validating API input with zod
+
+The client checks every write, but at an API boundary you usually want to reject bad input with a
+`400` before calling it, and to share the checks with a form. Configure the
+[zod generator](/cli#zod-schemas) and `cyphra generate` also writes `cyphra.zod.ts`:
+
+```json filename="cyphra.json"
+{
+  "schema": "./schema.cyphra",
+  "migrations": "./migrations",
+  "generators": { "zod": { "output": "./src/cyphra.zod.ts", "coerce": true } }
+}
+```
+
+```ts filename="app/api/users/route.ts"
+import { UserCreateInputSchema } from "@/cyphra.zod";
+import { db } from "@/lib/db";
+
+export async function POST(req: Request) {
+  const parsed = UserCreateInputSchema.safeParse(await req.json());
+  if (!parsed.success) {
+    // [{ path: ["name"], message: "must be at least 2 characters long.", … }]
+    return Response.json({ issues: parsed.error.issues }, { status: 400 });
+  }
+  const user = await db.user.create({ data: parsed.data });
+  return Response.json(user, { status: 201 });
+}
+```
+
+For each node model and each relationship model (its edge properties), the module exports:
+
+| Schema                  | Accepts                                                                                                 |
+| ----------------------- | ------------------------------------------------------------------------------------------------------- |
+| `UserSchema`            | The properties the client returns: optional fields are `null` when unset, lists are arrays              |
+| `UserCreateInputSchema` | Scalar `data` of a `create`: fields with a default, optional fields and lists may be left out           |
+| `UserUpdateInputSchema` | Scalar `data` of an `update`: every field may be left out, optional fields may be `null` to remove them |
+| `RoleSchema`            | One value of the enum (`z.enum([...])`)                                                                 |
+
+What they parse type-checks as the client's `data`, and they check what the client checks:
+
+- Every [validation rule](/schema#validation-rules) with the same semantics and messages:
+  `@length` counts characters (Unicode code points, not UTF-16 units), `@url` takes absolute
+  `http:` / `https:` URLs only, `@nonEmpty` refuses blank strings, `@min` / `@max` are inclusive
+  (a `Date` bound compares the UTC calendar day), `@regex` uses the pattern and flags of the schema.
+- Types: integers for `Int`, the 64-bit range for `BigInt` (a `bigint`), `Date`s for `DateTime` and
+  `Date`, ISO 8601 text for `LocalDateTime`, `LocalTime`, `Time` and `Duration` (checked as the
+  runtime parses it: `"2023-02-29T10:00"` and `"24:00"` are refused), `{ longitude, latitude,
+height? }` within range for `Point`, `{ x, y, z? }` for `CartesianPoint`, `N` finite numbers for
+  `Vector(N)`, any JSON value for `Json`.
+- Required fields: a create without `email` fails, and so does one without a `@nonEmpty` list (an
+  absent list is stored empty).
+
+JSON has no dates or bigints: with `"coerce": true` the schemas read ISO 8601 strings as `Date`s and
+decimal strings as `bigint`s (`"2025-01-01T00:00:00Z"`, `"42"`), as you would send them from a
+browser. Without it they expect `Date` and `bigint` values, for input that is already typed.
+
+Relation fields are not part of the schemas (unknown keys are dropped). To accept a nested write,
+extend the input schema, for example
+`UserCreateInputSchema.extend({ posts: z.object({ connect: z.array(z.object({ id: z.string() })) }).optional() })`.
+Numeric operators (`{ increment: 1 }`) are not accepted by the update schemas either.
+
 ## Transactions
 
 ```ts

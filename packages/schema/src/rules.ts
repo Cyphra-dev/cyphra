@@ -75,8 +75,11 @@ const ORDERED_TYPES: readonly ScalarTypeName[] = ["Int", "Float", "BigInt", "Dat
 const BIGINT_MIN = -(2n ** 63n);
 const BIGINT_MAX = 2n ** 63n - 1n;
 
-/** Practical email check (the one zod uses): `local@domain.tld`, no leading or double dots. */
-const EMAIL_RE =
+/**
+ * Practical email check (the one zod uses): `local@domain.tld`, no leading or double dots. Also
+ * emitted by the zod generator.
+ */
+export const EMAIL_RE =
   /^(?!\.)(?!.*\.\.)([A-Za-z0-9_'+\-.]*)[A-Za-z0-9_+-]@([A-Za-z0-9][A-Za-z0-9-]*\.)+[A-Za-z]{2,}$/;
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;

@@ -55,7 +55,9 @@
     "neo4j-driver-6": "npm:neo4j-driver@^6.3.2",
     "tsup": "^8.5.1",
     "typescript": "^5.9.3",
-    "vitest": "^4.1.12"
+    "vitest": "^4.1.12",
+    "zod": "^4.6.7",
+    "zod3": "npm:zod@^3.25.76"
   },
   "license": "MIT",
   "repository": {
