@@ -128,9 +128,7 @@ query {
   nestedAggregate: people(
     where: {
       actedIn: {
-        some: {
-          actorsConnection: { aggregate: { edge: { screenTime: { sum: { gt: 200 } } } } }
-        }
+        some: { actorsConnection: { aggregate: { edge: { screenTime: { sum: { gt: 200 } } } } } }
       }
     }
   ) {
