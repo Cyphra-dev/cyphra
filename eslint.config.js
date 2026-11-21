@@ -8,7 +8,14 @@ export default tseslint.config(
   ...tseslint.configs.recommended,
   eslintConfigPrettier,
   {
-    ignores: ["**/node_modules/**", "**/dist/**", "doc/**", "packages/schema/src/generated/**"],
+    ignores: [
+      "**/node_modules/**",
+      "**/dist/**",
+      "**/.next/**",
+      "**/next-env.d.ts",
+      "doc/**",
+      "packages/schema/src/generated/**",
+    ],
   },
   {
     files: ["**/*.ts"],

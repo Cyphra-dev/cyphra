@@ -1,0 +1,25 @@
+// Users write posts. Deleting a user deletes their posts (onDelete: Cascade).
+
+enum PostStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+node User {
+  id        String   @id @default(uuid())
+  email     String   @unique @email
+  name      String   @length(2, 40) @nonEmpty
+  createdAt DateTime @default(now())
+  posts     Post[]   @relationship(type: "WROTE", direction: OUT, onDelete: Cascade)
+}
+
+node Post {
+  id        String     @id @default(uuid())
+  title     String     @length(3, 120) @nonEmpty
+  body      String     @length(max: 5000)
+  status    PostStatus @default(DRAFT)
+  tags      String[]   @size(max: 5)
+  createdAt DateTime   @default(now()) @index
+  author    User       @relationship(type: "WROTE", direction: IN)
+}

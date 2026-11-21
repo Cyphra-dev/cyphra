@@ -1,7 +1,7 @@
 ---
 title: "Neo4j guides for TypeScript frameworks"
 sidebarTitle: Guides
-description: "Step-by-step guides for Neo4j with Cyphra: Next.js, NestJS and Bun, deploying on Vercel, GraphRAG retrieval, and migrating from @neo4j/graphql."
+description: "Step-by-step guides for Neo4j with Cyphra: Next.js, NestJS, Bun and tRPC, deploying on Vercel, GraphRAG retrieval, and migrating from @neo4j/graphql."
 ---
 
 import { Cards } from "nextra/components";
@@ -19,12 +19,16 @@ which versions it was tested with.
   <Cards.Card title="Deploy a Neo4j app on Vercel" href="/guides/vercel" />
   <Cards.Card title="Neo4j with NestJS" href="/guides/nestjs" />
   <Cards.Card title="Neo4j with Bun" href="/guides/bun" />
+  <Cards.Card title="tRPC with Neo4j and zod" href="/guides/trpc" />
   <Cards.Card title="GraphRAG with Neo4j and TypeScript" href="/guides/graphrag" />
   <Cards.Card
     title="Migrate from @neo4j/graphql to Cyphra"
     href="/guides/migrate-from-neo4j-graphql"
   />
 </Cards>
+
+The [tRPC guide](/guides/trpc) builds a typed API: the zod schemas Cyphra generates from
+`schema.cyphra` validate procedure input, and the types reach React without a type written by hand.
 
 The [GraphRAG guide](/guides/graphrag) builds retrieval for a question-answering app: vector and
 full-text search over document chunks, then expansion through the chunks' entities.

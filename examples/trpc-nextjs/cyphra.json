@@ -1,0 +1,8 @@
+{
+  "schema": "./schema.cyphra",
+  "migrations": "./migrations",
+  "generate": "./src/server/cyphra.gen.ts",
+  "generators": {
+    "zod": { "output": "./src/cyphra.zod.ts" }
+  }
+}

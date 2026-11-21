@@ -6,6 +6,7 @@ const meta: MetaRecord = {
   nextjs: "Next.js",
   nestjs: "NestJS",
   bun: "Bun",
+  trpc: "tRPC",
   "--deploy": { type: "separator", title: "Deploy" },
   vercel: "Vercel",
   "--ai": { type: "separator", title: "AI" },

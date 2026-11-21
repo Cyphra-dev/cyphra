@@ -1,0 +1,535 @@
+---
+title: "tRPC with Neo4j: end-to-end types with zod"
+sidebarTitle: tRPC
+description: "Build a tRPC API on Neo4j with Cyphra: generated zod schemas as procedure inputs, Cyphra errors mapped to tRPC codes, and types from the schema to React."
+---
+
+import { Callout, Steps } from "nextra/components";
+import { HowToJsonLd } from "../../../components/seo/page-jsonld";
+
+# tRPC with Neo4j
+
+[tRPC](https://trpc.io) gives the browser the types of your API without a code generator: the
+client imports the router's type, and every call is checked against it. Cyphra gives the server the
+types of your graph: a client generated from `schema.cyphra`, and [zod schemas](/cli#zod-schemas)
+generated from the same file. Put them together and one schema types the database, the API input,
+the API output and the React components that use them.
+
+This guide builds a small posts API on Neo4j with Next.js (App Router), tRPC 11 and TanStack Query:
+
+- procedure inputs are the generated zod schemas, so the API rejects what the schema's
+  [validation rules](/schema#validation-rules) reject, with the same messages;
+- Cyphra's errors become tRPC errors: `BAD_REQUEST` with the invalid fields, `NOT_FOUND`,
+  `CONFLICT`;
+- the router is tested with `createCaller` against Neo4j.
+
+<Callout type="info">
+  The code on this page comes from
+  [`examples/trpc-nextjs`](https://github.com/Cyphra-dev/cyphra/tree/main/examples/trpc-nextjs), a
+  runnable example tested with Next.js 16.4, tRPC 11.29, TanStack Query 5, zod 4.6 and Neo4j 5.26.
+  CI builds it and runs its router tests against Neo4j.
+</Callout>
+
+## Steps
+
+<Steps>
+
+### Install
+
+```bash
+npm i cyphra zod superjson server-only \
+  @trpc/server @trpc/client @trpc/tanstack-react-query @tanstack/react-query
+npm i -D @cyphra/cli
+```
+
+`@trpc/tanstack-react-query` is tRPC's current React integration: it gives you TanStack Query
+options (`queryOptions`, `mutationOptions`) instead of wrapping its hooks. `superjson` sends `Date`
+values over the wire as dates, not strings.
+
+### Describe your graph
+
+```cyphra filename="schema.cyphra"
+enum PostStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+node User {
+  id        String   @id @default(uuid())
+  email     String   @unique @email
+  name      String   @length(2, 40) @nonEmpty
+  createdAt DateTime @default(now())
+  posts     Post[]   @relationship(type: "WROTE", direction: OUT, onDelete: Cascade)
+}
+
+node Post {
+  id        String     @id @default(uuid())
+  title     String     @length(3, 120) @nonEmpty
+  body      String     @length(max: 5000)
+  status    PostStatus @default(DRAFT)
+  tags      String[]   @size(max: 5)
+  createdAt DateTime   @default(now()) @index
+  author    User       @relationship(type: "WROTE", direction: IN)
+}
+```
+
+`onDelete: Cascade` on `User.posts` means deleting a user deletes their posts, in the same
+transaction. See [onDelete rules](/schema#ondelete-rules).
+
+### Generate the client and the zod schemas
+
+Turn on the zod generator in `cyphra.json`:
+
+```json filename="cyphra.json"
+{
+  "schema": "./schema.cyphra",
+  "migrations": "./migrations",
+  "generate": "./src/server/cyphra.gen.ts",
+  "generators": {
+    "zod": { "output": "./src/cyphra.zod.ts" }
+  }
+}
+```
+
+```bash
+npx cyphra dev                       # local Neo4j 5 in Docker, writes .env
+npx cyphra migrate dev --name init   # unique constraints for @id and @unique
+npx cyphra generate                  # src/server/cyphra.gen.ts and src/cyphra.zod.ts
+```
+
+`cyphra.zod.ts` exports `UserSchema`, `UserCreateInputSchema`, `UserUpdateInputSchema`, the same
+three for `Post`, and `PostStatusSchema`. It imports nothing but zod, so the browser can use it too
+(the example's page builds its status filter from `PostStatusSchema.options`). Both files are
+generated: add them to `.gitignore` and run `cyphra generate` before `next dev` and `next build`.
+
+Leave `coerce` off here. superjson already sends `Date` values as dates, so the schemas can expect
+`Date`s and the client's input types stay exact. Turn it on when the input is plain JSON, as in a
+REST route handler.
+
+### Initialize tRPC and map errors
+
+The context carries the Cyphra client. Pass it in instead of importing it: the route handler gives
+the app's client, and tests give their own.
+
+```ts filename="src/server/trpc.ts"
+import { initTRPC, TRPCError } from "@trpc/server";
+import { CyphraValidationError, NotFoundError, RestrictError } from "cyphra";
+import superjson from "superjson";
+import { ZodError } from "zod";
+import type { Db } from "./cyphra.gen";
+
+export type Context = { db: Db };
+
+export type InputIssue = { path: (string | number)[]; message: string };
+
+function inputIssues(cause: unknown): InputIssue[] | null {
+  if (cause instanceof ZodError) {
+    return cause.issues.map((i) => ({
+      path: i.path.map((p) => (typeof p === "number" ? p : String(p))),
+      message: i.message,
+    }));
+  }
+  if (cause instanceof CyphraValidationError) {
+    return cause.issues.map((i) => ({ path: [...i.path], message: i.message }));
+  }
+  return null;
+}
+
+const t = initTRPC.context<Context>().create({
+  transformer: superjson,
+  errorFormatter({ shape, error }) {
+    const issues = error.code === "BAD_REQUEST" ? inputIssues(error.cause) : null;
+    return {
+      ...shape,
+      message: error.cause instanceof ZodError ? "Invalid input." : shape.message,
+      data: { ...shape.data, issues },
+    };
+  },
+});
+
+const CONSTRAINT_FAILED = "Neo.ClientError.Schema.ConstraintValidationFailed";
+
+export function toTRPCError(cause: unknown): TRPCError | null {
+  if (cause instanceof CyphraValidationError) {
+    return new TRPCError({ code: "BAD_REQUEST", message: cause.message, cause });
+  }
+  if (cause instanceof NotFoundError) {
+    return new TRPCError({ code: "NOT_FOUND", message: cause.message, cause });
+  }
+  if (cause instanceof RestrictError) {
+    return new TRPCError({ code: "CONFLICT", message: cause.message, cause });
+  }
+  if ((cause as { code?: unknown } | null)?.code === CONSTRAINT_FAILED) {
+    return new TRPCError({ code: "CONFLICT", message: "Already exists.", cause: cause as Error });
+  }
+  return null;
+}
+
+const cyphraErrors = t.middleware(async ({ next }) => {
+  const result = await next();
+  if (!result.ok) {
+    const mapped = toTRPCError(result.error.cause);
+    if (mapped) throw mapped;
+  }
+  return result;
+});
+
+export const router = t.router;
+export const createCallerFactory = t.createCallerFactory;
+export const publicProcedure = t.procedure.use(cyphraErrors);
+```
+
+Without the middleware, every error the client throws reaches the browser as
+`INTERNAL_SERVER_ERROR` (HTTP 500). With it:
+
+| Thrown                                                                     | tRPC code     | HTTP |
+| -------------------------------------------------------------------------- | ------------- | ---- |
+| `ZodError` from `.input()` (tRPC does this one itself)                     | `BAD_REQUEST` | 400  |
+| `CyphraValidationError`: a value breaks a rule, an unknown enum value, …   | `BAD_REQUEST` | 400  |
+| `NotFoundError`: `update`, `delete`, `connect` or `…OrThrow` found no node | `NOT_FOUND`   | 404  |
+| `RestrictError`: an `onDelete: Restrict` rule refused a delete             | `CONFLICT`    | 409  |
+| Neo4j `ConstraintValidationFailed`: a duplicate `@unique` value            | `CONFLICT`    | 409  |
+
+The error formatter puts the invalid fields in `error.data.issues`, in one shape for both sources:
+`{ path, message }`. zod's paths are relative to the procedure input (`["title"]`). The Cyphra
+client's paths are relative to the operation's arguments (`["data", "title"]`). When zod already
+checks the input, a `CyphraValidationError` only comes from data the server adds itself, such as a
+value computed in the procedure.
+
+Map only errors you can name. Anything else stays a 500: log it in the handler's `onError`.
+
+### Write the router
+
+The generated input schemas accept every scalar field of the model, including `id` and `createdAt`.
+An API usually sets those itself, so remove them with `.omit()`, and add what the procedure needs
+with `.extend()`:
+
+```ts filename="src/server/routers/post.ts"
+import { z } from "zod";
+import { PostCreateInputSchema, PostStatusSchema, PostUpdateInputSchema } from "../../cyphra.zod";
+import { publicProcedure, router } from "../trpc";
+
+const PostCreateInput = PostCreateInputSchema.omit({ id: true, createdAt: true }).extend({
+  authorId: z.string(),
+});
+const PostUpdateInput = PostUpdateInputSchema.omit({ id: true, createdAt: true });
+
+export const postRouter = router({
+  create: publicProcedure.input(PostCreateInput).mutation(({ ctx, input: { authorId, ...data } }) =>
+    ctx.db.post.create({
+      data: { ...data, author: { connect: { id: authorId } } },
+      include: { author: true },
+    }),
+  ),
+
+  list: publicProcedure
+    .input(
+      z.object({
+        status: PostStatusSchema.optional(),
+        authorId: z.string().optional(),
+        tag: z.string().optional(),
+        search: z.string().trim().max(100).optional(),
+        skip: z.number().int().min(0).default(0),
+        take: z.number().int().min(1).max(50).default(10),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      const where = {
+        ...(input.status ? { status: input.status } : {}),
+        ...(input.authorId ? { author: { is: { id: input.authorId } } } : {}),
+        ...(input.tag ? { tags: { has: input.tag } } : {}),
+        ...(input.search
+          ? { title: { contains: input.search, mode: "insensitive" as const } }
+          : {}),
+      };
+      const [items, total] = await Promise.all([
+        ctx.db.post.findMany({
+          where,
+          include: { author: { select: { id: true, name: true } } },
+          orderBy: { createdAt: "desc" },
+          skip: input.skip,
+          take: input.take,
+        }),
+        ctx.db.post.count({ where }),
+      ]);
+      const next = input.skip + items.length;
+      return { items, total, nextSkip: next < total ? next : null };
+    }),
+
+  byId: publicProcedure
+    .input(z.object({ id: z.string() }))
+    .query(({ ctx, input }) =>
+      ctx.db.post.findUniqueOrThrow({ where: { id: input.id }, include: { author: true } }),
+    ),
+
+  update: publicProcedure
+    .input(z.object({ id: z.string(), data: PostUpdateInput }))
+    .mutation(({ ctx, input }) =>
+      ctx.db.post.update({ where: { id: input.id }, data: input.data }),
+    ),
+
+  delete: publicProcedure
+    .input(z.object({ id: z.string() }))
+    .mutation(({ ctx, input }) => ctx.db.post.delete({ where: { id: input.id } })),
+});
+```
+
+- `create` connects the post to its author in the same write. When no user has that id, `connect`
+  throws `NotFoundError` and nothing is written: the caller gets `NOT_FOUND`.
+- `list` filters on the enum, on the author (a [to-one relation filter](/client#filters)), on a
+  list field and on the title, and pages with `skip` and `take`. `count` takes the same `where`.
+- `byId` uses `findUniqueOrThrow`, so a missing post is a `NOT_FOUND`, not a `null` the client must
+  check.
+- `update` takes `PostUpdateInputSchema`: every field is optional, so a client can send only
+  `{ status: "PUBLISHED" }`, and the rules still apply to what it sends.
+
+The user router is the same pattern. Its `delete` removes the user's posts too, through
+`onDelete: Cascade`:
+
+```ts filename="src/server/routers/user.ts"
+export const userRouter = router({
+  create: publicProcedure
+    .input(UserCreateInputSchema.omit({ id: true, createdAt: true }))
+    .mutation(({ ctx, input }) => ctx.db.user.create({ data: input })),
+  list: publicProcedure.query(({ ctx }) =>
+    ctx.db.user.findMany({ orderBy: { name: "asc" }, take: 100 }),
+  ),
+  delete: publicProcedure
+    .input(z.object({ id: z.string() }))
+    .mutation(({ ctx, input }) => ctx.db.user.delete({ where: { id: input.id } })),
+});
+```
+
+```ts filename="src/server/router.ts"
+import { postRouter } from "./routers/post";
+import { userRouter } from "./routers/user";
+import { createCallerFactory, router } from "./trpc";
+
+export const appRouter = router({ user: userRouter, post: postRouter });
+
+export type AppRouter = typeof appRouter;
+
+export const createCaller = createCallerFactory(appRouter);
+```
+
+### Serve it from a route handler
+
+Create one Cyphra client per server process, as in the [Next.js guide](/guides/nextjs), and give it
+to tRPC's fetch adapter:
+
+```ts filename="src/server/db.ts"
+import "server-only";
+import { createClient, type Db } from "./cyphra.gen";
+
+const globalForDb = globalThis as unknown as { cyphra?: Db };
+
+export function db(): Db {
+  globalForDb.cyphra ??= createClient({
+    uri: process.env.NEO4J_URI!,
+    user: process.env.NEO4J_USERNAME!,
+    password: process.env.NEO4J_PASSWORD!,
+  });
+  return globalForDb.cyphra;
+}
+```
+
+```ts filename="src/app/api/trpc/[trpc]/route.ts"
+import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
+import { db } from "@/server/db";
+import { appRouter } from "@/server/router";
+
+function handler(req: Request) {
+  return fetchRequestHandler({
+    endpoint: "/api/trpc",
+    req,
+    router: appRouter,
+    createContext: () => ({ db: db() }),
+  });
+}
+
+export { handler as GET, handler as POST };
+```
+
+`server-only` makes the build fail if a Client Component imports `db.ts`. The router files do not
+import it: they use `ctx.db`, which is what lets tests run them with their own client.
+
+### Call it from React
+
+```tsx filename="src/trpc/client.tsx"
+"use client";
+
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { createTRPCClient, httpBatchLink } from "@trpc/client";
+import { createTRPCContext } from "@trpc/tanstack-react-query";
+import { useState, type ReactNode } from "react";
+import superjson from "superjson";
+import type { AppRouter } from "@/server/router";
+
+export const { TRPCProvider, useTRPC } = createTRPCContext<AppRouter>();
+
+export function Providers({ children }: { children: ReactNode }) {
+  const [queryClient] = useState(() => new QueryClient());
+  const [trpcClient] = useState(() =>
+    createTRPCClient<AppRouter>({
+      links: [httpBatchLink({ url: "/api/trpc", transformer: superjson })],
+    }),
+  );
+  return (
+    <QueryClientProvider client={queryClient}>
+      <TRPCProvider trpcClient={trpcClient} queryClient={queryClient}>
+        {children}
+      </TRPCProvider>
+    </QueryClientProvider>
+  );
+}
+```
+
+Wrap the app in `<Providers>` in `app/layout.tsx`. `import type` brings only the router's type into
+the browser bundle: no server code, no driver, no credentials.
+
+```tsx filename="src/app/page.tsx"
+"use client";
+
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useTRPC } from "@/trpc/client";
+
+export default function Home() {
+  const trpc = useTRPC();
+  const queryClient = useQueryClient();
+  const posts = useQuery(trpc.post.list.queryOptions({ status: "PUBLISHED", take: 20 }));
+  const createPost = useMutation(
+    trpc.post.create.mutationOptions({
+      onSuccess: () => queryClient.invalidateQueries({ queryKey: trpc.post.pathKey() }),
+    }),
+  );
+  const issues = createPost.error?.data?.issues ?? [];
+
+  return (
+    <main>
+      <ul>
+        {posts.data?.items.map((post) => (
+          <li key={post.id}>
+            {post.title} by {post.author.name}, {post.createdAt.toLocaleDateString()}
+          </li>
+        ))}
+      </ul>
+      {issues.map((i) => (
+        <p key={i.path.join(".")} role="alert">
+          {i.path.join(".")}: {i.message}
+        </p>
+      ))}
+    </main>
+  );
+}
+```
+
+The example's page adds forms for users and posts, a status filter, and publish and delete buttons.
+
+</Steps>
+
+## End-to-end types
+
+Nothing on this page declares a type by hand, yet every value is typed:
+
+- **Input.** `trpc.post.create.mutationOptions()` takes the zod schema's type:
+  `authorId`, `title` and `body` as strings, an optional `status` among the enum's values and
+  optional `tags`. `{ status: "LIVE" }` is a type error in the browser, and a `400` on the server if
+  it is sent anyway.
+- **Output.** `posts.data.items[0]` is `Post & { author: { id: string; name: string } }`: the
+  client's result type for that `include` and `select`, passed through tRPC.
+- **Dates.** `post.createdAt` is a `Date` in the browser, because superjson sends it as one.
+- **Errors.** `createPost.error.data.issues` is `InputIssue[] | null`, from the error formatter.
+- **Rules.** The messages in `issues` are the schema's: `must be at least 3 characters long.` for
+  `@length(3, 120)`, `must have at most 5 elements.` for `@size(max: 5)`.
+
+Change `schema.cyphra`, run `cyphra generate`, and `tsc` points at every procedure and component
+that no longer fits.
+
+## Test the router
+
+`createCaller` calls procedures directly, without HTTP. Give it a Cyphra client for a test
+database:
+
+```ts filename="src/server/router.integration.test.ts"
+import { createClient } from "./cyphra.gen";
+import { createCaller } from "./router";
+
+const db = createClient({
+  uri: process.env.NEO4J_TEST_URI!,
+  user: process.env.NEO4J_TEST_USER!,
+  password: process.env.NEO4J_TEST_PASSWORD!,
+});
+const caller = createCaller({ db });
+
+it("returns NOT_FOUND for an unknown author and writes nothing", async () => {
+  await expect(
+    caller.post.create({ authorId: "nobody", title: "Orphan", body: "" }),
+  ).rejects.toMatchObject({ code: "NOT_FOUND" });
+  expect(await db.post.count()).toBe(0);
+});
+
+it("deletes a user with their posts", async () => {
+  const user = await caller.user.create({ name: "Ada Lovelace", email: "ada@example.com" });
+  await caller.post.create({ authorId: user.id, title: "Notes", body: "" });
+  await caller.user.delete({ id: user.id });
+  expect(await db.post.count()).toBe(0);
+});
+```
+
+`createCaller` skips the error formatter. To check what the browser receives (HTTP status,
+`issues`, superjson), the example's
+[`errors.test.ts`](https://github.com/Cyphra-dev/cyphra/blob/main/examples/trpc-nextjs/src/server/errors.test.ts)
+sends requests through `fetchRequestHandler` with a tRPC client whose `fetch` calls the handler
+directly. Those tests need no database: zod rejects the input before the client is used.
+
+## Related
+
+- [Typed client](/client): filters, `include`, `select`, pagination and errors
+- [Validating API input with zod](/client#validating-api-input-with-zod) and the
+  [zod generator options](/cli#zod-schemas)
+- [Validation rules](/schema#validation-rules) and [onDelete rules](/schema#ondelete-rules)
+- [Neo4j with Next.js](/guides/nextjs) for Server Components and Server Actions without tRPC
+
+<HowToJsonLd
+  path="/guides/trpc"
+  name="Build a typed tRPC API on Neo4j with Cyphra and zod"
+  description="Generate the Cyphra client and zod schemas from one schema, use the schemas as tRPC inputs, map Cyphra errors to tRPC codes, serve the router from Next.js and call it from React."
+  steps={[
+    {
+      name: "Install",
+      anchor: "install",
+      text: "Install cyphra, zod, superjson, @trpc/server, @trpc/client, @trpc/tanstack-react-query and @tanstack/react-query, with @cyphra/cli as a dev dependency.",
+    },
+    {
+      name: "Describe your graph",
+      anchor: "describe-your-graph",
+      text: "Write schema.cyphra with User and Post, an enum status, validation rules and onDelete: Cascade.",
+    },
+    {
+      name: "Generate the client and the zod schemas",
+      anchor: "generate-the-client-and-the-zod-schemas",
+      text: "Add generators.zod to cyphra.json, then run cyphra migrate dev and cyphra generate to write the client and cyphra.zod.ts.",
+    },
+    {
+      name: "Initialize tRPC and map errors",
+      anchor: "initialize-trpc-and-map-errors",
+      text: "Create tRPC with the Cyphra client in the context and superjson, and a middleware that turns CyphraValidationError, NotFoundError and constraint failures into BAD_REQUEST, NOT_FOUND and CONFLICT.",
+    },
+    {
+      name: "Write the router",
+      anchor: "write-the-router",
+      text: "Use the generated create and update schemas, with .omit() and .extend(), as .input() of procedures that call the typed client.",
+    },
+    {
+      name: "Serve it from a route handler",
+      anchor: "serve-it-from-a-route-handler",
+      text: "Create one Cyphra client per process and pass it to fetchRequestHandler in app/api/trpc/[trpc]/route.ts.",
+    },
+    {
+      name: "Call it from React",
+      anchor: "call-it-from-react",
+      text: "Create the tRPC context with createTRPCContext<AppRouter>(), wrap the app in the providers, and use queryOptions and mutationOptions with TanStack Query.",
+    },
+  ]}
+/>

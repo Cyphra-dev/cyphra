@@ -928,6 +928,9 @@ extend the input schema, for example
 `UserCreateInputSchema.extend({ posts: z.object({ connect: z.array(z.object({ id: z.string() })) }).optional() })`.
 Numeric operators (`{ increment: 1 }`) are not accepted by the update schemas either.
 
+The [tRPC guide](/guides/trpc) uses these schemas as procedure inputs and maps
+`CyphraValidationError` and `NotFoundError` to tRPC error codes.
+
 ## Transactions
 
 ```ts
