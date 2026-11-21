@@ -51,6 +51,8 @@ const meta: MetaRecord = {
   "--integrations": { type: "separator", title: "Integrations" },
   "better-auth": "Better Auth",
   graphql: "GraphQL",
+  "--databases": { type: "separator", title: "Databases" },
+  memgraph: "Memgraph",
   "--lower": { type: "separator", title: "Lower-level APIs" },
   queries: "Query builder",
   runtime: "Runtime",

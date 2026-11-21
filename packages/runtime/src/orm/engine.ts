@@ -9,6 +9,7 @@
  */
 
 import { isInt } from "../cypher-values.js";
+import type { CyphraDialect } from "../dialect.js";
 import type {
   ResolvedNodeModel,
   ResolvedRelationField,
@@ -35,7 +36,12 @@ import { compileShortestPath } from "./shortest.js";
 import { findSimilar } from "./vector.js";
 import { search } from "./fulltext.js";
 import { deleteWithRules, hasDeleteRules, lockNodes } from "./onDelete.js";
-import { CyphraError, CyphraValidationError, NotFoundError } from "./errors.js";
+import {
+  CyphraError,
+  CyphraValidationError,
+  NotFoundError,
+  UniqueConstraintError,
+} from "./errors.js";
 import { defaultLiteralValue, encodeScalar, integerToNumber, nowValue } from "./values.js";
 import { numericGuard, throwGuardIssues, validateWriteArgs, type NumericCheck } from "./rules.js";
 
@@ -71,6 +77,9 @@ export function createCuid(): string {
 /** Temporary property marking a node created by an upsert's MERGE (removed in the same statement). */
 const UPSERT_FLAG = "__cyphraUpsertCreated";
 
+/** Memgraph: how many times an upsert whose MERGE lost a race on its key is run again. */
+const MEMGRAPH_UPSERT_RETRIES = 5;
+
 /** Property set and removed at once to take a write lock on a node. */
 const LOCK_FLAG = "__cyphraLock";
 
@@ -91,6 +100,8 @@ function asArray(v: unknown): unknown[] {
 export type EngineOptions = {
   /** Upper bound for `traverse` `depth.max` (default 10). */
   readonly maxTraversalDepth?: number;
+  /** The Cypher flavour to compile to (default `"neo4j"`). */
+  readonly dialect?: CyphraDialect;
 };
 
 export class ModelEngine {
@@ -102,7 +113,7 @@ export class ModelEngine {
   ) {}
 
   private ctx(): QueryContext {
-    return new QueryContext(this.schema);
+    return new QueryContext(this.schema, this.options.dialect);
   }
 
   private get label(): string {
@@ -564,6 +575,12 @@ export class ModelEngine {
     };
     if (!rel.many) {
       replace("a", `${relationPattern(ctx, "a", rel, "other", "old")} WHERE other <> b`);
+    } else if (this.options.dialect === "memgraph") {
+      // Memgraph's MERGE takes no lock: concurrent connects of one pair would each create an
+      // edge. A write to `a` makes them conflict instead (a transient error, retried by the
+      // driver), and the retry's MERGE finds the committed edge.
+      const lock = `a.${q(LOCK_FLAG)}`;
+      text += `SET ${lock} = true REMOVE ${lock} WITH a, b `;
     }
     const inverse = this.toOneInverse(rel);
     if (inverse) {
@@ -962,25 +979,41 @@ export class ModelEngine {
     if (guard) text += `, bad`;
     if (projection) text += `, ${projection.expr} AS row`;
 
-    return this.runner.write(async (exec) => {
-      const rows = await exec(text, ctx.params);
-      const row = rows[0];
-      if (!row) {
-        throw new CyphraError(
-          `${this.model.name}.upsert: a node with ${keyFields.map((k) => `${k} = ${JSON.stringify(where[k])}`).join(", ")} exists but does not match the rest of where; creating another would duplicate the key.`,
-        );
+    const attempt = () =>
+      this.runner.write(async (exec) => {
+        const rows = await exec(text, ctx.params);
+        const row = rows[0];
+        if (!row) {
+          throw new CyphraError(
+            `${this.model.name}.upsert: a node with ${keyFields.map((k) => `${k} = ${JSON.stringify(where[k])}`).join(", ")} exists but does not match the rest of where; creating another would duplicate the key.`,
+          );
+        }
+        throwGuardIssues("upsert", this.model, checks, row.bad, ["update"]);
+        if (projection) return decodeRow(projection.shape, row.row)!;
+        const id = row.id as string;
+        const [relations, mode] = row.created
+          ? ([create.relations, "create"] as const)
+          : ([update.relations, "update"] as const);
+        for (const [k, v] of Object.entries(relations)) {
+          await this.writeRelation(exec, id, relationField(this.model, k)!, v, mode, [mode, k]);
+        }
+        return this.readById(exec, id, args);
+      });
+    if (this.options.dialect !== "memgraph") return attempt();
+    // Memgraph checks uniqueness at commit and its MERGE takes no lock: of two concurrent upserts
+    // creating one key, the second fails to commit. Run it again: its MERGE now finds the node.
+    // (Inside `$transaction` the commit happens later, outside this call: not retried.)
+    for (let retries = 0; ; retries++) {
+      try {
+        return await attempt();
+      } catch (e) {
+        const onKey =
+          e instanceof UniqueConstraintError &&
+          e.model === this.model.name &&
+          keyFields.every((k) => e.fields.includes(k));
+        if (!onKey || retries >= MEMGRAPH_UPSERT_RETRIES) throw e;
       }
-      throwGuardIssues("upsert", this.model, checks, row.bad, ["update"]);
-      if (projection) return decodeRow(projection.shape, row.row)!;
-      const id = row.id as string;
-      const [relations, mode] = row.created
-        ? ([create.relations, "create"] as const)
-        : ([update.relations, "update"] as const);
-      for (const [k, v] of Object.entries(relations)) {
-        await this.writeRelation(exec, id, relationField(this.model, k)!, v, mode, [mode, k]);
-      }
-      return this.readById(exec, id, args);
-    });
+    }
   }
 
   /**

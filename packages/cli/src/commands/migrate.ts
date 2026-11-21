@@ -1,5 +1,5 @@
 import { loadConfig } from "../config.js";
-import { clientFromEnv } from "../clientFromEnv.js";
+import { clientForConfig } from "../clientFromEnv.js";
 import { loadMigrationsFromDir } from "../loadMigrations.js";
 import { runPendingMigrations } from "@cyphra/migrator";
 
@@ -11,7 +11,7 @@ import { runPendingMigrations } from "@cyphra/migrator";
  */
 export async function runMigrate(cwd: string, verbose: boolean): Promise<void> {
   const config = await loadConfig(cwd);
-  const client = clientFromEnv(verbose);
+  const client = await clientForConfig(config, verbose);
   try {
     const loaded = await loadMigrationsFromDir(config.migrations, cwd);
     const applied = await runPendingMigrations(client, loaded);

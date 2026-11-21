@@ -33,7 +33,9 @@ export async function planMigration(
 ): Promise<{ plan: MigrationPlan; next: SchemaModel; first: boolean }> {
   const prev = await readSnapshot(config);
   const next = await currentModel(config);
-  return { plan: diffSchemaModels(prev ?? EMPTY_SCHEMA_MODEL, next), next, first: prev === null };
+  // The DDL is written for the configured dialect (no connection: Neo4j unless cyphra.json says).
+  const plan = diffSchemaModels(prev ?? EMPTY_SCHEMA_MODEL, next, { dialect: config.dialect });
+  return { plan, next, first: prev === null };
 }
 
 function timestamp(d = new Date()): string {

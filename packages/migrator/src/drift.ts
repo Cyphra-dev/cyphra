@@ -15,12 +15,13 @@
  * @packageDocumentation
  */
 
-import { toNative, type CyphraClient } from "@cyphra/runtime";
+import { toNative, type CyphraClient, type CyphraDialect } from "@cyphra/runtime";
 import type { SchemaModel } from "@cyphra/schema";
 import { ddlObjectsFromModel } from "./diff.js";
 import type { LoadedMigration } from "./runner.js";
 import type { MigrationDb } from "./migrationDb.js";
 import { CYPHRA_MIGRATION_LABEL } from "./tracker.js";
+import { memgraphSchemaObjects, parseMemgraphDdl } from "./memgraph.js";
 
 /** Value of a compared option (vector dimensions, analyzer, …). */
 export type SchemaOptionValue = string | number | boolean;
@@ -85,6 +86,8 @@ function unquote(id: string): string {
 export type ParsedDdl =
   | { readonly op: "create"; readonly object: SchemaObject; readonly ifNotExists: boolean }
   | { readonly op: "drop"; readonly kind: "constraint" | "index"; readonly name: string }
+  /** Memgraph: drop an unnamed constraint / index by its definition (`DROP INDEX ON :L(p)`). */
+  | { readonly op: "dropDefinition"; readonly object: SchemaObject }
   /** Looks like constraint / index DDL but is not a form Cyphra understands. */
   | { readonly op: "unsupported"; readonly statement: string };
 
@@ -156,6 +159,16 @@ function optionsFromLiteral(type: string, literal: string): Record<string, Schem
  */
 export function parseDdlStatement(statement: string): ParsedDdl | null {
   const text = stripComments(statement);
+  // Memgraph's syntax (`… ON (n:L) ASSERT …`, `… ON :L(p)`, `TEXT INDEX`): its CREATE is
+  // idempotent, like IF NOT EXISTS.
+  const mg = parseMemgraphDdl(text);
+  if (mg) {
+    if (mg.op === "create") return { op: "create", ifNotExists: true, object: mg.object };
+    if (mg.object.name !== null) {
+      return { op: "drop", kind: mg.object.kind, name: mg.object.name };
+    }
+    return { op: "dropDefinition", object: mg.object };
+  }
   const drop = new RegExp(`^DROP (INDEX|CONSTRAINT) (${ID})(?: IF EXISTS)?$`, "i").exec(text);
   if (drop) {
     return {
@@ -269,6 +282,11 @@ export function expectedSchemaFromStatements(statements: readonly string[]): {
       if (i >= 0) objects.splice(i, 1);
       continue;
     }
+    if (parsed.op === "dropDefinition") {
+      const i = objects.findIndex((o) => signature(o) === signature(parsed.object));
+      if (i >= 0) objects.splice(i, 1);
+      continue;
+    }
     const o = parsed.object;
     if (isInternal(o)) continue;
     const byName = o.name === null ? -1 : objects.findIndex((x) => x.name === o.name);
@@ -331,8 +349,12 @@ export async function replayMigrations(
  * The constraints and indexes a schema model implies (what `cyphra push` creates), for comparing a
  * database with `schema.cyphra` instead of the migrations.
  */
-export function expectedSchemaFromModel(model: SchemaModel): SchemaObject[] {
-  return expectedSchemaFromStatements(ddlObjectsFromModel(model).map((o) => o.create)).objects;
+export function expectedSchemaFromModel(
+  model: SchemaModel,
+  dialect: CyphraDialect = "neo4j",
+): SchemaObject[] {
+  return expectedSchemaFromStatements(ddlObjectsFromModel(model, { dialect }).map((o) => o.create))
+    .objects;
 }
 
 // ---------------------------------------------------------------------------
@@ -407,11 +429,21 @@ export function schemaObjectsFromShow(
   return out.filter((o) => !isInternal(o));
 }
 
-/** Read the database's constraints and indexes (read-only, no data sampling). */
+/**
+ * Read the database's constraints and indexes (read-only, no data sampling). On Memgraph
+ * (`client.dialect`): `SHOW CONSTRAINT INFO`, `SHOW INDEX INFO` and `SHOW VECTOR INDEX INFO`.
+ */
 export async function readSchemaObjects(client: CyphraClient): Promise<SchemaObject[]> {
   return client.withSession(async (session) => {
     const rows = async (text: string) =>
       (await session.run(text)).records.map((r) => toNative(r.toObject()) as ShowRow);
+    if ((client as { dialect?: CyphraDialect }).dialect === "memgraph") {
+      return memgraphSchemaObjects(
+        await rows("SHOW CONSTRAINT INFO"),
+        await rows("SHOW INDEX INFO"),
+        await rows("SHOW VECTOR INDEX INFO"),
+      ).filter((o) => !isInternal(o));
+    }
     return schemaObjectsFromShow(
       await rows("SHOW CONSTRAINTS YIELD *"),
       await rows("SHOW INDEXES YIELD *"),
@@ -426,7 +458,8 @@ export async function readSchemaObjects(client: CyphraClient): Promise<SchemaObj
 function differences(expected: SchemaObject, actual: SchemaObject): string[] {
   const diffs: string[] = [];
   const show = (v: readonly string[]) => v.join(", ");
-  if (expected.name !== null && expected.name !== actual.name) {
+  // Memgraph's constraints and property indexes have no name (`null`).
+  if (expected.name !== null && actual.name !== null && expected.name !== actual.name) {
     diffs.push(`name: ${expected.name} → ${actual.name}`);
   }
   if (expected.kind !== actual.kind) diffs.push(`kind: ${expected.kind} → ${actual.kind}`);
@@ -460,25 +493,27 @@ export function compareSchemaObjects(
 ): DriftReport {
   const changed: ChangedSchemaObject[] = [];
   const leftExpected: SchemaObject[] = [];
-  const leftActual = new Map(actual.map((a) => [a.name!, a]));
+  // Unnamed actual objects (Memgraph) get a key no name can take: they match by definition.
+  const leftActual = new Map(actual.map((a, i) => [a.name ?? `\u0000${i}`, a]));
   for (const e of expected) {
     const a = e.name === null ? undefined : leftActual.get(e.name);
     if (!a) {
       leftExpected.push(e);
       continue;
     }
-    leftActual.delete(a.name!);
+    leftActual.delete(e.name!);
     const diffs = differences(e, a);
     if (diffs.length) changed.push({ expected: e, actual: a, differences: diffs });
   }
   const missing: SchemaObject[] = [];
   for (const e of leftExpected) {
-    const a = [...leftActual.values()].find((x) => signature(x) === signature(e));
-    if (!a) {
+    const found = [...leftActual].find(([, x]) => signature(x) === signature(e));
+    if (!found) {
       missing.push(e);
       continue;
     }
-    leftActual.delete(a.name!);
+    const [key, a] = found;
+    leftActual.delete(key);
     const diffs = differences(e, a);
     if (diffs.length) changed.push({ expected: e, actual: a, differences: diffs });
   }

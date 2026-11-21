@@ -20,6 +20,7 @@ import { CypherInteger } from "../cypher-values.js";
 import { CyphraValidationError } from "./errors.js";
 import { decodeCount, decodeScalar, encodeFilterValue, isPointValue } from "./values.js";
 import type { QueryMode } from "./types.js";
+import type { CyphraDialect } from "../dialect.js";
 
 /** Quote an identifier for Cypher (labels, property keys, relationship types). */
 export function q(id: string): string {
@@ -49,7 +50,11 @@ export class QueryContext {
   private paramCount = 0;
   private varCount = 0;
 
-  constructor(readonly schema: SchemaModel) {}
+  constructor(
+    readonly schema: SchemaModel,
+    /** The Cypher flavour to compile to (see `dialect.ts`). */
+    readonly dialect: CyphraDialect = "neo4j",
+  ) {}
 
   /** Bind a value and return its `$placeholder`. */
   param(value: unknown): string {

@@ -3,6 +3,7 @@ import { compileCypher, type CompiledCypher, type SelectQuery } from "@cyphra/qu
 import { createBoltDriver } from "./bolt.js";
 import { basicAuth, HttpDriver, type FetchLike } from "./http/driver.js";
 import { toPlainRecord, toPlainRecords } from "./records.js";
+import { parseDialect, unsupportedOnMemgraph, type CyphraDialect } from "./dialect.js";
 import {
   Instrumentation,
   serverFromUri,
@@ -43,6 +44,11 @@ export interface DriverLike {
 type CommonClientOptions = ObservabilityOptions & {
   /** Optional database name (Neo4j 4+). */
   database?: string;
+  /**
+   * The database's Cypher flavour: `"neo4j"` (default) or `"memgraph"` (Memgraph 3.x, Bolt
+   * only). Not detected automatically: set it when connecting to Memgraph (see `detectDialect`).
+   */
+  dialect?: CyphraDialect;
 };
 
 /** Connect with a Bolt URI and credentials: the client creates (and owns) its own driver. */
@@ -194,8 +200,18 @@ export class CyphraClient {
   /** `"bolt"` (`neo4j-driver`) or `"http"` (Neo4j Query API over `fetch`). */
   readonly transport: CyphraTransport;
 
+  /** The Cypher flavour statements are compiled to (`dialect` option, default `"neo4j"`). */
+  readonly dialect: CyphraDialect;
+
   constructor(opts: CyphraClientOptions) {
     let server: { address: string; port?: number } | undefined;
+    this.dialect = parseDialect(opts.dialect);
+    if (this.dialect === "memgraph" && !opts.driver && isHttpOptions(opts)) {
+      throw unsupportedOnMemgraph(
+        "The HTTP transport",
+        "Memgraph has no Query API; connect over Bolt (bolt://host:7687).",
+      );
+    }
     if (opts.driver) {
       // A driver from another copy (or major) of `neo4j-driver` is not assignable to this copy's
       // `Driver` class type, but it is the same API at runtime: values are recognised by the
@@ -241,7 +257,8 @@ export class CyphraClient {
       logParams: opts.logParams,
       tracer: opts.tracer,
       traceQueryText: opts.traceQueryText,
-      warnMissingIndexes: opts.warnMissingIndexes,
+      // Missing-index checks read Neo4j's EXPLAIN plans, which Memgraph returns as rows.
+      warnMissingIndexes: this.dialect === "memgraph" ? false : opts.warnMissingIndexes,
       debug: opts.debug,
       database: opts.database,
       server,

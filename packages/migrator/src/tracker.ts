@@ -1,4 +1,5 @@
 import type { Session } from "neo4j-driver";
+import type { CyphraDialect } from "@cyphra/runtime";
 
 /** Neo4j label used to record applied migrations. */
 export const CYPHRA_MIGRATION_LABEL = "__CyphraMigration";
@@ -7,8 +8,16 @@ export const CYPHRA_MIGRATION_LABEL = "__CyphraMigration";
  * Ensure uniqueness on migration name (idempotent).
  *
  * @param session - Open session.
+ * @param dialect - `"memgraph"` writes Memgraph's (unnamed) constraint.
  */
-export async function ensureMigrationInfrastructure(session: Session): Promise<void> {
+export async function ensureMigrationInfrastructure(
+  session: Session,
+  dialect: CyphraDialect = "neo4j",
+): Promise<void> {
+  if (dialect === "memgraph") {
+    await session.run(`CREATE CONSTRAINT ON (m:${CYPHRA_MIGRATION_LABEL}) ASSERT m.name IS UNIQUE`);
+    return;
+  }
   const r = await session.run(`
     CREATE CONSTRAINT cyphra_migration_name_unique IF NOT EXISTS
     FOR (m:__CyphraMigration) REQUIRE m.name IS UNIQUE

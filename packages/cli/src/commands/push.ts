@@ -8,7 +8,7 @@ import {
 } from "@cyphra/migrator";
 import { parseSchema } from "@cyphra/schema";
 import { loadConfig } from "../config.js";
-import { clientFromEnv } from "../clientFromEnv.js";
+import { clientForConfig } from "../clientFromEnv.js";
 
 /**
  * Parse `schema.cyphra` and apply generated constraints.
@@ -24,7 +24,7 @@ export async function runPush(cwd: string): Promise<void> {
   const vectorIndexes = vectorIndexStatementsFromSchema(doc);
   const fulltextIndexes = fulltextIndexStatementsFromSchema(doc);
   const statements = [...constraints, ...indexes, ...vectorIndexes, ...fulltextIndexes];
-  const client = clientFromEnv(false);
+  const client = await clientForConfig(config);
   try {
     await applyConstraintStatements(client, statements);
     console.log(

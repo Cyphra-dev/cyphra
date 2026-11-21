@@ -213,3 +213,51 @@ jobs:
           NEO4J_TEST_USER: neo4j
           NEO4J_TEST_PASSWORD: cyphra_ci_test
         run: pnpm --filter compat-graphql --fail-if-no-match test
+
+  # The ORM, migrator and CLI suites on Memgraph (dialect "memgraph"): the shared ORM suites skip or
+  # adapt what Memgraph does not support (see doc/app/memgraph/page.mdx), plus Memgraph-only tests.
+  memgraph-integration:
+    runs-on: ubuntu-latest
+    services:
+      memgraph:
+        # Pinned: the feature matrix in the docs is verified against this version.
+        image: memgraph/memgraph:3.14.0
+        ports:
+          - 7687:7687
+    env:
+      CYPHRA_TEST_DIALECT: memgraph
+      NEO4J_TEST_URI: bolt://127.0.0.1:7687
+      # Memgraph accepts any credentials while authentication is off.
+      NEO4J_TEST_USER: memgraph
+      NEO4J_TEST_PASSWORD: memgraph
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Build packages
+        run: pnpm -r --filter './packages/*' run build
+
+      - name: Wait for Memgraph
+        run: |
+          for i in $(seq 1 60); do
+            (exec 3<>/dev/tcp/127.0.0.1/7687) 2>/dev/null && exit 0
+            sleep 1
+          done
+          echo "Memgraph did not start" >&2
+          exit 1
+
+      - name: Memgraph integration tests
+        run: |
+          pnpm --filter @cyphra/runtime --fail-if-no-match exec vitest run src/client.integration.test.ts src/orm/orm.integration.test.ts src/orm/onDelete.integration.test.ts src/orm/rules.integration.test.ts src/orm/interfaces.integration.test.ts src/orm/memgraph.integration.test.ts
+          pnpm --filter @cyphra/migrator --fail-if-no-match exec vitest run src/memgraph.integration.test.ts
+          # `cyphra migrate reset` empties the whole database, so it runs on its own (opt-in flag).
+          CYPHRA_TEST_RESET_DB=1 pnpm --filter @cyphra/cli --fail-if-no-match exec vitest run src/commands/migrateReset.memgraph.integration.test.ts

@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { resolveUnderRoot } from "./paths.js";
+import type { CyphraDialect } from "@cyphra/runtime";
 
 export type CyphraConfig = {
   readonly schema: string;
@@ -19,6 +20,12 @@ export type CyphraConfig = {
    * of the models to `output`. Absent when not configured.
    */
   readonly zod?: ZodGeneratorConfig;
+  /**
+   * The database's Cypher flavour (`"neo4j"` or `"memgraph"`). Decides the DDL `migrate dev`,
+   * `migrate diff` and `schema ddl` write. Unset: Neo4j offline; commands that connect detect it
+   * from the server.
+   */
+  readonly dialect?: CyphraDialect;
 };
 
 /** `"generators": { "zod": { "output", "coerce", "import", "omitGenerated" } }` in `cyphra.json`. */
@@ -110,6 +117,10 @@ export async function loadConfig(cwd: string): Promise<CyphraConfig> {
     throw new Error('cyphra.json "generators" must be an object');
   }
   const zod = zodConfig(cwd, (generators as Record<string, unknown> | undefined)?.zod);
+  const dialect = (data as Record<string, unknown>).dialect;
+  if (dialect !== undefined && dialect !== "neo4j" && dialect !== "memgraph") {
+    throw new Error('cyphra.json "dialect" must be "neo4j" or "memgraph"');
+  }
   return {
     schema: resolveUnderRoot(cwd, schema),
     migrations: resolveUnderRoot(cwd, migrations),
@@ -117,5 +128,6 @@ export async function loadConfig(cwd: string): Promise<CyphraConfig> {
     runtimeImport: runtimeImportRaw ?? "cyphra",
     ...(seedRaw !== undefined ? { seed: seedRaw.trim() } : {}),
     ...(zod ? { zod } : {}),
+    ...(dialect !== undefined ? { dialect } : {}),
   };
 }

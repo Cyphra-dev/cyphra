@@ -146,16 +146,20 @@ export async function findSimilar(
       .sort((a, b) => b.$score - a.$score)
       .slice(0, k);
 
+  const memgraph = ctx.dialect === "memgraph";
   if (args.exact === true) {
     const fn =
       index.similarity === "euclidean" ? "vector.similarity.euclidean" : "vector.similarity.cosine";
+    const similarity = memgraph
+      ? memgraphSimilarity(ctx, index.similarity, `n.${prop}`, vec)
+      : `${fn}(n.${prop}, ${vec})`;
     const filters = [
       `n.${prop} IS NOT NULL`,
       `size(n.${prop}) = ${ctx.param(intParam(vector.length))}`,
     ];
     if (where) filters.push(`(${where})`);
     let text = `MATCH (n:${labelExpr(model)}) WHERE ${filters.join(" AND ")}`;
-    text += ` WITH n, ${fn}(n.${prop}, ${vec}) AS score`;
+    text += ` WITH n, ${similarity} AS score`;
     if (scoreOk) text += ` WHERE ${scoreOk}`;
     text += ` WITH n, score ORDER BY score DESC LIMIT ${limit}`;
     text += ` RETURN ${expr} AS row, score ORDER BY score DESC`;
@@ -164,10 +168,18 @@ export async function findSimilar(
   }
 
   const name = ctx.param(index.name);
+  // Memgraph's `similarity` is the raw cosine for a cosine index: rescaled to [0, 1] like Neo4j's
+  // score. For an `l2sq` index it is already 1 / (1 + d²), Neo4j's euclidean score.
+  // Memgraph's index also returns nodes deleted since its last garbage collection: each hit is
+  // matched again by id (null when deleted, filtered out below, still counted as fetched).
   const call = (count: string) =>
-    `CALL db.index.vector.queryNodes(${name}, ${count}, ${vec}) YIELD node, score`;
+    memgraph
+      ? `CALL vector_search.search(${name}, ${count}, ${vec}) YIELD node AS hit, similarity ` +
+        `OPTIONAL MATCH (node) WHERE id(node) = id(hit) ` +
+        `WITH node, ${index.similarity === "euclidean" ? "similarity" : "(1 + similarity) / 2"} AS score`
+      : `CALL db.index.vector.queryNodes(${name}, ${count}, ${vec}) YIELD node, score`;
 
-  if (!where) {
+  if (!where && !memgraph) {
     let text = `${call(ctx.param(intParam(candidates)))} WITH node AS n, score`;
     if (scoreOk) text += ` WHERE ${scoreOk}`;
     text += ` WITH n, score ORDER BY score DESC LIMIT ${limit}`;
@@ -179,7 +191,7 @@ export async function findSimilar(
   // Filtered: one statement per attempt, reporting how many hits the index gave (to know when it
   // is exhausted) and the lowest score among them (to stop once below minScore).
   const count = "$cyphraCandidates";
-  const filter = [scoreOk, where].filter(Boolean).join(" AND ");
+  const filter = [memgraph ? "n IS NOT NULL" : null, scoreOk, where].filter(Boolean).join(" AND ");
   const text =
     `${call(count)} WITH collect({n: node, s: score}) AS hits ` +
     `CALL { WITH hits UNWIND hits AS h WITH h.n AS n, h.s AS score WHERE ${filter} ` +
@@ -202,4 +214,16 @@ export async function findSimilar(
     if (rows.length >= k || exhausted) return decode(rows);
     asked = Math.min(asked * CANDIDATE_GROWTH, maxCandidates);
   }
+}
+
+/**
+ * Memgraph: Neo4j's `vector.similarity.cosine` / `.euclidean` scores of `a` and `b`:
+ * `(1 + cos) / 2` and `1 / (1 + d²)`. Memgraph only has the raw cosine
+ * (`vector_search.cosine_similarity`); the squared distance is summed in Cypher.
+ */
+function memgraphSimilarity(ctx: QueryContext, similarity: string, a: string, b: string): string {
+  if (similarity !== "euclidean") return `(1 + vector_search.cosine_similarity(${a}, ${b})) / 2`;
+  const i = ctx.variable("i");
+  const sum = `reduce(acc = 0.0, ${i} IN range(0, size(${b}) - 1) | acc + (${a}[${i}] - ${b}[${i}]) ^ 2)`;
+  return `1.0 / (1.0 + ${sum})`;
 }

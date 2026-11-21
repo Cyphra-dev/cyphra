@@ -29,7 +29,13 @@ import {
 } from "./compile.js";
 import { CyphraValidationError } from "./errors.js";
 import { compilePath, decodePath } from "./path.js";
-import { compileHop, edgeWhereModel, hopBound, viaRelations } from "./traverse.js";
+import {
+  compileHop,
+  edgeWhereModel,
+  hopBound,
+  memgraphExpansion,
+  viaRelations,
+} from "./traverse.js";
 
 type AnyRecord = Record<string, unknown>;
 
@@ -98,6 +104,9 @@ export function compileShortestPath(
   const label = q(model.label);
   const from = compileWhere(ctx, model, "s", args.from);
   const to = compileWhere(ctx, model, "t", args.to);
+  if (ctx.dialect === "memgraph") {
+    return memgraphShortestPath(ctx, model, args, max, all, { label, from, to, rels, op });
+  }
   // `where` reads the group variable of the hop's end nodes (every node but the start).
   const y = args.where === undefined ? undefined : ctx.variable("y");
   const hop = compileHop(
@@ -139,6 +148,92 @@ export function compileShortestPath(
   const n = ctx.variable("n");
   const { expr, shape } = compileProjection(ctx, model, n, args);
   text += ` RETURN [${n} IN nodes(p) | ${expr}] AS nodes, ${compilePath(ctx, "p")} AS path`;
+
+  return {
+    text,
+    params: ctx.params,
+    decode: (rows) =>
+      rows.map((r) => ({
+        nodes: ((r.nodes ?? []) as unknown[]).map((node) => decodeRow(shape, node)!),
+        edges: decodePath(ctx.schema, r.path).edges,
+      })),
+  };
+}
+
+/**
+ * Memgraph: `*BFS` (one shortest path per start/end pair) or `*ALLSHORTEST` with a constant
+ * weight (every shortest path), with the hop's checks and `where` in the filter lambda, so they
+ * apply during the search. Memgraph's searches need at least one hop: a node matching both `from`
+ * and `to` gets its zero-hop path from a second branch.
+ *
+ * ```cypher
+ * MATCH (s:`User`) WHERE … MATCH (t:`User`) WHERE …
+ * CALL { WITH s, t MATCH p = (s) WHERE s = t RETURN p
+ *        UNION WITH s, t MATCH p = (s)-[:`FOLLOWS` *BFS ..4 (r, m | …)]->(t) WHERE s <> t RETURN p }
+ * ```
+ */
+function memgraphShortestPath(
+  ctx: QueryContext,
+  model: ResolvedNodeModel,
+  args: AnyRecord,
+  max: number,
+  all: boolean,
+  parts: {
+    label: string;
+    from: string | null;
+    to: string | null;
+    rels: ReturnType<typeof viaRelations>;
+    op: string;
+  },
+): CompiledShortestPath {
+  const { label, from, to, rels, op } = parts;
+  let range = `*BFS ..${max}`;
+  if (all) {
+    const wr = ctx.variable("r");
+    const wm = ctx.variable("m");
+    range = `*ALLSHORTEST ..${max} (${wr}, ${wm} | 1) ${ctx.variable("w")}`;
+  }
+  const expansion = memgraphExpansion(
+    ctx,
+    model,
+    rels,
+    args.direction,
+    (e) =>
+      args.edgeWhere === undefined
+        ? null
+        : compileWhere(ctx, edgeWhereModel(ctx.schema, model, rels, op), e, args.edgeWhere),
+    // `where` holds on intermediate nodes only: the end node, which `to` selects, is exempt.
+    args.where === undefined
+      ? undefined
+      : (m) => {
+          const where = compileWhere(ctx, model, m, args.where);
+          return where ? `${m} = t OR (${where})` : null;
+        },
+    range,
+    op,
+  );
+
+  let text = `MATCH (s:${label})${from ? ` WHERE ${from}` : ""} `;
+  text += `MATCH (t:${label})${to ? ` WHERE ${to}` : ""} `;
+  text += `CALL { WITH s, t MATCH p = (s) WHERE s = t RETURN p`;
+  text += ` UNION WITH s, t MATCH p = (s)${expansion}(t) WHERE s <> t RETURN p }`;
+  if (all) {
+    const x = ctx.variable("x");
+    text += ` WITH collect(p) AS ps, min(length(p)) AS d`;
+    text += ` UNWIND [${x} IN ps WHERE length(${x}) = d] AS p`;
+    if (args.take !== undefined) {
+      text += ` WITH p LIMIT ${ctx.param(intParam(nonNegativeInt(args.take, "take")))}`;
+    }
+  } else {
+    text += ` WITH p ORDER BY length(p) LIMIT 1`;
+  }
+
+  // Not a list comprehension over nodes(p): Memgraph cannot run the projection's subqueries
+  // (relation counts, includes) there. UNWIND keeps the path's order.
+  const n = ctx.variable("n");
+  const { expr, shape } = compileProjection(ctx, model, n, args);
+  text += ` CALL { WITH p UNWIND nodes(p) AS ${n} RETURN collect(${expr}) AS nodes }`;
+  text += ` RETURN nodes, ${compilePath(ctx, "p")} AS path`;
 
   return {
     text,

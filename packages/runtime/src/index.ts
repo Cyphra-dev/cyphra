@@ -18,6 +18,13 @@ export {
 export type { Config, Driver, ManagedTransaction, Session } from "./client.js";
 export { toPlainRecord, toPlainRecords } from "./records.js";
 export {
+  DIALECTS,
+  detectDialect,
+  dialectFromServerAgent,
+  parseDialect,
+  type CyphraDialect,
+} from "./dialect.js";
+export {
   HttpDriver,
   HttpRecord,
   HttpSession,

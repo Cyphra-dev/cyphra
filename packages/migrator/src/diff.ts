@@ -23,6 +23,8 @@ import type {
   SchemaModel,
 } from "@cyphra/schema";
 import { formatRule } from "@cyphra/schema";
+import type { CyphraDialect } from "@cyphra/runtime";
+import { memgraphDdl } from "./memgraph.js";
 
 function q(id: string): string {
   return "`" + id.replace(/`/g, "``") + "`";
@@ -105,16 +107,37 @@ export function propertyIndexStatement(
 
 /** One named schema object (constraint or index) and the statement that creates it. */
 export type DdlObject = {
+  /** Cyphra's name for it (the Neo4j name; Memgraph's constraints and property indexes have none). */
   readonly name: string;
   readonly kind: "constraint" | "index";
   readonly create: string;
+  /**
+   * The statement that drops it, when it cannot be dropped by name (Memgraph). Absent on Neo4j:
+   * `DROP CONSTRAINT|INDEX <name> IF EXISTS`.
+   */
+  readonly drop?: string;
+};
+
+/** Options of {@link ddlObjectsFromModel} and {@link diffSchemaModels}. */
+export type DdlOptions = {
+  /** The DDL syntax to write (default `"neo4j"`). */
+  readonly dialect?: CyphraDialect;
 };
 
 /**
  * Constraints and range indexes implied by a schema model. Names match
  * {@link import("./push.js").constraintStatementsFromSchema} so `push` and migrations interoperate.
  */
-export function ddlObjectsFromModel(model: SchemaModel): DdlObject[] {
+export function ddlObjectsFromModel(model: SchemaModel, options: DdlOptions = {}): DdlObject[] {
+  const objects = neo4jDdlObjects(model);
+  if (options.dialect !== "memgraph") return objects;
+  return objects.map((o) => {
+    const mg = memgraphDdl(o.create)!;
+    return { ...o, create: mg.create, drop: mg.drop };
+  });
+}
+
+function neo4jDdlObjects(model: SchemaModel): DdlObject[] {
   const out: DdlObject[] = [];
   // What a node inherits from an interface is indexed and constrained on the interface's label,
   // which covers every implementation: only the declaring model gets the DDL.
@@ -360,8 +383,14 @@ function nodeDataSteps(
  *
  * @param prev - Schema at the last migration ({@link EMPTY_SCHEMA_MODEL} for the first one).
  * @param next - Current schema.
+ * @param options - `dialect: "memgraph"` writes Memgraph DDL (constraints and property indexes
+ *   dropped by definition, not by name).
  */
-export function diffSchemaModels(prev: SchemaModel, next: SchemaModel): MigrationPlan {
+export function diffSchemaModels(
+  prev: SchemaModel,
+  next: SchemaModel,
+  options: DdlOptions = {},
+): MigrationPlan {
   // Order: drop obsolete DDL → fix up data (backfills, guards) → create new DDL, so that e.g. a
   // backfilled @id gets its values before the uniqueness constraint is created.
   const drops: MigrationStep[] = [];
@@ -370,15 +399,16 @@ export function diffSchemaModels(prev: SchemaModel, next: SchemaModel): Migratio
   const warnings: string[] = [];
 
   // --- DDL -----------------------------------------------------------------
-  const before = new Map(ddlObjectsFromModel(prev).map((o) => [o.name, o]));
-  const after = new Map(ddlObjectsFromModel(next).map((o) => [o.name, o]));
+  const before = new Map(ddlObjectsFromModel(prev, options).map((o) => [o.name, o]));
+  const after = new Map(ddlObjectsFromModel(next, options).map((o) => [o.name, o]));
   for (const [name, o] of before) {
     const n = after.get(name);
     if (!n || n.create !== o.create) {
       drops.push({
         kind: "statement",
         comment: `Drop ${o.kind} ${name}.`,
-        cypher: `DROP ${o.kind === "constraint" ? "CONSTRAINT" : "INDEX"} ${name} IF EXISTS`,
+        cypher:
+          o.drop ?? `DROP ${o.kind === "constraint" ? "CONSTRAINT" : "INDEX"} ${name} IF EXISTS`,
       });
     }
   }

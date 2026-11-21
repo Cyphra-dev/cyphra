@@ -1,6 +1,7 @@
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createClient, type Db } from "./__fixtures__/ondelete.gen.js";
 import { NotFoundError, RestrictError } from "./errors.js";
+import { testDialect } from "./__fixtures__/testDialect.js";
 
 // Each test makes many round trips to Neo4j: the default 5 s is too tight on a busy CI runner.
 vi.setConfig({ testTimeout: 30_000, hookTimeout: 30_000 });
@@ -28,6 +29,7 @@ describe.skipIf(!hasNeo)("onDelete rules (Neo4j)", () => {
       uri: process.env.NEO4J_TEST_URI!,
       user: process.env.NEO4J_TEST_USER!,
       password: process.env.NEO4J_TEST_PASSWORD!,
+      dialect: testDialect,
     });
     await db.$cypher`MATCH (n) WHERE any(l IN labels(n) WHERE l IN ${LABELS}) DETACH DELETE n`;
   });

@@ -15,7 +15,8 @@ const enabled = Boolean(
   process.env.NEO4J_TEST_URI &&
   process.env.NEO4J_TEST_USER &&
   process.env.NEO4J_TEST_PASSWORD &&
-  process.env.CYPHRA_TEST_RESET_DB === "1",
+  process.env.CYPHRA_TEST_RESET_DB === "1" &&
+  process.env.CYPHRA_TEST_DIALECT !== "memgraph",
 );
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));

@@ -2,7 +2,7 @@ import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { CyphraConfig } from "./config.js";
+import { loadConfig, type CyphraConfig } from "./config.js";
 import { runSchemaDdl } from "./commands/schemaDdl.js";
 
 describe("runSchemaDdl", () => {
@@ -49,6 +49,53 @@ describe("runSchemaDdl", () => {
     );
     expect(lines.at(-2)).toBe(
       "CREATE VECTOR INDEX U_embedding_vector IF NOT EXISTS FOR (n:`U`) ON n.`embedding` OPTIONS {indexConfig: {`vector.dimensions`: 3, `vector.similarity_function`: 'cosine'}}",
+    );
+  });
+
+  it('prints Memgraph DDL with "dialect": "memgraph"', async () => {
+    const dir = await mkdtemp(join(tmpdir(), "cyphra-ddl-mg-"));
+    await writeFile(
+      join(dir, "schema.cyphra"),
+      `node U {
+  id   String @id
+  slug String @index
+  embedding Vector(3)? @vectorIndex(similarity: euclidean)
+}
+`,
+      "utf8",
+    );
+    await writeFile(
+      join(dir, "cyphra.json"),
+      JSON.stringify({
+        schema: "./schema.cyphra",
+        migrations: "./migrations",
+        dialect: "memgraph",
+      }),
+      "utf8",
+    );
+    const config = await loadConfig(dir);
+    expect(config.dialect).toBe("memgraph");
+    const lines: string[] = [];
+    vi.spyOn(console, "log").mockImplementation((msg: unknown) => {
+      lines.push(String(msg));
+    });
+    await runSchemaDdl(config);
+    expect(lines).toEqual([
+      "CREATE CONSTRAINT ON (n:`U`) ASSERT n.`id` IS UNIQUE",
+      "CREATE INDEX ON :`U`(`slug`)",
+      'CREATE VECTOR INDEX `U_embedding_vector` ON :`U`(`embedding`) WITH CONFIG {"dimension": 3, "capacity": 1000, "metric": "l2sq"}',
+    ]);
+  });
+
+  it("rejects an unknown dialect in cyphra.json", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "cyphra-ddl-bad-"));
+    await writeFile(
+      join(dir, "cyphra.json"),
+      JSON.stringify({ schema: "./schema.cyphra", migrations: "./migrations", dialect: "kuzu" }),
+      "utf8",
+    );
+    await expect(loadConfig(dir)).rejects.toThrow(
+      'cyphra.json "dialect" must be "neo4j" or "memgraph"',
     );
   });
 });
