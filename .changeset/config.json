@@ -23,6 +23,7 @@
     "cyphra-doc",
     "cyphra-example-basic",
     "cyphra-example-graphrag",
+    "cyphra-example-trpc-nextjs",
     "compat-graphql",
     "cyphra-vscode"
   ]
