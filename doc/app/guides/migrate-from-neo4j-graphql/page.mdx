@@ -1,0 +1,523 @@
+---
+title: "Migrate from @neo4j/graphql to Cyphra"
+sidebarTitle: From @neo4j/graphql
+description: "A checklist to move a @neo4j/graphql v7 API to @cyphra/graphql: same type definitions and frontend queries, schema.cyphra, migrations and a typed client."
+---
+
+import { Callout, Steps } from "nextra/components";
+import { HowToJsonLd } from "../../../components/seo/page-jsonld";
+
+# Migrate from @neo4j/graphql to Cyphra
+
+`@cyphra/graphql` serves the API that `@neo4j/graphql` 7 generates from your type definitions. You
+keep `typeDefs.graphql` and every query your frontend sends; you replace one line on the server.
+Along the way you get a `schema.cyphra` for the same graph, migrations for its constraints and
+indexes, and a typed client for server code.
+
+This guide is a checklist. Each step was run on a small app with `@id`, `@relationshipProperties`,
+`@cypher`, `@fulltext` and `@authorization`, against Neo4j 5.26, with `@neo4j/graphql` 7.6.8 and
+`@cyphra/graphql` 0.7.
+
+<Callout type="info">
+  Before you start, check that your type definitions are covered: interfaces, unions, subscriptions,
+  `@vector`, some scalars, custom resolvers and the schema configuration directives (`@query`,
+  `@selectable`, `@filterable`, …) are not supported yet ([full list](#what-is-not-supported-yet)).
+  `makeSchema` throws an `UnsupportedTypeDefsError` that names the type or field, so the first run
+  tells you.
+</Callout>
+
+## Steps
+
+<Steps>
+
+### Install the packages
+
+```bash
+npm i @cyphra/graphql cyphra
+npm i -D @cyphra/cli
+```
+
+`@cyphra/graphql` needs `graphql` 16 and `neo4j-driver` 5.28 or later, which a `@neo4j/graphql` app
+already has, and Neo4j 5.23 or later (like `@neo4j/graphql` 7). `cyphra` is the runtime of the typed
+client and the migrations; `@cyphra/cli` is the `cyphra` command. Keep `@neo4j/graphql` installed
+until [the comparison step](#compare-both-libraries-on-your-operations) passes.
+
+### Set up cyphra.json
+
+```bash
+npx cyphra init
+```
+
+It writes `cyphra.json`, a starter `schema.cyphra`, `migrations/` and `.env.example`:
+
+```json filename="cyphra.json"
+{
+  "schema": "./schema.cyphra",
+  "migrations": "./migrations",
+  "generate": "./cyphra.gen.ts"
+}
+```
+
+Put the connection to your database in `.env`, with the variables your server already uses:
+
+```bash filename=".env"
+NEO4J_URI=neo4j+s://<your-host>
+NEO4J_USERNAME=neo4j
+NEO4J_PASSWORD=<your-password>
+```
+
+### Import the type definitions
+
+```bash
+npx cyphra import graphql typeDefs.graphql --force
+```
+
+`--force` replaces the starter `schema.cyphra` from `cyphra init`. Pass several files if your type
+definitions are split, or `--merge` to add to a schema you already wrote. The command prints what it
+did not convert and what behaves differently. For the test app:
+
+```text
+Wrote schema.cyphra (2 node(s), 1 relationship model(s))
+
+Not converted (2):
+  Person            @authorization: authorization rules are not part of a Cyphra schema: compat.v7 still applies them; enforce them yourself around the typed client
+  Movie.actorCount  @cypher: @cypher fields are computed by a Cypher query: not converted (compat.v7 still serves it); with the typed client, write it as a query
+
+Converted with differences (2):
+  Movie.id   @id: became @id @default(uuid()); Cyphra also adds a uniqueness constraint, which v7 @id does not
+  Person.id  @id: became @id @default(uuid()); Cyphra also adds a uniqueness constraint, which v7 @id does not
+
+Ignored (GraphQL API only) (2):
+  JWT    @jwt: JWT payload type, used by authorization rules only
+  Movie  @fulltext(queryName): query field "moviesByTitle" is part of the GraphQL API (compat.v7 still serves it)
+```
+
+"Not converted" is about `schema.cyphra` only. The GraphQL API still reads `typeDefs.graphql`, so
+`@cypher` fields and `@authorization` rules keep working there. The written schema:
+
+```cyphra filename="schema.cyphra"
+node Movie {
+  id String @id @default(uuid())
+  title String
+  released Int?
+  actors Person[] @relationship(type: "ACTED_IN", direction: IN)
+  // actorCount: Int! (not converted: computed field)
+
+  @@fulltext([title], name: "MovieTitle")
+}
+
+node Person {
+  id String @id @default(uuid())
+  name String
+  movies Movie[] @relationship(type: "ACTED_IN", direction: OUT)
+}
+
+relationship ActedIn {
+  type "ACTED_IN"
+  from Person
+  to Movie
+  roles String[]
+}
+```
+
+Check it and generate the typed client:
+
+```bash
+npx cyphra validate
+npx cyphra generate
+```
+
+The [CLI reference](/cli#import-from-neo4jgraphql) lists every mapping.
+
+### Create constraints and indexes with migrations
+
+`@neo4j/graphql` 7 creates no constraints or indexes: you created the full-text indexes by hand, and
+`assertIndexesAndConstraints` only checks that they exist. With Cyphra they come from the schema:
+
+```bash
+npx cyphra migrate dev --name init
+```
+
+```js filename="migrations/20261121164049_init.mjs"
+// Generated by `cyphra migrate dev`. Review it before applying to shared databases.
+import { defineMigration } from "cyphra";
+
+export default defineMigration({
+  name: "20261121164049_init",
+  async up({ db }) {
+    // Create constraint Movie_id_id.
+    await db.execute(
+      "CREATE CONSTRAINT Movie_id_id IF NOT EXISTS FOR (n:`Movie`) REQUIRE n.`id` IS UNIQUE",
+    );
+
+    // Create constraint Person_id_id.
+    await db.execute(
+      "CREATE CONSTRAINT Person_id_id IF NOT EXISTS FOR (n:`Person`) REQUIRE n.`id` IS UNIQUE",
+    );
+
+    // Create index MovieTitle.
+    await db.execute(
+      "CREATE FULLTEXT INDEX MovieTitle IF NOT EXISTS FOR (n:`Movie`) ON EACH [n.`title`]",
+    );
+  },
+});
+```
+
+Two things to check before you apply it to a database with data:
+
+- **`@id` becomes unique.** v7 `@id` generates a UUID but adds no constraint. In Cyphra, `@id`
+  creates a uniqueness constraint, and creating it fails if two nodes already share a value. Look for
+  duplicates first: `MATCH (n:Movie) WITH n.id AS id, count(*) AS c WHERE c > 1 RETURN id, c`. If
+  you want no constraint, change `@id` to `@default(uuid())` in `schema.cyphra` before you run
+  `migrate dev`.
+- **Existing indexes are kept as they are.** The importer keeps each `indexName`, and
+  `IF NOT EXISTS` skips an index that already exists under that name, even if its fields differ.
+  Compare with `SHOW INDEXES` if you created the indexes by hand.
+
+In CI and production, `cyphra migrate deploy` applies pending migrations and
+`cyphra migrate status` fails when the database and the schema differ: it replaces
+`assertIndexesAndConstraints`. See [Migrations](/migrations).
+
+### Swap the server package
+
+Replace the `Neo4jGraphQL` instance with `compat.v7.makeSchema`. It takes the same `typeDefs` and
+`driver` and returns a `GraphQLSchema` (synchronously, so there is no `await`):
+
+```ts filename="graphql.ts"
+// Before
+import { Neo4jGraphQL } from "@neo4j/graphql";
+const neoSchema = new Neo4jGraphQL({ typeDefs, driver });
+const schema = await neoSchema.getSchema();
+
+// After
+import { compat } from "@cyphra/graphql";
+const schema = compat.v7.makeSchema({ typeDefs, driver });
+```
+
+The rest of the server stays as it is. Apollo Server:
+
+```ts filename="server.ts"
+import { ApolloServer } from "@apollo/server";
+import { startStandaloneServer } from "@apollo/server/standalone";
+
+const server = new ApolloServer({ schema });
+const { url } = await startStandaloneServer(server, {
+  context: async ({ req }) => ({ token: req.headers.authorization }),
+});
+```
+
+GraphQL Yoga:
+
+```ts filename="server.ts"
+import { createServer } from "node:http";
+import { createYoga } from "graphql-yoga";
+
+const yoga = createYoga({
+  schema,
+  context: ({ request }) => ({ token: request.headers.get("authorization") ?? undefined }),
+});
+createServer(yoga).listen(4000);
+```
+
+A Next.js Route Handler, with Yoga:
+
+```ts filename="app/api/graphql/route.ts"
+import { createYoga } from "graphql-yoga";
+import { schema } from "@/lib/graphql";
+
+const { handleRequest } = createYoga({
+  schema,
+  graphqlEndpoint: "/api/graphql",
+  fetchAPI: { Response },
+  context: ({ request }) => ({ token: request.headers.get("authorization") ?? undefined }),
+});
+
+export { handleRequest as GET, handleRequest as POST, handleRequest as OPTIONS };
+```
+
+The Apollo version for Next.js is on the [GraphQL page](/graphql#serve-it-from-a-nextjs-route).
+
+`makeSchema` accepts `typeDefs`, `driver` (or `client`, a `CyphraClient`), `database`, `debug` and
+`features.authorization`. Other `Neo4jGraphQL` options, such as `resolvers` or the other
+`features` keys, are not supported.
+
+### Map the authorization settings
+
+`features.authorization` takes the same values as in v7, and the context keys are the same: `token`
+for the `Authorization` header, `jwt` for a payload you already verified, and any other key for
+`$context.<path>` in rules.
+
+```ts filename="graphql.ts"
+// Before
+new Neo4jGraphQL({
+  typeDefs,
+  driver,
+  features: { authorization: { key: process.env.JWT_SECRET! } },
+});
+
+// After
+compat.v7.makeSchema({
+  typeDefs,
+  driver,
+  features: { authorization: { key: process.env.JWT_SECRET! } },
+});
+```
+
+| v7 `features.authorization` | `@cyphra/graphql`                                                            |
+| --------------------------- | ---------------------------------------------------------------------------- |
+| `key: "<secret>"`           | Same (HS256, HS384, HS512)                                                   |
+| `key: { url }` (JWKS)       | Same; keys are cached                                                        |
+| `key: (context) => …`       | Same                                                                         |
+| `verifyOptions`             | Same, passed to `jwtVerify` of `jose`                                        |
+| `verify: false`             | Same: decodes without checking the signature (only behind a verifying proxy) |
+
+The rules are applied as in v7, with a few stricter cases listed [below](#known-differences).
+
+### Compare both libraries on your operations
+
+Run the operations your frontend sends against both libraries, on the same data, before you
+remove `@neo4j/graphql`. Put each operation in `operations/NN-name.graphql`, optional variables in
+`NN-name.variables.json` and a decoded JWT in `NN-name.jwt.json`, and the test data in `seed.cypher`
+(statements separated by `;` at the end of a line). The script resets the database before every run,
+so **use a disposable database**: it deletes every node.
+
+```js filename="compare.mjs"
+import { readFile, readdir } from "node:fs/promises";
+import { isDeepStrictEqual } from "node:util";
+import { Neo4jGraphQL } from "@neo4j/graphql";
+import { compat } from "@cyphra/graphql";
+import { graphql } from "graphql";
+import neo4j from "neo4j-driver";
+
+const driver = neo4j.driver(
+  process.env.NEO4J_URI,
+  neo4j.auth.basic(process.env.NEO4J_USERNAME, process.env.NEO4J_PASSWORD),
+);
+const typeDefs = await readFile("typeDefs.graphql", "utf8");
+const seed = (await readFile("seed.cypher", "utf8"))
+  .split(/;\s*$/m)
+  .map((s) => s.trim())
+  .filter(Boolean);
+const schemas = {
+  "@neo4j/graphql": await new Neo4jGraphQL({ typeDefs, driver }).getSchema(),
+  "@cyphra/graphql": compat.v7.makeSchema({ typeDefs, driver }),
+};
+
+async function reset() {
+  await driver.executeQuery("MATCH (n) DETACH DELETE n");
+  for (const statement of seed) await driver.executeQuery(statement);
+}
+
+async function readJson(path) {
+  try {
+    return JSON.parse(await readFile(path, "utf8"));
+  } catch {
+    return undefined;
+  }
+}
+
+// Neo4j returns rows in no particular order: arrays are sorted before comparing.
+function normalize(value) {
+  if (Array.isArray(value)) {
+    return value.map(normalize).sort((a, b) => (JSON.stringify(a) < JSON.stringify(b) ? -1 : 1));
+  }
+  if (value && typeof value === "object") {
+    return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, normalize(v)]));
+  }
+  return value;
+}
+
+let failed = 0;
+const files = (await readdir("operations")).filter((f) => f.endsWith(".graphql")).sort();
+for (const file of files) {
+  const base = `operations/${file.replace(/\.graphql$/, "")}`;
+  const source = await readFile(`operations/${file}`, "utf8");
+  const variableValues = await readJson(`${base}.variables.json`);
+  const jwt = await readJson(`${base}.jwt.json`);
+  const results = {};
+  for (const [name, schema] of Object.entries(schemas)) {
+    await reset();
+    const { data, errors } = await graphql({
+      schema,
+      source,
+      variableValues,
+      contextValue: jwt ? { jwt } : {},
+    });
+    results[name] = normalize({ data, errors: errors?.map((e) => e.message) });
+  }
+  const [a, b] = Object.values(results);
+  if (isDeepStrictEqual(a, b)) {
+    console.log(`same     ${file}`);
+  } else {
+    failed++;
+    console.log(`DIFFERS  ${file}`);
+    for (const [name, r] of Object.entries(results)) console.log(`  ${name}: ${JSON.stringify(r)}`);
+  }
+}
+await driver.close();
+process.exitCode = failed ? 1 : 0;
+```
+
+```text
+$ node --env-file=.env compare.mjs
+same     01-movies.graphql
+same     02-search.graphql
+same     03-create-person.graphql
+same     04-create-forbidden.graphql
+```
+
+Generated values such as `@id` UUIDs and `@timestamp` dates differ between two runs: select fixed
+fields in mutations, or mask those values before comparing. Copy your full-text index statements
+into `seed.cypher` if an operation uses them.
+
+This is a small version of the suite Cyphra runs in CI: 7 apps and 96 operations, with expected
+results recorded from `@neo4j/graphql` 7.6.8, all passing
+([`compat/graphql/REPORT.md`](https://github.com/Cyphra-dev/cyphra/blob/main/compat/graphql/REPORT.md)).
+Its [README](https://github.com/Cyphra-dev/cyphra/blob/main/compat/graphql/README.md) explains how to
+add a fixture; an operation that differs on your app is worth an issue.
+
+### Remove @neo4j/graphql
+
+When the comparison passes, deploy with `@cyphra/graphql`, then `npm uninstall @neo4j/graphql`.
+
+</Steps>
+
+## Known differences
+
+These are documented on the [GraphQL page](/graphql) and covered by the compatibility suite.
+
+- **Neo4j 5.23 or later**, as for `@neo4j/graphql` 7. APOC is not needed.
+- **Stricter authorization in a few cases.** Inside an `AND` / `OR` element, `node` and `jwt` must
+  both hold (v7 combines them with the element's operator). `NOT` works at the top of a rule, a
+  `validate` rule that evaluates to `null` fails with `Forbidden`, a missing `$context` value is
+  `null`, and a rule that does not fit its type makes `makeSchema` throw. In each of these cases v7
+  either passes or fails with an internal error
+  ([details](/graphql#differences-from-v7)).
+- **`@cypher` fields in `where`** are compared on the first row the statement returns, `null` when
+  there is none. v7 leaves the node out when the statement returns no row, even inside `OR` or
+  `NOT`. Two cases that fail in v7 work: filters on `@cypher` fields nested in a `@cypher` node
+  filter, and `@cypher` fields returning lists of enums ([details](/graphql#cypher-differences-from-v7)).
+- **Mutation responses are read after all writes.** With several inputs in one `createMovies`, v7
+  can return a node as it was before a later input connected to it.
+
+Some v7 behaviour is kept on purpose, because changing it would change your results:
+
+- **`connect` creates a relationship to every node that matches `where`**, also when the pair is
+  already connected, so connecting twice gives two relationships. Filter connected nodes out in
+  `where` if you do not want that.
+- `create` responses skip the `READ` rules of the created nodes, filters and sorts can use fields
+  the user cannot read, and connection aggregates use the `AGGREGATE` rules
+  ([full list](/graphql#v7-authorization-behaviour-you-get-as-well)).
+- `Date` inputs are read in the time zone of the process: run the server with `TZ=UTC`.
+
+## What is not supported yet
+
+- **Subscriptions** ([#76](https://github.com/Cyphra-dev/cyphra/issues/76)).
+- Interfaces and unions.
+- `@vector` queries.
+- The scalars `Time`, `LocalTime`, `LocalDateTime`, `Duration`, `Point`, `CartesianPoint` and
+  custom scalars. `ID`, `String`, `Int`, `Float`, `Boolean`, `BigInt`, `Date`, `DateTime` and enums
+  work.
+- Custom resolvers: `@customResolver` and the `resolvers` option.
+- `@populatedBy` and `@relayId`.
+- The schema configuration directives `@query`, `@mutation`, `@subscription`, `@selectable`,
+  `@settable`, `@filterable`, `@sortable` and `@limit`.
+
+`makeSchema` throws an `UnsupportedTypeDefsError` for them instead of serving a different API.
+`@plural` works.
+
+## Using the typed client alongside GraphQL
+
+The `schema.cyphra` from the import describes the graph the API serves, so server code can use the
+generated client on the same data: background jobs, webhooks, admin scripts, or REST endpoints next
+to the GraphQL one. Share one driver between the two:
+
+```ts filename="server.ts"
+import { compat } from "@cyphra/graphql";
+import neo4j from "neo4j-driver";
+import { createClient } from "./cyphra.gen";
+
+const driver = neo4j.driver(
+  process.env.NEO4J_URI!,
+  neo4j.auth.basic(process.env.NEO4J_USERNAME!, process.env.NEO4J_PASSWORD!),
+);
+
+export const schema = compat.v7.makeSchema({ typeDefs, driver });
+export const db = createClient({ driver });
+
+// Elsewhere in server code:
+const movies = await db.movie.findMany({
+  select: { title: true, actors: { select: { name: true } } },
+});
+// [{ title: "The Matrix", actors: [{ name: "Keanu Reeves", $edge: { roles: ["Neo"] } }, …] }, …]
+```
+
+Two things the client does not take from `typeDefs.graphql`: `@authorization` rules (check access in
+your own code before calling `db`) and `@cypher` fields (write them as a
+[query](/queries) or with `` db.$cypher`…` ``). When the data model changes, edit both files and run
+`cyphra migrate dev`, or edit `typeDefs.graphql` and run `cyphra import graphql --merge` to bring
+the new fields into `schema.cyphra`. See the [typed client](/client).
+
+## Next: the native API
+
+`compat.v7` reproduces the v7 API exactly, including its rough edges: generated plural names, two
+list APIs (lists and connections), very large input types, edge properties only through
+connections, and delete mutations that return counts. A Cyphra-native GraphQL API, generated from
+`schema.cyphra` and able to run next to `compat.v7` in the same server, is the next step
+([#77](https://github.com/Cyphra-dev/cyphra/issues/77)). It does not exist yet; this guide will cover
+the move to it when it ships.
+
+## Related
+
+- [GraphQL](/graphql): every option and v7 behaviour of `@cyphra/graphql`
+- [Cyphra vs the Neo4j GraphQL Library](/compare/neo4j-graphql-library)
+- [CLI: import from @neo4j/graphql](/cli#import-from-neo4jgraphql)
+- [Migrations](/migrations)
+
+<HowToJsonLd
+  path="/guides/migrate-from-neo4j-graphql"
+  name="Migrate from @neo4j/graphql to Cyphra"
+  description="Install @cyphra/graphql, import the type definitions to schema.cyphra, create constraints and indexes with migrations, swap Neo4jGraphQL for compat.v7.makeSchema, and compare both libraries on your operations."
+  steps={[
+    {
+      name: "Install the packages",
+      anchor: "install-the-packages",
+      text: "Install @cyphra/graphql and cyphra, and @cyphra/cli as a dev dependency.",
+    },
+    {
+      name: "Set up cyphra.json",
+      anchor: "set-up-cyphrajson",
+      text: "Run cyphra init and put the Neo4j connection in .env.",
+    },
+    {
+      name: "Import the type definitions",
+      anchor: "import-the-type-definitions",
+      text: "Run cyphra import graphql on your type definitions, read the report, then cyphra validate and cyphra generate.",
+    },
+    {
+      name: "Create constraints and indexes with migrations",
+      anchor: "create-constraints-and-indexes-with-migrations",
+      text: "Run cyphra migrate dev; check for duplicate @id values first, since Cyphra makes @id unique.",
+    },
+    {
+      name: "Swap the server package",
+      anchor: "swap-the-server-package",
+      text: "Replace new Neo4jGraphQL({ typeDefs, driver }).getSchema() with compat.v7.makeSchema({ typeDefs, driver }).",
+    },
+    {
+      name: "Map the authorization settings",
+      anchor: "map-the-authorization-settings",
+      text: "Pass the same features.authorization and the same token or jwt context values.",
+    },
+    {
+      name: "Compare both libraries on your operations",
+      anchor: "compare-both-libraries-on-your-operations",
+      text: "Run your operations against both libraries on a disposable database and check that the results are the same.",
+    },
+    {
+      name: "Remove @neo4j/graphql",
+      anchor: "remove-neo4jgraphql",
+      text: "Deploy with @cyphra/graphql, then uninstall @neo4j/graphql.",
+    },
+  ]}
+/>

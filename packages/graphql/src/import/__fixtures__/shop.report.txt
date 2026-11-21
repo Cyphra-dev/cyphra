@@ -6,7 +6,7 @@ Not converted (8):
   Product.location      Point: Point is not supported by Cyphra yet: not converted
   Customer.wishlist     @relationship: relationships to an interface are not supported yet: not converted
   Order.deliveryWindow  LocalTime: LocalTime is not supported by Cyphra yet: not converted
-  Order.total           @cypher: @cypher fields are computed by a Cypher query: not converted, write it as a query
+  Order.total           @cypher: @cypher fields are computed by a Cypher query: not converted (compat.v7 still serves it); with the typed client, write it as a query
 
 Converted with differences (7):
   OrderStatus  enum: enums are not supported by Cyphra yet: mapped to String, allowed values are not enforced

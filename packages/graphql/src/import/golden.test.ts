@@ -7,7 +7,7 @@ import { formatImportReport, printImportedSchema } from "./print.js";
 
 const FIXTURES = join(import.meta.dirname, "__fixtures__");
 
-describe.each(["movies", "blog", "shop"])("golden: %s", (name) => {
+describe.each(["movies", "blog", "shop", "library"])("golden: %s", (name) => {
   it("converts to the expected schema and report", async () => {
     const body = await readFile(join(FIXTURES, `${name}.graphql`), "utf8");
     const result = convertGraphQLTypeDefs([{ name: `${name}.graphql`, body }]);

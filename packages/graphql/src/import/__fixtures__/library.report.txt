@@ -1,0 +1,16 @@
+Not converted (11):
+  Query                  Query: custom Query fields (@cypher, resolvers) are not converted (compat.v7 still serves @cypher fields); with the typed client, write them as queries
+  Mutation               Mutation: custom Mutation fields (@cypher, resolvers) are not converted (compat.v7 still serves @cypher fields); with the typed client, write them as queries
+  Book.reviewCount       @cypher: @cypher fields are computed by a Cypher query: not converted (compat.v7 still serves it); with the typed client, write it as a query
+  Book.averageRating     @cypher: @cypher fields are computed by a Cypher query: not converted (compat.v7 still serves it); with the typed client, write it as a query
+  Book.keywords          @cypher: @cypher fields are computed by a Cypher query: not converted (compat.v7 still serves it); with the typed client, write it as a query
+  Book.related           @cypher: @cypher fields are computed by a Cypher query: not converted (compat.v7 still serves it); with the typed client, write it as a query
+  Book.firstAuthor       @cypher: @cypher fields are computed by a Cypher query: not converted (compat.v7 still serves it); with the typed client, write it as a query
+  Book.writers           @cypher: @cypher fields are computed by a Cypher query: not converted (compat.v7 still serves it); with the typed client, write it as a query
+  Book.reviewedByViewer  @cypher: @cypher fields are computed by a Cypher query: not converted (compat.v7 still serves it); with the typed client, write it as a query
+  Author.bookCount       @cypher: @cypher fields are computed by a Cypher query: not converted (compat.v7 still serves it); with the typed client, write it as a query
+  Wrote.credit           @cypher: @cypher fields are computed by a Cypher query: not converted (compat.v7 still serves it); with the typed client, write it as a query
+
+Ignored (GraphQL API only) (2):
+  Book  @fulltext(queryName): query field "booksByTitle" is part of the GraphQL API (compat.v7 still serves it)
+  Book  @fulltext(queryName): query field "searchBooks" is part of the GraphQL API (compat.v7 still serves it)

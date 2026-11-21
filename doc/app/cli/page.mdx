@@ -103,6 +103,9 @@ What converts:
   value, and `@unique` (from v6 and earlier) stays `@unique`.
 - `@relationship(type, direction)` becomes a relation field, and a `@relationshipProperties` type
   becomes a `relationship` model.
+- `@fulltext(indexes: [{ indexName, queryName, fields }])` becomes one
+  [`@@fulltext([fields], name: indexName)`](/schema#full-text-indexes) per index, so `cyphra migrate`
+  creates the indexes. `queryName` names a GraphQL query field and is listed as ignored.
 
 Everything else is listed in a report, never dropped silently. Fields that were not converted also
 appear as comments in the schema. The command exits with 0 when it wrote the schema, warnings included,
@@ -114,7 +117,7 @@ Wrote schema.cyphra (2 node(s), 1 relationship model(s))
 Not converted (3):
   Person         @node(labels): extra labels "Actor" are not supported: Cyphra nodes have one label
   Movie.runtime  Duration: Duration is not supported by Cyphra yet: not converted
-  Movie.similar  @cypher: @cypher fields are computed by a Cypher query: not converted, write it as a query
+  Movie.similar  @cypher: @cypher fields are computed by a Cypher query: not converted (compat.v7 still serves it); with the typed client, write it as a query
 
 Converted with differences (3):
   Movie.id     @id: became @id @default(uuid()); Cyphra also adds a uniqueness constraint, which v7 @id does not
@@ -124,6 +127,7 @@ Converted with differences (3):
 
 Not converted today: `BigInt`, `Time`, `LocalTime`, `LocalDateTime`, `Duration`, `Point`,
 `CartesianPoint` and custom scalars, interfaces and unions, extra labels, `@cypher` and
-`@customResolver` fields, `@authentication` and `@authorization` rules, `@fulltext` and `@vector`
-indexes, and update timestamps. API-only settings such as `@plural`, `@selectable` or `@filterable`
+`@customResolver` fields, `@authentication` and `@authorization` rules, `@vector` indexes (the type
+definitions carry neither the dimensions nor the similarity: declare a
+[`Vector(N)` field with `@vectorIndex`](/schema#vector-fields) by hand), and update timestamps. API-only settings such as `@plural`, `@selectable` or `@filterable`
 are listed as ignored. Run `cyphra validate` after the import, then `cyphra migrate dev`.

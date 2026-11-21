@@ -1,7 +1,6 @@
-Not converted (3):
-  Query  Query: custom Query fields (@cypher, resolvers) are not converted: write them as Cyphra queries
-  User   @authorization: authorization rules are not part of a Cyphra schema: enforce them in your resolvers or services
-  Post   @fulltext: fulltext indexes are not supported: create them in a migration
+Not converted (2):
+  Query  Query: custom Query fields (@cypher, resolvers) are not converted (compat.v7 still serves @cypher fields); with the typed client, write them as queries
+  User   @authorization: authorization rules are not part of a Cyphra schema: compat.v7 still applies them; enforce them yourself around the typed client
 
 Converted with differences (10):
   Role              enum: enums are not supported by Cyphra yet: mapped to String, allowed values are not enforced

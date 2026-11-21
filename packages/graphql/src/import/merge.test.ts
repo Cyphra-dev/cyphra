@@ -98,6 +98,39 @@ relationship P {
     expect(issues).toEqual([expect.objectContaining({ at: "P", feature: "--merge" })]);
   });
 
+  it("adds full-text indexes the existing node lacks, once", () => {
+    const result = convertGraphQLTypeDefs(`
+      type Post @node @fulltext(indexes: [
+        { indexName: "PostTitle", queryName: "q1", fields: ["title"] }
+        { indexName: "PostText", queryName: "q2", fields: ["title", "body"] }
+      ]) { title: String!, body: String }
+    `);
+    const existing = `node Post {
+  title String
+  body String?
+
+  @@fulltext([title], name: "PostTitle", analyzer: "english")
+}
+`;
+    const { source, issues } = mergeImportedSchema(existing, result);
+    expect(source).toBe(`node Post {
+  title String
+  body String?
+
+  @@fulltext([title], name: "PostTitle", analyzer: "english")
+  @@fulltext([title, body], name: "PostText")
+}
+`);
+    expect(issues).toEqual([
+      expect.objectContaining({
+        at: "Post",
+        feature: "--merge",
+        message: expect.stringMatching(/PostTitle/),
+      }),
+    ]);
+    expect(mergeImportedSchema(source, result).source).toBe(source);
+  });
+
   it("throws when the merged schema does not resolve", () => {
     expect(() =>
       mergeImportedSchema(

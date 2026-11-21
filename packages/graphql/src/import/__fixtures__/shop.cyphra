@@ -13,7 +13,7 @@
 // - Customer.wishlist: relationships to an interface are not supported yet: not converted
 // - Order.id: became @id @default(uuid()); Cyphra also adds a uniqueness constraint, which v7 @id does not
 // - Order.deliveryWindow: LocalTime is not supported by Cyphra yet: not converted
-// - Order.total: @cypher fields are computed by a Cypher query: not converted, write it as a query
+// - Order.total: @cypher fields are computed by a Cypher query: not converted (compat.v7 still serves it); with the typed client, write it as a query
 // - Review.id: became @id @default(uuid()); Cyphra also adds a uniqueness constraint, which v7 @id does not
 
 node Item {

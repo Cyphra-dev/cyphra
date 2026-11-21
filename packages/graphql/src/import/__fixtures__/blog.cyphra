@@ -1,9 +1,8 @@
 // Imported from @neo4j/graphql type definitions with `cyphra import graphql`.
 // Review before use (run the import again to see the full report):
 // - Role: enums are not supported by Cyphra yet: mapped to String, allowed values are not enforced
-// - Query: custom Query fields (@cypher, resolvers) are not converted: write them as Cyphra queries
-// - User: authorization rules are not part of a Cyphra schema: enforce them in your resolvers or services
-// - Post: fulltext indexes are not supported: create them in a migration
+// - Query: custom Query fields (@cypher, resolvers) are not converted (compat.v7 still serves @cypher fields); with the typed client, write them as queries
+// - User: authorization rules are not part of a Cyphra schema: compat.v7 still applies them; enforce them yourself around the typed client
 // - User.id: became @id @default(uuid()); Cyphra also adds a uniqueness constraint, which v7 @id does not
 // - User.email: @unique was removed in @neo4j/graphql v7; Cyphra keeps it and creates the uniqueness constraint
 // - User.displayName: Cyphra field names are the Neo4j property names: renamed to "display_name"
@@ -34,6 +33,8 @@ node Post {
   author User @relationship(type: "WROTE", direction: IN)
   tags Tag[] @relationship(type: "TAGGED", direction: OUT)
   comments Comment[] @relationship(type: "ON", direction: IN)
+
+  @@fulltext([title, body], name: "PostSearch")
 }
 
 node Tag {
