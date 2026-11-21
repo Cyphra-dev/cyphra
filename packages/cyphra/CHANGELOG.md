@@ -1,5 +1,15 @@
 # cyphra
 
+## 0.4.0
+
+### Patch Changes
+
+- Updated dependencies [e1ad59f]
+  - @cyphra/runtime@0.4.0
+  - @cyphra/schema@0.4.0
+  - @cyphra/migrator@0.4.0
+  - @cyphra/query@0.4.0
+
 ## 0.3.0
 
 ### Minor Changes
