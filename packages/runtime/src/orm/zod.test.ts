@@ -56,6 +56,20 @@ describe("renderZodSource", () => {
     expect(out).toContain("export const BSchema = z.object({});");
     expect(out).not.toContain("b: ");
   });
+
+  it("gives an interface no create schema, and its implementations the inherited fields", () => {
+    const out = renderZodSource(
+      parseSchema(
+        "interface Person { name String }\nnode Employee implements Person { id String @id\n team String }",
+      ),
+    );
+    expect(out).toContain("export const PersonSchema");
+    expect(out).toContain("export const PersonUpdateInputSchema");
+    expect(out).not.toContain("PersonCreateInputSchema");
+    expect(out).toContain("export const EmployeeCreateInputSchema");
+    const employee = out.slice(out.indexOf("const EmployeeFields"));
+    expect(employee.slice(0, employee.indexOf("};"))).toContain("name:");
+  });
 });
 
 // ---------------------------------------------------------------------------------------------

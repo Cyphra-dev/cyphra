@@ -26,6 +26,7 @@ const COMPLETION_KINDS: Record<CompletionKind, lsp.CompletionItemKind> = {
   keyword: CompletionItemKind.Keyword,
   type: CompletionItemKind.TypeParameter,
   node: CompletionItemKind.Class,
+  interface: CompletionItemKind.Interface,
   relationship: CompletionItemKind.Interface,
   enum: CompletionItemKind.Enum,
   enumMember: CompletionItemKind.EnumMember,
@@ -39,6 +40,7 @@ const COMPLETION_KINDS: Record<CompletionKind, lsp.CompletionItemKind> = {
 
 const SYMBOL_KINDS: Record<OutlineKind, lsp.SymbolKind> = {
   node: SymbolKind.Class,
+  interface: SymbolKind.Interface,
   relationship: SymbolKind.Interface,
   enum: SymbolKind.Enum,
   field: SymbolKind.Field,

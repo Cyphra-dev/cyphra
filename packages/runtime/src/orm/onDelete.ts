@@ -59,6 +59,11 @@ export function hasDeleteRules(schema: SchemaModel, root: ResolvedNodeModel): bo
     const m = stack.pop()!;
     if (seen.has(m.name)) continue;
     seen.add(m.name);
+    // A node reached as an interface is one of its implementations, with their own rules.
+    for (const i of m.implementations ?? []) {
+      const impl = schema.nodes.find((n) => n.name === i);
+      if (impl) stack.push(impl);
+    }
     const cascades = relations(m, "Cascade");
     if (cascades.length || relations(m, "Restrict").length) found = true;
     for (const f of cascades) {
@@ -68,6 +73,35 @@ export function hasDeleteRules(schema: SchemaModel, root: ResolvedNodeModel): bo
   }
   cache.set(root, found);
   return found;
+}
+
+/**
+ * Group nodes of `model` by the model whose rules apply to them: `model` itself, or for an
+ * interface the implementation whose label each node carries (the interface when none).
+ */
+async function concreteModels(
+  exec: Executor,
+  schema: SchemaModel,
+  model: ResolvedNodeModel,
+  ids: readonly string[],
+): Promise<Map<string, string[]>> {
+  if (!model.abstract || ids.length === 0)
+    return new Map(ids.length ? [[model.name, [...ids]]] : []);
+  const impls = (model.implementations ?? []).map((i) => schema.nodes.find((n) => n.name === i)!);
+  const ctx = new QueryContext(schema);
+  const rows = await exec(
+    `MATCH (n) WHERE elementId(n) IN ${ctx.param([...ids])} RETURN elementId(n) AS id, labels(n) AS labels`,
+    ctx.params,
+  );
+  const out = new Map<string, string[]>();
+  for (const r of rows) {
+    const labels = (r.labels ?? []) as unknown[];
+    const name = impls.find((m) => labels.includes(m.label))?.name ?? model.name;
+    const list = out.get(name);
+    if (list) list.push(r.id as string);
+    else out.set(name, [r.id as string]);
+  }
+  return out;
 }
 
 /** Lock the nodes with these element ids; returns the ids still there. */
@@ -102,13 +136,30 @@ export async function deleteWithRules(
   if (rootIds.length === 0) return 0;
   const nodeOf = (name: string) => schema.nodes.find((n) => n.name === name)!;
   // Nodes to delete, by model name (a node is visited once per model it is reached as).
-  const doomed = new Map<string, Set<string>>([[root.name, new Set(rootIds)]]);
-  let frontier = new Map<string, string[]>([[root.name, [...rootIds]]]);
+  const doomed = new Map<string, Set<string>>();
+  let frontier = new Map<string, string[]>();
   const flag = `b.${q(LOCK_FLAG)}`;
+  // Record nodes reached as `name`; a node reached as an interface is recorded as the
+  // implementation its labels name, so that its own rules apply.
+  const reach = async (name: string, ids: readonly string[]) => {
+    for (const [model, group] of await concreteModels(exec, schema, nodeOf(name), ids)) {
+      let seen = doomed.get(model);
+      if (!seen) doomed.set(model, (seen = new Set()));
+      for (const id of group) {
+        if (seen.has(id)) continue;
+        seen.add(id);
+        const list = frontier.get(model);
+        if (list) list.push(id);
+        else frontier.set(model, [id]);
+      }
+    }
+  };
+  await reach(root.name, rootIds);
 
   while (frontier.size) {
-    const next = new Map<string, string[]>();
-    for (const [name, ids] of frontier) {
+    const current = frontier;
+    frontier = new Map();
+    for (const [name, ids] of current) {
       for (const f of relations(nodeOf(name), "Cascade")) {
         const ctx = new QueryContext(schema);
         const rows = await exec(
@@ -116,19 +167,12 @@ export async function deleteWithRules(
             `WITH DISTINCT b SET ${flag} = true REMOVE ${flag} RETURN elementId(b) AS id`,
           ctx.params,
         );
-        let seen = doomed.get(f.target);
-        if (!seen) doomed.set(f.target, (seen = new Set()));
-        for (const r of rows) {
-          const id = r.id as string;
-          if (seen.has(id)) continue;
-          seen.add(id);
-          const list = next.get(f.target);
-          if (list) list.push(id);
-          else next.set(f.target, [id]);
-        }
+        await reach(
+          f.target,
+          rows.map((r) => r.id as string),
+        );
       }
     }
-    frontier = next;
   }
 
   const all = new Set<string>();

@@ -51,7 +51,12 @@ function scalarsOf(model: ResolvedNodeModel): ResolvedScalarField[] {
 export function decodePath(schema: SchemaModel, raw: unknown): Path<AnyRecord, PathEdge> {
   const src = (raw ?? {}) as { nodes?: unknown[]; edges?: unknown[] };
   const rawNodes = (src.nodes ?? []) as { labels?: unknown[]; properties?: unknown }[];
-  const models = rawNodes.map((n) => schema.nodes.find((m) => (n.labels ?? []).includes(m.label)));
+  // A node with an implementation's label decodes as that implementation, not as its interface.
+  const models = rawNodes.map((n) => {
+    const known = schema.nodes.filter((m) => (n.labels ?? []).includes(m.label));
+    return known.find((m) => !m.abstract) ?? known[0];
+  });
+  const names = (m: ResolvedNodeModel | undefined) => (m ? [m.name, ...(m.interfaces ?? [])] : []);
   const nodes = rawNodes.map((n, i) => {
     const model = models[i];
     return model
@@ -62,11 +67,11 @@ export function decodePath(schema: SchemaModel, raw: unknown): Path<AnyRecord, P
   const edges = rawEdges.map((e, i): PathEdge => {
     const type = String(e.type);
     const out = e.out === true;
-    const start = models[out ? i : i + 1]?.name;
-    const end = models[out ? i + 1 : i]?.name;
+    const start = names(models[out ? i : i + 1]);
+    const end = names(models[out ? i + 1 : i]);
     const candidates = schema.relationships.filter((r) => r.relType === type);
     const edgeModel =
-      candidates.find((r) => r.from === start && r.to === end) ??
+      candidates.find((r) => start.includes(r.from) && end.includes(r.to)) ??
       (candidates.length === 1 ? candidates[0] : undefined);
     return {
       type,

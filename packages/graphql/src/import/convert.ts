@@ -275,7 +275,7 @@ export function convertGraphQLTypeDefs(
           severity: "unsupported",
           feature: "interface",
           message:
-            "interfaces are not supported by Cyphra yet: implementing @node types are converted with their own fields; relationships to the interface are not",
+            "@neo4j/graphql interfaces are not labels (Cyphra interfaces are): implementing @node types are converted with their own fields, relationships to the interface are not; to share a label, declare a Cyphra `interface`, implement it and backfill the label",
         });
         break;
       case "union":

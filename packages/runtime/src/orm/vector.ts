@@ -28,6 +28,8 @@ import {
   decodeRow,
   intParam,
   q,
+  and,
+  labelExpr,
 } from "./compile.js";
 import { CyphraValidationError } from "./errors.js";
 import { decodeCount, encodeVector } from "./values.js";
@@ -111,7 +113,11 @@ export async function findSimilar(
     throw new CyphraValidationError(`${op}: exact must be a boolean.`);
   }
   const ctx = ctxFactory();
-  const where = compileWhere(ctx, model, "n", args.where);
+  // An index inherited from an interface covers every implementation: keep this model's nodes.
+  const where = and([
+    field.inheritedFrom ? `n:${labelExpr(model)}` : null,
+    compileWhere(ctx, model, "n", args.where),
+  ]);
   const candidates =
     args.candidates === undefined
       ? where
@@ -148,7 +154,7 @@ export async function findSimilar(
       `size(n.${prop}) = ${ctx.param(intParam(vector.length))}`,
     ];
     if (where) filters.push(`(${where})`);
-    let text = `MATCH (n:${q(model.label)}) WHERE ${filters.join(" AND ")}`;
+    let text = `MATCH (n:${labelExpr(model)}) WHERE ${filters.join(" AND ")}`;
     text += ` WITH n, ${fn}(n.${prop}, ${vec}) AS score`;
     if (scoreOk) text += ` WHERE ${scoreOk}`;
     text += ` WITH n, score ORDER BY score DESC LIMIT ${limit}`;

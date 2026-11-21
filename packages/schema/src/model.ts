@@ -19,7 +19,14 @@ import type {
   SchemaDocument,
 } from "./ast.js";
 import { SchemaValidationError } from "./errors.js";
-import { validateEnum, validateModelAttributes, validateVectorField } from "./validate.js";
+import {
+  nodeOwner,
+  validateEnum,
+  validateImplements,
+  validateModelAttributes,
+  validateVectorField,
+  withInheritedFields,
+} from "./validate.js";
 import {
   VALIDATION_RULES,
   assertNamedArgs,
@@ -112,6 +119,11 @@ export type ResolvedFulltextIndex = {
    * in the background after commit, so queries can miss recent writes.
    */
   readonly eventuallyConsistent?: boolean;
+  /**
+   * Interface that declares the index, on a node implementing it (the index covers the
+   * interface's label; searching through the node keeps the nodes with its own label).
+   */
+  readonly inheritedFrom?: string;
 };
 
 /**
@@ -128,6 +140,8 @@ export type ResolvedCompoundUnique = {
   readonly key: string;
   /** Constrained scalar fields, in the attribute's order (at least two). */
   readonly fields: readonly string[];
+  /** Interface that declares the constraint, on a node implementing it (absent otherwise). */
+  readonly inheritedFrom?: string;
 };
 
 /** A `@@index([a, b])` composite range index on a node model. */
@@ -162,6 +176,11 @@ export type ResolvedScalarField = {
    * write (absent when the field has none).
    */
   readonly rules?: readonly ValidationRule[];
+  /**
+   * Interface that declares the field, on a node implementing it (absent for the node's own
+   * fields). Its constraints and indexes belong to the interface's label.
+   */
+  readonly inheritedFrom?: string;
 };
 
 export type RelationDirection = "OUT" | "IN";
@@ -201,14 +220,30 @@ export type ResolvedRelationField = {
    * schema sets none, which means `SetNull`: the edges are removed, the nodes stay).
    */
   readonly onDelete?: OnDeleteRule;
+  /** Interface that declares the field, on a node implementing it (absent otherwise). */
+  readonly inheritedFrom?: string;
 };
 
 export type ResolvedField = ResolvedScalarField | ResolvedRelationField;
 
 export type ResolvedNodeModel = {
   readonly name: string;
-  /** Neo4j label (currently always the model name). */
+  /** Neo4j label of the model (its name). */
   readonly label: string;
+  /**
+   * `true` for an `interface`: an abstract model whose label every implementation carries. It can
+   * be queried (results are its implementations) but not created. Absent for a `node`.
+   */
+  readonly abstract?: true;
+  /** Nodes implementing this interface, in declaration order (only on an interface). */
+  readonly implementations?: readonly string[];
+  /** Interfaces this node implements, in `implements` order (absent when it implements none). */
+  readonly interfaces?: readonly string[];
+  /**
+   * Every label of the node: its own, then each interface's (absent when it implements none, i.e.
+   * when it is just `[label]`). Nodes of the model are written and matched with all of them.
+   */
+  readonly labels?: readonly string[];
   /** Name of the `@id` field, if any. */
   readonly idField?: string;
   /** `@id` and `@unique` scalar fields — valid keys for `findUnique` / `connect`. */
@@ -523,7 +558,12 @@ export function resolveSchema(doc: SchemaDocument): SchemaModel {
       continue;
     }
     (d.kind === "Node" ? nodeNames : relNames).add(d.name);
-    validateModelAttributes(d);
+    if (d.kind === "Node") {
+      validateImplements(doc, d);
+      validateModelAttributes(withInheritedFields(doc, d));
+    } else {
+      validateModelAttributes(d);
+    }
   }
 
   const relationships: ResolvedRelationshipModel[] = [];
@@ -557,7 +597,7 @@ export function resolveSchema(doc: SchemaDocument): SchemaModel {
     if (d.kind !== "Node") {
       continue;
     }
-    const owner = `Node "${d.name}"`;
+    const owner = nodeOwner(d);
     assertUniqueNames(
       owner,
       d.fields.map((f) => f.name),
@@ -626,10 +666,15 @@ export function resolveSchema(doc: SchemaDocument): SchemaModel {
         }
         onDelete = ruleArg.value as OnDeleteRule;
       }
-      const [start, end] = direction === "OUT" ? [d.name, f.target] : [f.target, d.name];
-      const edges = relationships.filter(
-        (r) => r.relType === typeArg.value && r.from === start && r.to === end,
-      );
+      // A `relationship { … }` model names this node, or else one of its interfaces, as the end.
+      const edgeModels = (self: string) => {
+        const [start, end] = direction === "OUT" ? [self, f.target] : [f.target, self];
+        return relationships.filter(
+          (r) => r.relType === typeArg.value && r.from === start && r.to === end,
+        );
+      };
+      let edges = edgeModels(d.name);
+      for (const i of d.implements ?? []) if (edges.length === 0) edges = edgeModels(i);
       if (edges.length > 1) {
         throw new SchemaValidationError(
           `${where}: several relationship models match (${edges.map((e) => e.name).join(", ")}).`,
@@ -700,7 +745,7 @@ export function resolveSchema(doc: SchemaDocument): SchemaModel {
         continue;
       }
       const key = custom ?? fieldsOf.join("_");
-      if (d.fields.some((f) => f.name === key) || keys.has(key)) {
+      if (withInheritedFields(doc, d).fields.some((f) => f.name === key) || keys.has(key)) {
         throw new SchemaValidationError(
           `${owner} @@unique: key "${key}" is already a field or another @@unique key (give this one a name: "…").`,
         );
@@ -711,6 +756,7 @@ export function resolveSchema(doc: SchemaDocument): SchemaModel {
     nodes.push({
       name: d.name,
       label: d.name,
+      ...(d.abstract ? { abstract: true as const } : {}),
       ...(idField ? { idField } : {}),
       uniqueFields: scalars.filter((f) => f.id || f.unique).map((f) => f.name),
       fields,
@@ -722,10 +768,85 @@ export function resolveSchema(doc: SchemaDocument): SchemaModel {
 
   return {
     version: SCHEMA_MODEL_VERSION,
-    nodes,
+    nodes: linkInterfaces(nodes, doc),
     relationships,
     ...(enums.size ? { enums: [...enums.values()] } : {}),
   };
+}
+
+/**
+ * Give each node implementing interfaces the fields, `@@unique` keys and `@@fulltext` indexes it
+ * inherits (first, tagged with `inheritedFrom`) and its labels; give each interface its
+ * implementations.
+ */
+function linkInterfaces(
+  nodes: readonly ResolvedNodeModel[],
+  doc: SchemaDocument,
+): ResolvedNodeModel[] {
+  const byName = new Map(nodes.map((n) => [n.name, n]));
+  const implementsOf = new Map<string, readonly string[]>();
+  for (const d of doc.declarations) {
+    if (d.kind === "Node" && d.implements?.length) implementsOf.set(d.name, d.implements);
+  }
+  if (implementsOf.size === 0 && !nodes.some((n) => n.abstract)) return [...nodes];
+  const tag = <T extends { readonly inheritedFrom?: string }>(x: T, from: string): T => ({
+    ...x,
+    inheritedFrom: x.inheritedFrom ?? from,
+  });
+  return nodes.map((n) => {
+    if (n.abstract) {
+      const implementations = [...implementsOf]
+        .filter(([, i]) => i.includes(n.name))
+        .map(([k]) => k);
+      const { name, label, ...rest } = n;
+      return { name, label, abstract: true, implementations, ...rest };
+    }
+    const interfaces = implementsOf.get(n.name);
+    if (!interfaces) return n;
+    const parents = interfaces.map((i) => byName.get(i)!);
+    const owner = nodeOwner({ kind: "Node", name: n.name, fields: [] });
+    const fields = [...parents.flatMap((p) => p.fields.map((f) => tag(f, p.name))), ...n.fields];
+    const compoundUniques = [
+      ...parents.flatMap((p) => (p.compoundUniques ?? []).map((c) => tag(c, p.name))),
+      ...(n.compoundUniques ?? []),
+    ];
+    const keys = new Set<string>();
+    for (const c of compoundUniques) {
+      if (keys.has(c.key) || fields.some((f) => f.name === c.key)) {
+        throw new SchemaValidationError(
+          `${owner} @@unique: key "${c.key}" is already a field or another @@unique key (give this one a name: "…").`,
+        );
+      }
+      keys.add(c.key);
+    }
+    const fulltextIndexes = [
+      ...parents.flatMap((p) => (p.fulltextIndexes ?? []).map((i) => tag(i, p.name))),
+      ...(n.fulltextIndexes ?? []),
+    ];
+    const scalars = fields.filter((f): f is ResolvedScalarField => f.kind === "scalar");
+    const idField = scalars.find((f) => f.id)?.name;
+    const { name, label, compoundIndexes } = n;
+    return {
+      name,
+      label,
+      interfaces: [...interfaces],
+      labels: [label, ...interfaces.map((i) => byName.get(i)!.label)],
+      ...(idField ? { idField } : {}),
+      uniqueFields: scalars.filter((f) => f.id || f.unique).map((f) => f.name),
+      fields,
+      ...(fulltextIndexes.length ? { fulltextIndexes } : {}),
+      ...(compoundUniques.length ? { compoundUniques } : {}),
+      ...(compoundIndexes?.length ? { compoundIndexes } : {}),
+    };
+  });
+}
+
+/**
+ * Every label of a node model (`["Employee", "Person"]` for `node Employee implements Person`),
+ * which its nodes are written and matched with; just `[label]` for an interface or a plain node.
+ */
+export function nodeLabels(model: ResolvedNodeModel): readonly string[] {
+  return model.labels ?? [model.label];
 }
 
 /** Look up a node model by name. */

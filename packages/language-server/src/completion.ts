@@ -14,6 +14,7 @@ export type CompletionKind =
   | "keyword"
   | "type"
   | "node"
+  | "interface"
   | "relationship"
   | "enum"
   | "enumMember"
@@ -50,6 +51,23 @@ const significant = (t: Token) => t.kind !== "comment" && t.kind !== "newline";
 
 function names(a: Analysis, kind: ScannedDeclaration["kind"]): string[] {
   return [...new Set(a.scanned.filter((d) => d.kind === kind).map((d) => d.name))];
+}
+
+/** Names of node models a relation can target: nodes and interfaces. */
+function modelNames(a: Analysis): string[] {
+  return [...new Set([...names(a, "node"), ...names(a, "interface")])];
+}
+
+/**
+ * Field lines of a block, after the fields it inherits from the interfaces it implements (so
+ * `@@unique([…])` on an implementation can name inherited fields).
+ */
+function fieldsWithInherited(a: Analysis, decl: ScannedDeclaration) {
+  const inherited = decl.implements.flatMap((n) => {
+    const i = a.scanned.find((d) => d.kind === "interface" && d.name === n.text);
+    return i ? scanFields(a.tokens, i) : [];
+  });
+  return [...inherited, ...scanFields(a.tokens, decl)];
 }
 
 function enumValues(a: Analysis, name: string): string[] {
@@ -100,6 +118,16 @@ function typeCompletions(ctx: Ctx, inNode: boolean): Completion[] {
     for (const n of names(a, "node")) {
       out.push({ label: n, kind: "node", detail: "node (relation)", replace, sortText: `3${n}` });
     }
+    for (const n of names(a, "interface")) {
+      if (names(a, "node").includes(n)) continue;
+      out.push({
+        label: n,
+        kind: "interface",
+        detail: "interface (relation to any implementation)",
+        replace,
+        sortText: `3${n}`,
+      });
+    }
   }
   return out;
 }
@@ -110,7 +138,7 @@ function fieldKind(a: Analysis, typeName: string | undefined): FieldKind {
   if (!typeName) return "unknown";
   if (typeName === "Vector") return "vector";
   if (BUILTIN_TYPES.includes(typeName) || names(a, "enum").includes(typeName)) return "scalar";
-  if (names(a, "node").includes(typeName)) return "relation";
+  if (modelNames(a).includes(typeName)) return "relation";
   return "unknown";
 }
 
@@ -277,8 +305,8 @@ export function completionsAt(a: Analysis, offset: number): Completion[] {
         .map((t) => t.text);
       if (callee.text !== "fulltext") {
         // @@unique / @@index: single-value scalar fields (no relations, lists, Json or vectors).
-        const models = new Set(names(a, "node"));
-        return scanFields(a.tokens, decl)
+        const models = new Set(modelNames(a));
+        return fieldsWithInherited(a, decl)
           .filter(
             (f) =>
               f.type !== undefined &&
@@ -290,7 +318,7 @@ export function completionsAt(a: Analysis, offset: number): Completion[] {
           )
           .map((f) => ({ label: f.name, kind: "field" as const, detail: f.type, replace }));
       }
-      return scanFields(a.tokens, decl)
+      return fieldsWithInherited(a, decl)
         .filter((f) => f.type === "String" && !listed.includes(f.name))
         .map((f) => ({
           label: f.name,
@@ -368,7 +396,10 @@ export function completionsAt(a: Analysis, offset: number): Completion[] {
   if (stmt.length === 1 && stmt[0]!.kind === "ident") {
     const head = stmt[0]!.text;
     if (inRelationship && (head === "from" || head === "to")) {
-      return names(a, "node").map((n) => ({ label: n, kind: "node" as const, replace }));
+      return [
+        ...names(a, "node").map((n) => ({ label: n, kind: "node" as const, replace })),
+        ...names(a, "interface").map((n) => ({ label: n, kind: "interface" as const, replace })),
+      ];
     }
     if (inRelationship && head === "type") return [];
     return typeCompletions(ctx, !inRelationship);
@@ -392,11 +423,14 @@ export function completionsAt(a: Analysis, offset: number): Completion[] {
 }
 
 function topLevelCompletions(ctx: Ctx, before: readonly Token[]): Completion[] {
+  const header = headerCompletions(ctx, before);
+  if (header) return header;
   // Only at the start of a line (not while naming a declaration).
   const prev = [...before].reverse().find((t) => t.kind !== "comment");
   if (prev && prev.kind !== "newline" && !(prev.kind === "punct" && prev.text === "}")) return [];
   const snippets: Record<string, string> = {
     node: "node ${1:Name} {\n\tid String @id @default(cuid())\n\t$0\n}",
+    interface: "interface ${1:Name} {\n\tid String @id @default(cuid())\n\t$0\n}",
     relationship:
       'relationship ${1:Name} {\n\ttype "${2:TYPE}"\n\tfrom ${3:Node}\n\tto ${4:Node}\n\t$0\n}',
     enum: "enum ${1:Name} {\n\t${2:VALUE}\n}",
@@ -409,6 +443,36 @@ function topLevelCompletions(ctx: Ctx, before: readonly Token[]): Completion[] {
     snippet: true,
     replace: ctx.replace,
   }));
+}
+
+/**
+ * In a declaration header: `implements` after `node Name`, interface names after `implements`
+ * or after a `,` in its list (`undefined` when not in a header).
+ */
+function headerCompletions(ctx: Ctx, before: readonly Token[]): Completion[] | undefined {
+  const toks = before.filter(significant);
+  const n = toks.length;
+  if (n >= 2 && toks[n - 2]!.text === "node" && toks[n - 1]!.kind === "ident") {
+    return [
+      {
+        label: "implements",
+        kind: "keyword",
+        documentation: KEYWORD_DOCS.implements,
+        replace: ctx.replace,
+      },
+    ];
+  }
+  let k = n - 1;
+  while (k >= 0 && !(toks[k]!.kind === "ident" && toks[k]!.text === "implements")) k--;
+  if (k < 2 || toks[k - 2]!.text !== "node" || toks[k - 1]!.kind !== "ident") return undefined;
+  // After `implements`: `A , B ,` and the cursor where the next name goes.
+  const list = toks.slice(k + 1);
+  const wellFormed = list.every((t, i) => (i % 2 === 0 ? t.kind === "ident" : t.text === ","));
+  if (!wellFormed || list.length % 2 === 1) return undefined;
+  const listed = list.filter((t) => t.kind === "ident").map((t) => t.text);
+  return names(ctx.a, "interface")
+    .filter((x) => !listed.includes(x))
+    .map((x) => ({ label: x, kind: "interface", detail: "interface", replace: ctx.replace }));
 }
 
 /** Inside a string: analyzer names, relationship types already in use. */

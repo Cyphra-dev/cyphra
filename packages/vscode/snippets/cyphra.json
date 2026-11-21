@@ -4,6 +4,19 @@
     "description": "A node model with an id",
     "body": ["node ${1:Name} {", "\tid ${2:String} @id @default(${3|cuid(),uuid()|})", "\t$0", "}"]
   },
+  "Interface": {
+    "prefix": "interface",
+    "description": "An interface (abstract node model) and a node implementing it",
+    "body": [
+      "interface ${1:Person} {",
+      "\tid ${2:String} @id @default(${3|cuid(),uuid()|})",
+      "\t$0",
+      "}",
+      "",
+      "node ${4:Employee} implements ${1:Person} {",
+      "}"
+    ]
+  },
   "Relationship": {
     "prefix": "relationship",
     "description": "A relationship model (typed edge properties)",

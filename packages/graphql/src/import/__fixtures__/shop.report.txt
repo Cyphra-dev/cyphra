@@ -1,6 +1,6 @@
 Not converted (5):
   JSON                scalar: custom scalars are not supported by Cyphra: fields of this type are not converted
-  Purchasable         interface: interfaces are not supported by Cyphra yet: implementing @node types are converted with their own fields; relationships to the interface are not
+  Purchasable         interface: @neo4j/graphql interfaces are not labels (Cyphra interfaces are): implementing @node types are converted with their own fields, relationships to the interface are not; to share a label, declare a Cyphra `interface`, implement it and backfill the label
   Product.attributes  JSON: custom scalars are not supported by Cyphra: not converted
   Customer.wishlist   @relationship: relationships to an interface are not supported yet: not converted
   Order.total         @cypher: @cypher fields are computed by a Cypher query: not converted (compat.v7 still serves it); with the typed client, write it as a query

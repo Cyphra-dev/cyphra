@@ -43,10 +43,8 @@ function fieldType(f: NodeField): string {
 
 function fieldMarkdown(a: Analysis, owner: Declaration, f: NodeField): string {
   const head = "```cyphra\n" + `${f.name} ${fieldType(f)}` + "\n```";
-  const parts = [
-    head,
-    `Field of ${owner.kind === "Node" ? "node" : "relationship"} **${owner.name}**.`,
-  ];
+  const what = owner.kind === "Node" ? (owner.abstract ? "interface" : "node") : "relationship";
+  const parts = [head, `Field of ${what} **${owner.name}**.`];
   if (f.kind === "Relational") {
     const rel = f.decorators.find((d) => d.name === "relationship");
     const type = rel?.args.find((x) => x.key === "type")?.value;
@@ -121,10 +119,21 @@ export function hoverAt(a: Analysis, offset: number): HoverResult | undefined {
   for (const d of doc.declarations) {
     const declSpan = span(d.loc);
     if (!within(offset, declSpan)) continue;
-    const keyword = d.kind.toLowerCase();
+    const keyword = d.kind === "Node" && d.abstract ? "interface" : d.kind.toLowerCase();
     const kw = keywordSpan(d.loc, keyword);
     if (within(offset, kw)) return { markdown: KEYWORD_DOCS[keyword] ?? keyword, span: kw };
     if (d.kind === "Enum") return undefined;
+    // The `implements` keyword, between the name and the first interface name.
+    const name = span(d.nameLoc);
+    const first = span(d.kind === "Node" ? d.implementsLocs?.[0] : undefined);
+    if (name && first) {
+      const between = a.text.slice(name.end, first.start);
+      const at = between.indexOf("implements");
+      const s = { start: name.end + at, end: name.end + at + "implements".length };
+      if (at >= 0 && within(offset, s)) {
+        return { markdown: KEYWORD_DOCS.implements!, span: s };
+      }
+    }
     for (const f of d.fields) {
       if (!within(offset, span(f.loc))) continue;
       const name = span(f.nameLoc);

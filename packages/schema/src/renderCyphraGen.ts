@@ -64,6 +64,9 @@ function renderObjectType(
   doc: string,
   names: RuntimeTypeNames,
 ): string[] {
+  // Not `{}`: an empty object type trips @typescript-eslint/no-empty-object-type.
+  if (fields.length === 0)
+    return [`/** ${doc} */`, `export type ${name} = Record<never, never>;`, ""];
   const lines = [`/** ${doc} */`, `export type ${name} = {`];
   for (const f of fields) {
     if (f.rules?.length) {
@@ -116,7 +119,12 @@ export function renderClientSection(model: SchemaModel, names: RuntimeTypeNames 
   }
   for (const n of model.nodes) {
     const scalars = n.fields.filter((f): f is ResolvedScalarField => f.kind === "scalar");
-    lines.push(...renderObjectType(n.name, scalars, `\`${n.name}\` node properties.`, names));
+    const doc = n.abstract
+      ? `\`${n.name}\` interface properties (shared by ${n.implementations?.length ? n.implementations.map((i) => `\`${i}\``).join(", ") : "no node yet"}).`
+      : n.labels
+        ? `\`${n.name}\` node properties (labels ${n.labels.map((l) => `\`:${l}\``).join(", ")}).`
+        : `\`${n.name}\` node properties.`;
+    lines.push(...renderObjectType(n.name, scalars, doc, names));
   }
   for (const r of model.relationships) {
     lines.push(
@@ -136,6 +144,11 @@ export function renderClientSection(model: SchemaModel, names: RuntimeTypeNames 
     const required = scalars.filter((f) => !f.optional && !f.list && !f.default).map((f) => f.name);
     lines.push(`  ${n.name}: {`);
     lines.push(`    scalars: ${n.name};`);
+    // Only emitted for interfaces, so schemas without them generate the same code as before.
+    if (n.abstract) {
+      lines.push("    abstract: true;");
+      lines.push(`    implementations: ${union(n.implementations ?? [])};`);
+    }
     lines.push(`    createRequired: ${union(required)};`);
     lines.push(`    unique: ${union(n.uniqueFields)};`);
     // Only emitted when present, so schemas without vectors generate the same code as before.

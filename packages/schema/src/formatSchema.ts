@@ -8,7 +8,7 @@ import type {
   SourceRange,
 } from "./ast.js";
 import { parseSchemaSyntax } from "./parseSchema.js";
-import { formatRelationalType, formatScalarType } from "./printSchema.js";
+import { formatRelationalType, formatScalarType, nodeHeader } from "./printSchema.js";
 
 /** Options of {@link formatSchema}. */
 export type FormatSchemaOptions = {
@@ -117,7 +117,7 @@ export function formatSchema(source: string, options?: FormatSchemaOptions): str
       const attrs = (d.attributes ?? []).map((a) => lineItem(range(a.loc), formatAttr(a), true));
       const fields: Item[] = d.fields.map(fieldItem);
       if (d.kind === "Node") {
-        header = `node ${d.name} {`;
+        header = nodeHeader(d);
         items = [...fields, ...attrs];
       } else {
         header = `relationship ${d.name} {`;
