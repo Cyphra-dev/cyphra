@@ -24,9 +24,13 @@ Status (early release):
 - The full v7 schema is generated; its printed SDL is identical to `@neo4j/graphql` 7.6.8.
 - Read API: list and connection queries, filters, sorting, `limit` / `offset`, cursor pagination,
   nested relationships and connections with edge properties, connection `aggregate` selections and
-  aggregation filters. One Cypher statement per root field.
-- Not yet: mutations (#73), `@authentication` / `@authorization` (#74) and
-  `@cypher` fields (#75). They are in the schema and return a `Not implemented yet` error.
+  aggregation filters.
+- Mutations: `create`, `update`, `delete` with `info` counters, nested `create` / `connect` /
+  `disconnect` / `update` / `delete` with edge properties, every update operator (deprecated forms
+  included), `@id`, `@timestamp` and `@default`. No APOC needed.
+- One Cypher statement per root field, in its own transaction. Needs Neo4j 5.23+.
+- Not yet: `@authentication` / `@authorization` (#74) and `@cypher` fields (#75). They are in the
+  schema and return a `Not implemented yet` error.
 
 Compatibility is measured against the real `@neo4j/graphql` by the suite in
 [`compat/graphql`](https://github.com/Cyphra-dev/cyphra/tree/main/compat/graphql).

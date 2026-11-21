@@ -81,7 +81,7 @@ export function cursorToOffset(cursor: unknown): number | undefined {
 }
 
 /** Fields of a selection set, merged by response key (aliases), fragments and @skip/@include applied. */
-function collectFields(
+export function collectFields(
   info: SelectionInfo,
   sets: readonly (SelectionSetNode | undefined)[],
   out = new Map<string, FieldNode[]>(),
@@ -108,7 +108,7 @@ function collectFields(
   return out;
 }
 
-function subSelections(nodes: readonly FieldNode[]): (SelectionSetNode | undefined)[] {
+export function subSelections(nodes: readonly FieldNode[]): (SelectionSetNode | undefined)[] {
   return nodes.map((n) => n.selectionSet);
 }
 

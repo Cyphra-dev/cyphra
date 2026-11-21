@@ -13,9 +13,9 @@ the same types, fields, filters, sorting, pagination and results. You keep your 
 frontend queries, and the API runs on the Cyphra runtime.
 
 <Callout type="warning">
-  This is an early release. The full v7 schema is generated and the read API works, aggregations
-  included. Mutations, authorization and `@cypher` fields are in the schema but return a `Not
-  implemented yet` error for now. See [what works today](#what-works-today).
+  This is an early release. The full v7 schema is generated, and queries (aggregations included) and
+  mutations work. Authorization and `@cypher` fields are in the schema but return a `Not implemented
+  yet` error for now. See [what works today](#what-works-today).
 </Callout>
 
 ## Install
@@ -24,7 +24,7 @@ frontend queries, and the API runs on the Cyphra runtime.
 npm i @cyphra/graphql graphql neo4j-driver
 ```
 
-It needs Neo4j 5.6 or later and `graphql` 16.
+It needs Neo4j 5.23 or later (like `@neo4j/graphql` 7) and `graphql` 16.
 
 ## Create the schema
 
@@ -117,15 +117,44 @@ query {
 }
 ```
 
-Each root field runs as one Cypher statement. Values are always parameters, and labels, property
+Mutations written for `@neo4j/graphql` work as they are too, nested writes included:
+
+```graphql
+mutation {
+  updateMovies(
+    where: { title: { eq: "The Matrix" } }
+    update: {
+      released: { add: 1 }
+      actors: [
+        {
+          connect: [{ where: { node: { name: { eq: "Al Pacino" } } }, edge: { roles: ["Cameo"] } }]
+        }
+        { disconnect: [{ where: { node: { name: { eq: "Laurence Fishburne" } } } }] }
+      ]
+    }
+  ) {
+    info {
+      relationshipsCreated
+      relationshipsDeleted
+    }
+    movies {
+      title
+      released
+    }
+  }
+}
+```
+
+Each root field runs as one Cypher statement, in its own transaction (a read transaction for
+queries, a write transaction for mutations). Values are always parameters, and labels, property
 keys and relationship types come from your type definitions.
 
 ## What works today
 
 Compatibility is checked by a suite of 5 apps and 48 operations. Its expected results come from the
-real `@neo4j/graphql` 7.6.8. Today 27 of its 53 checks pass: the printed schema of all 5 apps, and
-the 22 read operations (aggregations included) that use no authorization or `@cypher` field. The
-full report is [`compat/graphql/REPORT.md`](https://github.com/Cyphra-dev/cyphra/blob/main/compat/graphql/REPORT.md).
+real `@neo4j/graphql` 7.6.8. Today 38 of its 53 checks pass: the printed schema of all 5 apps, and
+the 33 operations (queries, aggregations and mutations) that use no authorization or `@cypher`
+field. The full report is [`compat/graphql/REPORT.md`](https://github.com/Cyphra-dev/cyphra/blob/main/compat/graphql/REPORT.md).
 
 | Feature                                                                                                                                       | Status                                                          |
 | --------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
@@ -136,12 +165,15 @@ full report is [`compat/graphql/REPORT.md`](https://github.com/Cyphra-dev/cyphra
 | Connections: `totalCount`, `pageInfo`, cursors with `first` / `after`, nested connections with edge `properties`, sort and filter on edges    | Works                                                           |
 | Nested relationship fields with `where`, `sort`, `limit`, `offset`                                                                            | Works                                                           |
 | Aggregations: `aggregate { count, node, edge }` on root and nested connections, aggregation filters (`aggregate` and deprecated `xAggregate`) | Works                                                           |
-| Mutations: `create`, `update`, `delete`, nested `connect` / `disconnect`                                                                      | Not yet ([#73](https://github.com/Cyphra-dev/cyphra/issues/73)) |
+| Mutations: `create`, `update`, `delete` with `info` counters, and the response selection                                                      | Works                                                           |
+| Nested writes: `create`, `connect`, `disconnect`, `update`, `delete` (nested in each other), edge properties                                  | Works                                                           |
+| Update operators: `set`, `add`, `subtract`, `multiply`, `divide`, `push`, `pop` and the deprecated `field_SET` / `field_INCREMENT` / …        | Works                                                           |
+| `@id`, `@timestamp`, `@default`                                                                                                               | Works                                                           |
 | `@authentication` / `@authorization`                                                                                                          | Not yet ([#74](https://github.com/Cyphra-dev/cyphra/issues/74)) |
 | `@cypher` fields                                                                                                                              | Not yet ([#75](https://github.com/Cyphra-dev/cyphra/issues/75)) |
 
-A type with `@authentication` or `@authorization` rules for reads is never read without them: the
-query returns a `Not implemented yet` error instead of unfiltered data.
+A type with `@authentication` or `@authorization` rules is never read or written without them: the
+operation returns a `Not implemented yet` error instead of unfiltered data or an unchecked write.
 
 ### v7 behaviour you get as well
 
@@ -156,6 +188,28 @@ query returns a `Not implemented yet` error instead of unfiltered data.
   aggregates are `null`. An aggregation filter that compares a `null` aggregate matches nothing, even
   under `NOT`.
   As in v7, `Date` inputs are read in the time zone of the process: run the server with `TZ=UTC`.
+
+### Mutations, as in v7
+
+- `connect` creates a relationship to every node that matches `where`. It is a `CREATE`, not a
+  `MERGE`: connecting a pair that is already connected adds a second relationship, whether the
+  mutations run one after the other or at the same time. To skip nodes that are already connected,
+  filter them out in `where` (for example `movies: { none: { id: { eq: "…" } } }`); that filter
+  does not lock, so two concurrent mutations can still both connect.
+- In an update, the scalar operators run first, then each relationship field, element by element,
+  in the order `update`, `create`, `connect`, `delete`, `disconnect`.
+- `@id` fields get a UUID on create. `@timestamp` fields are set on create and on every update of
+  the node, even an update without an `update` argument. On relationships they are set by nested
+  `create` and nested `update`, not by `connect`.
+- `add` or `subtract` on a missing value, an `Int` result beyond 32 bits, and `push` / `pop` on a
+  missing list fail the mutation: nothing is written. v7 runs these checks with APOC; Cyphra does not
+  need APOC, and the error message is the APOC message without its `Failed to invoke procedure`
+  prefix.
+- `info` counts the nodes and relationships the mutation created, the relationships it removed, and
+  the distinct nodes it deleted with every relationship attached to them. It is computed in the
+  statement, so it does not depend on driver result counters.
+- The response of a mutation (`movies { … }`) is read after all of its writes. With several inputs
+  in one `createMovies`, v7 can return a node as it was before a later input connected to it.
 
 ## Move the data model to Cyphra
 

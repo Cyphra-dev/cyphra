@@ -134,15 +134,13 @@ describe("root fields compile to one statement each", () => {
 
   it("parts of the API that are not implemented yet answer with a clear error", async () => {
     const { driver, statements } = fakeDriver();
-    const schema = makeSchema({ typeDefs, driver });
-    const mutation = await execute({
-      schema,
-      document: parse(
-        `mutation { createMovies(input: [{ title: "X" }]) { info { nodesCreated } } }`,
-      ),
+    const schema = makeSchema({
+      typeDefs: `type Thing @node { name: String!, n: Int! @cypher(statement: "RETURN 1 AS x", columnName: "x") }`,
+      driver,
     });
-    expect(mutation.errors?.[0]?.message).toMatch(
-      /^Not implemented yet in @cyphra\/graphql \(see #73\)/,
+    const result = await execute({ schema, document: parse("{ things { n } }") });
+    expect(result.errors?.[0]?.message).toMatch(
+      /^Not implemented yet in @cyphra\/graphql \(see #75\)/,
     );
     expect(statements).toHaveLength(0);
   });
