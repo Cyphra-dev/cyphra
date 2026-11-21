@@ -29,6 +29,7 @@ import {
   scalarField,
 } from "./compile.js";
 import { compileAggregate, compileGroupBy } from "./aggregate.js";
+import { DEFAULT_MAX_TRAVERSAL_DEPTH, compileTraverse } from "./traverse.js";
 import { CyphraError, CyphraValidationError, NotFoundError } from "./errors.js";
 import { encodeScalar, integerToNumber } from "./values.js";
 
@@ -77,11 +78,18 @@ function asArray(v: unknown): unknown[] {
   return Array.isArray(v) ? v : [v];
 }
 
+/** Client-level options that change how operations compile. */
+export type EngineOptions = {
+  /** Upper bound for `traverse` `depth.max` (default 10). */
+  readonly maxTraversalDepth?: number;
+};
+
 export class ModelEngine {
   constructor(
     private readonly schema: SchemaModel,
     private readonly model: ResolvedNodeModel,
     private readonly runner: Runner,
+    private readonly options: EngineOptions = {},
   ) {}
 
   private ctx(): QueryContext {
@@ -201,6 +209,16 @@ export class ModelEngine {
     });
   }
 
+  /** One statement; see {@link compileTraverse}. */
+  traverse(args: AnyRecord): Promise<unknown[]> {
+    return this.runner.read(async (exec) => {
+      if (!isPlainObject(args)) throw new CyphraValidationError("traverse args must be an object.");
+      const max = this.options.maxTraversalDepth ?? DEFAULT_MAX_TRAVERSAL_DEPTH;
+      const c = compileTraverse(this.ctx(), this.model, args, max);
+      return c.decode(await exec(c.text, c.params));
+    });
+  }
+
   // -------------------------------------------------------------------------
   // Write helpers
   // -------------------------------------------------------------------------
@@ -210,7 +228,9 @@ export class ModelEngine {
   }
 
   private engineFor(model: ResolvedNodeModel): ModelEngine {
-    return model === this.model ? this : new ModelEngine(this.schema, model, this.runner);
+    return model === this.model
+      ? this
+      : new ModelEngine(this.schema, model, this.runner, this.options);
   }
 
   /** Encode scalar data for CREATE, applying defaults and checking required fields. */

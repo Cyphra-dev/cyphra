@@ -1039,3 +1039,277 @@ describe.skipIf(!hasNeo)("ORM relation counts (Neo4j)", () => {
     ).rejects.toBeInstanceOf(CyphraValidationError);
   });
 });
+
+describe.skipIf(!hasNeo)("ORM traversals and paths (Neo4j)", () => {
+  let db: Db;
+
+  beforeEach(async () => {
+    db ??= createClient({
+      uri: process.env.NEO4J_TEST_URI!,
+      user: process.env.NEO4J_TEST_USER!,
+      password: process.env.NEO4J_TEST_PASSWORD!,
+    });
+    await db.$cypher`MATCH (n) WHERE n:User OR n:Post DETACH DELETE n`;
+  });
+
+  afterAll(async () => {
+    await db?.$disconnect();
+  });
+
+  const day = (s: string) => new Date(`${s}T00:00:00Z`);
+
+  /**
+   * FOLLOWS edges (with `since`): alice→bob (2024), alice→carol (2022), bob→carol (2024),
+   * carol→alice (2023, a cycle), carol→dave (2025), dave→erin (2025). erin is 15, the others 30.
+   */
+  async function seed() {
+    for (const name of ["alice", "bob", "carol", "dave", "erin"]) {
+      await db.user.create({
+        data: { email: `${name}@x.io`, name, age: name === "erin" ? 15 : 30 },
+      });
+    }
+    const follow = async (from: string, to: string, since: string) =>
+      db.user.update({
+        where: { email: `${from}@x.io` },
+        data: { following: { connect: { email: `${to}@x.io`, $edge: { since: day(since) } } } },
+      });
+    await follow("alice", "bob", "2024-01-01");
+    await follow("alice", "carol", "2022-01-01");
+    await follow("bob", "carol", "2024-06-01");
+    await follow("carol", "alice", "2023-01-01");
+    await follow("carol", "dave", "2025-01-01");
+    await follow("dave", "erin", "2025-06-01");
+  }
+
+  const emails = (rows: { email: string }[]) => rows.map((r) => r.email.split("@")[0]);
+
+  it("returns friends of friends once each, skipping cycles back to the start", async () => {
+    await seed();
+    const fof = await db.user.traverse({
+      from: { email: "alice@x.io" },
+      via: "following",
+      depth: { max: 2 },
+      orderBy: { email: "asc" },
+    });
+    expect(emails(fof)).toEqual(["bob", "carol", "dave"]);
+    expect(fof[0]).toMatchObject({ name: "bob", age: 30, tags: [] });
+    expect(fof[0]!.createdAt).toBeInstanceOf(Date);
+
+    const exactlyTwo = await db.user.traverse({
+      from: { email: "alice@x.io" },
+      via: "following",
+      depth: { min: 2, max: 2 },
+      orderBy: { email: "asc" },
+    });
+    expect(emails(exactlyTwo)).toEqual(["carol", "dave"]);
+
+    // The cycle alice→carol→alice does not loop: the deepest bound still terminates.
+    const all = await db.user.traverse({
+      from: { email: "alice@x.io" },
+      via: "following",
+      depth: { max: 10 },
+      orderBy: { email: "asc" },
+    });
+    expect(emails(all)).toEqual(["bob", "carol", "dave", "erin"]);
+
+    const withStart = await db.user.traverse({
+      from: { email: "alice@x.io" },
+      via: "following",
+      depth: { min: 0, max: 1 },
+      orderBy: { email: "asc" },
+    });
+    expect(emails(withStart)).toEqual(["alice", "bob", "carol"]);
+  });
+
+  it("keeps one result per path with distinct: false", async () => {
+    await seed();
+    const paths = await db.user.traverse({
+      from: { email: "alice@x.io" },
+      via: "following",
+      depth: { max: 2 },
+      distinct: false,
+      orderBy: { email: "asc" },
+    });
+    // bob, carol (direct), carol (via bob), dave (via carol); alice via carol is a cycle.
+    expect(emails(paths)).toEqual(["bob", "carol", "carol", "dave"]);
+  });
+
+  it("filters reached nodes and edges, pages and projects", async () => {
+    await seed();
+    const adults = await db.user.traverse({
+      from: { email: "alice@x.io" },
+      via: "following",
+      depth: { max: 4 },
+      where: { age: { gte: 18 } },
+      orderBy: { email: "desc" },
+      skip: 1,
+      take: 2,
+      select: { email: true, _count: { select: { followers: true } } },
+    });
+    expect(adults).toEqual([
+      { email: "carol@x.io", _count: { followers: 2 } },
+      { email: "bob@x.io", _count: { followers: 1 } },
+    ]);
+
+    // Only edges since 2024: alice→carol (2022) is not followed, so carol is two hops away.
+    const recent = await db.user.traverse({
+      from: { email: "alice@x.io" },
+      via: "following",
+      depth: { max: 2 },
+      edgeWhere: { since: { gte: day("2024-01-01") } },
+      orderBy: { email: "asc" },
+    });
+    expect(emails(recent)).toEqual(["bob", "carol"]);
+
+    const included = await db.user.traverse({
+      from: { email: "dave@x.io" },
+      via: "following",
+      depth: { max: 1 },
+      include: { followers: { select: { email: true } } },
+    });
+    expect(included).toHaveLength(1);
+    expect(included[0]!.followers).toEqual([
+      { email: "dave@x.io", $edge: { since: day("2025-06-01") } },
+    ]);
+  });
+
+  it("follows declared, reversed and undirected directions", async () => {
+    await seed();
+    const upstream = await db.user.traverse({
+      from: { email: "dave@x.io" },
+      via: "followers",
+      depth: { max: 2 },
+      orderBy: { email: "asc" },
+    });
+    expect(emails(upstream)).toEqual(["alice", "bob", "carol"]);
+
+    const reversed = await db.user.traverse({
+      from: { email: "dave@x.io" },
+      via: "following",
+      direction: "in",
+      depth: { max: 2 },
+      orderBy: { email: "asc" },
+    });
+    expect(emails(reversed)).toEqual(emails(upstream));
+
+    const around = await db.user.traverse({
+      from: { email: "erin@x.io" },
+      via: ["following", "followers"],
+      depth: { max: 2 },
+      orderBy: { email: "asc" },
+    });
+    expect(emails(around)).toEqual(["carol", "dave"]);
+
+    const both = await db.user.traverse({
+      from: { email: "erin@x.io" },
+      via: "following",
+      direction: "both",
+      depth: { max: 2 },
+      orderBy: { email: "asc" },
+    });
+    expect(emails(both)).toEqual(["carol", "dave"]);
+  });
+
+  it("returns typed paths: nodes, edge types, directions and edge properties", async () => {
+    await seed();
+    const rows = await db.user.traverse({
+      from: { email: "alice@x.io" },
+      via: "following",
+      depth: { max: 3 },
+      where: { email: "dave@x.io" },
+      select: { email: true },
+      returnPaths: true,
+    });
+    expect(rows).toHaveLength(1);
+    const { node, path } = rows[0]!;
+    expect(node).toEqual({ email: "dave@x.io" });
+    // The shortest of alice→carol→dave and alice→bob→carol→dave.
+    expect(path.nodes.map((n) => n.name)).toEqual(["alice", "carol", "dave"]);
+    expect(path.nodes[0]!.createdAt).toBeInstanceOf(Date);
+    expect(path.edges).toEqual([
+      { type: "FOLLOWS", direction: "out", properties: { since: day("2022-01-01") } },
+      { type: "FOLLOWS", direction: "out", properties: { since: day("2025-01-01") } },
+    ]);
+
+    const every = await db.user.traverse({
+      from: { email: "alice@x.io" },
+      via: "following",
+      depth: { max: 3 },
+      where: { email: "dave@x.io" },
+      distinct: false,
+      returnPaths: true,
+    });
+    expect(every.map((r) => r.path.edges.length).sort()).toEqual([2, 3]);
+
+    const back = await db.user.traverse({
+      from: { email: "carol@x.io" },
+      via: "followers",
+      depth: { max: 1 },
+      orderBy: { email: "asc" },
+      returnPaths: true,
+    });
+    expect(back.map((r) => r.node.name)).toEqual(["alice", "bob"]);
+    expect(back[1]!.path.nodes.map((n) => n.name)).toEqual(["carol", "bob"]);
+    expect(back[1]!.path.edges).toEqual([
+      { type: "FOLLOWS", direction: "in", properties: { since: day("2024-06-01") } },
+    ]);
+
+    const zero = await db.user.traverse({
+      from: { email: "erin@x.io" },
+      via: "following",
+      depth: { min: 0, max: 1 },
+      returnPaths: true,
+    });
+    expect(zero).toHaveLength(1);
+    expect(zero[0]!.path.nodes.map((n) => n.name)).toEqual(["erin"]);
+    expect(zero[0]!.path.edges).toEqual([]);
+  });
+
+  it("runs inside $transaction and sees its own writes", async () => {
+    await seed();
+    const reached = await db.$transaction(async (tx) => {
+      await tx.user.create({
+        data: { email: "frank@x.io", following: { connect: { email: "alice@x.io" } } },
+      });
+      return tx.user.traverse({
+        from: { email: "frank@x.io" },
+        via: "following",
+        depth: { max: 2 },
+        orderBy: { email: "asc" },
+        select: { email: true },
+      });
+    });
+    expect(emails(reached)).toEqual(["alice", "bob", "carol"]);
+  });
+
+  it("enforces depth bounds and the client's maxTraversalDepth", async () => {
+    await seed();
+    const loose = db as unknown as { user: { traverse(args: unknown): Promise<unknown> } };
+    const base = { from: { email: "alice@x.io" }, via: "following" };
+    await expect(loose.user.traverse({ ...base, depth: { min: 1 } })).rejects.toBeInstanceOf(
+      CyphraValidationError,
+    );
+    await expect(loose.user.traverse({ ...base, depth: { max: 11 } })).rejects.toBeInstanceOf(
+      CyphraValidationError,
+    );
+    await expect(
+      loose.user.traverse({ ...base, via: "friends", depth: { max: 2 } }),
+    ).rejects.toBeInstanceOf(CyphraValidationError);
+
+    const capped = createClient({
+      uri: process.env.NEO4J_TEST_URI!,
+      user: process.env.NEO4J_TEST_USER!,
+      password: process.env.NEO4J_TEST_PASSWORD!,
+      maxTraversalDepth: 2,
+    });
+    try {
+      await expect(
+        capped.user.traverse({ ...base, via: "following", depth: { max: 3 } }),
+      ).rejects.toThrow(/maxTraversalDepth/);
+      const ok = await capped.user.traverse({ ...base, via: "following", depth: { max: 2 } });
+      expect(ok).toHaveLength(3);
+    } finally {
+      await capped.$disconnect();
+    }
+  });
+});

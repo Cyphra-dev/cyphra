@@ -2,7 +2,8 @@ import type { ManagedTransaction } from "neo4j-driver";
 import type { SchemaModel } from "@cyphra/schema";
 import { compileCypher } from "@cyphra/query";
 import { CyphraClient, type CyphraClientOptions } from "../client.js";
-import { ModelEngine, type Executor, type Runner } from "./engine.js";
+import { ModelEngine, type EngineOptions, type Executor, type Runner } from "./engine.js";
+import { CyphraValidationError } from "./errors.js";
 import type { ModelDelegates, TypeMap } from "./types.js";
 import { toNative } from "./values.js";
 
@@ -10,7 +11,13 @@ import { toNative } from "./values.js";
  * Options for {@link createOrm}: connection options, an existing `neo4j-driver` 5.28+ / 6.x
  * `Driver` (`{ driver }`), or an existing {@link CyphraClient}.
  */
-export type OrmOptions = CyphraClientOptions | { client: CyphraClient; debug?: boolean };
+export type OrmOptions = (CyphraClientOptions | { client: CyphraClient; debug?: boolean }) & {
+  /**
+   * Largest `depth.max` a `traverse` may ask for (default 10). Each extra hop can multiply the
+   * number of paths Neo4j explores, so keep it as low as your queries allow.
+   */
+  maxTraversalDepth?: number;
+};
 
 type Raw = {
   /**
@@ -58,12 +65,16 @@ function txExecutor(tx: ManagedTransaction, debug: boolean): Executor {
   };
 }
 
-function buildDelegates(schema: SchemaModel, runner: Runner): Record<string, unknown> {
+function buildDelegates(
+  schema: SchemaModel,
+  runner: Runner,
+  options: EngineOptions,
+): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const node of schema.nodes) {
     const key = delegateKey(node.name);
     if (key.startsWith("$")) throw new Error(`Model name "${node.name}" is reserved.`);
-    out[key] = new ModelEngine(schema, node, runner);
+    out[key] = new ModelEngine(schema, node, runner, options);
   }
   return out;
 }
@@ -92,6 +103,14 @@ export function createOrm<TM extends TypeMap>(
   schema: SchemaModel,
   options: OrmOptions,
 ): OrmClient<TM> {
+  const { maxTraversalDepth } = options;
+  if (
+    maxTraversalDepth !== undefined &&
+    (!Number.isInteger(maxTraversalDepth) || maxTraversalDepth < 1)
+  ) {
+    throw new CyphraValidationError("maxTraversalDepth must be a positive integer.");
+  }
+  const engineOptions: EngineOptions = { maxTraversalDepth };
   const owns = !("client" in options);
   const client = "client" in options ? options.client : new CyphraClient(options);
   const debug = options.debug ?? false;
@@ -105,12 +124,12 @@ export function createOrm<TM extends TypeMap>(
     client.withWriteTransaction((tx) => {
       const exec = txExecutor(tx, debug);
       const inTx: Runner = { read: (f) => f(exec), write: (f) => f(exec) };
-      const txClient = { ...buildDelegates(schema, inTx), $cypher: rawFor(inTx) };
+      const txClient = { ...buildDelegates(schema, inTx, engineOptions), $cypher: rawFor(inTx) };
       return fn(txClient as OrmTransactionClient<TM>);
     });
 
   return {
-    ...buildDelegates(schema, runner),
+    ...buildDelegates(schema, runner, engineOptions),
     $cypher: rawFor(runner),
     $transaction: transaction,
     $client: client,

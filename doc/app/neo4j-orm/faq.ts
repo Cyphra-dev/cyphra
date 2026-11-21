@@ -12,7 +12,7 @@ export const NEO4J_ORM_FAQ = [
   ],
   [
     "Which Neo4j versions does Cyphra need?",
-    "The typed client needs Neo4j 5.6 or later, because it compiles relations to COLLECT and EXISTS subqueries. Relationship property uniqueness constraints need Neo4j 5.7 or later.",
+    "The typed client needs Neo4j 5.6 or later, because it compiles relations to COLLECT and EXISTS subqueries. Relationship property uniqueness constraints need Neo4j 5.7 or later, and traversals (traverse) need Neo4j 5.9 or later.",
   ],
   [
     "Can I use Cyphra with an existing Neo4j database?",
