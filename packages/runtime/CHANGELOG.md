@@ -1,5 +1,23 @@
 # @cyphra/runtime
 
+## 0.13.0
+
+### Minor Changes
+
+- e586ac4: Graph query follow-ups:
+
+  - Multi-hop traversals across models: `traverse({ via: [{ rel: "entities" }, { rel: "related", depth: { max: 2 } }, { rel: "chunks" }] })` follows a list of hops, each along relation(s) of the model the previous hop reached, in one statement. Each hop takes its own `direction`, `depth` (self-relations only), `where` (on every node it steps to) and `edgeWhere`. Results, `where`, `orderBy` and `select` / `include` are typed by the last hop's model; `returnPaths` paths hold every model and edge met along the way (`HopPath`). The relation-name form of `via` is unchanged.
+  - Ordering by a filtered relation count: `orderBy: { posts: { _count: "desc", where: { published: true } } }`, at the top level, in nested relations and in traversals.
+  - `$edge` number updates on `connect` and `set`: `$edge: { weight: { increment: 1 } }` (and `decrement`, `multiply`) is applied in the `MERGE` statement, to the current value of an existing edge or to the default of a new one; `@min` / `@max` on the edge property are checked on the result and a broken rule rolls the write back.
+  - `set` on a to-many relation now keeps the edges to the nodes it lists (updating them with their `$edge`) instead of deleting and recreating them, so their other properties (and defaults such as `@default(now())`) are kept.
+
+### Patch Changes
+
+- ec7fd51: `UniqueConstraintError` no longer reads "Unique constraint failed: undefined" when the server reports a uniqueness GQL status without a message: it says "Unique constraint failed (GQL status 22N79): a node or relationship with the same value already exists."
+- Updated dependencies [ec7fd51]
+  - @cyphra/schema@0.13.0
+  - @cyphra/query@0.13.0
+
 ## 0.12.0
 
 ### Minor Changes
