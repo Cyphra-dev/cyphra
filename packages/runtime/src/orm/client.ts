@@ -10,7 +10,20 @@ import {
 } from "../observability.js";
 import { ModelEngine, type EngineOptions, type Executor, type Runner } from "./engine.js";
 import { CyphraValidationError } from "./errors.js";
-import type { ModelDelegates, TypeMap } from "./types.js";
+import {
+  ExtensionState,
+  ORM_OPERATIONS,
+  runHooks,
+  withComputed,
+  type ExtensionDef,
+} from "./extensions.js";
+import type {
+  ExtendedClient,
+  ExtensionArgs,
+  ModelMethods,
+  ResultNeedsMap,
+} from "./extensionTypes.js";
+import type { DelegateKey, ModelDelegate, TypeMap } from "./types.js";
 import { toNative } from "./values.js";
 
 /**
@@ -48,16 +61,65 @@ type Raw = {
   ): Promise<T[]>;
 };
 
-/** Client handed to {@link OrmClient.$transaction} callbacks. */
-export type OrmTransactionClient<TM extends TypeMap> = ModelDelegates<TM> & Raw;
+type None = Record<never, never>;
 
-export type OrmClient<TM extends TypeMap> = ModelDelegates<TM> &
+/** Model delegates, with the custom methods `MM` of an extended client. */
+type Delegates<TM extends TypeMap, MM extends ModelMethods> = {
+  [M in keyof TM & string as DelegateKey<M>]: ModelDelegate<TM, M> &
+    (DelegateKey<M> extends keyof MM ? MM[DelegateKey<M>] : unknown);
+};
+
+/**
+ * Client handed to {@link OrmClient.$transaction} callbacks: the model delegates (with the
+ * extensions of the client `$transaction` was called on) and `$cypher`.
+ */
+export type OrmTransactionClient<TM extends TypeMap, MM extends ModelMethods = None> = Delegates<
+  TM,
+  MM
+> &
+  Raw;
+
+/**
+ * The ORM client. `MM` and `CM` are the custom model methods and client members added by
+ * {@link OrmClient.$extends} (computed fields live in the type map `TM`).
+ */
+export type OrmClient<
+  TM extends TypeMap,
+  MM extends ModelMethods = None,
+  CM extends object = None,
+> = Delegates<TM, MM> &
   Raw & {
     /**
      * Run `fn` in a single write transaction: every operation commits together or not at all.
      * The driver may retry `fn` on transient errors, so keep it free of outside side effects.
+     * On an extended client, `tx` has the same query hooks, computed fields and model methods.
      */
-    $transaction<T>(fn: (tx: OrmTransactionClient<TM>) => Promise<T>): Promise<T>;
+    $transaction<T>(fn: (tx: OrmTransactionClient<TM, MM>) => Promise<T>): Promise<T>;
+    /**
+     * A new client with query hooks, computed fields, model methods and client members added
+     * (this client is unchanged). Extensions compose: `db.$extends(a).$extends(b)`.
+     *
+     * @example
+     * ```ts
+     * const xdb = db.$extends({
+     *   result: {
+     *     user: { label: { needs: { name: true, email: true }, compute: (u) => u.name ?? u.email } },
+     *   },
+     *   model: {
+     *     user: {
+     *       findByEmail(email: string) {
+     *         return this.findUnique({ where: { email } });
+     *       },
+     *     },
+     *   },
+     * });
+     * ```
+     */
+    $extends<N extends ResultNeedsMap = None, R = None, M = None, C = None>(
+      extension: ExtensionArgs<TM, MM, CM, N, R, M, C>,
+    ): ExtendedClient<TM, MM, CM, R, M, C>;
+    /** Apply a reusable extension: `db.$extends(softDelete)`, where `softDelete = (db) => db.$extends({ … })`. */
+    $extends<T>(extension: (client: OrmClient<TM, MM, CM>) => T): T;
     /**
      * Listen to `"query"`, `"warn"` or `"error"` events (same as `$client.on`). Returns a
      * function that removes the listener.
@@ -77,7 +139,7 @@ export type OrmClient<TM extends TypeMap> = ModelDelegates<TM> &
     readonly $schema: SchemaModel;
     /** Close the driver (only when the client owns it, i.e. it was created from connection options, not from `{ driver }` or `{ client }`). */
     $disconnect(): Promise<void>;
-  };
+  } & CM;
 
 function delegateKey(name: string): string {
   return name.charAt(0).toLowerCase() + name.slice(1);
@@ -95,37 +157,69 @@ function txExecutor(instr: Instrumentation, tx: TransactionLike, meta: QueryMeta
 /** Runner whose statements carry `meta` (model, operation) in events and spans. */
 type RunnerFor = (meta: QueryMeta) => Runner;
 
+/** What every delegate of one client (or transaction client) shares. */
+type DelegateContext = {
+  readonly instr: Instrumentation;
+  readonly schema: SchemaModel;
+  readonly runnerFor: RunnerFor;
+  readonly options: EngineOptions;
+  readonly state: ExtensionState;
+  /** The client the delegates belong to (`$parent` in model methods). */
+  readonly parent: () => object;
+};
+
 /**
  * One model delegate. Each call gets an engine bound to its operation name, wrapped in an
- * operation span: statements it runs report `model` / `operation`.
+ * operation span: statements it runs report `model` / `operation`. Inside the span, the call goes
+ * through the query hooks, then the computed-field layer, then the engine. Custom model methods
+ * are bound to the delegate.
  */
-function delegate(
-  instr: Instrumentation,
-  schema: SchemaModel,
-  node: ResolvedNodeModel,
-  runnerFor: RunnerFor,
-  options: EngineOptions,
-): ModelEngine {
+function delegate(ctx: DelegateContext, node: ResolvedNodeModel): ModelEngine {
+  const { instr, schema, runnerFor, options, state } = ctx;
   const base = new ModelEngine(schema, node, runnerFor({}), options);
-  const cache = new Map<string, (...args: unknown[]) => unknown>();
+  const cache = new Map<string, unknown>();
+  const methods = state.methods(node.name);
   return new Proxy(base, {
     get(target, prop, receiver) {
+      if (prop === "$name") return node.name;
+      if (prop === "$parent") return ctx.parent();
+      if (typeof prop === "string" && methods.has(prop)) {
+        let bound = cache.get(prop);
+        if (!bound) {
+          const m = methods.get(prop);
+          bound = typeof m === "function" ? m.bind(receiver) : m;
+          cache.set(prop, bound);
+        }
+        return bound;
+      }
       const value = Reflect.get(target, prop, receiver) as unknown;
       if (typeof prop !== "string" || typeof value !== "function" || prop === "constructor")
         return value;
       let wrapped = cache.get(prop);
       if (!wrapped) {
         const meta: QueryMeta = { model: node.name, operation: prop };
-        wrapped = (...args: unknown[]) =>
-          instr.operation(meta, async () => {
-            const engine = new ModelEngine(schema, node, runnerFor(meta), options);
-            return (engine as unknown as Record<string, (...a: unknown[]) => unknown>)[prop]!(
-              ...args,
-            );
-          });
+        const engineCall = (...args: unknown[]) => {
+          const engine = new ModelEngine(schema, node, runnerFor(meta), options);
+          return (engine as unknown as Record<string, (...a: unknown[]) => Promise<unknown>>)[
+            prop
+          ]!(...args);
+        };
+        wrapped = ORM_OPERATIONS.has(prop)
+          ? (args?: unknown) =>
+              instr.operation(meta, () =>
+                runHooks(state, node.name, prop, args, ctx.parent, (a) =>
+                  withComputed(state, schema, node, prop, a, (b) =>
+                    b === undefined ? engineCall() : engineCall(b),
+                  ),
+                ),
+              )
+          : (...args: unknown[]) => instr.operation(meta, async () => engineCall(...args));
         cache.set(prop, wrapped);
       }
       return wrapped;
+    },
+    has(target, prop) {
+      return (typeof prop === "string" && methods.has(prop)) || Reflect.has(target, prop);
     },
   });
 }
@@ -150,17 +244,12 @@ function fieldResolver(schema: SchemaModel): FieldResolver {
   };
 }
 
-function buildDelegates(
-  instr: Instrumentation,
-  schema: SchemaModel,
-  runnerFor: RunnerFor,
-  options: EngineOptions,
-): Record<string, unknown> {
+function buildDelegates(ctx: DelegateContext): Record<string, unknown> {
   const out: Record<string, unknown> = {};
-  for (const node of schema.nodes) {
+  for (const node of ctx.schema.nodes) {
     const key = delegateKey(node.name);
     if (key.startsWith("$")) throw new Error(`Model name "${node.name}" is reserved.`);
-    out[key] = delegate(instr, schema, node, runnerFor, options);
+    out[key] = delegate(ctx, node);
   }
   return out;
 }
@@ -221,30 +310,61 @@ export function createOrm<TM extends TypeMap>(
     };
   };
 
-  const transaction = <T>(fn: (tx: OrmTransactionClient<TM>) => Promise<T>): Promise<T> =>
-    instr.operation({ operation: "$transaction" }, () =>
-      client.withWriteTransaction((tx) => {
-        const inTx: RunnerFor = (meta) => {
-          const exec = txExecutor(instr, tx, { ...meta, transaction: true });
-          return { read: (f) => f(exec), write: (f) => f(exec) };
-        };
-        const txClient = {
-          ...buildDelegates(instr, schema, inTx, engineOptions),
-          $cypher: rawFor(instr, inTx),
-        };
-        return fn(txClient as OrmTransactionClient<TM>);
+  const build = (state: ExtensionState): Record<string, unknown> => {
+    const self: Record<string, unknown> = {};
+    const transaction = <T>(fn: (tx: unknown) => Promise<T>): Promise<T> =>
+      instr.operation({ operation: "$transaction" }, () =>
+        client.withWriteTransaction((tx) => {
+          const inTx: RunnerFor = (meta) => {
+            const exec = txExecutor(instr, tx, { ...meta, transaction: true });
+            return { read: (f) => f(exec), write: (f) => f(exec) };
+          };
+          const txClient: Record<string, unknown> = {};
+          Object.assign(
+            txClient,
+            buildDelegates({
+              instr,
+              schema,
+              runnerFor: inTx,
+              options: engineOptions,
+              state,
+              parent: () => txClient,
+            }),
+            { $cypher: rawFor(instr, inTx) },
+          );
+          return fn(txClient);
+        }),
+      );
+    Object.assign(
+      self,
+      buildDelegates({
+        instr,
+        schema,
+        runnerFor,
+        options: engineOptions,
+        state,
+        parent: () => self,
       }),
+      {
+        $cypher: rawFor(instr, runnerFor),
+        $transaction: transaction,
+        $on: (level: LogLevel, listener: (event: CyphraEvent) => void) => instr.on(level, listener),
+        $client: client,
+        $schema: schema,
+        $disconnect: async () => {
+          if (owns) await client.close();
+        },
+        $extends: (ext: unknown) =>
+          typeof ext === "function"
+            ? (ext as (c: unknown) => unknown)(self)
+            : build(state.extend(ext as ExtensionDef)),
+      },
     );
+    for (const [k, v] of Object.entries(state.clientMembers())) {
+      self[k] = typeof v === "function" ? v.bind(self) : v;
+    }
+    return self;
+  };
 
-  return {
-    ...buildDelegates(instr, schema, runnerFor, engineOptions),
-    $cypher: rawFor(instr, runnerFor),
-    $transaction: transaction,
-    $on: (level: LogLevel, listener: (event: CyphraEvent) => void) => instr.on(level, listener),
-    $client: client,
-    $schema: schema,
-    $disconnect: async () => {
-      if (owns) await client.close();
-    },
-  } as unknown as OrmClient<TM>;
+  return build(ExtensionState.empty(schema)) as unknown as OrmClient<TM>;
 }

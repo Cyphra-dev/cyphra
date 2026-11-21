@@ -942,6 +942,151 @@ await db.$transaction(async (tx) => {
 ```
 
 The driver may retry the callback on transient errors, so keep it free of outside side effects.
+On an [extended client](#extensions), `tx` has the same hooks, computed fields and model methods.
+
+## Extensions
+
+`db.$extends({ query, result, model, client })` returns a **new client** with logic attached to
+your models: hooks around operations, computed fields, custom model methods and client members.
+The original client is unchanged, extensions compose (`db.$extends(a).$extends(b)`), and
+everything stays typed: computed fields appear in result types, model methods return typed
+results, hooks see the arguments of the operation they wrap.
+
+### Query hooks
+
+A hook wraps one operation. It receives `{ model, operation, args, query, client }`, can change
+`args`, calls `query(args)` to run the operation (or skips it), and returns the result, changed
+or not. Hashing a password before it is stored:
+
+```ts
+import { hash } from "@node-rs/argon2";
+
+const xdb = db.$extends({
+  query: {
+    user: {
+      async create({ args, query }) {
+        return query({ ...args, data: { ...args.data, password: await hash(args.data.password) } });
+      },
+      async update({ args, query }) {
+        const { password } = args.data;
+        if (typeof password === "string") args.data.password = await hash(password);
+        return query(args);
+      },
+    },
+  },
+});
+```
+
+Hooks go per model and operation (`user: { create }`), on every operation of a model
+(`user: { $allOperations }`), or on every model (`$allModels: { findMany }`,
+`$allModels: { $allOperations }`). In `$allOperations`, checking `operation` narrows `args`. Hooks
+run from the first extension added to the last; within one extension, from the most general
+(`$allModels.$allOperations`) to the most specific (`user.create`). Events and spans keep the
+name of the operation that was called (`User.create`).
+
+### Computed fields
+
+`result` adds fields computed from others. `needs` lists the scalar fields `compute` reads (its
+argument is typed with exactly those):
+
+```ts
+const xdb = db.$extends({
+  result: {
+    user: {
+      fullName: {
+        needs: { firstName: true, lastName: true },
+        compute: (u) => `${u.firstName} ${u.lastName}`,
+      },
+    },
+  },
+});
+
+const users = await xdb.user.findMany({ include: { posts: true } }); // users[0].fullName: string
+const names = await xdb.user.findMany({ select: { id: true, fullName: true } }); // { id, fullName }[]
+```
+
+Computed fields are added to every result of the model: without `select`, with `include`, on
+nested relations (`post.findMany({ include: { author: true } })` computes the author's), and on
+the nodes `traverse`, `shortestPath`, `allShortestPaths`, `findSimilar` and `search` return. They
+can be selected: the fields in `needs` are then fetched even when `select` leaves them out, and
+removed from the result. They are computed in JS once the rows are read, so they cannot be used in
+`where`, `orderBy`, `aggregate` or `groupBy`, and are not on `traverse`'s `path.nodes` (scalar
+fields only). On an [interface](#querying-interfaces), results have the interface's computed
+fields and (without `select`) their implementation's. A computed field can shadow a scalar of the
+same name; `$allModels` fields apply to every model, and a model's own fields win.
+
+### Model methods
+
+`model` adds methods to delegates. `this` is the extended delegate (with computed fields and the
+other methods), plus `this.$name` (the model name) and `this.$parent` (the client):
+
+```ts
+const xdb = db.$extends({
+  model: {
+    user: {
+      findByEmail(email: string) {
+        return this.findUnique({ where: { email: email.toLowerCase() } });
+      },
+    },
+    $allModels: {
+      async exists(where: object) {
+        return (await this.count({ where })) > 0;
+      },
+    },
+  },
+});
+
+const ada = await xdb.user.findByEmail("Ada@Example.com"); // typed, with computed fields
+```
+
+`getExtensionContext(this)` (from `cyphra`) returns the same, typed: useful when a method is
+written outside the `$extends` call.
+
+### Client members
+
+`client` adds members to the client itself; `this` is the extended client:
+
+```ts
+const xdb = db.$extends({
+  client: {
+    async $health() {
+      const [row] = await this.$cypher<{ ok: number }>`RETURN 1 AS ok`;
+      return row?.ok === 1;
+    },
+  },
+});
+```
+
+### Soft delete
+
+Hooks can replace an operation. `client` in the hook params is the client the call was made on
+(the transaction client inside `$transaction`), so the replacement runs in the same transaction:
+
+```ts
+const xdb = db.$extends({
+  name: "soft-delete",
+  query: {
+    post: {
+      delete({ args, client }) {
+        return client.post.update({ where: args.where, data: { deletedAt: new Date() } });
+      },
+      async $allOperations({ operation, args, query }) {
+        if (operation === "findMany" || operation === "findFirst" || operation === "count") {
+          return query({ ...args, where: { ...args.where, deletedAt: null } });
+        }
+        return query(args);
+      },
+    },
+  },
+});
+```
+
+### Extensions in transactions
+
+`xdb.$transaction(async (tx) => …)` hands an extended transaction client: hooks, computed fields
+and model methods apply inside it (client members do not). A reusable extension is a function of
+the client: `const withSoftDelete = (c: Db) => c.$extends({ … })`, applied with
+`db.$extends(withSoftDelete)`.
 
 ## Raw Cypher
 

@@ -2982,3 +2982,240 @@ describe.skipIf(!hasNeo)("ORM composite unique keys (Neo4j)", () => {
     ).toMatchObject({ tenant: null });
   });
 });
+
+describe.skipIf(!hasNeo)("ORM client extensions (Neo4j)", () => {
+  let db: Db;
+
+  beforeEach(async () => {
+    db ??= createClient({
+      uri: process.env.NEO4J_TEST_URI!,
+      user: process.env.NEO4J_TEST_USER!,
+      password: process.env.NEO4J_TEST_PASSWORD!,
+    });
+    await db.$cypher`MATCH (n) WHERE n:User OR n:Post DETACH DELETE n`;
+  });
+
+  afterAll(async () => {
+    await db?.$disconnect();
+  });
+
+  /** Lower-cased emails on write, a computed label, a model method and a client member. */
+  const extend = (base: Db) =>
+    base.$extends({
+      name: "test",
+      query: {
+        user: {
+          create({ args, query }) {
+            return query({ ...args, data: { ...args.data, email: args.data.email.toLowerCase() } });
+          },
+        },
+        post: {
+          // Soft delete: unpublish instead (through the calling client, so inside a transaction too).
+          delete({ args, client }) {
+            return client.post.update({ where: args.where, data: { published: false } });
+          },
+          // Soft filter: drafts are hidden from findMany unless `published` is filtered on.
+          findMany({ args, query }) {
+            const where =
+              args.where?.published === undefined ? { ...args.where, published: true } : args.where;
+            return query({ ...args, where });
+          },
+        },
+      },
+      result: {
+        user: {
+          label: {
+            needs: { name: true, email: true },
+            compute: (u) => `${u.name ?? "?"} <${u.email}>`,
+          },
+        },
+        post: {
+          slug: {
+            needs: { title: true },
+            compute: (p) => p.title.toLowerCase().replace(/\s+/g, "-"),
+          },
+        },
+      },
+      model: {
+        user: {
+          findByEmail(email: string) {
+            return this.findUnique({ where: { email: email.toLowerCase() } });
+          },
+        },
+      },
+      client: {
+        $health() {
+          return this.$cypher<{ ok: number }>`RETURN 1 AS ok`.then((r) => r[0]!.ok === 1);
+        },
+      },
+    });
+
+  it("runs hooks, computes fields (respecting select) and exposes model and client methods", async () => {
+    const xdb = extend(db);
+    const ada = await xdb.user.create({
+      data: {
+        email: "Ada@Example.com",
+        name: "Ada",
+        posts: { create: [{ title: "Hello World", published: true }, { title: "Draft" }] },
+      },
+    });
+    expect(ada.email).toBe("ada@example.com");
+    expect(ada.label).toBe("Ada <ada@example.com>");
+
+    const picked = await xdb.user.findUniqueOrThrow({
+      where: { id: ada.id },
+      select: { id: true, label: true },
+    });
+    expect(picked).toEqual({ id: ada.id, label: "Ada <ada@example.com>" });
+
+    const found = await xdb.user.findByEmail("ADA@example.com");
+    expect(found?.id).toBe(ada.id);
+    expect(await xdb.$health()).toBe(true);
+
+    const posts = await xdb.post.findMany({ include: { author: { select: { label: true } } } });
+    expect(posts).toHaveLength(1);
+    expect(posts[0]).toMatchObject({
+      slug: "hello-world",
+      author: { label: "Ada <ada@example.com>" },
+    });
+    expect(Object.keys(posts[0]!.author!)).toEqual(["label"]);
+    expect(await xdb.post.findMany({ where: { published: false } })).toHaveLength(1);
+
+    const nested = await xdb.user.findMany({
+      select: { posts: { select: { slug: true }, orderBy: { title: "asc" } } },
+    });
+    expect(nested).toEqual([{ posts: [{ slug: "draft" }, { slug: "hello-world" }] }]);
+
+    // Aggregates are untouched; the original client is unchanged.
+    expect(await xdb.post.aggregate({ _count: true })).toEqual({ _count: 2 });
+    const plain = await db.user.findUnique({ where: { id: ada.id } });
+    expect(plain).not.toHaveProperty("label");
+    expect(await db.post.findMany()).toHaveLength(2);
+  });
+
+  it("applies computed fields to traversals and shortest paths", async () => {
+    const xdb = extend(db);
+    for (const name of ["a", "b", "c"])
+      await xdb.user.create({ data: { email: `${name}@example.com`, name } });
+    await xdb.user.update({
+      where: { email: "a@example.com" },
+      data: { following: { connect: { email: "b@example.com" } } },
+    });
+    await xdb.user.update({
+      where: { email: "b@example.com" },
+      data: { following: { connect: { email: "c@example.com" } } },
+    });
+
+    const reached = await xdb.user.traverse({
+      from: { email: "a@example.com" },
+      via: "following",
+      depth: { max: 2 },
+      orderBy: { email: "asc" },
+      select: { label: true },
+    });
+    expect(reached).toEqual([{ label: "b <b@example.com>" }, { label: "c <c@example.com>" }]);
+
+    const withPaths = await xdb.user.traverse({
+      from: { email: "a@example.com" },
+      via: "following",
+      depth: { min: 2, max: 2 },
+      returnPaths: true,
+    });
+    expect(withPaths[0]!.node.label).toBe("c <c@example.com>");
+
+    const path = await xdb.user.shortestPath({
+      from: { email: "a@example.com" },
+      to: { email: "c@example.com" },
+      via: "following",
+      maxDepth: 3,
+    });
+    expect(path!.nodes.map((n) => n.label)).toEqual([
+      "a <a@example.com>",
+      "b <b@example.com>",
+      "c <c@example.com>",
+    ]);
+  });
+
+  it("applies hooks, computed fields and model methods inside $transaction (and rolls back)", async () => {
+    const xdb = extend(db);
+    const out = await xdb.$transaction(async (tx) => {
+      const u = await tx.user.create({ data: { email: "TX@example.com", name: "Tx" } });
+      const again = await tx.user.findByEmail("tx@example.com");
+      return { email: u.email, label: again?.label };
+    });
+    expect(out).toEqual({ email: "tx@example.com", label: "Tx <tx@example.com>" });
+
+    const post = await xdb.post.create({ data: { title: "Soft", published: true } });
+    await xdb.$transaction(async (tx) => {
+      const gone = await tx.post.delete({ where: { id: post.id } });
+      expect(gone).toMatchObject({ published: false, slug: "soft" });
+      expect(await tx.post.findMany()).toEqual([]);
+    });
+    expect(await db.post.count()).toBe(1);
+
+    await expect(
+      xdb.$transaction(async (tx) => {
+        await tx.user.create({ data: { email: "Gone@example.com" } });
+        throw new Error("rollback");
+      }),
+    ).rejects.toThrow("rollback");
+    expect(await xdb.user.findByEmail("gone@example.com")).toBeNull();
+  });
+
+  it("reports the original operation in query events", async () => {
+    const events: CyphraEvent[] = [];
+    const off = db.$on("query", (e) => events.push(e));
+    try {
+      const xdb = db.$extends({
+        query: { user: { count: ({ args, query }) => query({ ...args, where: { name: "x" } }) } },
+      });
+      await xdb.user.count();
+    } finally {
+      off();
+    }
+    expect(
+      events.map((e) => [e.type === "query" && e.model, e.type === "query" && e.operation]),
+    ).toEqual([["User", "count"]]);
+  });
+});
+
+describe.skipIf(!hasNeo)("ORM client extensions on vector search (Neo4j)", () => {
+  let db: VectorDb;
+
+  beforeAll(async () => {
+    db = createVectorClient({
+      uri: process.env.NEO4J_TEST_URI!,
+      user: process.env.NEO4J_TEST_USER!,
+      password: process.env.NEO4J_TEST_PASSWORD!,
+    });
+    await db.$cypher`MATCH (n) WHERE n:VecDoc OR n:VecChunk DETACH DELETE n`;
+  });
+
+  afterAll(async () => {
+    if (!db) return;
+    await db.$cypher`MATCH (n) WHERE n:VecDoc OR n:VecChunk DETACH DELETE n`;
+    await db.$disconnect();
+  });
+
+  it("applies computed fields to findSimilar results", async () => {
+    await db.vecChunk.create({
+      data: { id: "x1", text: "first chunk", position: 0, embedding: [1, 0, 0] },
+    });
+    await db.vecChunk.create({
+      data: { id: "x2", text: "second chunk", position: 1, embedding: [0, 1, 0] },
+    });
+    const xdb = db.$extends({
+      result: {
+        vecChunk: { short: { needs: { text: true }, compute: (c) => c.text.split(" ")[0]! } },
+      },
+    });
+    const hits = await xdb.vecChunk.findSimilar({
+      field: "embedding",
+      vector: [1, 0, 0],
+      k: 1,
+      exact: true,
+      select: { id: true, short: true },
+    });
+    expect(hits).toEqual([{ id: "x1", short: "first", $score: expect.any(Number) }]);
+  });
+});
