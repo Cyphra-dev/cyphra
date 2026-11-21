@@ -38,6 +38,7 @@ const meta: MetaRecord = {
   glossary: { type: "page", title: "Glossary", display: "hidden", theme: CONTENT_SECTION },
   "neo4j-orm": { type: "page", title: "Neo4j ORM", display: "hidden", theme: CONTENT_SECTION },
   compare: { type: "page", title: "Compare", display: "hidden", theme: CONTENT_SECTION },
+  benchmarks: { type: "page", title: "Benchmarks", display: "hidden", theme: CONTENT_SECTION },
   operator: { type: "page", title: "Operator", href: "https://github.com/Cyphra-dev/operator" },
   "--start": { type: "separator", title: "Start here" },
   "getting-started": "Getting started",

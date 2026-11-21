@@ -1,0 +1,34 @@
+// Benchmark schema: a small social app. The same labels, properties and relationship types are
+// declared for @neo4j/graphql (src/contenders/graphql.ts) and neogma (src/contenders/neogma.ts).
+
+node User {
+  id        String    @id @default(uuid())
+  email     String    @unique
+  name      String
+  age       Int       @index
+  createdAt DateTime  @default(now())
+  posts     Post[]    @relationship(type: "AUTHORED", direction: OUT, onDelete: Cascade)
+  following User[]    @relationship(type: "FOLLOWS", direction: OUT)
+  followers User[]    @relationship(type: "FOLLOWS", direction: IN)
+}
+
+node Post {
+  id        String    @id @default(uuid())
+  title     String
+  views     Int
+  published Boolean   @default(false)
+  author    User?     @relationship(type: "AUTHORED", direction: IN)
+  comments  Comment[] @relationship(type: "HAS_COMMENT", direction: OUT, onDelete: Cascade)
+}
+
+node Comment {
+  id   String @id @default(uuid())
+  text String
+  post Post?  @relationship(type: "HAS_COMMENT", direction: IN)
+}
+
+node Doc {
+  id        String       @id @default(uuid())
+  title     String
+  embedding Vector(384)  @vectorIndex(similarity: cosine)
+}

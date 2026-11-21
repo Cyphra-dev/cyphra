@@ -1,0 +1,157 @@
+---
+title: "Cyphra benchmarks: ORM overhead vs the Neo4j driver"
+sidebarTitle: "Benchmarks"
+description: "Reproducible benchmarks of Cyphra against the raw neo4j-driver, neogma and @neo4j/graphql on the same Neo4j data: median, p95, ops/s and overhead."
+---
+
+import { Callout, Cards } from "nextra/components";
+import {
+  BoltTable,
+  DetailTable,
+  Environment,
+  GraphqlTable,
+  HttpTable,
+  NotCompared,
+  OverheadChart,
+} from "../../components/benchmarks/benchmarks";
+import results from "./results.json";
+
+# Benchmarks
+
+**What does the ORM layer cost?** These benchmarks run the same operations on the same Neo4j data
+through the raw [`neo4j-driver`](/compare/neo4j-driver) with hand-written Cypher (the baseline),
+the Cyphra typed client, [neogma](/compare/neogma-neode), and, for GraphQL,
+[`@neo4j/graphql`](/compare/neo4j-graphql-library) against [`@cyphra/graphql`](/graphql). The
+scripts are in [`bench/`](https://github.com/Cyphra-dev/cyphra/tree/main/bench) and run with one
+command against a Neo4j in Docker.
+
+What the published run shows (numbers below, from the run dated in [Environment](#environment)):
+
+- **Reads cost little.** On findUnique, nested reads, relation counts, aggregates, groupBy,
+  traversals and vector search, Cyphra is within about 10% of hand-written Cypher, sometimes
+  ahead (the same work, and differences of that size are noise on this machine). findMany is
+  about 25% slower and shortest path about 30% slower: Cyphra's statements there do a bit more
+  than the hand-written ones.
+- **Writes cost more, because Cyphra sends several statements.** A `create` is a `CREATE` then a
+  read of the new node (+37%); `update` finds the node, sets it and reads it back (+69%); a
+  cascading `delete` locks and collects each level before deleting (+110%); and a nested create of
+  a user with 5 posts sends 12 statements where the hand-written version sends one (about 4×
+  slower). All of it runs in one transaction, but each statement is a round trip. These are known
+  costs to reduce, not a floor.
+- **`@cyphra/graphql` is faster than `@neo4j/graphql`** on 8 of the 9 shared operations (by 12% to
+  37% on the median), and level on the aggregation.
+- **neogma is often faster than the raw baseline** on simple operations, because it uses
+  auto-commit transactions (see [Caveats](#caveats)), but it has no API for half of the scenarios.
+
+Single-digit percentages are within the noise of this run: compare the p95 column before reading
+much into them.
+
+## Typed clients over Bolt
+
+Median latency of one call, with the p95 under it, one call in flight. The overhead compares
+medians with the raw driver.
+
+<BoltTable results={results} />
+
+<OverheadChart results={results} />
+
+## HTTP transport
+
+Cyphra's [HTTP transport](/runtime#http-transport-edge-workers) (the Neo4j Query API over `fetch`,
+for edge runtimes) against the same hand-written Cypher sent to the Query API with `fetch`, and
+against the Bolt baseline.
+
+<HttpTable results={results} />
+
+Over HTTP, Cyphra pays twice: managed transactions are explicit Query API transactions (one
+request to open the transaction with the first statement, one to commit), where the `fetch`
+baseline sends one auto-commit request; and each extra statement of a write is one more request.
+So a read costs about twice the `fetch` baseline, and the 12-statement nested create costs about
+9×. Single-statement operations could use one auto-commit request instead.
+
+## GraphQL
+
+`@cyphra/graphql` and `@neo4j/graphql` 7.6.8 serve the same type definitions on the same driver.
+Each operation is parsed and validated once, then run with `execute()`, as a server with a
+document cache would.
+
+<GraphqlTable results={results} />
+
+Both libraries compile each GraphQL operation to one Cypher statement, so the difference is the
+time spent building that statement and shaping the result. `@cyphra/graphql` is level on the
+aggregation (it reads the same nodes) and ahead elsewhere.
+
+## Not compared
+
+A library without an API for a scenario is left out of it: writing raw Cypher through it would only
+measure the driver again.
+
+<NotCompared results={results} />
+
+## Method
+
+- **Data.** 10,000 users following 5 others each (50,000 edges), 10,000 posts by the first 2,000
+  users, 2 comments per post, and 1,000 documents with 384-dimension embeddings, seeded with a
+  fixed random seed. Constraints and indexes are the ones `cyphra push` creates from the
+  benchmark schema: unique ids and emails, a range index on `User.age`, a cosine vector index.
+- **Same conditions.** Every Bolt contender uses `neo4j-driver` 6.3.2 with default settings and
+  the explicit database `neo4j`. Cyphra, the GraphQL libraries and the baseline share one driver;
+  neogma always creates its own, from the same version. Every contender walks the same inputs in
+  the same order.
+- **Same answers.** Before timing, the first result of each contender is compared with the
+  baseline's (rows, counts, ids), and writes are checked in the database (5 posts after the nested
+  create, nothing left after the cascading delete).
+- **Timing.** [tinybench](https://github.com/tinylibs/tinybench) 6, chosen over mitata because
+  these are asynchronous I/O-bound calls (where mitata's CPU-level counters do not apply) and the
+  delete scenario needs an unmeasured `beforeEach`. Each scenario runs 3 interleaved rounds; in
+  each, every contender warms up, then runs at least 70 iterations and 1 second. The order rotates
+  between rounds and the samples are merged, so noise on the machine spreads over all contenders.
+- **The baseline** opens a session per call and runs one statement in a managed transaction
+  (`executeRead` / `executeWrite`, which retry transient errors), as Cyphra does, and maps records
+  to plain objects (integers to numbers, temporals to `Date`).
+
+## Caveats
+
+- **Loopback, one machine.** Neo4j runs in Docker next to the benchmark, so there is no network
+  latency: the best case for showing client-side overhead. Over a network, each call gains the
+  round-trip time and the relative overhead gets smaller.
+- **A shared machine.** Other processes ran during the published run. Interleaving spreads that
+  noise; it does not remove it. Differences of a few percent are within the noise, and the p95
+  shows the spread.
+- **No disk flush.** The database runs on a tmpfs, so commits do not wait for the transaction log
+  to reach a disk (on a shared machine that wait is large and erratic). On real storage each write
+  gains that time, the same for every library, and the relative write overhead gets smaller.
+- **Transaction patterns differ.** neogma runs reads and single writes as auto-commit statements
+  (`session.run`), one round trip less than a managed transaction, without retries; that, rather
+  than less work, is why it can beat the baseline on simple reads.
+- **Sequential calls only.** Throughput under concurrency is not measured.
+- **A small, cached data set.** The graph fits in memory, so the numbers show the client side
+  (building the query, parameters, mapping results) and the statement each library sends, not
+  Neo4j's disk.
+
+## Environment
+
+Captured automatically by the run (the Neo4j data directory is a tmpfs):
+
+<Environment results={results} />
+
+### All numbers
+
+Mean with its 95% margin of error; ops/s is 1000 / mean, one call in flight.
+
+<DetailTable results={results} />
+
+<Callout type="info">
+  Run it yourself: start a disposable Neo4j 5 with APOC in Docker, then `pnpm bench` from the
+  repository root. The [bench README](https://github.com/Cyphra-dev/cyphra/tree/main/bench#readme)
+  has the commands, the scenarios and the source of every contender.
+</Callout>
+
+## More
+
+<Cards>
+  <Cards.Card title="Cyphra vs neo4j-driver" href="/compare/neo4j-driver" />
+  <Cards.Card title="Cyphra vs neogma and neode" href="/compare/neogma-neode" />
+  <Cards.Card title="Cyphra vs @neo4j/graphql" href="/compare/neo4j-graphql-library" />
+  <Cards.Card title="Prisma-style ORM for Neo4j" href="/neo4j-orm" />
+</Cards>

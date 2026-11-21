@@ -1,0 +1,156 @@
+/* /benchmarks: tables, environment list and the overhead chart. Colors are the site tokens
+ * (app/globals.css), so both themes follow. */
+
+.table {
+  font-size: 0.875rem;
+}
+
+.num {
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.p95 {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--cy-fg-subtle);
+}
+
+.list {
+  margin-top: 1em;
+  padding-left: 1.25em;
+  list-style: disc;
+  color: var(--cy-fg-muted);
+}
+
+.env {
+  margin-top: 1.25em;
+  display: grid;
+  gap: 0.5rem;
+  font-size: 0.9375rem;
+}
+
+.env > div {
+  display: grid;
+  grid-template-columns: 7rem 1fr;
+  gap: 1rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--cy-border);
+}
+
+.env dt {
+  color: var(--cy-fg-subtle);
+}
+
+.env dd {
+  margin: 0;
+  color: var(--cy-fg);
+}
+
+@media (max-width: 520px) {
+  .env > div {
+    grid-template-columns: 1fr;
+    gap: 0.125rem;
+  }
+}
+
+.figure {
+  margin: 1.5em 0 0;
+  padding: 1rem 1rem 0.75rem;
+  background: var(--cy-surface);
+  border: 1px solid var(--cy-border);
+  border-radius: var(--cy-radius);
+}
+
+.legend {
+  display: flex;
+  gap: 1.25rem;
+  font-size: 0.8125rem;
+  color: var(--cy-fg-muted);
+}
+
+.legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.swatchCyphra,
+.swatchNeogma {
+  display: inline-block;
+  width: 14px;
+  height: 9px;
+  border-radius: 2px;
+}
+
+.swatchCyphra {
+  background: var(--cy-fg);
+}
+
+.swatchNeogma {
+  background: var(--cy-fg-subtle);
+  opacity: 0.55;
+}
+
+.scroll {
+  overflow-x: auto;
+}
+
+.chart {
+  display: block;
+  width: 100%;
+  min-width: 540px;
+  height: auto;
+  margin-top: 0.5rem;
+  font-family: var(--x-font-sans);
+}
+
+.grid {
+  stroke: var(--cy-border);
+  stroke-width: 1;
+}
+
+.zero {
+  stroke: var(--cy-signal);
+  stroke-width: 1.5;
+}
+
+.tick {
+  fill: var(--cy-fg-subtle);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.rowLabel {
+  fill: var(--cy-fg);
+  font-size: 12.5px;
+  font-weight: 500;
+}
+
+.barCyphra {
+  fill: var(--cy-fg);
+}
+
+.barNeogma {
+  fill: var(--cy-fg-subtle);
+  opacity: 0.55;
+}
+
+.value {
+  fill: var(--cy-fg-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.cut {
+  fill: none;
+  stroke: var(--cy-surface);
+  stroke-width: 2;
+}
+
+.caption {
+  margin-top: 0.5rem;
+  font-size: 0.8125rem;
+  color: var(--cy-fg-subtle);
+}

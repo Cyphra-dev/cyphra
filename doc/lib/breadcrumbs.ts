@@ -16,7 +16,7 @@ const SECTIONS: Record<string, Crumb> = {
 };
 
 // Docs pages that sit at the top level of the navbar rather than under "Docs".
-const TOP_LEVEL = new Set(["/getting-started", "/pricing", "/cloud", "/neo4j-orm"]);
+const TOP_LEVEL = new Set(["/getting-started", "/pricing", "/cloud", "/neo4j-orm", "/benchmarks"]);
 
 /**
  * `filePath` is the page's source file as Nextra reports it ("app/schema/page.mdx",
