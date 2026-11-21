@@ -1,0 +1,42 @@
+type Customer @node {
+  id: ID! @id
+  email: String!
+  name: String!
+  orders: [Order!]! @relationship(type: "PLACED", direction: OUT)
+}
+
+type Order @node {
+  id: ID! @id
+  number: String!
+  status: OrderStatus! @default(value: PENDING)
+  placedAt: DateTime!
+  customer: [Customer!]! @relationship(type: "PLACED", direction: IN)
+  lines: [Product!]! @relationship(type: "CONTAINS", direction: OUT, properties: "OrderLine")
+}
+
+type Product @node {
+  sku: String!
+  name: String!
+  price: Float!
+  stock: Int! @default(value: 0)
+  tags: [String!]!
+  category: [Category!]! @relationship(type: "IN_CATEGORY", direction: OUT)
+  orders: [Order!]! @relationship(type: "CONTAINS", direction: IN, properties: "OrderLine")
+}
+
+type Category @node {
+  name: String!
+  products: [Product!]! @relationship(type: "IN_CATEGORY", direction: IN)
+}
+
+type OrderLine @relationshipProperties {
+  quantity: Int!
+  unitPrice: Float!
+}
+
+enum OrderStatus {
+  PENDING
+  PAID
+  SHIPPED
+  CANCELLED
+}

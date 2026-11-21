@@ -1,0 +1,30 @@
+{
+  "data": {
+    "createPosts": {
+      "info": {
+        "nodesCreated": 2,
+        "relationshipsCreated": 2
+      },
+      "posts": [
+        {
+          "id": "<generated-id>",
+          "title": "Fresh post",
+          "published": false,
+          "createdAt": "<generated-datetime>",
+          "updatedAt": null,
+          "author": [
+            {
+              "username": "alice"
+            }
+          ],
+          "comments": [
+            {
+              "id": "<generated-id>",
+              "text": "First!"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

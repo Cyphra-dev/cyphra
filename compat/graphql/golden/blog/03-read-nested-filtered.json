@@ -1,0 +1,39 @@
+{
+  "data": {
+    "users": [
+      {
+        "username": "alice",
+        "posts": [
+          {
+            "title": "Hello graphs"
+          }
+        ],
+        "postsConnection": {
+          "totalCount": 1
+        }
+      },
+      {
+        "username": "bob",
+        "posts": [
+          {
+            "title": "Bob on Cypher"
+          },
+          {
+            "title": "Bob's secret draft"
+          }
+        ],
+        "postsConnection": {
+          "totalCount": 2
+        }
+      }
+    ],
+    "postsConnection": {
+      "totalCount": 3,
+      "aggregate": {
+        "count": {
+          "nodes": 4
+        }
+      }
+    }
+  }
+}

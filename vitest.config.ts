@@ -10,6 +10,7 @@ export default defineConfig({
       "packages/cli",
       "packages/cyphra",
       "packages/better-auth",
+      "compat/graphql",
     ],
   },
 });

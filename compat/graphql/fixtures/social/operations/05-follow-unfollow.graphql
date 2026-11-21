@@ -1,0 +1,54 @@
+# features: mutation.update, mutation.connect, mutation.disconnect, mutation.edge-properties, mutation.nested-update, relationship.self, info
+mutation {
+  updateAccounts(
+    where: { handle: { eq: "eli" } }
+    update: {
+      displayName: { set: "Eli M." }
+      follows: [
+        {
+          connect: [
+            {
+              where: { node: { handle: { in: ["ana", "bo"] } } }
+              edge: { since: "2024-04-01T00:00:00Z", muted: false }
+            }
+          ]
+        }
+        { update: { where: { node: { handle: { eq: "dev" } } }, edge: { muted: { set: false } } } }
+      ]
+    }
+  ) {
+    info {
+      relationshipsCreated
+      relationshipsDeleted
+    }
+    accounts {
+      displayName
+      followerCount
+      followsConnection(sort: [{ node: { handle: ASC } }]) {
+        edges {
+          properties {
+            since
+            muted
+          }
+          node {
+            handle
+            followerCount
+          }
+        }
+      }
+    }
+  }
+  unfollow: updateAccounts(
+    where: { handle: { eq: "ana" } }
+    update: { follows: [{ disconnect: [{ where: { edge: { muted: { eq: true } } } }] }] }
+  ) {
+    info {
+      relationshipsDeleted
+    }
+    accounts {
+      follows {
+        handle
+      }
+    }
+  }
+}

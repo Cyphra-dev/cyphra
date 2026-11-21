@@ -1,0 +1,99 @@
+{
+  "data": {
+    "companies": [
+      {
+        "name": "Acme",
+        "fullTime": {
+          "totalCount": 4,
+          "edges": [
+            {
+              "properties": {
+                "since": "2001-01-15",
+                "role": "CTO",
+                "fullTime": true
+              },
+              "node": {
+                "name": "Grace"
+              }
+            },
+            {
+              "properties": {
+                "since": "2003-09-01",
+                "role": "Engineer",
+                "fullTime": true
+              },
+              "node": {
+                "name": "Dennis"
+              }
+            },
+            {
+              "properties": {
+                "since": "2005-06-01",
+                "role": "Engineer",
+                "fullTime": true
+              },
+              "node": {
+                "name": "Linus"
+              }
+            },
+            {
+              "properties": {
+                "since": "2008-11-11",
+                "role": "Sales",
+                "fullTime": true
+              },
+              "node": {
+                "name": "Joan"
+              }
+            }
+          ]
+        },
+        "engineersSince2004": {
+          "edges": [
+            {
+              "properties": {
+                "since": "2010-03-01"
+              },
+              "node": {
+                "name": "Margaret"
+              }
+            },
+            {
+              "properties": {
+                "since": "2005-06-01"
+              },
+              "node": {
+                "name": "Linus"
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "employees": [
+      {
+        "name": "Margaret",
+        "employersConnection": {
+          "edges": [
+            {
+              "properties": {
+                "role": "Engineer"
+              },
+              "node": {
+                "name": "Acme"
+              }
+            },
+            {
+              "properties": {
+                "role": "Advisor"
+              },
+              "node": {
+                "name": "Globex"
+              }
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "data": {
+    "updatePeople": {
+      "info": {
+        "nodesCreated": 0,
+        "nodesDeleted": 1,
+        "relationshipsCreated": 1,
+        "relationshipsDeleted": 3
+      },
+      "people": [
+        {
+          "name": "Thomas Cruise",
+          "actedInConnection": {
+            "edges": [
+              {
+                "properties": {
+                  "roles": [
+                    "Extra"
+                  ],
+                  "screenTime": null
+                },
+                "node": {
+                  "title": "The Devil's Advocate"
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

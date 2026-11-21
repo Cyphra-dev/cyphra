@@ -1,0 +1,99 @@
+{
+  "data": {
+    "employees": [
+      {
+        "name": "Linus",
+        "manager": [
+          {
+            "name": "Grace"
+          }
+        ],
+        "reports": [
+          {
+            "name": "Dennis",
+            "reports": []
+          },
+          {
+            "name": "Margaret",
+            "reports": []
+          }
+        ]
+      }
+    ],
+    "managers": [
+      {
+        "name": "Dennis"
+      },
+      {
+        "name": "Grace"
+      },
+      {
+        "name": "Joan"
+      },
+      {
+        "name": "Ken"
+      },
+      {
+        "name": "Linus"
+      },
+      {
+        "name": "Margaret"
+      }
+    ],
+    "topLevel": [
+      {
+        "name": "Dennis"
+      },
+      {
+        "name": "Grace"
+      },
+      {
+        "name": "Joan"
+      },
+      {
+        "name": "Ken"
+      },
+      {
+        "name": "Linus"
+      },
+      {
+        "name": "Margaret"
+      }
+    ],
+    "reportsToLinus": [
+      {
+        "name": "Dennis"
+      },
+      {
+        "name": "Margaret"
+      }
+    ],
+    "allReportsActiveOnly": [
+      {
+        "name": "Grace"
+      }
+    ],
+    "noInactiveReports": [
+      {
+        "name": "Dennis"
+      },
+      {
+        "name": "Grace"
+      },
+      {
+        "name": "Joan"
+      },
+      {
+        "name": "Ken"
+      },
+      {
+        "name": "Margaret"
+      }
+    ],
+    "allReportsActive": [
+      {
+        "name": "Grace"
+      }
+    ]
+  }
+}

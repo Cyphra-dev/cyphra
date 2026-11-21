@@ -1,0 +1,29 @@
+# features: filter.enum, filter.number, filter.list, filter.string, filter.logical
+query {
+  openOrders: orders(where: { status: { in: [PENDING, PAID] } }) {
+    number
+    status
+  }
+  shipped: orders(where: { status: { eq: SHIPPED } }) {
+    number
+  }
+  affordable: products(where: { price: { lte: 30 }, stock: { gt: 0 } }) {
+    sku
+    price
+  }
+  bestsellers: products(where: { tags: { includes: "bestseller" } }) {
+    sku
+    tags
+  }
+  untagged: products(where: { tags: { eq: [] } }) {
+    sku
+  }
+  notBooks: products(where: { NOT: { sku: { startsWith: "BK" } } }) {
+    sku
+  }
+  emailDomain: customers(
+    where: { email: { endsWith: "@example.test" }, name: { in: ["Ada", "Cy"] } }
+  ) {
+    name
+  }
+}

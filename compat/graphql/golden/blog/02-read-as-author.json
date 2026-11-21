@@ -1,0 +1,36 @@
+{
+  "data": {
+    "posts": [
+      {
+        "id": "post-1",
+        "title": "Hello graphs",
+        "published": true,
+        "author": [
+          {
+            "username": "alice"
+          }
+        ]
+      },
+      {
+        "id": "post-2",
+        "title": "Alice's draft",
+        "published": false,
+        "author": [
+          {
+            "username": "alice"
+          }
+        ]
+      },
+      {
+        "id": "post-3",
+        "title": "Bob on Cypher",
+        "published": true,
+        "author": [
+          {
+            "username": "bob"
+          }
+        ]
+      }
+    ]
+  }
+}

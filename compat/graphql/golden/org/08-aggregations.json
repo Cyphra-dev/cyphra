@@ -1,0 +1,77 @@
+{
+  "data": {
+    "departmentsConnection": {
+      "aggregate": {
+        "count": {
+          "nodes": 3
+        },
+        "node": {
+          "budget": {
+            "min": "400000",
+            "max": "9007199254740993",
+            "sum": "9007199256640993",
+            "average": "3002399752213664"
+          }
+        }
+      }
+    },
+    "companies": [
+      {
+        "name": "Acme",
+        "employeesConnection": {
+          "aggregate": {
+            "count": {
+              "nodes": 5,
+              "edges": 5
+            },
+            "node": {
+              "name": {
+                "shortest": "Joan",
+                "longest": "Margaret"
+              }
+            }
+          }
+        },
+        "departmentsConnection": {
+          "aggregate": {
+            "count": {
+              "nodes": 2
+            }
+          }
+        }
+      },
+      {
+        "name": "Globex",
+        "employeesConnection": {
+          "aggregate": {
+            "count": {
+              "nodes": 2,
+              "edges": 2
+            },
+            "node": {
+              "name": {
+                "shortest": "Ken",
+                "longest": "Margaret"
+              }
+            }
+          }
+        },
+        "departmentsConnection": {
+          "aggregate": {
+            "count": {
+              "nodes": 1
+            }
+          }
+        }
+      }
+    ],
+    "bigTeams": [
+      {
+        "name": "Engineering"
+      },
+      {
+        "name": "Research"
+      }
+    ]
+  }
+}

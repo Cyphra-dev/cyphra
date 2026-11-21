@@ -1,0 +1,37 @@
+# features: filter.relationship, filter.connection, filter.edge
+query {
+  adaOrders: orders(where: { customer: { some: { email: { eq: "ada@example.test" } } } }) {
+    number
+  }
+  customersWithoutCancelled: customers(where: { orders: { none: { status: { eq: CANCELLED } } } }) {
+    name
+  }
+  customersAllPaidOrShipped: customers(
+    where: { orders: { all: { status: { in: [PAID, SHIPPED] } } } }
+  ) {
+    name
+  }
+  bulkOrders: orders(where: { linesConnection: { some: { edge: { quantity: { gte: 3 } } } } }) {
+    number
+  }
+  ordersWithBooks: orders(
+    where: { lines: { some: { category: { some: { name: { eq: "Books" } } } } } }
+  ) {
+    number
+  }
+  neverOrdered: products(where: { orders: { none: {} } }) {
+    sku
+  }
+  orderedOnce: products(where: { orders: { single: {} } }) {
+    sku
+  }
+  discounted: products(
+    where: {
+      ordersConnection: {
+        some: { edge: { unitPrice: { lt: 39.9 } }, node: { status: { eq: SHIPPED } } }
+      }
+    }
+  ) {
+    sku
+  }
+}

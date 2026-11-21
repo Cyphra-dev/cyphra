@@ -1,0 +1,24 @@
+type Account @node {
+  handle: String!
+  displayName: String!
+  joined: DateTime!
+  follows: [Account!]! @relationship(type: "FOLLOWS", direction: OUT, properties: "Follow")
+  followers: [Account!]! @relationship(type: "FOLLOWS", direction: IN, properties: "Follow")
+  posts: [Status!]! @relationship(type: "POSTED", direction: OUT)
+  likes: [Status!]! @relationship(type: "LIKES", direction: OUT)
+  followerCount: Int!
+    @cypher(statement: "MATCH (this)<-[:FOLLOWS]-(f:Account) RETURN count(f) AS c", columnName: "c")
+}
+
+type Status @node {
+  id: ID! @id
+  text: String!
+  postedAt: DateTime!
+  author: [Account!]! @relationship(type: "POSTED", direction: IN)
+  likedBy: [Account!]! @relationship(type: "LIKES", direction: IN)
+}
+
+type Follow @relationshipProperties {
+  since: DateTime!
+  muted: Boolean!
+}

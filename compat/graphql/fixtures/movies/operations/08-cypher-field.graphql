@@ -1,0 +1,11 @@
+# features: cypher, sort, filter.cypher
+# ordered
+query {
+  movies(sort: [{ actorCount: DESC }, { title: ASC }]) {
+    title
+    actorCount
+  }
+  bigCast: movies(where: { actorCount: { gte: 2 } }, sort: [{ title: ASC }]) {
+    title
+  }
+}

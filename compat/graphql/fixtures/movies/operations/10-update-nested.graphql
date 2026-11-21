@@ -1,0 +1,63 @@
+# features: mutation.update, mutation.nested-update, mutation.connect, mutation.disconnect, mutation.nested-create, mutation.edge-properties, mutation.scalar-operators, info
+mutation {
+  updateMovies(
+    where: { id: { eq: "m-matrix" } }
+    update: {
+      tagline: { set: "Free your mind" }
+      released: { add: 1 }
+      rating: { multiply: 2 }
+      genres: { push: ["Cyberpunk"] }
+      actors: [
+        {
+          update: {
+            where: { node: { name: { eq: "Keanu Reeves" } } }
+            edge: { screenTime: { add: 5 } }
+            node: { born: { set: 1965 } }
+          }
+        }
+        { disconnect: [{ where: { node: { name: { eq: "Laurence Fishburne" } } } }] }
+        {
+          connect: [
+            {
+              where: { node: { name: { eq: "Al Pacino" } } }
+              edge: { roles: ["Cameo"], screenTime: 1 }
+            }
+          ]
+        }
+        {
+          create: [{ edge: { roles: ["Agent Smith"] }, node: { name: "Hugo Weaving", born: 1960 } }]
+        }
+      ]
+      directors: [{ disconnect: [{ where: { node: { name: { eq: "Lilly Wachowski" } } } }] }]
+    }
+  ) {
+    info {
+      nodesCreated
+      nodesDeleted
+      relationshipsCreated
+      relationshipsDeleted
+    }
+    movies {
+      title
+      tagline
+      released
+      rating
+      genres
+      actorsConnection {
+        edges {
+          properties {
+            roles
+            screenTime
+          }
+          node {
+            name
+            born
+          }
+        }
+      }
+      directors {
+        name
+      }
+    }
+  }
+}

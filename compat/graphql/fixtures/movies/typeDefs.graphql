@@ -1,0 +1,28 @@
+type Movie @node {
+  id: ID! @id
+  title: String!
+  released: Int!
+  tagline: String
+  rating: Float
+  genres: [String!]!
+  actors: [Person!]! @relationship(type: "ACTED_IN", direction: IN, properties: "ActedIn")
+  directors: [Person!]! @relationship(type: "DIRECTED", direction: IN)
+  actorCount: Int!
+    @cypher(
+      statement: "MATCH (this)<-[:ACTED_IN]-(a:Person) RETURN count(a) AS result"
+      columnName: "result"
+    )
+}
+
+type Person @node {
+  id: ID! @id
+  name: String!
+  born: Int
+  actedIn: [Movie!]! @relationship(type: "ACTED_IN", direction: OUT, properties: "ActedIn")
+  directed: [Movie!]! @relationship(type: "DIRECTED", direction: OUT)
+}
+
+type ActedIn @relationshipProperties {
+  roles: [String!]!
+  screenTime: Int
+}

@@ -74,6 +74,9 @@ jobs:
           - 7687:7687
         env:
           NEO4J_AUTH: neo4j/cyphra_ci_test
+          # @neo4j/graphql (compat/graphql reference) needs APOC: apoc.util.validate(Predicate)
+          # for authorization and cardinality checks in nested mutations.
+          NEO4J_PLUGINS: '["apoc"]'
         options: >-
           --health-cmd "cypher-shell -u neo4j -p cyphra_ci_test 'RETURN 1'"
           --health-interval 10s
@@ -106,3 +109,5 @@ jobs:
           pnpm --filter @cyphra/migrator --fail-if-no-match exec vitest run src/push.integration.test.ts src/migrate.integration.test.ts
           # Better Auth conformance suites + adapter, typed-client and migration tests.
           pnpm --filter @cyphra/better-auth --fail-if-no-match exec vitest run test/
+          # @neo4j/graphql v7 compatibility suite: goldens must still match (compat/graphql).
+          pnpm --filter compat-graphql --fail-if-no-match test

@@ -1,0 +1,11 @@
+# features: auth.filter
+query {
+  posts {
+    id
+    title
+    published
+    author {
+      username
+    }
+  }
+}

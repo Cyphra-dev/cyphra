@@ -1,0 +1,78 @@
+# features: aggregate, aggregate.edge, filter.aggregate
+query {
+  moviesConnection {
+    aggregate {
+      count {
+        nodes
+      }
+      node {
+        released {
+          min
+          max
+          average
+          sum
+        }
+        rating {
+          min
+          max
+          average
+          sum
+        }
+        title {
+          longest
+          shortest
+        }
+      }
+    }
+  }
+  filteredCount: moviesConnection(where: { genres: { includes: "Sci-Fi" } }) {
+    aggregate {
+      count {
+        nodes
+      }
+    }
+  }
+  movies(where: { id: { eq: "m-matrix" } }) {
+    title
+    actorsConnection {
+      aggregate {
+        count {
+          nodes
+          edges
+        }
+        node {
+          born {
+            min
+            max
+            average
+          }
+          name {
+            longest
+            shortest
+          }
+        }
+        edge {
+          screenTime {
+            min
+            max
+            sum
+            average
+          }
+        }
+      }
+    }
+  }
+  manyActors: movies(where: { actorsConnection: { aggregate: { count: { nodes: { gte: 2 } } } } }) {
+    title
+  }
+  longRoles: movies(
+    where: { actorsConnection: { aggregate: { edge: { screenTime: { sum: { gt: 200 } } } } } }
+  ) {
+    title
+  }
+  oldCast: movies(
+    where: { actorsConnection: { aggregate: { node: { born: { min: { lt: 1945 } } } } } }
+  ) {
+    title
+  }
+}

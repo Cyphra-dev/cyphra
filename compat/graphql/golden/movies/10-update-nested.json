@@ -1,0 +1,82 @@
+{
+  "data": {
+    "updateMovies": {
+      "info": {
+        "nodesCreated": 1,
+        "nodesDeleted": 0,
+        "relationshipsCreated": 2,
+        "relationshipsDeleted": 2
+      },
+      "movies": [
+        {
+          "title": "The Matrix",
+          "tagline": "Free your mind",
+          "released": 2000,
+          "rating": 17.4,
+          "genres": [
+            "Action",
+            "Cyberpunk",
+            "Sci-Fi"
+          ],
+          "actorsConnection": {
+            "edges": [
+              {
+                "properties": {
+                  "roles": [
+                    "Agent Smith"
+                  ],
+                  "screenTime": null
+                },
+                "node": {
+                  "name": "Hugo Weaving",
+                  "born": 1960
+                }
+              },
+              {
+                "properties": {
+                  "roles": [
+                    "Cameo"
+                  ],
+                  "screenTime": 1
+                },
+                "node": {
+                  "name": "Al Pacino",
+                  "born": 1940
+                }
+              },
+              {
+                "properties": {
+                  "roles": [
+                    "Neo"
+                  ],
+                  "screenTime": 125
+                },
+                "node": {
+                  "name": "Keanu Reeves",
+                  "born": 1965
+                }
+              },
+              {
+                "properties": {
+                  "roles": [
+                    "Trinity"
+                  ],
+                  "screenTime": 80
+                },
+                "node": {
+                  "name": "Carrie-Anne Moss",
+                  "born": 1967
+                }
+              }
+            ]
+          },
+          "directors": [
+            {
+              "name": "Lana Wachowski"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

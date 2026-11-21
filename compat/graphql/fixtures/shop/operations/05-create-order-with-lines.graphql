@@ -1,0 +1,54 @@
+# features: mutation.create, mutation.connect, mutation.edge-properties, default, enum, id, info
+mutation ($placedAt: DateTime!) {
+  createOrders(
+    input: [
+      {
+        number: "A-2001"
+        placedAt: $placedAt
+        customer: { connect: [{ where: { node: { email: { eq: "ben@example.test" } } } }] }
+        lines: {
+          connect: [
+            { where: { node: { sku: { eq: "GM-002" } } }, edge: { quantity: 1, unitPrice: 80 } }
+            {
+              where: { node: { sku: { in: ["BK-001", "BK-002"] } } }
+              edge: { quantity: 2, unitPrice: 25 }
+            }
+          ]
+          create: [
+            {
+              edge: { quantity: 4, unitPrice: 2.5 }
+              node: { sku: "ACC-001", name: "Dice", price: 3, tags: ["accessory"] }
+            }
+          ]
+        }
+      }
+    ]
+  ) {
+    info {
+      nodesCreated
+      relationshipsCreated
+    }
+    orders {
+      id
+      number
+      status
+      placedAt
+      customer {
+        name
+      }
+      linesConnection(sort: [{ node: { sku: ASC } }]) {
+        totalCount
+        edges {
+          properties {
+            quantity
+            unitPrice
+          }
+          node {
+            sku
+            stock
+          }
+        }
+      }
+    }
+  }
+}

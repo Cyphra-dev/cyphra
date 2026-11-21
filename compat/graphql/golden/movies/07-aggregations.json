@@ -1,0 +1,95 @@
+{
+  "data": {
+    "moviesConnection": {
+      "aggregate": {
+        "count": {
+          "nodes": 5
+        },
+        "node": {
+          "released": {
+            "min": 1992,
+            "max": 2003,
+            "average": 1997.2,
+            "sum": 9986
+          },
+          "rating": {
+            "min": 5.7,
+            "max": 8.7,
+            "average": 7.36,
+            "sum": 36.8
+          },
+          "title": {
+            "longest": "The Devil's Advocate",
+            "shortest": "The Matrix"
+          }
+        }
+      }
+    },
+    "filteredCount": {
+      "aggregate": {
+        "count": {
+          "nodes": 3
+        }
+      }
+    },
+    "movies": [
+      {
+        "title": "The Matrix",
+        "actorsConnection": {
+          "aggregate": {
+            "count": {
+              "nodes": 3,
+              "edges": 3
+            },
+            "node": {
+              "born": {
+                "min": 1961,
+                "max": 1967,
+                "average": 1964
+              },
+              "name": {
+                "longest": "Laurence Fishburne",
+                "shortest": "Keanu Reeves"
+              }
+            },
+            "edge": {
+              "screenTime": {
+                "min": 70,
+                "max": 120,
+                "sum": 270,
+                "average": 90
+              }
+            }
+          }
+        }
+      }
+    ],
+    "manyActors": [
+      {
+        "title": "A Few Good Men"
+      },
+      {
+        "title": "The Devil's Advocate"
+      },
+      {
+        "title": "The Matrix Reloaded"
+      },
+      {
+        "title": "The Matrix"
+      }
+    ],
+    "longRoles": [
+      {
+        "title": "The Matrix"
+      }
+    ],
+    "oldCast": [
+      {
+        "title": "A Few Good Men"
+      },
+      {
+        "title": "The Devil's Advocate"
+      }
+    ]
+  }
+}

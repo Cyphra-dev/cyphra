@@ -1,0 +1,92 @@
+{
+  "data": {
+    "followedByDev": [
+      {
+        "handle": "ana"
+      },
+      {
+        "handle": "bo"
+      }
+    ],
+    "followsOnlyOne": [
+      {
+        "handle": "ana"
+      },
+      {
+        "handle": "bo"
+      },
+      {
+        "handle": "cleo"
+      },
+      {
+        "handle": "dev"
+      },
+      {
+        "handle": "eli"
+      }
+    ],
+    "followsNobody": [
+      {
+        "handle": "ana"
+      },
+      {
+        "handle": "bo"
+      },
+      {
+        "handle": "cleo"
+      },
+      {
+        "handle": "dev"
+      },
+      {
+        "handle": "eli"
+      }
+    ],
+    "allFollowersJoinedBefore2023": [
+      {
+        "handle": "cleo"
+      }
+    ],
+    "hasMutedSomeone": [
+      {
+        "handle": "ana"
+      },
+      {
+        "handle": "eli"
+      }
+    ],
+    "followedSince2022": [
+      {
+        "handle": "ana"
+      },
+      {
+        "handle": "bo"
+      },
+      {
+        "handle": "cleo"
+      },
+      {
+        "handle": "dev"
+      }
+    ],
+    "likedByFollowersOfAna": [
+      {
+        "id": "s-1"
+      },
+      {
+        "id": "s-2"
+      },
+      {
+        "id": "s-4"
+      }
+    ],
+    "textSearch": [
+      {
+        "id": "s-2"
+      },
+      {
+        "id": "s-4"
+      }
+    ]
+  }
+}

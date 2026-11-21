@@ -1,0 +1,76 @@
+{
+  "data": {
+    "priciest": [
+      {
+        "sku": "GM-002",
+        "price": 89.99
+      },
+      {
+        "sku": "GM-001",
+        "price": 59
+      },
+      {
+        "sku": "BK-001",
+        "price": 39.9
+      }
+    ],
+    "cheapestSecondPage": [
+      {
+        "sku": "BK-001"
+      },
+      {
+        "sku": "GM-001"
+      }
+    ],
+    "byStockThenName": [
+      {
+        "name": "Learning Cypher",
+        "stock": 0
+      },
+      {
+        "name": "Go Board",
+        "stock": 2
+      },
+      {
+        "name": "Chess Set",
+        "stock": 4
+      },
+      {
+        "name": "Graph Databases",
+        "stock": 12
+      },
+      {
+        "name": "Shovel",
+        "stock": 30
+      }
+    ],
+    "recentOrders": [
+      {
+        "number": "A-1004",
+        "placedAt": "2024-06-12T19:45:00.000Z"
+      },
+      {
+        "number": "A-1003",
+        "placedAt": "2024-06-11T08:15:00.000Z"
+      },
+      {
+        "number": "A-1002",
+        "placedAt": "2024-05-03T15:30:00.000Z"
+      }
+    ],
+    "enumSort": [
+      {
+        "status": "CANCELLED"
+      },
+      {
+        "status": "PAID"
+      },
+      {
+        "status": "PENDING"
+      },
+      {
+        "status": "SHIPPED"
+      }
+    ]
+  }
+}

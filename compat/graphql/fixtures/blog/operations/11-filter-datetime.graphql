@@ -1,0 +1,8 @@
+# features: filter.datetime, sort, auth.jwt
+# ordered
+query {
+  posts(where: { createdAt: { gte: "2024-02-01T00:00:00Z" } }, sort: [{ createdAt: DESC }]) {
+    title
+    createdAt
+  }
+}

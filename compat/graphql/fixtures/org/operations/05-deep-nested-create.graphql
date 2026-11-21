@@ -1,0 +1,81 @@
+# features: mutation.create, mutation.nested-create, mutation.connect, mutation.edge-properties, default, id, info
+mutation {
+  createCompanies(
+    input: [
+      {
+        name: "Initech"
+        founded: "1998-02-19"
+        departments: {
+          create: [
+            {
+              node: {
+                name: "TPS Reports"
+                budget: "12345678901234"
+                members: {
+                  create: [
+                    {
+                      node: {
+                        name: "Peter"
+                        title: "Engineer"
+                        manager: { connect: [{ where: { node: { name: { eq: "Grace" } } } }] }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        }
+        employees: {
+          connect: [
+            {
+              where: { node: { name: { eq: "Ken" } } }
+              edge: { since: "2020-01-01", role: "Consultant", fullTime: false }
+            }
+          ]
+          create: [
+            {
+              node: { name: "Milton", active: false }
+              edge: { since: "1990-05-05", role: "Collator", fullTime: true }
+            }
+          ]
+        }
+      }
+    ]
+  ) {
+    info {
+      nodesCreated
+      relationshipsCreated
+    }
+    companies {
+      name
+      founded
+      departments {
+        name
+        budget
+        members {
+          id
+          name
+          title
+          active
+          manager {
+            name
+          }
+        }
+      }
+      employeesConnection(sort: [{ node: { name: ASC } }]) {
+        edges {
+          properties {
+            since
+            role
+            fullTime
+          }
+          node {
+            name
+            active
+          }
+        }
+      }
+    }
+  }
+}

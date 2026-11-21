@@ -1,0 +1,75 @@
+{
+  "data": {
+    "firstPage": {
+      "totalCount": 5,
+      "edges": [
+        {
+          "cursor": "YXJyYXljb25uZWN0aW9uOjA=",
+          "node": {
+            "title": "A Few Good Men",
+            "released": 1992
+          }
+        },
+        {
+          "cursor": "YXJyYXljb25uZWN0aW9uOjE=",
+          "node": {
+            "title": "Johnny Mnemonic",
+            "released": 1995
+          }
+        }
+      ],
+      "pageInfo": {
+        "hasNextPage": true,
+        "hasPreviousPage": false,
+        "startCursor": "YXJyYXljb25uZWN0aW9uOjA=",
+        "endCursor": "YXJyYXljb25uZWN0aW9uOjE="
+      }
+    },
+    "secondPage": {
+      "totalCount": 5,
+      "edges": [
+        {
+          "cursor": "YXJyYXljb25uZWN0aW9uOjI=",
+          "node": {
+            "title": "The Devil's Advocate"
+          }
+        },
+        {
+          "cursor": "YXJyYXljb25uZWN0aW9uOjM=",
+          "node": {
+            "title": "The Matrix"
+          }
+        }
+      ],
+      "pageInfo": {
+        "hasNextPage": true,
+        "hasPreviousPage": true,
+        "startCursor": "YXJyYXljb25uZWN0aW9uOjI=",
+        "endCursor": "YXJyYXljb25uZWN0aW9uOjM="
+      }
+    },
+    "filtered": {
+      "totalCount": 3,
+      "edges": [
+        {
+          "node": {
+            "name": "Jack Nicholson"
+          }
+        },
+        {
+          "node": {
+            "name": "Al Pacino"
+          }
+        },
+        {
+          "node": {
+            "name": "Taylor Hackford"
+          }
+        }
+      ],
+      "pageInfo": {
+        "hasNextPage": false
+      }
+    }
+  }
+}

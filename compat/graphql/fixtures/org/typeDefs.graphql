@@ -1,0 +1,30 @@
+type Company @node {
+  name: String!
+  founded: Date
+  departments: [Department!]! @relationship(type: "HAS_DEPARTMENT", direction: OUT)
+  employees: [Employee!]! @relationship(type: "WORKS_AT", direction: IN, properties: "Employment")
+}
+
+type Department @node {
+  name: String!
+  budget: BigInt
+  company: [Company!]! @relationship(type: "HAS_DEPARTMENT", direction: IN)
+  members: [Employee!]! @relationship(type: "MEMBER_OF", direction: IN)
+}
+
+type Employee @node {
+  id: ID! @id
+  name: String!
+  title: String
+  active: Boolean! @default(value: true)
+  manager: [Employee!]! @relationship(type: "REPORTS_TO", direction: OUT)
+  reports: [Employee!]! @relationship(type: "REPORTS_TO", direction: IN)
+  departments: [Department!]! @relationship(type: "MEMBER_OF", direction: OUT)
+  employers: [Company!]! @relationship(type: "WORKS_AT", direction: OUT, properties: "Employment")
+}
+
+type Employment @relationshipProperties {
+  since: Date!
+  role: String!
+  fullTime: Boolean!
+}

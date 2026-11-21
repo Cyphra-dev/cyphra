@@ -1,0 +1,43 @@
+# features: connection, pagination.cursor, sort
+# ordered
+query ($after: String) {
+  page1: productsConnection(first: 2, sort: [{ sku: ASC }]) {
+    totalCount
+    edges {
+      cursor
+      node {
+        sku
+      }
+    }
+    pageInfo {
+      hasNextPage
+      hasPreviousPage
+      endCursor
+    }
+  }
+  page2: productsConnection(first: 2, after: $after, sort: [{ sku: ASC }]) {
+    edges {
+      cursor
+      node {
+        sku
+      }
+    }
+    pageInfo {
+      hasNextPage
+      hasPreviousPage
+      startCursor
+      endCursor
+    }
+  }
+  lastPage: productsConnection(first: 10, after: "YXJyYXljb25uZWN0aW9uOjM=", sort: [{ sku: ASC }]) {
+    edges {
+      node {
+        sku
+      }
+    }
+    pageInfo {
+      hasNextPage
+      hasPreviousPage
+    }
+  }
+}

@@ -1,0 +1,26 @@
+# features: filter.date, filter.bigint, filter.boolean, scalar.bigint, scalar.date
+query {
+  oldCompanies: companies(where: { founded: { lt: "2000-01-01" } }) {
+    name
+    founded
+  }
+  foundedIn: companies(where: { founded: { in: ["2012-09-15"] } }) {
+    name
+  }
+  bigBudgets: departments(where: { budget: { gt: "1000000" } }) {
+    name
+    budget
+  }
+  exactBigInt: departments(where: { budget: { eq: "9007199254740993" } }) {
+    name
+    budget
+  }
+  inactive: employees(where: { active: { eq: false } }) {
+    name
+    active
+  }
+  noTitle: employees(where: { title: { eq: null } }) {
+    name
+    title
+  }
+}

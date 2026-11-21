@@ -1,0 +1,15 @@
+# features: mutation.delete, mutation.nested-delete, info
+mutation {
+  deleteAccounts(where: { handle: { eq: "ana" } }, delete: { posts: [{ where: {} }] }) {
+    nodesDeleted
+    relationshipsDeleted
+  }
+  remaining: updateStatuses(where: {}) {
+    statuses {
+      id
+      likedBy {
+        handle
+      }
+    }
+  }
+}

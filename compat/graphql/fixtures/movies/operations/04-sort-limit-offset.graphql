@@ -1,0 +1,29 @@
+# features: sort, pagination.offset
+# ordered
+query {
+  byReleasedDesc: movies(sort: [{ released: DESC }]) {
+    title
+    released
+  }
+  multiKey: people(sort: [{ born: DESC }, { name: ASC }], limit: 4) {
+    name
+    born
+  }
+  page2: movies(sort: [{ title: ASC }], limit: 2, offset: 2) {
+    title
+  }
+  nestedSort: movies(where: { id: { eq: "m-matrix" } }) {
+    title
+    actors(sort: [{ name: DESC }], limit: 2) {
+      name
+    }
+    directors(sort: [{ name: ASC }]) {
+      name
+    }
+  }
+  nestedOffset: people(where: { name: { eq: "Keanu Reeves" } }) {
+    actedIn(sort: [{ released: ASC }], offset: 1, limit: 2) {
+      title
+    }
+  }
+}

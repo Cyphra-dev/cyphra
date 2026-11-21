@@ -1,0 +1,34 @@
+# features: connection, pagination.cursor, sort
+# ordered
+query ($after: String) {
+  companies(where: { name: { eq: "Acme" } }) {
+    first: employeesConnection(first: 2, sort: [{ node: { name: ASC } }]) {
+      totalCount
+      edges {
+        cursor
+        node {
+          name
+        }
+      }
+      pageInfo {
+        hasNextPage
+        endCursor
+      }
+    }
+    next: employeesConnection(first: 2, after: $after, sort: [{ node: { name: ASC } }]) {
+      totalCount
+      edges {
+        cursor
+        node {
+          name
+        }
+      }
+      pageInfo {
+        hasNextPage
+        hasPreviousPage
+        startCursor
+        endCursor
+      }
+    }
+  }
+}

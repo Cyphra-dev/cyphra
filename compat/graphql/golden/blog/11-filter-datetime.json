@@ -1,0 +1,14 @@
+{
+  "data": {
+    "posts": [
+      {
+        "title": "Bob's secret draft",
+        "createdAt": "2024-03-20T08:00:00.000Z"
+      },
+      {
+        "title": "Bob on Cypher",
+        "createdAt": "2024-03-05T12:30:00.000Z"
+      }
+    ]
+  }
+}

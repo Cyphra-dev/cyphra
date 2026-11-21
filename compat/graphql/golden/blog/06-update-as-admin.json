@@ -1,0 +1,12 @@
+{
+  "data": {
+    "updatePosts": {
+      "posts": [
+        {
+          "id": "post-3",
+          "body": "Moderated."
+        }
+      ]
+    }
+  }
+}

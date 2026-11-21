@@ -1,0 +1,8 @@
+# features: auth.authentication, mutation.create, errors
+mutation {
+  createUsers(input: [{ username: "mallory" }]) {
+    users {
+      username
+    }
+  }
+}

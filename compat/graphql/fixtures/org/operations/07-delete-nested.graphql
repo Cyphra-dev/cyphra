@@ -1,0 +1,18 @@
+# features: mutation.delete, mutation.nested-delete, info
+mutation {
+  deleteDepartments(
+    where: { name: { eq: "Engineering" } }
+    delete: { members: [{ where: { node: { active: { eq: false } } } }] }
+  ) {
+    nodesDeleted
+    relationshipsDeleted
+  }
+  remaining: updateEmployees(where: {}) {
+    employees {
+      name
+      departments {
+        name
+      }
+    }
+  }
+}

@@ -1,0 +1,51 @@
+# features: mutation.update, mutation.nested-update, mutation.connect, mutation.disconnect, mutation.edge-properties, mutation.scalar-operators, enum, info
+mutation {
+  updateOrders(
+    where: { number: { eq: "A-1001" } }
+    update: {
+      status: { set: SHIPPED }
+      lines: [
+        {
+          update: {
+            where: { node: { sku: { eq: "BK-002" } } }
+            edge: { quantity: { add: 1 }, unitPrice: { set: 27.5 } }
+          }
+        }
+        { disconnect: [{ where: { node: { sku: { eq: "BK-001" } } } }] }
+        {
+          connect: [
+            { where: { node: { sku: { eq: "GD-001" } } }, edge: { quantity: 1, unitPrice: 19.99 } }
+          ]
+        }
+      ]
+    }
+  ) {
+    info {
+      nodesCreated
+      nodesDeleted
+      relationshipsCreated
+      relationshipsDeleted
+    }
+    orders {
+      number
+      status
+      linesConnection(sort: [{ node: { sku: ASC } }]) {
+        edges {
+          properties {
+            quantity
+            unitPrice
+          }
+          node {
+            sku
+          }
+        }
+      }
+    }
+  }
+  stock: updateProducts(where: { stock: { lt: 5 } }, update: { stock: { add: 10 } }) {
+    products {
+      sku
+      stock
+    }
+  }
+}

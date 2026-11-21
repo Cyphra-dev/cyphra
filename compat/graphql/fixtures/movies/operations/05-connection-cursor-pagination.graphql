@@ -1,0 +1,46 @@
+# features: connection, pagination.cursor
+# ordered
+query ($after: String) {
+  firstPage: moviesConnection(first: 2, sort: [{ released: ASC }]) {
+    totalCount
+    edges {
+      cursor
+      node {
+        title
+        released
+      }
+    }
+    pageInfo {
+      hasNextPage
+      hasPreviousPage
+      startCursor
+      endCursor
+    }
+  }
+  secondPage: moviesConnection(first: 2, after: $after, sort: [{ released: ASC }]) {
+    totalCount
+    edges {
+      cursor
+      node {
+        title
+      }
+    }
+    pageInfo {
+      hasNextPage
+      hasPreviousPage
+      startCursor
+      endCursor
+    }
+  }
+  filtered: peopleConnection(where: { born: { lt: 1945 } }, sort: [{ born: ASC }]) {
+    totalCount
+    edges {
+      node {
+        name
+      }
+    }
+    pageInfo {
+      hasNextPage
+    }
+  }
+}

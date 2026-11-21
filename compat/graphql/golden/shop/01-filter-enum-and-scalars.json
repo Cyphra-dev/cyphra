@@ -1,0 +1,65 @@
+{
+  "data": {
+    "openOrders": [
+      {
+        "number": "A-1001",
+        "status": "PAID"
+      },
+      {
+        "number": "A-1003",
+        "status": "PENDING"
+      }
+    ],
+    "shipped": [
+      {
+        "number": "A-1002"
+      }
+    ],
+    "affordable": [
+      {
+        "sku": "GD-001",
+        "price": 19.99
+      }
+    ],
+    "bestsellers": [
+      {
+        "sku": "BK-001",
+        "tags": [
+          "bestseller",
+          "database"
+        ]
+      },
+      {
+        "sku": "GM-002",
+        "tags": [
+          "bestseller",
+          "classic"
+        ]
+      }
+    ],
+    "untagged": [
+      {
+        "sku": "GD-001"
+      }
+    ],
+    "notBooks": [
+      {
+        "sku": "GD-001"
+      },
+      {
+        "sku": "GM-001"
+      },
+      {
+        "sku": "GM-002"
+      }
+    ],
+    "emailDomain": [
+      {
+        "name": "Ada"
+      },
+      {
+        "name": "Cy"
+      }
+    ]
+  }
+}

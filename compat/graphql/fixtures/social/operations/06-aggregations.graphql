@@ -1,0 +1,52 @@
+# features: aggregate, aggregate.edge, aggregate.datetime, filter.aggregate
+query {
+  statusesConnection {
+    aggregate {
+      count {
+        nodes
+      }
+      node {
+        postedAt {
+          min
+          max
+        }
+        text {
+          shortest
+          longest
+        }
+      }
+    }
+  }
+  accounts(where: { handle: { eq: "ana" } }) {
+    followersConnection {
+      aggregate {
+        count {
+          nodes
+        }
+        edge {
+          since {
+            min
+            max
+          }
+        }
+        node {
+          joined {
+            min
+          }
+        }
+      }
+    }
+    postsConnection {
+      aggregate {
+        count {
+          nodes
+        }
+      }
+    }
+  }
+  wellLiked: statuses(
+    where: { likedByConnection: { aggregate: { count: { nodes: { gte: 2 } } } } }
+  ) {
+    id
+  }
+}
