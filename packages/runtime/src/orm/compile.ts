@@ -438,9 +438,9 @@ function compileRelatedScalar(
       `orderBy ${model.name}.${rel.name}: unknown scalar field "${target.name}.${name}".`,
     );
   }
-  if (f.type === "Vector" || f.list) {
+  if (f.type === "Vector" || f.type === "Json" || f.list) {
     throw new CyphraValidationError(
-      `orderBy ${model.name}.${rel.name}.${name}: list and Vector fields cannot be sorted.`,
+      `orderBy ${model.name}.${rel.name}.${name}: list, Vector and Json fields cannot be sorted.`,
     );
   }
   const m = ctx.variable();
