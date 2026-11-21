@@ -14,7 +14,7 @@ to continue when a newly required field is missing, and so on).
 cyphra dev                         # local Neo4j in Docker, writes .env
 # edit schema.cyphra
 cyphra migrate dev --name add-roles   # generate a migration from your changes, then apply it
-cyphra migrate status              # what is applied, pending, modified, or not yet captured
+cyphra migrate status              # applied / pending / modified migrations, and drift
 cyphra migrate deploy              # CI / production: apply pending migrations only
 ```
 
@@ -217,10 +217,130 @@ database.
 
 ## Tracking
 
-Applied migrations are recorded as `(:__CyphraMigration { name, appliedAt, checksum })`.
-`cyphra migrate status` reports migrations that are pending, applied files that were **modified**
-after being applied (checksum mismatch), applied migrations whose file is **missing**, and schema
-changes not yet captured in a migration. It exits non-zero in all of those cases, so it can gate CI.
+Applied migrations are recorded as `(:__CyphraMigration { name, appliedAt, checksum })`, where
+`checksum` is the SHA-256 of the migration file. `cyphra migrate status` reports migrations that are
+pending, applied files that were **modified** after being applied (checksum mismatch), applied
+migrations whose file is **missing**, schema changes not yet captured in a migration, and
+[drift](#drift-detection).
+
+## Drift detection
+
+A database drifts when its constraints or indexes are changed outside migrations: an index created
+by hand in Neo4j Browser, a constraint dropped during an incident, a vector index recreated with
+other dimensions. `cyphra migrate status` compares the database with what the applied migrations
+created:
+
+```text
+$ cyphra migrate status
+Migrations (migrations):
+  applied   20261121194402_init
+
+Drift (database vs the applied migrations):
+  extra     index manual_idx: RANGE index on (:User {name})
+  missing   constraint User_email_unique: UNIQUE constraint on (:User {email})
+  changed   index Doc_embedding_vector: dimensions: 3 → 4; similarity: cosine → euclidean (expected → actual)
+
+3 drift issue(s). Capture intended changes in a migration (`cyphra migration:create`) or revert them in the database; in development, `cyphra migrate reset` rebuilds the database from the migrations.
+```
+
+- **extra**: in the database, not created by any applied migration.
+- **missing**: created by a migration, no longer in the database.
+- **changed**: present on both sides with a different definition: labels or relationship type,
+  properties (and their order), index type (`RANGE`, `POINT`, `TEXT`, `VECTOR`, `FULLTEXT`),
+  constraint type, vector dimensions, similarity and quantization, full-text analyzer and
+  eventual consistency. An object found under another name with the same definition is reported
+  as a name change.
+
+**How the expected state is built.** The applied migrations are replayed, in the order they were
+applied: each `up()` runs against a recording `db` handle that sends nothing to the database, and
+the `CREATE` / `DROP` constraint and index statements it issues are applied to an in-memory model
+(`IF NOT EXISTS` is a no-op when the object already exists, as in Neo4j). Pending migrations are not
+part of it: they are listed as pending. The actual state comes from `SHOW CONSTRAINTS` and
+`SHOW INDEXES`, so the check is read-only and does not scan data.
+
+Replaying migrations answers "has the database drifted from the migrations?". Whether the
+_schema_ has changes no migration captures yet is a separate question that needs no database:
+`cyphra migrate diff`. With `--schema`, `migrate status` compares the database with the
+constraints and indexes `schema.cyphra` implies instead (what `cyphra push` creates), for projects
+that use `push` rather than migrations.
+
+Ignored on both sides: the `LOOKUP` token indexes Neo4j creates by default, indexes that back a
+constraint (the constraint is compared instead), and Cyphra's own `cyphra_migration_name_unique`
+constraint on `__CyphraMigration`. Neo4j settings Cyphra does not set (HNSW parameters, index
+providers, quantization when the migration leaves it to Neo4j's default) are not compared.
+
+Limits of the replay: a migration that computes DDL from data it reads (rows from `db.execute`) gets
+no rows during the replay, and DDL that is not a Neo4j 5 `CREATE` / `DROP` statement Cyphra
+recognizes is listed as a warning and left out. A migration that was edited after it was applied is
+replayed from its current file, with a warning.
+
+`cyphra migrate dev` runs the same check before it generates a migration, and warns when the
+database has drifted: the new migration only covers schema changes, so in development run
+`cyphra migrate reset` to rebuild the database from the migrations.
+
+### Exit codes and JSON
+
+| Exit code | Meaning                                                                                       |
+| --------- | --------------------------------------------------------------------------------------------- |
+| `0`       | In sync: every migration applied, nothing uncaptured, no drift                                |
+| `1`       | Something needs attention: drift, pending / modified / missing migrations, uncaptured changes |
+| `2`       | The check could not run (no connection, invalid `cyphra.json`, unreadable migration)          |
+
+`--json` prints one JSON document on stdout (warnings still go to stderr), with the same exit code:
+
+```json
+{
+  "inSync": false,
+  "migrations": [{ "name": "20261121194402_init", "state": "applied" }],
+  "uncapturedChanges": 0,
+  "drift": {
+    "expected": "migrations",
+    "extra": [
+      {
+        "name": "manual_idx",
+        "kind": "index",
+        "type": "RANGE",
+        "entityType": "NODE",
+        "labelsOrTypes": ["User"],
+        "properties": ["name"],
+        "options": {}
+      }
+    ],
+    "missing": [],
+    "changed": []
+  },
+  "warnings": []
+}
+```
+
+`state` is `applied`, `pending`, `modified` or `missing`. Each `changed` entry has `expected`,
+`actual` and `differences` (for example `"dimensions: 3 → 4"`, expected → actual).
+
+### In CI
+
+Run it after `migrate deploy`, so pending migrations are applied first and any remaining difference
+is drift:
+
+```yaml
+# .github/workflows/deploy.yml
+- name: Apply migrations
+  run: npx cyphra migrate deploy
+  env:
+    NEO4J_URI: ${{ secrets.NEO4J_URI }}
+    NEO4J_USERNAME: ${{ secrets.NEO4J_USERNAME }}
+    NEO4J_PASSWORD: ${{ secrets.NEO4J_PASSWORD }}
+
+- name: Check for schema drift
+  run: npx cyphra migrate status
+  env:
+    NEO4J_URI: ${{ secrets.NEO4J_URI }}
+    NEO4J_USERNAME: ${{ secrets.NEO4J_USERNAME }}
+    NEO4J_PASSWORD: ${{ secrets.NEO4J_PASSWORD }}
+```
+
+The step fails on drift (exit 1) and on a connection error (exit 2). To report without failing the
+job, use `npx cyphra migrate status --json > drift.json || true` and upload `drift.json` as an
+artifact.
 
 ## Existing databases
 

@@ -8,7 +8,7 @@ import { runImportGraphql } from "./commands/importGraphql.js";
 import { runInit } from "./commands/init.js";
 import { runMigrate } from "./commands/migrate.js";
 import { createMigrationFromSchema, runMigrateDiff } from "./commands/migrateDev.js";
-import { runMigrateStatus } from "./commands/migrateStatus.js";
+import { runMigrateStatus, warnOnDrift } from "./commands/migrateStatus.js";
 import { runMigrateReset } from "./commands/migrateReset.js";
 import { runMigrationCreate } from "./commands/migrationCreate.js";
 import { runPull } from "./commands/pull.js";
@@ -84,6 +84,7 @@ migrate
   .action(async (opts: { name?: string; createOnly?: boolean }) => {
     const cwd = process.cwd();
     const config = await loadConfig(cwd);
+    await warnOnDrift(cwd, config);
     await createMigrationFromSchema(cwd, config, opts.name);
     if (!opts.createOnly) await runMigrate(cwd, true);
   });
@@ -117,11 +118,21 @@ migrate
 
 migrate
   .command("status")
-  .description("Show applied / pending / modified migrations and uncaptured schema changes")
-  .action(async () => {
+  .description(
+    "Show applied / pending / modified migrations, uncaptured schema changes and drift between the database's constraints and indexes and the applied migrations (exit 0 in sync, 1 otherwise, 2 on error)",
+  )
+  .option("--json", "print the report as JSON")
+  .option("--schema", "compare the database with schema.cyphra instead of the applied migrations")
+  .action(async (opts: { json?: boolean; schema?: boolean }) => {
     const cwd = process.cwd();
-    const ok = await runMigrateStatus(cwd, await loadConfig(cwd));
-    if (!ok) process.exitCode = 1;
+    try {
+      const ok = await runMigrateStatus(cwd, await loadConfig(cwd), opts);
+      process.exitCode = ok ? 0 : 1;
+    } catch (err) {
+      // 2, like `git diff --exit-code`: CI can tell "out of sync" (1) from "could not check".
+      console.error(err instanceof Error ? err.message : err);
+      process.exitCode = 2;
+    }
   });
 
 program

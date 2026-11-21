@@ -147,7 +147,7 @@ jobs:
           NEO4J_TEST_PASSWORD: cyphra_ci_test
         run: |
           pnpm --filter @cyphra/runtime --fail-if-no-match exec vitest run src/client.integration.test.ts src/orm/orm.integration.test.ts src/orm/onDelete.integration.test.ts src/orm/rules.integration.test.ts src/driver-compat.integration.test.ts
-          pnpm --filter @cyphra/migrator --fail-if-no-match exec vitest run src/push.integration.test.ts src/migrate.integration.test.ts
+          pnpm --filter @cyphra/migrator --fail-if-no-match exec vitest run src/push.integration.test.ts src/migrate.integration.test.ts src/drift.integration.test.ts
           # Better Auth conformance suites + adapter, typed-client and migration tests.
           pnpm --filter @cyphra/better-auth --fail-if-no-match exec vitest run test/
           # @cyphra/graphql mutations (counters, nested writes, rollback, concurrent connect),
@@ -156,6 +156,8 @@ jobs:
           pnpm --filter @cyphra/graphql --fail-if-no-match exec vitest run test/mutations.integration.test.ts test/auth.integration.test.ts test/cypher.integration.test.ts
           # `cyphra migrate reset` empties the whole database, so it runs on its own (opt-in flag).
           CYPHRA_TEST_RESET_DB=1 pnpm --filter @cyphra/cli --fail-if-no-match exec vitest run src/commands/migrateReset.integration.test.ts
+          # `cyphra migrate status` compares the whole database with the migrations: same opt-in flag.
+          CYPHRA_TEST_RESET_DB=1 pnpm --filter @cyphra/cli --fail-if-no-match exec vitest run src/commands/migrateStatus.integration.test.ts
 
       # The same ORM suite over the HTTP transport (Neo4j Query API, what edge runtimes use), plus
       # the transport's own tests (typed values through the server, explicit transactions, error
