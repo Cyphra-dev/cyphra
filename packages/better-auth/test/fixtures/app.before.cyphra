@@ -1,0 +1,13 @@
+// The app's schema before `npx @better-auth/cli generate`: a User with business relations.
+node User {
+  id       String    @id @default(cuid())
+  email    String    @unique
+  projects Project[] @relationship(type: "OWNS", direction: OUT)
+}
+
+node Project {
+  id        String   @id @default(uuid())
+  title     String
+  createdAt DateTime @default(now())
+  owner     User     @relationship(type: "OWNS", direction: IN)
+}

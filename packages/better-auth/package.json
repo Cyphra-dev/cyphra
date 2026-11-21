@@ -1,0 +1,68 @@
+{
+  "name": "@cyphra/better-auth",
+  "version": "0.3.0",
+  "description": "Better Auth database adapter for Neo4j, built on the Cyphra ORM: auth and business data in one typed graph",
+  "type": "module",
+  "sideEffects": false,
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@cyphra/runtime": "workspace:*",
+    "@cyphra/schema": "workspace:*"
+  },
+  "peerDependencies": {
+    "better-auth": "^1.7.27"
+  },
+  "devDependencies": {
+    "@better-auth/core": "1.7.27",
+    "@better-auth/test-utils": "1.7.27",
+    "@cyphra/migrator": "workspace:*",
+    "@neo4j/cypher-builder": "^3.3.0",
+    "@types/node": "^22.20.5",
+    "better-auth": "1.7.27",
+    "neo4j-better-auth": "0.2.1",
+    "neo4j-driver": "^5.28.3",
+    "tsup": "^8.5.1",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.12"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Cyphra-dev/cyphra.git",
+    "directory": "packages/better-auth"
+  },
+  "homepage": "https://www.cyphra.dev/better-auth",
+  "bugs": {
+    "url": "https://github.com/Cyphra-dev/cyphra/issues"
+  },
+  "keywords": [
+    "better-auth",
+    "neo4j",
+    "auth",
+    "authentication",
+    "adapter",
+    "orm",
+    "typescript",
+    "cyphra",
+    "graph-database"
+  ]
+}

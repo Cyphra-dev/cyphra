@@ -9,6 +9,7 @@ export default defineConfig({
       "packages/migrator",
       "packages/cli",
       "packages/cyphra",
+      "packages/better-auth",
     ],
   },
 });

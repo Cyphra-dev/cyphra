@@ -221,6 +221,30 @@ describe.skipIf(!hasNeo)("ORM client (Neo4j)", () => {
     expect(await db.user.count()).toBe(1);
   });
 
+  it('filters strings case-insensitively with mode: "insensitive"', async () => {
+    await db.user.createMany({
+      data: [{ email: "Alice@Example.com", name: "Alice" }, { email: "bob@example.com" }],
+    });
+    const emails = async (where: Parameters<typeof db.user.findMany>[0]) =>
+      (await db.user.findMany({ ...where, orderBy: { email: "asc" } })).map((u) => u.email);
+    expect(await emails({ where: { email: "alice@example.com" } })).toEqual([]);
+    expect(
+      await emails({ where: { email: { equals: "alice@EXAMPLE.com", mode: "insensitive" } } }),
+    ).toEqual(["Alice@Example.com"]);
+    expect(
+      await emails({ where: { email: { in: ["ALICE@example.com"], mode: "insensitive" } } }),
+    ).toEqual(["Alice@Example.com"]);
+    expect(
+      await emails({ where: { email: { endsWith: "@EXAMPLE.COM", mode: "insensitive" } } }),
+    ).toEqual(["Alice@Example.com", "bob@example.com"]);
+    expect(
+      await emails({ where: { email: { not: "alice@example.com", mode: "insensitive" } } }),
+    ).toEqual(["bob@example.com"]);
+    expect(await emails({ where: { name: { contains: "LIC", mode: "insensitive" } } })).toEqual([
+      "Alice@Example.com",
+    ]);
+  });
+
   it("rolls back nested writes and $transaction on failure", async () => {
     await expect(
       db.user.create({

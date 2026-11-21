@@ -47,6 +47,8 @@ const meta: MetaRecord = {
   client: "Typed client",
   migrations: "Migrations",
   cli: "CLI",
+  "--integrations": { type: "separator", title: "Integrations" },
+  "better-auth": "Better Auth",
   "--lower": { type: "separator", title: "Lower-level APIs" },
   queries: "Query builder",
   runtime: "Runtime",

@@ -19,6 +19,7 @@ import type {
 import neo4j from "neo4j-driver";
 import { CyphraValidationError } from "./errors.js";
 import { decodeScalar, encodeFilterValue } from "./values.js";
+import type { QueryMode } from "./types.js";
 
 /** Quote an identifier for Cypher (labels, property keys, relationship types). */
 export function q(id: string): string {
@@ -110,6 +111,7 @@ const SCALAR_OPS = new Set([
   "contains",
   "startsWith",
   "endsWith",
+  "mode",
 ]);
 const LIST_OPS = new Set(["has", "hasEvery", "hasSome", "isEmpty", "equals"]);
 
@@ -149,12 +151,15 @@ function compileListFilter(
   return and(parts);
 }
 
+type StringFilterMode = QueryMode;
+
 function compileScalarFilter(
   ctx: QueryContext,
   model: ResolvedNodeModel,
   field: ResolvedScalarField,
   ref: string,
   filter: unknown,
+  inheritedMode: StringFilterMode = "default",
 ): string | null {
   if (filter === undefined) return null;
   if (field.list) return compileListFilter(ctx, model, field, ref, filter);
@@ -162,28 +167,45 @@ function compileScalarFilter(
   if (filter === null) return `${ref} IS NULL`;
   if (!isPlainObject(filter)) return `${ref} = ${ctx.param(enc(filter))}`;
 
+  const mode = filter.mode ?? inheritedMode;
+  if (mode !== "default" && mode !== "insensitive") {
+    throw new CyphraValidationError(
+      `${model.name}.${field.name}: mode must be "default" or "insensitive".`,
+    );
+  }
+  if (mode === "insensitive" && field.type !== "String") {
+    throw new CyphraValidationError(
+      `${model.name}.${field.name}: mode "insensitive" is only valid on String fields.`,
+    );
+  }
+  // Case-insensitive matching compares lower-cased values on both sides.
+  const insensitive = mode === "insensitive";
+  const lhs = insensitive ? `toLower(${ref})` : ref;
+  const fold = (v: unknown) => (insensitive && typeof v === "string" ? v.toLowerCase() : v);
+  const encFold = (v: unknown) => fold(enc(v));
+
   const parts: string[] = [];
   for (const [op, v] of Object.entries(filter)) {
-    if (v === undefined) continue;
+    if (v === undefined || op === "mode") continue;
     if (!SCALAR_OPS.has(op)) {
       throw new CyphraValidationError(`Unknown filter "${op}" on ${model.name}.${field.name}.`);
     }
     switch (op) {
       case "equals":
-        parts.push(v === null ? `${ref} IS NULL` : `${ref} = ${ctx.param(enc(v))}`);
+        parts.push(v === null ? `${ref} IS NULL` : `${lhs} = ${ctx.param(encFold(v))}`);
         break;
       case "not":
         if (v === null) parts.push(`${ref} IS NOT NULL`);
         else if (isPlainObject(v)) {
-          const inner = compileScalarFilter(ctx, model, field, ref, v);
+          const inner = compileScalarFilter(ctx, model, field, ref, v, mode);
           if (inner) parts.push(`NOT (${inner})`);
-        } else parts.push(`${ref} <> ${ctx.param(enc(v))}`);
+        } else parts.push(`${lhs} <> ${ctx.param(encFold(v))}`);
         break;
       case "in":
       case "notIn": {
         if (!Array.isArray(v)) throw new CyphraValidationError(`${op} expects an array.`);
-        const p = ctx.param(v.map(enc));
-        parts.push(op === "in" ? `${ref} IN ${p}` : `NOT ${ref} IN ${p}`);
+        const p = ctx.param(v.map(encFold));
+        parts.push(op === "in" ? `${lhs} IN ${p}` : `NOT ${lhs} IN ${p}`);
         break;
       }
       case "lt":
@@ -201,7 +223,7 @@ function compileScalarFilter(
           throw new CyphraValidationError(`${op} is only valid on String fields.`);
         }
         const kw = { contains: "CONTAINS", startsWith: "STARTS WITH", endsWith: "ENDS WITH" }[op];
-        parts.push(`${ref} ${kw} ${ctx.param(v)}`);
+        parts.push(`${lhs} ${kw} ${ctx.param(fold(v))}`);
         break;
       }
     }

@@ -1,5 +1,10 @@
 import type { Decorator, ScalarTypeName, SchemaDocument } from "./ast.js";
-import { resolveSchema, type ResolvedScalarField, type SchemaModel } from "./model.js";
+import {
+  resolveSchema,
+  type ResolvedRelationField,
+  type ResolvedScalarField,
+  type SchemaModel,
+} from "./model.js";
 
 /** Options for {@link renderCyphraGenSource}. */
 export type RenderCyphraGenOptions = {
@@ -66,14 +71,19 @@ export function renderClientSection(model: SchemaModel): string[] {
     lines.push(`    scalars: ${n.name};`);
     lines.push(`    createRequired: ${union(required)};`);
     lines.push(`    unique: ${union(n.uniqueFields)};`);
-    lines.push("    relations: {");
-    for (const f of n.fields) {
-      if (f.kind !== "relation") continue;
-      lines.push(
-        `      ${f.name}: { target: ${JSON.stringify(f.target)}; many: ${f.many}; optional: ${f.optional}; edge: ${f.edge ?? "null"} };`,
-      );
+    const relations = n.fields.filter((f): f is ResolvedRelationField => f.kind === "relation");
+    if (relations.length === 0) {
+      // Not `{}`: an empty object type trips @typescript-eslint/no-empty-object-type.
+      lines.push("    relations: Record<never, never>;");
+    } else {
+      lines.push("    relations: {");
+      for (const f of relations) {
+        lines.push(
+          `      ${f.name}: { target: ${JSON.stringify(f.target)}; many: ${f.many}; optional: ${f.optional}; edge: ${f.edge ?? "null"} };`,
+        );
+      }
+      lines.push("    };");
     }
-    lines.push("    };");
     lines.push("  };");
   }
   lines.push("};", "");

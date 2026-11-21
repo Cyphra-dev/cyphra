@@ -1,0 +1,319 @@
+---
+title: "Better Auth with Neo4j: the Cyphra adapter"
+sidebarTitle: Better Auth
+description: "Store Better Auth users, sessions and accounts in Neo4j with @cyphra/better-auth: one typed graph, one schema and one migration system for auth and app data."
+---
+
+import { Callout, Steps } from "nextra/components";
+
+# Better Auth
+
+**`@cyphra/better-auth`** is a [Better Auth](https://www.better-auth.com) database adapter built on the
+Cyphra ORM. Users, sessions, accounts, verifications and plugin models are nodes in the same graph as
+your own models. They are described in the same `schema.cyphra`, migrated by `cyphra migrate`, and
+queried through the same typed client.
+
+## Install
+
+```bash
+npm i @cyphra/better-auth better-auth cyphra
+npm i -D @cyphra/cli
+```
+
+The adapter needs Neo4j 5.6+ and `better-auth` 1.7.27 or later. If the project has no Cyphra setup
+yet, run `npx cyphra init` first (it creates `cyphra.json`, `schema.cyphra` and `migrations/`).
+
+## Configure Better Auth
+
+Pass your generated Cyphra client as `db`. The adapter reuses its connection (`db.$client`), so auth
+and app queries share one driver.
+
+```ts filename="db.ts"
+import { createClient } from "./cyphra.gen";
+
+export const db = createClient({
+  uri: process.env.NEO4J_URI!,
+  user: process.env.NEO4J_USERNAME!,
+  password: process.env.NEO4J_PASSWORD!,
+});
+```
+
+```ts filename="auth.ts"
+import { betterAuth } from "better-auth";
+import { cyphraAdapter } from "@cyphra/better-auth";
+import { db } from "./db";
+
+export const auth = betterAuth({
+  database: cyphraAdapter({ db }),
+  emailAndPassword: { enabled: true },
+});
+```
+
+Before the first `cyphra generate` there is no `cyphra.gen.ts`. Pass a `CyphraClient` instead:
+
+```ts filename="auth.ts"
+import { CyphraClient } from "cyphra";
+
+const client = new CyphraClient({
+  uri: process.env.NEO4J_URI!,
+  user: process.env.NEO4J_USERNAME!,
+  password: process.env.NEO4J_PASSWORD!,
+});
+
+export const auth = betterAuth({ database: cyphraAdapter({ client }) });
+```
+
+| Option      | Description                                                                                  |
+| ----------- | -------------------------------------------------------------------------------------------- |
+| `db`        | Your generated client. Its connection is reused.                                             |
+| `client`    | A `CyphraClient`, if you do not pass `db`.                                                   |
+| `usePlural` | Plural model names (`users`, `sessions`, …), so labels `Users`, `Sessions`. Default `false`. |
+| `debugLogs` | Better Auth's adapter debug logs. Logs can contain tokens: keep them off in production.      |
+
+The adapter builds its Cyphra schema from your Better Auth configuration when Better Auth starts, so
+it always matches the plugins you enable. It does not read `schema.cyphra` at runtime.
+
+## Generate the schema
+
+<Steps>
+
+### Write the Better Auth models into `schema.cyphra`
+
+```bash
+npx @better-auth/cli generate
+```
+
+The adapter adds the Better Auth nodes to `schema.cyphra` (or to the `schema` path in `cyphra.json`, or
+to `--output`). If the file exists, it is updated in place: Better Auth fields are added or
+rewritten, and everything else is kept as you wrote it, comments included. That covers your own
+models and relationships, and fields you added to auth nodes. Run the command again after adding a
+plugin.
+
+### Create and apply a migration
+
+```bash
+npx cyphra migrate dev --name better-auth
+```
+
+This creates the constraints and indexes for the auth nodes (`User.id`, `User.email`,
+`Session.token`, …) together with those of your own models.
+
+### Regenerate the typed client
+
+```bash
+npx cyphra generate
+```
+
+</Steps>
+
+For the default configuration, the generated nodes look like this (excerpt):
+
+```cyphra filename="schema.cyphra"
+node User {
+  id String @id @default(cuid())
+  name String
+  email String @unique
+  emailVerified Boolean
+  image String?
+  createdAt DateTime
+  updatedAt DateTime
+  sessions Session[] @relationship(type: "HAS_SESSION", direction: OUT)
+  accounts Account[] @relationship(type: "HAS_ACCOUNT", direction: OUT)
+}
+
+node Session {
+  id String @id @default(cuid())
+  expiresAt DateTime
+  token String @unique
+  createdAt DateTime
+  updatedAt DateTime
+  ipAddress String?
+  userAgent String?
+  user User @relationship(type: "HAS_SESSION", direction: IN)
+}
+```
+
+## How auth data is stored
+
+- **Labels** are the database model names in PascalCase: `user` → `User`, `twoFactor` → `TwoFactor`,
+  a custom `modelName: "app_user"` → `AppUser`.
+- **Foreign keys are edges.** A Better Auth field with `references`, such as `Session.userId`, is not
+  stored as a property. It is the edge `(User)-[:HAS_SESSION]->(Session)`, with a to-one field on the
+  child (`user`, from `userId` without the `Id` suffix) and a list field on the parent (`sessions`).
+  Better Auth still reads and writes `userId`; the adapter translates it to the edge. A model with
+  two foreign keys to the same parent gets one edge type per key (`HAS_INVITATION_INVITER`).
+- **Types:** `string` → `String`, `number` → `Int`, `boolean` → `Boolean`, `date` → `DateTime`,
+  `string[]` / `number[]` → lists, `json` → `String` (JSON text). `required: false` makes the
+  field optional; `unique` → `@unique`; `index` → `@index`.
+- **Deletes** follow `references.onDelete` in the same transaction: `cascade` (Better Auth's default)
+  deletes the children, `restrict` and `no action` refuse the delete while children exist, and
+  `set null` removes the edge. Deleting a user never deletes your own nodes; they lose their edge to it.
+- **Single-use tokens:** `consumeOne` locks the node before deleting it, so of several concurrent
+  requests for the same verification token exactly one gets it. `incrementOne` is race-safe the same
+  way.
+- **Joins:** with Better Auth's `advanced.database.joins`, joined models are loaded through the edges
+  in the same query.
+
+## Relate your models to users
+
+Add relations on `User` and on your models in `schema.cyphra`. `npx @better-auth/cli generate` keeps
+them.
+
+```cyphra filename="schema.cyphra"
+node User {
+  id String @id @default(cuid())
+  email String @unique
+  // … the other Better Auth fields
+  projects Project[] @relationship(type: "OWNS", direction: OUT)
+}
+
+node Project {
+  id String @id @default(uuid())
+  title String
+  owner User @relationship(type: "OWNS", direction: IN)
+}
+```
+
+After `cyphra migrate dev` and `cyphra generate`, auth nodes and your nodes are one typed graph:
+
+```ts
+const session = await auth.api.getSession({ headers });
+if (!session) throw new Error("Unauthorized");
+
+await db.project.create({
+  data: { title: "Analytical Engine", owner: { connect: { id: session.user.id } } },
+});
+
+const me = await db.user.findUniqueOrThrow({
+  where: { id: session.user.id },
+  include: { projects: true, sessions: { select: { expiresAt: true } } },
+});
+// me.projects: { id: string; title: string }[]
+// me.sessions: { expiresAt: Date }[]
+
+// The projects of whoever holds this session token, in one query:
+const projects = await db.project.findMany({
+  where: { owner: { is: { sessions: { some: { token } } } } },
+});
+```
+
+## Migrating from neo4j-better-auth
+
+`@cyphra/better-auth` replaces the community adapter
+[`neo4j-better-auth`](https://www.npmjs.com/package/neo4j-better-auth). The storage layout changes, so
+existing data has to be converted once:
+
+| neo4j-better-auth                                  | @cyphra/better-auth           |
+| -------------------------------------------------- | ----------------------------- |
+| Labels are model names: `user`, `session`          | PascalCase: `User`, `Session` |
+| Foreign keys are a property **and** a `HAS_*` edge | The `HAS_*` edge only         |
+| Dates are ISO 8601 strings                         | `DateTime` values             |
+| Numbers are floats                                 | Integers                      |
+
+Edge types and directions stay the same for single-word model names (`HAS_SESSION`,
+`HAS_ACCOUNT`). Model names with several words now get underscores (`twoFactor`:
+`HAS_TWOFACTOR` → `HAS_TWO_FACTOR`); the script below renames those edges.
+
+<Steps>
+
+### Back up the database and stop the app
+
+The script rewrites every auth node.
+
+### Run the migration Cypher
+
+For the default Better Auth configuration (no plugins), the script is:
+
+```cypher filename="migrate-better-auth.cypher"
+// 1. Drop the constraints and indexes neo4j-better-auth created on the old labels.
+DROP CONSTRAINT `user_id_unique` IF EXISTS;
+DROP CONSTRAINT `user_email_unique` IF EXISTS;
+DROP CONSTRAINT `session_id_unique` IF EXISTS;
+DROP CONSTRAINT `session_token_unique` IF EXISTS;
+DROP INDEX `session_userId_idx` IF EXISTS;
+DROP CONSTRAINT `account_id_unique` IF EXISTS;
+DROP INDEX `account_userId_idx` IF EXISTS;
+DROP CONSTRAINT `verification_id_unique` IF EXISTS;
+DROP INDEX `verification_identifier_idx` IF EXISTS;
+
+// 2. Lowercase labels → PascalCase.
+MATCH (n:`user`) SET n:`User` REMOVE n:`user`;
+MATCH (n:`session`) SET n:`Session` REMOVE n:`session`;
+MATCH (n:`account`) SET n:`Account` REMOVE n:`account`;
+MATCH (n:`verification`) SET n:`Verification` REMOVE n:`verification`;
+
+// 3. Foreign-key properties → HAS_* edges, then drop the properties.
+MATCH (c:`Session`) WHERE c.`userId` IS NOT NULL MATCH (p:`User`) WHERE p.`id` = c.`userId` MERGE (p)-[:`HAS_SESSION`]->(c);
+MATCH (c:`Account`) WHERE c.`userId` IS NOT NULL MATCH (p:`User`) WHERE p.`id` = c.`userId` MERGE (p)-[:`HAS_ACCOUNT`]->(c);
+MATCH (c:`Session`) WHERE c.`userId` IS NOT NULL REMOVE c.`userId`;
+MATCH (c:`Account`) WHERE c.`userId` IS NOT NULL REMOVE c.`userId`;
+
+// 4. ISO date strings → datetime() (toString(x) = x only holds for strings).
+MATCH (n:`User`) WHERE toString(n.`createdAt`) = n.`createdAt` SET n.`createdAt` = datetime(n.`createdAt`);
+MATCH (n:`User`) WHERE toString(n.`updatedAt`) = n.`updatedAt` SET n.`updatedAt` = datetime(n.`updatedAt`);
+MATCH (n:`Session`) WHERE toString(n.`expiresAt`) = n.`expiresAt` SET n.`expiresAt` = datetime(n.`expiresAt`);
+MATCH (n:`Session`) WHERE toString(n.`createdAt`) = n.`createdAt` SET n.`createdAt` = datetime(n.`createdAt`);
+MATCH (n:`Session`) WHERE toString(n.`updatedAt`) = n.`updatedAt` SET n.`updatedAt` = datetime(n.`updatedAt`);
+MATCH (n:`Account`) WHERE toString(n.`accessTokenExpiresAt`) = n.`accessTokenExpiresAt` SET n.`accessTokenExpiresAt` = datetime(n.`accessTokenExpiresAt`);
+MATCH (n:`Account`) WHERE toString(n.`refreshTokenExpiresAt`) = n.`refreshTokenExpiresAt` SET n.`refreshTokenExpiresAt` = datetime(n.`refreshTokenExpiresAt`);
+MATCH (n:`Account`) WHERE toString(n.`createdAt`) = n.`createdAt` SET n.`createdAt` = datetime(n.`createdAt`);
+MATCH (n:`Account`) WHERE toString(n.`updatedAt`) = n.`updatedAt` SET n.`updatedAt` = datetime(n.`updatedAt`);
+MATCH (n:`Verification`) WHERE toString(n.`expiresAt`) = n.`expiresAt` SET n.`expiresAt` = datetime(n.`expiresAt`);
+MATCH (n:`Verification`) WHERE toString(n.`createdAt`) = n.`createdAt` SET n.`createdAt` = datetime(n.`createdAt`);
+MATCH (n:`Verification`) WHERE toString(n.`updatedAt`) = n.`updatedAt` SET n.`updatedAt` = datetime(n.`updatedAt`);
+```
+
+```bash
+cypher-shell -a "$NEO4J_URI" -u "$NEO4J_USERNAME" -p "$NEO4J_PASSWORD" -f migrate-better-auth.cypher
+```
+
+Every statement can be run again safely. With plugins, custom model or field names, or `usePlural`,
+print the script for your own configuration instead. It also covers plugin models, renamed edge
+types and `number` fields (floats → `toInteger()`):
+
+```ts filename="print-migration.ts"
+import { neo4jBetterAuthMigration } from "@cyphra/better-auth";
+import { auth } from "./auth";
+
+console.log(
+  neo4jBetterAuthMigration(auth.options)
+    .map((s) => `${s};`)
+    .join("\n"),
+);
+```
+
+### Create the new constraints
+
+Generate the schema and migrate as in [Generate the schema](#generate-the-schema), or on a
+production database apply the committed migrations:
+
+```bash
+npx cyphra migrate deploy
+```
+
+### Switch the adapter
+
+Replace `neo4jAdapter({ driver })` with `cyphraAdapter({ db })` (or `{ client }`) in `auth.ts`.
+
+</Steps>
+
+<Callout type="info">
+  On a large graph, run each statement in batches, in an auto-commit transaction (`:auto` in Neo4j
+  Browser), for example
+  `MATCH (n:session) CALL { WITH n SET n:Session REMOVE n:session } IN TRANSACTIONS OF 10000 ROWS`.
+</Callout>
+
+## Limitations
+
+- Better Auth's compound indexes (the table-level `indexes` option) are not created; field-level
+  `unique` and `index` are.
+- `number` fields are integers. A plugin that stores fractional numbers is rejected with a
+  validation error.
+- `mode: "insensitive"` filters (used for emails) compare with `toLower()` and do not use the
+  property index.
+
+## See also
+
+- [Schema](/schema): the `.cyphra` language and relations.
+- [Typed client](/client): queries, `include` and nested writes on auth nodes and your own.
+- [Migrations](/migrations): `cyphra migrate dev` and `deploy`.
