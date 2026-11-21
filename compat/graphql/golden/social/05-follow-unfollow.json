@@ -1,0 +1,64 @@
+{
+  "data": {
+    "updateAccounts": {
+      "info": {
+        "relationshipsCreated": 2,
+        "relationshipsDeleted": 0
+      },
+      "accounts": [
+        {
+          "displayName": "Eli M.",
+          "followerCount": 0,
+          "followsConnection": {
+            "edges": [
+              {
+                "properties": {
+                  "since": "2024-03-01T00:00:00.000Z",
+                  "muted": false
+                },
+                "node": {
+                  "handle": "dev",
+                  "followerCount": 1
+                }
+              },
+              {
+                "properties": {
+                  "since": "2024-04-01T00:00:00.000Z",
+                  "muted": false
+                },
+                "node": {
+                  "handle": "ana",
+                  "followerCount": 4
+                }
+              },
+              {
+                "properties": {
+                  "since": "2024-04-01T00:00:00.000Z",
+                  "muted": false
+                },
+                "node": {
+                  "handle": "bo",
+                  "followerCount": 3
+                }
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "unfollow": {
+      "info": {
+        "relationshipsDeleted": 1
+      },
+      "accounts": [
+        {
+          "follows": [
+            {
+              "handle": "bo"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

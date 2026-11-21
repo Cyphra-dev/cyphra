@@ -1,0 +1,16 @@
+# features: cypher, sort, filter.cypher, pagination.offset
+# ordered
+query {
+  popular: accounts(sort: [{ followerCount: DESC }, { handle: ASC }]) {
+    handle
+    followerCount
+  }
+  withFollowers: accounts(
+    where: { followerCount: { gt: 0 } }
+    sort: [{ handle: DESC }]
+    limit: 2
+    offset: 1
+  ) {
+    handle
+  }
+}

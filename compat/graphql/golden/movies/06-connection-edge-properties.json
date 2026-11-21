@@ -1,0 +1,131 @@
+{
+  "data": {
+    "movies": [
+      {
+        "title": "The Matrix",
+        "actorsConnection": {
+          "totalCount": 3,
+          "edges": [
+            {
+              "cursor": "YXJyYXljb25uZWN0aW9uOjA=",
+              "properties": {
+                "roles": [
+                  "Neo"
+                ],
+                "screenTime": 120
+              },
+              "node": {
+                "name": "Keanu Reeves"
+              }
+            },
+            {
+              "cursor": "YXJyYXljb25uZWN0aW9uOjE=",
+              "properties": {
+                "roles": [
+                  "Trinity"
+                ],
+                "screenTime": 80
+              },
+              "node": {
+                "name": "Carrie-Anne Moss"
+              }
+            },
+            {
+              "cursor": "YXJyYXljb25uZWN0aW9uOjI=",
+              "properties": {
+                "roles": [
+                  "Morpheus"
+                ],
+                "screenTime": 70
+              },
+              "node": {
+                "name": "Laurence Fishburne"
+              }
+            }
+          ]
+        },
+        "paged": {
+          "edges": [
+            {
+              "node": {
+                "name": "Carrie-Anne Moss"
+              }
+            }
+          ],
+          "pageInfo": {
+            "hasNextPage": true,
+            "endCursor": "YXJyYXljb25uZWN0aW9uOjA="
+          }
+        },
+        "filtered": {
+          "edges": [
+            {
+              "properties": {
+                "screenTime": 80
+              },
+              "node": {
+                "name": "Carrie-Anne Moss"
+              }
+            },
+            {
+              "properties": {
+                "screenTime": 70
+              },
+              "node": {
+                "name": "Laurence Fishburne"
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "people": [
+      {
+        "actedInConnection": {
+          "edges": [
+            {
+              "properties": {
+                "roles": [
+                  "Johnny"
+                ]
+              },
+              "node": {
+                "title": "Johnny Mnemonic"
+              }
+            },
+            {
+              "properties": {
+                "roles": [
+                  "Kevin Lomax"
+                ]
+              },
+              "node": {
+                "title": "The Devil's Advocate"
+              }
+            },
+            {
+              "properties": {
+                "roles": [
+                  "Neo"
+                ]
+              },
+              "node": {
+                "title": "The Matrix"
+              }
+            },
+            {
+              "properties": {
+                "roles": [
+                  "Neo"
+                ]
+              },
+              "node": {
+                "title": "The Matrix Reloaded"
+              }
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

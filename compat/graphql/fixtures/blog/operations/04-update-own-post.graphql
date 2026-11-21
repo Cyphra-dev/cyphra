@@ -1,0 +1,15 @@
+# features: auth.validate, auth.jwt, mutation.update, timestamp
+mutation {
+  updatePosts(
+    where: { id: { eq: "post-2" } }
+    update: { published: { set: true }, title: { set: "Alice's first draft" } }
+  ) {
+    posts {
+      id
+      title
+      published
+      createdAt
+      updatedAt
+    }
+  }
+}

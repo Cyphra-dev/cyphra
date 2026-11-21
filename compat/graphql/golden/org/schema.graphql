@@ -1,0 +1,2214 @@
+"""
+A BigInt value up to 64 bits in size, which can be a number or a string if used inline, or a string only if used as a variable. Always returned as a string.
+"""
+scalar BigInt
+
+type BigIntAggregateSelection {
+  average: BigInt
+  max: BigInt
+  min: BigInt
+  sum: BigInt
+}
+
+"""Filters for an aggregation of an BigInt field"""
+input BigIntScalarAggregationFilters {
+  average: BigIntScalarFilters
+  max: BigIntScalarFilters
+  min: BigIntScalarFilters
+  sum: BigIntScalarFilters
+}
+
+"""BigInt filters"""
+input BigIntScalarFilters {
+  eq: BigInt
+  gt: BigInt
+  gte: BigInt
+  in: [BigInt!]
+  lt: BigInt
+  lte: BigInt
+}
+
+"""BigInt mutations"""
+input BigIntScalarMutations {
+  add: BigInt
+  set: BigInt
+  subtract: BigInt
+}
+
+"""Boolean filters"""
+input BooleanScalarFilters {
+  eq: Boolean
+}
+
+"""Boolean mutations"""
+input BooleanScalarMutations {
+  set: Boolean
+}
+
+type CompaniesConnection {
+  aggregate: CompanyAggregate!
+  edges: [CompanyEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+type Company {
+  departments(limit: Int, offset: Int, sort: [DepartmentSort!], where: DepartmentWhere): [Department!]!
+  departmentsConnection(after: String, first: Int, sort: [CompanyDepartmentsConnectionSort!], where: CompanyDepartmentsConnectionWhere): CompanyDepartmentsConnection!
+  employees(limit: Int, offset: Int, sort: [EmployeeSort!], where: EmployeeWhere): [Employee!]!
+  employeesConnection(after: String, first: Int, sort: [CompanyEmployeesConnectionSort!], where: CompanyEmployeesConnectionWhere): CompanyEmployeesConnection!
+  founded: Date
+  name: String!
+}
+
+type CompanyAggregate {
+  count: Count!
+  node: CompanyAggregateNode!
+}
+
+type CompanyAggregateNode {
+  name: StringAggregateSelection!
+}
+
+input CompanyConnectInput {
+  departments: [CompanyDepartmentsConnectFieldInput!]
+  employees: [CompanyEmployeesConnectFieldInput!]
+}
+
+input CompanyConnectWhere {
+  node: CompanyWhere!
+}
+
+input CompanyCreateInput {
+  departments: CompanyDepartmentsFieldInput
+  employees: CompanyEmployeesFieldInput
+  founded: Date
+  name: String!
+}
+
+input CompanyDeleteInput {
+  departments: [CompanyDepartmentsDeleteFieldInput!]
+  employees: [CompanyEmployeesDeleteFieldInput!]
+}
+
+type CompanyDepartmentDepartmentsAggregateSelection {
+  count: CountConnection!
+  node: CompanyDepartmentDepartmentsNodeAggregateSelection
+}
+
+type CompanyDepartmentDepartmentsNodeAggregateSelection {
+  budget: BigIntAggregateSelection!
+  name: StringAggregateSelection!
+}
+
+input CompanyDepartmentsAggregateInput {
+  AND: [CompanyDepartmentsAggregateInput!]
+  NOT: CompanyDepartmentsAggregateInput
+  OR: [CompanyDepartmentsAggregateInput!]
+  count: IntScalarFilters
+  count_EQ: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { eq: ... } } }' instead.")
+  count_GT: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { gt: ... } } }' instead.")
+  count_GTE: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { gte: ... } } }' instead.")
+  count_LT: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { lt: ... } } }' instead.")
+  count_LTE: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { lte: ... } } }' instead.")
+  node: CompanyDepartmentsNodeAggregationWhereInput
+}
+
+input CompanyDepartmentsConnectFieldInput {
+  connect: [DepartmentConnectInput!]
+  where: DepartmentConnectWhere
+}
+
+type CompanyDepartmentsConnection {
+  aggregate: CompanyDepartmentDepartmentsAggregateSelection!
+  edges: [CompanyDepartmentsRelationship!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+input CompanyDepartmentsConnectionAggregateInput {
+  AND: [CompanyDepartmentsConnectionAggregateInput!]
+  NOT: CompanyDepartmentsConnectionAggregateInput
+  OR: [CompanyDepartmentsConnectionAggregateInput!]
+  count: ConnectionAggregationCountFilterInput
+  node: CompanyDepartmentsNodeAggregationWhereInput
+}
+
+input CompanyDepartmentsConnectionFilters {
+  """
+  Filter Companies by aggregating results on related CompanyDepartmentsConnections
+  """
+  aggregate: CompanyDepartmentsConnectionAggregateInput
+
+  """
+  Return Companies where all of the related CompanyDepartmentsConnections match this filter
+  """
+  all: CompanyDepartmentsConnectionWhere
+
+  """
+  Return Companies where none of the related CompanyDepartmentsConnections match this filter
+  """
+  none: CompanyDepartmentsConnectionWhere
+
+  """
+  Return Companies where one of the related CompanyDepartmentsConnections match this filter
+  """
+  single: CompanyDepartmentsConnectionWhere
+
+  """
+  Return Companies where some of the related CompanyDepartmentsConnections match this filter
+  """
+  some: CompanyDepartmentsConnectionWhere
+}
+
+input CompanyDepartmentsConnectionSort {
+  node: DepartmentSort
+}
+
+input CompanyDepartmentsConnectionWhere {
+  AND: [CompanyDepartmentsConnectionWhere!]
+  NOT: CompanyDepartmentsConnectionWhere
+  OR: [CompanyDepartmentsConnectionWhere!]
+  node: DepartmentWhere
+}
+
+input CompanyDepartmentsCreateFieldInput {
+  node: DepartmentCreateInput!
+}
+
+input CompanyDepartmentsDeleteFieldInput {
+  delete: DepartmentDeleteInput
+  where: CompanyDepartmentsConnectionWhere
+}
+
+input CompanyDepartmentsDisconnectFieldInput {
+  disconnect: DepartmentDisconnectInput
+  where: CompanyDepartmentsConnectionWhere
+}
+
+input CompanyDepartmentsFieldInput {
+  connect: [CompanyDepartmentsConnectFieldInput!]
+  create: [CompanyDepartmentsCreateFieldInput!]
+}
+
+input CompanyDepartmentsNodeAggregationWhereInput {
+  AND: [CompanyDepartmentsNodeAggregationWhereInput!]
+  NOT: CompanyDepartmentsNodeAggregationWhereInput
+  OR: [CompanyDepartmentsNodeAggregationWhereInput!]
+  budget: BigIntScalarAggregationFilters
+  budget_AVERAGE_EQUAL: BigInt @deprecated(reason: "Please use the relevant generic filter 'budget: { average: { eq: ... } } }' instead.")
+  budget_AVERAGE_GT: BigInt @deprecated(reason: "Please use the relevant generic filter 'budget: { average: { gt: ... } } }' instead.")
+  budget_AVERAGE_GTE: BigInt @deprecated(reason: "Please use the relevant generic filter 'budget: { average: { gte: ... } } }' instead.")
+  budget_AVERAGE_LT: BigInt @deprecated(reason: "Please use the relevant generic filter 'budget: { average: { lt: ... } } }' instead.")
+  budget_AVERAGE_LTE: BigInt @deprecated(reason: "Please use the relevant generic filter 'budget: { average: { lte: ... } } }' instead.")
+  budget_MAX_EQUAL: BigInt @deprecated(reason: "Please use the relevant generic filter 'budget: { max: { eq: ... } } }' instead.")
+  budget_MAX_GT: BigInt @deprecated(reason: "Please use the relevant generic filter 'budget: { max: { gt: ... } } }' instead.")
+  budget_MAX_GTE: BigInt @deprecated(reason: "Please use the relevant generic filter 'budget: { max: { gte: ... } } }' instead.")
+  budget_MAX_LT: BigInt @deprecated(reason: "Please use the relevant generic filter 'budget: { max: { lt: ... } } }' instead.")
+  budget_MAX_LTE: BigInt @deprecated(reason: "Please use the relevant generic filter 'budget: { max: { lte: ... } } }' instead.")
+  budget_MIN_EQUAL: BigInt @deprecated(reason: "Please use the relevant generic filter 'budget: { min: { eq: ... } } }' instead.")
+  budget_MIN_GT: BigInt @deprecated(reason: "Please use the relevant generic filter 'budget: { min: { gt: ... } } }' instead.")
+  budget_MIN_GTE: BigInt @deprecated(reason: "Please use the relevant generic filter 'budget: { min: { gte: ... } } }' instead.")
+  budget_MIN_LT: BigInt @deprecated(reason: "Please use the relevant generic filter 'budget: { min: { lt: ... } } }' instead.")
+  budget_MIN_LTE: BigInt @deprecated(reason: "Please use the relevant generic filter 'budget: { min: { lte: ... } } }' instead.")
+  budget_SUM_EQUAL: BigInt @deprecated(reason: "Please use the relevant generic filter 'budget: { sum: { eq: ... } } }' instead.")
+  budget_SUM_GT: BigInt @deprecated(reason: "Please use the relevant generic filter 'budget: { sum: { gt: ... } } }' instead.")
+  budget_SUM_GTE: BigInt @deprecated(reason: "Please use the relevant generic filter 'budget: { sum: { gte: ... } } }' instead.")
+  budget_SUM_LT: BigInt @deprecated(reason: "Please use the relevant generic filter 'budget: { sum: { lt: ... } } }' instead.")
+  budget_SUM_LTE: BigInt @deprecated(reason: "Please use the relevant generic filter 'budget: { sum: { lte: ... } } }' instead.")
+  name: StringScalarAggregationFilters
+  name_AVERAGE_LENGTH_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { eq: ... } } }' instead.")
+  name_AVERAGE_LENGTH_GT: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { gt: ... } } }' instead.")
+  name_AVERAGE_LENGTH_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { gte: ... } } }' instead.")
+  name_AVERAGE_LENGTH_LT: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { lt: ... } } }' instead.")
+  name_AVERAGE_LENGTH_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { lte: ... } } }' instead.")
+  name_LONGEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { eq: ... } } }' instead.")
+  name_LONGEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { gt: ... } } }' instead.")
+  name_LONGEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { gte: ... } } }' instead.")
+  name_LONGEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { lt: ... } } }' instead.")
+  name_LONGEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { lte: ... } } }' instead.")
+  name_SHORTEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { eq: ... } } }' instead.")
+  name_SHORTEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { gt: ... } } }' instead.")
+  name_SHORTEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { gte: ... } } }' instead.")
+  name_SHORTEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { lt: ... } } }' instead.")
+  name_SHORTEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { lte: ... } } }' instead.")
+}
+
+type CompanyDepartmentsRelationship {
+  cursor: String!
+  node: Department!
+}
+
+input CompanyDepartmentsUpdateConnectionInput {
+  node: DepartmentUpdateInput
+  where: CompanyDepartmentsConnectionWhere
+}
+
+input CompanyDepartmentsUpdateFieldInput {
+  connect: [CompanyDepartmentsConnectFieldInput!]
+  create: [CompanyDepartmentsCreateFieldInput!]
+  delete: [CompanyDepartmentsDeleteFieldInput!]
+  disconnect: [CompanyDepartmentsDisconnectFieldInput!]
+  update: CompanyDepartmentsUpdateConnectionInput
+}
+
+input CompanyDisconnectInput {
+  departments: [CompanyDepartmentsDisconnectFieldInput!]
+  employees: [CompanyEmployeesDisconnectFieldInput!]
+}
+
+type CompanyEdge {
+  cursor: String!
+  node: Company!
+}
+
+type CompanyEmployeeEmployeesAggregateSelection {
+  count: CountConnection!
+  edge: CompanyEmployeeEmployeesEdgeAggregateSelection
+  node: CompanyEmployeeEmployeesNodeAggregateSelection
+}
+
+type CompanyEmployeeEmployeesEdgeAggregateSelection {
+  role: StringAggregateSelection!
+}
+
+type CompanyEmployeeEmployeesNodeAggregateSelection {
+  name: StringAggregateSelection!
+  title: StringAggregateSelection!
+}
+
+input CompanyEmployeesAggregateInput {
+  AND: [CompanyEmployeesAggregateInput!]
+  NOT: CompanyEmployeesAggregateInput
+  OR: [CompanyEmployeesAggregateInput!]
+  count: IntScalarFilters
+  count_EQ: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { eq: ... } } }' instead.")
+  count_GT: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { gt: ... } } }' instead.")
+  count_GTE: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { gte: ... } } }' instead.")
+  count_LT: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { lt: ... } } }' instead.")
+  count_LTE: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { lte: ... } } }' instead.")
+  edge: EmploymentAggregationWhereInput
+  node: CompanyEmployeesNodeAggregationWhereInput
+}
+
+input CompanyEmployeesConnectFieldInput {
+  connect: [EmployeeConnectInput!]
+  edge: EmploymentCreateInput!
+  where: EmployeeConnectWhere
+}
+
+type CompanyEmployeesConnection {
+  aggregate: CompanyEmployeeEmployeesAggregateSelection!
+  edges: [CompanyEmployeesRelationship!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+input CompanyEmployeesConnectionAggregateInput {
+  AND: [CompanyEmployeesConnectionAggregateInput!]
+  NOT: CompanyEmployeesConnectionAggregateInput
+  OR: [CompanyEmployeesConnectionAggregateInput!]
+  count: ConnectionAggregationCountFilterInput
+  edge: EmploymentAggregationWhereInput
+  node: CompanyEmployeesNodeAggregationWhereInput
+}
+
+input CompanyEmployeesConnectionFilters {
+  """
+  Filter Companies by aggregating results on related CompanyEmployeesConnections
+  """
+  aggregate: CompanyEmployeesConnectionAggregateInput
+
+  """
+  Return Companies where all of the related CompanyEmployeesConnections match this filter
+  """
+  all: CompanyEmployeesConnectionWhere
+
+  """
+  Return Companies where none of the related CompanyEmployeesConnections match this filter
+  """
+  none: CompanyEmployeesConnectionWhere
+
+  """
+  Return Companies where one of the related CompanyEmployeesConnections match this filter
+  """
+  single: CompanyEmployeesConnectionWhere
+
+  """
+  Return Companies where some of the related CompanyEmployeesConnections match this filter
+  """
+  some: CompanyEmployeesConnectionWhere
+}
+
+input CompanyEmployeesConnectionSort {
+  edge: EmploymentSort
+  node: EmployeeSort
+}
+
+input CompanyEmployeesConnectionWhere {
+  AND: [CompanyEmployeesConnectionWhere!]
+  NOT: CompanyEmployeesConnectionWhere
+  OR: [CompanyEmployeesConnectionWhere!]
+  edge: EmploymentWhere
+  node: EmployeeWhere
+}
+
+input CompanyEmployeesCreateFieldInput {
+  edge: EmploymentCreateInput!
+  node: EmployeeCreateInput!
+}
+
+input CompanyEmployeesDeleteFieldInput {
+  delete: EmployeeDeleteInput
+  where: CompanyEmployeesConnectionWhere
+}
+
+input CompanyEmployeesDisconnectFieldInput {
+  disconnect: EmployeeDisconnectInput
+  where: CompanyEmployeesConnectionWhere
+}
+
+input CompanyEmployeesFieldInput {
+  connect: [CompanyEmployeesConnectFieldInput!]
+  create: [CompanyEmployeesCreateFieldInput!]
+}
+
+input CompanyEmployeesNodeAggregationWhereInput {
+  AND: [CompanyEmployeesNodeAggregationWhereInput!]
+  NOT: CompanyEmployeesNodeAggregationWhereInput
+  OR: [CompanyEmployeesNodeAggregationWhereInput!]
+  name: StringScalarAggregationFilters
+  name_AVERAGE_LENGTH_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { eq: ... } } }' instead.")
+  name_AVERAGE_LENGTH_GT: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { gt: ... } } }' instead.")
+  name_AVERAGE_LENGTH_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { gte: ... } } }' instead.")
+  name_AVERAGE_LENGTH_LT: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { lt: ... } } }' instead.")
+  name_AVERAGE_LENGTH_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { lte: ... } } }' instead.")
+  name_LONGEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { eq: ... } } }' instead.")
+  name_LONGEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { gt: ... } } }' instead.")
+  name_LONGEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { gte: ... } } }' instead.")
+  name_LONGEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { lt: ... } } }' instead.")
+  name_LONGEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { lte: ... } } }' instead.")
+  name_SHORTEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { eq: ... } } }' instead.")
+  name_SHORTEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { gt: ... } } }' instead.")
+  name_SHORTEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { gte: ... } } }' instead.")
+  name_SHORTEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { lt: ... } } }' instead.")
+  name_SHORTEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { lte: ... } } }' instead.")
+  title: StringScalarAggregationFilters
+  title_AVERAGE_LENGTH_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'title: { averageLength: { eq: ... } } }' instead.")
+  title_AVERAGE_LENGTH_GT: Float @deprecated(reason: "Please use the relevant generic filter 'title: { averageLength: { gt: ... } } }' instead.")
+  title_AVERAGE_LENGTH_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'title: { averageLength: { gte: ... } } }' instead.")
+  title_AVERAGE_LENGTH_LT: Float @deprecated(reason: "Please use the relevant generic filter 'title: { averageLength: { lt: ... } } }' instead.")
+  title_AVERAGE_LENGTH_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'title: { averageLength: { lte: ... } } }' instead.")
+  title_LONGEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'title: { longestLength: { eq: ... } } }' instead.")
+  title_LONGEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'title: { longestLength: { gt: ... } } }' instead.")
+  title_LONGEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'title: { longestLength: { gte: ... } } }' instead.")
+  title_LONGEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'title: { longestLength: { lt: ... } } }' instead.")
+  title_LONGEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'title: { longestLength: { lte: ... } } }' instead.")
+  title_SHORTEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'title: { shortestLength: { eq: ... } } }' instead.")
+  title_SHORTEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'title: { shortestLength: { gt: ... } } }' instead.")
+  title_SHORTEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'title: { shortestLength: { gte: ... } } }' instead.")
+  title_SHORTEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'title: { shortestLength: { lt: ... } } }' instead.")
+  title_SHORTEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'title: { shortestLength: { lte: ... } } }' instead.")
+}
+
+type CompanyEmployeesRelationship {
+  cursor: String!
+  node: Employee!
+  properties: Employment!
+}
+
+input CompanyEmployeesUpdateConnectionInput {
+  edge: EmploymentUpdateInput
+  node: EmployeeUpdateInput
+  where: CompanyEmployeesConnectionWhere
+}
+
+input CompanyEmployeesUpdateFieldInput {
+  connect: [CompanyEmployeesConnectFieldInput!]
+  create: [CompanyEmployeesCreateFieldInput!]
+  delete: [CompanyEmployeesDeleteFieldInput!]
+  disconnect: [CompanyEmployeesDisconnectFieldInput!]
+  update: CompanyEmployeesUpdateConnectionInput
+}
+
+input CompanyRelationshipFilters {
+  """Filter type where all of the related Companies match this filter"""
+  all: CompanyWhere
+
+  """Filter type where none of the related Companies match this filter"""
+  none: CompanyWhere
+
+  """Filter type where one of the related Companies match this filter"""
+  single: CompanyWhere
+
+  """Filter type where some of the related Companies match this filter"""
+  some: CompanyWhere
+}
+
+"""
+Fields to sort Companies by. The order in which sorts are applied is not guaranteed when specifying many fields in one CompanySort object.
+"""
+input CompanySort {
+  founded: SortDirection
+  name: SortDirection
+}
+
+input CompanyUpdateInput {
+  departments: [CompanyDepartmentsUpdateFieldInput!]
+  employees: [CompanyEmployeesUpdateFieldInput!]
+  founded: DateScalarMutations
+  founded_SET: Date @deprecated(reason: "Please use the generic mutation 'founded: { set: ... } }' instead.")
+  name: StringScalarMutations
+  name_SET: String @deprecated(reason: "Please use the generic mutation 'name: { set: ... } }' instead.")
+}
+
+input CompanyWhere {
+  AND: [CompanyWhere!]
+  NOT: CompanyWhere
+  OR: [CompanyWhere!]
+  departments: DepartmentRelationshipFilters
+  departmentsAggregate: CompanyDepartmentsAggregateInput @deprecated(reason: "Aggregate filters are moved inside the departmentsConnection filter, please use { departmentsConnection: { aggregate: {...} } } instead")
+  departmentsConnection: CompanyDepartmentsConnectionFilters
+
+  """
+  Return Companies where all of the related CompanyDepartmentsConnections match this filter
+  """
+  departmentsConnection_ALL: CompanyDepartmentsConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'departmentsConnection: { all: { node: ... } } }' instead.")
+
+  """
+  Return Companies where none of the related CompanyDepartmentsConnections match this filter
+  """
+  departmentsConnection_NONE: CompanyDepartmentsConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'departmentsConnection: { none: { node: ... } } }' instead.")
+
+  """
+  Return Companies where one of the related CompanyDepartmentsConnections match this filter
+  """
+  departmentsConnection_SINGLE: CompanyDepartmentsConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'departmentsConnection: { single: { node: ... } } }' instead.")
+
+  """
+  Return Companies where some of the related CompanyDepartmentsConnections match this filter
+  """
+  departmentsConnection_SOME: CompanyDepartmentsConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'departmentsConnection: { some: { node: ... } } }' instead.")
+
+  """
+  Return Companies where all of the related Departments match this filter
+  """
+  departments_ALL: DepartmentWhere @deprecated(reason: "Please use the relevant generic filter 'departments: { all: ... }' instead.")
+
+  """
+  Return Companies where none of the related Departments match this filter
+  """
+  departments_NONE: DepartmentWhere @deprecated(reason: "Please use the relevant generic filter 'departments: { none: ... }' instead.")
+
+  """
+  Return Companies where one of the related Departments match this filter
+  """
+  departments_SINGLE: DepartmentWhere @deprecated(reason: "Please use the relevant generic filter 'departments: {  single: ... }' instead.")
+
+  """
+  Return Companies where some of the related Departments match this filter
+  """
+  departments_SOME: DepartmentWhere @deprecated(reason: "Please use the relevant generic filter 'departments: {  some: ... }' instead.")
+  employees: EmployeeRelationshipFilters
+  employeesAggregate: CompanyEmployeesAggregateInput @deprecated(reason: "Aggregate filters are moved inside the employeesConnection filter, please use { employeesConnection: { aggregate: {...} } } instead")
+  employeesConnection: CompanyEmployeesConnectionFilters
+
+  """
+  Return Companies where all of the related CompanyEmployeesConnections match this filter
+  """
+  employeesConnection_ALL: CompanyEmployeesConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'employeesConnection: { all: { node: ... } } }' instead.")
+
+  """
+  Return Companies where none of the related CompanyEmployeesConnections match this filter
+  """
+  employeesConnection_NONE: CompanyEmployeesConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'employeesConnection: { none: { node: ... } } }' instead.")
+
+  """
+  Return Companies where one of the related CompanyEmployeesConnections match this filter
+  """
+  employeesConnection_SINGLE: CompanyEmployeesConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'employeesConnection: { single: { node: ... } } }' instead.")
+
+  """
+  Return Companies where some of the related CompanyEmployeesConnections match this filter
+  """
+  employeesConnection_SOME: CompanyEmployeesConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'employeesConnection: { some: { node: ... } } }' instead.")
+
+  """Return Companies where all of the related Employees match this filter"""
+  employees_ALL: EmployeeWhere @deprecated(reason: "Please use the relevant generic filter 'employees: { all: ... }' instead.")
+
+  """Return Companies where none of the related Employees match this filter"""
+  employees_NONE: EmployeeWhere @deprecated(reason: "Please use the relevant generic filter 'employees: { none: ... }' instead.")
+
+  """Return Companies where one of the related Employees match this filter"""
+  employees_SINGLE: EmployeeWhere @deprecated(reason: "Please use the relevant generic filter 'employees: {  single: ... }' instead.")
+
+  """Return Companies where some of the related Employees match this filter"""
+  employees_SOME: EmployeeWhere @deprecated(reason: "Please use the relevant generic filter 'employees: {  some: ... }' instead.")
+  founded: DateScalarFilters
+  founded_EQ: Date @deprecated(reason: "Please use the relevant generic filter founded: { eq: ... }")
+  founded_GT: Date @deprecated(reason: "Please use the relevant generic filter founded: { gt: ... }")
+  founded_GTE: Date @deprecated(reason: "Please use the relevant generic filter founded: { gte: ... }")
+  founded_IN: [Date] @deprecated(reason: "Please use the relevant generic filter founded: { in: ... }")
+  founded_LT: Date @deprecated(reason: "Please use the relevant generic filter founded: { lt: ... }")
+  founded_LTE: Date @deprecated(reason: "Please use the relevant generic filter founded: { lte: ... }")
+  name: StringScalarFilters
+  name_CONTAINS: String @deprecated(reason: "Please use the relevant generic filter name: { contains: ... }")
+  name_ENDS_WITH: String @deprecated(reason: "Please use the relevant generic filter name: { endsWith: ... }")
+  name_EQ: String @deprecated(reason: "Please use the relevant generic filter name: { eq: ... }")
+  name_IN: [String!] @deprecated(reason: "Please use the relevant generic filter name: { in: ... }")
+  name_STARTS_WITH: String @deprecated(reason: "Please use the relevant generic filter name: { startsWith: ... }")
+}
+
+input ConnectionAggregationCountFilterInput {
+  edges: IntScalarFilters
+  nodes: IntScalarFilters
+}
+
+type Count {
+  nodes: Int!
+}
+
+type CountConnection {
+  edges: Int!
+  nodes: Int!
+}
+
+type CreateCompaniesMutationResponse {
+  companies: [Company!]!
+  info: CreateInfo!
+}
+
+type CreateDepartmentsMutationResponse {
+  departments: [Department!]!
+  info: CreateInfo!
+}
+
+type CreateEmployeesMutationResponse {
+  employees: [Employee!]!
+  info: CreateInfo!
+}
+
+"""
+Information about the number of nodes and relationships created during a create mutation
+"""
+type CreateInfo {
+  nodesCreated: Int!
+  relationshipsCreated: Int!
+}
+
+"""A date, represented as a 'yyyy-mm-dd' string"""
+scalar Date
+
+"""Date filters"""
+input DateScalarFilters {
+  eq: Date
+  gt: Date
+  gte: Date
+  in: [Date!]
+  lt: Date
+  lte: Date
+}
+
+"""Date mutations"""
+input DateScalarMutations {
+  set: Date
+}
+
+"""
+Information about the number of nodes and relationships deleted during a delete mutation
+"""
+type DeleteInfo {
+  nodesDeleted: Int!
+  relationshipsDeleted: Int!
+}
+
+type Department {
+  budget: BigInt
+  company(limit: Int, offset: Int, sort: [CompanySort!], where: CompanyWhere): [Company!]!
+  companyConnection(after: String, first: Int, sort: [DepartmentCompanyConnectionSort!], where: DepartmentCompanyConnectionWhere): DepartmentCompanyConnection!
+  members(limit: Int, offset: Int, sort: [EmployeeSort!], where: EmployeeWhere): [Employee!]!
+  membersConnection(after: String, first: Int, sort: [DepartmentMembersConnectionSort!], where: DepartmentMembersConnectionWhere): DepartmentMembersConnection!
+  name: String!
+}
+
+type DepartmentAggregate {
+  count: Count!
+  node: DepartmentAggregateNode!
+}
+
+type DepartmentAggregateNode {
+  budget: BigIntAggregateSelection!
+  name: StringAggregateSelection!
+}
+
+input DepartmentCompanyAggregateInput {
+  AND: [DepartmentCompanyAggregateInput!]
+  NOT: DepartmentCompanyAggregateInput
+  OR: [DepartmentCompanyAggregateInput!]
+  count: IntScalarFilters
+  count_EQ: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { eq: ... } } }' instead.")
+  count_GT: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { gt: ... } } }' instead.")
+  count_GTE: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { gte: ... } } }' instead.")
+  count_LT: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { lt: ... } } }' instead.")
+  count_LTE: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { lte: ... } } }' instead.")
+  node: DepartmentCompanyNodeAggregationWhereInput
+}
+
+type DepartmentCompanyCompanyAggregateSelection {
+  count: CountConnection!
+  node: DepartmentCompanyCompanyNodeAggregateSelection
+}
+
+type DepartmentCompanyCompanyNodeAggregateSelection {
+  name: StringAggregateSelection!
+}
+
+input DepartmentCompanyConnectFieldInput {
+  connect: [CompanyConnectInput!]
+  where: CompanyConnectWhere
+}
+
+type DepartmentCompanyConnection {
+  aggregate: DepartmentCompanyCompanyAggregateSelection!
+  edges: [DepartmentCompanyRelationship!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+input DepartmentCompanyConnectionAggregateInput {
+  AND: [DepartmentCompanyConnectionAggregateInput!]
+  NOT: DepartmentCompanyConnectionAggregateInput
+  OR: [DepartmentCompanyConnectionAggregateInput!]
+  count: ConnectionAggregationCountFilterInput
+  node: DepartmentCompanyNodeAggregationWhereInput
+}
+
+input DepartmentCompanyConnectionFilters {
+  """
+  Filter Departments by aggregating results on related DepartmentCompanyConnections
+  """
+  aggregate: DepartmentCompanyConnectionAggregateInput
+
+  """
+  Return Departments where all of the related DepartmentCompanyConnections match this filter
+  """
+  all: DepartmentCompanyConnectionWhere
+
+  """
+  Return Departments where none of the related DepartmentCompanyConnections match this filter
+  """
+  none: DepartmentCompanyConnectionWhere
+
+  """
+  Return Departments where one of the related DepartmentCompanyConnections match this filter
+  """
+  single: DepartmentCompanyConnectionWhere
+
+  """
+  Return Departments where some of the related DepartmentCompanyConnections match this filter
+  """
+  some: DepartmentCompanyConnectionWhere
+}
+
+input DepartmentCompanyConnectionSort {
+  node: CompanySort
+}
+
+input DepartmentCompanyConnectionWhere {
+  AND: [DepartmentCompanyConnectionWhere!]
+  NOT: DepartmentCompanyConnectionWhere
+  OR: [DepartmentCompanyConnectionWhere!]
+  node: CompanyWhere
+}
+
+input DepartmentCompanyCreateFieldInput {
+  node: CompanyCreateInput!
+}
+
+input DepartmentCompanyDeleteFieldInput {
+  delete: CompanyDeleteInput
+  where: DepartmentCompanyConnectionWhere
+}
+
+input DepartmentCompanyDisconnectFieldInput {
+  disconnect: CompanyDisconnectInput
+  where: DepartmentCompanyConnectionWhere
+}
+
+input DepartmentCompanyFieldInput {
+  connect: [DepartmentCompanyConnectFieldInput!]
+  create: [DepartmentCompanyCreateFieldInput!]
+}
+
+input DepartmentCompanyNodeAggregationWhereInput {
+  AND: [DepartmentCompanyNodeAggregationWhereInput!]
+  NOT: DepartmentCompanyNodeAggregationWhereInput
+  OR: [DepartmentCompanyNodeAggregationWhereInput!]
+  name: StringScalarAggregationFilters
+  name_AVERAGE_LENGTH_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { eq: ... } } }' instead.")
+  name_AVERAGE_LENGTH_GT: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { gt: ... } } }' instead.")
+  name_AVERAGE_LENGTH_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { gte: ... } } }' instead.")
+  name_AVERAGE_LENGTH_LT: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { lt: ... } } }' instead.")
+  name_AVERAGE_LENGTH_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { lte: ... } } }' instead.")
+  name_LONGEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { eq: ... } } }' instead.")
+  name_LONGEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { gt: ... } } }' instead.")
+  name_LONGEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { gte: ... } } }' instead.")
+  name_LONGEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { lt: ... } } }' instead.")
+  name_LONGEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { lte: ... } } }' instead.")
+  name_SHORTEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { eq: ... } } }' instead.")
+  name_SHORTEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { gt: ... } } }' instead.")
+  name_SHORTEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { gte: ... } } }' instead.")
+  name_SHORTEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { lt: ... } } }' instead.")
+  name_SHORTEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { lte: ... } } }' instead.")
+}
+
+type DepartmentCompanyRelationship {
+  cursor: String!
+  node: Company!
+}
+
+input DepartmentCompanyUpdateConnectionInput {
+  node: CompanyUpdateInput
+  where: DepartmentCompanyConnectionWhere
+}
+
+input DepartmentCompanyUpdateFieldInput {
+  connect: [DepartmentCompanyConnectFieldInput!]
+  create: [DepartmentCompanyCreateFieldInput!]
+  delete: [DepartmentCompanyDeleteFieldInput!]
+  disconnect: [DepartmentCompanyDisconnectFieldInput!]
+  update: DepartmentCompanyUpdateConnectionInput
+}
+
+input DepartmentConnectInput {
+  company: [DepartmentCompanyConnectFieldInput!]
+  members: [DepartmentMembersConnectFieldInput!]
+}
+
+input DepartmentConnectWhere {
+  node: DepartmentWhere!
+}
+
+input DepartmentCreateInput {
+  budget: BigInt
+  company: DepartmentCompanyFieldInput
+  members: DepartmentMembersFieldInput
+  name: String!
+}
+
+input DepartmentDeleteInput {
+  company: [DepartmentCompanyDeleteFieldInput!]
+  members: [DepartmentMembersDeleteFieldInput!]
+}
+
+input DepartmentDisconnectInput {
+  company: [DepartmentCompanyDisconnectFieldInput!]
+  members: [DepartmentMembersDisconnectFieldInput!]
+}
+
+type DepartmentEdge {
+  cursor: String!
+  node: Department!
+}
+
+type DepartmentEmployeeMembersAggregateSelection {
+  count: CountConnection!
+  node: DepartmentEmployeeMembersNodeAggregateSelection
+}
+
+type DepartmentEmployeeMembersNodeAggregateSelection {
+  name: StringAggregateSelection!
+  title: StringAggregateSelection!
+}
+
+input DepartmentMembersAggregateInput {
+  AND: [DepartmentMembersAggregateInput!]
+  NOT: DepartmentMembersAggregateInput
+  OR: [DepartmentMembersAggregateInput!]
+  count: IntScalarFilters
+  count_EQ: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { eq: ... } } }' instead.")
+  count_GT: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { gt: ... } } }' instead.")
+  count_GTE: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { gte: ... } } }' instead.")
+  count_LT: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { lt: ... } } }' instead.")
+  count_LTE: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { lte: ... } } }' instead.")
+  node: DepartmentMembersNodeAggregationWhereInput
+}
+
+input DepartmentMembersConnectFieldInput {
+  connect: [EmployeeConnectInput!]
+  where: EmployeeConnectWhere
+}
+
+type DepartmentMembersConnection {
+  aggregate: DepartmentEmployeeMembersAggregateSelection!
+  edges: [DepartmentMembersRelationship!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+input DepartmentMembersConnectionAggregateInput {
+  AND: [DepartmentMembersConnectionAggregateInput!]
+  NOT: DepartmentMembersConnectionAggregateInput
+  OR: [DepartmentMembersConnectionAggregateInput!]
+  count: ConnectionAggregationCountFilterInput
+  node: DepartmentMembersNodeAggregationWhereInput
+}
+
+input DepartmentMembersConnectionFilters {
+  """
+  Filter Departments by aggregating results on related DepartmentMembersConnections
+  """
+  aggregate: DepartmentMembersConnectionAggregateInput
+
+  """
+  Return Departments where all of the related DepartmentMembersConnections match this filter
+  """
+  all: DepartmentMembersConnectionWhere
+
+  """
+  Return Departments where none of the related DepartmentMembersConnections match this filter
+  """
+  none: DepartmentMembersConnectionWhere
+
+  """
+  Return Departments where one of the related DepartmentMembersConnections match this filter
+  """
+  single: DepartmentMembersConnectionWhere
+
+  """
+  Return Departments where some of the related DepartmentMembersConnections match this filter
+  """
+  some: DepartmentMembersConnectionWhere
+}
+
+input DepartmentMembersConnectionSort {
+  node: EmployeeSort
+}
+
+input DepartmentMembersConnectionWhere {
+  AND: [DepartmentMembersConnectionWhere!]
+  NOT: DepartmentMembersConnectionWhere
+  OR: [DepartmentMembersConnectionWhere!]
+  node: EmployeeWhere
+}
+
+input DepartmentMembersCreateFieldInput {
+  node: EmployeeCreateInput!
+}
+
+input DepartmentMembersDeleteFieldInput {
+  delete: EmployeeDeleteInput
+  where: DepartmentMembersConnectionWhere
+}
+
+input DepartmentMembersDisconnectFieldInput {
+  disconnect: EmployeeDisconnectInput
+  where: DepartmentMembersConnectionWhere
+}
+
+input DepartmentMembersFieldInput {
+  connect: [DepartmentMembersConnectFieldInput!]
+  create: [DepartmentMembersCreateFieldInput!]
+}
+
+input DepartmentMembersNodeAggregationWhereInput {
+  AND: [DepartmentMembersNodeAggregationWhereInput!]
+  NOT: DepartmentMembersNodeAggregationWhereInput
+  OR: [DepartmentMembersNodeAggregationWhereInput!]
+  name: StringScalarAggregationFilters
+  name_AVERAGE_LENGTH_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { eq: ... } } }' instead.")
+  name_AVERAGE_LENGTH_GT: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { gt: ... } } }' instead.")
+  name_AVERAGE_LENGTH_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { gte: ... } } }' instead.")
+  name_AVERAGE_LENGTH_LT: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { lt: ... } } }' instead.")
+  name_AVERAGE_LENGTH_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { lte: ... } } }' instead.")
+  name_LONGEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { eq: ... } } }' instead.")
+  name_LONGEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { gt: ... } } }' instead.")
+  name_LONGEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { gte: ... } } }' instead.")
+  name_LONGEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { lt: ... } } }' instead.")
+  name_LONGEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { lte: ... } } }' instead.")
+  name_SHORTEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { eq: ... } } }' instead.")
+  name_SHORTEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { gt: ... } } }' instead.")
+  name_SHORTEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { gte: ... } } }' instead.")
+  name_SHORTEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { lt: ... } } }' instead.")
+  name_SHORTEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { lte: ... } } }' instead.")
+  title: StringScalarAggregationFilters
+  title_AVERAGE_LENGTH_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'title: { averageLength: { eq: ... } } }' instead.")
+  title_AVERAGE_LENGTH_GT: Float @deprecated(reason: "Please use the relevant generic filter 'title: { averageLength: { gt: ... } } }' instead.")
+  title_AVERAGE_LENGTH_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'title: { averageLength: { gte: ... } } }' instead.")
+  title_AVERAGE_LENGTH_LT: Float @deprecated(reason: "Please use the relevant generic filter 'title: { averageLength: { lt: ... } } }' instead.")
+  title_AVERAGE_LENGTH_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'title: { averageLength: { lte: ... } } }' instead.")
+  title_LONGEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'title: { longestLength: { eq: ... } } }' instead.")
+  title_LONGEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'title: { longestLength: { gt: ... } } }' instead.")
+  title_LONGEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'title: { longestLength: { gte: ... } } }' instead.")
+  title_LONGEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'title: { longestLength: { lt: ... } } }' instead.")
+  title_LONGEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'title: { longestLength: { lte: ... } } }' instead.")
+  title_SHORTEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'title: { shortestLength: { eq: ... } } }' instead.")
+  title_SHORTEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'title: { shortestLength: { gt: ... } } }' instead.")
+  title_SHORTEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'title: { shortestLength: { gte: ... } } }' instead.")
+  title_SHORTEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'title: { shortestLength: { lt: ... } } }' instead.")
+  title_SHORTEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'title: { shortestLength: { lte: ... } } }' instead.")
+}
+
+type DepartmentMembersRelationship {
+  cursor: String!
+  node: Employee!
+}
+
+input DepartmentMembersUpdateConnectionInput {
+  node: EmployeeUpdateInput
+  where: DepartmentMembersConnectionWhere
+}
+
+input DepartmentMembersUpdateFieldInput {
+  connect: [DepartmentMembersConnectFieldInput!]
+  create: [DepartmentMembersCreateFieldInput!]
+  delete: [DepartmentMembersDeleteFieldInput!]
+  disconnect: [DepartmentMembersDisconnectFieldInput!]
+  update: DepartmentMembersUpdateConnectionInput
+}
+
+input DepartmentRelationshipFilters {
+  """Filter type where all of the related Departments match this filter"""
+  all: DepartmentWhere
+
+  """Filter type where none of the related Departments match this filter"""
+  none: DepartmentWhere
+
+  """Filter type where one of the related Departments match this filter"""
+  single: DepartmentWhere
+
+  """Filter type where some of the related Departments match this filter"""
+  some: DepartmentWhere
+}
+
+"""
+Fields to sort Departments by. The order in which sorts are applied is not guaranteed when specifying many fields in one DepartmentSort object.
+"""
+input DepartmentSort {
+  budget: SortDirection
+  name: SortDirection
+}
+
+input DepartmentUpdateInput {
+  budget: BigIntScalarMutations
+  budget_DECREMENT: BigInt @deprecated(reason: "Please use the relevant generic mutation 'budget: { decrement: ... } }' instead.")
+  budget_INCREMENT: BigInt @deprecated(reason: "Please use the relevant generic mutation 'budget: { increment: ... } }' instead.")
+  budget_SET: BigInt @deprecated(reason: "Please use the generic mutation 'budget: { set: ... } }' instead.")
+  company: [DepartmentCompanyUpdateFieldInput!]
+  members: [DepartmentMembersUpdateFieldInput!]
+  name: StringScalarMutations
+  name_SET: String @deprecated(reason: "Please use the generic mutation 'name: { set: ... } }' instead.")
+}
+
+input DepartmentWhere {
+  AND: [DepartmentWhere!]
+  NOT: DepartmentWhere
+  OR: [DepartmentWhere!]
+  budget: BigIntScalarFilters
+  budget_EQ: BigInt @deprecated(reason: "Please use the relevant generic filter budget: { eq: ... }")
+  budget_GT: BigInt @deprecated(reason: "Please use the relevant generic filter budget: { gt: ... }")
+  budget_GTE: BigInt @deprecated(reason: "Please use the relevant generic filter budget: { gte: ... }")
+  budget_IN: [BigInt] @deprecated(reason: "Please use the relevant generic filter budget: { in: ... }")
+  budget_LT: BigInt @deprecated(reason: "Please use the relevant generic filter budget: { lt: ... }")
+  budget_LTE: BigInt @deprecated(reason: "Please use the relevant generic filter budget: { lte: ... }")
+  company: CompanyRelationshipFilters
+  companyAggregate: DepartmentCompanyAggregateInput @deprecated(reason: "Aggregate filters are moved inside the companyConnection filter, please use { companyConnection: { aggregate: {...} } } instead")
+  companyConnection: DepartmentCompanyConnectionFilters
+
+  """
+  Return Departments where all of the related DepartmentCompanyConnections match this filter
+  """
+  companyConnection_ALL: DepartmentCompanyConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'companyConnection: { all: { node: ... } } }' instead.")
+
+  """
+  Return Departments where none of the related DepartmentCompanyConnections match this filter
+  """
+  companyConnection_NONE: DepartmentCompanyConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'companyConnection: { none: { node: ... } } }' instead.")
+
+  """
+  Return Departments where one of the related DepartmentCompanyConnections match this filter
+  """
+  companyConnection_SINGLE: DepartmentCompanyConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'companyConnection: { single: { node: ... } } }' instead.")
+
+  """
+  Return Departments where some of the related DepartmentCompanyConnections match this filter
+  """
+  companyConnection_SOME: DepartmentCompanyConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'companyConnection: { some: { node: ... } } }' instead.")
+
+  """
+  Return Departments where all of the related Companies match this filter
+  """
+  company_ALL: CompanyWhere @deprecated(reason: "Please use the relevant generic filter 'company: { all: ... }' instead.")
+
+  """
+  Return Departments where none of the related Companies match this filter
+  """
+  company_NONE: CompanyWhere @deprecated(reason: "Please use the relevant generic filter 'company: { none: ... }' instead.")
+
+  """
+  Return Departments where one of the related Companies match this filter
+  """
+  company_SINGLE: CompanyWhere @deprecated(reason: "Please use the relevant generic filter 'company: {  single: ... }' instead.")
+
+  """
+  Return Departments where some of the related Companies match this filter
+  """
+  company_SOME: CompanyWhere @deprecated(reason: "Please use the relevant generic filter 'company: {  some: ... }' instead.")
+  members: EmployeeRelationshipFilters
+  membersAggregate: DepartmentMembersAggregateInput @deprecated(reason: "Aggregate filters are moved inside the membersConnection filter, please use { membersConnection: { aggregate: {...} } } instead")
+  membersConnection: DepartmentMembersConnectionFilters
+
+  """
+  Return Departments where all of the related DepartmentMembersConnections match this filter
+  """
+  membersConnection_ALL: DepartmentMembersConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'membersConnection: { all: { node: ... } } }' instead.")
+
+  """
+  Return Departments where none of the related DepartmentMembersConnections match this filter
+  """
+  membersConnection_NONE: DepartmentMembersConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'membersConnection: { none: { node: ... } } }' instead.")
+
+  """
+  Return Departments where one of the related DepartmentMembersConnections match this filter
+  """
+  membersConnection_SINGLE: DepartmentMembersConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'membersConnection: { single: { node: ... } } }' instead.")
+
+  """
+  Return Departments where some of the related DepartmentMembersConnections match this filter
+  """
+  membersConnection_SOME: DepartmentMembersConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'membersConnection: { some: { node: ... } } }' instead.")
+
+  """
+  Return Departments where all of the related Employees match this filter
+  """
+  members_ALL: EmployeeWhere @deprecated(reason: "Please use the relevant generic filter 'members: { all: ... }' instead.")
+
+  """
+  Return Departments where none of the related Employees match this filter
+  """
+  members_NONE: EmployeeWhere @deprecated(reason: "Please use the relevant generic filter 'members: { none: ... }' instead.")
+
+  """
+  Return Departments where one of the related Employees match this filter
+  """
+  members_SINGLE: EmployeeWhere @deprecated(reason: "Please use the relevant generic filter 'members: {  single: ... }' instead.")
+
+  """
+  Return Departments where some of the related Employees match this filter
+  """
+  members_SOME: EmployeeWhere @deprecated(reason: "Please use the relevant generic filter 'members: {  some: ... }' instead.")
+  name: StringScalarFilters
+  name_CONTAINS: String @deprecated(reason: "Please use the relevant generic filter name: { contains: ... }")
+  name_ENDS_WITH: String @deprecated(reason: "Please use the relevant generic filter name: { endsWith: ... }")
+  name_EQ: String @deprecated(reason: "Please use the relevant generic filter name: { eq: ... }")
+  name_IN: [String!] @deprecated(reason: "Please use the relevant generic filter name: { in: ... }")
+  name_STARTS_WITH: String @deprecated(reason: "Please use the relevant generic filter name: { startsWith: ... }")
+}
+
+type DepartmentsConnection {
+  aggregate: DepartmentAggregate!
+  edges: [DepartmentEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+type Employee {
+  active: Boolean!
+  departments(limit: Int, offset: Int, sort: [DepartmentSort!], where: DepartmentWhere): [Department!]!
+  departmentsConnection(after: String, first: Int, sort: [EmployeeDepartmentsConnectionSort!], where: EmployeeDepartmentsConnectionWhere): EmployeeDepartmentsConnection!
+  employers(limit: Int, offset: Int, sort: [CompanySort!], where: CompanyWhere): [Company!]!
+  employersConnection(after: String, first: Int, sort: [EmployeeEmployersConnectionSort!], where: EmployeeEmployersConnectionWhere): EmployeeEmployersConnection!
+  id: ID!
+  manager(limit: Int, offset: Int, sort: [EmployeeSort!], where: EmployeeWhere): [Employee!]!
+  managerConnection(after: String, first: Int, sort: [EmployeeManagerConnectionSort!], where: EmployeeManagerConnectionWhere): EmployeeManagerConnection!
+  name: String!
+  reports(limit: Int, offset: Int, sort: [EmployeeSort!], where: EmployeeWhere): [Employee!]!
+  reportsConnection(after: String, first: Int, sort: [EmployeeReportsConnectionSort!], where: EmployeeReportsConnectionWhere): EmployeeReportsConnection!
+  title: String
+}
+
+type EmployeeAggregate {
+  count: Count!
+  node: EmployeeAggregateNode!
+}
+
+type EmployeeAggregateNode {
+  name: StringAggregateSelection!
+  title: StringAggregateSelection!
+}
+
+type EmployeeCompanyEmployersAggregateSelection {
+  count: CountConnection!
+  edge: EmployeeCompanyEmployersEdgeAggregateSelection
+  node: EmployeeCompanyEmployersNodeAggregateSelection
+}
+
+type EmployeeCompanyEmployersEdgeAggregateSelection {
+  role: StringAggregateSelection!
+}
+
+type EmployeeCompanyEmployersNodeAggregateSelection {
+  name: StringAggregateSelection!
+}
+
+input EmployeeConnectInput {
+  departments: [EmployeeDepartmentsConnectFieldInput!]
+  employers: [EmployeeEmployersConnectFieldInput!]
+  manager: [EmployeeManagerConnectFieldInput!]
+  reports: [EmployeeReportsConnectFieldInput!]
+}
+
+input EmployeeConnectWhere {
+  node: EmployeeWhere!
+}
+
+input EmployeeCreateInput {
+  active: Boolean! = true
+  departments: EmployeeDepartmentsFieldInput
+  employers: EmployeeEmployersFieldInput
+  manager: EmployeeManagerFieldInput
+  name: String!
+  reports: EmployeeReportsFieldInput
+  title: String
+}
+
+input EmployeeDeleteInput {
+  departments: [EmployeeDepartmentsDeleteFieldInput!]
+  employers: [EmployeeEmployersDeleteFieldInput!]
+  manager: [EmployeeManagerDeleteFieldInput!]
+  reports: [EmployeeReportsDeleteFieldInput!]
+}
+
+type EmployeeDepartmentDepartmentsAggregateSelection {
+  count: CountConnection!
+  node: EmployeeDepartmentDepartmentsNodeAggregateSelection
+}
+
+type EmployeeDepartmentDepartmentsNodeAggregateSelection {
+  budget: BigIntAggregateSelection!
+  name: StringAggregateSelection!
+}
+
+input EmployeeDepartmentsAggregateInput {
+  AND: [EmployeeDepartmentsAggregateInput!]
+  NOT: EmployeeDepartmentsAggregateInput
+  OR: [EmployeeDepartmentsAggregateInput!]
+  count: IntScalarFilters
+  count_EQ: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { eq: ... } } }' instead.")
+  count_GT: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { gt: ... } } }' instead.")
+  count_GTE: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { gte: ... } } }' instead.")
+  count_LT: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { lt: ... } } }' instead.")
+  count_LTE: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { lte: ... } } }' instead.")
+  node: EmployeeDepartmentsNodeAggregationWhereInput
+}
+
+input EmployeeDepartmentsConnectFieldInput {
+  connect: [DepartmentConnectInput!]
+  where: DepartmentConnectWhere
+}
+
+type EmployeeDepartmentsConnection {
+  aggregate: EmployeeDepartmentDepartmentsAggregateSelection!
+  edges: [EmployeeDepartmentsRelationship!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+input EmployeeDepartmentsConnectionAggregateInput {
+  AND: [EmployeeDepartmentsConnectionAggregateInput!]
+  NOT: EmployeeDepartmentsConnectionAggregateInput
+  OR: [EmployeeDepartmentsConnectionAggregateInput!]
+  count: ConnectionAggregationCountFilterInput
+  node: EmployeeDepartmentsNodeAggregationWhereInput
+}
+
+input EmployeeDepartmentsConnectionFilters {
+  """
+  Filter Employees by aggregating results on related EmployeeDepartmentsConnections
+  """
+  aggregate: EmployeeDepartmentsConnectionAggregateInput
+
+  """
+  Return Employees where all of the related EmployeeDepartmentsConnections match this filter
+  """
+  all: EmployeeDepartmentsConnectionWhere
+
+  """
+  Return Employees where none of the related EmployeeDepartmentsConnections match this filter
+  """
+  none: EmployeeDepartmentsConnectionWhere
+
+  """
+  Return Employees where one of the related EmployeeDepartmentsConnections match this filter
+  """
+  single: EmployeeDepartmentsConnectionWhere
+
+  """
+  Return Employees where some of the related EmployeeDepartmentsConnections match this filter
+  """
+  some: EmployeeDepartmentsConnectionWhere
+}
+
+input EmployeeDepartmentsConnectionSort {
+  node: DepartmentSort
+}
+
+input EmployeeDepartmentsConnectionWhere {
+  AND: [EmployeeDepartmentsConnectionWhere!]
+  NOT: EmployeeDepartmentsConnectionWhere
+  OR: [EmployeeDepartmentsConnectionWhere!]
+  node: DepartmentWhere
+}
+
+input EmployeeDepartmentsCreateFieldInput {
+  node: DepartmentCreateInput!
+}
+
+input EmployeeDepartmentsDeleteFieldInput {
+  delete: DepartmentDeleteInput
+  where: EmployeeDepartmentsConnectionWhere
+}
+
+input EmployeeDepartmentsDisconnectFieldInput {
+  disconnect: DepartmentDisconnectInput
+  where: EmployeeDepartmentsConnectionWhere
+}
+
+input EmployeeDepartmentsFieldInput {
+  connect: [EmployeeDepartmentsConnectFieldInput!]
+  create: [EmployeeDepartmentsCreateFieldInput!]
+}
+
+input EmployeeDepartmentsNodeAggregationWhereInput {
+  AND: [EmployeeDepartmentsNodeAggregationWhereInput!]
+  NOT: EmployeeDepartmentsNodeAggregationWhereInput
+  OR: [EmployeeDepartmentsNodeAggregationWhereInput!]
+  budget: BigIntScalarAggregationFilters
+  budget_AVERAGE_EQUAL: BigInt @deprecated(reason: "Please use the relevant generic filter 'budget: { average: { eq: ... } } }' instead.")
+  budget_AVERAGE_GT: BigInt @deprecated(reason: "Please use the relevant generic filter 'budget: { average: { gt: ... } } }' instead.")
+  budget_AVERAGE_GTE: BigInt @deprecated(reason: "Please use the relevant generic filter 'budget: { average: { gte: ... } } }' instead.")
+  budget_AVERAGE_LT: BigInt @deprecated(reason: "Please use the relevant generic filter 'budget: { average: { lt: ... } } }' instead.")
+  budget_AVERAGE_LTE: BigInt @deprecated(reason: "Please use the relevant generic filter 'budget: { average: { lte: ... } } }' instead.")
+  budget_MAX_EQUAL: BigInt @deprecated(reason: "Please use the relevant generic filter 'budget: { max: { eq: ... } } }' instead.")
+  budget_MAX_GT: BigInt @deprecated(reason: "Please use the relevant generic filter 'budget: { max: { gt: ... } } }' instead.")
+  budget_MAX_GTE: BigInt @deprecated(reason: "Please use the relevant generic filter 'budget: { max: { gte: ... } } }' instead.")
+  budget_MAX_LT: BigInt @deprecated(reason: "Please use the relevant generic filter 'budget: { max: { lt: ... } } }' instead.")
+  budget_MAX_LTE: BigInt @deprecated(reason: "Please use the relevant generic filter 'budget: { max: { lte: ... } } }' instead.")
+  budget_MIN_EQUAL: BigInt @deprecated(reason: "Please use the relevant generic filter 'budget: { min: { eq: ... } } }' instead.")
+  budget_MIN_GT: BigInt @deprecated(reason: "Please use the relevant generic filter 'budget: { min: { gt: ... } } }' instead.")
+  budget_MIN_GTE: BigInt @deprecated(reason: "Please use the relevant generic filter 'budget: { min: { gte: ... } } }' instead.")
+  budget_MIN_LT: BigInt @deprecated(reason: "Please use the relevant generic filter 'budget: { min: { lt: ... } } }' instead.")
+  budget_MIN_LTE: BigInt @deprecated(reason: "Please use the relevant generic filter 'budget: { min: { lte: ... } } }' instead.")
+  budget_SUM_EQUAL: BigInt @deprecated(reason: "Please use the relevant generic filter 'budget: { sum: { eq: ... } } }' instead.")
+  budget_SUM_GT: BigInt @deprecated(reason: "Please use the relevant generic filter 'budget: { sum: { gt: ... } } }' instead.")
+  budget_SUM_GTE: BigInt @deprecated(reason: "Please use the relevant generic filter 'budget: { sum: { gte: ... } } }' instead.")
+  budget_SUM_LT: BigInt @deprecated(reason: "Please use the relevant generic filter 'budget: { sum: { lt: ... } } }' instead.")
+  budget_SUM_LTE: BigInt @deprecated(reason: "Please use the relevant generic filter 'budget: { sum: { lte: ... } } }' instead.")
+  name: StringScalarAggregationFilters
+  name_AVERAGE_LENGTH_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { eq: ... } } }' instead.")
+  name_AVERAGE_LENGTH_GT: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { gt: ... } } }' instead.")
+  name_AVERAGE_LENGTH_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { gte: ... } } }' instead.")
+  name_AVERAGE_LENGTH_LT: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { lt: ... } } }' instead.")
+  name_AVERAGE_LENGTH_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { lte: ... } } }' instead.")
+  name_LONGEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { eq: ... } } }' instead.")
+  name_LONGEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { gt: ... } } }' instead.")
+  name_LONGEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { gte: ... } } }' instead.")
+  name_LONGEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { lt: ... } } }' instead.")
+  name_LONGEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { lte: ... } } }' instead.")
+  name_SHORTEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { eq: ... } } }' instead.")
+  name_SHORTEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { gt: ... } } }' instead.")
+  name_SHORTEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { gte: ... } } }' instead.")
+  name_SHORTEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { lt: ... } } }' instead.")
+  name_SHORTEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { lte: ... } } }' instead.")
+}
+
+type EmployeeDepartmentsRelationship {
+  cursor: String!
+  node: Department!
+}
+
+input EmployeeDepartmentsUpdateConnectionInput {
+  node: DepartmentUpdateInput
+  where: EmployeeDepartmentsConnectionWhere
+}
+
+input EmployeeDepartmentsUpdateFieldInput {
+  connect: [EmployeeDepartmentsConnectFieldInput!]
+  create: [EmployeeDepartmentsCreateFieldInput!]
+  delete: [EmployeeDepartmentsDeleteFieldInput!]
+  disconnect: [EmployeeDepartmentsDisconnectFieldInput!]
+  update: EmployeeDepartmentsUpdateConnectionInput
+}
+
+input EmployeeDisconnectInput {
+  departments: [EmployeeDepartmentsDisconnectFieldInput!]
+  employers: [EmployeeEmployersDisconnectFieldInput!]
+  manager: [EmployeeManagerDisconnectFieldInput!]
+  reports: [EmployeeReportsDisconnectFieldInput!]
+}
+
+type EmployeeEdge {
+  cursor: String!
+  node: Employee!
+}
+
+type EmployeeEmployeeManagerAggregateSelection {
+  count: CountConnection!
+  node: EmployeeEmployeeManagerNodeAggregateSelection
+}
+
+type EmployeeEmployeeManagerNodeAggregateSelection {
+  name: StringAggregateSelection!
+  title: StringAggregateSelection!
+}
+
+type EmployeeEmployeeReportsAggregateSelection {
+  count: CountConnection!
+  node: EmployeeEmployeeReportsNodeAggregateSelection
+}
+
+type EmployeeEmployeeReportsNodeAggregateSelection {
+  name: StringAggregateSelection!
+  title: StringAggregateSelection!
+}
+
+input EmployeeEmployersAggregateInput {
+  AND: [EmployeeEmployersAggregateInput!]
+  NOT: EmployeeEmployersAggregateInput
+  OR: [EmployeeEmployersAggregateInput!]
+  count: IntScalarFilters
+  count_EQ: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { eq: ... } } }' instead.")
+  count_GT: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { gt: ... } } }' instead.")
+  count_GTE: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { gte: ... } } }' instead.")
+  count_LT: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { lt: ... } } }' instead.")
+  count_LTE: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { lte: ... } } }' instead.")
+  edge: EmploymentAggregationWhereInput
+  node: EmployeeEmployersNodeAggregationWhereInput
+}
+
+input EmployeeEmployersConnectFieldInput {
+  connect: [CompanyConnectInput!]
+  edge: EmploymentCreateInput!
+  where: CompanyConnectWhere
+}
+
+type EmployeeEmployersConnection {
+  aggregate: EmployeeCompanyEmployersAggregateSelection!
+  edges: [EmployeeEmployersRelationship!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+input EmployeeEmployersConnectionAggregateInput {
+  AND: [EmployeeEmployersConnectionAggregateInput!]
+  NOT: EmployeeEmployersConnectionAggregateInput
+  OR: [EmployeeEmployersConnectionAggregateInput!]
+  count: ConnectionAggregationCountFilterInput
+  edge: EmploymentAggregationWhereInput
+  node: EmployeeEmployersNodeAggregationWhereInput
+}
+
+input EmployeeEmployersConnectionFilters {
+  """
+  Filter Employees by aggregating results on related EmployeeEmployersConnections
+  """
+  aggregate: EmployeeEmployersConnectionAggregateInput
+
+  """
+  Return Employees where all of the related EmployeeEmployersConnections match this filter
+  """
+  all: EmployeeEmployersConnectionWhere
+
+  """
+  Return Employees where none of the related EmployeeEmployersConnections match this filter
+  """
+  none: EmployeeEmployersConnectionWhere
+
+  """
+  Return Employees where one of the related EmployeeEmployersConnections match this filter
+  """
+  single: EmployeeEmployersConnectionWhere
+
+  """
+  Return Employees where some of the related EmployeeEmployersConnections match this filter
+  """
+  some: EmployeeEmployersConnectionWhere
+}
+
+input EmployeeEmployersConnectionSort {
+  edge: EmploymentSort
+  node: CompanySort
+}
+
+input EmployeeEmployersConnectionWhere {
+  AND: [EmployeeEmployersConnectionWhere!]
+  NOT: EmployeeEmployersConnectionWhere
+  OR: [EmployeeEmployersConnectionWhere!]
+  edge: EmploymentWhere
+  node: CompanyWhere
+}
+
+input EmployeeEmployersCreateFieldInput {
+  edge: EmploymentCreateInput!
+  node: CompanyCreateInput!
+}
+
+input EmployeeEmployersDeleteFieldInput {
+  delete: CompanyDeleteInput
+  where: EmployeeEmployersConnectionWhere
+}
+
+input EmployeeEmployersDisconnectFieldInput {
+  disconnect: CompanyDisconnectInput
+  where: EmployeeEmployersConnectionWhere
+}
+
+input EmployeeEmployersFieldInput {
+  connect: [EmployeeEmployersConnectFieldInput!]
+  create: [EmployeeEmployersCreateFieldInput!]
+}
+
+input EmployeeEmployersNodeAggregationWhereInput {
+  AND: [EmployeeEmployersNodeAggregationWhereInput!]
+  NOT: EmployeeEmployersNodeAggregationWhereInput
+  OR: [EmployeeEmployersNodeAggregationWhereInput!]
+  name: StringScalarAggregationFilters
+  name_AVERAGE_LENGTH_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { eq: ... } } }' instead.")
+  name_AVERAGE_LENGTH_GT: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { gt: ... } } }' instead.")
+  name_AVERAGE_LENGTH_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { gte: ... } } }' instead.")
+  name_AVERAGE_LENGTH_LT: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { lt: ... } } }' instead.")
+  name_AVERAGE_LENGTH_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { lte: ... } } }' instead.")
+  name_LONGEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { eq: ... } } }' instead.")
+  name_LONGEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { gt: ... } } }' instead.")
+  name_LONGEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { gte: ... } } }' instead.")
+  name_LONGEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { lt: ... } } }' instead.")
+  name_LONGEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { lte: ... } } }' instead.")
+  name_SHORTEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { eq: ... } } }' instead.")
+  name_SHORTEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { gt: ... } } }' instead.")
+  name_SHORTEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { gte: ... } } }' instead.")
+  name_SHORTEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { lt: ... } } }' instead.")
+  name_SHORTEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { lte: ... } } }' instead.")
+}
+
+type EmployeeEmployersRelationship {
+  cursor: String!
+  node: Company!
+  properties: Employment!
+}
+
+input EmployeeEmployersUpdateConnectionInput {
+  edge: EmploymentUpdateInput
+  node: CompanyUpdateInput
+  where: EmployeeEmployersConnectionWhere
+}
+
+input EmployeeEmployersUpdateFieldInput {
+  connect: [EmployeeEmployersConnectFieldInput!]
+  create: [EmployeeEmployersCreateFieldInput!]
+  delete: [EmployeeEmployersDeleteFieldInput!]
+  disconnect: [EmployeeEmployersDisconnectFieldInput!]
+  update: EmployeeEmployersUpdateConnectionInput
+}
+
+input EmployeeManagerAggregateInput {
+  AND: [EmployeeManagerAggregateInput!]
+  NOT: EmployeeManagerAggregateInput
+  OR: [EmployeeManagerAggregateInput!]
+  count: IntScalarFilters
+  count_EQ: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { eq: ... } } }' instead.")
+  count_GT: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { gt: ... } } }' instead.")
+  count_GTE: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { gte: ... } } }' instead.")
+  count_LT: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { lt: ... } } }' instead.")
+  count_LTE: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { lte: ... } } }' instead.")
+  node: EmployeeManagerNodeAggregationWhereInput
+}
+
+input EmployeeManagerConnectFieldInput {
+  connect: [EmployeeConnectInput!]
+  where: EmployeeConnectWhere
+}
+
+type EmployeeManagerConnection {
+  aggregate: EmployeeEmployeeManagerAggregateSelection!
+  edges: [EmployeeManagerRelationship!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+input EmployeeManagerConnectionAggregateInput {
+  AND: [EmployeeManagerConnectionAggregateInput!]
+  NOT: EmployeeManagerConnectionAggregateInput
+  OR: [EmployeeManagerConnectionAggregateInput!]
+  count: ConnectionAggregationCountFilterInput
+  node: EmployeeManagerNodeAggregationWhereInput
+}
+
+input EmployeeManagerConnectionFilters {
+  """
+  Filter Employees by aggregating results on related EmployeeManagerConnections
+  """
+  aggregate: EmployeeManagerConnectionAggregateInput
+
+  """
+  Return Employees where all of the related EmployeeManagerConnections match this filter
+  """
+  all: EmployeeManagerConnectionWhere
+
+  """
+  Return Employees where none of the related EmployeeManagerConnections match this filter
+  """
+  none: EmployeeManagerConnectionWhere
+
+  """
+  Return Employees where one of the related EmployeeManagerConnections match this filter
+  """
+  single: EmployeeManagerConnectionWhere
+
+  """
+  Return Employees where some of the related EmployeeManagerConnections match this filter
+  """
+  some: EmployeeManagerConnectionWhere
+}
+
+input EmployeeManagerConnectionSort {
+  node: EmployeeSort
+}
+
+input EmployeeManagerConnectionWhere {
+  AND: [EmployeeManagerConnectionWhere!]
+  NOT: EmployeeManagerConnectionWhere
+  OR: [EmployeeManagerConnectionWhere!]
+  node: EmployeeWhere
+}
+
+input EmployeeManagerCreateFieldInput {
+  node: EmployeeCreateInput!
+}
+
+input EmployeeManagerDeleteFieldInput {
+  delete: EmployeeDeleteInput
+  where: EmployeeManagerConnectionWhere
+}
+
+input EmployeeManagerDisconnectFieldInput {
+  disconnect: EmployeeDisconnectInput
+  where: EmployeeManagerConnectionWhere
+}
+
+input EmployeeManagerFieldInput {
+  connect: [EmployeeManagerConnectFieldInput!]
+  create: [EmployeeManagerCreateFieldInput!]
+}
+
+input EmployeeManagerNodeAggregationWhereInput {
+  AND: [EmployeeManagerNodeAggregationWhereInput!]
+  NOT: EmployeeManagerNodeAggregationWhereInput
+  OR: [EmployeeManagerNodeAggregationWhereInput!]
+  name: StringScalarAggregationFilters
+  name_AVERAGE_LENGTH_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { eq: ... } } }' instead.")
+  name_AVERAGE_LENGTH_GT: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { gt: ... } } }' instead.")
+  name_AVERAGE_LENGTH_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { gte: ... } } }' instead.")
+  name_AVERAGE_LENGTH_LT: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { lt: ... } } }' instead.")
+  name_AVERAGE_LENGTH_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { lte: ... } } }' instead.")
+  name_LONGEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { eq: ... } } }' instead.")
+  name_LONGEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { gt: ... } } }' instead.")
+  name_LONGEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { gte: ... } } }' instead.")
+  name_LONGEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { lt: ... } } }' instead.")
+  name_LONGEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { lte: ... } } }' instead.")
+  name_SHORTEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { eq: ... } } }' instead.")
+  name_SHORTEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { gt: ... } } }' instead.")
+  name_SHORTEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { gte: ... } } }' instead.")
+  name_SHORTEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { lt: ... } } }' instead.")
+  name_SHORTEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { lte: ... } } }' instead.")
+  title: StringScalarAggregationFilters
+  title_AVERAGE_LENGTH_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'title: { averageLength: { eq: ... } } }' instead.")
+  title_AVERAGE_LENGTH_GT: Float @deprecated(reason: "Please use the relevant generic filter 'title: { averageLength: { gt: ... } } }' instead.")
+  title_AVERAGE_LENGTH_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'title: { averageLength: { gte: ... } } }' instead.")
+  title_AVERAGE_LENGTH_LT: Float @deprecated(reason: "Please use the relevant generic filter 'title: { averageLength: { lt: ... } } }' instead.")
+  title_AVERAGE_LENGTH_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'title: { averageLength: { lte: ... } } }' instead.")
+  title_LONGEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'title: { longestLength: { eq: ... } } }' instead.")
+  title_LONGEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'title: { longestLength: { gt: ... } } }' instead.")
+  title_LONGEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'title: { longestLength: { gte: ... } } }' instead.")
+  title_LONGEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'title: { longestLength: { lt: ... } } }' instead.")
+  title_LONGEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'title: { longestLength: { lte: ... } } }' instead.")
+  title_SHORTEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'title: { shortestLength: { eq: ... } } }' instead.")
+  title_SHORTEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'title: { shortestLength: { gt: ... } } }' instead.")
+  title_SHORTEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'title: { shortestLength: { gte: ... } } }' instead.")
+  title_SHORTEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'title: { shortestLength: { lt: ... } } }' instead.")
+  title_SHORTEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'title: { shortestLength: { lte: ... } } }' instead.")
+}
+
+type EmployeeManagerRelationship {
+  cursor: String!
+  node: Employee!
+}
+
+input EmployeeManagerUpdateConnectionInput {
+  node: EmployeeUpdateInput
+  where: EmployeeManagerConnectionWhere
+}
+
+input EmployeeManagerUpdateFieldInput {
+  connect: [EmployeeManagerConnectFieldInput!]
+  create: [EmployeeManagerCreateFieldInput!]
+  delete: [EmployeeManagerDeleteFieldInput!]
+  disconnect: [EmployeeManagerDisconnectFieldInput!]
+  update: EmployeeManagerUpdateConnectionInput
+}
+
+input EmployeeRelationshipFilters {
+  """Filter type where all of the related Employees match this filter"""
+  all: EmployeeWhere
+
+  """Filter type where none of the related Employees match this filter"""
+  none: EmployeeWhere
+
+  """Filter type where one of the related Employees match this filter"""
+  single: EmployeeWhere
+
+  """Filter type where some of the related Employees match this filter"""
+  some: EmployeeWhere
+}
+
+input EmployeeReportsAggregateInput {
+  AND: [EmployeeReportsAggregateInput!]
+  NOT: EmployeeReportsAggregateInput
+  OR: [EmployeeReportsAggregateInput!]
+  count: IntScalarFilters
+  count_EQ: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { eq: ... } } }' instead.")
+  count_GT: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { gt: ... } } }' instead.")
+  count_GTE: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { gte: ... } } }' instead.")
+  count_LT: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { lt: ... } } }' instead.")
+  count_LTE: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { lte: ... } } }' instead.")
+  node: EmployeeReportsNodeAggregationWhereInput
+}
+
+input EmployeeReportsConnectFieldInput {
+  connect: [EmployeeConnectInput!]
+  where: EmployeeConnectWhere
+}
+
+type EmployeeReportsConnection {
+  aggregate: EmployeeEmployeeReportsAggregateSelection!
+  edges: [EmployeeReportsRelationship!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+input EmployeeReportsConnectionAggregateInput {
+  AND: [EmployeeReportsConnectionAggregateInput!]
+  NOT: EmployeeReportsConnectionAggregateInput
+  OR: [EmployeeReportsConnectionAggregateInput!]
+  count: ConnectionAggregationCountFilterInput
+  node: EmployeeReportsNodeAggregationWhereInput
+}
+
+input EmployeeReportsConnectionFilters {
+  """
+  Filter Employees by aggregating results on related EmployeeReportsConnections
+  """
+  aggregate: EmployeeReportsConnectionAggregateInput
+
+  """
+  Return Employees where all of the related EmployeeReportsConnections match this filter
+  """
+  all: EmployeeReportsConnectionWhere
+
+  """
+  Return Employees where none of the related EmployeeReportsConnections match this filter
+  """
+  none: EmployeeReportsConnectionWhere
+
+  """
+  Return Employees where one of the related EmployeeReportsConnections match this filter
+  """
+  single: EmployeeReportsConnectionWhere
+
+  """
+  Return Employees where some of the related EmployeeReportsConnections match this filter
+  """
+  some: EmployeeReportsConnectionWhere
+}
+
+input EmployeeReportsConnectionSort {
+  node: EmployeeSort
+}
+
+input EmployeeReportsConnectionWhere {
+  AND: [EmployeeReportsConnectionWhere!]
+  NOT: EmployeeReportsConnectionWhere
+  OR: [EmployeeReportsConnectionWhere!]
+  node: EmployeeWhere
+}
+
+input EmployeeReportsCreateFieldInput {
+  node: EmployeeCreateInput!
+}
+
+input EmployeeReportsDeleteFieldInput {
+  delete: EmployeeDeleteInput
+  where: EmployeeReportsConnectionWhere
+}
+
+input EmployeeReportsDisconnectFieldInput {
+  disconnect: EmployeeDisconnectInput
+  where: EmployeeReportsConnectionWhere
+}
+
+input EmployeeReportsFieldInput {
+  connect: [EmployeeReportsConnectFieldInput!]
+  create: [EmployeeReportsCreateFieldInput!]
+}
+
+input EmployeeReportsNodeAggregationWhereInput {
+  AND: [EmployeeReportsNodeAggregationWhereInput!]
+  NOT: EmployeeReportsNodeAggregationWhereInput
+  OR: [EmployeeReportsNodeAggregationWhereInput!]
+  name: StringScalarAggregationFilters
+  name_AVERAGE_LENGTH_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { eq: ... } } }' instead.")
+  name_AVERAGE_LENGTH_GT: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { gt: ... } } }' instead.")
+  name_AVERAGE_LENGTH_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { gte: ... } } }' instead.")
+  name_AVERAGE_LENGTH_LT: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { lt: ... } } }' instead.")
+  name_AVERAGE_LENGTH_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { lte: ... } } }' instead.")
+  name_LONGEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { eq: ... } } }' instead.")
+  name_LONGEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { gt: ... } } }' instead.")
+  name_LONGEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { gte: ... } } }' instead.")
+  name_LONGEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { lt: ... } } }' instead.")
+  name_LONGEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { lte: ... } } }' instead.")
+  name_SHORTEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { eq: ... } } }' instead.")
+  name_SHORTEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { gt: ... } } }' instead.")
+  name_SHORTEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { gte: ... } } }' instead.")
+  name_SHORTEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { lt: ... } } }' instead.")
+  name_SHORTEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { lte: ... } } }' instead.")
+  title: StringScalarAggregationFilters
+  title_AVERAGE_LENGTH_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'title: { averageLength: { eq: ... } } }' instead.")
+  title_AVERAGE_LENGTH_GT: Float @deprecated(reason: "Please use the relevant generic filter 'title: { averageLength: { gt: ... } } }' instead.")
+  title_AVERAGE_LENGTH_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'title: { averageLength: { gte: ... } } }' instead.")
+  title_AVERAGE_LENGTH_LT: Float @deprecated(reason: "Please use the relevant generic filter 'title: { averageLength: { lt: ... } } }' instead.")
+  title_AVERAGE_LENGTH_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'title: { averageLength: { lte: ... } } }' instead.")
+  title_LONGEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'title: { longestLength: { eq: ... } } }' instead.")
+  title_LONGEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'title: { longestLength: { gt: ... } } }' instead.")
+  title_LONGEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'title: { longestLength: { gte: ... } } }' instead.")
+  title_LONGEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'title: { longestLength: { lt: ... } } }' instead.")
+  title_LONGEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'title: { longestLength: { lte: ... } } }' instead.")
+  title_SHORTEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'title: { shortestLength: { eq: ... } } }' instead.")
+  title_SHORTEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'title: { shortestLength: { gt: ... } } }' instead.")
+  title_SHORTEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'title: { shortestLength: { gte: ... } } }' instead.")
+  title_SHORTEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'title: { shortestLength: { lt: ... } } }' instead.")
+  title_SHORTEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'title: { shortestLength: { lte: ... } } }' instead.")
+}
+
+type EmployeeReportsRelationship {
+  cursor: String!
+  node: Employee!
+}
+
+input EmployeeReportsUpdateConnectionInput {
+  node: EmployeeUpdateInput
+  where: EmployeeReportsConnectionWhere
+}
+
+input EmployeeReportsUpdateFieldInput {
+  connect: [EmployeeReportsConnectFieldInput!]
+  create: [EmployeeReportsCreateFieldInput!]
+  delete: [EmployeeReportsDeleteFieldInput!]
+  disconnect: [EmployeeReportsDisconnectFieldInput!]
+  update: EmployeeReportsUpdateConnectionInput
+}
+
+"""
+Fields to sort Employees by. The order in which sorts are applied is not guaranteed when specifying many fields in one EmployeeSort object.
+"""
+input EmployeeSort {
+  active: SortDirection
+  id: SortDirection
+  name: SortDirection
+  title: SortDirection
+}
+
+input EmployeeUpdateInput {
+  active: BooleanScalarMutations
+  active_SET: Boolean @deprecated(reason: "Please use the generic mutation 'active: { set: ... } }' instead.")
+  departments: [EmployeeDepartmentsUpdateFieldInput!]
+  employers: [EmployeeEmployersUpdateFieldInput!]
+  manager: [EmployeeManagerUpdateFieldInput!]
+  name: StringScalarMutations
+  name_SET: String @deprecated(reason: "Please use the generic mutation 'name: { set: ... } }' instead.")
+  reports: [EmployeeReportsUpdateFieldInput!]
+  title: StringScalarMutations
+  title_SET: String @deprecated(reason: "Please use the generic mutation 'title: { set: ... } }' instead.")
+}
+
+input EmployeeWhere {
+  AND: [EmployeeWhere!]
+  NOT: EmployeeWhere
+  OR: [EmployeeWhere!]
+  active: BooleanScalarFilters
+  active_EQ: Boolean @deprecated(reason: "Please use the relevant generic filter active: { eq: ... }")
+  departments: DepartmentRelationshipFilters
+  departmentsAggregate: EmployeeDepartmentsAggregateInput @deprecated(reason: "Aggregate filters are moved inside the departmentsConnection filter, please use { departmentsConnection: { aggregate: {...} } } instead")
+  departmentsConnection: EmployeeDepartmentsConnectionFilters
+
+  """
+  Return Employees where all of the related EmployeeDepartmentsConnections match this filter
+  """
+  departmentsConnection_ALL: EmployeeDepartmentsConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'departmentsConnection: { all: { node: ... } } }' instead.")
+
+  """
+  Return Employees where none of the related EmployeeDepartmentsConnections match this filter
+  """
+  departmentsConnection_NONE: EmployeeDepartmentsConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'departmentsConnection: { none: { node: ... } } }' instead.")
+
+  """
+  Return Employees where one of the related EmployeeDepartmentsConnections match this filter
+  """
+  departmentsConnection_SINGLE: EmployeeDepartmentsConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'departmentsConnection: { single: { node: ... } } }' instead.")
+
+  """
+  Return Employees where some of the related EmployeeDepartmentsConnections match this filter
+  """
+  departmentsConnection_SOME: EmployeeDepartmentsConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'departmentsConnection: { some: { node: ... } } }' instead.")
+
+  """
+  Return Employees where all of the related Departments match this filter
+  """
+  departments_ALL: DepartmentWhere @deprecated(reason: "Please use the relevant generic filter 'departments: { all: ... }' instead.")
+
+  """
+  Return Employees where none of the related Departments match this filter
+  """
+  departments_NONE: DepartmentWhere @deprecated(reason: "Please use the relevant generic filter 'departments: { none: ... }' instead.")
+
+  """
+  Return Employees where one of the related Departments match this filter
+  """
+  departments_SINGLE: DepartmentWhere @deprecated(reason: "Please use the relevant generic filter 'departments: {  single: ... }' instead.")
+
+  """
+  Return Employees where some of the related Departments match this filter
+  """
+  departments_SOME: DepartmentWhere @deprecated(reason: "Please use the relevant generic filter 'departments: {  some: ... }' instead.")
+  employers: CompanyRelationshipFilters
+  employersAggregate: EmployeeEmployersAggregateInput @deprecated(reason: "Aggregate filters are moved inside the employersConnection filter, please use { employersConnection: { aggregate: {...} } } instead")
+  employersConnection: EmployeeEmployersConnectionFilters
+
+  """
+  Return Employees where all of the related EmployeeEmployersConnections match this filter
+  """
+  employersConnection_ALL: EmployeeEmployersConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'employersConnection: { all: { node: ... } } }' instead.")
+
+  """
+  Return Employees where none of the related EmployeeEmployersConnections match this filter
+  """
+  employersConnection_NONE: EmployeeEmployersConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'employersConnection: { none: { node: ... } } }' instead.")
+
+  """
+  Return Employees where one of the related EmployeeEmployersConnections match this filter
+  """
+  employersConnection_SINGLE: EmployeeEmployersConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'employersConnection: { single: { node: ... } } }' instead.")
+
+  """
+  Return Employees where some of the related EmployeeEmployersConnections match this filter
+  """
+  employersConnection_SOME: EmployeeEmployersConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'employersConnection: { some: { node: ... } } }' instead.")
+
+  """Return Employees where all of the related Companies match this filter"""
+  employers_ALL: CompanyWhere @deprecated(reason: "Please use the relevant generic filter 'employers: { all: ... }' instead.")
+
+  """Return Employees where none of the related Companies match this filter"""
+  employers_NONE: CompanyWhere @deprecated(reason: "Please use the relevant generic filter 'employers: { none: ... }' instead.")
+
+  """Return Employees where one of the related Companies match this filter"""
+  employers_SINGLE: CompanyWhere @deprecated(reason: "Please use the relevant generic filter 'employers: {  single: ... }' instead.")
+
+  """Return Employees where some of the related Companies match this filter"""
+  employers_SOME: CompanyWhere @deprecated(reason: "Please use the relevant generic filter 'employers: {  some: ... }' instead.")
+  id: IDScalarFilters
+  id_CONTAINS: ID @deprecated(reason: "Please use the relevant generic filter id: { contains: ... }")
+  id_ENDS_WITH: ID @deprecated(reason: "Please use the relevant generic filter id: { endsWith: ... }")
+  id_EQ: ID @deprecated(reason: "Please use the relevant generic filter id: { eq: ... }")
+  id_IN: [ID!] @deprecated(reason: "Please use the relevant generic filter id: { in: ... }")
+  id_STARTS_WITH: ID @deprecated(reason: "Please use the relevant generic filter id: { startsWith: ... }")
+  manager: EmployeeRelationshipFilters
+  managerAggregate: EmployeeManagerAggregateInput @deprecated(reason: "Aggregate filters are moved inside the managerConnection filter, please use { managerConnection: { aggregate: {...} } } instead")
+  managerConnection: EmployeeManagerConnectionFilters
+
+  """
+  Return Employees where all of the related EmployeeManagerConnections match this filter
+  """
+  managerConnection_ALL: EmployeeManagerConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'managerConnection: { all: { node: ... } } }' instead.")
+
+  """
+  Return Employees where none of the related EmployeeManagerConnections match this filter
+  """
+  managerConnection_NONE: EmployeeManagerConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'managerConnection: { none: { node: ... } } }' instead.")
+
+  """
+  Return Employees where one of the related EmployeeManagerConnections match this filter
+  """
+  managerConnection_SINGLE: EmployeeManagerConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'managerConnection: { single: { node: ... } } }' instead.")
+
+  """
+  Return Employees where some of the related EmployeeManagerConnections match this filter
+  """
+  managerConnection_SOME: EmployeeManagerConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'managerConnection: { some: { node: ... } } }' instead.")
+
+  """Return Employees where all of the related Employees match this filter"""
+  manager_ALL: EmployeeWhere @deprecated(reason: "Please use the relevant generic filter 'manager: { all: ... }' instead.")
+
+  """Return Employees where none of the related Employees match this filter"""
+  manager_NONE: EmployeeWhere @deprecated(reason: "Please use the relevant generic filter 'manager: { none: ... }' instead.")
+
+  """Return Employees where one of the related Employees match this filter"""
+  manager_SINGLE: EmployeeWhere @deprecated(reason: "Please use the relevant generic filter 'manager: {  single: ... }' instead.")
+
+  """Return Employees where some of the related Employees match this filter"""
+  manager_SOME: EmployeeWhere @deprecated(reason: "Please use the relevant generic filter 'manager: {  some: ... }' instead.")
+  name: StringScalarFilters
+  name_CONTAINS: String @deprecated(reason: "Please use the relevant generic filter name: { contains: ... }")
+  name_ENDS_WITH: String @deprecated(reason: "Please use the relevant generic filter name: { endsWith: ... }")
+  name_EQ: String @deprecated(reason: "Please use the relevant generic filter name: { eq: ... }")
+  name_IN: [String!] @deprecated(reason: "Please use the relevant generic filter name: { in: ... }")
+  name_STARTS_WITH: String @deprecated(reason: "Please use the relevant generic filter name: { startsWith: ... }")
+  reports: EmployeeRelationshipFilters
+  reportsAggregate: EmployeeReportsAggregateInput @deprecated(reason: "Aggregate filters are moved inside the reportsConnection filter, please use { reportsConnection: { aggregate: {...} } } instead")
+  reportsConnection: EmployeeReportsConnectionFilters
+
+  """
+  Return Employees where all of the related EmployeeReportsConnections match this filter
+  """
+  reportsConnection_ALL: EmployeeReportsConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'reportsConnection: { all: { node: ... } } }' instead.")
+
+  """
+  Return Employees where none of the related EmployeeReportsConnections match this filter
+  """
+  reportsConnection_NONE: EmployeeReportsConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'reportsConnection: { none: { node: ... } } }' instead.")
+
+  """
+  Return Employees where one of the related EmployeeReportsConnections match this filter
+  """
+  reportsConnection_SINGLE: EmployeeReportsConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'reportsConnection: { single: { node: ... } } }' instead.")
+
+  """
+  Return Employees where some of the related EmployeeReportsConnections match this filter
+  """
+  reportsConnection_SOME: EmployeeReportsConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'reportsConnection: { some: { node: ... } } }' instead.")
+
+  """Return Employees where all of the related Employees match this filter"""
+  reports_ALL: EmployeeWhere @deprecated(reason: "Please use the relevant generic filter 'reports: { all: ... }' instead.")
+
+  """Return Employees where none of the related Employees match this filter"""
+  reports_NONE: EmployeeWhere @deprecated(reason: "Please use the relevant generic filter 'reports: { none: ... }' instead.")
+
+  """Return Employees where one of the related Employees match this filter"""
+  reports_SINGLE: EmployeeWhere @deprecated(reason: "Please use the relevant generic filter 'reports: {  single: ... }' instead.")
+
+  """Return Employees where some of the related Employees match this filter"""
+  reports_SOME: EmployeeWhere @deprecated(reason: "Please use the relevant generic filter 'reports: {  some: ... }' instead.")
+  title: StringScalarFilters
+  title_CONTAINS: String @deprecated(reason: "Please use the relevant generic filter title: { contains: ... }")
+  title_ENDS_WITH: String @deprecated(reason: "Please use the relevant generic filter title: { endsWith: ... }")
+  title_EQ: String @deprecated(reason: "Please use the relevant generic filter title: { eq: ... }")
+  title_IN: [String] @deprecated(reason: "Please use the relevant generic filter title: { in: ... }")
+  title_STARTS_WITH: String @deprecated(reason: "Please use the relevant generic filter title: { startsWith: ... }")
+}
+
+type EmployeesConnection {
+  aggregate: EmployeeAggregate!
+  edges: [EmployeeEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+"""
+The edge properties for the following fields:
+* Company.employees
+* Employee.employers
+"""
+type Employment {
+  fullTime: Boolean!
+  role: String!
+  since: Date!
+}
+
+input EmploymentAggregationWhereInput {
+  AND: [EmploymentAggregationWhereInput!]
+  NOT: EmploymentAggregationWhereInput
+  OR: [EmploymentAggregationWhereInput!]
+  role: StringScalarAggregationFilters
+  role_AVERAGE_LENGTH_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'role: { averageLength: { eq: ... } } }' instead.")
+  role_AVERAGE_LENGTH_GT: Float @deprecated(reason: "Please use the relevant generic filter 'role: { averageLength: { gt: ... } } }' instead.")
+  role_AVERAGE_LENGTH_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'role: { averageLength: { gte: ... } } }' instead.")
+  role_AVERAGE_LENGTH_LT: Float @deprecated(reason: "Please use the relevant generic filter 'role: { averageLength: { lt: ... } } }' instead.")
+  role_AVERAGE_LENGTH_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'role: { averageLength: { lte: ... } } }' instead.")
+  role_LONGEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'role: { longestLength: { eq: ... } } }' instead.")
+  role_LONGEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'role: { longestLength: { gt: ... } } }' instead.")
+  role_LONGEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'role: { longestLength: { gte: ... } } }' instead.")
+  role_LONGEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'role: { longestLength: { lt: ... } } }' instead.")
+  role_LONGEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'role: { longestLength: { lte: ... } } }' instead.")
+  role_SHORTEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'role: { shortestLength: { eq: ... } } }' instead.")
+  role_SHORTEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'role: { shortestLength: { gt: ... } } }' instead.")
+  role_SHORTEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'role: { shortestLength: { gte: ... } } }' instead.")
+  role_SHORTEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'role: { shortestLength: { lt: ... } } }' instead.")
+  role_SHORTEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'role: { shortestLength: { lte: ... } } }' instead.")
+}
+
+input EmploymentCreateInput {
+  fullTime: Boolean!
+  role: String!
+  since: Date!
+}
+
+input EmploymentSort {
+  fullTime: SortDirection
+  role: SortDirection
+  since: SortDirection
+}
+
+input EmploymentUpdateInput {
+  fullTime: BooleanScalarMutations
+  fullTime_SET: Boolean @deprecated(reason: "Please use the generic mutation 'fullTime: { set: ... } }' instead.")
+  role: StringScalarMutations
+  role_SET: String @deprecated(reason: "Please use the generic mutation 'role: { set: ... } }' instead.")
+  since: DateScalarMutations
+  since_SET: Date @deprecated(reason: "Please use the generic mutation 'since: { set: ... } }' instead.")
+}
+
+input EmploymentWhere {
+  AND: [EmploymentWhere!]
+  NOT: EmploymentWhere
+  OR: [EmploymentWhere!]
+  fullTime: BooleanScalarFilters
+  fullTime_EQ: Boolean @deprecated(reason: "Please use the relevant generic filter fullTime: { eq: ... }")
+  role: StringScalarFilters
+  role_CONTAINS: String @deprecated(reason: "Please use the relevant generic filter role: { contains: ... }")
+  role_ENDS_WITH: String @deprecated(reason: "Please use the relevant generic filter role: { endsWith: ... }")
+  role_EQ: String @deprecated(reason: "Please use the relevant generic filter role: { eq: ... }")
+  role_IN: [String!] @deprecated(reason: "Please use the relevant generic filter role: { in: ... }")
+  role_STARTS_WITH: String @deprecated(reason: "Please use the relevant generic filter role: { startsWith: ... }")
+  since: DateScalarFilters
+  since_EQ: Date @deprecated(reason: "Please use the relevant generic filter since: { eq: ... }")
+  since_GT: Date @deprecated(reason: "Please use the relevant generic filter since: { gt: ... }")
+  since_GTE: Date @deprecated(reason: "Please use the relevant generic filter since: { gte: ... }")
+  since_IN: [Date!] @deprecated(reason: "Please use the relevant generic filter since: { in: ... }")
+  since_LT: Date @deprecated(reason: "Please use the relevant generic filter since: { lt: ... }")
+  since_LTE: Date @deprecated(reason: "Please use the relevant generic filter since: { lte: ... }")
+}
+
+"""Float filters"""
+input FloatScalarFilters {
+  eq: Float
+  gt: Float
+  gte: Float
+  in: [Float!]
+  lt: Float
+  lte: Float
+}
+
+"""ID filters"""
+input IDScalarFilters {
+  contains: ID
+  endsWith: ID
+  eq: ID
+  in: [ID!]
+  startsWith: ID
+}
+
+"""Int filters"""
+input IntScalarFilters {
+  eq: Int
+  gt: Int
+  gte: Int
+  in: [Int!]
+  lt: Int
+  lte: Int
+}
+
+type Mutation {
+  createCompanies(input: [CompanyCreateInput!]!): CreateCompaniesMutationResponse!
+  createDepartments(input: [DepartmentCreateInput!]!): CreateDepartmentsMutationResponse!
+  createEmployees(input: [EmployeeCreateInput!]!): CreateEmployeesMutationResponse!
+  deleteCompanies(delete: CompanyDeleteInput, where: CompanyWhere): DeleteInfo!
+  deleteDepartments(delete: DepartmentDeleteInput, where: DepartmentWhere): DeleteInfo!
+  deleteEmployees(delete: EmployeeDeleteInput, where: EmployeeWhere): DeleteInfo!
+  updateCompanies(update: CompanyUpdateInput, where: CompanyWhere): UpdateCompaniesMutationResponse!
+  updateDepartments(update: DepartmentUpdateInput, where: DepartmentWhere): UpdateDepartmentsMutationResponse!
+  updateEmployees(update: EmployeeUpdateInput, where: EmployeeWhere): UpdateEmployeesMutationResponse!
+}
+
+"""Pagination information (Relay)"""
+type PageInfo {
+  endCursor: String
+  hasNextPage: Boolean!
+  hasPreviousPage: Boolean!
+  startCursor: String
+}
+
+type Query {
+  companies(limit: Int, offset: Int, sort: [CompanySort!], where: CompanyWhere): [Company!]!
+  companiesConnection(after: String, first: Int, sort: [CompanySort!], where: CompanyWhere): CompaniesConnection!
+  departments(limit: Int, offset: Int, sort: [DepartmentSort!], where: DepartmentWhere): [Department!]!
+  departmentsConnection(after: String, first: Int, sort: [DepartmentSort!], where: DepartmentWhere): DepartmentsConnection!
+  employees(limit: Int, offset: Int, sort: [EmployeeSort!], where: EmployeeWhere): [Employee!]!
+  employeesConnection(after: String, first: Int, sort: [EmployeeSort!], where: EmployeeWhere): EmployeesConnection!
+}
+
+"""An enum for sorting in either ascending or descending order."""
+enum SortDirection {
+  """Sort by field values in ascending order."""
+  ASC
+
+  """Sort by field values in descending order."""
+  DESC
+}
+
+type StringAggregateSelection {
+  longest: String
+  shortest: String
+}
+
+"""Filters for an aggregation of a string field"""
+input StringScalarAggregationFilters {
+  averageLength: FloatScalarFilters
+  longestLength: IntScalarFilters
+  shortestLength: IntScalarFilters
+}
+
+"""String filters"""
+input StringScalarFilters {
+  contains: String
+  endsWith: String
+  eq: String
+  in: [String!]
+  startsWith: String
+}
+
+"""String mutations"""
+input StringScalarMutations {
+  set: String
+}
+
+type UpdateCompaniesMutationResponse {
+  companies: [Company!]!
+  info: UpdateInfo!
+}
+
+type UpdateDepartmentsMutationResponse {
+  departments: [Department!]!
+  info: UpdateInfo!
+}
+
+type UpdateEmployeesMutationResponse {
+  employees: [Employee!]!
+  info: UpdateInfo!
+}
+
+"""
+Information about the number of nodes and relationships created and deleted during an update mutation
+"""
+type UpdateInfo {
+  nodesCreated: Int!
+  nodesDeleted: Int!
+  relationshipsCreated: Int!
+  relationshipsDeleted: Int!
+}

@@ -1,0 +1,39 @@
+{
+  "data": {
+    "deleteMovies": {
+      "nodesDeleted": 4,
+      "relationshipsDeleted": 9
+    },
+    "remaining": {
+      "people": [
+        {
+          "name": "Carrie-Anne Moss",
+          "actedIn": []
+        },
+        {
+          "name": "Keanu Reeves",
+          "actedIn": [
+            {
+              "title": "Johnny Mnemonic"
+            },
+            {
+              "title": "The Devil's Advocate"
+            }
+          ]
+        },
+        {
+          "name": "Laurence Fishburne",
+          "actedIn": []
+        },
+        {
+          "name": "Tom Cruise",
+          "actedIn": [
+            {
+              "title": "A Few Good Men"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

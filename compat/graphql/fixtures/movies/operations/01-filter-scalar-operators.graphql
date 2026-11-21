@@ -1,0 +1,47 @@
+# features: query.list, filter.string, filter.number, filter.list, filter.id
+query {
+  containsMatrix: movies(where: { title: { contains: "Matrix" } }) {
+    title
+  }
+  startsWithThe: movies(where: { title: { startsWith: "The" } }) {
+    title
+  }
+  endsWithMen: movies(where: { title: { endsWith: "Men" } }) {
+    title
+  }
+  titleEq: movies(where: { title: { eq: "The Matrix" } }) {
+    id
+    title
+    tagline
+  }
+  titleIn: movies(where: { title: { in: ["A Few Good Men", "Johnny Mnemonic", "Unknown"] } }) {
+    title
+  }
+  releasedRange: movies(where: { released: { gte: 1995, lt: 2000 } }) {
+    title
+    released
+  }
+  releasedGtLte: movies(where: { released: { gt: 1997, lte: 2003 } }) {
+    title
+  }
+  releasedIn: movies(where: { released: { in: [1992, 2003] } }) {
+    title
+  }
+  ratingGt: movies(where: { rating: { gt: 7.5 } }) {
+    title
+    rating
+  }
+  genreIncludes: movies(where: { genres: { includes: "Thriller" } }) {
+    title
+    genres
+  }
+  genresEq: movies(where: { genres: { eq: ["Drama"] } }) {
+    title
+  }
+  idIn: movies(where: { id: { in: ["m-matrix", "m-johnny"] } }) {
+    id
+  }
+  noTagline: movies(where: { tagline: { eq: null } }) {
+    title
+  }
+}

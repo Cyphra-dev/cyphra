@@ -1,0 +1,31 @@
+# features: mutation.create, mutation.connect, mutation.nested-create, id, info, pluralization
+mutation {
+  createStatuses(
+    input: [
+      {
+        text: "new here"
+        postedAt: "2024-05-01T00:00:00Z"
+        author: {
+          create: [{ node: { handle: "fay", displayName: "Fay", joined: "2024-05-01T00:00:00Z" } }]
+        }
+        likedBy: { connect: [{ where: { node: { handle: { eq: "ana" } } } }] }
+      }
+    ]
+  ) {
+    info {
+      nodesCreated
+      relationshipsCreated
+    }
+    statuses {
+      id
+      text
+      author {
+        handle
+        followerCount
+      }
+      likedBy {
+        handle
+      }
+    }
+  }
+}

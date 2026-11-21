@@ -1,0 +1,15 @@
+{
+  "data": {
+    "updatePosts": {
+      "posts": [
+        {
+          "id": "post-2",
+          "title": "Alice's first draft",
+          "published": true,
+          "createdAt": "2024-02-01T09:00:00.000Z",
+          "updatedAt": "<generated-datetime>"
+        }
+      ]
+    }
+  }
+}

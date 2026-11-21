@@ -1,0 +1,57 @@
+# features: mutation.update, mutation.nested-update, mutation.connect, mutation.disconnect, mutation.edge-properties, relationship.self, info
+mutation {
+  updateEmployees(
+    where: { name: { eq: "Margaret" } }
+    update: {
+      title: { set: "Senior Engineer" }
+      manager: [
+        { disconnect: [{ where: { node: { name: { eq: "Linus" } } } }] }
+        { connect: [{ where: { node: { name: { eq: "Grace" } } } }] }
+      ]
+      departments: [{ disconnect: [{ where: { node: { name: { eq: "Research" } } } }] }]
+      employers: [
+        {
+          update: {
+            where: { node: { name: { eq: "Acme" } } }
+            edge: { fullTime: { set: true }, role: { set: "Senior Engineer" } }
+          }
+        }
+        {
+          update: {
+            where: { node: { name: { eq: "Globex" } } }
+            node: { name: { set: "Globex Corp" } }
+          }
+        }
+      ]
+    }
+  ) {
+    info {
+      nodesCreated
+      nodesDeleted
+      relationshipsCreated
+      relationshipsDeleted
+    }
+    employees {
+      name
+      title
+      manager {
+        name
+      }
+      departments {
+        name
+      }
+      employersConnection {
+        edges {
+          properties {
+            role
+            fullTime
+            since
+          }
+          node {
+            name
+          }
+        }
+      }
+    }
+  }
+}

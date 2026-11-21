@@ -1,0 +1,52 @@
+{
+  "data": {
+    "updateEmployees": {
+      "info": {
+        "nodesCreated": 0,
+        "nodesDeleted": 0,
+        "relationshipsCreated": 1,
+        "relationshipsDeleted": 2
+      },
+      "employees": [
+        {
+          "name": "Margaret",
+          "title": "Senior Engineer",
+          "manager": [
+            {
+              "name": "Grace"
+            }
+          ],
+          "departments": [
+            {
+              "name": "Engineering"
+            }
+          ],
+          "employersConnection": {
+            "edges": [
+              {
+                "properties": {
+                  "role": "Advisor",
+                  "fullTime": false,
+                  "since": "2015-01-01"
+                },
+                "node": {
+                  "name": "Globex Corp"
+                }
+              },
+              {
+                "properties": {
+                  "role": "Senior Engineer",
+                  "fullTime": true,
+                  "since": "2010-03-01"
+                },
+                "node": {
+                  "name": "Acme"
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

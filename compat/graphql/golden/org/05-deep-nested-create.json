@@ -1,0 +1,61 @@
+{
+  "data": {
+    "createCompanies": {
+      "info": {
+        "nodesCreated": 4,
+        "relationshipsCreated": 5
+      },
+      "companies": [
+        {
+          "name": "Initech",
+          "founded": "1998-02-19",
+          "departments": [
+            {
+              "name": "TPS Reports",
+              "budget": "12345678901234",
+              "members": [
+                {
+                  "id": "<generated-id>",
+                  "name": "Peter",
+                  "title": "Engineer",
+                  "active": true,
+                  "manager": [
+                    {
+                      "name": "Grace"
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "employeesConnection": {
+            "edges": [
+              {
+                "properties": {
+                  "since": "1990-05-05",
+                  "role": "Collator",
+                  "fullTime": true
+                },
+                "node": {
+                  "name": "Milton",
+                  "active": false
+                }
+              },
+              {
+                "properties": {
+                  "since": "2020-01-01",
+                  "role": "Consultant",
+                  "fullTime": false
+                },
+                "node": {
+                  "name": "Ken",
+                  "active": true
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,80 @@
+{
+  "data": {
+    "adaOrders": [
+      {
+        "number": "A-1001"
+      },
+      {
+        "number": "A-1003"
+      }
+    ],
+    "customersWithoutCancelled": [
+      {
+        "name": "Ada"
+      },
+      {
+        "name": "Ben"
+      }
+    ],
+    "customersAllPaidOrShipped": [
+      {
+        "name": "Ben"
+      }
+    ],
+    "bulkOrders": [
+      {
+        "number": "A-1002"
+      },
+      {
+        "number": "A-1003"
+      }
+    ],
+    "ordersWithBooks": [
+      {
+        "number": "A-1001"
+      },
+      {
+        "number": "A-1002"
+      }
+    ],
+    "neverOrdered": [
+      {
+        "sku": "BK-001"
+      },
+      {
+        "sku": "BK-002"
+      },
+      {
+        "sku": "GD-001"
+      },
+      {
+        "sku": "GM-001"
+      },
+      {
+        "sku": "GM-002"
+      }
+    ],
+    "orderedOnce": [
+      {
+        "sku": "BK-001"
+      },
+      {
+        "sku": "BK-002"
+      },
+      {
+        "sku": "GD-001"
+      },
+      {
+        "sku": "GM-001"
+      },
+      {
+        "sku": "GM-002"
+      }
+    ],
+    "discounted": [
+      {
+        "sku": "BK-001"
+      }
+    ]
+  }
+}

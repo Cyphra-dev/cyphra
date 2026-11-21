@@ -1,0 +1,54 @@
+# features: connection, connection.edge-properties, filter.edge, sort.edge, filter.date
+# ordered
+query {
+  companies(where: { name: { eq: "Acme" } }) {
+    name
+    fullTime: employeesConnection(
+      where: { edge: { fullTime: { eq: true } } }
+      sort: [{ edge: { since: ASC } }]
+    ) {
+      totalCount
+      edges {
+        properties {
+          since
+          role
+          fullTime
+        }
+        node {
+          name
+        }
+      }
+    }
+    engineersSince2004: employeesConnection(
+      where: {
+        AND: [{ edge: { role: { eq: "Engineer" } } }, { edge: { since: { gte: "2004-01-01" } } }]
+      }
+      sort: [{ edge: { since: DESC } }]
+    ) {
+      edges {
+        properties {
+          since
+        }
+        node {
+          name
+        }
+      }
+    }
+  }
+  employees(
+    where: { employersConnection: { some: { edge: { fullTime: { eq: false } } } } }
+    sort: [{ name: ASC }]
+  ) {
+    name
+    employersConnection(sort: [{ edge: { since: ASC } }]) {
+      edges {
+        properties {
+          role
+        }
+        node {
+          name
+        }
+      }
+    }
+  }
+}

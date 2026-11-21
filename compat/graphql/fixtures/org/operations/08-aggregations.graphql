@@ -1,0 +1,47 @@
+# features: aggregate, aggregate.edge, filter.aggregate, scalar.bigint
+query {
+  departmentsConnection {
+    aggregate {
+      count {
+        nodes
+      }
+      node {
+        budget {
+          min
+          max
+          sum
+          average
+        }
+      }
+    }
+  }
+  companies(sort: [{ name: ASC }]) {
+    name
+    employeesConnection {
+      aggregate {
+        count {
+          nodes
+          edges
+        }
+        node {
+          name {
+            shortest
+            longest
+          }
+        }
+      }
+    }
+    departmentsConnection {
+      aggregate {
+        count {
+          nodes
+        }
+      }
+    }
+  }
+  bigTeams: departments(
+    where: { membersConnection: { aggregate: { count: { nodes: { gte: 2 } } } } }
+  ) {
+    name
+  }
+}

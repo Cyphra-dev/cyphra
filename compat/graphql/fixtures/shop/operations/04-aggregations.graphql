@@ -1,0 +1,74 @@
+# features: aggregate, aggregate.edge, filter.aggregate, aggregate.datetime
+query {
+  productsConnection {
+    aggregate {
+      count {
+        nodes
+      }
+      node {
+        price {
+          min
+          max
+          average
+          sum
+        }
+        stock {
+          min
+          max
+          sum
+        }
+        name {
+          shortest
+          longest
+        }
+      }
+    }
+  }
+  ordersConnection(where: { status: { in: [PAID, SHIPPED] } }) {
+    aggregate {
+      count {
+        nodes
+      }
+      node {
+        placedAt {
+          min
+          max
+        }
+      }
+    }
+  }
+  orders(where: { id: { eq: "ord-2" } }) {
+    number
+    linesConnection {
+      aggregate {
+        count {
+          nodes
+          edges
+        }
+        edge {
+          quantity {
+            sum
+            max
+          }
+          unitPrice {
+            min
+            average
+          }
+        }
+        node {
+          price {
+            max
+          }
+        }
+      }
+    }
+  }
+  bigBaskets: orders(
+    where: { linesConnection: { aggregate: { edge: { quantity: { sum: { gte: 4 } } } } } }
+  ) {
+    number
+  }
+  multiLine: orders(where: { linesConnection: { aggregate: { count: { edges: { gt: 1 } } } } }) {
+    number
+  }
+}

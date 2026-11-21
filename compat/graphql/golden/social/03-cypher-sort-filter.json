@@ -1,0 +1,34 @@
+{
+  "data": {
+    "popular": [
+      {
+        "handle": "ana",
+        "followerCount": 3
+      },
+      {
+        "handle": "bo",
+        "followerCount": 2
+      },
+      {
+        "handle": "cleo",
+        "followerCount": 1
+      },
+      {
+        "handle": "dev",
+        "followerCount": 1
+      },
+      {
+        "handle": "eli",
+        "followerCount": 0
+      }
+    ],
+    "withFollowers": [
+      {
+        "handle": "cleo"
+      },
+      {
+        "handle": "bo"
+      }
+    ]
+  }
+}

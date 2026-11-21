@@ -1,0 +1,41 @@
+# features: mutation.update, mutation.connect, mutation.disconnect, mutation.delete, mutation.edge-properties, info
+mutation {
+  updatePeople(
+    where: { id: { eq: "p-tom" } }
+    update: {
+      name: { set: "Thomas Cruise" }
+      actedIn: [
+        {
+          connect: [
+            {
+              where: { node: { title: { eq: "The Devil's Advocate" } } }
+              edge: { roles: ["Extra"] }
+            }
+          ]
+        }
+        { delete: [{ where: { node: { title: { eq: "A Few Good Men" } } } }] }
+      ]
+    }
+  ) {
+    info {
+      nodesCreated
+      nodesDeleted
+      relationshipsCreated
+      relationshipsDeleted
+    }
+    people {
+      name
+      actedInConnection {
+        edges {
+          properties {
+            roles
+            screenTime
+          }
+          node {
+            title
+          }
+        }
+      }
+    }
+  }
+}

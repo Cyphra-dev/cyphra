@@ -1,0 +1,52 @@
+{
+  "data": {
+    "companies": [
+      {
+        "first": {
+          "totalCount": 5,
+          "edges": [
+            {
+              "cursor": "YXJyYXljb25uZWN0aW9uOjA=",
+              "node": {
+                "name": "Dennis"
+              }
+            },
+            {
+              "cursor": "YXJyYXljb25uZWN0aW9uOjE=",
+              "node": {
+                "name": "Grace"
+              }
+            }
+          ],
+          "pageInfo": {
+            "hasNextPage": true,
+            "endCursor": "YXJyYXljb25uZWN0aW9uOjE="
+          }
+        },
+        "next": {
+          "totalCount": 5,
+          "edges": [
+            {
+              "cursor": "YXJyYXljb25uZWN0aW9uOjI=",
+              "node": {
+                "name": "Joan"
+              }
+            },
+            {
+              "cursor": "YXJyYXljb25uZWN0aW9uOjM=",
+              "node": {
+                "name": "Linus"
+              }
+            }
+          ],
+          "pageInfo": {
+            "hasNextPage": true,
+            "hasPreviousPage": true,
+            "startCursor": "YXJyYXljb25uZWN0aW9uOjI=",
+            "endCursor": "YXJyYXljb25uZWN0aW9uOjM="
+          }
+        }
+      }
+    ]
+  }
+}

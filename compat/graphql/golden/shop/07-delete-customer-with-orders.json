@@ -1,0 +1,18 @@
+{
+  "data": {
+    "deleteCustomers": {
+      "nodesDeleted": 3,
+      "relationshipsDeleted": 5
+    },
+    "remaining": {
+      "orders": [
+        {
+          "number": "A-1002"
+        },
+        {
+          "number": "A-1004"
+        }
+      ]
+    }
+  }
+}

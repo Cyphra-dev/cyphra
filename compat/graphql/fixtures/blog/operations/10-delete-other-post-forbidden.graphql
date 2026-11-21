@@ -1,0 +1,7 @@
+# features: auth.validate, auth.jwt, mutation.delete, errors
+mutation {
+  deletePosts(where: { id: { eq: "post-4" } }) {
+    nodesDeleted
+    relationshipsDeleted
+  }
+}

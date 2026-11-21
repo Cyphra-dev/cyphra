@@ -1,0 +1,56 @@
+# features: mutation.create, mutation.nested-create, mutation.connect, mutation.edge-properties, id, info
+mutation {
+  createMovies(
+    input: [
+      {
+        title: "John Wick"
+        released: 2014
+        genres: ["Action"]
+        actors: {
+          create: [
+            {
+              edge: { roles: ["John Wick"], screenTime: 101 }
+              node: { name: "Ian McShane", born: 1942 }
+            }
+          ]
+          connect: [
+            {
+              where: { node: { name: { eq: "Keanu Reeves" } } }
+              edge: { roles: ["John Wick"], screenTime: 95 }
+            }
+          ]
+        }
+        directors: { create: [{ node: { name: "Chad Stahelski", born: 1968 } }] }
+      }
+      { title: "Speed", released: 1994, genres: ["Action", "Thriller"], rating: 7.3 }
+    ]
+  ) {
+    info {
+      nodesCreated
+      relationshipsCreated
+    }
+    movies {
+      id
+      title
+      released
+      rating
+      tagline
+      genres
+      actorsConnection(sort: [{ node: { name: ASC } }]) {
+        edges {
+          properties {
+            roles
+            screenTime
+          }
+          node {
+            id
+            name
+          }
+        }
+      }
+      directors {
+        name
+      }
+    }
+  }
+}

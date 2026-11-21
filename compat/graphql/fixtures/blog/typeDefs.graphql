@@ -1,0 +1,52 @@
+type JWT @jwt {
+  roles: [String!]!
+}
+
+type User @node @authentication(operations: [CREATE, UPDATE, DELETE]) {
+  id: ID! @id
+  username: String!
+  posts: [Post!]! @relationship(type: "WROTE", direction: OUT)
+}
+
+type Post
+  @node
+  @authorization(
+    filter: [
+      {
+        operations: [READ]
+        where: {
+          OR: [
+            { node: { published: { eq: true } } }
+            { node: { author: { single: { id: { eq: "$jwt.sub" } } } } }
+          ]
+        }
+      }
+    ]
+    validate: [
+      {
+        operations: [UPDATE, DELETE]
+        when: [BEFORE]
+        where: {
+          OR: [
+            { node: { author: { single: { id: { eq: "$jwt.sub" } } } } }
+            { jwt: { roles: { includes: "admin" } } }
+          ]
+        }
+      }
+    ]
+  ) {
+  id: ID! @id
+  title: String!
+  body: String!
+  published: Boolean! @default(value: false)
+  createdAt: DateTime! @timestamp(operations: [CREATE])
+  updatedAt: DateTime @timestamp(operations: [UPDATE])
+  author: [User!]! @relationship(type: "WROTE", direction: IN)
+  comments: [Comment!]! @relationship(type: "HAS_COMMENT", direction: OUT)
+}
+
+type Comment @node {
+  id: ID! @id
+  text: String!
+  post: [Post!]! @relationship(type: "HAS_COMMENT", direction: IN)
+}

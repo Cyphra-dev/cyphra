@@ -1,0 +1,17 @@
+// Blog: users write posts (published or drafts), posts have comments. Auth rules live on Post.
+CREATE (alice:User {id: "u-alice", username: "alice"})
+CREATE (bob:User {id: "u-bob", username: "bob"})
+CREATE (p1:Post {id: "post-1", title: "Hello graphs", body: "Graphs are everywhere.", published: true, createdAt: datetime("2024-01-10T09:00:00Z")})
+CREATE (p2:Post {id: "post-2", title: "Alice's draft", body: "Not ready yet.", published: false, createdAt: datetime("2024-02-01T09:00:00Z")})
+CREATE (p3:Post {id: "post-3", title: "Bob on Cypher", body: "MATCH all the things.", published: true, createdAt: datetime("2024-03-05T12:30:00Z")})
+CREATE (p4:Post {id: "post-4", title: "Bob's secret draft", body: "Shh.", published: false, createdAt: datetime("2024-03-20T08:00:00Z")})
+CREATE (alice)-[:WROTE]->(p1)
+CREATE (alice)-[:WROTE]->(p2)
+CREATE (bob)-[:WROTE]->(p3)
+CREATE (bob)-[:WROTE]->(p4)
+CREATE (c1:Comment {id: "c-1", text: "Nice post!"})
+CREATE (c2:Comment {id: "c-2", text: "Agreed."})
+CREATE (c3:Comment {id: "c-3", text: "Cypher rocks"})
+CREATE (p1)-[:HAS_COMMENT]->(c1)
+CREATE (p1)-[:HAS_COMMENT]->(c2)
+CREATE (p3)-[:HAS_COMMENT]->(c3);

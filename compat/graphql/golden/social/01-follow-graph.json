@@ -1,0 +1,71 @@
+{
+  "data": {
+    "accounts": [
+      {
+        "handle": "ana",
+        "follows": [
+          {
+            "handle": "bo"
+          },
+          {
+            "handle": "cleo"
+          }
+        ],
+        "followers": [
+          {
+            "handle": "bo"
+          },
+          {
+            "handle": "cleo"
+          },
+          {
+            "handle": "dev"
+          }
+        ],
+        "followsConnection": {
+          "edges": [
+            {
+              "properties": {
+                "since": "2021-07-01T00:00:00.000Z",
+                "muted": false
+              },
+              "node": {
+                "handle": "bo"
+              }
+            },
+            {
+              "properties": {
+                "since": "2022-04-01T00:00:00.000Z",
+                "muted": true
+              },
+              "node": {
+                "handle": "cleo"
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "statuses": [
+      {
+        "text": "hello world",
+        "author": [
+          {
+            "handle": "ana"
+          }
+        ],
+        "likedBy": [
+          {
+            "handle": "bo"
+          },
+          {
+            "handle": "cleo"
+          },
+          {
+            "handle": "dev"
+          }
+        ]
+      }
+    ]
+  }
+}

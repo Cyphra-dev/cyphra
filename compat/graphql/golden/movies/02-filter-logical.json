@@ -1,0 +1,47 @@
+{
+  "data": {
+    "and": [
+      {
+        "title": "The Matrix Reloaded"
+      },
+      {
+        "title": "The Matrix"
+      }
+    ],
+    "or": [
+      {
+        "title": "A Few Good Men"
+      },
+      {
+        "title": "The Matrix Reloaded"
+      }
+    ],
+    "not": [
+      {
+        "title": "A Few Good Men"
+      },
+      {
+        "title": "The Devil's Advocate"
+      }
+    ],
+    "nested": [
+      {
+        "title": "A Few Good Men"
+      },
+      {
+        "title": "The Matrix"
+      }
+    ],
+    "implicitAnd": [
+      {
+        "name": "Lana Wachowski"
+      },
+      {
+        "name": "Laurence Fishburne"
+      },
+      {
+        "name": "Lilly Wachowski"
+      }
+    ]
+  }
+}

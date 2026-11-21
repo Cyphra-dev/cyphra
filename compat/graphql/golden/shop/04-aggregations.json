@@ -1,0 +1,85 @@
+{
+  "data": {
+    "productsConnection": {
+      "aggregate": {
+        "count": {
+          "nodes": 5
+        },
+        "node": {
+          "price": {
+            "min": 19.99,
+            "max": 89.99,
+            "average": 47.676,
+            "sum": 238.38
+          },
+          "stock": {
+            "min": 0,
+            "max": 30,
+            "sum": 48
+          },
+          "name": {
+            "shortest": "Shovel",
+            "longest": "Graph Databases"
+          }
+        }
+      }
+    },
+    "ordersConnection": {
+      "aggregate": {
+        "count": {
+          "nodes": 2
+        },
+        "node": {
+          "placedAt": {
+            "min": "2024-05-01T10:00:00.000Z",
+            "max": "2024-05-03T15:30:00.000Z"
+          }
+        }
+      }
+    },
+    "orders": [
+      {
+        "number": "A-1002",
+        "linesConnection": {
+          "aggregate": {
+            "count": {
+              "nodes": 2,
+              "edges": 2
+            },
+            "edge": {
+              "quantity": {
+                "sum": 4,
+                "max": 3
+              },
+              "unitPrice": {
+                "min": 35,
+                "average": 47
+              }
+            },
+            "node": {
+              "price": {
+                "max": 59
+              }
+            }
+          }
+        }
+      }
+    ],
+    "bigBaskets": [
+      {
+        "number": "A-1002"
+      },
+      {
+        "number": "A-1003"
+      }
+    ],
+    "multiLine": [
+      {
+        "number": "A-1001"
+      },
+      {
+        "number": "A-1002"
+      }
+    ]
+  }
+}

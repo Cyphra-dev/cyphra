@@ -1,0 +1,15 @@
+# features: mutation.delete, mutation.nested-delete, info
+mutation {
+  deleteCustomers(
+    where: { email: { eq: "ada@example.test" } }
+    delete: { orders: [{ where: { node: { status: { in: [PAID, PENDING] } } } }] }
+  ) {
+    nodesDeleted
+    relationshipsDeleted
+  }
+  remaining: updateOrders(where: {}) {
+    orders {
+      number
+    }
+  }
+}

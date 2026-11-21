@@ -1,0 +1,28 @@
+{
+  "data": {
+    "deleteAccounts": {
+      "nodesDeleted": 3,
+      "relationshipsDeleted": 12
+    },
+    "remaining": {
+      "statuses": [
+        {
+          "id": "s-3",
+          "likedBy": []
+        },
+        {
+          "id": "s-4",
+          "likedBy": [
+            {
+              "handle": "bo"
+            }
+          ]
+        },
+        {
+          "id": "s-5",
+          "likedBy": []
+        }
+      ]
+    }
+  }
+}

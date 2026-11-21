@@ -1,0 +1,41 @@
+# features: connection, pagination.cursor, sort, filter.datetime
+# ordered
+query ($after: String) {
+  latest: statusesConnection(first: 2, sort: [{ postedAt: DESC }]) {
+    totalCount
+    edges {
+      cursor
+      node {
+        id
+        postedAt
+      }
+    }
+    pageInfo {
+      hasNextPage
+      endCursor
+    }
+  }
+  older: statusesConnection(first: 2, after: $after, sort: [{ postedAt: DESC }]) {
+    edges {
+      cursor
+      node {
+        id
+      }
+    }
+    pageInfo {
+      hasNextPage
+      hasPreviousPage
+    }
+  }
+  since2022: statusesConnection(
+    where: { postedAt: { gte: "2022-01-01T00:00:00Z" } }
+    sort: [{ postedAt: ASC }]
+  ) {
+    totalCount
+    edges {
+      node {
+        id
+      }
+    }
+  }
+}

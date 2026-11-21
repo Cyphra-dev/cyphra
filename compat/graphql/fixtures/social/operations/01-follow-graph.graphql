@@ -1,0 +1,32 @@
+# features: query.list, relationship.self, connection.edge-properties, pluralization
+query {
+  accounts(where: { handle: { eq: "ana" } }) {
+    handle
+    follows {
+      handle
+    }
+    followers {
+      handle
+    }
+    followsConnection {
+      edges {
+        properties {
+          since
+          muted
+        }
+        node {
+          handle
+        }
+      }
+    }
+  }
+  statuses(where: { id: { eq: "s-1" } }) {
+    text
+    author {
+      handle
+    }
+    likedBy {
+      handle
+    }
+  }
+}

@@ -1,0 +1,32 @@
+# features: mutation.create, mutation.connect, default, timestamp, id, auth.jwt
+mutation {
+  createPosts(
+    input: [
+      {
+        title: "Fresh post"
+        body: "Written just now."
+        author: { connect: [{ where: { node: { id: { eq: "u-alice" } } } }] }
+        comments: { create: [{ node: { text: "First!" } }] }
+      }
+    ]
+  ) {
+    info {
+      nodesCreated
+      relationshipsCreated
+    }
+    posts {
+      id
+      title
+      published
+      createdAt
+      updatedAt
+      author {
+        username
+      }
+      comments {
+        id
+        text
+      }
+    }
+  }
+}

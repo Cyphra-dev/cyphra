@@ -1,0 +1,27 @@
+{
+  "data": {
+    "createStatuses": {
+      "info": {
+        "nodesCreated": 2,
+        "relationshipsCreated": 2
+      },
+      "statuses": [
+        {
+          "id": "<generated-id>",
+          "text": "new here",
+          "author": [
+            {
+              "handle": "fay",
+              "followerCount": 0
+            }
+          ],
+          "likedBy": [
+            {
+              "handle": "ana"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

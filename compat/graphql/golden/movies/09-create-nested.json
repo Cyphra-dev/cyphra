@@ -1,0 +1,70 @@
+{
+  "data": {
+    "createMovies": {
+      "info": {
+        "nodesCreated": 4,
+        "relationshipsCreated": 3
+      },
+      "movies": [
+        {
+          "id": "<generated-id>",
+          "title": "John Wick",
+          "released": 2014,
+          "rating": null,
+          "tagline": null,
+          "genres": [
+            "Action"
+          ],
+          "actorsConnection": {
+            "edges": [
+              {
+                "properties": {
+                  "roles": [
+                    "John Wick"
+                  ],
+                  "screenTime": 101
+                },
+                "node": {
+                  "id": "<generated-id>",
+                  "name": "Ian McShane"
+                }
+              },
+              {
+                "properties": {
+                  "roles": [
+                    "John Wick"
+                  ],
+                  "screenTime": 95
+                },
+                "node": {
+                  "id": "p-keanu",
+                  "name": "Keanu Reeves"
+                }
+              }
+            ]
+          },
+          "directors": [
+            {
+              "name": "Chad Stahelski"
+            }
+          ]
+        },
+        {
+          "id": "<generated-id>",
+          "title": "Speed",
+          "released": 1994,
+          "rating": 7.3,
+          "tagline": null,
+          "genres": [
+            "Action",
+            "Thriller"
+          ],
+          "actorsConnection": {
+            "edges": []
+          },
+          "directors": []
+        }
+      ]
+    }
+  }
+}

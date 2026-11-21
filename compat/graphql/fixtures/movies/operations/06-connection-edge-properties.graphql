@@ -1,0 +1,56 @@
+# features: connection, connection.edge-properties, sort.edge, pagination.cursor
+# ordered
+query {
+  movies(where: { id: { eq: "m-matrix" } }) {
+    title
+    actorsConnection(sort: [{ edge: { screenTime: DESC } }]) {
+      totalCount
+      edges {
+        cursor
+        properties {
+          roles
+          screenTime
+        }
+        node {
+          name
+        }
+      }
+    }
+    paged: actorsConnection(first: 1, sort: [{ node: { name: ASC } }]) {
+      edges {
+        node {
+          name
+        }
+      }
+      pageInfo {
+        hasNextPage
+        endCursor
+      }
+    }
+    filtered: actorsConnection(
+      where: { edge: { screenTime: { lt: 100 } }, node: { born: { gte: 1960 } } }
+      sort: [{ node: { name: ASC } }]
+    ) {
+      edges {
+        properties {
+          screenTime
+        }
+        node {
+          name
+        }
+      }
+    }
+  }
+  people(where: { id: { eq: "p-keanu" } }) {
+    actedInConnection(sort: [{ node: { released: ASC } }]) {
+      edges {
+        properties {
+          roles
+        }
+        node {
+          title
+        }
+      }
+    }
+  }
+}

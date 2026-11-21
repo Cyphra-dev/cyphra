@@ -1,0 +1,67 @@
+{
+  "data": {
+    "latest": {
+      "totalCount": 5,
+      "edges": [
+        {
+          "cursor": "YXJyYXljb25uZWN0aW9uOjA=",
+          "node": {
+            "id": "s-5",
+            "postedAt": "2024-02-29T10:00:00.000Z"
+          }
+        },
+        {
+          "cursor": "YXJyYXljb25uZWN0aW9uOjE=",
+          "node": {
+            "id": "s-4",
+            "postedAt": "2023-09-09T09:09:09.000Z"
+          }
+        }
+      ],
+      "pageInfo": {
+        "hasNextPage": true,
+        "endCursor": "YXJyYXljb25uZWN0aW9uOjE="
+      }
+    },
+    "older": {
+      "edges": [
+        {
+          "cursor": "YXJyYXljb25uZWN0aW9uOjI=",
+          "node": {
+            "id": "s-2"
+          }
+        },
+        {
+          "cursor": "YXJyYXljb25uZWN0aW9uOjM=",
+          "node": {
+            "id": "s-3"
+          }
+        }
+      ],
+      "pageInfo": {
+        "hasNextPage": true,
+        "hasPreviousPage": true
+      }
+    },
+    "since2022": {
+      "totalCount": 3,
+      "edges": [
+        {
+          "node": {
+            "id": "s-2"
+          }
+        },
+        {
+          "node": {
+            "id": "s-4"
+          }
+        },
+        {
+          "node": {
+            "id": "s-5"
+          }
+        }
+      ]
+    }
+  }
+}

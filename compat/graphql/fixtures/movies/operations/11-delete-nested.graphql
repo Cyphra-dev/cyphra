@@ -1,0 +1,18 @@
+# features: mutation.delete, mutation.nested-delete, info
+mutation {
+  deleteMovies(
+    where: { title: { startsWith: "The Matrix" } }
+    delete: { directors: [{ where: { node: { name: { contains: "Wachowski" } } } }] }
+  ) {
+    nodesDeleted
+    relationshipsDeleted
+  }
+  remaining: updatePeople(where: { born: { gte: 1960 } }) {
+    people {
+      name
+      actedIn {
+        title
+      }
+    }
+  }
+}

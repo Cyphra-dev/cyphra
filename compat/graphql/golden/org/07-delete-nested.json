@@ -1,0 +1,44 @@
+{
+  "data": {
+    "deleteDepartments": {
+      "nodesDeleted": 2,
+      "relationshipsDeleted": 7
+    },
+    "remaining": {
+      "employees": [
+        {
+          "name": "Grace",
+          "departments": []
+        },
+        {
+          "name": "Joan",
+          "departments": [
+            {
+              "name": "Sales"
+            }
+          ]
+        },
+        {
+          "name": "Ken",
+          "departments": [
+            {
+              "name": "Research"
+            }
+          ]
+        },
+        {
+          "name": "Linus",
+          "departments": []
+        },
+        {
+          "name": "Margaret",
+          "departments": [
+            {
+              "name": "Research"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

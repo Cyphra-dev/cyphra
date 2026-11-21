@@ -1,0 +1,20 @@
+# features: auth.filter, auth.jwt, connection
+query {
+  users(sort: [{ username: ASC }]) {
+    username
+    posts {
+      title
+    }
+    postsConnection {
+      totalCount
+    }
+  }
+  postsConnection {
+    totalCount
+    aggregate {
+      count {
+        nodes
+      }
+    }
+  }
+}

@@ -1,0 +1,25 @@
+# features: filter.logical
+query {
+  and: movies(where: { AND: [{ genres: { includes: "Action" } }, { rating: { gte: 7 } }] }) {
+    title
+  }
+  or: movies(where: { OR: [{ released: { lt: 1993 } }, { title: { contains: "Reloaded" } }] }) {
+    title
+  }
+  not: movies(where: { NOT: { genres: { includes: "Sci-Fi" } } }) {
+    title
+  }
+  nested: movies(
+    where: {
+      OR: [
+        { AND: [{ released: { gte: 1999 } }, { NOT: { title: { contains: "Reloaded" } } }] }
+        { title: { eq: "A Few Good Men" } }
+      ]
+    }
+  ) {
+    title
+  }
+  implicitAnd: people(where: { born: { gte: 1960 }, name: { startsWith: "L" } }) {
+    name
+  }
+}

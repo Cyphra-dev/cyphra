@@ -1,0 +1,68 @@
+{
+  "data": {
+    "createOrders": {
+      "info": {
+        "nodesCreated": 2,
+        "relationshipsCreated": 5
+      },
+      "orders": [
+        {
+          "id": "<generated-id>",
+          "number": "A-2001",
+          "status": "PENDING",
+          "placedAt": "2024-07-01T12:00:00.000Z",
+          "customer": [
+            {
+              "name": "Ben"
+            }
+          ],
+          "linesConnection": {
+            "totalCount": 4,
+            "edges": [
+              {
+                "properties": {
+                  "quantity": 1,
+                  "unitPrice": 80
+                },
+                "node": {
+                  "sku": "GM-002",
+                  "stock": 2
+                }
+              },
+              {
+                "properties": {
+                  "quantity": 2,
+                  "unitPrice": 25
+                },
+                "node": {
+                  "sku": "BK-001",
+                  "stock": 12
+                }
+              },
+              {
+                "properties": {
+                  "quantity": 2,
+                  "unitPrice": 25
+                },
+                "node": {
+                  "sku": "BK-002",
+                  "stock": 0
+                }
+              },
+              {
+                "properties": {
+                  "quantity": 4,
+                  "unitPrice": 2.5
+                },
+                "node": {
+                  "sku": "ACC-001",
+                  "stock": 0
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,33 @@
+# features: query.list, relationship.self, filter.relationship
+query {
+  employees(where: { name: { eq: "Linus" } }) {
+    name
+    manager {
+      name
+    }
+    reports {
+      name
+      reports {
+        name
+      }
+    }
+  }
+  managers: employees(where: { reports: { some: {} } }) {
+    name
+  }
+  topLevel: employees(where: { manager: { none: {} } }) {
+    name
+  }
+  reportsToLinus: employees(where: { manager: { single: { name: { eq: "Linus" } } } }) {
+    name
+  }
+  allReportsActiveOnly: employees(where: { reports: { all: { active: { eq: true } } } }) {
+    name
+  }
+  noInactiveReports: employees(where: { reports: { none: { active: { eq: false } } } }) {
+    name
+  }
+  allReportsActive: employees(where: { reports: { some: {}, all: { active: { eq: true } } } }) {
+    name
+  }
+}

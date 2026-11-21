@@ -1,0 +1,43 @@
+{
+  "data": {
+    "oldCompanies": [
+      {
+        "name": "Acme",
+        "founded": "1999-04-01"
+      }
+    ],
+    "foundedIn": [
+      {
+        "name": "Globex"
+      }
+    ],
+    "bigBudgets": [
+      {
+        "name": "Engineering",
+        "budget": "1500000"
+      },
+      {
+        "name": "Research",
+        "budget": "9007199254740993"
+      }
+    ],
+    "exactBigInt": [
+      {
+        "name": "Research",
+        "budget": "9007199254740993"
+      }
+    ],
+    "inactive": [
+      {
+        "name": "Dennis",
+        "active": false
+      }
+    ],
+    "noTitle": [
+      {
+        "name": "Ken",
+        "title": null
+      }
+    ]
+  }
+}

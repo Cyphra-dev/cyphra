@@ -1,0 +1,56 @@
+{
+  "data": {
+    "updateOrders": {
+      "info": {
+        "nodesCreated": 0,
+        "nodesDeleted": 0,
+        "relationshipsCreated": 1,
+        "relationshipsDeleted": 1
+      },
+      "orders": [
+        {
+          "number": "A-1001",
+          "status": "SHIPPED",
+          "linesConnection": {
+            "edges": [
+              {
+                "properties": {
+                  "quantity": 1,
+                  "unitPrice": 19.99
+                },
+                "node": {
+                  "sku": "GD-001"
+                }
+              },
+              {
+                "properties": {
+                  "quantity": 3,
+                  "unitPrice": 27.5
+                },
+                "node": {
+                  "sku": "BK-002"
+                }
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "stock": {
+      "products": [
+        {
+          "sku": "BK-002",
+          "stock": 10
+        },
+        {
+          "sku": "GM-001",
+          "stock": 14
+        },
+        {
+          "sku": "GM-002",
+          "stock": 12
+        }
+      ]
+    }
+  }
+}

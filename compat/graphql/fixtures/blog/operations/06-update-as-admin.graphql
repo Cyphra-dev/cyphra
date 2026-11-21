@@ -1,0 +1,9 @@
+# features: auth.validate, auth.jwt, mutation.update
+mutation {
+  updatePosts(where: { id: { eq: "post-3" } }, update: { body: { set: "Moderated." } }) {
+    posts {
+      id
+      body
+    }
+  }
+}

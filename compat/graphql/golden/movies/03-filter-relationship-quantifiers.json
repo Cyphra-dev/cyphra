@@ -1,0 +1,94 @@
+{
+  "data": {
+    "someActorBornAfter1965": [
+      {
+        "title": "The Matrix Reloaded"
+      },
+      {
+        "title": "The Matrix"
+      }
+    ],
+    "allActorsBornBefore1965": [
+      {
+        "title": "A Few Good Men"
+      },
+      {
+        "title": "Johnny Mnemonic"
+      },
+      {
+        "title": "The Devil's Advocate"
+      }
+    ],
+    "noKeanu": [
+      {
+        "title": "A Few Good Men"
+      }
+    ],
+    "singleDirector": [
+      {
+        "title": "A Few Good Men"
+      },
+      {
+        "title": "The Devil's Advocate"
+      }
+    ],
+    "neoRole": [
+      {
+        "title": "The Matrix Reloaded"
+      },
+      {
+        "title": "The Matrix"
+      }
+    ],
+    "longScreenTimeKeanu": [
+      {
+        "title": "The Devil's Advocate"
+      },
+      {
+        "title": "The Matrix Reloaded"
+      },
+      {
+        "title": "The Matrix"
+      }
+    ],
+    "allEdgesHaveScreenTime": [
+      {
+        "title": "A Few Good Men"
+      },
+      {
+        "title": "Johnny Mnemonic"
+      },
+      {
+        "title": "The Devil's Advocate"
+      },
+      {
+        "title": "The Matrix Reloaded"
+      },
+      {
+        "title": "The Matrix"
+      }
+    ],
+    "actedInMatrixAndDirected": [
+      {
+        "name": "Carrie-Anne Moss"
+      },
+      {
+        "name": "Keanu Reeves"
+      },
+      {
+        "name": "Laurence Fishburne"
+      }
+    ],
+    "directorsOfKeanuMovies": [
+      {
+        "name": "Lana Wachowski"
+      },
+      {
+        "name": "Lilly Wachowski"
+      },
+      {
+        "name": "Taylor Hackford"
+      }
+    ]
+  }
+}

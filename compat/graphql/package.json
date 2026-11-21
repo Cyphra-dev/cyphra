@@ -1,0 +1,21 @@
+{
+  "name": "compat-graphql",
+  "private": true,
+  "type": "module",
+  "description": "Compatibility test suite: golden SDL and results from @neo4j/graphql v7, compared against other implementations",
+  "scripts": {
+    "golden": "TZ=UTC tsx src/cli.ts golden",
+    "report": "TZ=UTC tsx src/cli.ts report",
+    "test": "TZ=UTC vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@neo4j/graphql": "7.6.8",
+    "@types/node": "^22.20.5",
+    "graphql": "16.15.0",
+    "neo4j-driver": "^5.28.3",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.12"
+  }
+}

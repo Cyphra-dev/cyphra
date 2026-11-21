@@ -1,0 +1,118 @@
+{
+  "data": {
+    "containsMatrix": [
+      {
+        "title": "The Matrix Reloaded"
+      },
+      {
+        "title": "The Matrix"
+      }
+    ],
+    "startsWithThe": [
+      {
+        "title": "The Devil's Advocate"
+      },
+      {
+        "title": "The Matrix Reloaded"
+      },
+      {
+        "title": "The Matrix"
+      }
+    ],
+    "endsWithMen": [
+      {
+        "title": "A Few Good Men"
+      }
+    ],
+    "titleEq": [
+      {
+        "id": "m-matrix",
+        "title": "The Matrix",
+        "tagline": "Welcome to the Real World"
+      }
+    ],
+    "titleIn": [
+      {
+        "title": "A Few Good Men"
+      },
+      {
+        "title": "Johnny Mnemonic"
+      }
+    ],
+    "releasedRange": [
+      {
+        "title": "Johnny Mnemonic",
+        "released": 1995
+      },
+      {
+        "title": "The Devil's Advocate",
+        "released": 1997
+      },
+      {
+        "title": "The Matrix",
+        "released": 1999
+      }
+    ],
+    "releasedGtLte": [
+      {
+        "title": "The Matrix Reloaded"
+      },
+      {
+        "title": "The Matrix"
+      }
+    ],
+    "releasedIn": [
+      {
+        "title": "A Few Good Men"
+      },
+      {
+        "title": "The Matrix Reloaded"
+      }
+    ],
+    "ratingGt": [
+      {
+        "title": "A Few Good Men",
+        "rating": 7.7
+      },
+      {
+        "title": "The Matrix",
+        "rating": 8.7
+      }
+    ],
+    "genreIncludes": [
+      {
+        "title": "Johnny Mnemonic",
+        "genres": [
+          "Action",
+          "Sci-Fi",
+          "Thriller"
+        ]
+      },
+      {
+        "title": "The Devil's Advocate",
+        "genres": [
+          "Drama",
+          "Thriller"
+        ]
+      }
+    ],
+    "genresEq": [
+      {
+        "title": "A Few Good Men"
+      }
+    ],
+    "idIn": [
+      {
+        "id": "m-johnny"
+      },
+      {
+        "id": "m-matrix"
+      }
+    ],
+    "noTagline": [
+      {
+        "title": "A Few Good Men"
+      }
+    ]
+  }
+}

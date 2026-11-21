@@ -1,0 +1,11 @@
+# features: auth.filter, auth.jwt
+query {
+  posts {
+    id
+    title
+    published
+    author {
+      username
+    }
+  }
+}

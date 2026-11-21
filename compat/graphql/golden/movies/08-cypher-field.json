@@ -1,0 +1,40 @@
+{
+  "data": {
+    "movies": [
+      {
+        "title": "The Matrix",
+        "actorCount": 3
+      },
+      {
+        "title": "A Few Good Men",
+        "actorCount": 2
+      },
+      {
+        "title": "The Devil's Advocate",
+        "actorCount": 2
+      },
+      {
+        "title": "The Matrix Reloaded",
+        "actorCount": 2
+      },
+      {
+        "title": "Johnny Mnemonic",
+        "actorCount": 1
+      }
+    ],
+    "bigCast": [
+      {
+        "title": "A Few Good Men"
+      },
+      {
+        "title": "The Devil's Advocate"
+      },
+      {
+        "title": "The Matrix"
+      },
+      {
+        "title": "The Matrix Reloaded"
+      }
+    ]
+  }
+}

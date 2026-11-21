@@ -1,0 +1,7 @@
+# features: auth.validate, auth.jwt, mutation.delete, mutation.nested-delete
+mutation {
+  deletePosts(where: { id: { eq: "post-1" } }, delete: { comments: [{ where: {} }] }) {
+    nodesDeleted
+    relationshipsDeleted
+  }
+}

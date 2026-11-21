@@ -1,0 +1,25 @@
+# features: sort, pagination.offset, filter.datetime
+# ordered
+query {
+  priciest: products(sort: [{ price: DESC }], limit: 3) {
+    sku
+    price
+  }
+  cheapestSecondPage: products(sort: [{ price: ASC }], limit: 2, offset: 2) {
+    sku
+  }
+  byStockThenName: products(sort: [{ stock: ASC }, { name: DESC }]) {
+    name
+    stock
+  }
+  recentOrders: orders(
+    where: { placedAt: { gt: "2024-05-02T00:00:00Z" } }
+    sort: [{ placedAt: DESC }]
+  ) {
+    number
+    placedAt
+  }
+  enumSort: orders(sort: [{ status: ASC }]) {
+    status
+  }
+}

@@ -1,0 +1,47 @@
+# features: filter.relationship, filter.connection, filter.edge
+query {
+  someActorBornAfter1965: movies(where: { actors: { some: { born: { gt: 1965 } } } }) {
+    title
+  }
+  allActorsBornBefore1965: movies(where: { actors: { all: { born: { lt: 1965 } } } }) {
+    title
+  }
+  noKeanu: movies(where: { actors: { none: { name: { eq: "Keanu Reeves" } } } }) {
+    title
+  }
+  singleDirector: movies(where: { directors: { single: { born: { lt: 2000 } } } }) {
+    title
+  }
+  neoRole: movies(where: { actorsConnection: { some: { edge: { roles: { includes: "Neo" } } } } }) {
+    title
+  }
+  longScreenTimeKeanu: movies(
+    where: {
+      actorsConnection: {
+        some: {
+          AND: [{ node: { name: { eq: "Keanu Reeves" } } }, { edge: { screenTime: { gte: 100 } } }]
+        }
+      }
+    }
+  ) {
+    title
+  }
+  allEdgesHaveScreenTime: movies(
+    where: { actorsConnection: { all: { edge: { screenTime: { gt: 0 } } } } }
+  ) {
+    title
+  }
+  actedInMatrixAndDirected: people(
+    where: {
+      actedIn: { some: { title: { eq: "The Matrix" } } }
+      directed: { none: { released: { gt: 0 } } }
+    }
+  ) {
+    name
+  }
+  directorsOfKeanuMovies: people(
+    where: { directed: { some: { actors: { some: { name: { eq: "Keanu Reeves" } } } } } }
+  ) {
+    name
+  }
+}
