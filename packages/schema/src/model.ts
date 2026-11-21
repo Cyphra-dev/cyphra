@@ -107,6 +107,30 @@ export type ResolvedFulltextIndex = {
   readonly eventuallyConsistent?: boolean;
 };
 
+/**
+ * A `@@unique([a, b])` composite uniqueness constraint on a node model: no two nodes of the label
+ * share the same values for all of `fields` (nodes missing one of them are not constrained).
+ */
+export type ResolvedCompoundUnique = {
+  /** Neo4j constraint name (the attribute's `name`, else `<Label>_<field>_<field>…_unique`). */
+  readonly name: string;
+  /**
+   * Key of the compound value in a unique `where` (`findUnique`, `upsert`, `connect`, …): the
+   * attribute's `name`, else the field names joined by `_` (`a_b`, as in Prisma).
+   */
+  readonly key: string;
+  /** Constrained scalar fields, in the attribute's order (at least two). */
+  readonly fields: readonly string[];
+};
+
+/** A `@@index([a, b])` composite range index on a node model. */
+export type ResolvedCompoundIndex = {
+  /** Neo4j index name (the attribute's `name`, else `<Label>_<field>_<field>…_idx`). */
+  readonly name: string;
+  /** Indexed scalar fields, in the attribute's order (at least two). */
+  readonly fields: readonly string[];
+};
+
 export type ResolvedScalarField = {
   readonly kind: "scalar";
   readonly name: string;
@@ -159,6 +183,13 @@ export type ResolvedNodeModel = {
   readonly fields: readonly ResolvedField[];
   /** `@@fulltext` indexes (absent when the model has none). */
   readonly fulltextIndexes?: readonly ResolvedFulltextIndex[];
+  /**
+   * `@@unique([...])` composite uniqueness constraints (absent when the model has none); each one
+   * is also a valid key for `findUnique` / `connect` (`where: { a_b: { a, b } }`).
+   */
+  readonly compoundUniques?: readonly ResolvedCompoundUnique[];
+  /** `@@index([...])` composite range indexes (absent when the model has none). */
+  readonly compoundIndexes?: readonly ResolvedCompoundIndex[];
 };
 
 export type ResolvedRelationshipModel = {
@@ -556,6 +587,36 @@ export function resolveSchema(doc: SchemaDocument): SchemaModel {
       indexNames.set(index.name, `@@fulltext on ${d.name}`);
       fulltextIndexes.push(index);
     }
+    const compoundUniques: ResolvedCompoundUnique[] = [];
+    const compoundIndexes: ResolvedCompoundIndex[] = [];
+    const keys = new Set<string>();
+    for (const attr of d.attributes ?? []) {
+      if (attr.name !== "unique" && attr.name !== "index") continue;
+      const fieldsOf = attr.fields ?? [];
+      const given = attr.args.find((a) => a.key === "name")?.value;
+      const custom = given?.kind === "string" ? given.value : undefined;
+      const suffix = attr.name === "unique" ? "unique" : "idx";
+      const name = custom ?? sanitizeIndexName(`${d.name}_${fieldsOf.join("_")}_${suffix}`);
+      const clash = indexNames.get(name);
+      if (clash) {
+        throw new SchemaValidationError(
+          `${owner} @@${attr.name}: ${attr.name === "unique" ? "constraint" : "index"} name "${name}" is already used by ${clash}.`,
+        );
+      }
+      indexNames.set(name, `@@${attr.name} on ${d.name}`);
+      if (attr.name === "index") {
+        compoundIndexes.push({ name, fields: fieldsOf });
+        continue;
+      }
+      const key = custom ?? fieldsOf.join("_");
+      if (d.fields.some((f) => f.name === key) || keys.has(key)) {
+        throw new SchemaValidationError(
+          `${owner} @@unique: key "${key}" is already a field or another @@unique key (give this one a name: "…").`,
+        );
+      }
+      keys.add(key);
+      compoundUniques.push({ name, key, fields: fieldsOf });
+    }
     nodes.push({
       name: d.name,
       label: d.name,
@@ -563,6 +624,8 @@ export function resolveSchema(doc: SchemaDocument): SchemaModel {
       uniqueFields: scalars.filter((f) => f.id || f.unique).map((f) => f.name),
       fields,
       ...(fulltextIndexes.length ? { fulltextIndexes } : {}),
+      ...(compoundUniques.length ? { compoundUniques } : {}),
+      ...(compoundIndexes.length ? { compoundIndexes } : {}),
     });
   }
 

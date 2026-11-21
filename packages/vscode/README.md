@@ -8,7 +8,8 @@ Language support for Cyphra schema files (`schema.cyphra`):
 - **Diagnostics while you type**, the same errors as `cyphra validate`, underlined where they are.
 - **Completion**: keywords, built-in types, your models and enums, decorators and their
   arguments (`direction: OUT | IN`, vector similarity, full-text analyzers), `@default(…)` values
-  for the field's type, String fields inside `@@fulltext([…])`.
+  for the field's type, String fields inside `@@fulltext([…])`, scalar fields inside
+  `@@unique([…])` / `@@index([…])`.
 - **Hover** documentation for types and decorators, and a summary of relation targets and enums.
 - **Go to definition**, **find references** and **rename** for models and enums.
 - **Outline** (document symbols) and **formatting** that keeps your comments (`Format Document`,
@@ -17,7 +18,8 @@ Language support for Cyphra schema files (`schema.cyphra`):
   `cyphra.json` (through the package manager of your lockfile; override with
   `cyphra.generateCommand`).
 - A **status bar item** shows whether the open schema is valid.
-- Snippets: `node`, `relationship`, `enum`, `rel` (relation field), `id`, `vector`, `@@fulltext`.
+- Snippets: `node`, `relationship`, `enum`, `rel` (relation field), `id`, `vector`, `@@fulltext`, `@@unique`,
+  `@@index`.
 
 The language server is also published on npm as
 [`@cyphra/language-server`](https://www.npmjs.com/package/@cyphra/language-server) for Neovim,

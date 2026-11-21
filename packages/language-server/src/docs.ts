@@ -182,6 +182,32 @@ export const DECORATORS: readonly DecoratorDoc[] = [
       },
     ],
   },
+  {
+    name: "unique",
+    on: "model",
+    doc: "A composite uniqueness constraint: no two nodes share the same values for all the fields (`@@unique([provider, accountId])`). Also a `findUnique` / `upsert` / `connect` key: `where: { provider_accountId: { provider, accountId } }`.",
+    snippet: "unique([${1}])",
+    args: [
+      {
+        name: "name",
+        doc: "Constraint name and `where` key (default: `<Label>_<field>_…_unique` and `<field>_<field>…`).",
+        string: true,
+      },
+    ],
+  },
+  {
+    name: "index",
+    on: "model",
+    doc: "A composite range index over several fields of the node (`@@index([tenant, createdAt])`), for filters and sorts that use them together.",
+    snippet: "index([${1}])",
+    args: [
+      {
+        name: "name",
+        doc: "Index name (default `<Label>_<field>_…_idx`).",
+        string: true,
+      },
+    ],
+  },
 ];
 
 export function decoratorDoc(name: string, model = false): DecoratorDoc | undefined {
@@ -195,7 +221,13 @@ export function decoratorMarkdown(d: DecoratorDoc): string {
     ? `\n\n${d.args.map((a) => `- \`${a.name}\`: ${a.doc}`).join("\n")}`
     : "";
   const anchor =
-    d.on === "model" ? "full-text-indexes" : d.on === "vector" ? "vector-fields" : "decorators";
+    d.on === "model"
+      ? d.name === "fulltext"
+        ? "full-text-indexes"
+        : "composite-constraints-and-indexes"
+      : d.on === "vector"
+        ? "vector-fields"
+        : "decorators";
   return `**${sigil}${d.name}**\n\n${d.doc}${args}\n\n[Schema reference](${DOCS_URL}#${anchor})`;
 }
 

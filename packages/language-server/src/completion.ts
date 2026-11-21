@@ -265,11 +265,26 @@ export function completionsAt(a: Analysis, offset: number): Completion[] {
     const model = sigil.kind === "atat";
     const dec = DECORATORS.find((d) => d.name === callee.text && (d.on === "model") === model);
     if (stmt[open]!.text === "[") {
-      if (!model || callee.text !== "fulltext") return [];
+      if (!model || !["fulltext", "unique", "index"].includes(callee.text)) return [];
       const listed = stmt
         .slice(open + 1)
         .filter((t) => t.kind === "ident")
         .map((t) => t.text);
+      if (callee.text !== "fulltext") {
+        // @@unique / @@index: single-value scalar fields (no relations, lists, Json or vectors).
+        const models = new Set(names(a, "node"));
+        return scanFields(a.tokens, decl)
+          .filter(
+            (f) =>
+              f.type !== undefined &&
+              !models.has(f.type) &&
+              !f.list &&
+              f.type !== "Json" &&
+              f.type !== "Vector" &&
+              !listed.includes(f.name),
+          )
+          .map((f) => ({ label: f.name, kind: "field" as const, detail: f.type, replace }));
+      }
       return scanFields(a.tokens, decl)
         .filter((f) => f.type === "String" && !listed.includes(f.name))
         .map((f) => ({

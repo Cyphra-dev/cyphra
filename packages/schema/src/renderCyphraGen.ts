@@ -141,6 +141,11 @@ export function renderClientSection(model: SchemaModel, names: RuntimeTypeNames 
     if (n.fulltextIndexes?.length) {
       lines.push(`    fulltextIndexes: ${union(n.fulltextIndexes.map((i) => i.name))};`);
     }
+    if (n.compoundUniques?.length) {
+      lines.push("    compoundUniques: {");
+      for (const c of n.compoundUniques) lines.push(`      ${c.key}: ${union(c.fields)};`);
+      lines.push("    };");
+    }
     const relations = n.fields.filter((f): f is ResolvedRelationField => f.kind === "relation");
     if (relations.length === 0) {
       // Not `{}`: an empty object type trips @typescript-eslint/no-empty-object-type.

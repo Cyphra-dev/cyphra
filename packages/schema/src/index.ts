@@ -74,6 +74,8 @@ export type {
   DefaultValueSpec,
   RelationDirection,
   ResolvedField,
+  ResolvedCompoundIndex,
+  ResolvedCompoundUnique,
   ResolvedFulltextIndex,
   ResolvedNodeModel,
   ResolvedRelationField,

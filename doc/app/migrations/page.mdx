@@ -28,20 +28,22 @@ migration and the snapshot.
 
 ## What gets generated
 
-| Schema change                                    | Generated step                                                      |
-| ------------------------------------------------ | ------------------------------------------------------------------- |
-| new `@id` / `@unique` / `@index`                 | `CREATE CONSTRAINT / RANGE INDEX … IF NOT EXISTS`                   |
-| new `@index` on a `Point` / `CartesianPoint`     | `CREATE POINT INDEX … IF NOT EXISTS`                                |
-| removed or changed `@id` / `@unique` / `@index`  | `DROP CONSTRAINT / INDEX … IF EXISTS`                               |
-| new `@vectorIndex`                               | `CREATE VECTOR INDEX … IF NOT EXISTS … OPTIONS { indexConfig }`     |
-| changed dimensions, similarity or index name     | `DROP INDEX … IF EXISTS`, then `CREATE VECTOR INDEX`                |
-| new `@@fulltext`                                 | `CREATE FULLTEXT INDEX … IF NOT EXISTS … ON EACH [ … ]`             |
-| changed fields, analyzer, consistency or name    | `DROP INDEX … IF EXISTS`, then `CREATE FULLTEXT INDEX`              |
-| new field with a `@default` on an existing model | backfill: `MATCH (n:User) WHERE n.role IS NULL SET n.role = $value` |
-| field becomes required and has a default         | backfill of the missing values                                      |
-| new required field without a default             | **guard**: the migration fails if any existing node lacks it        |
-| removed field / model                            | `REMOVE` / `DETACH DELETE`, **commented out**: you opt in           |
-| type change, or a likely rename                  | a review warning at the top of the file                             |
+| Schema change                                      | Generated step                                                      |
+| -------------------------------------------------- | ------------------------------------------------------------------- |
+| new `@id` / `@unique` / `@index`                   | `CREATE CONSTRAINT / RANGE INDEX … IF NOT EXISTS`                   |
+| new `@index` on a `Point` / `CartesianPoint`       | `CREATE POINT INDEX … IF NOT EXISTS`                                |
+| removed or changed `@id` / `@unique` / `@index`    | `DROP CONSTRAINT / INDEX … IF EXISTS`                               |
+| new `@vectorIndex`                                 | `CREATE VECTOR INDEX … IF NOT EXISTS … OPTIONS { indexConfig }`     |
+| changed dimensions, similarity or index name       | `DROP INDEX … IF EXISTS`, then `CREATE VECTOR INDEX`                |
+| new `@@unique([a, b])` / `@@index([a, b])`         | `CREATE CONSTRAINT … REQUIRE (n.a, n.b) IS UNIQUE` / `RANGE INDEX`  |
+| changed fields or name of a `@@unique` / `@@index` | `DROP CONSTRAINT / INDEX … IF EXISTS`, then `CREATE …`              |
+| new `@@fulltext`                                   | `CREATE FULLTEXT INDEX … IF NOT EXISTS … ON EACH [ … ]`             |
+| changed fields, analyzer, consistency or name      | `DROP INDEX … IF EXISTS`, then `CREATE FULLTEXT INDEX`              |
+| new field with a `@default` on an existing model   | backfill: `MATCH (n:User) WHERE n.role IS NULL SET n.role = $value` |
+| field becomes required and has a default           | backfill of the missing values                                      |
+| new required field without a default               | **guard**: the migration fails if any existing node lacks it        |
+| removed field / model                              | `REMOVE` / `DETACH DELETE`, **commented out**: you opt in           |
+| type change, or a likely rename                    | a review warning at the top of the file                             |
 
 Steps run in this order: drop obsolete DDL → data steps → create new DDL, so values are backfilled
 before a uniqueness constraint is created on them. `now()` backfills with `datetime()` / `date()` /
@@ -138,6 +140,28 @@ Neo4j cannot alter a full-text index either, so adding or removing a field, or c
 migration. Neo4j then indexes the existing nodes again in the background; like a vector index, wait
 for it to be `ONLINE` (`CALL db.awaitIndexes(300)`) before relying on [`search`](/client#full-text-search).
 `cyphra schema ddl` prints the statement and `cyphra push` applies it directly.
+
+## Composite constraints and indexes
+
+A [`@@unique([a, b])`](/schema#composite-constraints-and-indexes) model attribute becomes a
+composite uniqueness constraint, a `@@index([a, b])` a composite range index:
+
+```cypher
+CREATE CONSTRAINT Account_providerId_accountId_unique IF NOT EXISTS
+FOR (n:`Account`) REQUIRE (n.`providerId`, n.`accountId`) IS UNIQUE
+
+CREATE RANGE INDEX Account_tenant_createdAt_idx IF NOT EXISTS
+FOR (n:`Account`) ON (n.`tenant`, n.`createdAt`)
+```
+
+Both work on Neo4j Community. Cyphra does not emit `IS NODE KEY` (uniqueness plus existence of
+every property), which Neo4j only supports on Enterprise Edition; make the fields required in the
+schema instead, which the client enforces on create. Changing the fields or the `name` drops the
+old constraint or index first and creates the new one at the end of the migration. Creating a
+uniqueness constraint fails if existing nodes already share a key: deduplicate them in a step
+before it. `cyphra push` and `cyphra schema ddl` emit the same statements, and
+[`cyphra pull`](/cli#cyphra-pull) maps composite uniqueness constraints (and node keys) back to
+`@@unique` and composite range indexes to `@@index`.
 
 ## Writing migrations by hand
 

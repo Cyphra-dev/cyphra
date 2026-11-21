@@ -21,6 +21,8 @@ export { applyConstraintStatements, runPendingMigrations, type LoadedMigration }
 export { schemaIntegrationHints } from "./schemaHints.js";
 export {
   EMPTY_SCHEMA_MODEL,
+  compoundIndexStatement,
+  compoundUniqueStatement,
   ddlObjectsFromModel,
   diffSchemaModels,
   fulltextIndexStatement,

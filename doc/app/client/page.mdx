@@ -49,8 +49,56 @@ const first = await db.post.findFirst({ where: { published: false } });
 const total = await db.user.count({ where: { name: { not: null } } });
 ```
 
-`findUnique`, `update`, `upsert` and `delete` require at least one `@id` / `@unique` field in `where` —
-enforced by the types and at runtime.
+`findUnique`, `update`, `upsert` and `delete` require at least one `@id` / `@unique` field or
+[composite unique key](#composite-unique-keys) in `where`, enforced by the types and at runtime.
+
+### Composite unique keys
+
+A [`@@unique([a, b])`](/schema#composite-constraints-and-indexes) model attribute is a unique key
+too. Pass it under the fields' names joined by `_` (the Prisma shape), or under the attribute's
+`name` when it has one:
+
+```cyphra
+node Account {
+  id         String @id @default(cuid())
+  providerId String
+  accountId  String
+  tenant     String
+  email      String
+  user       User   @relationship(type: "HAS_ACCOUNT", direction: IN)
+
+  @@unique([providerId, accountId])
+  @@unique([tenant, email], name: "tenantEmail")
+}
+```
+
+```ts
+const key = { providerId_accountId: { providerId: "github", accountId: "42" } };
+
+await db.account.findUnique({ where: key });
+await db.account.findUniqueOrThrow({ where: { tenantEmail: { tenant: "acme", email } } });
+await db.account.update({ where: key, data: { email } });
+await db.account.delete({ where: key });
+await db.account.upsert({
+  where: key,
+  create: { ...key.providerId_accountId, tenant: "acme", email, user: { connect: { id: userId } } },
+  update: {},
+});
+await db.user.update({ where: { id: userId }, data: { accounts: { connect: key } } });
+```
+
+- The key's value is typed: it needs every field of the key, each with a non-null value of the
+  field's type. `where: { providerId: "github", accountId: "42" }` is not accepted as a unique key
+  by the types (the runtime accepts it).
+- Other filters can sit next to the key, as with a single unique field:
+  `{ ...key, tenant: "acme" }`.
+- `upsert` `MERGE`s on every field of the key (`MERGE (n:Account {providerId: $a, accountId: $b})`);
+  values of the key fields in `create` must equal the key's. When `where` also has an `@id` / `@unique` field, the
+  `MERGE` uses that field and the composite key is checked like any extra filter.
+- `connect`, `disconnect` and `set` take composite keys in their `where` objects.
+- A write that would duplicate a composite key fails with Neo4j's
+  `Neo.ClientError.Schema.ConstraintValidationFailed` error once the constraint exists
+  (`cyphra push` or a migration).
 
 ### select and include
 
@@ -692,7 +740,7 @@ created; on an existing edge only the `$edge` properties you pass are updated.
 `upsert` is one atomic `MERGE` on the unique key in `where` (`ON CREATE SET` the create data,
 `ON MATCH SET` the update), then any nested relation writes of the branch it took. Concurrent
 upserts of the same key yield one node as long as the key has a uniqueness constraint, which
-`@id` / `@unique` create through `cyphra push` or a migration. See
+`@id` / `@unique` / `@@unique` create through `cyphra push` or a migration. See
 [Upsert with MERGE](/cypher/upsert-merge#upsert-with-cyphra).
 
 A nested write runs in **one write transaction**: if any step fails (for example a `connect` target

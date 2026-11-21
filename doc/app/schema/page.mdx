@@ -1,5 +1,5 @@
 ---
-description: "The .cyphra schema DSL for Neo4j: nodes, relationships, enums, spatial, temporal, Json, BigInt and Vector(N) fields, and decorators for indexes and constraints."
+description: "The .cyphra schema DSL for Neo4j: nodes, relationships, enums, spatial, temporal, Json, BigInt and Vector fields, constraints and indexes, composite ones too."
 ---
 
 # Schema DSL
@@ -238,8 +238,55 @@ node Post {
 - `cyphra push` and [migrations](/migrations#full-text-indexes) create the index with
   `CREATE FULLTEXT INDEX`. Full-text indexes are supported on node models, not on relationships.
 
-Model attributes are a general syntax, `@@name([fields], key: value, …)`; `@@fulltext` is the only one
-so far.
+Model attributes are a general syntax, `@@name([fields], key: value, …)`: `@@fulltext`, and
+`@@unique` / `@@index` below.
+
+## Composite constraints and indexes
+
+`@unique` and `@index` cover one field. When uniqueness or a lookup spans several fields (a
+provider and an account id, a tenant and an email), declare it on the model with `@@unique` or
+`@@index`:
+
+```cyphra
+node Account {
+  id         String   @id @default(cuid())
+  providerId String
+  accountId  String
+  tenant     String
+  email      String
+  createdAt  DateTime @default(now())
+
+  @@unique([providerId, accountId])
+  @@unique([tenant, email], name: "tenantEmail")
+  @@index([tenant, createdAt])
+}
+```
+
+- **`@@unique([a, b])`** is a composite **uniqueness constraint**
+  (`CREATE CONSTRAINT … REQUIRE (n.a, n.b) IS UNIQUE`): no two nodes of the label share the same
+  values for all the fields. It works on Neo4j **Community** and Enterprise. A node that lacks one
+  of the fields (an optional field left `null`) is not constrained. Cyphra does not create a
+  `NODE KEY` (a uniqueness constraint that also requires every field), because node keys need
+  Neo4j Enterprise Edition.
+- **`@@index([a, b])`** is a composite **range index** (`CREATE RANGE INDEX … ON (n.a, n.b)`). Neo4j
+  uses it for queries that filter on all its fields, so the order of the fields matters.
+- **Fields.** At least two, each a scalar field of the model that holds one value: no relations,
+  no lists, no `Json` and no `Vector(N)` fields, none listed twice. For one field, use `@unique` or
+  `@index` on the field.
+- **`name: "…"`** is the constraint or index name. It defaults to `<Label>_<field>_<field>…_unique`
+  (`Account_providerId_accountId_unique`) or `…_idx`. Like every index and constraint name, it must
+  be unique across the schema.
+- Each `@@unique` is also a key for [`findUnique`, `upsert`, `connect`](/client#composite-unique-keys)
+  and the other operations that take a unique `where`: `{ providerId_accountId: { providerId, accountId } }`,
+  the fields joined by `_`. With a `name`, the key is the name (`{ tenantEmail: { tenant, email } }`),
+  so it must not clash with a field of the model.
+- The schema rejects two `@@unique` over the same fields (in any order), two identical `@@index`
+  and a `@@index` with the same fields, in the same order, as a `@@unique` (its constraint already
+  has that index).
+- `cyphra push` and [migrations](/migrations#composite-constraints-and-indexes) create them;
+  [`cyphra pull`](/migrations#existing-databases) reads composite uniqueness constraints, node keys
+  and composite range indexes back as `@@unique` and `@@index`. They are supported on node models,
+  not on relationships.
 
 ## Defaults
 
@@ -258,7 +305,7 @@ The [typed client](/client) applies them on create.
 
 ## Decorators
 
-`@id`, `@unique`, `@vectorIndex(…)` (on `Vector(N)` fields, see above), `@@fulltext([…])` (a model attribute, see above), `@index` (Neo4j 5+ **range** index, or a **point** index on a `Point` / `CartesianPoint` field: on nodes via `(n:Label)`, on rich relationships via `()-[r:TYPE]-()`), `@default(…)`, `@relationship(…)`. On **nodes**, you cannot combine `@index` with `@id` or `@unique` on the same field (those constraints already imply an index). On **relationship** models, `@unique` maps to a **relationship property uniqueness** constraint (Neo4j **5.7+**); `@id` is not allowed on relationship fields.
+`@id`, `@unique`, `@vectorIndex(…)` (on `Vector(N)` fields, see above), `@@fulltext([…])`, `@@unique([…])` and `@@index([…])` (model attributes, see above), `@index` (Neo4j 5+ **range** index, or a **point** index on a `Point` / `CartesianPoint` field: on nodes via `(n:Label)`, on rich relationships via `()-[r:TYPE]-()`), `@default(…)`, `@relationship(…)`. On **nodes**, you cannot combine `@index` with `@id` or `@unique` on the same field (those constraints already imply an index). On **relationship** models, `@unique` maps to a **relationship property uniqueness** constraint (Neo4j **5.7+**); `@id` is not allowed on relationship fields.
 
 ## Programmatic API
 

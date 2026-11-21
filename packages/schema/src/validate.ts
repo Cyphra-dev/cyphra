@@ -98,7 +98,7 @@ export const FULLTEXT_ANALYZERS = [
 export const DEFAULT_FULLTEXT_ANALYZER = "standard-no-stop-words";
 
 /** Model-level attributes `schema.cyphra` understands. */
-const MODEL_ATTRIBUTES = ["fulltext"] as const;
+const MODEL_ATTRIBUTES = ["fulltext", "unique", "index"] as const;
 
 function argsOnce(where: string, attr: string, args: readonly DecoratorArg[]): void {
   const seen = new Set<string>();
@@ -168,8 +168,58 @@ function validateFulltext(where: string, decl: NodeDeclaration, attr: ModelAttri
 }
 
 /**
- * Model-level `@@…` attributes: known names only, `@@fulltext` on node models with valid fields
- * and arguments.
+ * `@@unique([a, b], name: "…")` / `@@index([a, b], name: "…")`: at least two fields, each an
+ * existing scalar non-list field of the model (not `Json` or `Vector`), listed once; `name` only.
+ */
+function validateCompound(where: string, decl: NodeDeclaration, attr: ModelAttribute): void {
+  const at = `@@${attr.name}`;
+  const fields = attr.fields;
+  const single = attr.name === "unique" ? "@unique" : "@index";
+  if (!fields || fields.length < 2) {
+    throw new SchemaValidationError(
+      `${where}: ${at} needs a list of at least two fields, e.g. ${at}([a, b]) (for one field, use ${single} on the field).`,
+    );
+  }
+  const seen = new Set<string>();
+  for (const name of fields) {
+    if (seen.has(name)) {
+      throw new SchemaValidationError(`${where}: ${at} lists field "${name}" twice.`);
+    }
+    seen.add(name);
+    const f = decl.fields.find((x) => x.name === name);
+    if (!f) {
+      throw new SchemaValidationError(`${where}: ${at} field "${name}" does not exist.`);
+    }
+    if (f.kind !== "Scalar") {
+      throw new SchemaValidationError(
+        `${where}: ${at} field "${name}" is a relation; only scalar fields can be ${attr.name === "unique" ? "constrained" : "indexed"}.`,
+      );
+    }
+    if (f.type.list || f.type.name === "Json" || f.type.name === "Vector") {
+      const t = f.type.name === "Vector" ? "Vector" : `${f.type.name}${f.type.list ? "[]" : ""}`;
+      throw new SchemaValidationError(
+        `${where}: ${at} field "${name}" must be a single scalar value (not ${t}).`,
+      );
+    }
+  }
+  argsOnce(where, at, attr.args);
+  for (const a of attr.args) {
+    if (a.key !== "name") {
+      throw new SchemaValidationError(
+        `${where}: unknown ${at} argument "${a.key}" (expected name).`,
+      );
+    }
+    if (a.value.kind !== "string" || !INDEX_NAME.test(a.value.value)) {
+      throw new SchemaValidationError(
+        `${where}: ${at} name must be a string of letters, digits and underscores (not starting with a digit).`,
+      );
+    }
+  }
+}
+
+/**
+ * Model-level `@@…` attributes: known names only, on node models, with valid fields and
+ * arguments; no two `@@unique` (or two `@@index`) over the same fields.
  */
 export function validateModelAttributes(decl: NodeDeclaration | RelationshipDeclaration): void {
   const owner = `${decl.kind === "Node" ? "Node" : "Relationship"} "${decl.name}"`;
@@ -181,11 +231,43 @@ export function validateModelAttributes(decl: NodeDeclaration | RelationshipDecl
       );
     }
     if (decl.kind !== "Node") {
+      const what =
+        attr.name === "fulltext"
+          ? "full-text indexes are"
+          : attr.name === "unique"
+            ? "composite uniqueness constraints are"
+            : "composite indexes are";
       throw new SchemaValidationError(
-        `${where}: full-text indexes are only supported on node models (not on relationships).`,
+        `${where}: ${what} only supported on node models (not on relationships).`,
       );
     }
-    validateFulltext(owner, decl, attr);
+    if (attr.name === "fulltext") validateFulltext(owner, decl, attr);
+    else validateCompound(owner, decl, attr);
+  }
+  // Uniqueness does not depend on field order; a composite index does (it serves its prefixes).
+  const uniques = new Set<string>();
+  const ordered = new Set<string>();
+  const indexes = new Set<string>();
+  for (const attr of decl.attributes ?? []) {
+    if (attr.name !== "unique") continue;
+    const set = JSON.stringify([...(attr.fields ?? [])].sort());
+    if (uniques.has(set)) {
+      throw new SchemaValidationError(
+        `${owner} @@unique: fields [${(attr.fields ?? []).join(", ")}] are already covered by another @@unique.`,
+      );
+    }
+    uniques.add(set);
+    ordered.add(JSON.stringify(attr.fields ?? []));
+  }
+  for (const attr of decl.attributes ?? []) {
+    if (attr.name !== "index") continue;
+    const list = JSON.stringify(attr.fields ?? []);
+    if (indexes.has(list) || ordered.has(list)) {
+      throw new SchemaValidationError(
+        `${owner} @@index: fields [${(attr.fields ?? []).join(", ")}] are already indexed by ${ordered.has(list) ? "a @@unique (its constraint has an index)" : "another @@index"}.`,
+      );
+    }
+    indexes.add(list);
   }
 }
 

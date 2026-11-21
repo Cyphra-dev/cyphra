@@ -131,7 +131,9 @@ their endpoints. Review the result:
   and `authoredBy` on the end node), and every relation is to-many.
 - A property is required only if every node with that label had it at pull time.
 - Single-property uniqueness constraints become `@id` (on a property named `id`) or `@unique`; range
-  and point indexes become `@index`.
+  and point indexes become `@index`. Composite uniqueness constraints (and node keys) become
+  `@@unique([…])`, composite range indexes `@@index([…])`, with a `name` when theirs is not the
+  default.
 - `LocalDateTime`, `LocalTime`, `Time` and `Duration` properties keep their type. A point property
   becomes a `Point` or a `CartesianPoint` from the CRS of up to 10,000 sampled values; a property
   holding both kinds is skipped with a warning.

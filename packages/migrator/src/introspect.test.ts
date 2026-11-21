@@ -263,3 +263,89 @@ describe("schemaFromIntrospection (full-text indexes)", () => {
     expect(w).toMatch(/Skipped full-text index ghost: label Ghost has no nodes/);
   });
 });
+
+describe("schemaFromIntrospection: composite constraints and indexes", () => {
+  const { doc, warnings } = schemaFromIntrospection({
+    nodeTypes: [
+      {
+        labels: ["Account"],
+        properties: [
+          { propertyName: "provider", propertyTypes: ["String"], mandatory: true },
+          { propertyName: "accountId", propertyTypes: ["String"], mandatory: true },
+          { propertyName: "tenant", propertyTypes: ["String"], mandatory: false },
+          { propertyName: "tags", propertyTypes: ["StringArray"], mandatory: false },
+        ],
+      },
+    ],
+    relTypes: [],
+    constraints: [
+      {
+        name: "Account_provider_accountId_unique",
+        type: "UNIQUENESS",
+        entityType: "NODE",
+        labelsOrTypes: ["Account"],
+        properties: ["provider", "accountId"],
+      },
+      {
+        name: "tenantKey",
+        type: "NODE_KEY",
+        entityType: "NODE",
+        labelsOrTypes: ["Account"],
+        properties: ["tenant", "accountId"],
+      },
+      {
+        name: "withTags",
+        type: "UNIQUENESS",
+        entityType: "NODE",
+        labelsOrTypes: ["Account"],
+        properties: ["tenant", "tags"],
+      },
+    ],
+    indexes: [
+      {
+        name: "Account_provider_accountId_unique",
+        type: "RANGE",
+        entityType: "NODE",
+        labelsOrTypes: ["Account"],
+        properties: ["provider", "accountId"],
+        owningConstraint: "Account_provider_accountId_unique",
+      },
+      {
+        name: "Account_tenant_provider_idx",
+        type: "RANGE",
+        entityType: "NODE",
+        labelsOrTypes: ["Account"],
+        properties: ["tenant", "provider"],
+        owningConstraint: null,
+      },
+      {
+        name: "byProvider",
+        type: "RANGE",
+        entityType: "NODE",
+        labelsOrTypes: ["Account"],
+        properties: ["provider", "tenant"],
+        owningConstraint: null,
+      },
+    ],
+  });
+  const printed = printSchemaDocument(doc);
+
+  it("maps them to @@unique / @@index, naming only non-default names", () => {
+    expect(printed).toBe(`node Account {
+  accountId String
+  provider String
+  tags String[]
+  tenant String?
+
+  @@unique([provider, accountId])
+  @@unique([tenant, accountId], name: "tenantKey")
+  @@index([tenant, provider])
+  @@index([provider, tenant], name: "byProvider")
+}
+`);
+    expect(() => resolveSchema(parseSchema(printed))).not.toThrow();
+    const w = warnings.join("\n");
+    expect(w).toMatch(/Node key tenantKey became @@unique/);
+    expect(w).toMatch(/Skipped composite constraint withTags: Account\.tags not found/);
+  });
+});

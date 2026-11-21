@@ -15,6 +15,10 @@ import {
   type Db as TypesDb,
 } from "./__fixtures__/types.gen.js";
 import { createClient as createGeoClient, type Db as GeoDb } from "./__fixtures__/geo.gen.js";
+import {
+  createClient as createCompoundClient,
+  type Db as CompoundDb,
+} from "./__fixtures__/compound.gen.js";
 import { escapeLucene } from "./fulltext.js";
 import neo4j5 from "neo4j-driver-5";
 import neo4j6 from "neo4j-driver-6";
@@ -745,8 +749,9 @@ describe.skipIf(!hasNeo)("ORM aggregate / groupBy (Neo4j)", () => {
     });
     expect(posts).toEqual({
       _count: { _all: 5, score: 2, publishedOn: 2 },
-      _sum: { views: 146, score: 4 },
-      _avg: { views: 29.2, score: 2 },
+      _sum: { views: 146, score: expect.closeTo(4, 9) },
+      // Neo4j's avg() can be off in the last bit (29.199999999999996): compare floats closely.
+      _avg: { views: expect.closeTo(29.2, 9), score: expect.closeTo(2, 9) },
       _min: { views: 1, title: "a1", publishedOn: new Date("2023-12-31T00:00:00.000Z") },
       _max: { views: 100, title: "orphan", publishedOn: new Date("2024-02-01T00:00:00.000Z") },
     });
@@ -758,7 +763,7 @@ describe.skipIf(!hasNeo)("ORM aggregate / groupBy (Neo4j)", () => {
       _max: { createdAt: true },
     });
     expect(users._count).toBe(3);
-    expect(users._avg.age).toBe(35);
+    expect(users._avg.age).toBeCloseTo(35, 9);
     expect(users._min.createdAt!.toISOString()).toBe("2023-06-15T12:30:45.123Z");
     expect(users._max.createdAt!.toISOString()).toBe("2025-03-01T08:00:00.000Z");
   });
@@ -814,7 +819,12 @@ describe.skipIf(!hasNeo)("ORM aggregate / groupBy (Neo4j)", () => {
       orderBy: { _sum: { views: "desc" } },
     });
     expect(rows).toEqual([
-      { published: true, _count: { _all: 3 }, _sum: { views: 140 }, _avg: { score: 2 } },
+      {
+        published: true,
+        _count: { _all: 3 },
+        _sum: { views: 140 },
+        _avg: { score: expect.closeTo(2, 9) },
+      },
       { published: false, _count: { _all: 2 }, _sum: { views: 6 }, _avg: { score: null } },
     ]);
 
@@ -890,7 +900,7 @@ describe.skipIf(!hasNeo)("ORM aggregate / groupBy (Neo4j)", () => {
       return { agg, groups };
     });
     expect(out).toEqual({
-      agg: { _count: 2, _avg: { views: 3 } },
+      agg: { _count: 2, _avg: { views: expect.closeTo(3, 9) } },
       groups: [
         { views: 2, _count: 1 },
         { views: 4, _count: 1 },
@@ -2847,5 +2857,126 @@ describe.skipIf(!hasNeo)("ORM logging and missing-index warnings (Neo4j)", () =>
       warn.mockRestore();
       await db.$disconnect();
     }
+  });
+});
+
+describe.skipIf(!hasNeo)("ORM composite unique keys (Neo4j)", () => {
+  let db: CompoundDb;
+
+  // Same statements as `cyphra push` / migrations generate for __fixtures__/compound.cyphra.
+  const ddl = [
+    "CREATE CONSTRAINT Member_tenantId_email_unique IF NOT EXISTS FOR (n:`Member`) REQUIRE (n.`tenantId`, n.`email`) IS UNIQUE",
+    "CREATE RANGE INDEX Member_tenantId_joinedOn_idx IF NOT EXISTS FOR (n:`Member`) ON (n.`tenantId`, n.`joinedOn`)",
+    "CREATE CONSTRAINT dayRoom IF NOT EXISTS FOR (n:`Slot`) REQUIRE (n.`day`, n.`room`) IS UNIQUE",
+  ];
+  const wipe = () => db.$cypher`MATCH (n) WHERE n:Tenant OR n:Member OR n:Slot DETACH DELETE n`;
+
+  beforeAll(async () => {
+    db = createCompoundClient({
+      uri: process.env.NEO4J_TEST_URI!,
+      user: process.env.NEO4J_TEST_USER!,
+      password: process.env.NEO4J_TEST_PASSWORD!,
+    });
+    await db.$client.withSession(async (s) => {
+      for (const stmt of ddl) await s.run(stmt);
+      await s.run("CALL db.awaitIndexes(120)");
+    });
+  });
+
+  beforeEach(async () => {
+    await wipe();
+  });
+
+  afterAll(async () => {
+    if (!db) return;
+    await wipe();
+    await db.$disconnect();
+  });
+
+  it("rejects a duplicate composite key with a constraint error (Community)", async () => {
+    await db.member.create({ data: { tenantId: "t1", email: "a@x.io", joinedOn: 1 } });
+    // Same email in another tenant, same tenant with another email: both fine.
+    await db.member.create({ data: { tenantId: "t2", email: "a@x.io", joinedOn: 1 } });
+    await db.member.create({ data: { tenantId: "t1", email: "b@x.io", joinedOn: 1 } });
+    await expect(
+      db.member.create({ data: { tenantId: "t1", email: "a@x.io", joinedOn: 2 } }),
+    ).rejects.toMatchObject({ code: "Neo.ClientError.Schema.ConstraintValidationFailed" });
+    expect(await db.member.count()).toBe(3);
+  });
+
+  it("finds, updates and deletes by a composite key", async () => {
+    await db.member.create({ data: { tenantId: "t1", email: "a@x.io", joinedOn: 1 } });
+    await db.member.create({ data: { tenantId: "t2", email: "a@x.io", joinedOn: 2 } });
+    const key = { tenantId_email: { tenantId: "t2", email: "a@x.io" } };
+    const m = await db.member.findUnique({ where: key, select: { joinedOn: true } });
+    expect(m).toEqual({ joinedOn: 2 });
+    expect(
+      await db.member.findUnique({
+        where: { tenantId_email: { tenantId: "t3", email: "a@x.io" } },
+      }),
+    ).toBeNull();
+    const updated = await db.member.update({ where: key, data: { role: "admin" } });
+    expect(updated).toMatchObject({ tenantId: "t2", role: "admin" });
+    await expect(
+      db.member.findUniqueOrThrow({ where: { ...key, role: "member" } }),
+    ).rejects.toBeInstanceOf(NotFoundError);
+    await db.member.delete({ where: key });
+    expect(await db.member.findMany({ select: { tenantId: true } })).toEqual([{ tenantId: "t1" }]);
+  });
+
+  it("upserts by a composite key (custom name, model without @id)", async () => {
+    const created = await db.slot.upsert({
+      where: { dayRoom: { day: 1, room: "A" } },
+      create: { day: 1, room: "A", label: "standup" },
+      update: { label: "retro" },
+    });
+    expect(created).toEqual({ day: 1, room: "A", label: "standup" });
+    const again = await db.slot.upsert({
+      where: { dayRoom: { day: 1, room: "A" } },
+      create: { day: 1, room: "A", label: "standup" },
+      update: { label: "retro" },
+    });
+    expect(again).toEqual({ day: 1, room: "A", label: "retro" });
+    await db.slot.upsert({
+      where: { dayRoom: { day: 1, room: "B" } },
+      create: { day: 1, room: "B" },
+      update: {},
+    });
+    expect(await db.slot.count()).toBe(2);
+    // Concurrent upserts on one key yield a single node (MERGE + the composite constraint).
+    await Promise.allSettled(
+      Array.from({ length: 8 }, () =>
+        db.slot.upsert({
+          where: { dayRoom: { day: 2, room: "C" } },
+          create: { day: 2, room: "C" },
+          update: {},
+        }),
+      ),
+    );
+    expect(await db.slot.count({ where: { day: 2 } })).toBe(1);
+  });
+
+  it("connects by a composite key", async () => {
+    await db.member.create({ data: { tenantId: "acme", email: "a@x.io", joinedOn: 1 } });
+    const t = await db.tenant.create({
+      data: {
+        slug: "acme",
+        members: { connect: { tenantId_email: { tenantId: "acme", email: "a@x.io" } } },
+      },
+      include: { members: { select: { email: true } } },
+    });
+    expect(t.members).toEqual([{ email: "a@x.io" }]);
+    await db.tenant.update({
+      where: { slug: "acme" },
+      data: {
+        members: { disconnect: { tenantId_email: { tenantId: "acme", email: "a@x.io" } } },
+      },
+    });
+    expect(
+      await db.member.findUniqueOrThrow({
+        where: { tenantId_email: { tenantId: "acme", email: "a@x.io" } },
+        include: { tenant: true },
+      }),
+    ).toMatchObject({ tenant: null });
   });
 });

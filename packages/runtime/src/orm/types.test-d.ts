@@ -8,6 +8,7 @@ import type { Db as VectorDb } from "./__fixtures__/vector.gen.js";
 import type { Db as SearchDb } from "./__fixtures__/search.gen.js";
 import { TyRole, type Db as TypesDb } from "./__fixtures__/types.gen.js";
 import type { Db as GeoDb } from "./__fixtures__/geo.gen.js";
+import type { Db as CompoundDb } from "./__fixtures__/compound.gen.js";
 import type {
   CartesianPoint,
   Duration,
@@ -793,5 +794,43 @@ describe("point and temporal types", () => {
       when: LocalDateTime | null;
       took: Duration | null;
     }>();
+  });
+
+  it("accepts @@unique keys as unique where (Prisma shape), fully typed", async () => {
+    const cdb = {} as CompoundDb;
+    const m = await cdb.member.findUnique({
+      where: { tenantId_email: { tenantId: "t", email: "a@x.io" } },
+    });
+    expectTypeOf(m).toEqualTypeOf<{
+      id: string;
+      tenantId: string;
+      email: string;
+      role: string;
+      joinedOn: number;
+    } | null>();
+    await cdb.member.findUniqueOrThrow({ where: { id: "1" } });
+    await cdb.member.update({
+      where: { tenantId_email: { tenantId: "t", email: "a@x.io" } },
+      data: { role: "admin" },
+    });
+    await cdb.member.delete({ where: { tenantId_email: { tenantId: "t", email: "a@x.io" } } });
+    await cdb.member.upsert({
+      where: { tenantId_email: { tenantId: "t", email: "a@x.io" } },
+      create: { tenantId: "t", email: "a@x.io", joinedOn: 1 },
+      update: { role: "owner" },
+    });
+    await cdb.tenant.update({
+      where: { slug: "acme" },
+      data: { members: { connect: { tenantId_email: { tenantId: "t", email: "a@x.io" } } } },
+    });
+    await cdb.slot.findUnique({ where: { dayRoom: { day: 1, room: "A" }, label: "x" } });
+    // @ts-expect-error — every field of the key is required
+    await cdb.member.findUnique({ where: { tenantId_email: { tenantId: "t" } } });
+    // @ts-expect-error — wrong value type for a key field
+    await cdb.slot.findUnique({ where: { dayRoom: { day: "1", room: "A" } } });
+    // @ts-expect-error — fields of the key alone are not a unique key
+    await cdb.slot.findUnique({ where: { day: 1, room: "A" } });
+    // @ts-expect-error — unknown compound key
+    await cdb.member.findUnique({ where: { email_tenantId: { tenantId: "t", email: "a" } } });
   });
 });
