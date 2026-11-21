@@ -1,5 +1,28 @@
 # @cyphra/runtime
 
+## 0.7.0
+
+### Minor Changes
+
+- fc22aac: Add vector similarity search to the ORM client.
+
+  - `db.chunk.findSimilar({ field, vector, k, where, minScore, select, include })` returns the `k` nodes most similar to `vector`, best first, each with a `$score` (the index's score in `[0, 1]`), through `db.index.vector.queryNodes` (Neo4j 5.15+). It exists only on models with a `Vector(N) @vectorIndex` field, and `field` only accepts those fields; the vector length is checked at runtime.
+  - With `where`, the search over-fetches `candidates` neighbours (default `max(10 × k, 100)`), filters them in the same statement and widens (×4) until `k` rows match, the index is exhausted, scores fall below `minScore`, or `maxCandidates` is reached. `exact: true` skips the index and ranks the nodes matching `where` with `vector.similarity.*` (Neo4j 5.18+), for selective filters.
+  - Vector fields are written as float lists with their length checked on `create`, `update`, `upsert` and `createMany`, filter only on `null`, and cannot be sorted. Works in `$transaction`. The new `FindSimilarArgs`, `SimilarResult`, `VectorKeys` and `VectorIndexKeys` types are exported.
+
+- 1e3c799: Add full-text search to the ORM client.
+
+  - `db.post.search({ index, query, mode, where, minScore, skip, take, select, include })` queries a `@@fulltext` index through `db.index.fulltext.queryNodes` and returns the matching nodes, most relevant first, each with a `$score` (Lucene's relevance score). It exists only on models with a `@@fulltext` attribute, and `index` only accepts that model's index names.
+  - `query` is Lucene query syntax by default (`mode: "lucene"`); `mode: "terms"` and `mode: "phrase"` escape it to search plain words or a phrase. The new `escapeLucene(text)` helper escapes user input for queries you build yourself. A blank query returns `[]`.
+  - `where` and `minScore` filter the hits in the same statement, before `skip` / `take`; full-text queries return every match, so a filtered search never comes back short. Works in `$transaction`, where the index sees the transaction's own writes. The new `SearchArgs`, `SearchMode`, `SearchResult` and `FulltextIndexNames` types are exported.
+
+### Patch Changes
+
+- Updated dependencies [1e3c799]
+- Updated dependencies [fc22aac]
+  - @cyphra/schema@0.7.0
+  - @cyphra/query@0.7.0
+
 ## 0.6.0
 
 ### Minor Changes
