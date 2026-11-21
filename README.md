@@ -44,7 +44,7 @@ cyphra pull                         # or start from an existing database: write 
 - **CLI**: `pnpm add -D @cyphra/cli`
 - **Docs site**: [`doc/`](./doc) (Next.js + Nextra) — `pnpm doc:dev` / `pnpm doc:build`
 - **Example apps**: [`examples/blog/`](./examples/blog) (typed client, needs Neo4j: `pnpm example:blog`) and [`examples/basic/`](./examples/basic) (low-level APIs: `pnpm example:basic`)
-- **Requires** Neo4j 5.6+ for the typed client
+- **Requires** Neo4j 5.6+ for the typed client, or Memgraph 3.x with `dialect: "memgraph"` ([feature matrix](https://cyphra.dev/memgraph))
 - **Security**: see [SECURITY.md](./SECURITY.md)
 
 ## Monorepo

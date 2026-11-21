@@ -1,6 +1,7 @@
 import { cypher } from "@cyphra/query";
 import { describe, expect, it, vi } from "vitest";
 import { CyphraClient } from "./client.js";
+import { testDialect } from "./orm/__fixtures__/testDialect.js";
 
 // Each test makes many round trips to Neo4j: the default 5 s is too tight on a busy CI runner.
 vi.setConfig({ testTimeout: 30_000, hookTimeout: 30_000 });
@@ -15,6 +16,7 @@ describe.skipIf(!hasNeo)("CyphraClient integration", () => {
       uri: process.env.NEO4J_TEST_URI!,
       user: process.env.NEO4J_TEST_USER!,
       password: process.env.NEO4J_TEST_PASSWORD!,
+      dialect: testDialect,
     });
     try {
       await client.withSession(async (session) => {

@@ -29,6 +29,7 @@ export {
   vectorIndexStatement,
   isEmptyPlan,
   type DdlObject,
+  type DdlOptions,
   type MigrationPlan,
   type MigrationStep,
 } from "./diff.js";
@@ -59,6 +60,18 @@ export {
   type ShowRow,
 } from "./drift.js";
 export { listAppliedMigrations, type AppliedMigration } from "./tracker.js";
+export {
+  MEMGRAPH_VECTOR_CAPACITY,
+  ddlForDialect,
+  isMemgraphDdl,
+  memgraphDdl,
+  memgraphDropStatement,
+  memgraphSchemaObjects,
+  memgraphStatements,
+  memgraphVectorMetric,
+  parseMemgraphDdl,
+  type ParsedMemgraphDdl,
+} from "./memgraph.js";
 export {
   CYPHRA_MIGRATION_LABEL,
   ensureMigrationInfrastructure,

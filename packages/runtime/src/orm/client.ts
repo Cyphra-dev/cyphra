@@ -9,7 +9,9 @@ import {
   type QueryMeta,
 } from "../observability.js";
 import { ModelEngine, type EngineOptions, type Executor, type Runner } from "./engine.js";
-import { CyphraValidationError } from "./errors.js";
+import { CyphraError, CyphraValidationError } from "./errors.js";
+import { unsupportedOnMemgraph, type CyphraDialect } from "../dialect.js";
+import { CypherDuration, CypherTime } from "../cypher-values.js";
 import {
   ExtensionState,
   ORM_OPERATIONS,
@@ -158,16 +160,80 @@ function txExecutor(
   schema: SchemaModel,
   tx: TransactionLike,
   meta: QueryMeta,
+  dialect: CyphraDialect = "neo4j",
 ): Executor {
   return async (text, params) => {
+    if (dialect === "memgraph") assertMemgraphParams(params);
     let res: RowsResult;
     try {
       res = (await instr.run(text, params, meta, () => tx.run(text, params))) as RowsResult;
     } catch (e) {
-      throw mapUniqueError(schema, e);
+      throw dialect === "neo4j"
+        ? withDialectHint(mapUniqueError(schema, e))
+        : memgraphError(schema, e);
     }
     return res.records.map((r) => r.toObject());
   };
+}
+
+/** Memgraph: reject values it cannot store before the statement runs (no zoned `Time` type). */
+function assertMemgraphParams(value: unknown, depth = 0): void {
+  if (value instanceof CypherTime) {
+    throw unsupportedOnMemgraph(
+      "The Time type (a time of day with a UTC offset)",
+      "Memgraph has no zoned time type. Use LocalTime, or a DateTime.",
+    );
+  }
+  if (value instanceof CypherDuration && value.months.value !== 0n) {
+    throw unsupportedOnMemgraph(
+      "A Duration with months or years",
+      "Memgraph durations have a fixed length (days, hours, minutes, seconds). Use days instead of months.",
+    );
+  }
+  if (depth > 8 || value === null || typeof value !== "object" || value instanceof Date) return;
+  for (const v of Array.isArray(value) ? value : Object.values(value)) {
+    assertMemgraphParams(v, depth + 1);
+  }
+}
+
+/**
+ * Memgraph reports many errors that retrying cannot fix as *transient* (Cypher it cannot run yet,
+ * an invalid duration string, …), which the driver would retry until its retry timeout. Only
+ * write conflicts between transactions are worth retrying: anything else is raised as a
+ * `CyphraError` (not retried; the original error is the cause).
+ */
+function memgraphError(schema: SchemaModel, err: unknown): unknown {
+  const e = err as { code?: unknown; message?: unknown } | null;
+  if (
+    typeof e?.code === "string" &&
+    e.code.startsWith("Memgraph.TransientError") &&
+    typeof e.message === "string" &&
+    !/conflicting transactions|retry this transaction/i.test(e.message)
+  ) {
+    return new CyphraError(`Memgraph cannot run this statement: ${e.message}`, { cause: err });
+  }
+  return mapUniqueError(schema, err);
+}
+
+/**
+ * A Memgraph parse error or missing function / procedure under the default `"neo4j"` dialect:
+ * the client was most likely meant to use `dialect: "memgraph"`. Say so, keeping the error as the
+ * cause.
+ */
+function withDialectHint(err: unknown): unknown {
+  const e = err as { code?: unknown; message?: unknown } | null;
+  if (
+    typeof e?.code === "string" &&
+    e.code.startsWith("Memgraph.") &&
+    typeof e.message === "string" &&
+    /parsing error|doesn't exist|not supported/i.test(e.message)
+  ) {
+    return new CyphraError(
+      `${e.message} (the server is Memgraph: create the client with dialect: "memgraph")`,
+      { cause: err },
+    );
+  }
+  return err;
 }
 
 /**
@@ -317,9 +383,11 @@ export function createOrm<TM extends TypeMap>(
   ) {
     throw new CyphraValidationError("maxTraversalDepth must be a positive integer.");
   }
-  const engineOptions: EngineOptions = { maxTraversalDepth };
   const owns = !("client" in options);
   const client = "client" in options ? options.client : new CyphraClient(options);
+  // A client from an older @cyphra/runtime (or a test stub) has no dialect: Neo4j.
+  const dialect = (client as { dialect?: CyphraDialect }).dialect ?? "neo4j";
+  const engineOptions: EngineOptions = { maxTraversalDepth, dialect };
   // A client from another copy (or an older version) of @cyphra/runtime, or a test stub, may have
   // no instrumentation: fall back to an inert one.
   const instr: Instrumentation =
@@ -335,11 +403,11 @@ export function createOrm<TM extends TypeMap>(
     return {
       read: (fn) =>
         mapped(schema, () =>
-          client.withReadTransaction((tx) => fn(txExecutor(instr, schema, tx, m))),
+          client.withReadTransaction((tx) => fn(txExecutor(instr, schema, tx, m, dialect))),
         ),
       write: (fn) =>
         mapped(schema, () =>
-          client.withWriteTransaction((tx) => fn(txExecutor(instr, schema, tx, m))),
+          client.withWriteTransaction((tx) => fn(txExecutor(instr, schema, tx, m, dialect))),
         ),
     };
   };
@@ -351,7 +419,7 @@ export function createOrm<TM extends TypeMap>(
         mapped(schema, () =>
           client.withWriteTransaction((tx) => {
             const inTx: RunnerFor = (meta) => {
-              const exec = txExecutor(instr, schema, tx, { ...meta, transaction: true });
+              const exec = txExecutor(instr, schema, tx, { ...meta, transaction: true }, dialect);
               return { read: (f) => f(exec), write: (f) => f(exec) };
             };
             const txClient: Record<string, unknown> = {};

@@ -15,7 +15,7 @@ import {
 } from "@cyphra/migrator";
 import type { CyphraClient } from "@cyphra/runtime";
 import type { CyphraConfig } from "../config.js";
-import { clientFromEnv } from "../clientFromEnv.js";
+import { clientForConfig } from "../clientFromEnv.js";
 import { loadMigrationsFromDir } from "../loadMigrations.js";
 import { currentModel, planMigration } from "./migrateDev.js";
 
@@ -98,7 +98,7 @@ export async function migrateStatusReport(
   const warnings: string[] = [];
   let expected: SchemaObject[];
   if (opts.schema) {
-    expected = expectedSchemaFromModel(await currentModel(config));
+    expected = expectedSchemaFromModel(await currentModel(config), client.dialect);
   } else {
     const { ordered, warnings: missing } = appliedFiles(applied, files);
     warnings.push(...missing);
@@ -196,7 +196,7 @@ export async function runMigrateStatus(
   config: CyphraConfig,
   opts: MigrateStatusOptions = {},
 ): Promise<boolean> {
-  const client = clientFromEnv(false);
+  const client = await clientForConfig(config);
   try {
     const report = await migrateStatusReport(cwd, config, client, opts);
     if (opts.json) console.log(JSON.stringify(report, null, 2));
@@ -216,7 +216,7 @@ export async function warnOnDrift(cwd: string, config: CyphraConfig): Promise<vo
   if (!process.env.NEO4J_URI) return;
   let client: CyphraClient;
   try {
-    client = clientFromEnv(false);
+    client = await clientForConfig(config);
   } catch {
     return;
   }

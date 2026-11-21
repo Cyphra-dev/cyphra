@@ -1,6 +1,7 @@
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createClient, type Db } from "./__fixtures__/interfaces.gen.js";
 import { CyphraValidationError } from "./errors.js";
+import { onMemgraph, testDdl, testDialect } from "./__fixtures__/testDialect.js";
 
 // Each test makes many round trips to Neo4j: the default 5 s is too tight on a busy CI runner.
 vi.setConfig({ testTimeout: 30_000, hookTimeout: 30_000 });
@@ -19,6 +20,7 @@ describe.skipIf(!hasNeo)("interfaces and multiple labels (Neo4j)", () => {
       uri: process.env.NEO4J_TEST_URI!,
       user: process.env.NEO4J_TEST_USER!,
       password: process.env.NEO4J_TEST_PASSWORD!,
+      dialect: testDialect,
     });
     await db.$cypher`MATCH (n) WHERE any(l IN labels(n) WHERE l IN ${LABELS}) DETACH DELETE n`;
   });
@@ -26,7 +28,7 @@ describe.skipIf(!hasNeo)("interfaces and multiple labels (Neo4j)", () => {
   afterAll(async () => {
     if (!db) return;
     await db.$cypher`MATCH (n) WHERE any(l IN labels(n) WHERE l IN ${LABELS}) DETACH DELETE n`;
-    await db.$cypher`DROP INDEX personSearch IF EXISTS`;
+    if (!onMemgraph) await db.$cypher`DROP INDEX personSearch IF EXISTS`;
     await db.$disconnect();
   });
 
@@ -176,30 +178,41 @@ describe.skipIf(!hasNeo)("interfaces and multiple labels (Neo4j)", () => {
   });
 
   it("enforces an interface uniqueness constraint across implementations", async () => {
-    await db.$cypher`CREATE CONSTRAINT Person_email_unique IF NOT EXISTS FOR (n:Person) REQUIRE n.email IS UNIQUE`;
+    // Outside a transaction: Memgraph rejects DDL in explicit transactions.
+    const ddl = (text: string) =>
+      db.$client.withSession(async (s) => {
+        await s.run(testDdl(text)!);
+      });
+    await ddl(
+      "CREATE CONSTRAINT Person_email_unique IF NOT EXISTS FOR (n:Person) REQUIRE n.email IS UNIQUE",
+    );
     try {
       await db.customer.create({ data: { email: "same@x.io", name: "C" } });
       await expect(
         db.employee.create({ data: { email: "same@x.io", name: "E" } }),
       ).rejects.toThrow();
     } finally {
-      await db.$cypher`DROP CONSTRAINT Person_email_unique IF EXISTS`;
+      await ddl("DROP CONSTRAINT Person_email_unique IF EXISTS");
     }
   });
 
-  it("searches an interface full-text index, through the interface and an implementation", async () => {
-    await db.$cypher`CREATE FULLTEXT INDEX personSearch IF NOT EXISTS FOR (n:Person) ON EACH [n.name, n.bio]`;
-    await db.$cypher`CALL db.awaitIndexes(60)`;
-    await seed();
-    await db.customer.create({ data: { email: "c2@x.io", name: "Bob Buyer" } });
-    // Full-text indexes are eventually visible: retry briefly.
-    let hits: { __typename: string }[] = [];
-    for (let i = 0; i < 50 && hits.length < 2; i++) {
-      hits = await db.person.search({ index: "personSearch", query: "bob" });
-      if (hits.length < 2) await new Promise((r) => setTimeout(r, 100));
-    }
-    expect(hits.map((h) => h.__typename).sort()).toEqual(["Customer", "Employee"]);
-    const employees = await db.employee.search({ index: "personSearch", query: "bob" });
-    expect(employees.map((h) => h.email)).toEqual(["emp@x.io"]);
-  });
+  // Memgraph's text search has its own suite (memgraph.integration.test.ts).
+  it.skipIf(onMemgraph)(
+    "searches an interface full-text index, through the interface and an implementation",
+    async () => {
+      await db.$cypher`CREATE FULLTEXT INDEX personSearch IF NOT EXISTS FOR (n:Person) ON EACH [n.name, n.bio]`;
+      await db.$cypher`CALL db.awaitIndexes(60)`;
+      await seed();
+      await db.customer.create({ data: { email: "c2@x.io", name: "Bob Buyer" } });
+      // Full-text indexes are eventually visible: retry briefly.
+      let hits: { __typename: string }[] = [];
+      for (let i = 0; i < 50 && hits.length < 2; i++) {
+        hits = await db.person.search({ index: "personSearch", query: "bob" });
+        if (hits.length < 2) await new Promise((r) => setTimeout(r, 100));
+      }
+      expect(hits.map((h) => h.__typename).sort()).toEqual(["Customer", "Employee"]);
+      const employees = await db.employee.search({ index: "personSearch", query: "bob" });
+      expect(employees.map((h) => h.email)).toEqual(["emp@x.io"]);
+    },
+  );
 });

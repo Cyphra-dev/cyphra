@@ -2,6 +2,7 @@ import type { Session } from "neo4j-driver";
 import { toNative, type CyphraClient } from "@cyphra/runtime";
 import { wrapInTransactions } from "./batch.js";
 import { compileRenameLabel, compileRenameProperty } from "./rename.js";
+import { memgraphDdl } from "./memgraph.js";
 
 /**
  * Database handle passed to `up()` in {@link defineMigration}.
@@ -47,7 +48,19 @@ export type MigrationMigrateHelpers = {
  * @param session - Neo4j session (caller manages lifecycle).
  */
 export function createMigrationDb(client: CyphraClient, session: Session): MigrationDb {
+  const memgraph = (client as { dialect?: string }).dialect === "memgraph";
+  // On Memgraph, Cyphra's DDL in Neo4j syntax (a migration generated before `"dialect":
+  // "memgraph"` was set) is translated; everything else runs as written.
+  const ddl = (text: string) => (memgraph ? (memgraphDdl(text)?.create ?? text) : text);
   const run = async (strings: TemplateStringsArray, ...values: unknown[]): Promise<void> => {
+    if (memgraph && values.length === 0) {
+      const text = strings.join("");
+      const translated = ddl(text);
+      if (translated !== text) {
+        await session.run(translated);
+        return;
+      }
+    }
     const result = await client.runCypher(session, strings, ...values);
     await result;
   };
@@ -57,7 +70,7 @@ export function createMigrationDb(client: CyphraClient, session: Session): Migra
     batchSize: number;
     params?: Record<string, unknown>;
   }): Promise<void> => {
-    const text = wrapInTransactions(opts.inner, opts.batchSize);
+    const text = wrapInTransactions(opts.inner, opts.batchSize, memgraph ? "memgraph" : "neo4j");
     const result = await session.run(text, opts.params ?? {});
     await result;
   };
@@ -77,7 +90,7 @@ export function createMigrationDb(client: CyphraClient, session: Session): Migra
     text: string,
     params: Record<string, unknown> = {},
   ): Promise<Record<string, unknown>[]> => {
-    const result = await session.run(text, params);
+    const result = await session.run(ddl(text), params);
     return result.records.map((r) => toNative(r.toObject()) as Record<string, unknown>);
   };
 

@@ -41,6 +41,35 @@ export class CyphraValidationError extends CyphraError {
   }
 }
 
+/**
+ * The operation (or one of its options) is not available on the configured database dialect, e.g.
+ * a `Time` field on Memgraph, which has no zoned time type. Thrown before any statement runs, in
+ * place of Cypher the database would reject or answer differently.
+ *
+ * @example
+ * ```ts
+ * try {
+ *   await db.user.search({ index: "userSearch", query: "graph", mode: "lucene" });
+ * } catch (e) {
+ *   if (e instanceof UnsupportedFeatureError) console.warn(e.feature, e.dialect);
+ * }
+ * ```
+ */
+export class UnsupportedFeatureError extends CyphraError {
+  constructor(
+    /** What is unsupported, phrased to read "<feature> is not supported on …", e.g. `"User.opensAt (a Time field)"`. */
+    readonly feature: string,
+    /** The dialect it is unavailable on. */
+    readonly dialect: "neo4j" | "memgraph",
+    /** What to do instead (appended to the message). */
+    hint?: string,
+  ) {
+    super(
+      `${feature} is not supported on ${dialect === "memgraph" ? "Memgraph" : "Neo4j"}${hint ? `: ${hint}` : "."}`,
+    );
+  }
+}
+
 /** A node required by the operation does not exist (`update`, `delete`, `connect`, `…OrThrow`). */
 export class NotFoundError extends CyphraError {}
 

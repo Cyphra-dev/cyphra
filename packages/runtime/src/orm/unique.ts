@@ -27,6 +27,12 @@ const HEAD = new RegExp(
   `already exists with (label|type) ${QUOTED} and propert(?:y|ies) (${QUOTED} = [\\s\\S]*)$`,
 );
 const PROPERTY = new RegExp(`(?:^|, )${QUOTED} = `, "g");
+/**
+ * Memgraph (3.x), at commit: `Unable to commit due to unique constraint violation on :User(email)`
+ * or `… on :Member(email, tenantId)` (properties sorted, no values). Memgraph has no relationship
+ * constraints.
+ */
+const MEMGRAPH_HEAD = /unique constraint violation on :([^(]+)\((.*)\)\s*$/;
 
 function unquote(s: string): string {
   return s.replace(/``/g, "`");
@@ -36,9 +42,21 @@ function unquote(s: string): string {
  * Read the label and properties from a uniqueness violation message, e.g.
  * ``Node(12) already exists with label `User` and property `email` = 'a@example.com'`` or
  * ``… with label `Member` and properties `tenantId` = 't1', `email` = 'a@example.com'`` (Neo4j 4,
- * 5 and 2025, Bolt and Query API; the node id may be an element id).
+ * 5 and 2025, Bolt and Query API; the node id may be an element id), or Memgraph's
+ * ``Unable to commit due to unique constraint violation on :User(email)``.
  */
 export function parseUniqueViolation(message: string): ParsedUniqueViolation | undefined {
+  const mg = MEMGRAPH_HEAD.exec(message);
+  if (mg) {
+    return {
+      entity: "node",
+      label: mg[1]!,
+      properties: mg[2]!
+        .split(",")
+        .map((p) => p.trim())
+        .filter(Boolean),
+    };
+  }
   const m = HEAD.exec(message);
   if (!m) return undefined;
   const properties: string[] = [];
@@ -54,6 +72,9 @@ type ErrorLike = { code?: unknown; gqlStatus?: unknown; message?: unknown; cause
 
 /** Messages Neo4j uses for a uniqueness conflict (a plain write, or a `MERGE` that cannot create). */
 const UNIQUE_MESSAGE = /already exists with (?:label|type) `|conflicts? with existing unique/;
+
+/** Memgraph reports every error with this one code (the message tells them apart). */
+const MEMGRAPH_ERROR_CODE = /^Memgraph\./;
 
 /**
  * GQL statuses of a uniqueness violation (Neo4j 2025+): `22N79` property uniqueness constraint
@@ -76,6 +97,9 @@ function uniqueViolation(err: unknown): ErrorLike | undefined {
     const message = typeof e.message === "string" ? e.message : "";
     if (
       (e.code === CONSTRAINT_VALIDATION_FAILED && UNIQUE_MESSAGE.test(message)) ||
+      (typeof e.code === "string" &&
+        MEMGRAPH_ERROR_CODE.test(e.code) &&
+        MEMGRAPH_HEAD.test(message)) ||
       (typeof e.gqlStatus === "string" && UNIQUE_GQL_STATUSES.has(e.gqlStatus))
     ) {
       return e;

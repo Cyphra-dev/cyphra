@@ -2,7 +2,12 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 import { createClient, type Db } from "./__fixtures__/blog.gen.js";
 import { parseSchema, resolveSchema } from "@cyphra/schema";
 import { createOrm } from "./client.js";
-import { CyphraValidationError, NotFoundError, UniqueConstraintError } from "./errors.js";
+import {
+  CyphraValidationError,
+  NotFoundError,
+  UniqueConstraintError,
+  UnsupportedFeatureError,
+} from "./errors.js";
 import {
   createClient as createVectorClient,
   type Db as VectorDb,
@@ -33,6 +38,7 @@ import neo4j5 from "neo4j-driver-5";
 import neo4j6 from "neo4j-driver-6";
 import type { DriverLike } from "../client.js";
 import type { CyphraEvent, ErrorEvent, QueryEvent, WarnEvent } from "../observability.js";
+import { onMemgraph, storedType, testDdl, testDialect } from "./__fixtures__/testDialect.js";
 
 // Each test makes many round trips to Neo4j: the default 5 s is too tight on a busy CI runner.
 vi.setConfig({ testTimeout: 30_000, hookTimeout: 30_000 });
@@ -49,6 +55,7 @@ describe.skipIf(!hasNeo)("ORM client (Neo4j)", () => {
       uri: process.env.NEO4J_TEST_URI!,
       user: process.env.NEO4J_TEST_USER!,
       password: process.env.NEO4J_TEST_PASSWORD!,
+      dialect: testDialect,
     });
     await db.$cypher`MATCH (n) WHERE n:User OR n:Post DETACH DELETE n`;
   });
@@ -67,7 +74,7 @@ describe.skipIf(!hasNeo)("ORM client (Neo4j)", () => {
 
     // Int must be stored as an integer, not a float.
     const [row] = await db.$cypher<{ t: string }>`MATCH (u:User) RETURN valueType(u.age) AS t`;
-    expect(row!.t).toBe("INTEGER NOT NULL");
+    expect(row!.t).toBe(storedType("INTEGER NOT NULL"));
 
     const found = await db.user.findUnique({ where: { email: "a@x.io" } });
     expect(found).toEqual(u);
@@ -368,9 +375,23 @@ describe.skipIf(!hasNeo)("ORM client (Neo4j)", () => {
 });
 
 /** Schema commands cannot share a transaction with data writes, so run them on their own. */
-async function schemaCommand(db: Db, text: string): Promise<void> {
+type SchemaRunner = {
+  $client: {
+    withSession<T>(fn: (s: { run(q: string): Promise<unknown> }) => Promise<T>): Promise<T>;
+  };
+};
+
+async function schemaCommand(db: SchemaRunner, text: string): Promise<void> {
+  if (onMemgraph && /^CALL db\.awaitIndexes/.test(text)) return;
+  const statement = testDdl(text);
+  if (!statement) return;
   await db.$client.withSession(async (s) => {
-    await s.run(text);
+    try {
+      await s.run(statement);
+    } catch (e) {
+      // Memgraph's text and vector index DDL has no IF [NOT] EXISTS.
+      if (!onMemgraph || !/already exists|does ?n[o']t exist/i.test((e as Error).message)) throw e;
+    }
   });
 }
 
@@ -388,6 +409,7 @@ describe.skipIf(!hasNeo)("ORM write correctness (Neo4j)", () => {
       uri: process.env.NEO4J_TEST_URI!,
       user: process.env.NEO4J_TEST_USER!,
       password: process.env.NEO4J_TEST_PASSWORD!,
+      dialect: testDialect,
     });
     await db.$cypher`MATCH (n) WHERE n:User OR n:Post DETACH DELETE n`;
     for (const [name, body] of Object.entries(constraints)) {
@@ -622,11 +644,19 @@ describe.skipIf(!hasNeo)("ORM write correctness (Neo4j)", () => {
         const d = await db.user.create({ data: { email: "d@x.io" } }); // @default(now())
         expect(u.createdAt.getTime()).toBe(at.getTime());
 
-        const stored = await db.$cypher<{ s: string; offset: string }>`
-          MATCH (u:User) RETURN toString(u.createdAt) AS s, u.createdAt.offset AS offset
-          ORDER BY u.email`;
-        expect(stored.map((r) => r.offset)).toEqual(["Z", "Z"]);
-        expect(stored[1]!.s).toBe("2024-03-10T07:30:15.123Z");
+        if (onMemgraph) {
+          // Memgraph has no `.offset`; its text keeps microseconds and the numeric offset.
+          const stored = await db.$cypher<{ s: string }>`
+            MATCH (u:User) RETURN toString(u.createdAt) AS s ORDER BY u.email`;
+          expect(stored.map((r) => r.s.endsWith("+00:00"))).toEqual([true, true]);
+          expect(stored[1]!.s).toBe("2024-03-10T07:30:15.123000+00:00");
+        } else {
+          const stored = await db.$cypher<{ s: string; offset: string }>`
+            MATCH (u:User) RETURN toString(u.createdAt) AS s, u.createdAt.offset AS offset
+            ORDER BY u.email`;
+          expect(stored.map((r) => r.offset)).toEqual(["Z", "Z"]);
+          expect(stored[1]!.s).toBe("2024-03-10T07:30:15.123Z");
+        }
 
         const eq = await db.user.findMany({ where: { createdAt: at } });
         expect(eq.map((x) => x.email)).toEqual(["t@x.io"]);
@@ -635,9 +665,10 @@ describe.skipIf(!hasNeo)("ORM write correctness (Neo4j)", () => {
         expect(await db.user.count({ where: { createdAt: d.createdAt } })).toBe(1);
         const [{ same }] = (await db.$cypher<{ same: boolean }>`
           MATCH (u:User {email: "t@x.io"})
-          RETURN u.createdAt = datetime("2024-03-10T07:30:15.123Z") AS same`) as [
-          { same: boolean },
-        ];
+          RETURN u.createdAt = datetime(${
+            // Memgraph reads "Z" as the Etc/UTC zone, not equal to a +00:00 offset.
+            onMemgraph ? "2024-03-10T07:30:15.123+00:00" : "2024-03-10T07:30:15.123Z"
+          }) AS same`) as [{ same: boolean }];
         expect(same).toBe(true);
       } finally {
         if (prevTz === undefined) delete process.env.TZ;
@@ -702,6 +733,7 @@ describe.skipIf(!hasNeo)("ORM aggregate / groupBy (Neo4j)", () => {
       uri: process.env.NEO4J_TEST_URI!,
       user: process.env.NEO4J_TEST_USER!,
       password: process.env.NEO4J_TEST_PASSWORD!,
+      dialect: testDialect,
     });
     await db.$cypher`MATCH (n) WHERE n:User OR n:Post DETACH DELETE n`;
   });
@@ -943,6 +975,7 @@ describe.skipIf(!hasNeo)("ORM relation counts (Neo4j)", () => {
       uri: process.env.NEO4J_TEST_URI!,
       user: process.env.NEO4J_TEST_USER!,
       password: process.env.NEO4J_TEST_PASSWORD!,
+      dialect: testDialect,
     });
     await db.$cypher`MATCH (n) WHERE n:User OR n:Post DETACH DELETE n`;
   });
@@ -1124,6 +1157,7 @@ describe.skipIf(!hasNeo)("ORM traversals and paths (Neo4j)", () => {
       uri: process.env.NEO4J_TEST_URI!,
       user: process.env.NEO4J_TEST_USER!,
       password: process.env.NEO4J_TEST_PASSWORD!,
+      dialect: testDialect,
     });
     await db.$cypher`MATCH (n) WHERE n:User OR n:Post DETACH DELETE n`;
   });
@@ -1376,6 +1410,7 @@ describe.skipIf(!hasNeo)("ORM traversals and paths (Neo4j)", () => {
       uri: process.env.NEO4J_TEST_URI!,
       user: process.env.NEO4J_TEST_USER!,
       password: process.env.NEO4J_TEST_PASSWORD!,
+      dialect: testDialect,
       maxTraversalDepth: 2,
     });
     try {
@@ -1398,6 +1433,7 @@ describe.skipIf(!hasNeo)("ORM shortest paths (Neo4j)", () => {
       uri: process.env.NEO4J_TEST_URI!,
       user: process.env.NEO4J_TEST_USER!,
       password: process.env.NEO4J_TEST_PASSWORD!,
+      dialect: testDialect,
     });
     await db.$cypher`MATCH (n) WHERE n:User OR n:Post DETACH DELETE n`;
   });
@@ -1633,14 +1669,25 @@ describe.skipIf(!hasNeo)("ORM shortest paths (Neo4j)", () => {
         await db.user.shortestPath({ ...base, edgeWhere: { since: { gte: day("2024-01-01") } } }),
       ),
     ).toEqual(["alice", "bob", "dave", "erin"]);
-    const viaRelation = await db.user.shortestPath({
+    const viaRelationArgs = {
       from: at("alice"),
       to: at("dave"),
-      via: "following",
+      via: "following" as const,
       maxDepth: 4,
       where: { following: { some: { name: "dave" } }, NOT: { name: "bob" } },
-    });
-    expect(names(viaRelation)).toEqual(["alice", "carol", "dave"]);
+    };
+    if (onMemgraph) {
+      // Memgraph cannot run a subquery inside the search's filter lambda.
+      await expect(db.user.shortestPath(viaRelationArgs)).rejects.toBeInstanceOf(
+        UnsupportedFeatureError,
+      );
+    } else {
+      expect(names(await db.user.shortestPath(viaRelationArgs))).toEqual([
+        "alice",
+        "carol",
+        "dave",
+      ]);
+    }
   });
 
   it("projects path nodes with select / include", async () => {
@@ -1693,6 +1740,7 @@ describe.skipIf(!hasNeo)("ORM shortest paths (Neo4j)", () => {
       uri: process.env.NEO4J_TEST_URI!,
       user: process.env.NEO4J_TEST_USER!,
       password: process.env.NEO4J_TEST_PASSWORD!,
+      dialect: testDialect,
       maxTraversalDepth: 2,
     });
     try {
@@ -1748,15 +1796,17 @@ describe.skipIf(!hasNeo)("ORM vector search (Neo4j)", () => {
       uri: process.env.NEO4J_TEST_URI!,
       user: process.env.NEO4J_TEST_USER!,
       password: process.env.NEO4J_TEST_PASSWORD!,
+      dialect: testDialect,
     });
-    await db.$client.withSession(async (s) => {
-      for (const stmt of ddl) await s.run(stmt);
-      await s.run("CALL db.awaitIndexes(120)");
-    });
+    for (const stmt of ddl) await schemaCommand(db, stmt);
+    await schemaCommand(db, "CALL db.awaitIndexes(120)");
   });
 
   beforeEach(async () => {
     await db.$cypher`MATCH (n) WHERE n:VecDoc OR n:VecChunk DETACH DELETE n`;
+    // Memgraph's vector index keeps deleted nodes until garbage collection (Cyphra skips them,
+    // but they take places in the top k): collect them now, so maxCandidates counts live nodes.
+    if (onMemgraph) await schemaCommand(db, "FREE MEMORY");
     await db.vecDoc.create({ data: { id: "en", title: "English", lang: "en" } });
     await db.vecDoc.create({ data: { id: "fr", title: "French", lang: "fr" } });
     for (const [i, c] of chunks.entries()) {
@@ -1781,21 +1831,25 @@ describe.skipIf(!hasNeo)("ORM vector search (Neo4j)", () => {
 
   const ids = (rows: readonly { id: string }[]) => rows.map((r) => r.id);
 
-  it("creates ONLINE vector indexes and stores vectors as LIST<FLOAT>", async () => {
-    const indexes = await db.$cypher<{ name: string; state: string; options: unknown }>`
+  // SHOW VECTOR INDEXES and LIST<FLOAT> value types are Neo4j's.
+  it.skipIf(onMemgraph)(
+    "creates ONLINE vector indexes and stores vectors as LIST<FLOAT>",
+    async () => {
+      const indexes = await db.$cypher<{ name: string; state: string; options: unknown }>`
       SHOW VECTOR INDEXES YIELD name, state, options WHERE name IN ['VecChunk_embedding_vector', 'vec_chunk_sketch']
       RETURN name, state, options ORDER BY name`;
-    expect(indexes.map((i) => [i.name, i.state])).toEqual([
-      ["VecChunk_embedding_vector", "ONLINE"],
-      ["vec_chunk_sketch", "ONLINE"],
-    ]);
-    const [row] = await db.$cypher<{ t: string }>`
+      expect(indexes.map((i) => [i.name, i.state])).toEqual([
+        ["VecChunk_embedding_vector", "ONLINE"],
+        ["vec_chunk_sketch", "ONLINE"],
+      ]);
+      const [row] = await db.$cypher<{ t: string }>`
       MATCH (c:VecChunk {id: 'c1'}) RETURN valueType(c.embedding) AS t`;
-    expect(row!.t).toMatch(/^LIST<FLOAT/);
-    const c1 = await db.vecChunk.findUniqueOrThrow({ where: { id: "c1" } });
-    expect(c1.embedding).toEqual([1, 0, 0]);
-    expect((await db.vecChunk.findUniqueOrThrow({ where: { id: "c6" } })).embedding).toBeNull();
-  });
+      expect(row!.t).toMatch(/^LIST<FLOAT/);
+      const c1 = await db.vecChunk.findUniqueOrThrow({ where: { id: "c1" } });
+      expect(c1.embedding).toEqual([1, 0, 0]);
+      expect((await db.vecChunk.findUniqueOrThrow({ where: { id: "c6" } })).embedding).toBeNull();
+    },
+  );
 
   it("returns the k nearest nodes, best first, with $score", async () => {
     const hits = await db.vecChunk.findSimilar({ field: "embedding", vector: [1, 0, 0], k: 3 });
@@ -1978,12 +2032,17 @@ describe.skipIf(!hasNeo)("ORM vector search (Neo4j)", () => {
         await tx.vecChunk.findSimilar({ ...args, exact: true }),
       ];
     });
-    expect(ids(viaIndex)).not.toContain("new");
+    // Memgraph's vector index sees the transaction's own writes.
+    if (onMemgraph) expect(ids(viaIndex)).toEqual(["new"]);
+    else expect(ids(viaIndex)).not.toContain("new");
     expect(ids(exact)).toEqual(["new"]);
   });
 });
 
-describe.skipIf(!hasNeo)("ORM full-text search (Neo4j)", () => {
+// Memgraph's text search (Tantivy) has no analyzers, no field-qualified queries through
+// search_all and no uncommitted reads, and commits its index on every write (about a second per
+// index in Docker): it has its own, smaller suite below.
+describe.skipIf(!hasNeo || onMemgraph)("ORM full-text search (Neo4j)", () => {
   let db: SearchDb;
 
   // Same statements as `cyphra push` / migrations generate for __fixtures__/search.cyphra.
@@ -2034,11 +2093,10 @@ describe.skipIf(!hasNeo)("ORM full-text search (Neo4j)", () => {
       uri: process.env.NEO4J_TEST_URI!,
       user: process.env.NEO4J_TEST_USER!,
       password: process.env.NEO4J_TEST_PASSWORD!,
+      dialect: testDialect,
     });
-    await db.$client.withSession(async (s) => {
-      for (const stmt of ddl) await s.run(stmt);
-      await s.run("CALL db.awaitIndexes(120)");
-    });
+    for (const stmt of ddl) await schemaCommand(db, stmt);
+    await schemaCommand(db, "CALL db.awaitIndexes(120)");
   });
 
   beforeEach(async () => {
@@ -2213,6 +2271,7 @@ describe.skipIf(!hasNeo)("ORM enum / Json / BigInt (Neo4j)", () => {
       uri: process.env.NEO4J_TEST_URI!,
       user: process.env.NEO4J_TEST_USER!,
       password: process.env.NEO4J_TEST_PASSWORD!,
+      dialect: testDialect,
     });
   });
 
@@ -2251,12 +2310,12 @@ describe.skipIf(!hasNeo)("ORM enum / Json / BigInt (Neo4j)", () => {
         valueType(n.settings) AS settings, valueType(n.balance) AS balance,
         valueType(n.external) AS external, valueType(n.ids) AS ids, n.settings AS text`;
     expect(types).toEqual({
-      role: "STRING NOT NULL",
-      roles: "LIST<STRING NOT NULL> NOT NULL",
-      settings: "STRING NOT NULL",
-      balance: "INTEGER NOT NULL",
-      external: "INTEGER NOT NULL",
-      ids: "LIST<INTEGER NOT NULL> NOT NULL",
+      role: storedType("STRING NOT NULL"),
+      roles: storedType("LIST<STRING NOT NULL> NOT NULL"),
+      settings: storedType("STRING NOT NULL"),
+      balance: storedType("INTEGER NOT NULL"),
+      external: storedType("INTEGER NOT NULL"),
+      ids: storedType("LIST<INTEGER NOT NULL> NOT NULL"),
       text: '{"a":[1]}',
     });
   });
@@ -2332,7 +2391,10 @@ describe.skipIf(!hasNeo)("ORM enum / Json / BigInt (Neo4j)", () => {
 
     // Past 2^63 - 1, Neo4j's sum() turns into a (rounded) float: reject it rather than round.
     await db.tyAccount.create({ data: { id: "d", balance: MAX } });
-    await expect(db.tyAccount.aggregate({ _sum: { balance: true } })).rejects.toThrow(RangeError);
+    // Memgraph's integer sum wraps around instead of failing.
+    if (!onMemgraph) {
+      await expect(db.tyAccount.aggregate({ _sum: { balance: true } })).rejects.toThrow(RangeError);
+    }
   });
 
   it("validates enum values on every write (nested, createMany, upsert, update, edges)", async () => {
@@ -2465,6 +2527,7 @@ describe.skipIf(!hasNeo)("ORM points and temporal types (Neo4j)", () => {
       uri: process.env.NEO4J_TEST_URI!,
       user: process.env.NEO4J_TEST_USER!,
       password: process.env.NEO4J_TEST_PASSWORD!,
+      dialect: testDialect,
     });
   });
 
@@ -2499,7 +2562,8 @@ describe.skipIf(!hasNeo)("ORM points and temporal types (Neo4j)", () => {
         grid: { x: 1.5, y: -2 },
         route: [PARIS, LOUVRE],
         closes: "18:30:15.25",
-        slot: "10:00:00+02:00",
+        // Memgraph has no zoned time type (Time fields throw UnsupportedFeatureError there).
+        ...(onMemgraph ? {} : { slot: "10:00:00+02:00" }),
         starts: "2024-05-01T10:30",
         stay: "PT90M",
         windows: ["P1D", "-PT5M"],
@@ -2511,7 +2575,7 @@ describe.skipIf(!hasNeo)("ORM points and temporal types (Neo4j)", () => {
       route: [PARIS, LOUVRE],
       opens: "09:00:00", // @default("09:00")
       closes: "18:30:15.25",
-      slot: "10:00:00+02:00",
+      slot: onMemgraph ? null : "10:00:00+02:00",
       starts: "2024-05-01T10:30:00",
       stay: "PT1H30M",
       windows: ["P1D", "-PT5M"],
@@ -2528,16 +2592,16 @@ describe.skipIf(!hasNeo)("ORM points and temporal types (Neo4j)", () => {
              valueType(n.seen) AS seen, valueType(n.stay) AS stay, valueType(n.windows) AS windows,
              toString(n.stay) AS stayText`;
     expect(types).toEqual({
-      location: "POINT NOT NULL",
+      location: storedType("POINT NOT NULL"),
       srid: 4979,
       gridSrid: 7203,
-      route: "LIST<POINT NOT NULL> NOT NULL",
-      opens: "LOCAL TIME NOT NULL",
-      slot: "ZONED TIME NOT NULL",
-      seen: "LOCAL DATETIME NOT NULL",
-      stay: "DURATION NOT NULL",
-      windows: "LIST<DURATION NOT NULL> NOT NULL",
-      stayText: "PT1H30M",
+      route: storedType("LIST<POINT NOT NULL> NOT NULL"),
+      opens: storedType("LOCAL TIME NOT NULL"),
+      slot: onMemgraph ? "NULL" : "ZONED TIME NOT NULL",
+      seen: storedType("LOCAL DATETIME NOT NULL"),
+      stay: storedType("DURATION NOT NULL"),
+      windows: storedType("LIST<DURATION NOT NULL> NOT NULL"),
+      stayText: onMemgraph ? "P0DT1H30M0.000000S" : "PT1H30M",
     });
     expect(await db.geoPlace.findUnique({ where: { id: "a" } })).toEqual(p);
   });
@@ -2618,25 +2682,32 @@ describe.skipIf(!hasNeo)("ORM points and temporal types (Neo4j)", () => {
       { name: "Versailles", opens: "09:00:00" },
     ]);
     expect(await db.geoPlace.count({ where: { opens: { in: ["09:30", "10:00"] } } })).toBe(1);
-    // Durations compare by their months / days / seconds: "PT180M" is "PT3H", "P1D" is not "PT24H".
+    // Durations compare by their months / days / seconds: "PT180M" is "PT3H", "P1D" is not "PT24H"
+    // (on Neo4j; Memgraph durations are a length of time, so there it is).
     expect(await db.geoPlace.count({ where: { stay: "PT180M" } })).toBe(1);
-    expect(await db.geoPlace.count({ where: { stay: "PT24H" } })).toBe(0);
+    expect(await db.geoPlace.count({ where: { stay: "PT24H" } })).toBe(onMemgraph ? 1 : 0);
     expect(await db.geoPlace.count({ where: { stay: { in: ["P1D", "P2D"] } } })).toBe(2);
     expect(await db.geoPlace.count({ where: { stay: { not: "P1D" } } })).toBe(3);
 
     await db.geoPlace.update({
       where: { id: "louvre" },
-      data: { starts: "2024-05-01T09:00", slot: "09:00:00Z" },
+      data: { starts: "2024-05-01T09:00", ...(onMemgraph ? {} : { slot: "09:00:00Z" }) },
     });
     await db.geoPlace.update({
       where: { id: "eiffel" },
-      data: { starts: "2024-06-01T09:00", slot: "11:00:00+01:00" },
+      data: { starts: "2024-06-01T09:00", ...(onMemgraph ? {} : { slot: "11:00:00+01:00" }) },
     });
     const may = await db.geoPlace.findMany({
       where: { starts: { gte: "2024-05-01T00:00", lt: "2024-06-01T00:00" } },
       select: { id: true },
     });
     expect(may).toEqual([{ id: "louvre" }]);
+    if (onMemgraph) {
+      await expect(
+        db.geoPlace.update({ where: { id: "louvre" }, data: { slot: "09:00:00Z" } }),
+      ).rejects.toBeInstanceOf(UnsupportedFeatureError);
+      return;
+    }
     const bySlot = await db.geoPlace.findMany({
       where: { slot: { not: null } },
       orderBy: { slot: "desc" },
@@ -2720,10 +2791,19 @@ describe.skipIf(!hasNeo)("ORM points and temporal types (Neo4j)", () => {
     expect(count).toBe(1); // the Louvre is now a 3D point: no distance to the 2D PARIS
     const up = await db.geoPlace.upsert({
       where: { id: "new" },
-      create: { id: "new", name: "New", location: PARIS, slot: "07:00Z" },
+      create: {
+        id: "new",
+        name: "New",
+        location: PARIS,
+        ...(onMemgraph ? {} : { slot: "07:00Z" }),
+      },
       update: { location: LYON },
     });
-    expect(up).toMatchObject({ location: PARIS, slot: "07:00:00Z", opens: "09:00:00" });
+    expect(up).toMatchObject({
+      location: PARIS,
+      slot: onMemgraph ? null : "07:00:00Z",
+      opens: "09:00:00",
+    });
     const again = await db.geoPlace.upsert({
       where: { id: "new" },
       create: { id: "new", name: "New", location: PARIS },
@@ -2762,6 +2842,7 @@ describe.skipIf(!hasNeo)("ORM logging and missing-index warnings (Neo4j)", () =>
     uri: process.env.NEO4J_TEST_URI!,
     user: process.env.NEO4J_TEST_USER!,
     password: process.env.NEO4J_TEST_PASSWORD!,
+    dialect: testDialect,
   });
   let admin: Db;
 
@@ -2803,7 +2884,7 @@ describe.skipIf(!hasNeo)("ORM logging and missing-index warnings (Neo4j)", () =>
           operation: "findMany",
           rows: 3,
           transaction: false,
-          database: "neo4j",
+          database: onMemgraph ? "memgraph" : "neo4j",
           params: { p0: "<boolean>" },
         });
         expect(q.durationMs).toBeGreaterThan(0);
@@ -2811,7 +2892,11 @@ describe.skipIf(!hasNeo)("ORM logging and missing-index warnings (Neo4j)", () =>
         events.length = 0;
         await expect(db.$cypher`RETURN ${1} +* 2`).rejects.toThrow();
         const err = events.find((e): e is ErrorEvent => e.type === "error")!;
-        expect(err.code).toBe("Neo.ClientError.Statement.SyntaxError");
+        expect(err.code).toBe(
+          onMemgraph
+            ? "Memgraph.ClientError.MemgraphError.MemgraphError"
+            : "Neo.ClientError.Statement.SyntaxError",
+        );
         expect(err.operation).toBe("$cypher");
         expect(err.params).toEqual({ p0: "<number>" });
       } finally {
@@ -2821,44 +2906,48 @@ describe.skipIf(!hasNeo)("ORM logging and missing-index warnings (Neo4j)", () =>
     });
   }
 
-  it("warns once about a filtered property without an index, not about indexed ones", async () => {
-    const warns: WarnEvent[] = [];
-    const db = createClient({ ...conn(), warnMissingIndexes: true });
-    db.$on("warn", (e) => warns.push(e));
-    try {
-      await db.post.create({ data: { title: "Hello", views: 3 } });
-      await db.post.findMany({ where: { title: "Hello" } });
-      await db.post.findMany({ where: { title: "Hello" } }); // same statement: no second EXPLAIN
-      await db.post.findMany({ where: { title: { startsWith: "He" } } }); // same property
-      await db.post.findMany({ where: { views: 3 } }); // indexed (obs_post_views)
-      await db.post.findMany({ where: { id: "nope" } }); // @id without its constraint
-      await db.user.findMany({ where: { posts: { some: { title: "Hello" } } } }); // expanded node
-      await db.$client.instrumentation.flush();
+  // Memgraph returns EXPLAIN plans as rows: the check is off on that dialect.
+  it.skipIf(onMemgraph)(
+    "warns once about a filtered property without an index, not about indexed ones",
+    async () => {
+      const warns: WarnEvent[] = [];
+      const db = createClient({ ...conn(), warnMissingIndexes: true });
+      db.$on("warn", (e) => warns.push(e));
+      try {
+        await db.post.create({ data: { title: "Hello", views: 3 } });
+        await db.post.findMany({ where: { title: "Hello" } });
+        await db.post.findMany({ where: { title: "Hello" } }); // same statement: no second EXPLAIN
+        await db.post.findMany({ where: { title: { startsWith: "He" } } }); // same property
+        await db.post.findMany({ where: { views: 3 } }); // indexed (obs_post_views)
+        await db.post.findMany({ where: { id: "nope" } }); // @id without its constraint
+        await db.user.findMany({ where: { posts: { some: { title: "Hello" } } } }); // expanded node
+        await db.$client.instrumentation.flush();
 
-      // Post.id is @id, but this block does not create its constraint.
-      expect(warns.map((w) => `${w.label}.${w.property}`).sort()).toEqual([
-        "Post.id",
-        "Post.title",
-      ]);
-      const title = warns.find((w) => w.property === "title")!;
-      expect(title).toMatchObject({
-        type: "warn",
-        kind: "missing-index",
-        label: "Post",
-        property: "title",
-        model: "Post",
-        operation: "findMany",
-      });
-      expect(title.message).toBe(
-        "Post.title is filtered without an index (label scan + filter): add @index to Post.title in your schema.",
-      );
-      expect(warns.find((w) => w.property === "id")!.message).toMatch(
-        /declared @id but the database has no index on Post\.id\. Apply your migrations/,
-      );
-    } finally {
-      await db.$disconnect();
-    }
-  });
+        // Post.id is @id, but this block does not create its constraint.
+        expect(warns.map((w) => `${w.label}.${w.property}`).sort()).toEqual([
+          "Post.id",
+          "Post.title",
+        ]);
+        const title = warns.find((w) => w.property === "title")!;
+        expect(title).toMatchObject({
+          type: "warn",
+          kind: "missing-index",
+          label: "Post",
+          property: "title",
+          model: "Post",
+          operation: "findMany",
+        });
+        expect(title.message).toBe(
+          "Post.title is filtered without an index (label scan + filter): add @index to Post.title in your schema.",
+        );
+        expect(warns.find((w) => w.property === "id")!.message).toMatch(
+          /declared @id but the database has no index on Post\.id\. Apply your migrations/,
+        );
+      } finally {
+        await db.$disconnect();
+      }
+    },
+  );
 
   it("does not EXPLAIN anything by default", async () => {
     const db = createClient(conn());
@@ -2890,11 +2979,10 @@ describe.skipIf(!hasNeo)("ORM composite unique keys (Neo4j)", () => {
       uri: process.env.NEO4J_TEST_URI!,
       user: process.env.NEO4J_TEST_USER!,
       password: process.env.NEO4J_TEST_PASSWORD!,
+      dialect: testDialect,
     });
-    await db.$client.withSession(async (s) => {
-      for (const stmt of ddl) await s.run(stmt);
-      await s.run("CALL db.awaitIndexes(120)");
-    });
+    for (const stmt of ddl) await schemaCommand(db, stmt);
+    await schemaCommand(db, "CALL db.awaitIndexes(120)");
   });
 
   beforeEach(async () => {
@@ -2914,7 +3002,11 @@ describe.skipIf(!hasNeo)("ORM composite unique keys (Neo4j)", () => {
     await db.member.create({ data: { tenantId: "t1", email: "b@x.io", joinedOn: 1 } });
     await expect(
       db.member.create({ data: { tenantId: "t1", email: "a@x.io", joinedOn: 2 } }),
-    ).rejects.toMatchObject({ code: "Neo.ClientError.Schema.ConstraintValidationFailed" });
+    ).rejects.toMatchObject({
+      code: onMemgraph
+        ? "Memgraph.ClientError.MemgraphError.MemgraphError"
+        : "Neo.ClientError.Schema.ConstraintValidationFailed",
+    });
     expect(await db.member.count()).toBe(3);
   });
 
@@ -3003,6 +3095,7 @@ describe.skipIf(!hasNeo)("ORM client extensions (Neo4j)", () => {
       uri: process.env.NEO4J_TEST_URI!,
       user: process.env.NEO4J_TEST_USER!,
       password: process.env.NEO4J_TEST_PASSWORD!,
+      dialect: testDialect,
     });
     await db.$cypher`MATCH (n) WHERE n:User OR n:Post DETACH DELETE n`;
   });
@@ -3199,6 +3292,7 @@ describe.skipIf(!hasNeo)("ORM client extensions on vector search (Neo4j)", () =>
       uri: process.env.NEO4J_TEST_URI!,
       user: process.env.NEO4J_TEST_USER!,
       password: process.env.NEO4J_TEST_PASSWORD!,
+      dialect: testDialect,
     });
     await db.$cypher`MATCH (n) WHERE n:VecDoc OR n:VecChunk DETACH DELETE n`;
   });
@@ -3283,7 +3377,10 @@ describe.skipIf(!hasNeo)("ORM unique constraint errors (Neo4j)", () => {
     $disconnect(): Promise<void>;
   };
   let db: UntypedDb;
-  const code = "Neo.ClientError.Schema.ConstraintValidationFailed";
+  // Memgraph reports every error with one code.
+  const code = onMemgraph
+    ? "Memgraph.ClientError.MemgraphError.MemgraphError"
+    : "Neo.ClientError.Schema.ConstraintValidationFailed";
   const wipe = () => db.$cypher`MATCH (n) WHERE n:UqAccount OR n:UqSeat DETACH DELETE n`;
   const account = (n: number, extra: Record<string, unknown> = {}) => ({
     email: `user${n}@example.com`,
@@ -3310,11 +3407,10 @@ describe.skipIf(!hasNeo)("ORM unique constraint errors (Neo4j)", () => {
       uri: process.env.NEO4J_TEST_URI!,
       user: process.env.NEO4J_TEST_USER!,
       password: process.env.NEO4J_TEST_PASSWORD!,
+      dialect: testDialect,
     }) as unknown as UntypedDb;
-    await db.$client.withSession(async (s) => {
-      for (const stmt of ddl) await s.run(stmt);
-      await s.run("CALL db.awaitIndexes(120)");
-    });
+    for (const stmt of ddl) await schemaCommand(db, stmt);
+    await schemaCommand(db, "CALL db.awaitIndexes(120)");
   });
 
   beforeEach(async () => {
@@ -3325,9 +3421,8 @@ describe.skipIf(!hasNeo)("ORM unique constraint errors (Neo4j)", () => {
   afterAll(async () => {
     if (!db) return;
     await wipe();
-    await db.$client.withSession(async (s) => {
-      for (const stmt of ddl) await s.run(`DROP CONSTRAINT ${stmt.split(" ")[2]} IF EXISTS`);
-    });
+    for (const stmt of ddl)
+      await schemaCommand(db, `DROP CONSTRAINT ${stmt.split(" ")[2]} IF EXISTS`);
     await db.$disconnect();
   });
 
@@ -3343,8 +3438,11 @@ describe.skipIf(!hasNeo)("ORM unique constraint errors (Neo4j)", () => {
         "Unique constraint failed on UqAccount(email) (constraint UqAccount_email_unique): a node with the same value already exists.",
       );
       expect((err.cause as { code?: string }).code).toBe(code);
-      // The statement's error event still carries the Neo4j code.
-      expect(events.find((e): e is ErrorEvent => e.type === "error")).toMatchObject({ code });
+      // The statement's error event still carries the Neo4j code (Memgraph fails at commit,
+      // after the statement).
+      if (!onMemgraph) {
+        expect(events.find((e): e is ErrorEvent => e.type === "error")).toMatchObject({ code });
+      }
     } finally {
       off();
     }
@@ -3432,7 +3530,8 @@ describe.skipIf(!hasNeo)("ORM unique constraint errors (Neo4j)", () => {
     expect(await db.uqSeat.count()).toBe(1);
   });
 
-  it("$edge: a duplicate relationship @unique property", async () => {
+  // Memgraph has no relationship constraints.
+  it.skipIf(onMemgraph)("$edge: a duplicate relationship @unique property", async () => {
     await db.uqAccount.create({
       data: account(2, {
         friends: { connect: [{ email: "user1@example.com", $edge: { ref: "r1" } }] },
@@ -3469,8 +3568,14 @@ describe.skipIf(!hasNeo)("ORM unique constraint errors (Neo4j)", () => {
         }
       })
       .catch((e: unknown) => e);
-    expect(inside).toBeInstanceOf(UniqueConstraintError);
-    expect(outside).toBe(inside);
+    if (onMemgraph) {
+      // Memgraph checks uniqueness at commit: the error comes out of $transaction.
+      expect(inside).toBeUndefined();
+      expect(outside).toBeInstanceOf(UniqueConstraintError);
+    } else {
+      expect(inside).toBeInstanceOf(UniqueConstraintError);
+      expect(outside).toBe(inside);
+    }
     expect(await db.uqAccount.count()).toBe(1);
   });
 });
@@ -3485,6 +3590,7 @@ describe.skipIf(!hasNeo)(
         uri: process.env.NEO4J_TEST_URI!,
         user: process.env.NEO4J_TEST_USER!,
         password: process.env.NEO4J_TEST_PASSWORD!,
+        dialect: testDialect,
       });
       await db.$cypher`MATCH (n) WHERE n:GrDoc OR n:GrChunk OR n:GrEntity DETACH DELETE n`;
     });
@@ -3594,11 +3700,18 @@ describe.skipIf(!hasNeo)(
       expect(ids(await via({ edgeWhere: { weight: { gte: 2 } } }))).toEqual(["c2", "c4"]);
       // Every node a hop steps to must match its where (zero hops: none to check).
       expect(ids(await via({ where: { kind: "person" } }))).toEqual(["c2", "c4"]);
-      expect(ids(await via({ where: { chunks: { some: { id: "c3" } } } }))).toEqual([
-        "c2",
-        "c3",
-        "c4",
-      ]);
+      if (onMemgraph) {
+        // Memgraph cannot run a subquery inside an expansion's filter lambda.
+        await expect(via({ where: { chunks: { some: { id: "c3" } } } })).rejects.toBeInstanceOf(
+          UnsupportedFeatureError,
+        );
+      } else {
+        expect(ids(await via({ where: { chunks: { some: { id: "c3" } } } }))).toEqual([
+          "c2",
+          "c3",
+          "c4",
+        ]);
+      }
       // Typed: two hops from ada along RELATED_TO in either direction, then the chunks.
       const far = await db.grEntity.traverse({
         from: { id: "ada" },

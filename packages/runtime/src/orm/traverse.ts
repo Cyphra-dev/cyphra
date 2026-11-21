@@ -29,6 +29,7 @@ import {
 } from "./compile.js";
 import { CyphraValidationError } from "./errors.js";
 import { compilePath, decodePath } from "./path.js";
+import { unsupportedOnMemgraph } from "../dialect.js";
 
 type AnyRecord = Record<string, unknown>;
 
@@ -216,6 +217,82 @@ function hopPattern(
   return `${pattern}${where}`;
 }
 
+/** Whether compiled Cypher contains a subquery expression (`EXISTS {`, `COUNT {`, `COLLECT {`). */
+function hasSubquery(cypher: string): boolean {
+  return /\b(?:EXISTS|COUNT|COLLECT) \{/.test(cypher);
+}
+
+/**
+ * Memgraph: the relationship part of a variable-length expansion from `from` nodes to `to` nodes,
+ * e.g. ``-[:`FOLLOWS` *1..3 (r0, m1 | m1:`User` AND …)]->``. Memgraph has no quantified path
+ * patterns; its filter lambda (`(edge, node | predicate)`, checked on every hop while expanding)
+ * holds what the hop pattern of {@link hopPattern} checks: the labels of the node stepped to, the
+ * relationship types and directions, `edgeWhere`, and `nodePredicate` on the node stepped to.
+ *
+ * `range` is what follows the types: `*1..3`, `*BFS ..4`, or
+ * `*ALLSHORTEST ..4 (r, m | 1) w` (the weight lambda comes before the filter lambda).
+ *
+ * Memgraph cannot evaluate a subquery (a relation filter) inside a filter lambda, so a
+ * `nodePredicate` that needs one throws an `UnsupportedFeatureError`.
+ */
+export function memgraphExpansion(
+  ctx: QueryContext,
+  to: ResolvedNodeModel,
+  rels: readonly ResolvedRelationField[],
+  direction: unknown,
+  edgePredicate: (edge: string) => string | null,
+  nodePredicate: ((node: string) => string | null) | undefined,
+  range: string,
+  op: string,
+): string {
+  if (
+    direction !== undefined &&
+    direction !== "out" &&
+    direction !== "in" &&
+    direction !== "both"
+  ) {
+    throw new CyphraValidationError(`${op}: direction must be "out", "in" or "both".`);
+  }
+  const byType = new Map<string, Set<RelationDirection>>();
+  for (const rel of rels) {
+    const dirs = byType.get(rel.relType) ?? new Set<RelationDirection>();
+    if (direction === "both") dirs.add("OUT").add("IN");
+    else dirs.add(direction === "out" ? "OUT" : direction === "in" ? "IN" : rel.direction);
+    byType.set(rel.relType, dirs);
+  }
+  const kinds = new Set([...byType.values()].map((d) => (d.size === 2 ? "BOTH" : [...d][0]!)));
+  const r = ctx.variable("r");
+  const m = ctx.variable("m");
+  const types = [...byType.keys()].map(q).join("|");
+  const preds: string[] = [`${m}:${labelExpr(to)}`];
+  const kind = kinds.size === 1 ? [...kinds][0]! : "BOTH";
+  if (kinds.size > 1) {
+    // Undirected expansion; each type keeps its own direction: an OUT edge ends at the node it
+    // steps to, an IN edge starts there.
+    const alts = [...byType].map(([type, dirs]) => {
+      const tp = `type(${r}) = ${ctx.param(type)}`;
+      if (dirs.size === 2) return tp;
+      return `${tp} AND ${dirs.has("OUT") ? "endNode" : "startNode"}(${r}) = ${m}`;
+    });
+    preds.push(alts.map((a) => `(${a})`).join(" OR "));
+  }
+  const edgeWhere = edgePredicate(r);
+  if (edgeWhere) preds.push(edgeWhere);
+  const nodeWhere = nodePredicate?.(m);
+  if (nodeWhere) {
+    if (hasSubquery(nodeWhere)) {
+      throw unsupportedOnMemgraph(
+        `${op}: a relation filter in where (checked on the nodes a path steps through)`,
+        "Memgraph cannot run a subquery inside a path's filter lambda. Filter on the nodes' own fields, or filter the results afterwards.",
+      );
+    }
+    preds.push(nodeWhere);
+  }
+  const lambda = ` (${r}, ${m} | ${preds.map((x) => `(${x})`).join(" AND ")})`;
+  const edge = `[:${types} ${range}${lambda}]`;
+  return kind === "OUT" ? `-${edge}->` : kind === "IN" ? `<-${edge}-` : `-${edge}-`;
+}
+
 /** The `relationship { … }` model shared by every relation of `via`, as a model for `compileWhere`. */
 export function edgeWhereModel(
   schema: SchemaModel,
@@ -383,7 +460,57 @@ export function compileTraverse(
   let segments: string;
   let end: ResolvedNodeModel;
   let min: number;
-  if (hops) {
+  if (ctx.dialect === "memgraph") {
+    // Variable-length expansions in sequence: (s)-[*a..b (r, m | …)]->(j0:Next)-[…]-(n:End).
+    if (hops) {
+      segments = hops
+        .map((h, i) => {
+          const where = `traverse: via[${i}]`;
+          const rel = memgraphExpansion(
+            ctx,
+            h.to,
+            h.rels,
+            h.spec.direction,
+            (e) =>
+              h.spec.edgeWhere === undefined
+                ? null
+                : compileWhere(
+                    ctx,
+                    edgeWhereModel(ctx.schema, h.from, h.rels, where),
+                    e,
+                    h.spec.edgeWhere,
+                  ),
+            h.spec.where === undefined
+              ? undefined
+              : (t) => compileWhere(ctx, h.to, t, h.spec.where),
+            `*${h.min}..${h.max}`,
+            where,
+          );
+          return i === hops.length - 1 ? rel : `${rel}(${ctx.variable("j")}:${labelExpr(h.to)})`;
+        })
+        .join("");
+      end = hops.at(-1)!.to;
+      min = hops.reduce((sum, h) => sum + h.min, 0);
+    } else {
+      const rels = viaRelations(model, args.via);
+      const depth = parseDepth(args.depth, maxDepth);
+      segments = memgraphExpansion(
+        ctx,
+        model,
+        rels,
+        args.direction,
+        (e) =>
+          args.edgeWhere === undefined
+            ? null
+            : compileWhere(ctx, edgeWhereModel(ctx.schema, model, rels), e, args.edgeWhere),
+        undefined,
+        `*${depth.min}..${depth.max}`,
+        "traverse",
+      );
+      end = model;
+      min = depth.min;
+    }
+  } else if (hops) {
     segments = hops
       .map((h, i) => {
         const pattern = hopPattern(

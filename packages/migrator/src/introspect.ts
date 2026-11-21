@@ -26,6 +26,7 @@ import {
 import neo4j from "neo4j-driver";
 import { toNative, type CyphraClient } from "@cyphra/runtime";
 import { CYPHRA_MIGRATION_LABEL } from "./tracker.js";
+import { memgraphSchemaObjects } from "./memgraph.js";
 
 export type IntrospectedProperty = {
   readonly propertyName: string;
@@ -73,6 +74,20 @@ export type IntrospectionResult = {
   }[];
 };
 
+/** Memgraph's `valueType()` names, as the property type names of {@link TYPE_MAP}. */
+const MEMGRAPH_VALUE_TYPES: Record<string, string> = {
+  STRING: "String",
+  INTEGER: "Int",
+  FLOAT: "Float",
+  BOOLEAN: "Boolean",
+  DATE: "Date",
+  LOCAL_TIME: "LocalTime",
+  LOCAL_DATE_TIME: "LocalDateTime",
+  ZONED_DATE_TIME: "DateTime",
+  DURATION: "Duration",
+  POINT: "Point",
+};
+
 /** Edges sampled per relationship type to discover its endpoint labels. */
 export const ENDPOINT_SAMPLE_SIZE = 10_000;
 
@@ -87,14 +102,19 @@ function stripRelType(raw: string): string {
  * edges per relationship type.
  */
 export async function introspectDatabase(client: CyphraClient): Promise<IntrospectionResult> {
+  const memgraph = (client as { dialect?: string }).dialect === "memgraph";
   return client.withSession(async (session) => {
     const rows = async (text: string, params: Record<string, unknown> = {}) =>
       (await session.run(text, params)).records.map(
         (r) => toNative(r.toObject()) as Record<string, unknown>,
       );
 
+    // Memgraph has the same procedures under other names (built in, no MAGE needed). Its
+    // `mandatory` column is always false: a property is mandatory when every node has it.
     const nodeRows = await rows(
-      "CALL db.schema.nodeTypeProperties() YIELD nodeLabels, propertyName, propertyTypes, mandatory RETURN *",
+      memgraph
+        ? "CALL schema.node_type_properties() YIELD nodeLabels, propertyName, propertyTypes, propertyObservations, totalObservations RETURN *, propertyObservations = totalObservations AS mandatory"
+        : "CALL db.schema.nodeTypeProperties() YIELD nodeLabels, propertyName, propertyTypes, mandatory RETURN *",
     );
     const byCombo = new Map<string, { labels: string[]; properties: IntrospectedProperty[] }>();
     for (const r of nodeRows) {
@@ -112,7 +132,9 @@ export async function introspectDatabase(client: CyphraClient): Promise<Introspe
     }
 
     const relRows = await rows(
-      "CALL db.schema.relTypeProperties() YIELD relType, propertyName, propertyTypes, mandatory RETURN *",
+      memgraph
+        ? "CALL schema.rel_type_properties() YIELD relType, propertyName, propertyTypes, propertyObservations, totalObservations RETURN *, propertyObservations = totalObservations AS mandatory"
+        : "CALL db.schema.relTypeProperties() YIELD relType, propertyName, propertyTypes, mandatory RETURN *",
     );
     const byType = new Map<string, IntrospectedProperty[]>();
     for (const r of relRows) {
@@ -147,14 +169,35 @@ export async function introspectDatabase(client: CyphraClient): Promise<Introspe
         props[i] = { ...p, pointCrs: await sampleCrs(match, ref(p.propertyName)) };
       }
     };
+    // Memgraph reports every list as "List[Any]": sample the types of its elements.
+    const withListTypes = async (
+      props: IntrospectedProperty[],
+      match: string,
+      ref: (p: string) => string,
+    ) => {
+      if (!memgraph) return;
+      for (let i = 0; i < props.length; i++) {
+        const p = props[i]!;
+        if (!p.propertyTypes.some((t) => t.startsWith("List"))) continue;
+        const types = await rows(
+          `${match} WHERE ${ref(p.propertyName)} IS NOT NULL WITH ${ref(p.propertyName)} AS v LIMIT $limit ` +
+            `UNWIND v AS x RETURN DISTINCT valueType(x) AS t`,
+          { limit: neo4jInt(ENDPOINT_SAMPLE_SIZE) },
+        );
+        const elements = types.map((r) => MEMGRAPH_VALUE_TYPES[String(r.t)] ?? String(r.t));
+        props[i] = { ...p, propertyTypes: elements.map((t) => `List<${t}>`) };
+      }
+    };
     const quote = (id: string) => "`" + id.replace(/`/g, "``") + "`";
     for (const entry of byCombo.values()) {
       const labelExpr = entry.labels.map(quote).join(":");
       if (!labelExpr) continue;
       await withCrs(entry.properties, `MATCH (n:${labelExpr})`, (p) => `n.${quote(p)}`);
+      await withListTypes(entry.properties, `MATCH (n:${labelExpr})`, (p) => `n.${quote(p)}`);
     }
     for (const [type, props] of byType) {
       await withCrs(props, `MATCH ()-[r:${quote(type)}]->()`, (p) => `r.${quote(p)}`);
+      await withListTypes(props, `MATCH ()-[r:${quote(type)}]->()`, (p) => `r.${quote(p)}`);
     }
 
     const relTypes: IntrospectionResult["relTypes"][number][] = [];
@@ -169,6 +212,15 @@ export async function introspectDatabase(client: CyphraClient): Promise<Introspe
         properties,
         endpoints: ends.map((e) => ({ from: e.from as string[], to: e.to as string[] })),
       });
+    }
+
+    if (memgraph) {
+      const { constraints, indexes } = memgraphConstraintsAndIndexes(
+        await rows("SHOW CONSTRAINT INFO"),
+        await rows("SHOW INDEX INFO"),
+        await rows("SHOW VECTOR INDEX INFO"),
+      );
+      return { nodeTypes: [...byCombo.values()], relTypes, constraints, indexes };
     }
 
     const constraints = (
@@ -205,6 +257,63 @@ function neo4jInt(n: number): unknown {
   return neo4j.int(n);
 }
 
+/**
+ * Memgraph's constraints and indexes in the shape of Neo4j's `SHOW CONSTRAINTS` / `SHOW INDEXES`
+ * rows. Memgraph's constraints and property indexes have no name: they get the one Cyphra would
+ * give them (`Label_prop_unique`, `Label_a_b_idx`), so a uniqueness constraint on `id` reads back
+ * as `@id`.
+ */
+function memgraphConstraintsAndIndexes(
+  constraintRows: readonly Record<string, unknown>[],
+  indexRows: readonly Record<string, unknown>[],
+  vectorRows: readonly Record<string, unknown>[],
+): Pick<IntrospectionResult, "constraints" | "indexes"> {
+  const name = (label: string, props: readonly string[], suffix: string) =>
+    `${label}_${props.join("_")}_${suffix}`.replace(/[^A-Za-z0-9_]/g, "_");
+  const constraints: IntrospectionResult["constraints"][number][] = [];
+  const indexes: IntrospectionResult["indexes"][number][] = [];
+  for (const o of memgraphSchemaObjects(constraintRows, indexRows, vectorRows)) {
+    const [label] = o.labelsOrTypes;
+    if (!label || label === CYPHRA_MIGRATION_LABEL) continue;
+    if (o.kind === "constraint") {
+      if (o.type !== "UNIQUE") continue;
+      constraints.push({
+        name: name(
+          label,
+          o.properties,
+          o.properties.length === 1 && o.properties[0] === "id" ? "id" : "unique",
+        ),
+        type: "UNIQUENESS",
+        entityType: "NODE",
+        labelsOrTypes: [label],
+        properties: o.properties,
+      });
+      continue;
+    }
+    if (!["RANGE", "POINT", "VECTOR", "FULLTEXT"].includes(o.type)) continue;
+    const options =
+      o.type === "VECTOR"
+        ? {
+            indexConfig: {
+              "vector.dimensions": o.options.dimensions,
+              "vector.similarity_function": o.options.similarity,
+            },
+          }
+        : null;
+    indexes.push({
+      name:
+        o.name ?? name(label, o.properties, o.entityType === "RELATIONSHIP" ? "rel_idx" : "idx"),
+      type: o.type,
+      entityType: o.entityType,
+      labelsOrTypes: [label],
+      properties: o.properties,
+      owningConstraint: null,
+      options,
+    });
+  }
+  return { constraints, indexes };
+}
+
 // ---------------------------------------------------------------------------
 // Pure conversion
 // ---------------------------------------------------------------------------
@@ -216,6 +325,7 @@ const IDENT = /^[A-Za-z_][A-Za-z0-9_]*$/;
 // A `Point` is a `Point` or a `CartesianPoint` depending on the CRS of its sampled values.
 const TYPE_MAP: Record<string, ScalarTypeName> = {
   String: "String",
+  Int: "Int", // Memgraph
   Long: "Int",
   Integer: "Int",
   Double: "Float",

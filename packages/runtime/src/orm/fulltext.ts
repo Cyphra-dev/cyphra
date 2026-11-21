@@ -42,6 +42,9 @@ const ARG_KEYS = new Set([
 
 const MODES = ["lucene", "terms", "phrase"] as const;
 
+/** Memgraph: most hits `text_search.search_all` collects before `where` / `minScore` filter them. */
+export const MEMGRAPH_TEXT_SEARCH_LIMIT = 100_000;
+
 /** Characters with a meaning in Lucene's classic query syntax. */
 const LUCENE_SPECIAL = /[+\-&|!(){}[\]^"~*?:\\/]/g;
 /** Upper-case boolean operators, which Lucene reads as operators between terms. */
@@ -126,11 +129,20 @@ export async function search(
     ...(where ? [`(${where})`] : []),
   ];
   // Unfiltered and paged: let Lucene collect only the top `skip + take` hits.
-  const options =
-    filters.length === 0 && take !== undefined
-      ? `, {limit: ${ctx.param(intParam((skip ?? 0) + take))}}`
-      : "";
-  let text = `CALL db.index.fulltext.queryNodes(${name}, ${query}${options}) YIELD node, score`;
+  const top = filters.length === 0 && take !== undefined ? (skip ?? 0) + take : undefined;
+  let text: string;
+  if (ctx.dialect === "memgraph") {
+    // Memgraph's text index (Tantivy) searches every indexed property and collects the top hits
+    // only (1000 by default, hence an explicit, high limit). It can also return nodes deleted since
+    // its last garbage collection: each hit is matched again by id.
+    const limit = ctx.param(intParam(MEMGRAPH_TEXT_SEARCH_LIMIT));
+    text =
+      `CALL text_search.search_all(${name}, ${query}, {limit: ${limit}}) YIELD node AS hit, score ` +
+      `MATCH (node) WHERE id(node) = id(hit)`;
+  } else {
+    const options = top === undefined ? "" : `, {limit: ${ctx.param(intParam(top))}}`;
+    text = `CALL db.index.fulltext.queryNodes(${name}, ${query}${options}) YIELD node, score`;
+  }
   text += " WITH node AS n, score";
   if (filters.length) text += ` WHERE ${filters.join(" AND ")}`;
   text += " WITH n, score ORDER BY score DESC";

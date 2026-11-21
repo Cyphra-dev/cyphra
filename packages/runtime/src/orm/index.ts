@@ -7,6 +7,7 @@ export {
   NotFoundError,
   RestrictError,
   UniqueConstraintError,
+  UnsupportedFeatureError,
 } from "./errors.js";
 export { parseUniqueViolation, type ParsedUniqueViolation } from "./unique.js";
 export { createCuid } from "./engine.js";

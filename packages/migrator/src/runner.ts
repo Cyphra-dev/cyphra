@@ -1,7 +1,13 @@
-import type { CyphraClient } from "@cyphra/runtime";
+import type { CyphraClient, CyphraDialect } from "@cyphra/runtime";
 import { createMigrationDb } from "./migrationDb.js";
 import type { MigrationDefinition } from "./defineMigration.js";
 import * as tracker from "./tracker.js";
+import { ddlForDialect } from "./memgraph.js";
+
+/** The client's dialect (a client from an older @cyphra/runtime has none: Neo4j). */
+export function dialectOf(client: CyphraClient): CyphraDialect {
+  return (client as { dialect?: CyphraDialect }).dialect ?? "neo4j";
+}
 
 /** Migration with precomputed checksum (e.g. SHA-256 of source file). */
 export type LoadedMigration = {
@@ -23,7 +29,7 @@ export async function runPendingMigrations(
 ): Promise<readonly string[]> {
   const applied: string[] = [];
   await client.withSession(async (session) => {
-    await tracker.ensureMigrationInfrastructure(session);
+    await tracker.ensureMigrationInfrastructure(session, dialectOf(client));
     for (const m of ordered) {
       if (await tracker.isMigrationApplied(session, m.name)) {
         continue;
@@ -48,7 +54,9 @@ export async function applyConstraintStatements(
   statements: readonly string[],
 ): Promise<void> {
   await client.withSession(async (session) => {
-    for (const statement of statements) {
+    // Cyphra's DDL is written in Neo4j's syntax: translated for Memgraph (statements already in
+    // Memgraph's syntax, or not DDL, run as they are).
+    for (const statement of ddlForDialect(statements, dialectOf(client))) {
       const r = await session.run(statement);
       await r;
     }

@@ -44,6 +44,7 @@ App code depends on **`cyphra`** separately (see [Getting started](/getting-star
   "migrations": "./migrations",
   "generate": "./cyphra.gen.ts",
   "runtimeImport": "cyphra",
+  "dialect": "neo4j",
   "seed": "tsx seed.ts",
   "generators": {
     "zod": { "output": "./src/cyphra.zod.ts", "coerce": true }
@@ -54,6 +55,9 @@ App code depends on **`cyphra`** separately (see [Getting started](/getting-star
 `runtimeImport` is the module that generated files (the client and migrations) import from. Set it to
 `@cyphra/runtime` if you depend on the scoped packages instead of `cyphra`. `seed` is optional: see
 [cyphra db seed](#cyphra-db-seed). `generators` is optional: see [zod schemas](#zod-schemas).
+`dialect` is `"neo4j"` (default) or `"memgraph"`: it decides the DDL that `migrate dev`,
+`migrate diff` and `schema ddl` write. Commands that connect use it too; when it is not set, they
+detect Memgraph from the server (see [Memgraph](/memgraph)).
 
 ## Zod schemas
 

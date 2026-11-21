@@ -3,7 +3,7 @@ import path from "node:path";
 import { introspectDatabase, schemaFromIntrospection } from "@cyphra/migrator";
 import { parseSchema, printSchemaDocument, resolveSchema } from "@cyphra/schema";
 import type { CyphraConfig } from "../config.js";
-import { clientFromEnv } from "../clientFromEnv.js";
+import { clientForConfig } from "../clientFromEnv.js";
 
 /**
  * `cyphra pull`: introspect the database (read-only) and write a `.cyphra` schema.
@@ -13,7 +13,7 @@ export async function runPull(
   config: CyphraConfig,
   opts: { force?: boolean; print?: boolean },
 ): Promise<void> {
-  const client = clientFromEnv(false);
+  const client = await clientForConfig(config);
   let source: string;
   let warnings: string[];
   try {

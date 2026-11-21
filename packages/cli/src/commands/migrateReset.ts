@@ -1,7 +1,12 @@
 import { createInterface } from "node:readline/promises";
 import type { CyphraClient } from "@cyphra/runtime";
-import { runPendingMigrations } from "@cyphra/migrator";
-import { clientFromEnv } from "../clientFromEnv.js";
+import {
+  CYPHRA_MIGRATION_LABEL,
+  memgraphDropStatement,
+  readSchemaObjects,
+  runPendingMigrations,
+} from "@cyphra/migrator";
+import { clientForConfig } from "../clientFromEnv.js";
 import type { CyphraConfig } from "../config.js";
 import { loadMigrationsFromDir } from "../loadMigrations.js";
 import { runDbSeed } from "./seed.js";
@@ -142,6 +147,7 @@ export type ResetCounts = {
  * @param client - Client bound to the database to reset (`NEO4J_DATABASE`).
  */
 export async function resetDatabase(client: CyphraClient): Promise<ResetCounts> {
+  if (client.dialect === "memgraph") return resetMemgraph(client);
   return client.withSession(async (session) => {
     // Constraints first: an index that backs a constraint cannot be dropped on its own.
     const constraints = (await session.run("SHOW CONSTRAINTS YIELD name")).records.map(
@@ -166,6 +172,31 @@ export async function resetDatabase(client: CyphraClient): Promise<ResetCounts> 
     );
     const nodes = deleted.summary.counters.updates().nodesDeleted;
     return { constraints: constraints.length, indexes: indexes.length, nodes };
+  });
+}
+
+/**
+ * {@link resetDatabase} on Memgraph: its constraints and property indexes have no name, so each
+ * one is dropped by its definition (as read by `SHOW … INFO`).
+ */
+async function resetMemgraph(client: CyphraClient): Promise<ResetCounts> {
+  const objects = await readSchemaObjects(client);
+  return client.withSession(async (session) => {
+    let constraints = 0;
+    let indexes = 0;
+    for (const o of objects) {
+      await session.run(memgraphDropStatement(o));
+      if (o.kind === "constraint") constraints++;
+      else indexes++;
+    }
+    // Cyphra's migration-name constraint (left out of `readSchemaObjects`).
+    await session.run(`DROP CONSTRAINT ON (m:${CYPHRA_MIGRATION_LABEL}) ASSERT m.name IS UNIQUE`);
+    const [row] = (await session.run("MATCH (n) RETURN count(n) AS c")).records;
+    const c = row?.get("c") as { toNumber?: () => number } | number | undefined;
+    const nodes = typeof c === "object" && c?.toNumber ? c.toNumber() : Number(c ?? 0);
+    // Memgraph cannot DELETE inside CALL { } IN TRANSACTIONS: its batching directive instead.
+    await session.run(`USING PERIODIC COMMIT ${RESET_BATCH_SIZE} MATCH (n) DETACH DELETE n`);
+    return { constraints, indexes, nodes };
   });
 }
 
@@ -214,7 +245,7 @@ export async function runMigrateReset(
 
   // Load migrations before deleting anything, so a broken migration file fails early.
   const loaded = await loadMigrationsFromDir(config.migrations, cwd);
-  const client = (deps.client ?? (() => clientFromEnv(false)))();
+  const client = deps.client ? deps.client() : await clientForConfig(config);
   try {
     const counts = await resetDatabase(client);
     console.log(

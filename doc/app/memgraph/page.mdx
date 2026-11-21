@@ -1,0 +1,187 @@
+---
+title: "Memgraph support: the Cyphra feature matrix"
+sidebarTitle: Memgraph
+description: "Run the Cyphra ORM and migrations on Memgraph over Bolt: the dialect option, what compiles differently, and which features Memgraph supports, tested in CI."
+---
+
+import { Callout } from "nextra/components";
+
+# Memgraph
+
+Cyphra runs on [Memgraph](https://memgraph.com) 3.x as well as Neo4j. Memgraph speaks Bolt and
+openCypher, so the same `neo4j-driver`, the same schema and the same typed client work. Where the
+Cypher differs, Cyphra compiles to Memgraph's syntax. Where Memgraph has no equivalent, Cyphra
+throws an `UnsupportedFeatureError` before anything runs.
+
+CI runs the ORM, migration and CLI integration suites against `memgraph/memgraph:3.14.0` on every
+push. The matrix below lists what those suites cover.
+
+## Set the dialect
+
+Pass `dialect: "memgraph"` to the client (generated `createClient`, `createOrm` or `CyphraClient`):
+
+```ts filename="db.ts"
+import { createClient } from "./cyphra.gen";
+
+export const db = createClient({
+  uri: process.env.NEO4J_URI!, // bolt://localhost:7687
+  user: process.env.NEO4J_USERNAME!,
+  password: process.env.NEO4J_PASSWORD!,
+  dialect: "memgraph",
+});
+```
+
+And set it in `cyphra.json`, so that `cyphra migrate dev`, `cyphra migrate diff` and
+`cyphra schema ddl` write Memgraph DDL:
+
+```json filename="cyphra.json"
+{
+  "schema": "./schema.cyphra",
+  "migrations": "./migrations",
+  "dialect": "memgraph"
+}
+```
+
+The client does not detect the dialect on its own: ORM statements are compiled without a round
+trip to the server, and Neo4j stays the default. If a Neo4j-dialect client talks to Memgraph, the
+first Cypher Memgraph cannot parse fails with a `CyphraError` that points at the `dialect` option.
+The CLI commands that connect (`push`, `pull`, `migrate deploy`, `migrate status`, `migrate reset`)
+read the dialect from `cyphra.json` and, when it sets none, from the server's Bolt agent string
+(`detectDialect(client)` does the same in code).
+
+<Callout type="info">
+  Memgraph accepts any user name and password unless authentication is enabled on the server. The
+  `NEO4J_URI`, `NEO4J_USERNAME` and `NEO4J_PASSWORD` variables are read the same way.
+</Callout>
+
+## Feature matrix
+
+Verified against Memgraph 3.14.0. "Supported" means the shared integration suite passes on Memgraph.
+
+| Feature                                                        | Memgraph                                                                                 |
+| -------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| CRUD (`create`, `findMany`, `update`, `delete`, `…Many`)       | Supported                                                                                |
+| Nested writes (`create`, `connect`, `connectOrCreate`, `set`)  | Supported                                                                                |
+| `upsert`                                                       | Supported (see [concurrency](#concurrency-and-uniqueness))                               |
+| `UniqueConstraintError`                                        | Supported, raised at commit                                                              |
+| Relation filters, `_count`, ordering by relation counts        | Supported                                                                                |
+| `aggregate`, `groupBy`                                         | Supported (a `BigInt` `_sum` past 2^63 wraps around)                                     |
+| `traverse` (one model, or hops across models)                  | Supported, except relation filters in a hop's `where`                                    |
+| `shortestPath`, `allShortestPaths`                             | Supported, except relation filters in `where`                                            |
+| `onDelete` rules                                               | Supported                                                                                |
+| Interfaces and multiple labels                                 | Supported                                                                                |
+| Validation rules, client extensions, `$transaction`            | Supported                                                                                |
+| Vector search (`findSimilar`)                                  | Supported, through `vector_search.search`                                                |
+| Full-text search (`search`)                                    | Supported, through `text_search.search_all` (see [text search](#vector-and-text-search)) |
+| `DateTime`, `Date`, `LocalDateTime`, `LocalTime`               | Supported, microsecond precision                                                         |
+| `Duration`                                                     | Days, hours, minutes and seconds only: months and years throw                            |
+| `Time` (time of day with an offset)                            | Not available: Memgraph has no zoned time type                                           |
+| `Point`, `CartesianPoint` (2D, 3D), distance and box filters   | Supported, with point indexes                                                            |
+| `cyphra push`, `migrate dev`, `migrate deploy`, `migrate diff` | Supported, Memgraph DDL                                                                  |
+| `cyphra migrate status` (drift), `migrate reset`               | Supported                                                                                |
+| `cyphra pull`                                                  | Supported                                                                                |
+| `@unique` on relationship properties                           | Not available: Memgraph has no relationship constraints                                  |
+| Missing-index warnings (`warnMissingIndexes`)                  | Not available (off on Memgraph)                                                          |
+| HTTP transport (Query API, edge runtimes)                      | Not available: Memgraph has no HTTP query endpoint                                       |
+| `@cyphra/graphql`, `@cyphra/better-auth`                       | Not tested on Memgraph                                                                   |
+
+Every "not available" row, and the exceptions above, throw `UnsupportedFeatureError` (a
+`CyphraError` with `feature` and `dialect`) with a message like
+`The Time type (a time of day with a UTC offset) is not supported on Memgraph: …`.
+
+## What compiles differently
+
+| Neo4j                                                               | Memgraph                                                              |
+| ------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| Quantified path pattern `(s)((:User)-[e:FOLLOWS]->(:User)){1,3}(n)` | `(s)-[:FOLLOWS *1..3 (r, m \| m:User AND …)]->(n)`                    |
+| `SHORTEST 1` / `ALL SHORTEST` path selectors                        | `*BFS ..n` / `*ALLSHORTEST ..n (r, m \| 1) w`                         |
+| `db.index.vector.queryNodes`, `vector.similarity.*`                 | `vector_search.search`, `vector_search.cosine_similarity`             |
+| `db.index.fulltext.queryNodes`                                      | `text_search.search_all`                                              |
+| `CREATE CONSTRAINT n FOR (n:L) REQUIRE (n.a, n.b) IS UNIQUE`        | `CREATE CONSTRAINT ON (n:L) ASSERT n.a, n.b IS UNIQUE`                |
+| `CREATE RANGE INDEX n FOR (n:L) ON (n.a)`                           | `CREATE INDEX ON :L(a)`                                               |
+| `CREATE RANGE INDEX n FOR ()-[r:T]-() ON (r.p)`                     | `CREATE EDGE INDEX ON :T(p)`                                          |
+| `CREATE VECTOR INDEX n … OPTIONS {indexConfig: …}`                  | `CREATE VECTOR INDEX n ON :L(p) WITH CONFIG {…}`                      |
+| `CREATE FULLTEXT INDEX n … ON EACH [n.a, n.b]`                      | `CREATE TEXT INDEX n ON :L(a, b)`                                     |
+| `SHOW CONSTRAINTS` / `SHOW INDEXES`                                 | `SHOW CONSTRAINT INFO` / `SHOW INDEX INFO` / `SHOW VECTOR INDEX INFO` |
+| `db.schema.nodeTypeProperties()` (pull)                             | `schema.node_type_properties()`                                       |
+| `CALL { … } IN TRANSACTIONS OF n ROWS` (batches, reset)             | `USING PERIODIC COMMIT n …`                                           |
+
+Neo4j output is unchanged: the Neo4j statements are byte for byte what they were before dialects.
+
+## Traversals and shortest paths
+
+A traversal's checks (labels, relationship types and directions, `edgeWhere`, a hop's `where`) go
+in the filter lambda of a variable-length expansion, so they apply while Memgraph expands, as they
+do inside a quantified path pattern on Neo4j. A list of hops compiles to one expansion per hop.
+`returnPaths`, `distinct` and the cycle rule behave as on Neo4j.
+
+Memgraph cannot run a subquery inside a filter lambda. A relation filter in a hop's `where`
+(`where: { chunks: { some: { … } } }`) or in a shortest path's `where` throws
+`UnsupportedFeatureError`: filter on the nodes' own fields, or filter the results. Relation filters
+on the reached nodes (`traverse({ where })`) work.
+
+Shortest paths use breadth-first search (`*BFS`), and `*ALLSHORTEST` with a constant weight for
+every tied path. A node that matches both `from` and `to` gets its zero-hop path, as on Neo4j.
+
+## Concurrency and uniqueness
+
+Memgraph checks uniqueness constraints when a transaction commits, and its `MERGE` takes no lock.
+
+- `upsert` retries (up to five times) when its `MERGE` lost a race on its key: the retry finds the
+  committed node. Inside `$transaction` the commit happens after your callback, so the conflict
+  comes out of `$transaction` instead.
+- `connect` writes to the start node before its `MERGE`, so concurrent connects of one pair
+  conflict and the driver retries one of them: one edge per pair, as on Neo4j.
+- A duplicate value inside `$transaction` cannot be caught statement by statement: the
+  `UniqueConstraintError` is thrown by `$transaction`.
+
+Memgraph reports many errors that retrying cannot fix (an unsupported construct, an invalid
+duration string) as transient. Cyphra raises them as a `CyphraError` at once, so the driver does
+not retry them for 30 seconds. Write conflicts between transactions are still retried.
+
+## Vector and text search
+
+`findSimilar` calls `vector_search.search` and rescales Memgraph's cosine similarity to Neo4j's
+`[0, 1]` score, so `minScore` thresholds carry over. Euclidean indexes (`l2sq` on Memgraph) already
+score `1 / (1 + d²)`, like Neo4j. `exact: true` computes the same scores in Cypher. Memgraph's
+vector index sees the transaction's own writes, and also returns nodes deleted since its last
+garbage collection: Cyphra skips them, widening the search as it does for filters.
+
+`search` calls `text_search.search_all`, which searches every property of the index with
+[Tantivy](https://github.com/quickwit-oss/tantivy)'s query syntax. `mode: "terms"` and
+`mode: "phrase"` behave as on Neo4j, and boolean operators work in the default mode, but
+field-qualified terms (`title:graph`) do not. Memgraph has no analyzers, so the `analyzer` and
+`eventuallyConsistent` options of `@@fulltext` are ignored. Memgraph commits its text index with
+each write transaction, which costs about a second per index in Docker: batch writes to
+text-indexed nodes in one `$transaction` or `createMany`.
+
+## Migrations on Memgraph
+
+With `"dialect": "memgraph"`, `cyphra migrate dev` writes Memgraph DDL. Memgraph's constraints and
+property indexes have no name, so a migration drops them by definition
+(`DROP INDEX ON :User(email)`), and `migrate status` matches them by definition. Text and vector
+indexes keep their names. Memgraph runs DDL outside explicit transactions only; Cyphra's migration
+runner already runs each statement on its own.
+
+A migration generated before the dialect was set (Neo4j syntax) still applies: its `CREATE`
+statements are translated when it runs. Its `DROP … <name>` statements are not, so regenerate those
+migrations once you switch.
+
+`cyphra pull` reads `schema.node_type_properties()` and `SHOW … INFO`. Memgraph reports every list
+as `List[Any]`, so `pull` samples the element types of list properties, and marks a property
+required when every node of the label has it.
+
+## Try it locally
+
+```bash
+docker run -d --name memgraph -p 7687:7687 memgraph/memgraph:3.14.0
+export NEO4J_URI=bolt://localhost:7687 NEO4J_USERNAME=memgraph NEO4J_PASSWORD=memgraph
+npx cyphra push
+```
+
+## See also
+
+- [Typed client](/client): every operation in the matrix
+- [Migrations](/migrations): `migrate dev`, `deploy` and drift
+- [CLI](/cli): `cyphra.json` and the commands
+- [Runtime](/runtime): `CyphraClient` options
