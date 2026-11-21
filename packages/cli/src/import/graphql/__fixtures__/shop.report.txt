@@ -1,0 +1,18 @@
+Not converted (8):
+  JSON                  scalar: custom scalars are not supported by Cyphra: fields of this type are not converted
+  Purchasable           interface: interfaces are not supported by Cyphra yet: implementing @node types are converted with their own fields; relationships to the interface are not
+  Product.stock         BigInt: BigInt is not supported by Cyphra yet: not converted
+  Product.attributes    JSON: custom scalars are not supported by Cyphra: not converted
+  Product.location      Point: Point is not supported by Cyphra yet: not converted
+  Customer.wishlist     @relationship: relationships to an interface are not supported yet: not converted
+  Order.deliveryWindow  LocalTime: LocalTime is not supported by Cyphra yet: not converted
+  Order.total           @cypher: @cypher fields are computed by a Cypher query: not converted, write it as a query
+
+Converted with differences (7):
+  OrderStatus  enum: enums are not supported by Cyphra yet: mapped to String, allowed values are not enforced
+  Product      @node(labels): a Cyphra node's name is its label: renamed to "Item"
+  Product.sku  @unique: @unique was removed in @neo4j/graphql v7; Cyphra keeps it and creates the uniqueness constraint
+  Category.id  @id: became @id @default(uuid()); Cyphra also adds a uniqueness constraint, which v7 @id does not
+  Customer.id  @id: became @id @default(uuid()); Cyphra also adds a uniqueness constraint, which v7 @id does not
+  Order.id     @id: became @id @default(uuid()); Cyphra also adds a uniqueness constraint, which v7 @id does not
+  Review.id    @id: became @id @default(uuid()); Cyphra also adds a uniqueness constraint, which v7 @id does not

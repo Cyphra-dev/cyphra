@@ -22,7 +22,8 @@
     "@cyphra/migrator": "workspace:*",
     "@cyphra/runtime": "workspace:*",
     "@cyphra/schema": "workspace:*",
-    "commander": "^12.1.0"
+    "commander": "^12.1.0",
+    "graphql": "^16.11.0"
   },
   "devDependencies": {
     "@types/node": "^22.20.5",

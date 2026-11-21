@@ -1,0 +1,70 @@
+// Imported from @neo4j/graphql type definitions with `cyphra import graphql`.
+// Review before use (run the import again to see the full report):
+// - JSON: custom scalars are not supported by Cyphra: fields of this type are not converted
+// - Purchasable: interfaces are not supported by Cyphra yet: implementing @node types are converted with their own fields; relationships to the interface are not
+// - OrderStatus: enums are not supported by Cyphra yet: mapped to String, allowed values are not enforced
+// - Product: a Cyphra node's name is its label: renamed to "Item"
+// - Product.sku: @unique was removed in @neo4j/graphql v7; Cyphra keeps it and creates the uniqueness constraint
+// - Product.stock: BigInt is not supported by Cyphra yet: not converted
+// - Product.attributes: custom scalars are not supported by Cyphra: not converted
+// - Product.location: Point is not supported by Cyphra yet: not converted
+// - Category.id: became @id @default(uuid()); Cyphra also adds a uniqueness constraint, which v7 @id does not
+// - Customer.id: became @id @default(uuid()); Cyphra also adds a uniqueness constraint, which v7 @id does not
+// - Customer.wishlist: relationships to an interface are not supported yet: not converted
+// - Order.id: became @id @default(uuid()); Cyphra also adds a uniqueness constraint, which v7 @id does not
+// - Order.deliveryWindow: LocalTime is not supported by Cyphra yet: not converted
+// - Order.total: @cypher fields are computed by a Cypher query: not converted, write it as a query
+// - Review.id: became @id @default(uuid()); Cyphra also adds a uniqueness constraint, which v7 @id does not
+
+node Item {
+  sku String @unique
+  name String
+  price Float
+  weightKg Float?
+  tags String[]
+  categories Category[] @relationship(type: "IN_CATEGORY", direction: OUT)
+  reviews Review[] @relationship(type: "REVIEWS", direction: IN)
+  // stock: BigInt (not converted: type not supported)
+  // attributes: JSON (not converted: type not supported)
+  // location: Point (not converted: type not supported)
+}
+
+node Category {
+  id String @id @default(uuid())
+  name String
+  parent Category? @relationship(type: "CHILD_OF", direction: OUT)
+  products Item[] @relationship(type: "IN_CATEGORY", direction: IN)
+}
+
+node Customer {
+  id String @id @default(uuid())
+  email String
+  orders Order[] @relationship(type: "PLACED", direction: OUT)
+  // wishlist: [Purchasable!]! (not converted: relationship not converted)
+}
+
+node Order {
+  id String @id @default(uuid())
+  status String @default("PENDING")
+  placedAt DateTime @default(now())
+  customer Customer @relationship(type: "PLACED", direction: IN)
+  lines Item[] @relationship(type: "CONTAINS", direction: OUT)
+  // deliveryWindow: LocalTime (not converted: type not supported)
+  // total: Float (not converted: computed field)
+}
+
+node Review {
+  id String @id @default(uuid())
+  stars Int
+  body String?
+  product Item @relationship(type: "REVIEWS", direction: OUT)
+}
+
+relationship OrderLine {
+  type "CONTAINS"
+  from Order
+  to Item
+  quantity Int @default(1)
+  unitPrice Float
+  addedAt DateTime? @default(now())
+}

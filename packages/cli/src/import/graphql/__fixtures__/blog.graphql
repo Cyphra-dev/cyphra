@@ -1,0 +1,55 @@
+enum Role {
+  ADMIN
+  AUTHOR
+  READER
+}
+
+type JWT @jwt {
+  roles: [String!]!
+}
+
+type User
+  @node
+  @authorization(validate: [{ where: { node: { id: { eq: "$jwt.sub" } } } }])
+  @plural(value: "Users") {
+  id: ID! @id
+  email: String! @unique
+  displayName: String @alias(property: "display_name")
+  role: Role! @default(value: READER)
+  createdAt: DateTime! @timestamp(operations: [CREATE])
+  updatedAt: DateTime @timestamp
+  posts: [Post!]! @relationship(type: "WROTE", direction: OUT)
+}
+
+type Post @node @fulltext(indexes: [{ indexName: "PostSearch", fields: ["title", "body"] }]) {
+  id: ID! @id
+  title: String! @filterable(byValue: true, byAggregate: false)
+  body: String!
+  published: Boolean! @default(value: false)
+  publishedOn: Date
+  createdAt: DateTime! @timestamp
+  author: User! @relationship(type: "WROTE", direction: IN)
+  tags: [Tag!]! @relationship(type: "TAGGED", direction: OUT, nestedOperations: [CONNECT])
+  comments: [Comment!]! @relationship(type: "ON", direction: IN)
+}
+
+type Tag @node {
+  name: String! @unique
+  posts: [Post!]! @relationship(type: "TAGGED", direction: IN, queryDirection: UNDIRECTED)
+}
+
+type Comment @node {
+  id: ID! @id
+  text: String! @settable(onCreate: true, onUpdate: false)
+  createdAt: DateTime! @timestamp(operations: [CREATE])
+  post: Post! @relationship(type: "ON", direction: OUT)
+  author: User @relationship(type: "COMMENTED", direction: IN)
+}
+
+type Query {
+  trendingPosts(limit: Int = 10): [Post!]!
+    @cypher(
+      statement: "MATCH (p:Post) RETURN p ORDER BY p.createdAt DESC LIMIT $limit"
+      columnName: "p"
+    )
+}

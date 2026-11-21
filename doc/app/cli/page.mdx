@@ -1,5 +1,5 @@
 ---
-description: "Cyphra CLI reference for Neo4j projects: init, validate, generate, schema ddl, migrate deploy and push for constraints and indexes."
+description: "Cyphra CLI reference for Neo4j projects: init, validate, generate, migrations, push, and import from @neo4j/graphql type definitions."
 ---
 
 # CLI
@@ -24,6 +24,7 @@ App code depends on **`cyphra`** separately (see [Getting started](/getting-star
 | `cyphra migrate status`          | Applied / pending / modified migrations and uncaptured schema changes (non-zero exit if any)                              |
 | `cyphra migration:create <name>` | Empty `.mjs` migration to write by hand                                                                                   |
 | `cyphra pull`                    | Introspect the database and write `schema.cyphra` (`--print`, `--force`)                                                  |
+| `cyphra import graphql <files>`  | Convert `@neo4j/graphql` v7 type definitions to `schema.cyphra` (`--out`, `--merge`, `--force`, `--print`)                |
 | `cyphra push`                    | Apply constraints and range indexes directly (prototyping)                                                                |
 | `cyphra validate`                | Parse and validate the schema                                                                                             |
 | `cyphra schema print`            | Canonical pretty-print of the schema                                                                                      |
@@ -71,3 +72,52 @@ their endpoints. Review the result:
 - Single-property uniqueness constraints become `@id` (on a property named `id`) or `@unique`; range
   indexes become `@index`.
 - Unsupported types (e.g. `Point`) and names that are not identifiers are skipped with a warning.
+
+## Import from @neo4j/graphql
+
+If your app runs on `@neo4j/graphql` v7, convert its type definitions to a Cyphra schema in one step:
+
+```bash
+cyphra import graphql typeDefs.graphql            # writes the schema from cyphra.json
+cyphra import graphql src/**/*.graphql --merge    # add to an existing schema.cyphra
+```
+
+Pass one or more `.graphql` files. The schema goes to the `schema` path in `cyphra.json` (or
+`./schema.cyphra`), or to `--out <path>`. An existing file is never overwritten unless you pass
+`--force`. With `--merge`, your models, fields and comments stay as they are: missing fields and new
+models are added, and when a field exists on both sides your version wins.
+
+What converts:
+
+- `@node` types become `node` models. A custom label in `@node(labels)` becomes the model name, since a
+  Cyphra model's name is its label.
+- `ID`, `String`, `Int`, `Float`, `Boolean`, `DateTime` and `Date`, lists, and required or optional
+  from nullability. Enums become `String` for now.
+- `@id` becomes `@id @default(uuid())`, `@timestamp` becomes `@default(now())`, `@default` keeps its
+  value, and `@unique` (from v6 and earlier) stays `@unique`.
+- `@relationship(type, direction)` becomes a relation field, and a `@relationshipProperties` type
+  becomes a `relationship` model.
+
+Everything else is listed in a report, never dropped silently. Fields that were not converted also
+appear as comments in the schema. The command exits with 0 when it wrote the schema, warnings included,
+and with 1 only when the type definitions are not valid GraphQL:
+
+```text
+Wrote schema.cyphra (2 node(s), 1 relationship model(s))
+
+Not converted (3):
+  Person         @node(labels): extra labels "Actor" are not supported: Cyphra nodes have one label
+  Movie.runtime  Duration: Duration is not supported by Cyphra yet: not converted
+  Movie.similar  @cypher: @cypher fields are computed by a Cypher query: not converted, write it as a query
+
+Converted with differences (3):
+  Movie.id     @id: became @id @default(uuid()); Cyphra also adds a uniqueness constraint, which v7 @id does not
+  Person.id    @id: became @id @default(uuid()); Cyphra also adds a uniqueness constraint, which v7 @id does not
+  Person.name  @unique: @unique was removed in @neo4j/graphql v7; Cyphra keeps it and creates the uniqueness constraint
+```
+
+Not converted today: `BigInt`, `Time`, `LocalTime`, `LocalDateTime`, `Duration`, `Point`,
+`CartesianPoint` and custom scalars, interfaces and unions, extra labels, `@cypher` and
+`@customResolver` fields, `@authentication` and `@authorization` rules, `@fulltext` and `@vector`
+indexes, and update timestamps. API-only settings such as `@plural`, `@selectable` or `@filterable`
+are listed as ignored. Run `cyphra validate` after the import, then `cyphra migrate dev`.
