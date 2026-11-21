@@ -14,8 +14,9 @@ frontend queries, and the API runs on the Cyphra runtime.
 
 <Callout type="warning">
   This is an early release. The full v7 schema is generated, and queries (aggregations included),
-  mutations and `@authentication` / `@authorization` rules work. `@cypher` fields are in the schema
-  but return a `Not implemented yet` error for now. See [what works today](#what-works-today).
+  mutations, `@authentication` / `@authorization` rules, `@cypher` fields and `@fulltext` queries
+  work. Interfaces, unions, subscriptions and some scalars are not supported yet. See [what works
+  today](#what-works-today).
 </Callout>
 
 ## Install
@@ -288,27 +289,128 @@ read or fails with an internal error:
   `@authentication` / `@authorization` on relationship fields or relationship properties is
   rejected instead of ignored.
 
+## Custom Cypher fields
+
+`@cypher(statement, columnName)` works as in v7 on fields of node types, on relationship properties
+and on `Query` / `Mutation` fields. The statement runs inside the root field's statement, so a
+query with `@cypher` fields is still one Cypher statement.
+
+```graphql
+type Movie @node {
+  title: String!
+  actors: [Person!]! @relationship(type: "ACTED_IN", direction: IN)
+  actorCount: Int!
+    @cypher(statement: "MATCH (this)<-[:ACTED_IN]-(a:Person) RETURN count(a) AS n", columnName: "n")
+  similar(limit: Int = 3): [Movie!]!
+    @cypher(
+      statement: """
+      MATCH (this)<-[:ACTED_IN]-(:Person)-[:ACTED_IN]->(m:Movie)
+      WHERE m <> this
+      RETURN DISTINCT m LIMIT $limit
+      """
+      columnName: "m"
+    )
+}
+
+type Query {
+  moviesSince(year: Int!): [Movie!]!
+    @cypher(statement: "MATCH (m:Movie) WHERE m.released >= $year RETURN m", columnName: "m")
+}
+```
+
+- `this` is the node (or the relationship, on relationship properties) the field belongs to.
+- `$name` refers to an argument of the field. Each value is passed as a parameter, never written
+  into the statement: a missing or `null` argument becomes `NULL`, and default values apply.
+- `$jwt` is the JWT of the request (`{}` when it is not authenticated), and the keys of
+  `context.cypherParams` are passed as parameters too.
+- Scalar `@cypher` fields without arguments can be used in `where` and `sort`, like v7 generates
+  them. Fields that return nodes can be filtered with `some` / `all` / `none` / `single` (lists)
+  or with a node filter (one node).
+- Nodes returned by a statement get the `READ` rules of their type, and the selection works as for
+  any node: nested relationships, connections and other `@cypher` fields.
+- `Query` fields run in a read transaction, `Mutation` fields in a write transaction. Their
+  `@authentication` (on the field or on `type Query` / `type Mutation`) is checked first.
+
+As in v7:
+
+- A scalar field takes the `columnName` value of each row. When the statement returns no row, the
+  node is left out of the result; when it returns several rows, the node appears once per row. A
+  list field collects the values of every row, and list values are flattened.
+- A `Query` or `Mutation` field that is not a list returns the first row, or `null`.
+- `all` on a list of nodes is true when the statement returns no node.
+
+## Full-text search
+
+`@fulltext` generates the v7 full-text query fields, which call
+`db.index.fulltext.queryNodes`:
+
+```graphql
+type Movie
+  @node
+  @fulltext(indexes: [{ indexName: "MovieTitle", queryName: "moviesByTitle", fields: ["title"] }]) {
+  title: String!
+  released: Int
+}
+```
+
+```graphql
+query {
+  moviesByTitle(
+    phrase: "matrix"
+    where: { score: { min: 0.5 }, node: { released: { gt: 1990 } } }
+    sort: [{ score: DESC }]
+    first: 10
+  ) {
+    totalCount
+    edges {
+      score
+      node {
+        title
+      }
+    }
+    pageInfo {
+      hasNextPage
+      endCursor
+    }
+  }
+}
+```
+
+`phrase` uses the Lucene query syntax of Neo4j full-text indexes. Results are filtered by `where`
+(`score` and `node`) and the `READ` rules of the type, sorted by `sort` (the index order, best
+score first, without it) and paginated with `first` / `after`.
+
+Like v7, `@cyphra/graphql` does not create the index: create it before you query it. With Cyphra
+migrations, declare it in `schema.cyphra` with [`@@fulltext`](/schema#full-text-indexes) and the
+same name (`@@fulltext([title], name: "MovieTitle")`), and `cyphra migrate` creates it; or run
+`CREATE FULLTEXT INDEX MovieTitle IF NOT EXISTS FOR (n:Movie) ON EACH [n.title]` yourself. Wait for
+a new index to be `ONLINE` (`CALL db.awaitIndexes()`) before relying on its results.
+A query on a missing index fails with the Neo4j error.
+
 ## What works today
 
-Compatibility is checked by a suite of 6 apps and 84 operations. Its expected results come from the
-real `@neo4j/graphql` 7.6.8. Today 86 of its 90 checks pass: the printed schema of all 6 apps, and
-the 80 operations (queries, aggregations, mutations and authorization) that use no `@cypher` field. The full report is [`compat/graphql/REPORT.md`](https://github.com/Cyphra-dev/cyphra/blob/main/compat/graphql/REPORT.md).
+Compatibility is checked by a suite of 7 apps and 96 operations. Its expected results come from the
+real `@neo4j/graphql` 7.6.8. Today all of its 103 checks pass: the printed schema of the 7 apps and
+the 96 operations (queries, aggregations, mutations, authorization, `@cypher` fields and full-text
+queries). The full report is [`compat/graphql/REPORT.md`](https://github.com/Cyphra-dev/cyphra/blob/main/compat/graphql/REPORT.md).
 
-| Feature                                                                                                                                       | Status                                                          |
-| --------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
-| Generated schema: queries, connections, every `where` / `sort` / mutation input, aggregate types, deprecated `field_OPERATOR` fields          | Works: the printed SDL is identical to v7                       |
-| List queries: `movies(where, sort, limit, offset)`, pluralization like v7, `@plural`                                                          | Works                                                           |
-| Filters on `String`, `ID`, `Int`, `Float`, `BigInt`, `Boolean`, `Date`, `DateTime`, enums and lists, with `AND` / `OR` / `NOT`                | Works                                                           |
-| Relationship filters `some` / `all` / `none` / `single`, connection filters on `node` and `edge`                                              | Works                                                           |
-| Connections: `totalCount`, `pageInfo`, cursors with `first` / `after`, nested connections with edge `properties`, sort and filter on edges    | Works                                                           |
-| Nested relationship fields with `where`, `sort`, `limit`, `offset`                                                                            | Works                                                           |
-| Aggregations: `aggregate { count, node, edge }` on root and nested connections, aggregation filters (`aggregate` and deprecated `xAggregate`) | Works                                                           |
-| Mutations: `create`, `update`, `delete` with `info` counters, and the response selection                                                      | Works                                                           |
-| Nested writes: `create`, `connect`, `disconnect`, `update`, `delete` (nested in each other), edge properties                                  | Works                                                           |
-| Update operators: `set`, `add`, `subtract`, `multiply`, `divide`, `push`, `pop` and the deprecated `field_SET` / `field_INCREMENT` / …        | Works                                                           |
-| `@id`, `@timestamp`, `@default`                                                                                                               | Works                                                           |
-| `@authentication` / `@authorization` (type, field and schema level), `@jwt`, `@jwtClaim`, JWT verification (secret or JWKS)                   | Works ([details](#authentication-and-authorization))            |
-| `@cypher` fields                                                                                                                              | Not yet ([#75](https://github.com/Cyphra-dev/cyphra/issues/75)) |
+| Feature                                                                                                                                       | Status                                                  |
+| --------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
+| Generated schema: queries, connections, every `where` / `sort` / mutation input, aggregate types, deprecated `field_OPERATOR` fields          | Works: the printed SDL is identical to v7               |
+| List queries: `movies(where, sort, limit, offset)`, pluralization like v7, `@plural`                                                          | Works                                                   |
+| Filters on `String`, `ID`, `Int`, `Float`, `BigInt`, `Boolean`, `Date`, `DateTime`, enums and lists, with `AND` / `OR` / `NOT`                | Works                                                   |
+| Relationship filters `some` / `all` / `none` / `single`, connection filters on `node` and `edge`                                              | Works                                                   |
+| Connections: `totalCount`, `pageInfo`, cursors with `first` / `after`, nested connections with edge `properties`, sort and filter on edges    | Works                                                   |
+| Nested relationship fields with `where`, `sort`, `limit`, `offset`                                                                            | Works                                                   |
+| Aggregations: `aggregate { count, node, edge }` on root and nested connections, aggregation filters (`aggregate` and deprecated `xAggregate`) | Works                                                   |
+| Mutations: `create`, `update`, `delete` with `info` counters, and the response selection                                                      | Works                                                   |
+| Nested writes: `create`, `connect`, `disconnect`, `update`, `delete` (nested in each other), edge properties                                  | Works                                                   |
+| Update operators: `set`, `add`, `subtract`, `multiply`, `divide`, `push`, `pop` and the deprecated `field_SET` / `field_INCREMENT` / …        | Works                                                   |
+| `@id`, `@timestamp`, `@default`                                                                                                               | Works                                                   |
+| `@authentication` / `@authorization` (type, field and schema level), `@jwt`, `@jwtClaim`, JWT verification (secret or JWKS)                   | Works ([details](#authentication-and-authorization))    |
+| `@cypher` fields: scalars and nodes, arguments, `$jwt`, `where` and `sort`, relationship properties, `Query` and `Mutation` fields            | Works ([details](#custom-cypher-fields))                |
+| `@fulltext` queries: `score`, `where`, `sort`, `first` / `after`                                                                              | Works ([details](#full-text-search))                    |
+| Interfaces, unions, subscriptions, `@vector`, `Point`, `Duration`, custom scalars and custom resolvers                                        | Not yet: `makeSchema` throws `UnsupportedTypeDefsError` |
 
 ### v7 behaviour you get as well
 
@@ -345,6 +447,15 @@ the 80 operations (queries, aggregations, mutations and authorization) that use 
   statement, so it does not depend on driver result counters.
 - The response of a mutation (`movies { … }`) is read after all of its writes. With several inputs
   in one `createMovies`, v7 can return a node as it was before a later input connected to it.
+
+### `@cypher` differences from v7
+
+- In `where`, a scalar `@cypher` field is compared on the first row the statement returns, `null`
+  when there is none. v7 leaves out the node when the statement returns no row, even inside `OR` or
+  `NOT`.
+- A filter on a `@cypher` field inside a filter on a `@cypher` field returning nodes (`actors: {
+some: { movieCount: { gt: 1 } } }`) works. v7 fails with a Neo4j "Variable not defined" error.
+- A `@cypher` field returning a list of enum values works. v7 fails with an enum serialization error.
 
 ## Move the data model to Cyphra
 

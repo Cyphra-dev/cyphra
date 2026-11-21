@@ -3,12 +3,20 @@ export class CypherContext {
   readonly params: Record<string, unknown> = {};
   private paramCount = 0;
   private varCount = 0;
+  /** `$jwt` of `@cypher` statements: the decoded JWT, `{}` when not authenticated (v7). */
+  jwt: unknown = {};
 
   /** Bind a value and return its `$placeholder`. */
   param(value: unknown): string {
     const key = `p${this.paramCount++}`;
     this.params[key] = value;
     return `$${key}`;
+  }
+
+  /** Bind a value under a fixed name (`$jwt` of `@cypher` statements). */
+  namedParam(name: string, value: unknown): string {
+    this.params[name] = value;
+    return `$${name}`;
   }
 
   /** Fresh variable name, e.g. `this0`. */

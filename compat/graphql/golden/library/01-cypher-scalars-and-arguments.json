@@ -1,0 +1,94 @@
+{
+  "data": {
+    "books": [
+      {
+        "title": "A Wizard of Earthsea",
+        "reviewCount": 2,
+        "averageRating": 4.5,
+        "keywords": [
+          "a",
+          "earthsea"
+        ],
+        "first3": [
+          "a",
+          "earthsea",
+          "of"
+        ],
+        "none": []
+      },
+      {
+        "title": "American Gods",
+        "reviewCount": 0,
+        "averageRating": null,
+        "keywords": [
+          "american",
+          "gods"
+        ],
+        "first3": [
+          "american",
+          "gods"
+        ],
+        "none": []
+      },
+      {
+        "title": "Good Omens",
+        "reviewCount": 3,
+        "averageRating": 4,
+        "keywords": [
+          "good",
+          "omens"
+        ],
+        "first3": [
+          "good",
+          "omens"
+        ],
+        "none": []
+      },
+      {
+        "title": "The Colour of Magic",
+        "reviewCount": 1,
+        "averageRating": 2,
+        "keywords": [
+          "colour",
+          "magic"
+        ],
+        "first3": [
+          "colour",
+          "magic",
+          "of"
+        ],
+        "none": []
+      },
+      {
+        "title": "The Tombs of Atuan",
+        "reviewCount": 0,
+        "averageRating": null,
+        "keywords": [
+          "atuan",
+          "of"
+        ],
+        "first3": [
+          "atuan",
+          "of",
+          "the"
+        ],
+        "none": []
+      },
+      {
+        "title": "The Wizard Next Door",
+        "reviewCount": 0,
+        "averageRating": null,
+        "keywords": [
+          "door",
+          "next"
+        ],
+        "first3": [
+          "door",
+          "next",
+          "the"
+        ],
+        "none": []
+      }
+    ]
+  }
+}

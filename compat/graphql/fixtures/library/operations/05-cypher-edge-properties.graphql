@@ -1,0 +1,27 @@
+# features: cypher, connection.edge-properties, sort.edge, filter.edge
+# ordered
+query {
+  books(where: { isbn: { eq: "b3" } }) {
+    title
+    authorsConnection(sort: [{ edge: { credit: DESC } }]) {
+      totalCount
+      edges {
+        properties {
+          position
+          credit
+        }
+        node {
+          name
+          bookCount
+        }
+      }
+    }
+    firstOnly: authorsConnection(where: { edge: { credit: { endsWith: "#1" } } }) {
+      edges {
+        node {
+          name
+        }
+      }
+    }
+  }
+}

@@ -131,19 +131,6 @@ describe("root fields compile to one statement each", () => {
     const result = await execute({ schema, document: parse("{ people { budget } }") });
     expect(result.data).toEqual({ people: [{ budget: "9007199254740993" }] });
   });
-
-  it("parts of the API that are not implemented yet answer with a clear error", async () => {
-    const { driver, statements } = fakeDriver();
-    const schema = makeSchema({
-      typeDefs: `type Thing @node { name: String!, n: Int! @cypher(statement: "RETURN 1 AS x", columnName: "x") }`,
-      driver,
-    });
-    const result = await execute({ schema, document: parse("{ things { n } }") });
-    expect(result.errors?.[0]?.message).toMatch(
-      /^Not implemented yet in @cyphra\/graphql \(see #75\)/,
-    );
-    expect(statements).toHaveLength(0);
-  });
 });
 
 describe("connection aggregate selections", () => {

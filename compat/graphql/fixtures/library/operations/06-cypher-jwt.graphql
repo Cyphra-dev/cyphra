@@ -1,0 +1,7 @@
+# features: cypher, cypher.jwt, auth.jwt
+query {
+  books(where: { reviewedByViewer: { eq: true } }) {
+    title
+    reviewedByViewer
+  }
+}

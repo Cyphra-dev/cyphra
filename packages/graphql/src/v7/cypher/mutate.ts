@@ -812,13 +812,15 @@ export class MutationCompiler {
         const v = this.ctx.variable("this");
         const d = this.ctx.variable("data");
         const auth = readRules ? this.select.readRules(v, node, nodesOfKey) : {};
-        const proj = this.select.projectNode(v, node, nodesOfKey);
+        const scope: string[] = [];
+        const proj = this.select.projectNode(v, node, nodesOfKey, scope);
         const value = auth.failure
           ? `CASE WHEN ${auth.failure} THEN ${this.select.forbiddenMap()} ELSE ${proj.expr} END`
           : proj.expr;
         const filter = auth.filter ? `\n  WITH ${v} WHERE ${auth.filter}` : "";
+        const clauses = scope.map((c) => `\n${indent([c])}`).join("");
         block.add(
-          `CALL (${list}) {\n  UNWIND ${list} AS ${v}${filter}\n  RETURN collect(${value}) AS ${d}\n}`,
+          `CALL (${list}) {\n  UNWIND ${list} AS ${v}${filter}${clauses}\n  RETURN collect(${value}) AS ${d}\n}`,
         );
         entries.push(`${q(key)}: ${d}`);
         decoders.push([
@@ -1069,4 +1071,5 @@ const intAttribute: Attribute = {
   type: { name: "Int", list: false, required: true, elementRequired: false },
   kind: "scalar",
   id: false,
+  args: [],
 };

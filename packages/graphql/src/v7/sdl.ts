@@ -36,6 +36,8 @@ import {
 } from "graphql";
 import type {
   Attribute,
+  CypherRootField,
+  FieldArgument,
   NodeType,
   PropertiesType,
   Relationship,
@@ -443,7 +445,8 @@ class TypeRegistry {
   attributeWhereFields(attributes: readonly Attribute[]): GraphQLInputFieldConfigMap {
     const out: GraphQLInputFieldConfigMap = {};
     for (const a of attributes) {
-      if (a.cypher && a.type.list) continue;
+      // v7: `@cypher` fields with arguments cannot be filtered on.
+      if (a.args.length) continue;
       out[a.name] = { type: this.scalarFilters(a), deprecationReason: a.deprecated };
       const named = this.namedType(a.type.name);
       const dep = (op: string) =>
@@ -606,7 +609,11 @@ class TypeRegistry {
 
   propertiesSort(p: PropertiesType): GraphQLInputObjectType {
     return this.input(`${p.name}Sort`, () =>
-      Object.fromEntries(p.attributes.map((a) => [a.name, { type: this.sortDirection() }])),
+      Object.fromEntries(
+        p.attributes
+          .filter((a) => !a.args.length)
+          .map((a) => [a.name, { type: this.sortDirection() }]),
+      ),
     );
   }
 
@@ -648,6 +655,14 @@ class TypeRegistry {
       n.name,
       () => {
         const fields = attributeOutputFields(this, n.attributes);
+        for (const c of n.cypherNodes) {
+          fields[c.name] = {
+            type: this.nodeRefType(c.type, c.target),
+            description: c.description,
+            deprecationReason: c.deprecated,
+            args: argumentConfigs(this, c.args),
+          };
+        }
         for (const r of n.relationships) {
           const target = this.model.node(r.target);
           fields[r.name] = {
@@ -684,7 +699,7 @@ class TypeRegistry {
       () =>
         Object.fromEntries(
           n.attributes
-            .filter((a) => !a.type.list)
+            .filter((a) => !a.type.list && !a.args.length)
             .map((a) => [a.name, { type: this.sortDirection() }]),
         ),
       `Fields to sort ${n.pascalPlural} by. The order in which sorts are applied is not guaranteed when specifying many fields in one ${n.name}Sort object.`,
@@ -700,6 +715,18 @@ class TypeRegistry {
         OR: { type: list(nn(self)) },
         ...this.attributeWhereFields(n.attributes),
       };
+      for (const c of n.cypherNodes) {
+        if (c.args.length) continue;
+        const target = this.model.node(c.target);
+        if (!c.type.list) {
+          out[c.name] = { type: this.nodeWhere(target) };
+          continue;
+        }
+        // v7 prints the `_ALL` / … variants of `@cypher` fields without description or deprecation.
+        out[c.name] = { type: this.relationshipFilters(target) };
+        for (const q of QUANTIFIERS)
+          out[`${c.name}_${q.toUpperCase()}`] = { type: this.nodeWhere(target) };
+      }
       const sourcePlural = pluralize(n.name);
       for (const r of n.relationships) {
         const target = this.model.node(r.target);
@@ -743,6 +770,75 @@ class TypeRegistry {
         ]),
       );
     });
+  }
+
+  /** `Movie`, `[Movie!]!`, … for a field returning nodes. */
+  nodeRefType(t: TypeRef, target: string): GraphQLOutputType {
+    const named = this.node(this.model.node(target));
+    if (t.list) {
+      const inner = list(t.elementRequired ? nn(named) : named);
+      return t.required ? nn(inner) : inner;
+    }
+    return t.required ? nn(named) : named;
+  }
+
+  /** The type of a `Query` / `Mutation` `@cypher` field. */
+  rootFieldType(f: CypherRootField): GraphQLOutputType {
+    return f.kind === "node" ? this.nodeRefType(f.type, f.type.name) : this.attributeType(f.type);
+  }
+
+  floatWhere(): GraphQLInputObjectType {
+    return this.input(
+      "FloatWhere",
+      () => ({ max: { type: GraphQLFloat }, min: { type: GraphQLFloat } }),
+      "The input for filtering a float",
+    );
+  }
+
+  fulltextEdge(n: NodeType): GraphQLObjectType {
+    return this.object(`${n.name}IndexEdge`, () => ({
+      cursor: { type: nn(GraphQLString) },
+      node: { type: nn(this.node(n)) },
+      score: { type: nn(GraphQLFloat) },
+    }));
+  }
+
+  fulltextConnection(n: NodeType): GraphQLObjectType {
+    return this.object(`${n.pascalPlural}IndexConnection`, () => ({
+      edges: { type: nn(list(nn(this.fulltextEdge(n)))) },
+      pageInfo: { type: nn(this.pageInfo()) },
+      totalCount: { type: nn(GraphQLInt) },
+    }));
+  }
+
+  fulltextSort(n: NodeType): GraphQLInputObjectType {
+    return this.input(
+      `${n.name}IndexSort`,
+      () => ({ node: { type: this.nodeSort(n) }, score: { type: this.sortDirection() } }),
+      `The input for sorting a Fulltext query on an index of ${n.name}`,
+    );
+  }
+
+  fulltextWhere(n: NodeType): GraphQLInputObjectType {
+    return this.input(
+      `${n.name}IndexWhere`,
+      () => ({ node: { type: this.nodeWhere(n) }, score: { type: this.floatWhere() } }),
+      `The input for filtering a full-text query on an index of ${n.name}`,
+    );
+  }
+
+  /** `moviesByTitle(phrase, where, sort, first, after)`. */
+  fulltextField(n: NodeType): GraphQLFieldConfig<unknown, unknown> {
+    return {
+      type: nn(this.fulltextConnection(n)),
+      args: {
+        after: { type: GraphQLString },
+        first: { type: GraphQLInt },
+        phrase: { type: nn(GraphQLString) },
+        sort: { type: list(nn(this.fulltextSort(n))) },
+        where: { type: this.fulltextWhere(n) },
+      },
+    };
   }
 
   nodeAggregate(n: NodeType): GraphQLObjectType {
@@ -1076,6 +1172,24 @@ function relationshipType(reg: TypeRegistry, r: Relationship): GraphQLOutputType
   return r.required ? nn(target) : target;
 }
 
+/** Arguments of a `@cypher` field, with their defaults. */
+function argumentConfigs(
+  reg: TypeRegistry,
+  args: readonly FieldArgument[],
+): GraphQLFieldConfigArgumentMap | undefined {
+  if (!args.length) return undefined;
+  const out: GraphQLFieldConfigArgumentMap = {};
+  for (const a of args) {
+    const type = reg.attributeType(a.type);
+    out[a.name] = {
+      type,
+      description: a.description,
+      defaultValue: a.defaultAst ? valueFromAST(a.defaultAst, type) : undefined,
+    };
+  }
+  return out;
+}
+
 function attributeOutputFields(
   reg: TypeRegistry,
   attributes: readonly Attribute[],
@@ -1086,10 +1200,20 @@ function attributeOutputFields(
       type: reg.attributeType(a.type),
       description: a.description,
       deprecationReason: a.deprecated,
+      args: argumentConfigs(reg, a.args),
     };
     out[a.name] = field;
   }
   return out;
+}
+
+function rootField(reg: TypeRegistry, f: CypherRootField): GraphQLFieldConfig<unknown, unknown> {
+  return {
+    type: reg.rootFieldType(f),
+    description: f.description,
+    deprecationReason: f.deprecated,
+    args: argumentConfigs(reg, f.args),
+  };
 }
 
 function aggregateSelectionFields(
@@ -1136,7 +1260,9 @@ export function buildV7Schema(model: V7Model): GraphQLSchema {
             where: { type: reg.nodeWhere(n) },
           },
         };
+        for (const ft of n.fulltext) fields[ft.queryName] = reg.fulltextField(n);
       }
+      for (const f of model.query.fields) fields[f.name] = rootField(reg, f);
       return fields;
     },
   });
@@ -1165,6 +1291,7 @@ export function buildV7Schema(model: V7Model): GraphQLSchema {
           },
         };
       }
+      for (const f of model.mutation.fields) fields[f.name] = rootField(reg, f);
       return fields;
     },
   });

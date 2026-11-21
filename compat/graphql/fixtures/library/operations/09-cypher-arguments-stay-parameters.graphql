@@ -1,0 +1,9 @@
+# features: cypher, cypher.root, cypher.arguments
+query ($prefix: String!) {
+  injection: titlesStartingWith(prefix: "' OR true RETURN 'x' AS t //")
+  quote: titlesStartingWith(prefix: "The\" OR 1=1 //")
+  variable: titlesStartingWith(prefix: $prefix)
+  booksSince(year: 2014) {
+    title
+  }
+}

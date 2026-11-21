@@ -23,8 +23,14 @@
  */
 
 import neo4j from "neo4j-driver";
-import { FOLLOW_UP, notImplemented } from "../errors.js";
-import type { Attribute, NodeType, PropertiesType, Relationship, V7Model } from "../model.js";
+import type {
+  Attribute,
+  CypherNodeField,
+  NodeType,
+  PropertiesType,
+  Relationship,
+  V7Model,
+} from "../model.js";
 import {
   type CypherContext,
   labels,
@@ -33,6 +39,7 @@ import {
   withList,
   type ListAggregate,
 } from "./context.js";
+import { nodeRows, scalarExpr } from "./custom.js";
 
 type AnyRecord = Record<string, unknown>;
 
@@ -180,6 +187,14 @@ function attributeComparison(
   throw new Error(`Unsupported filter operator ${op}`);
 }
 
+/** `variable.property`, or the value of a `@cypher` field (see `scalarExpr`). */
+function attributeExpr(ctx: CypherContext, variable: string, attr: Attribute): string {
+  if (!attr.cypher) return `${variable}.${q(attr.property)}`;
+  if (attr.args.length)
+    throw new Error(`Cannot filter on @cypher field ${attr.name} with arguments`);
+  return scalarExpr(ctx, variable, attr.cypher, attr.type.list);
+}
+
 /** Predicates on the attributes of a node or relationship (`variable.property`). */
 function attributeFilter(
   ctx: CypherContext,
@@ -191,12 +206,11 @@ function attributeFilter(
   const direct = attributes.find((a) => a.name === key);
   if (direct) {
     if (value === null || value === undefined) return { handled: true };
-    if (direct.cypher) throw notImplemented(`filtering on @cypher field ${key}`, FOLLOW_UP.cypher);
     if (!isPlainObject(value)) throw new Error(`Invalid filter on ${key}`);
-    const expr = `${variable}.${q(direct.property)}`;
-    const preds = Object.entries(value as AnyRecord).map(([op, v]) =>
-      attributePredicate(ctx, expr, direct, op, v),
-    );
+    const ops = Object.entries(value as AnyRecord).filter(([, v]) => v !== undefined);
+    if (ops.length === 0) return { handled: true };
+    const expr = attributeExpr(ctx, variable, direct);
+    const preds = ops.map(([op, v]) => attributePredicate(ctx, expr, direct, op, v));
     return { handled: true, predicate: and(preds) };
   }
   const m = /^(.+)_([A-Z_]+)$/.exec(key);
@@ -204,11 +218,11 @@ function attributeFilter(
     const attr = attributes.find((a) => a.name === m[1]);
     const op = LEGACY_OPERATORS[m[2]!];
     if (attr && op) {
-      if (attr.cypher)
-        throw notImplemented(`filtering on @cypher field ${attr.name}`, FOLLOW_UP.cypher);
+      if (value === undefined) return { handled: true };
+      if (value === null && op !== "eq") return { handled: true };
       return {
         handled: true,
-        predicate: attributePredicate(ctx, `${variable}.${q(attr.property)}`, attr, op, value),
+        predicate: attributePredicate(ctx, attributeExpr(ctx, variable, attr), attr, op, value),
       };
     }
   }
@@ -362,9 +376,90 @@ export class WhereCompiler {
         parts.push(a.predicate);
         continue;
       }
+      const c = this.cypherNodeFilter(variable, node, key, value);
+      if (c.handled) {
+        parts.push(c.predicate);
+        continue;
+      }
       parts.push(this.relationshipFilter(variable, node, key, value));
     }
     return and(parts);
+  }
+
+  /**
+   * Filters on `@cypher` fields returning nodes (v7 7.6): for a list, `actors: { some | all | none |
+   * single }` (and `actors_SOME`, …) test the returned nodes with `any` / `all` / `none` / `single`
+   * (so `all` holds when the statement returns nothing); for one node, `topActor: { … }` tests the
+   * first returned node and `topActor: null` matches when there is none.
+   */
+  private cypherNodeFilter(
+    variable: string,
+    node: NodeType,
+    key: string,
+    value: unknown,
+  ): { handled: boolean; predicate?: string } {
+    const legacy = /^(.+)_(ALL|NONE|SINGLE|SOME)$/.exec(key);
+    const name = node.cypherNodes.some((c) => c.name === key) ? key : legacy?.[1];
+    const field = node.cypherNodes.find((c) => c.name === name);
+    if (!field) return { handled: false };
+    if (field.args.length)
+      throw new Error(`Cannot filter on @cypher field ${field.name} with arguments`);
+    const target = this.model.node(field.target);
+    if (!field.type.list) {
+      if (value === undefined) return { handled: true };
+      const x = this.ctx.variable("n");
+      const rows = nodeRows(this.ctx, variable, field.cypher, x);
+      if (value === null) return { handled: true, predicate: `NOT EXISTS {\n${rows}\n}` };
+      const pred = this.node(x, target, value);
+      if (pred === undefined) return { handled: true };
+      // The first returned node (v7: `head(collect(…))`).
+      return {
+        handled: true,
+        predicate: `EXISTS {\n${rows}\nWITH ${x} LIMIT 1\nWITH ${x} WHERE ${pred}\n}`,
+      };
+    }
+    const quantifiers: [Quantifier, unknown][] =
+      key === field.name
+        ? isFilterObject(value, key)
+          ? Object.entries(value).map(([k, w]) => [k as Quantifier, w])
+          : []
+        : [[QUANTIFIER_KEYS[legacy![2]!]!, value]];
+    return {
+      handled: true,
+      predicate: and(
+        quantifiers.map(([quantifier, w]) =>
+          this.cypherNodes(variable, field, target, quantifier, w),
+        ),
+      ),
+    };
+  }
+
+  /** `any` / `all` / `none` / `single` of the nodes returned by the statement (v7 semantics). */
+  private cypherNodes(
+    variable: string,
+    field: CypherNodeField,
+    target: NodeType,
+    quantifier: Quantifier,
+    where: unknown,
+  ): string | undefined {
+    if (!isFilterObject(where, "filter")) return undefined;
+    const x = this.ctx.variable("n");
+    const pred = this.node(x, target, where);
+    if (pred === undefined) return undefined;
+    const rows = () => nodeRows(this.ctx, variable, field.cypher, x);
+    const matching = () => `COUNT {\n${rows()}\nWITH ${x} WHERE ${pred}\n}`;
+    switch (quantifier) {
+      case "some":
+        return `EXISTS {\n${rows()}\nWITH ${x} WHERE ${pred}\n}`;
+      case "none":
+        return `NOT EXISTS {\n${rows()}\nWITH ${x} WHERE ${pred}\n}`;
+      case "single":
+        return `${matching()} = 1`;
+      case "all":
+        // Vacuously true without rows (v7 `all(x IN list WHERE …)`); a null predicate is false.
+        return `${matching()} = COUNT {\n${rows()}\n}`;
+    }
+    throw new Error(`Unknown relationship filter ${String(quantifier)}`);
   }
 
   private relationshipFilter(

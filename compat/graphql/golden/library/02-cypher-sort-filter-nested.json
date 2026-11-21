@@ -1,0 +1,48 @@
+{
+  "data": {
+    "authors": [
+      {
+        "name": "Neil Gaiman",
+        "bookCount": 2,
+        "books": [
+          {
+            "title": "Good Omens",
+            "averageRating": 4
+          }
+        ]
+      },
+      {
+        "name": "Terry Pratchett",
+        "bookCount": 2,
+        "books": [
+          {
+            "title": "Good Omens",
+            "averageRating": 4
+          },
+          {
+            "title": "The Colour of Magic",
+            "averageRating": 2
+          }
+        ]
+      },
+      {
+        "name": "Ursula Le Guin",
+        "bookCount": 2,
+        "books": [
+          {
+            "title": "A Wizard of Earthsea",
+            "averageRating": 4.5
+          }
+        ]
+      }
+    ],
+    "reviewed": [
+      {
+        "title": "A Wizard of Earthsea"
+      },
+      {
+        "title": "Good Omens"
+      }
+    ]
+  }
+}

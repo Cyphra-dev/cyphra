@@ -1,0 +1,43 @@
+{
+  "data": {
+    "books": [
+      {
+        "title": "Good Omens",
+        "authorsConnection": {
+          "totalCount": 2,
+          "edges": [
+            {
+              "properties": {
+                "position": 2,
+                "credit": "author #2"
+              },
+              "node": {
+                "name": "Neil Gaiman",
+                "bookCount": 2
+              }
+            },
+            {
+              "properties": {
+                "position": 1,
+                "credit": "author #1"
+              },
+              "node": {
+                "name": "Terry Pratchett",
+                "bookCount": 2
+              }
+            }
+          ]
+        },
+        "firstOnly": {
+          "edges": [
+            {
+              "node": {
+                "name": "Terry Pratchett"
+              }
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

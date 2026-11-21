@@ -1,0 +1,59 @@
+{
+  "data": {
+    "page1": {
+      "totalCount": 3,
+      "pageInfo": {
+        "hasNextPage": true,
+        "hasPreviousPage": false,
+        "startCursor": "YXJyYXljb25uZWN0aW9uOjA=",
+        "endCursor": "YXJyYXljb25uZWN0aW9uOjE="
+      },
+      "edges": [
+        {
+          "cursor": "YXJyYXljb25uZWN0aW9uOjA=",
+          "node": {
+            "title": "A Wizard of Earthsea",
+            "year": 1968
+          }
+        },
+        {
+          "cursor": "YXJyYXljb25uZWN0aW9uOjE=",
+          "node": {
+            "title": "The Colour of Magic",
+            "year": 1983
+          }
+        }
+      ]
+    },
+    "page2": {
+      "pageInfo": {
+        "hasNextPage": false,
+        "hasPreviousPage": true
+      },
+      "edges": [
+        {
+          "cursor": "YXJyYXljb25uZWN0aW9uOjI=",
+          "node": {
+            "title": "American Gods"
+          }
+        }
+      ]
+    },
+    "byCypherField": {
+      "edges": [
+        {
+          "node": {
+            "title": "A Wizard of Earthsea",
+            "reviewCount": 2
+          }
+        },
+        {
+          "node": {
+            "title": "The Colour of Magic",
+            "reviewCount": 1
+          }
+        }
+      ]
+    }
+  }
+}

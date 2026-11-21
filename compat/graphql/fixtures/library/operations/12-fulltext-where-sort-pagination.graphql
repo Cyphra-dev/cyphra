@@ -1,0 +1,55 @@
+# features: fulltext, sort, pagination.cursor, filter.cypher
+# ordered
+query {
+  page1: searchBooks(
+    phrase: "wizard OR magic OR gods"
+    where: { score: { min: 0.1 }, node: { year: { lt: 2010 } } }
+    sort: [{ node: { year: ASC } }]
+    first: 2
+  ) {
+    totalCount
+    pageInfo {
+      hasNextPage
+      hasPreviousPage
+      startCursor
+      endCursor
+    }
+    edges {
+      cursor
+      node {
+        title
+        year
+      }
+    }
+  }
+  page2: searchBooks(
+    phrase: "wizard OR magic OR gods"
+    where: { node: { year: { lt: 2010 } } }
+    sort: [{ node: { year: ASC } }]
+    first: 2
+    after: "YXJyYXljb25uZWN0aW9uOjE="
+  ) {
+    pageInfo {
+      hasNextPage
+      hasPreviousPage
+    }
+    edges {
+      cursor
+      node {
+        title
+      }
+    }
+  }
+  byCypherField: searchBooks(
+    phrase: "wizard OR magic OR gods"
+    where: { node: { reviewCount: { gt: 0 } } }
+    sort: [{ node: { reviewCount: DESC } }, { score: DESC }]
+  ) {
+    edges {
+      node {
+        title
+        reviewCount
+      }
+    }
+  }
+}

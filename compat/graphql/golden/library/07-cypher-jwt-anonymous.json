@@ -1,0 +1,14 @@
+{
+  "data": {
+    "books": [
+      {
+        "title": "A Wizard of Earthsea",
+        "reviewedByViewer": false
+      },
+      {
+        "title": "The Tombs of Atuan",
+        "reviewedByViewer": false
+      }
+    ]
+  }
+}

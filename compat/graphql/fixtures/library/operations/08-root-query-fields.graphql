@@ -1,0 +1,18 @@
+# features: cypher, cypher.root, cypher.arguments
+# ordered
+query {
+  bookTotal
+  booksSince(year: 1990) {
+    title
+    year
+    reviewCount
+    firstAuthor {
+      name
+    }
+  }
+  titlesStartingWith(prefix: "The")
+  oldestAuthor {
+    name
+    born
+  }
+}

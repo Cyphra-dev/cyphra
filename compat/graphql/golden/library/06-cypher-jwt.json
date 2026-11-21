@@ -1,0 +1,14 @@
+{
+  "data": {
+    "books": [
+      {
+        "title": "A Wizard of Earthsea",
+        "reviewedByViewer": true
+      },
+      {
+        "title": "Good Omens",
+        "reviewedByViewer": true
+      }
+    ]
+  }
+}

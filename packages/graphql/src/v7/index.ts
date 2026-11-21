@@ -5,6 +5,7 @@
  */
 
 import {
+  GraphQLError,
   isObjectType,
   type GraphQLFieldResolver,
   type GraphQLResolveInfo,
@@ -23,7 +24,12 @@ import {
 } from "./execute.js";
 import { AUTH_OPERATIONS, readTypeDefs, UnsupportedTypeDefsError, type V7Model } from "./model.js";
 import { buildV7Schema } from "./sdl.js";
-import { authContextFor, forbidden, type AuthContext } from "./auth/context.js";
+import {
+  authContextFor,
+  checkRootAuthentication,
+  forbidden,
+  type AuthContext,
+} from "./auth/context.js";
 import { JwtDecoder, type Features } from "./auth/jwt.js";
 import { AuthRules } from "./auth/rules.js";
 import { CypherContext } from "./cypher/context.js";
@@ -49,6 +55,25 @@ const byResponseKey: GraphQLFieldResolver<unknown, unknown> = (source, _args, _c
 
 type Auth = { model: V7Model; decoder?: JwtDecoder };
 
+/**
+ * v7 passes `context.cypherParams` as top-level parameters of every statement (`$name` in `@cypher`
+ * statements). A name that clashes with a generated parameter is an error, like in v7.
+ */
+function withCypherParams(params: Record<string, unknown>, ctx: unknown): Record<string, unknown> {
+  const extra = ctx && typeof ctx === "object" ? (ctx as AnyRecord).cypherParams : undefined;
+  if (extra === undefined || extra === null) return params;
+  if (typeof extra !== "object" || Array.isArray(extra)) {
+    throw new GraphQLError("context.cypherParams must be an object.");
+  }
+  const clash = Object.keys(extra).filter((k) => Object.prototype.hasOwnProperty.call(params, k));
+  if (clash.length) {
+    throw new GraphQLError(
+      `Duplicate parameter keys between context.cypherParams and generated parameters: [${clash.join(", ")}]`,
+    );
+  }
+  return { ...(extra as AnyRecord), ...params };
+}
+
 /** Throws `Forbidden` when the statement replaced a selection by the forbidden marker. */
 function checked<T>(decode: (rows: readonly unknown[]) => T): (rows: readonly unknown[]) => T {
   return (rows) => {
@@ -71,7 +96,56 @@ function rootReadResolver(
       kind === "list"
         ? compiler.rootList(node, args as AnyRecord, info.fieldNodes)
         : compiler.rootConnection(node, args as AnyRecord, info.fieldNodes);
-    return checked(compiled.decode)(await execute(compiled.cypher, compiled.params));
+    return checked(compiled.decode)(
+      await execute(compiled.cypher, withCypherParams(compiled.params, ctx)),
+    );
+  };
+}
+
+function fulltextResolver(
+  { model, decoder }: Auth,
+  execute: ReadExecutor,
+  nodeName: string,
+  queryName: string,
+): GraphQLFieldResolver<unknown, unknown> {
+  return async (_source, args, ctx, info: GraphQLResolveInfo) => {
+    const node = model.node(nodeName);
+    const index = node.fulltext.find((f) => f.queryName === queryName)!;
+    const auth = await authContextFor(ctx, model, decoder);
+    const compiled = new SelectionCompiler(model, info, auth).rootFulltext(
+      node,
+      index,
+      args as AnyRecord,
+      info.fieldNodes,
+    );
+    return checked(compiled.decode)(
+      await execute(compiled.cypher, withCypherParams(compiled.params, ctx)),
+    );
+  };
+}
+
+/** `Query` fields run in a read transaction, `Mutation` fields in a write transaction. */
+function rootCypherResolver(
+  { model, decoder }: Auth,
+  executors: Executors,
+  type: "Query" | "Mutation",
+  fieldName: string,
+): GraphQLFieldResolver<unknown, unknown> {
+  return async (_source, args, ctx, info: GraphQLResolveInfo) => {
+    const field = (type === "Query" ? model.query : model.mutation).fields.find(
+      (f) => f.name === fieldName,
+    )!;
+    const auth = await authContextFor(ctx, model, decoder);
+    checkRootAuthentication(model, auth, type, field);
+    const compiled = new SelectionCompiler(model, info, auth).rootCypher(
+      field,
+      args as AnyRecord,
+      info.fieldNodes,
+    );
+    const params = withCypherParams(compiled.params, ctx);
+    if (type === "Query")
+      return checked(compiled.decode)(await executors.read(compiled.cypher, params));
+    return executors.write(compiled.cypher, params, checked(compiled.decode));
   };
 }
 
@@ -93,7 +167,11 @@ function rootMutationResolver(
           ? compiler.rootUpdate(node, a, info.fieldNodes)
           : compiler.rootDelete(node, a, info.fieldNodes);
     // Decoded inside the transaction: a failed check throws and rolls the statement back.
-    return execute(compiled.cypher, compiled.params, checked(compiled.decode));
+    return execute(
+      compiled.cypher,
+      withCypherParams(compiled.params, ctx),
+      checked(compiled.decode),
+    );
   };
 }
 
@@ -148,8 +226,17 @@ function attachResolvers(schema: GraphQLSchema, auth: Auth, executors: Executors
       node.name,
       "connection",
     );
+    for (const ft of node.fulltext) {
+      query[ft.queryName]!.resolve = fulltextResolver(auth, execute, node.name, ft.queryName);
+    }
+  }
+  for (const f of model.query.fields) {
+    query[f.name]!.resolve = rootCypherResolver(auth, executors, "Query", f.name);
   }
   const mutation = schema.getMutationType()!.getFields();
+  for (const f of model.mutation.fields) {
+    mutation[f.name]!.resolve = rootCypherResolver(auth, executors, "Mutation", f.name);
+  }
   for (const node of model.nodes) {
     for (const kind of ["create", "update", "delete"] as const) {
       mutation[`${kind}${node.pascalPlural}`]!.resolve = rootMutationResolver(
@@ -170,8 +257,9 @@ function attachResolvers(schema: GraphQLSchema, auth: Auth, executors: Executors
  * filters, sorting, offset and cursor pagination, nested relationships and connections with edge
  * properties, connection `aggregate` selections and aggregation filters), mutations (create,
  * update, delete with every nested operation and `info` counters) and `@authentication` /
- * `@authorization` (compiled into each statement; JWTs verified with `features.authorization`).
- * `@cypher` fields (#75) are in the schema but answer with a "Not implemented yet" error.
+ * `@authorization` (compiled into each statement; JWTs verified with `features.authorization`),
+ * `@cypher` fields (on node types, relationship properties, `Query` and `Mutation`; sortable and
+ * filterable like v7) and `@fulltext` queries (on indexes the application creates).
  *
  * @example
  * ```ts

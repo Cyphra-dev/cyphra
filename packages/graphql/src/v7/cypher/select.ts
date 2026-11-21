@@ -36,11 +36,14 @@ import {
   type SelectionSetNode,
 } from "graphql";
 import neo4j, { isInt } from "neo4j-driver";
-import { FOLLOW_UP, notImplemented } from "../errors.js";
 import { checkAuthentication, type AuthContext } from "../auth/context.js";
 import { AuthRules } from "../auth/rules.js";
 import {
   type Attribute,
+  type CypherAnnotation,
+  type CypherNodeField,
+  type CypherRootField,
+  type FulltextIndex,
   type NodeType,
   type PropertiesType,
   type Relationship,
@@ -55,6 +58,7 @@ import {
   type ListAggregate,
 } from "./context.js";
 import { WhereCompiler, relationshipPattern } from "./where.js";
+import { column, hasStatement, scalarClause, statementCall } from "./custom.js";
 
 type AnyRecord = Record<string, unknown>;
 export type Decoder = (raw: unknown) => unknown;
@@ -106,6 +110,23 @@ function gate(
 ): string {
   if (failure === undefined) return expr;
   return `CASE WHEN EXISTS { MATCH ${match} WHERE ${and([predicate, failure])} } THEN ${marker} ELSE ${expr} END`;
+}
+
+/**
+ * Clauses to run before the expression of a projection is evaluated (in the same query part, right
+ * before its `RETURN`): subqueries that contain a `@cypher` statement are hoisted there (see
+ * `custom.ts`).
+ */
+export type Scope = string[];
+
+/**
+ * `@cypher` sort values computed before an `ORDER BY` (`CALL` clauses) and the variables holding
+ * them, by `<variable>.<field>`: a projection of the same field reuses the value, like v7.
+ */
+type SortScope = { clauses: string[]; vars: Map<string, string> };
+
+function sortScope(): SortScope {
+  return { clauses: [], vars: new Map() };
 }
 
 /** What the compiler needs from `GraphQLResolveInfo`. */
@@ -190,7 +211,7 @@ function integerToNumber(x: unknown): unknown {
   return isInt(x) ? x.toNumber() : x;
 }
 
-function attributeDecoder(a: Attribute): Decoder {
+function attributeDecoder(a: Pick<Attribute, "kind" | "type">): Decoder {
   if (a.kind === "scalar" && a.type.name === "BigInt") {
     return (v) => mapValue(v, (x) => (isInt(x) ? x.toString() : x));
   }
@@ -198,6 +219,10 @@ function attributeDecoder(a: Attribute): Decoder {
     return (v) => mapValue(v, integerToNumber);
   }
   return (v) => v ?? null;
+}
+
+function toFloat(v: unknown): number {
+  return isInt(v) ? v.toNumber() : Number(v);
 }
 
 function toNumber(v: unknown): number {
@@ -218,10 +243,14 @@ function paging(ctx: CypherContext, offset: unknown, limit: unknown): string {
   return parts.join(" ");
 }
 
-/** `WITH vars ORDER BY … SKIP … LIMIT …`, or nothing when there is no order and no paging. */
-function withClause(vars: string, order: string, page: string): string {
+/**
+ * `WITH vars ORDER BY … SKIP … LIMIT …`, or nothing when there is no order and no paging. The
+ * `@cypher` sort values are carried along for the projection.
+ */
+function withClause(vars: string, order: string, page: string, sort?: SortScope): string {
   if (!order && !page) return "";
-  return ["WITH", vars, order, page].filter(Boolean).join(" ");
+  const all = [vars, ...(sort ? sort.vars.values() : [])].join(", ");
+  return ["WITH", all, order, page].filter(Boolean).join(" ");
 }
 
 const AGGREGATE_FUNCTIONS: Record<string, ListAggregate> = {
@@ -262,6 +291,55 @@ export class SelectionCompiler {
   ) {
     this.where = new WhereCompiler(model, this.ctx);
     this.rules = new AuthRules(model, this.ctx, auth);
+    this.ctx.jwt = auth.jwt ?? {};
+  }
+
+  /**
+   * `COLLECT { <body> RETURN ret }` / `COUNT { <body> }` / `EXISTS { <body> }` as an expression or,
+   * when the subquery contains a `@cypher` statement, hoisted into `scope` as
+   * `CALL (*) { <body> RETURN collect(ret) | count(*) AS v }` (the variable is the value).
+   */
+  subquery(
+    scope: Scope,
+    kind: "collect" | "count" | "exists",
+    body: readonly string[],
+    ret?: string,
+  ): string {
+    const text = body.filter(Boolean).join(" ");
+    if (!hasStatement(text, ret)) {
+      if (kind === "collect") return `COLLECT { ${text} RETURN ${ret} }`;
+      if (kind === "count") return `COUNT { ${text}${ret ? ` RETURN ${ret}` : ""} }`;
+      return `EXISTS { ${text} }`;
+    }
+    const v = this.ctx.variable("sub");
+    const agg =
+      kind === "collect" ? `collect(${ret})` : kind === "count" ? "count(*)" : "count(*) > 0";
+    scope.push(["CALL (*) {", text, `RETURN ${agg} AS ${v}`, "}"].join("\n"));
+    return v;
+  }
+
+  /** {@link gate} with the existence check hoisted when it contains a statement. */
+  private gate(
+    scope: Scope,
+    match: string,
+    predicate: string | undefined,
+    failure: string | undefined,
+    expr: string,
+    marker: string,
+  ): string {
+    if (failure === undefined) return expr;
+    if (!hasStatement(predicate, failure)) return gate(match, predicate, failure, expr, marker);
+    const denied = this.subquery(scope, "exists", [
+      `MATCH ${match} WHERE ${and([predicate, failure])}`,
+    ]);
+    return `CASE WHEN ${denied} THEN ${marker} ELSE ${expr} END`;
+  }
+
+  /** {@link rowGate} with the check hoisted when it contains a statement. */
+  private rowGate(scope: Scope, failure: string | undefined, expr: string, marker: string): string {
+    if (failure === undefined || !hasStatement(failure)) return rowGate(failure, expr, marker);
+    const denied = this.subquery(scope, "exists", [`WITH * WHERE ${failure}`]);
+    return `CASE WHEN ${denied} THEN ${marker} ELSE ${expr} END`;
   }
 
   /** `@authentication` for `operation` on the type (and on each of `fields`). */
@@ -314,6 +392,7 @@ export class SelectionCompiler {
     attributes: readonly Attribute[],
     sort: unknown,
     owner: string,
+    pre: SortScope,
   ): string[] {
     const items: string[] = [];
     if (sort === null || typeof sort !== "object") return items;
@@ -321,16 +400,31 @@ export class SelectionCompiler {
       if (dir !== "ASC" && dir !== "DESC") continue;
       const a = attributes.find((x) => x.name === field);
       if (!a) throw new Error(`Unknown sort field ${owner}.${field}`);
-      if (a.cypher)
-        throw notImplemented(`sorting on @cypher field ${owner}.${field}`, FOLLOW_UP.cypher);
+      if (a.cypher) {
+        items.push(`${this.sortValue(variable, a, pre)} ${dir}`);
+        continue;
+      }
       items.push(`${variable}.${q(a.property)} ${dir}`);
     }
     return items;
   }
 
-  private nodeOrder(variable: string, node: NodeType, sort: unknown): string {
+  /** The variable holding a `@cypher` sort value, computed once per field (v7). */
+  private sortValue(variable: string, a: Attribute, pre: SortScope): string {
+    const key = `${variable}.${a.name}`;
+    let v = pre.vars.get(key);
+    if (!v) {
+      const c = scalarClause(this.ctx, variable, a.cypher!, a.args, {}, a.type.list);
+      pre.clauses.push(c.clause);
+      pre.vars.set(key, c.variable);
+      v = c.variable;
+    }
+    return v;
+  }
+
+  private nodeOrder(variable: string, node: NodeType, sort: unknown, pre: SortScope): string {
     const items = (Array.isArray(sort) ? sort : []).flatMap((s) =>
-      this.sortItems(variable, node.attributes, s, node.name),
+      this.sortItems(variable, node.attributes, s, node.name, pre),
     );
     return items.length ? `ORDER BY ${items.join(", ")}` : "";
   }
@@ -340,6 +434,7 @@ export class SelectionCompiler {
     nodeVar: string,
     rel: Relationship,
     sort: unknown,
+    pre: SortScope,
   ): string {
     const target = this.model.node(rel.target);
     const props = this.props(rel);
@@ -347,12 +442,35 @@ export class SelectionCompiler {
     for (const s of Array.isArray(sort) ? sort : []) {
       if (s === null || typeof s !== "object") continue;
       for (const [k, v] of Object.entries(s as AnyRecord)) {
-        if (k === "node") items.push(...this.sortItems(nodeVar, target.attributes, v, target.name));
+        if (k === "node")
+          items.push(...this.sortItems(nodeVar, target.attributes, v, target.name, pre));
         else if (k === "edge" && props)
-          items.push(...this.sortItems(relVar, props.attributes, v, props.name));
+          items.push(...this.sortItems(relVar, props.attributes, v, props.name, pre));
       }
     }
     return items.length ? `ORDER BY ${items.join(", ")}` : "";
+  }
+
+  /**
+   * The value of a scalar `@cypher` field of `variable` for the response key: the sort value when
+   * the field was sorted on (same field, no arguments), else a new `CALL` clause in `scope`.
+   */
+  private cypherValue(
+    scope: Scope,
+    variable: string,
+    attr: Attribute,
+    fieldNode: FieldNode,
+    gqlType: GraphQLObjectType,
+    pre?: SortScope,
+  ): string {
+    const reused = attr.args.length ? undefined : pre?.vars.get(`${variable}.${attr.name}`);
+    if (reused) return reused;
+    const values = attr.args.length
+      ? fieldArgs(gqlType.getFields()[attr.name]!, fieldNode, this.info)
+      : {};
+    const c = scalarClause(this.ctx, variable, attr.cypher!, attr.args, values, attr.type.list);
+    scope.push(c.clause);
+    return c.variable;
   }
 
   private props(rel: Relationship): PropertiesType | undefined {
@@ -364,6 +482,8 @@ export class SelectionCompiler {
     variable: string,
     node: NodeType,
     fieldNodes: readonly FieldNode[],
+    scope: Scope,
+    pre?: SortScope,
   ): { expr: string; decode: Decoder } {
     const fields = [...collectFields(this.info, subSelections(fieldNodes)).values()].map(
       (n) => n[0]!.name.value,
@@ -378,18 +498,26 @@ export class SelectionCompiler {
       if (name === "__typename") continue;
       const attr = node.attributes.find((a) => a.name === name);
       if (attr) {
-        if (attr.cypher)
-          throw notImplemented(`@cypher field ${node.name}.${name}`, FOLLOW_UP.cypher);
-        entries.push(`${q(key)}: ${variable}.${q(attr.property)}`);
+        const value = attr.cypher
+          ? this.cypherValue(scope, variable, attr, nodes[0]!, type, pre)
+          : `${variable}.${q(attr.property)}`;
+        entries.push(`${q(key)}: ${value}`);
         decoders.push([key, attributeDecoder(attr)]);
         continue;
       }
       const gqlField = gqlFields[name];
       if (!gqlField) throw new Error(`Unknown field ${node.name}.${name}`);
       const args = fieldArgs(gqlField, nodes[0]!, this.info);
+      const cypherNode = node.cypherNodes.find((c) => c.name === name);
+      if (cypherNode) {
+        const p = this.cypherNodeField(scope, variable, cypherNode, args, nodes);
+        entries.push(`${q(key)}: ${p.expr}`);
+        decoders.push([key, p.decode]);
+        continue;
+      }
       const rel = node.relationships.find((r) => r.name === name);
       if (rel) {
-        const p = this.relationshipList(variable, rel, args, nodes);
+        const p = this.relationshipList(scope, variable, rel, args, nodes);
         entries.push(`${q(key)}: ${p.expr}`);
         decoders.push([key, p.decode]);
         continue;
@@ -398,7 +526,7 @@ export class SelectionCompiler {
         ? node.relationships.find((r) => `${r.name}Connection` === name)
         : undefined;
       if (connRel) {
-        const p = this.relationshipConnection(variable, connRel, args, nodes);
+        const p = this.relationshipConnection(scope, variable, connRel, args, nodes);
         entries.push(`${q(key)}: ${p.expr}`);
         decoders.push([key, p.decode]);
         continue;
@@ -420,15 +548,21 @@ export class SelectionCompiler {
     relVar: string,
     props: PropertiesType,
     fieldNodes: readonly FieldNode[],
+    scope: Scope,
+    pre?: SortScope,
   ): { expr: string; decode: Decoder } {
     const entries: string[] = [];
     const decoders: [string, Decoder][] = [];
+    const type = objectType(this.info, props.name);
     for (const [key, nodes] of collectFields(this.info, subSelections(fieldNodes))) {
       const name = nodes[0]!.name.value;
       if (name === "__typename") continue;
       const attr = props.attributes.find((a) => a.name === name);
       if (!attr) throw new Error(`Unknown field ${props.name}.${name}`);
-      entries.push(`${q(key)}: ${relVar}.${q(attr.property)}`);
+      const value = attr.cypher
+        ? this.cypherValue(scope, relVar, attr, nodes[0]!, type, pre)
+        : `${relVar}.${q(attr.property)}`;
+      entries.push(`${q(key)}: ${value}`);
       decoders.push([key, attributeDecoder(attr)]);
     }
     return {
@@ -443,6 +577,7 @@ export class SelectionCompiler {
   }
 
   private relationshipList(
+    scope: Scope,
     variable: string,
     rel: Relationship,
     args: AnyRecord,
@@ -453,20 +588,75 @@ export class SelectionCompiler {
     const pattern = relationshipPattern(this.model, variable, rel, m);
     const auth = this.readRules(m, target, fieldNodes);
     const pred = and([this.where.node(m, target, args.where), auth.filter]);
-    const order = this.nodeOrder(m, target, args.sort);
+    const pre = sortScope();
+    const order = this.nodeOrder(m, target, args.sort, pre);
     const page = paging(this.ctx, args.offset, args.limit);
-    const inner = this.projectNode(m, target, fieldNodes);
+    const inner: Scope = [];
+    const proj = this.projectNode(m, target, fieldNodes, inner, pre);
+    const row = this.rowGate(inner, auth.failure, proj.expr, this.forbiddenMap());
     const body = [
       `MATCH ${pattern}`,
       pred ? `WHERE ${pred}` : "",
-      withClause(m, order, page),
-      `RETURN ${rowGate(auth.failure, inner.expr, this.forbiddenMap())}`,
-    ]
-      .filter(Boolean)
-      .join(" ");
+      ...pre.clauses,
+      withClause(m, order, page, pre),
+      ...inner,
+    ];
+    const list = this.subquery(scope, "collect", body, row);
     return {
-      expr: gate(pattern, pred, auth.failure, `COLLECT { ${body} }`, this.forbiddenList()),
-      decode: (raw) => (Array.isArray(raw) ? raw.map(inner.decode) : []),
+      expr: this.gate(scope, pattern, pred, auth.failure, list, this.forbiddenList()),
+      decode: (raw) => (Array.isArray(raw) ? raw.map(proj.decode) : []),
+    };
+  }
+
+  /**
+   * A `@cypher` field returning nodes: `CALL (v) { <statement> WITH col AS n WHERE n IS NOT NULL
+   * AND <READ filter> … RETURN collect(<projection>) AS s }` (`head(…)` for one node). The READ rules
+   * of the returned type apply (a node failing `validate` makes the field `Forbidden`), like v7.
+   */
+  private cypherNodeField(
+    scope: Scope,
+    variable: string,
+    field: CypherNodeField,
+    args: AnyRecord,
+    fieldNodes: readonly FieldNode[],
+  ): { expr: string; decode: Decoder } {
+    const target = this.model.node(field.target);
+    const call = statementCall(this.ctx, field.cypher, field.args, args, variable);
+    const p = this.cypherNodes(call, field.cypher, target, fieldNodes);
+    const s = this.ctx.variable("cypher");
+    const value = field.type.list ? `collect(${p.row})` : `head(collect(${p.row}))`;
+    scope.push([`CALL (${variable}) {`, ...p.clauses, `RETURN ${value} AS ${s}`, "}"].join("\n"));
+    return {
+      expr: s,
+      decode: field.type.list
+        ? (raw) => (Array.isArray(raw) ? raw.map(p.decode) : [])
+        : (raw) => (raw === null || raw === undefined ? null : p.decode(raw)),
+    };
+  }
+
+  /**
+   * Clauses that run a statement returning nodes and keep the readable ones (`WHERE n IS NOT NULL
+   * AND <READ filter>`), and the projection of one row (or the forbidden marker).
+   */
+  private cypherNodes(
+    call: string,
+    cypher: CypherAnnotation,
+    target: NodeType,
+    fieldNodes: readonly FieldNode[],
+  ): { clauses: string[]; row: string; decode: Decoder } {
+    const n = this.ctx.variable("this");
+    const auth = this.readRules(n, target, fieldNodes);
+    const inner: Scope = [];
+    const proj = this.projectNode(n, target, fieldNodes, inner);
+    const row = this.rowGate(inner, auth.failure, proj.expr, this.forbiddenMap());
+    return {
+      clauses: [
+        call,
+        `WITH ${column(cypher)} AS ${n} WHERE ${and([`${n} IS NOT NULL`, auth.filter])}`,
+        ...inner,
+      ],
+      row,
+      decode: proj.decode,
     };
   }
 
@@ -476,14 +666,25 @@ export class SelectionCompiler {
    * `pageInfo` from the selection.
    */
   private connection(opts: {
+    scope: Scope;
     match: string;
     /** The connection `where`. */
     predicate?: string;
     order: string;
+    /** `@cypher` sort values (computed after the `MATCH`, before the `ORDER BY`). */
+    pre: SortScope;
     nodeVar: string;
     relVar?: string;
-    projectNode: (fieldNodes: readonly FieldNode[]) => { expr: string; decode: Decoder };
-    projectProperties?: (fieldNodes: readonly FieldNode[]) => { expr: string; decode: Decoder };
+    projectNode: (
+      fieldNodes: readonly FieldNode[],
+      scope: Scope,
+      pre: SortScope,
+    ) => { expr: string; decode: Decoder };
+    projectProperties?: (
+      fieldNodes: readonly FieldNode[],
+      scope: Scope,
+      pre: SortScope,
+    ) => { expr: string; decode: Decoder };
     /** Node type and relationship properties the `aggregate` selection aggregates over. */
     node: NodeType;
     props?: PropertiesType;
@@ -536,6 +737,7 @@ export class SelectionCompiler {
         );
         const p = this.aggregate(
           {
+            scope: opts.scope,
             base: `MATCH ${opts.match}${aggPredicate ? ` WHERE ${aggPredicate}` : ""}`,
             nodeVar: opts.nodeVar,
             relVar: opts.relVar,
@@ -546,7 +748,7 @@ export class SelectionCompiler {
           nodes,
         );
         aggregateEntries.push(
-          `${q(key)}: ${gate(opts.match, aggPredicate, aggFailure, p.expr, this.forbiddenMap())}`,
+          `${q(key)}: ${this.gate(opts.scope, opts.match, aggPredicate, aggFailure, p.expr, this.forbiddenMap())}`,
         );
         aggregates.push([key, p.decode]);
       }
@@ -554,16 +756,17 @@ export class SelectionCompiler {
       if (name === "edges" || name === "pageInfo") needsEdges = true;
       if (name === "totalCount" || name === "pageInfo") needsTotal = true;
     }
+    const edgeScope: Scope = [];
     for (const [key, nodes] of collectFields(this.info, subSelections(edgeFieldNodes))) {
       const name = nodes[0]!.name.value;
       if (name === "cursor") {
         edgeDecoders.push([key, (_raw, i) => offsetToCursor(offset + i)]);
       } else if (name === "node") {
-        const p = opts.projectNode(nodes);
+        const p = opts.projectNode(nodes, edgeScope, opts.pre);
         edgeEntries.push(`${q(key)}: ${p.expr}`);
         edgeDecoders.push([key, (raw) => p.decode(raw[key])]);
       } else if (name === "properties" && opts.projectProperties) {
-        const p = opts.projectProperties(nodes);
+        const p = opts.projectProperties(nodes, edgeScope, opts.pre);
         edgeEntries.push(`${q(key)}: ${p.expr}`);
         edgeDecoders.push([key, (raw) => p.decode(raw[key])]);
       }
@@ -571,21 +774,35 @@ export class SelectionCompiler {
 
     const withVars = opts.relVar ? `${opts.relVar}, ${opts.nodeVar}` : opts.nodeVar;
     const page = paging(this.ctx, offset || undefined, opts.args.first);
+    const edgeRow = this.rowGate(
+      edgeScope,
+      needsEdges ? readAuth.failure : undefined,
+      `{ ${edgeEntries.join(", ")} }`,
+      this.forbiddenMap(),
+    );
     const edgesBody = [
       `MATCH ${opts.match}${where}`,
-      withClause(withVars, opts.order, page),
-      `RETURN ${rowGate(needsEdges ? readAuth.failure : undefined, `{ ${edgeEntries.join(", ")} }`, this.forbiddenMap())}`,
-    ]
-      .filter(Boolean)
-      .join(" ");
+      ...opts.pre.clauses,
+      withClause(withVars, opts.order, page, opts.pre),
+      ...edgeScope,
+    ];
     const parts: string[] = [];
-    if (needsTotal) parts.push(`total: COUNT { MATCH ${opts.match}${where} }`);
-    if (needsEdges) parts.push(`edges: COLLECT { ${edgesBody} }`);
+    if (needsTotal)
+      parts.push(`total: ${this.subquery(opts.scope, "count", [`MATCH ${opts.match}${where}`])}`);
+    if (needsEdges)
+      parts.push(`edges: ${this.subquery(opts.scope, "collect", edgesBody, edgeRow)}`);
     if (aggregateEntries.length) parts.push(`aggregate: { ${aggregateEntries.join(", ")} }`);
     const map = `{ ${parts.join(", ")} }`;
     const expr =
       needsTotal || needsEdges
-        ? gate(opts.match, readPredicate, readAuth.failure, map, this.forbiddenMap())
+        ? this.gate(
+            opts.scope,
+            opts.match,
+            readPredicate,
+            readAuth.failure,
+            map,
+            this.forbiddenMap(),
+          )
         : map;
 
     return {
@@ -640,6 +857,7 @@ export class SelectionCompiler {
    */
   private aggregate(
     scope: {
+      scope: Scope;
       /** `MATCH <pattern> [WHERE <connection where>]`. */
       base: string;
       nodeVar: string;
@@ -662,7 +880,9 @@ export class SelectionCompiler {
           const what = cn[0]!.name.value;
           const v = what === "nodes" ? scope.nodeVar : what === "edges" ? scope.relVar : undefined;
           if (!v) continue;
-          counts.push(`${q(ck)}: COUNT { ${scope.base} WITH DISTINCT ${v} RETURN ${v} }`);
+          counts.push(
+            `${q(ck)}: ${this.subquery(scope.scope, "count", [scope.base, `WITH DISTINCT ${v}`], v)}`,
+          );
           keys.push(ck);
         }
         entries.push(`${q(key)}: { ${counts.join(", ")} }`);
@@ -689,7 +909,7 @@ export class SelectionCompiler {
         if (field === "__typename") continue;
         const attr = attributes.find((a) => a.name === field);
         if (!attr) throw new Error(`Unknown field ${scope.owner}.aggregate.${name}.${field}`);
-        const p = this.aggregateAttribute(scope.base, variable, attr, fn);
+        const p = this.aggregateAttribute(scope.scope, scope.base, variable, attr, fn);
         fieldEntries.push(`${q(fk)}: ${p.expr}`);
         fieldDecoders.push([fk, p.decode]);
       }
@@ -701,6 +921,7 @@ export class SelectionCompiler {
 
   /** `min` / `max` / `average` / `sum` / `shortest` / `longest` of one attribute, v7 semantics. */
   private aggregateAttribute(
+    scope: Scope,
     base: string,
     variable: string,
     attr: Attribute,
@@ -719,7 +940,12 @@ export class SelectionCompiler {
     const values = `${base} WITH DISTINCT ${variable} WHERE ${prop} IS NOT NULL`;
     if (type === "String") {
       // v7: ordered by size descending, `longest` is the first value and `shortest` the last.
-      const list = `COLLECT { ${values} WITH ${variable} ORDER BY size(${prop}) DESC RETURN ${prop} }`;
+      const list = this.subquery(
+        scope,
+        "collect",
+        [values, `WITH ${variable} ORDER BY size(${prop}) DESC`],
+        prop,
+      );
       const items = ops.map(
         ([k, op]) =>
           `${q(k)}: ${op === "longest" ? `head(${l})` : op === "shortest" ? `last(${l})` : "null"}`,
@@ -729,7 +955,7 @@ export class SelectionCompiler {
         decode: mapDecoder(decoders),
       };
     }
-    const list = `COLLECT { ${values} RETURN ${prop} }`;
+    const list = this.subquery(scope, "collect", [values], prop);
     const items = ops.map(([k, op]) => {
       const fn = AGGREGATE_FUNCTIONS[op];
       return `${q(k)}: ${fn ? listAggregate(fn, l) : "null"}`;
@@ -741,6 +967,7 @@ export class SelectionCompiler {
   }
 
   private relationshipConnection(
+    scope: Scope,
     variable: string,
     rel: Relationship,
     args: AnyRecord,
@@ -750,14 +977,19 @@ export class SelectionCompiler {
     const m = this.ctx.variable("this");
     const r = this.ctx.variable("edge");
     const props = this.props(rel);
+    const pre = sortScope();
     return this.connection({
+      scope,
       match: relationshipPattern(this.model, variable, rel, m, r),
       predicate: this.where.connection(r, m, rel, args.where),
-      order: this.connectionOrder(r, m, rel, args.sort),
+      order: this.connectionOrder(r, m, rel, args.sort, pre),
+      pre,
       nodeVar: m,
       relVar: r,
-      projectNode: (nodes) => this.projectNode(m, target, nodes),
-      projectProperties: props ? (nodes) => this.projectProperties(r, props, nodes) : undefined,
+      projectNode: (nodes, sc, p) => this.projectNode(m, target, nodes, sc, p),
+      projectProperties: props
+        ? (nodes, sc, p) => this.projectProperties(r, props, nodes, sc, p)
+        : undefined,
       node: target,
       props,
       args,
@@ -771,55 +1003,216 @@ export class SelectionCompiler {
     const v = this.ctx.variable("this");
     const auth = this.readRules(v, node, fieldNodes);
     const pred = and([this.where.node(v, node, args.where), auth.filter]);
-    const order = this.nodeOrder(v, node, args.sort);
+    const pre = sortScope();
+    const order = this.nodeOrder(v, node, args.sort, pre);
     const page = paging(this.ctx, args.offset, args.limit);
-    const proj = this.projectNode(v, node, fieldNodes);
+    const inner: Scope = [];
+    const proj = this.projectNode(v, node, fieldNodes, inner, pre);
+    const head = [
+      `MATCH (${v}${labels(node.labels)})`,
+      pred ? `WHERE ${pred}` : "",
+      ...pre.clauses,
+      withClause(v, order, page, pre),
+      ...inner,
+    ];
     if (auth.failure !== undefined) {
       // One row: the projections, or the marker when a matching node fails validation.
+      const root: Scope = [];
+      const row = this.rowGate(inner, auth.failure, proj.expr, this.forbiddenMap());
+      const list = this.subquery(root, "collect", head, row);
       const match = `(${v}${labels(node.labels)})`;
-      const body = [
-        `MATCH ${match}`,
-        pred ? `WHERE ${pred}` : "",
-        withClause(v, order, page),
-        `RETURN ${rowGate(auth.failure, proj.expr, this.forbiddenMap())}`,
-      ]
-        .filter(Boolean)
-        .join(" ");
+      const value = this.gate(root, match, pred, auth.failure, list, this.forbiddenList());
       return {
-        cypher: `RETURN ${gate(match, pred, auth.failure, `COLLECT { ${body} }`, this.forbiddenList())} AS this`,
+        cypher: [...root, `RETURN ${value} AS this`].join("\n"),
         params: this.ctx.params,
         decode: (rows) => (Array.isArray(rows[0]) ? rows[0].map(proj.decode) : []),
       };
     }
-    const cypher = [
-      `MATCH (${v}${labels(node.labels)})`,
-      pred ? `WHERE ${pred}` : "",
-      withClause(v, order, page),
-      `RETURN ${proj.expr} AS this`,
-    ]
-      .filter(Boolean)
-      .join("\n");
+    const cypher = [...head, `RETURN ${proj.expr} AS this`].filter(Boolean).join("\n");
     return { cypher, params: this.ctx.params, decode: (rows) => rows.map(proj.decode) };
   }
 
   /** `moviesConnection(where, sort, first, after)`. */
   rootConnection(node: NodeType, args: AnyRecord, fieldNodes: readonly FieldNode[]): CompiledQuery {
     const v = this.ctx.variable("this");
+    const root: Scope = [];
+    const pre = sortScope();
     const c = this.connection({
+      scope: root,
       match: `(${v}${labels(node.labels)})`,
       predicate: this.where.node(v, node, args.where),
-      order: this.nodeOrder(v, node, args.sort),
+      order: this.nodeOrder(v, node, args.sort, pre),
+      pre,
       nodeVar: v,
-      projectNode: (nodes) => this.projectNode(v, node, nodes),
+      projectNode: (nodes, sc, p) => this.projectNode(v, node, nodes, sc, p),
       node,
       args,
       fieldNodes,
       owner: `${node.plural}Connection`,
     });
     return {
-      cypher: `RETURN ${c.expr} AS this`,
+      cypher: [...root, `RETURN ${c.expr} AS this`].join("\n"),
       params: this.ctx.params,
       decode: (rows) => c.decode(rows[0]),
+    };
+  }
+
+  /**
+   * A `Query` / `Mutation` `@cypher` field: `CALL () { <statement> }` then one row per returned
+   * value (a scalar list column is flattened, like v7). A non-list field takes the first row.
+   * Returned nodes get the READ rules of their type and the selection's projection.
+   */
+  rootCypher(
+    field: CypherRootField,
+    args: AnyRecord,
+    fieldNodes: readonly FieldNode[],
+  ): CompiledQuery {
+    const call = statementCall(this.ctx, field.cypher, field.args, args);
+    const list = field.type.list;
+    if (field.kind !== "node") {
+      const decode = attributeDecoder({ kind: field.kind as "scalar" | "enum", type: field.type });
+      const x = this.ctx.variable("value");
+      const cypher = list
+        ? [call, `UNWIND ${column(field.cypher)} AS ${x}`, `RETURN ${x} AS this`]
+        : [call, `RETURN ${column(field.cypher)} AS this`];
+      return {
+        cypher: cypher.join("\n"),
+        params: this.ctx.params,
+        decode: list
+          ? (rows) => rows.map((r) => decode(r))
+          : (rows) => (rows.length ? decode(rows[0]) : null),
+      };
+    }
+    const target = this.model.node(field.type.name);
+    this.authenticate(target, "READ");
+    const p = this.cypherNodes(call, field.cypher, target, fieldNodes);
+    return {
+      cypher: [...p.clauses, `RETURN ${p.row} AS this`].join("\n"),
+      params: this.ctx.params,
+      decode: list
+        ? (rows) => rows.map(p.decode)
+        : (rows) => (rows.length ? p.decode(rows[0]) : null),
+    };
+  }
+
+  /**
+   * A `@fulltext` query (`moviesByTitle(phrase, where, sort, first, after)`), v7 7.6:
+   * `db.index.fulltext.queryNodes(index, phrase)` keeps the nodes of the type that match `where`
+   * (`score: { min, max }` and `node`) and its READ filter rules; `totalCount` counts them,
+   * `edges` (`node`, `score`, offset cursors) are ordered by `sort` (no order: the index order,
+   * best score first) and paginated by `first` / `after`. A matching node that fails READ
+   * `validate` rules makes the query `Forbidden`.
+   */
+  rootFulltext(
+    node: NodeType,
+    index: FulltextIndex,
+    args: AnyRecord,
+    fieldNodes: readonly FieldNode[],
+  ): CompiledQuery {
+    this.authenticate(node, "READ");
+    const v = this.ctx.variable("this");
+    const score = this.ctx.variable("score");
+    const conn = collectFields(this.info, subSelections(fieldNodes));
+    const edgeFields = [...conn]
+      .filter(([, n]) => n[0]!.name.value === "edges")
+      .flatMap(([, n]) => n);
+    const nodeFields = [...collectFields(this.info, subSelections(edgeFields))]
+      .filter(([, n]) => n[0]!.name.value === "node")
+      .flatMap(([, n]) => n);
+    const auth = this.readRules(v, node, nodeFields);
+    const where = (args.where ?? {}) as AnyRecord;
+    const scoreWhere = (where.score ?? {}) as AnyRecord;
+    const pred = and([
+      `${v}${labels(node.labels)}`,
+      typeof scoreWhere.min === "number"
+        ? `${score} >= ${this.ctx.param(scoreWhere.min)}`
+        : undefined,
+      typeof scoreWhere.max === "number"
+        ? `${score} <= ${this.ctx.param(scoreWhere.max)}`
+        : undefined,
+      this.where.node(v, node, where.node),
+      auth.filter,
+    ]);
+    const pre = sortScope();
+    const items: string[] = [];
+    for (const s of Array.isArray(args.sort) ? args.sort : []) {
+      if (s === null || typeof s !== "object") continue;
+      for (const [k, dir] of Object.entries(s as AnyRecord)) {
+        if (k === "score" && (dir === "ASC" || dir === "DESC")) items.push(`${score} ${dir}`);
+        else if (k === "node")
+          items.push(...this.sortItems(v, node.attributes, dir, node.name, pre));
+      }
+    }
+    const afterOffset = cursorToOffset(args.after);
+    const offset = afterOffset === undefined ? 0 : afterOffset + 1;
+    const page = paging(this.ctx, offset || undefined, args.first);
+    const edges = this.ctx.variable("edges");
+    const e = this.ctx.variable("edge");
+    const inner: Scope = [];
+    const entries: string[] = [`score: ${score}`];
+    const decoders: [string, (raw: AnyRecord, i: number) => unknown][] = [];
+    for (const [key, nodes] of collectFields(this.info, subSelections(edgeFields))) {
+      const name = nodes[0]!.name.value;
+      if (name === "cursor") decoders.push([key, (_r, i) => offsetToCursor(offset + i)]);
+      else if (name === "score") decoders.push([key, (r) => toFloat(r.score)]);
+      else if (name === "node") {
+        const p = this.projectNode(v, node, nodes, inner, pre);
+        entries.push(`${q(key)}: ${p.expr}`);
+        decoders.push([key, (r) => p.decode(r[key])]);
+      }
+    }
+    const order = items.length ? `ORDER BY ${items.join(", ")}` : "";
+    const denied = this.ctx.variable("denied");
+    const pageVar = this.ctx.variable("page");
+    const result = `{ edges: ${pageVar}, total: size(${edges}) }`;
+    const cypher = [
+      `CALL db.index.fulltext.queryNodes(${this.ctx.param(index.indexName)}, ${this.ctx.param(args.phrase ?? "")}) YIELD node AS ${v}, score AS ${score}`,
+      `WHERE ${pred}`,
+      `WITH collect({ node: ${v}, score: ${score} }) AS ${edges}${
+        auth.failure ? `, sum(CASE WHEN ${auth.failure} THEN 1 ELSE 0 END) > 0 AS ${denied}` : ""
+      }`,
+      `CALL (${edges}) {`,
+      `UNWIND ${edges} AS ${e}`,
+      `WITH ${e}.node AS ${v}, ${e}.score AS ${score}`,
+      ...pre.clauses,
+      withClause(`${v}, ${score}`, order, page, pre),
+      ...inner,
+      `RETURN collect({ ${entries.join(", ")} }) AS ${pageVar}`,
+      `}`,
+      `RETURN ${auth.failure ? `CASE WHEN ${denied} THEN ${this.forbiddenMap()} ELSE ${result} END` : result} AS this`,
+    ]
+      .filter(Boolean)
+      .join("\n");
+    return {
+      cypher,
+      params: this.ctx.params,
+      decode: (rows) => {
+        const r = (rows[0] ?? {}) as AnyRecord;
+        const total = toNumber(r.total ?? 0);
+        const rawEdges = (Array.isArray(r.edges) ? r.edges : []) as AnyRecord[];
+        const out: AnyRecord = {};
+        const list = rawEdges.map((raw, i) =>
+          Object.fromEntries(decoders.map(([k, dec]) => [k, dec(raw ?? {}, i)])),
+        );
+        for (const [key, nodes] of conn) {
+          const name = nodes[0]!.name.value;
+          if (name === "totalCount") out[key] = total;
+          else if (name === "edges") out[key] = list;
+          else if (name === "pageInfo") {
+            const info: AnyRecord = {};
+            for (const [pk, pn] of collectFields(this.info, subSelections(nodes))) {
+              const n = pn[0]!.name.value;
+              if (n === "hasNextPage") info[pk] = offset + list.length < total;
+              else if (n === "hasPreviousPage") info[pk] = offset > 0;
+              else if (n === "startCursor") info[pk] = list.length ? offsetToCursor(offset) : null;
+              else if (n === "endCursor")
+                info[pk] = list.length ? offsetToCursor(offset + list.length - 1) : null;
+            }
+            out[key] = info;
+          }
+        }
+        return out;
+      },
     };
   }
 }
