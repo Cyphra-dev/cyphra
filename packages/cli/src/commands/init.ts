@@ -53,4 +53,7 @@ export async function runInit(cwd: string): Promise<void> {
   if (created.length) console.log(`Created ${created.join(", ")}, migrations/`);
   if (skipped.length) console.log(`Kept existing ${skipped.join(", ")}`);
   console.log("Next: `cyphra dev` (local Neo4j), `cyphra generate`, `cyphra migrate dev`.");
+  console.log(
+    'Optional: add "seed": "tsx seed.ts" to cyphra.json to load data with `cyphra db seed`.',
+  );
 }
