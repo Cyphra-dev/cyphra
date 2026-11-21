@@ -103,9 +103,10 @@ request: a GraphQL client over HTTP, or your own code in the same process.
 - **Declarative authorization.** `@authentication`, `@authorization` and `@jwt` express access rules
   in the schema, so they apply to every generated operation.
 - **Search directives.** `@fulltext` and `@vector` expose full-text and vector index queries through
-  the API.
+  the API. Cyphra has vector search on its client ([`findSimilar`](/client#vector-search)) but no
+  full-text search yet.
 
-Cyphra has none of this. It does not serve HTTP and has no GraphQL layer; if you need an API, you
+Cyphra has none of the rest. It does not serve HTTP and has no GraphQL layer; if you need an API, you
 write it (REST, tRPC, GraphQL with your own resolvers) and call the Cyphra client from it.
 
 ## What Cyphra does that `@neo4j/graphql` does not

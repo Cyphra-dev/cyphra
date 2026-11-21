@@ -18,6 +18,7 @@ describe("runSchemaDdl", () => {
       `node U {
   id   String @id
   slug String @index
+  embedding Vector(3)? @vectorIndex(similarity: cosine)
 }
 `,
       "utf8",
@@ -40,5 +41,8 @@ describe("runSchemaDdl", () => {
     const iIdx = lines.findIndex((l) => l.includes("CREATE RANGE INDEX"));
     expect(cIdx).toBeGreaterThanOrEqual(0);
     expect(iIdx).toBeGreaterThan(cIdx);
+    expect(lines.at(-1)).toBe(
+      "CREATE VECTOR INDEX U_embedding_vector IF NOT EXISTS FOR (n:`U`) ON n.`embedding` OPTIONS {indexConfig: {`vector.dimensions`: 3, `vector.similarity_function`: 'cosine'}}",
+    );
   });
 });

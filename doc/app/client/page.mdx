@@ -1,5 +1,5 @@
 ---
-description: "The Cyphra typed client for Neo4j: findMany, select, include, relation counts, nested writes, aggregate, groupBy, transactions and raw Cypher, schema-typed."
+description: "The Cyphra typed client for Neo4j: findMany, select, include, relation counts, nested writes, aggregate, groupBy, vector search and transactions, schema-typed."
 ---
 
 # Typed client
@@ -30,6 +30,7 @@ Each node model becomes a delegate with a lower-cased name: `node User` → `db.
 
 > Requires **Neo4j 5.6+** (the client compiles relations to `COLLECT {}` / `EXISTS {}` subqueries).
 > [`traverse`](#traversals) needs **Neo4j 5.9+** (quantified path patterns).
+> [`findSimilar`](#vector-search) needs **Neo4j 5.15+** (vector indexes; `exact: true` needs 5.18+).
 
 ## Reading
 
@@ -408,6 +409,82 @@ const routes = await db.user.allShortestPaths({
 
 The result type is exported as `ShortestPathResult<CyphraTypeMap, "User", "following", Node>`.
 
+## Vector search
+
+`findSimilar` returns the `k` nodes whose embedding is closest to a query vector, through the
+field's [vector index](/schema#vector-fields): the retrieval step of semantic search and GraphRAG.
+It is available on models with a `Vector(N) @vectorIndex` field, and `field` only accepts those fields.
+
+```ts
+const chunks = await db.chunk.findSimilar({
+  field: "embedding",
+  vector: await embed("How do I rotate API keys?"), // number[] of length 1536
+  k: 5,
+  where: { document: { is: { published: true } } },
+  include: { document: { select: { title: true, url: true } } },
+});
+// (Chunk & { document: { title: string; url: string } | null; $score: number })[]
+chunks[0].$score; // 0.93
+```
+
+Results come best first, shaped by `select` / `include` like `findMany`, each with a `$score`
+(model fields cannot start with `$`, so it never collides). `include` is how the graph helps
+retrieval: load the chunk's document, its neighbours or its entities in the same statement.
+
+| Argument            | Meaning                                                                                                               |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `field`             | The `Vector(N)` field to search. It must have a `@vectorIndex`.                                                       |
+| `vector`            | The query embedding. Its length must be `N`, else `CyphraValidationError` (checked before any query).                 |
+| `k`                 | Number of results (a positive integer).                                                                               |
+| `where`             | Any filter on the model, relation filters included. See below for how it combines with the index.                     |
+| `minScore`          | Drop results that score below this.                                                                                   |
+| `candidates`        | Neighbours asked from the index on the first attempt (at least `k`). Default `k`, or `max(10 × k, 100)` with `where`. |
+| `maxCandidates`     | Upper bound on the neighbours a filtered search asks for (default: no bound).                                         |
+| `exact`             | `true`: skip the index and score every node matching `where` (see below).                                             |
+| `select`, `include` | Shape each result, as in `findMany`.                                                                                  |
+
+**Scores** are the index's, in `[0, 1]`, higher is more similar: `(1 + cos) / 2` for `cosine`
+(so `0.5` is orthogonal) and `1 / (1 + d²)` for `euclidean`. With Neo4j's default quantization the
+index stores compressed vectors, so scores are close to, not exactly, the exact similarity.
+
+**How `where` works.** Without a filter, `findSimilar` is one call to
+`db.index.vector.queryNodes(index, k, vector)`. Neo4j 5 vector indexes take no filter: the procedure
+returns its nearest neighbours and anything else is applied afterwards, so filtering the top `k`
+could leave fewer than `k` results. With `where`, `findSimilar` instead asks the index for
+`candidates` neighbours, filters them in the same statement and keeps the best `k`. If fewer than
+`k` pass, it asks again for four times as many, until it has `k` results, the index has no more
+nodes, the scores fall below `minScore`, or it reaches `maxCandidates`. So you get the `k` best
+matching nodes, as far as the approximate index can tell, at the cost of extra queries when the
+filter is selective.
+
+**`exact: true`** skips the index: it matches the nodes that pass `where` and ranks them with
+`vector.similarity.cosine` / `vector.similarity.euclidean` (Neo4j **5.18+**), in one statement. Use it
+when `where` narrows the search to a few thousand nodes (the chunks of one document, one tenant's
+data): results are exact and nothing is over-fetched. It also sees nodes written earlier in the same
+[`$transaction`](#transactions), which the vector index does not (it only holds committed data).
+
+The generated Cypher for a filtered search, here `where: { document: { is: { published: true } } }`
+with `include: { document: { select: { title: true } } }` (`$cyphraCandidates` grows between
+attempts):
+
+```cypher
+CALL db.index.vector.queryNodes($p3, $cyphraCandidates, $p1) YIELD node, score
+WITH collect({n: node, s: score}) AS hits
+CALL {
+  WITH hits UNWIND hits AS h WITH h.n AS n, h.s AS score
+  WHERE EXISTS { MATCH (n)-[:`PART_OF`]->(m0:`Document`) WHERE m0.`published` = $p0 }
+  WITH n, score ORDER BY score DESC LIMIT $p2
+  RETURN collect({row: n{.`id`, .`text`, .`embedding`,
+    `document`: head(COLLECT { MATCH (n)-[r2:`PART_OF`]->(m1:`Document`) RETURN m1{.`title`} })
+  }, score: score}) AS rows
+}
+RETURN size(hits) AS fetched, hits[-1].s AS lowest, rows
+```
+
+`findSimilar` works in [`$transaction`](#transactions) and with either driver major. Vectors are
+written with a plain `SET` of a float list, which Neo4j indexes like
+`db.create.setNodeVectorProperty` would. The `FindSimilarArgs` and `SimilarResult` types are exported.
+
 ## Writing
 
 ```ts
@@ -490,16 +567,17 @@ The [Cypher how-tos](/cypher) show common queries (upserts, pagination, counts) 
 
 ## Types and values
 
-| Schema     | TypeScript            | Stored in Neo4j as                                               |
-| ---------- | --------------------- | ---------------------------------------------------------------- |
-| `String`   | `string`              | String                                                           |
-| `Int`      | `number`              | Integer (64-bit; values outside the JS safe range throw on read) |
-| `Float`    | `number`              | Float                                                            |
-| `Boolean`  | `boolean`             | Boolean                                                          |
-| `DateTime` | `Date`                | DateTime                                                         |
-| `Date`     | `Date` (UTC midnight) | Date                                                             |
-| `T?`       | `T \| null`           | absent property                                                  |
-| `T[]`      | `T[]`                 | List (absent reads as `[]`)                                      |
+| Schema      | TypeScript                                | Stored in Neo4j as                                               |
+| ----------- | ----------------------------------------- | ---------------------------------------------------------------- |
+| `String`    | `string`                                  | String                                                           |
+| `Int`       | `number`                                  | Integer (64-bit; values outside the JS safe range throw on read) |
+| `Float`     | `number`                                  | Float                                                            |
+| `Boolean`   | `boolean`                                 | Boolean                                                          |
+| `DateTime`  | `Date`                                    | DateTime                                                         |
+| `Date`      | `Date` (UTC midnight)                     | Date                                                             |
+| `Vector(N)` | `number[]` (length `N`, checked on write) | `LIST<FLOAT>`                                                    |
+| `T?`        | `T \| null`                               | absent property                                                  |
+| `T[]`       | `T[]`                                     | List (absent reads as `[]`)                                      |
 
 ### DateTime values
 

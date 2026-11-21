@@ -28,7 +28,7 @@ export {
   renderClientSection,
   renderCyphraGenSource,
 } from "./renderCyphraGen.js";
-export { validateSchema } from "./validate.js";
+export { MAX_VECTOR_DIMENSIONS, VECTOR_SIMILARITIES, validateSchema } from "./validate.js";
 export type {
   DefaultFunction,
   DefaultValueSpec,
@@ -38,6 +38,8 @@ export type {
   ResolvedRelationField,
   ResolvedRelationshipModel,
   ResolvedScalarField,
+  ResolvedVectorIndex,
   SchemaModel,
+  VectorSimilarity,
 } from "./model.js";
 export { SCHEMA_MODEL_VERSION, getNodeModel, resolveSchema } from "./model.js";

@@ -3,6 +3,8 @@ import { CyphraClient } from "@cyphra/runtime";
 import { afterAll, describe, expect, it } from "vitest";
 import { diffSchemaModels, EMPTY_SCHEMA_MODEL } from "./diff.js";
 import { introspectDatabase, schemaFromIntrospection } from "./introspect.js";
+import { vectorIndexStatementsFromSchema } from "./push.js";
+import { applyConstraintStatements } from "./runner.js";
 import { createMigrationDb } from "./migrationDb.js";
 
 const hasNeo = Boolean(
@@ -78,5 +80,77 @@ describe.skipIf(!hasNeo)("schema migrations and pull (Neo4j)", () => {
     expect(src).toMatch(/node MigUser \{\n {2}id String @id\n/);
     expect(src).toContain("handle String @unique");
     expect(src).toContain("n Int");
+  });
+
+  it("creates vector indexes, recreates them on change, and pulls them back", async () => {
+    const v1 = `node MigVector {
+  id String @id
+  embedding Vector(3)? @vectorIndex(similarity: cosine, name: "mig_vector")
+}
+`;
+    const v2 = v1.replace("Vector(3)?", "Vector(4)?").replace("cosine", "euclidean");
+    const indexInfo = async () =>
+      client.withSession(async (s) => {
+        await s.run("CALL db.awaitIndexes(120)");
+        const res = await s.run(
+          "SHOW VECTOR INDEXES YIELD name, state, labelsOrTypes, properties, options WHERE name = 'mig_vector' RETURN *",
+        );
+        return res.records.map((r) => {
+          const config = (r.get("options") as { indexConfig: Record<string, unknown> }).indexConfig;
+          return {
+            state: r.get("state") as string,
+            on: [...(r.get("labelsOrTypes") as string[]), ...(r.get("properties") as string[])],
+            dimensions: Number(config["vector.dimensions"]),
+            similarity: config["vector.similarity_function"],
+          };
+        });
+      });
+    try {
+      await client.withSession((s) =>
+        s.run("DROP INDEX mig_vector IF EXISTS").then(() => undefined),
+      );
+      const stmts = vectorIndexStatementsFromSchema(parseSchema(v1));
+      await applyConstraintStatements(client, stmts);
+      await applyConstraintStatements(client, stmts); // IF NOT EXISTS: idempotent
+      expect(await indexInfo()).toEqual([
+        {
+          state: "ONLINE",
+          on: ["MigVector", "embedding"],
+          dimensions: 3,
+          similarity: "COSINE",
+        },
+      ]);
+
+      // `cyphra pull` maps the index back to the same field.
+      await client.withSession((s) =>
+        s
+          .run("CREATE (:MigVector {id: 'v', embedding: [0.1, 0.2, 0.3]}), (:MigVector {id: 'w'})")
+          .then(() => undefined),
+      );
+      const pulled = printSchemaDocument(
+        schemaFromIntrospection(await introspectDatabase(client)).doc,
+      );
+      expect(pulled).toContain(
+        'embedding Vector(3)? @vectorIndex(similarity: cosine, name: "mig_vector")',
+      );
+
+      // A migration from v1 to v2 drops and recreates the index with the new options.
+      const plan = diffSchemaModels(resolveSchema(parseSchema(v1)), resolveSchema(parseSchema(v2)));
+      await applyConstraintStatements(
+        client,
+        plan.steps.flatMap((step) => (step.kind === "statement" ? [step.cypher] : [])),
+      );
+      expect(await indexInfo()).toEqual([
+        {
+          state: "ONLINE",
+          on: ["MigVector", "embedding"],
+          dimensions: 4,
+          similarity: "EUCLIDEAN",
+        },
+      ]);
+    } finally {
+      await run("MATCH (n:MigVector) DETACH DELETE n");
+      await run("DROP INDEX mig_vector IF EXISTS");
+    }
   });
 });

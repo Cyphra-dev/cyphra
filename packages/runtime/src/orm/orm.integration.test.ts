@@ -1,6 +1,10 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { createClient, type Db } from "./__fixtures__/blog.gen.js";
 import { CyphraValidationError, NotFoundError } from "./errors.js";
+import {
+  createClient as createVectorClient,
+  type Db as VectorDb,
+} from "./__fixtures__/vector.gen.js";
 
 const hasNeo = Boolean(
   process.env.NEO4J_TEST_URI && process.env.NEO4J_TEST_USER && process.env.NEO4J_TEST_PASSWORD,
@@ -1646,5 +1650,263 @@ describe.skipIf(!hasNeo)("ORM shortest paths (Neo4j)", () => {
     });
     expect(path!.nodes).toEqual([{ name: "alice" }, { name: "erin" }]);
     expect(path!.edges[0]!.properties.since).toBeInstanceOf(Date); // @default(now())
+  });
+});
+
+describe.skipIf(!hasNeo)("ORM vector search (Neo4j)", () => {
+  let db: VectorDb;
+
+  // Same statements as `cyphra push` / migrations generate for __fixtures__/vector.cyphra.
+  const ddl = [
+    "CREATE VECTOR INDEX VecChunk_embedding_vector IF NOT EXISTS FOR (n:`VecChunk`) ON n.`embedding` OPTIONS {indexConfig: {`vector.dimensions`: 3, `vector.similarity_function`: 'cosine'}}",
+    "CREATE VECTOR INDEX vec_chunk_sketch IF NOT EXISTS FOR (n:`VecChunk`) ON n.`sketch` OPTIONS {indexConfig: {`vector.dimensions`: 2, `vector.similarity_function`: 'euclidean', `vector.quantization.enabled`: false}}",
+  ];
+
+  const chunks = [
+    { id: "c1", doc: "en", embedding: [1, 0, 0], sketch: [0, 0] },
+    { id: "c2", doc: "en", embedding: [0.9, 0.1, 0], sketch: [1, 0] },
+    { id: "c3", doc: "fr", embedding: [0, 1, 0], sketch: [3, 0] },
+    { id: "c4", doc: "fr", embedding: [0.8, 0.2, 0.1], sketch: [2, 0] },
+    { id: "c5", doc: "en", embedding: [0.1, 0.05, 1], sketch: [5, 5] },
+    { id: "c6", doc: "fr", embedding: null, sketch: null },
+  ];
+
+  beforeAll(async () => {
+    db = createVectorClient({
+      uri: process.env.NEO4J_TEST_URI!,
+      user: process.env.NEO4J_TEST_USER!,
+      password: process.env.NEO4J_TEST_PASSWORD!,
+    });
+    await db.$client.withSession(async (s) => {
+      for (const stmt of ddl) await s.run(stmt);
+      await s.run("CALL db.awaitIndexes(120)");
+    });
+  });
+
+  beforeEach(async () => {
+    await db.$cypher`MATCH (n) WHERE n:VecDoc OR n:VecChunk DETACH DELETE n`;
+    await db.vecDoc.create({ data: { id: "en", title: "English", lang: "en" } });
+    await db.vecDoc.create({ data: { id: "fr", title: "French", lang: "fr" } });
+    for (const [i, c] of chunks.entries()) {
+      await db.vecChunk.create({
+        data: {
+          id: c.id,
+          text: `chunk ${c.id}`,
+          position: i,
+          embedding: c.embedding,
+          sketch: c.sketch,
+          doc: { connect: { id: c.doc } },
+        },
+      });
+    }
+  });
+
+  afterAll(async () => {
+    if (!db) return;
+    await db.$cypher`MATCH (n) WHERE n:VecDoc OR n:VecChunk DETACH DELETE n`;
+    await db.$disconnect();
+  });
+
+  const ids = (rows: readonly { id: string }[]) => rows.map((r) => r.id);
+
+  it("creates ONLINE vector indexes and stores vectors as LIST<FLOAT>", async () => {
+    const indexes = await db.$cypher<{ name: string; state: string; options: unknown }>`
+      SHOW VECTOR INDEXES YIELD name, state, options WHERE name IN ['VecChunk_embedding_vector', 'vec_chunk_sketch']
+      RETURN name, state, options ORDER BY name`;
+    expect(indexes.map((i) => [i.name, i.state])).toEqual([
+      ["VecChunk_embedding_vector", "ONLINE"],
+      ["vec_chunk_sketch", "ONLINE"],
+    ]);
+    const [row] = await db.$cypher<{ t: string }>`
+      MATCH (c:VecChunk {id: 'c1'}) RETURN valueType(c.embedding) AS t`;
+    expect(row!.t).toMatch(/^LIST<FLOAT/);
+    const c1 = await db.vecChunk.findUniqueOrThrow({ where: { id: "c1" } });
+    expect(c1.embedding).toEqual([1, 0, 0]);
+    expect((await db.vecChunk.findUniqueOrThrow({ where: { id: "c6" } })).embedding).toBeNull();
+  });
+
+  it("returns the k nearest nodes, best first, with $score", async () => {
+    const hits = await db.vecChunk.findSimilar({ field: "embedding", vector: [1, 0, 0], k: 3 });
+    expect(ids(hits)).toEqual(["c1", "c2", "c4"]);
+    // Cosine scores are (1 + cos) / 2 (approximate: the index quantizes vectors by default).
+    expect(hits[0]!.$score).toBeCloseTo(1, 1);
+    const cos = 0.8 / Math.sqrt(0.8 ** 2 + 0.2 ** 2 + 0.1 ** 2);
+    expect(hits[2]!.$score).toBeCloseTo((1 + cos) / 2, 1);
+    expect(hits.map((h) => h.$score)).toEqual([...hits.map((h) => h.$score)].sort((a, b) => b - a));
+    expect(hits[0]).toMatchObject({
+      id: "c1",
+      text: "chunk c1",
+      position: 0,
+      embedding: [1, 0, 0],
+    });
+
+    // Nodes without an embedding are not in the index.
+    const all = await db.vecChunk.findSimilar({ field: "embedding", vector: [1, 0, 0], k: 10 });
+    expect(ids(all).sort()).toEqual(["c1", "c2", "c3", "c4", "c5"]);
+  });
+
+  it("filters with where and still returns k rows (widening the candidate set)", async () => {
+    const fr = await db.vecChunk.findSimilar({
+      field: "embedding",
+      vector: [1, 0, 0],
+      k: 2,
+      where: { doc: { is: { lang: "fr" } } },
+      candidates: 2, // the 2 nearest are English: forces a second, wider attempt
+    });
+    expect(ids(fr)).toEqual(["c4", "c3"]);
+
+    // Bounded: never asks the index for more than maxCandidates neighbours.
+    const bounded = await db.vecChunk.findSimilar({
+      field: "embedding",
+      vector: [1, 0, 0],
+      k: 2,
+      where: { doc: { is: { lang: "fr" } } },
+      candidates: 2,
+      maxCandidates: 3,
+    });
+    expect(ids(bounded)).toEqual(["c4"]);
+
+    const scalarFilter = await db.vecChunk.findSimilar({
+      field: "embedding",
+      vector: [0, 1, 0],
+      k: 2,
+      where: { position: { gte: 3 } },
+    });
+    expect(ids(scalarFilter)).toEqual(["c4", "c5"]);
+  });
+
+  it("drops results below minScore", async () => {
+    const hits = await db.vecChunk.findSimilar({
+      field: "embedding",
+      vector: [1, 0, 0],
+      k: 5,
+      minScore: 0.75,
+    });
+    expect(ids(hits)).toEqual(["c1", "c2", "c4"]);
+    const filtered = await db.vecChunk.findSimilar({
+      field: "embedding",
+      vector: [1, 0, 0],
+      k: 5,
+      minScore: 0.75,
+      where: { doc: { is: { lang: "en" } } },
+      candidates: 5,
+    });
+    expect(ids(filtered)).toEqual(["c1", "c2"]);
+  });
+
+  it("includes related nodes (graph expansion) and honours select", async () => {
+    const hits = await db.vecChunk.findSimilar({
+      field: "embedding",
+      vector: [0, 1, 0],
+      k: 2,
+      include: {
+        doc: { include: { chunks: { select: { id: true }, orderBy: { position: "asc" } } } },
+      },
+    });
+    expect(ids(hits)).toEqual(["c3", "c4"]);
+    expect(hits[0]!.doc!.title).toBe("French");
+    expect(hits[0]!.doc!.chunks.map((c) => c.id)).toEqual(["c3", "c4", "c6"]);
+
+    const selected = await db.vecChunk.findSimilar({
+      field: "embedding",
+      vector: [0, 1, 0],
+      k: 1,
+      select: { text: true, doc: { select: { lang: true } } },
+    });
+    expect(selected).toEqual([
+      { text: "chunk c3", doc: { lang: "fr" }, $score: expect.closeTo(1, 1) },
+    ]);
+  });
+
+  it("exact: true scores the filtered nodes like the index does", async () => {
+    const viaIndex = await db.vecChunk.findSimilar({ field: "embedding", vector: [1, 0, 0], k: 5 });
+    const exact = await db.vecChunk.findSimilar({
+      field: "embedding",
+      vector: [1, 0, 0],
+      k: 5,
+      exact: true,
+    });
+    expect(ids(exact)).toEqual(ids(viaIndex));
+    // Exact scores; the default (quantized) index is close but not identical.
+    expect(exact[0]!.$score).toBeCloseTo(1, 6);
+    exact.forEach((h, i) => expect(h.$score).toBeCloseTo(viaIndex[i]!.$score, 1));
+
+    const fr = await db.vecChunk.findSimilar({
+      field: "embedding",
+      vector: [1, 0, 0],
+      k: 5,
+      exact: true,
+      where: { doc: { is: { lang: "fr" } } },
+      minScore: 0.6,
+    });
+    expect(ids(fr)).toEqual(["c4"]);
+  });
+
+  it("searches a euclidean index with a custom name", async () => {
+    const hits = await db.vecChunk.findSimilar({ field: "sketch", vector: [0, 0], k: 3 });
+    expect(ids(hits)).toEqual(["c1", "c2", "c4"]);
+    expect(hits[0]!.$score).toBeCloseTo(1, 5);
+    expect(hits[1]!.$score).toBeCloseTo(1 / (1 + 1), 5); // 1 / (1 + d²)
+    const exact = await db.vecChunk.findSimilar({
+      field: "sketch",
+      vector: [0, 0],
+      k: 3,
+      exact: true,
+    });
+    exact.forEach((h, i) => expect(h.$score).toBeCloseTo(hits[i]!.$score, 5));
+  });
+
+  it("validates dimensions on writes and queries", async () => {
+    await expect(
+      db.vecChunk.findSimilar({ field: "embedding", vector: [1, 0], k: 1 }),
+    ).rejects.toThrow(/3 dimensions, got 2/);
+    await expect(
+      db.vecChunk.create({ data: { id: "bad", text: "x", position: 9, embedding: [1, 2] } }),
+    ).rejects.toBeInstanceOf(CyphraValidationError);
+    await expect(
+      db.vecChunk.update({ where: { id: "c1" }, data: { embedding: [1, Number.NaN, 0] } }),
+    ).rejects.toThrow(/finite number/);
+    await expect(
+      // @ts-expect-error — raw has no @vectorIndex
+      db.vecChunk.findSimilar({ field: "raw", vector: [1, 0, 0, 0], k: 1 }),
+    ).rejects.toThrow(/no @vectorIndex/);
+    await expect(
+      db.vecChunk.findSimilar({ field: "embedding", vector: [1, 0, 0], k: 0 }),
+    ).rejects.toThrow(/k must be a positive integer/);
+
+    // Updates and null filters on vector fields.
+    await db.vecChunk.update({ where: { id: "c6" }, data: { embedding: [0, 0.5, 0.5] } });
+    await db.vecChunk.update({ where: { id: "c5" }, data: { embedding: null } });
+    expect(ids(await db.vecChunk.findMany({ where: { embedding: null } }))).toEqual(["c5"]);
+    expect(await db.vecChunk.count({ where: { embedding: { not: null } } })).toBe(5);
+    const hits = await db.vecChunk.findSimilar({ field: "embedding", vector: [0, 0, 1], k: 1 });
+    expect(ids(hits)).toEqual(["c6"]);
+  });
+
+  it("runs inside $transaction", async () => {
+    const hits = await db.$transaction(async (tx) => {
+      await tx.vecChunk.update({ where: { id: "c3" }, data: { text: "updated" } });
+      return tx.vecChunk.findSimilar({
+        field: "embedding",
+        vector: [0, 1, 0],
+        k: 1,
+        where: { text: "updated" },
+      });
+    });
+    expect(hits).toMatchObject([{ id: "c3", text: "updated" }]);
+
+    // The vector index only holds committed data; exact: true also sees the transaction's writes.
+    const [viaIndex, exact] = await db.$transaction(async (tx) => {
+      await tx.vecChunk.create({
+        data: { id: "new", text: "new", position: 9, embedding: [0.3, 0.3, 0.9] },
+      });
+      const args = { field: "embedding", vector: [0.3, 0.3, 0.9], k: 1 } as const;
+      return [
+        await tx.vecChunk.findSimilar(args),
+        await tx.vecChunk.findSimilar({ ...args, exact: true }),
+      ];
+    });
+    expect(ids(viaIndex)).not.toContain("new");
+    expect(ids(exact)).toEqual(["new"]);
   });
 });

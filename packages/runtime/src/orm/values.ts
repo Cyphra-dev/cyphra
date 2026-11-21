@@ -69,6 +69,33 @@ function encodeOne(type: ScalarTypeName, value: unknown, where: string): unknown
   throw new CyphraValidationError(`${where}: expected ${type}, got ${describe(value)}.`);
 }
 
+/**
+ * Check a `Vector(N)` value: an array of exactly `dimensions` finite numbers. JS numbers go over
+ * the wire as Cypher floats, so the property is stored as `LIST<FLOAT>`, which vector indexes read.
+ *
+ * @throws {CyphraValidationError} On a wrong length or a non-finite / non-number element.
+ */
+export function encodeVector(value: unknown, dimensions: number, where: string): number[] {
+  if (!Array.isArray(value) && !ArrayBuffer.isView(value)) {
+    throw new CyphraValidationError(
+      `${where}: expected a vector (number[] of length ${dimensions}), got ${describe(value)}.`,
+    );
+  }
+  const arr = Array.from(value as ArrayLike<unknown>);
+  if (arr.length !== dimensions) {
+    throw new CyphraValidationError(
+      `${where}: expected a vector of ${dimensions} dimensions, got ${arr.length}.`,
+    );
+  }
+  for (let i = 0; i < arr.length; i++) {
+    const x = arr[i];
+    if (typeof x !== "number" || !Number.isFinite(x)) {
+      throw new CyphraValidationError(`${where}[${i}]: expected a finite number.`);
+    }
+  }
+  return arr as number[];
+}
+
 function describe(v: unknown): string {
   if (v === null) return "null";
   if (v instanceof Date) return "Date";
@@ -88,6 +115,7 @@ export function encodeScalar(field: ResolvedScalarField, value: unknown, owner: 
     }
     return null;
   }
+  if (field.type === "Vector") return encodeVector(value, field.dimensions ?? 0, where);
   if (field.list) {
     if (!Array.isArray(value)) {
       throw new CyphraValidationError(`${where}: expected an array.`);
@@ -103,6 +131,11 @@ export function encodeFilterValue(
   value: unknown,
   owner: string,
 ): unknown {
+  if (field.type === "Vector") {
+    throw new CyphraValidationError(
+      `${owner}.${field.name}: Vector fields can only be filtered on null (use findSimilar to search them).`,
+    );
+  }
   return encodeOne(field.type, value, `${owner}.${field.name}`);
 }
 
@@ -123,6 +156,10 @@ function decodeOne(type: ScalarTypeName, value: unknown): unknown {
 
 /** Decode a property value read from Neo4j according to its schema field. */
 export function decodeScalar(field: ResolvedScalarField, value: unknown): unknown {
+  if (field.type === "Vector") {
+    if (value === null || value === undefined) return null;
+    return Array.from(value as ArrayLike<unknown>, (x) => (isInt(x) ? integerToNumber(x) : x));
+  }
   if (field.list) {
     if (value === null || value === undefined) return [];
     return (value as unknown[]).map((v) => decodeOne(field.type, v));

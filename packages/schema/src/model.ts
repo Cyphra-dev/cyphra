@@ -17,6 +17,7 @@ import type {
   SchemaDocument,
 } from "./ast.js";
 import { SchemaValidationError } from "./errors.js";
+import { validateVectorField } from "./validate.js";
 
 /** Bump when the shape of {@link SchemaModel} changes incompatibly. */
 export const SCHEMA_MODEL_VERSION = 1 as const;
@@ -27,6 +28,21 @@ export type DefaultFunction = "cuid" | "uuid" | "now";
 export type DefaultValueSpec =
   | { readonly kind: "fn"; readonly fn: DefaultFunction }
   | { readonly kind: "literal"; readonly value: string | number | boolean };
+
+/** Similarity function of a vector index (`vector.similarity_function`). */
+export type VectorSimilarity = "cosine" | "euclidean";
+
+/** A `@vectorIndex(...)` on a `Vector(N)` node field. */
+export type ResolvedVectorIndex = {
+  /** Neo4j index name (default `<Label>_<field>_vector`). */
+  readonly name: string;
+  readonly similarity: VectorSimilarity;
+  /**
+   * `vector.quantization.enabled` (Neo4j 5.23+). Absent: Neo4j's default (on), which stores
+   * compressed vectors and makes index scores approximate.
+   */
+  readonly quantization?: boolean;
+};
 
 export type ResolvedScalarField = {
   readonly kind: "scalar";
@@ -39,6 +55,10 @@ export type ResolvedScalarField = {
   readonly unique: boolean;
   readonly index: boolean;
   readonly default?: DefaultValueSpec;
+  /** Number of dimensions of a `Vector(N)` field (stored as `LIST<FLOAT>`, typed `number[]`). */
+  readonly dimensions?: number;
+  /** Vector index declared with `@vectorIndex(...)` on a `Vector(N)` field. */
+  readonly vectorIndex?: ResolvedVectorIndex;
 };
 
 export type RelationDirection = "OUT" | "IN";
@@ -156,8 +176,9 @@ function resolveScalar(owner: string, f: ScalarNodeField, allowId: boolean): Res
       `${owner} field "${f.name}": an @id field cannot be optional or a list.`,
     );
   }
+  validateVectorField(owner, f, allowId);
   for (const d of f.decorators) {
-    if (!["id", "unique", "index", "default"].includes(d.name)) {
+    if (!["id", "unique", "index", "default", "vectorIndex"].includes(d.name)) {
       throw new SchemaValidationError(`${owner} field "${f.name}": unknown decorator @${d.name}.`);
     }
   }
@@ -171,8 +192,27 @@ function resolveScalar(owner: string, f: ScalarNodeField, allowId: boolean): Res
     unique: Boolean(findDecorator(f.decorators, "unique")),
     index: Boolean(findDecorator(f.decorators, "index")),
   };
+  if (f.type.name === "Vector") {
+    return { ...field, dimensions: f.type.dimensions ?? 0 };
+  }
   const def = resolveDefault(owner, f);
   return def ? { ...field, default: def } : field;
+}
+
+function resolveVectorIndex(label: string, f: ScalarNodeField): ResolvedVectorIndex | undefined {
+  const dec = findDecorator(f.decorators, "vectorIndex");
+  if (!dec) return undefined;
+  const sim = argValue(dec, "similarity");
+  const name = argValue(dec, "name");
+  const quantization = argValue(dec, "quantization");
+  return {
+    ...(quantization?.kind === "boolean" ? { quantization: quantization.value } : {}),
+    name:
+      name?.kind === "string"
+        ? name.value
+        : `${label}_${f.name}_vector`.replace(/[^A-Za-z0-9_]/g, "_"),
+    similarity: sim?.kind === "identifier" ? (sim.value as VectorSimilarity) : "cosine",
+  };
 }
 
 function assertUniqueNames(owner: string, names: readonly string[]): void {
@@ -228,6 +268,7 @@ export function resolveSchema(doc: SchemaDocument): SchemaModel {
   }
 
   const nodes: ResolvedNodeModel[] = [];
+  const vectorIndexNames = new Map<string, string>();
   for (const d of doc.declarations) {
     if (d.kind !== "Node") {
       continue;
@@ -240,7 +281,18 @@ export function resolveSchema(doc: SchemaDocument): SchemaModel {
     const fields: ResolvedField[] = [];
     for (const f of d.fields) {
       if (f.kind === "Scalar") {
-        fields.push(resolveScalar(owner, f, true));
+        const field = resolveScalar(owner, f, true);
+        const vectorIndex = resolveVectorIndex(d.name, f);
+        if (vectorIndex) {
+          const clash = vectorIndexNames.get(vectorIndex.name);
+          if (clash) {
+            throw new SchemaValidationError(
+              `${owner} field "${f.name}": vector index name "${vectorIndex.name}" is already used by ${clash}.`,
+            );
+          }
+          vectorIndexNames.set(vectorIndex.name, `${d.name}.${f.name}`);
+        }
+        fields.push(vectorIndex ? { ...field, vectorIndex } : field);
         continue;
       }
       const where = `${owner} field "${f.name}"`;

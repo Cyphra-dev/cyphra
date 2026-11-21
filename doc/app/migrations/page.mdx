@@ -32,6 +32,8 @@ migration and the snapshot.
 | ------------------------------------------------ | ------------------------------------------------------------------- |
 | new `@id` / `@unique` / `@index`                 | `CREATE CONSTRAINT / RANGE INDEX … IF NOT EXISTS`                   |
 | removed or changed `@id` / `@unique` / `@index`  | `DROP CONSTRAINT / INDEX … IF EXISTS`                               |
+| new `@vectorIndex`                               | `CREATE VECTOR INDEX … IF NOT EXISTS … OPTIONS { indexConfig }`     |
+| changed dimensions, similarity or index name     | `DROP INDEX … IF EXISTS`, then `CREATE VECTOR INDEX`                |
 | new field with a `@default` on an existing model | backfill: `MATCH (n:User) WHERE n.role IS NULL SET n.role = $value` |
 | field becomes required and has a default         | backfill of the missing values                                      |
 | new required field without a default             | **guard**: the migration fails if any existing node lacks it        |
@@ -80,6 +82,26 @@ When a guard fails, add your own step above it (for example
 > Steps run as separate auto-commit statements (Neo4j does not allow schema and data changes in one
 > transaction). Generated steps are written to be safe to re-run after a failure (`IF NOT EXISTS`,
 > `WHERE … IS NULL`); keep hand-written steps re-runnable too.
+
+## Vector indexes
+
+A `Vector(N) @vectorIndex(…)` field becomes a vector index (Neo4j **5.15+**), named like the field's
+index (`<Label>_<field>_vector` unless `name` is set):
+
+```cypher
+CREATE VECTOR INDEX Chunk_embedding_vector IF NOT EXISTS
+FOR (n:`Chunk`) ON n.`embedding`
+OPTIONS {indexConfig: {`vector.dimensions`: 1536, `vector.similarity_function`: 'cosine'}}
+```
+
+Neo4j cannot alter a vector index, so changing `N`, `similarity` or `quantization` drops the index
+first and creates the new one at the end of the migration. A dimension change also adds a review
+warning: existing embeddings keep their old length, and Neo4j leaves vectors of the wrong length out
+of the index, so re-embed them (in this migration or a backfill job) before relying on `findSimilar`.
+
+A new index is built in the background. `cyphra schema ddl` prints the statement and `cyphra push`
+applies it directly. Wait for it to be `ONLINE` before querying it, for example in a test setup:
+`CALL db.awaitIndexes(300)`.
 
 ## Writing migrations by hand
 

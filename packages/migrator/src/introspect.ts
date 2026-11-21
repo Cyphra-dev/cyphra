@@ -8,14 +8,17 @@
  * @packageDocumentation
  */
 
-import type {
-  Decorator,
-  NodeDeclaration,
-  RelationalNodeField,
-  RelationshipDeclaration,
-  ScalarNodeField,
-  ScalarTypeName,
-  SchemaDocument,
+import {
+  MAX_VECTOR_DIMENSIONS,
+  VECTOR_SIMILARITIES,
+  type Decorator,
+  type DecoratorArg,
+  type NodeDeclaration,
+  type RelationalNodeField,
+  type RelationshipDeclaration,
+  type ScalarNodeField,
+  type ScalarTypeName,
+  type SchemaDocument,
 } from "@cyphra/schema";
 import neo4j from "neo4j-driver";
 import { toNative, type CyphraClient } from "@cyphra/runtime";
@@ -57,6 +60,8 @@ export type IntrospectionResult = {
     readonly labelsOrTypes: readonly string[];
     readonly properties: readonly string[];
     readonly owningConstraint: string | null;
+    /** `OPTIONS` of the index (`indexConfig` holds a vector index's dimensions and similarity). */
+    readonly options?: Readonly<Record<string, unknown>> | null;
   }[];
 };
 
@@ -143,7 +148,7 @@ export async function introspectDatabase(client: CyphraClient): Promise<Introspe
 
     const indexes = (
       await rows(
-        "SHOW INDEXES YIELD name, type, entityType, labelsOrTypes, properties, owningConstraint RETURN *",
+        "SHOW INDEXES YIELD name, type, entityType, labelsOrTypes, properties, owningConstraint, options RETURN *",
       )
     ).map((i) => ({
       name: i.name as string,
@@ -152,6 +157,7 @@ export async function introspectDatabase(client: CyphraClient): Promise<Introspe
       labelsOrTypes: (i.labelsOrTypes as string[] | null) ?? [],
       properties: (i.properties as string[] | null) ?? [],
       owningConstraint: (i.owningConstraint as string | null) ?? null,
+      options: (i.options as Record<string, unknown> | null) ?? null,
     }));
 
     return { nodeTypes: [...byCombo.values()], relTypes, constraints, indexes };
@@ -297,7 +303,39 @@ export function schemaFromIntrospection(input: IntrospectionResult): {
       relUnique.add(`${key}.${c.properties[0]}`);
     }
   }
+  const vectorOn = new Map<
+    string,
+    { name: string; dimensions: number; similarity: string; quantization: false | undefined }
+  >();
   for (const i of input.indexes) {
+    if (i.type === "VECTOR" && i.entityType === "NODE") {
+      const where = `vector index ${i.name}`;
+      if (i.properties.length !== 1 || i.labelsOrTypes.length !== 1) {
+        warnings.push(
+          `Skipped ${where}: only single-label, single-property indexes are supported.`,
+        );
+        continue;
+      }
+      const config = ((i.options ?? {}) as { indexConfig?: Record<string, unknown> }).indexConfig;
+      const dims = Number(config?.["vector.dimensions"]);
+      const similarity = String(config?.["vector.similarity_function"] ?? "").toLowerCase();
+      if (!Number.isInteger(dims) || dims < 1 || dims > MAX_VECTOR_DIMENSIONS) {
+        warnings.push(`Skipped ${where}: no supported vector.dimensions in its options.`);
+        continue;
+      }
+      if (!(VECTOR_SIMILARITIES as readonly string[]).includes(similarity)) {
+        warnings.push(`Skipped ${where}: unsupported similarity function "${similarity}".`);
+        continue;
+      }
+      vectorOn.set(`${i.labelsOrTypes[0]}.${i.properties[0]}`, {
+        name: i.name,
+        dimensions: dims,
+        similarity,
+        // Neo4j turns quantization on by default (5.23+): only an explicit "off" is worth keeping.
+        quantization: config?.["vector.quantization.enabled"] === false ? false : undefined,
+      });
+      continue;
+    }
     if (
       i.type !== "RANGE" ||
       i.owningConstraint ||
@@ -323,6 +361,29 @@ export function schemaFromIntrospection(input: IntrospectionResult): {
     for (const [prop, acc] of ordered) {
       if (!IDENT.test(prop)) {
         warnings.push(`Skipped ${label}.${prop}: not a valid identifier.`);
+        continue;
+      }
+      const vector = vectorOn.get(`${label}.${prop}`);
+      if (vector) {
+        const args: DecoratorArg[] = [
+          { key: "similarity", value: { kind: "identifier", value: vector.similarity } },
+        ];
+        if (vector.name !== `${label}_${prop}_vector`) {
+          args.push({ key: "name", value: { kind: "string", value: vector.name } });
+        }
+        if (vector.quantization === false) {
+          args.push({ key: "quantization", value: { kind: "boolean", value: false } });
+        }
+        fields.push({
+          kind: "Scalar",
+          name: prop,
+          type: {
+            name: "Vector",
+            optional: acc.mandatoryIn !== e.combos,
+            dimensions: vector.dimensions,
+          },
+          decorators: [{ name: "vectorIndex", args }],
+        });
         continue;
       }
       const t = mapType([...acc.types]);

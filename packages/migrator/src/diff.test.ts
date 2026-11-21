@@ -1,7 +1,11 @@
 import { parseSchema, resolveSchema } from "@cyphra/schema";
 import { describe, expect, it } from "vitest";
 import { EMPTY_SCHEMA_MODEL, ddlObjectsFromModel, diffSchemaModels, isEmptyPlan } from "./diff.js";
-import { constraintStatementsFromSchema, indexStatementsFromSchema } from "./push.js";
+import {
+  constraintStatementsFromSchema,
+  indexStatementsFromSchema,
+  vectorIndexStatementsFromSchema,
+} from "./push.js";
 import { renderMigrationSource } from "./renderMigration.js";
 
 const model = (src: string) => resolveSchema(parseSchema(src));
@@ -125,5 +129,85 @@ describe("renderMigrationSource", () => {
       '// await db.execute("MATCH (n:`User`) WHERE n.`bio` IS NOT NULL REMOVE n.`bio`");',
     );
     expect(src).toContain('await db.execute("DROP CONSTRAINT Follows_key_rel_unique IF EXISTS");');
+  });
+});
+
+describe("vector indexes", () => {
+  const chunk = (field: string) => model(`node Chunk { id String @id\n ${field} }`);
+  const ddl = (field: string) =>
+    ddlObjectsFromModel(chunk(field)).filter((o) => o.name.endsWith("_vector") || o.name === "ci");
+
+  it("emits CREATE VECTOR INDEX with dimensions and similarity", () => {
+    expect(ddl("embedding Vector(1536)? @vectorIndex(similarity: cosine)")).toEqual([
+      {
+        name: "Chunk_embedding_vector",
+        kind: "index",
+        create:
+          "CREATE VECTOR INDEX Chunk_embedding_vector IF NOT EXISTS FOR (n:`Chunk`) ON n.`embedding` OPTIONS {indexConfig: {`vector.dimensions`: 1536, `vector.similarity_function`: 'cosine'}}",
+      },
+    ]);
+    expect(
+      ddl('e Vector(8) @vectorIndex(similarity: euclidean, name: "ci", quantization: false)')[0]!
+        .create,
+    ).toBe(
+      "CREATE VECTOR INDEX ci IF NOT EXISTS FOR (n:`Chunk`) ON n.`e` OPTIONS {indexConfig: {`vector.dimensions`: 8, `vector.similarity_function`: 'euclidean', `vector.quantization.enabled`: false}}",
+    );
+    expect(ddl("embedding Vector(3)?")).toEqual([]);
+  });
+
+  it("matches cyphra push and schema ddl", () => {
+    const doc = parseSchema(
+      `node Chunk { id String @id\n embedding Vector(3)? @vectorIndex(similarity: cosine) }`,
+    );
+    const fromDiff = ddlObjectsFromModel(resolveSchema(doc))
+      .filter((o) => o.create.startsWith("CREATE VECTOR"))
+      .map((o) => o.create);
+    expect(vectorIndexStatementsFromSchema(doc)).toEqual(fromDiff);
+  });
+
+  it("detects added, removed and changed vector indexes", () => {
+    const v1 = chunk("embedding Vector(3)? @vectorIndex(similarity: cosine)");
+    const comments = (a: typeof v1, b: typeof v1) =>
+      diffSchemaModels(a, b).steps.map((s) => s.comment);
+
+    expect(comments(chunk("embedding Vector(3)?"), v1)).toEqual([
+      "Create index Chunk_embedding_vector.",
+    ]);
+    expect(comments(v1, chunk("embedding Vector(3)?"))).toEqual([
+      "Drop index Chunk_embedding_vector.",
+    ]);
+    expect(isEmptyPlan(diffSchemaModels(v1, v1))).toBe(true);
+
+    // A similarity or dimension change recreates the index (drop first, create last).
+    const euclid = chunk("embedding Vector(3)? @vectorIndex(similarity: euclidean)");
+    const plan = diffSchemaModels(v1, euclid);
+    expect(plan.steps.map((s) => s.kind === "statement" && s.cypher)).toEqual([
+      "DROP INDEX Chunk_embedding_vector IF EXISTS",
+      expect.stringContaining("`vector.similarity_function`: 'euclidean'"),
+    ]);
+    const wider = diffSchemaModels(
+      v1,
+      chunk("embedding Vector(1536)? @vectorIndex(similarity: cosine)"),
+    );
+    expect(wider.steps.map((s) => s.comment)).toEqual([
+      "Drop index Chunk_embedding_vector.",
+      "Create index Chunk_embedding_vector.",
+    ]);
+    expect(wider.warnings.join("\n")).toMatch(
+      /Chunk\.embedding changed dimensions 3 → 1536; existing embeddings/,
+    );
+
+    // A rename drops the old index and creates the new one.
+    const renamed = chunk('embedding Vector(3)? @vectorIndex(similarity: cosine, name: "emb")');
+    expect(comments(v1, renamed)).toEqual([
+      "Drop index Chunk_embedding_vector.",
+      "Create index emb.",
+    ]);
+  });
+
+  it("guards a vector that becomes required", () => {
+    const plan = diffSchemaModels(chunk("embedding Vector(3)?"), chunk("embedding Vector(3)"));
+    expect(plan.steps.map((s) => s.kind)).toEqual(["guard"]);
+    expect(plan.warnings).toEqual([]);
   });
 });

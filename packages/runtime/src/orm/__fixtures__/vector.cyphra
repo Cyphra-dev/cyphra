@@ -1,0 +1,18 @@
+// Fixture for the vector search tests (distinct labels so they can run alongside the blog ORM
+// integration tests against the same database).
+node VecDoc {
+  id     String     @id
+  title  String
+  lang   String
+  chunks VecChunk[] @relationship(type: "VEC_PART_OF", direction: IN)
+}
+
+node VecChunk {
+  id        String     @id
+  text      String
+  position  Int
+  embedding Vector(3)? @vectorIndex(similarity: cosine)
+  sketch    Vector(2)? @vectorIndex(similarity: euclidean, name: "vec_chunk_sketch", quantization: false)
+  raw       Vector(4)?
+  doc       VecDoc?    @relationship(type: "VEC_PART_OF", direction: OUT)
+}

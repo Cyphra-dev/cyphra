@@ -31,6 +31,7 @@ import {
 import { compileAggregate, compileGroupBy } from "./aggregate.js";
 import { DEFAULT_MAX_TRAVERSAL_DEPTH, compileTraverse } from "./traverse.js";
 import { compileShortestPath } from "./shortest.js";
+import { findSimilar } from "./vector.js";
 import { CyphraError, CyphraValidationError, NotFoundError } from "./errors.js";
 import { encodeScalar, integerToNumber } from "./values.js";
 
@@ -240,6 +241,15 @@ export class ModelEngine {
       const max = this.options.maxTraversalDepth ?? DEFAULT_MAX_TRAVERSAL_DEPTH;
       const c = compileShortestPath(this.ctx(), this.model, args, max, all);
       return c.decode(await exec(c.text, c.params));
+    });
+  }
+
+  /** Nearest neighbours on a `@vectorIndex` field; see {@link findSimilar}. */
+  findSimilar(args: AnyRecord): Promise<AnyRecord[]> {
+    return this.runner.read(async (exec) => {
+      if (!isPlainObject(args))
+        throw new CyphraValidationError("findSimilar args must be an object.");
+      return findSimilar(exec, () => this.ctx(), this.model, args);
     });
   }
 

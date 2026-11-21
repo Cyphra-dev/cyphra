@@ -25,6 +25,10 @@ export type ModelTypeDef = {
   /** `@id` / `@unique` keys usable in `findUnique`, `connect`, … */
   readonly unique: string;
   readonly relations: Record<string, RelationTypeDef>;
+  /** `Vector(N)` scalar keys (absent when the model has none). */
+  readonly vectors?: string;
+  /** `Vector(N)` keys with a `@vectorIndex`: the fields `findSimilar` can search. */
+  readonly vectorIndexes?: string;
 };
 
 export type TypeMap = Record<string, ModelTypeDef>;
@@ -43,6 +47,20 @@ type Target<TM extends TypeMap, M extends keyof TM, R extends keyof Relations<TM
   keyof TM;
 
 type Simplify<T> = { [K in keyof T]: T[K] } & {};
+
+/** `Vector(N)` scalar keys of model `M`. */
+export type VectorKeys<TM extends TypeMap, M extends keyof TM> = TM[M] extends {
+  vectors: infer V extends string;
+}
+  ? V
+  : never;
+
+/** `Vector(N)` keys of model `M` with a `@vectorIndex` (what `findSimilar` searches). */
+export type VectorIndexKeys<TM extends TypeMap, M extends keyof TM> = TM[M] extends {
+  vectorIndexes: infer V extends string;
+}
+  ? V
+  : never;
 
 // ---------------------------------------------------------------------------
 // Filters
@@ -110,8 +128,13 @@ type RelationFilter<TM extends TypeMap, D extends RelationTypeDef> = D["many"] e
       isNot?: WhereInput<TM, D["target"] & keyof TM> | null;
     };
 
+/** Vector fields only filter on presence (search them with `findSimilar`). */
+export type VectorFilter = null | { equals?: null; not?: null };
+
 export type WhereInput<TM extends TypeMap, M extends keyof TM> = {
-  [K in keyof Scalars<TM, M>]?: ScalarFilter<Scalars<TM, M>[K]>;
+  [K in keyof Scalars<TM, M>]?: K extends VectorKeys<TM, M>
+    ? VectorFilter
+    : ScalarFilter<Scalars<TM, M>[K]>;
 } & {
   [R in keyof Relations<TM, M>]?: RelationFilter<TM, Rel<TM, M, R>>;
 } & {
@@ -139,7 +162,7 @@ export type ToManyRelations<TM extends TypeMap, M extends keyof TM> = {
 
 /** One `orderBy` entry: scalars, or a to-many relation by its count (`{ posts: { _count: "desc" } }`). */
 type OrderByItem<TM extends TypeMap, M extends keyof TM> = {
-  [K in keyof Scalars<TM, M>]?: SortOrder;
+  [K in Exclude<keyof Scalars<TM, M>, VectorKeys<TM, M>>]?: SortOrder;
 } & {
   [R in ToManyRelations<TM, M>]?: { _count?: SortOrder };
 };
@@ -654,12 +677,65 @@ export type ShortestPathResult<
   N,
 > = Path<N, PathEdge<EdgeProps<Rel<TM, M, R>>>>;
 
+// ---------------------------------------------------------------------------
+// Vector search
+// ---------------------------------------------------------------------------
+
+export type FindSimilarArgs<TM extends TypeMap, M extends keyof TM> = {
+  /** The `Vector(N)` field to search; it must have a `@vectorIndex`. */
+  field: VectorIndexKeys<TM, M>;
+  /** Query embedding. Its length must equal the field's dimensions (checked at runtime). */
+  vector: readonly number[];
+  /** Number of results (best first). */
+  k: number;
+  /**
+   * Filter on the results. The vector index has no filter argument, so `findSimilar` asks it for
+   * `candidates` neighbours, filters them, and widens the search (×4) until `k` rows match or the
+   * index is exhausted. Use `exact: true` when the filter is selective.
+   */
+  where?: WhereInput<TM, M>;
+  /** Drop results scoring below this (scores are in `[0, 1]`, higher is more similar). */
+  minScore?: number;
+  /**
+   * Neighbours asked from the index on the first attempt (at least `k`; default `k`, or
+   * `max(10 × k, 100)` with a `where`). More candidates improve the recall of the approximate search.
+   */
+  candidates?: number;
+  /** Upper bound on the candidates of a filtered search (default: no bound). */
+  maxCandidates?: number;
+  /**
+   * Skip the index: score every node matching `where` with `vector.similarity.*` (exact results,
+   * Neo4j 5.18+). Fast when `where` narrows the search to a few thousand nodes.
+   */
+  exact?: boolean;
+};
+
+/** A `findSimilar` result: the node (honouring `select` / `include`) and its similarity score. */
+export type SimilarResult<N> = Simplify<N & { $score: number }>;
+
+type VectorDelegate<TM extends TypeMap, M extends keyof TM> = [VectorIndexKeys<TM, M>] extends [
+  never,
+]
+  ? unknown
+  : {
+      /**
+       * The `k` nodes whose `field` is most similar to `vector`, best first, each with its
+       * `$score`, through the field's vector index (`db.index.vector.queryNodes`, Neo4j 5.15+).
+       */
+      findSimilar<S extends Sel<TM, M> = undefined, I extends Inc<TM, M> = undefined>(
+        args: FindSimilarArgs<TM, M> & Projection<S, I>,
+      ): Promise<SimilarResult<Out<TM, M, S, I>>[]>;
+    };
+
 type Sel<TM extends TypeMap, M extends keyof TM> = SelectInput<TM, M> | undefined;
 type Inc<TM extends TypeMap, M extends keyof TM> = IncludeInput<TM, M> | undefined;
 type Out<TM extends TypeMap, M extends keyof TM, S, I> = Payload<TM, M, { select: S; include: I }>;
 
 /** Operations available on `db.<model>`. */
-export type ModelDelegate<TM extends TypeMap, M extends keyof TM> = {
+export type ModelDelegate<TM extends TypeMap, M extends keyof TM> = BaseModelDelegate<TM, M> &
+  VectorDelegate<TM, M>;
+
+type BaseModelDelegate<TM extends TypeMap, M extends keyof TM> = {
   findMany<S extends Sel<TM, M> = undefined, I extends Inc<TM, M> = undefined>(
     args?: FindManyArgs<TM, M> & Projection<S, I>,
   ): Promise<Out<TM, M, S, I>[]>;

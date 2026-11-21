@@ -4,6 +4,7 @@
  */
 import { describe, expectTypeOf, it } from "vitest";
 import type { CyphraTypeMap, Db } from "./__fixtures__/blog.gen.js";
+import type { Db as VectorDb } from "./__fixtures__/vector.gen.js";
 import type { ModelPath, Path, PathEdge, SelfRelations, ShortestPathResult } from "./types.js";
 
 // Type-only test file: checked by `tsc` (pnpm typecheck), not executed by Vitest.
@@ -406,5 +407,75 @@ describe("ORM types", () => {
     >().toEqualTypeOf<{ since: Date }>();
     expectTypeOf<SelfRelations<CyphraTypeMap, "User">>().toEqualTypeOf<"following" | "followers">();
     expectTypeOf<SelfRelations<CyphraTypeMap, "Post">>().toEqualTypeOf<never>();
+  });
+});
+
+declare const vdb: VectorDb;
+
+describe("ORM vector search types", () => {
+  it("types findSimilar results with $score and honours select / include", async () => {
+    const hits = await vdb.vecChunk.findSimilar({ field: "embedding", vector: [1, 0, 0], k: 3 });
+    expectTypeOf(hits).toEqualTypeOf<
+      {
+        id: string;
+        text: string;
+        position: number;
+        embedding: number[] | null;
+        sketch: number[] | null;
+        raw: number[] | null;
+        $score: number;
+      }[]
+    >();
+
+    const selected = await vdb.vecChunk.findSimilar({
+      field: "sketch",
+      vector: [0, 0],
+      k: 1,
+      where: { doc: { is: { lang: "fr" } }, embedding: { not: null } },
+      minScore: 0.5,
+      candidates: 50,
+      maxCandidates: 1000,
+      select: { text: true, doc: { select: { title: true } } },
+    });
+    expectTypeOf(selected).toEqualTypeOf<
+      { text: string; doc: { title: string } | null; $score: number }[]
+    >();
+
+    const _included = await vdb.vecChunk.findSimilar({
+      field: "embedding",
+      vector: [1, 0, 0],
+      k: 1,
+      exact: true,
+      include: { doc: { include: { chunks: true } } },
+    });
+    type Doc = NonNullable<(typeof _included)[number]["doc"]>;
+    expectTypeOf<Doc["chunks"][number]["embedding"]>().toEqualTypeOf<number[] | null>();
+  });
+
+  it("restricts findSimilar to models and fields with a vector index", async () => {
+    // @ts-expect-error — raw is a Vector without @vectorIndex
+    await vdb.vecChunk.findSimilar({ field: "raw", vector: [1, 0, 0, 0], k: 1 });
+    // @ts-expect-error — text is not a vector
+    await vdb.vecChunk.findSimilar({ field: "text", vector: [1], k: 1 });
+    // @ts-expect-error — k is required
+    await vdb.vecChunk.findSimilar({ field: "embedding", vector: [1, 0, 0] });
+    // @ts-expect-error — VecDoc has no vector field
+    await vdb.vecDoc.findSimilar({ field: "embedding", vector: [1, 0, 0], k: 1 });
+    // @ts-expect-error — nor do the blog models
+    await db.user.findSimilar({ field: "tags", vector: [1], k: 1 });
+  });
+
+  it("types vector fields as number[] and only filters them on null", async () => {
+    await vdb.vecChunk.create({
+      data: { id: "c", text: "t", position: 0, embedding: [0.1, 0.2, 0.3] },
+    });
+    await vdb.vecChunk.update({ where: { id: "c" }, data: { embedding: null } });
+    await vdb.vecChunk.findMany({ where: { embedding: null, sketch: { equals: null } } });
+    // @ts-expect-error — vectors are not compared element-wise
+    await vdb.vecChunk.findMany({ where: { embedding: { has: 1 } } });
+    // @ts-expect-error — vectors cannot be sorted
+    await vdb.vecChunk.findMany({ orderBy: { embedding: "asc" } });
+    // @ts-expect-error — a vector is an array of numbers
+    await vdb.vecChunk.create({ data: { id: "c", text: "t", position: 0, embedding: ["x"] } });
   });
 });

@@ -1,6 +1,9 @@
 import type { Decorator, NodeField, ScalarTypeRef, SchemaDocument } from "./ast.js";
 
 function formatScalarType(t: ScalarTypeRef): string {
+  if (t.name === "Vector") {
+    return `Vector(${t.dimensions ?? 0})${t.optional ? "?" : ""}`;
+  }
   if (t.list) {
     return `${t.name}[]`;
   }

@@ -25,6 +25,24 @@ function constraintName(name: string): string {
   return name.replace(/[^A-Za-z0-9_]/g, "_");
 }
 
+/**
+ * `CREATE VECTOR INDEX … IF NOT EXISTS` for a `Vector(N) @vectorIndex(...)` field (Neo4j 5.15+).
+ * Dimensions and similarity are part of the statement, so changing either one makes the diff drop
+ * and recreate the index.
+ */
+export function vectorIndexStatement(label: string, f: ResolvedScalarField): string | null {
+  if (f.type !== "Vector" || !f.vectorIndex || f.dimensions === undefined) return null;
+  const entries = [
+    `\`vector.dimensions\`: ${f.dimensions}`,
+    `\`vector.similarity_function\`: '${f.vectorIndex.similarity}'`,
+  ];
+  if (f.vectorIndex.quantization !== undefined) {
+    entries.push(`\`vector.quantization.enabled\`: ${f.vectorIndex.quantization}`);
+  }
+  const config = `{${entries.join(", ")}}`;
+  return `CREATE VECTOR INDEX ${f.vectorIndex.name} IF NOT EXISTS FOR (n:${q(label)}) ON n.${q(f.name)} OPTIONS {indexConfig: ${config}}`;
+}
+
 /** One named schema object (constraint or index) and the statement that creates it. */
 export type DdlObject = {
   readonly name: string;
@@ -42,6 +60,11 @@ export function ddlObjectsFromModel(model: SchemaModel): DdlObject[] {
     const scalars = n.fields.filter((f): f is ResolvedScalarField => f.kind === "scalar");
     for (const f of scalars) {
       const target = `FOR (n:${q(n.label)})`;
+      const vector = vectorIndexStatement(n.label, f);
+      if (vector) {
+        out.push({ name: f.vectorIndex!.name, kind: "index", create: vector });
+        continue;
+      }
       if (f.id) {
         const name = constraintName(`${n.label}_${f.name}_id`);
         out.push({
@@ -128,6 +151,7 @@ function scalarsOf(n: ResolvedNodeModel): Map<string, ResolvedScalarField> {
 }
 
 function typeLabel(f: ResolvedScalarField): string {
+  if (f.type === "Vector") return `Vector(${f.dimensions})${f.optional ? "?" : ""}`;
   return f.list ? `${f.type}[]` : f.optional ? `${f.type}?` : f.type;
 }
 
@@ -163,7 +187,13 @@ function nodeDataSteps(
   const nowRequired = !after.optional && !after.list;
   const wasRequired = before ? !before.optional && !before.list : false;
 
-  if (before && before.type !== after.type) {
+  if (before && after.type === "Vector" && before.type === "Vector") {
+    if (before.dimensions !== after.dimensions) {
+      warnings.push(
+        `${model}.${name} changed dimensions ${before.dimensions} → ${after.dimensions}; existing embeddings keep their old length and are not indexed (or returned by findSimilar) until re-embedded.`,
+      );
+    }
+  } else if (before && before.type !== after.type) {
     warnings.push(
       `${model}.${name} changed type ${typeLabel(before)} → ${typeLabel(after)}; existing values are not converted. Add a conversion step (e.g. SET ${ref} = toInteger(${ref})) if needed.`,
     );
