@@ -306,6 +306,176 @@ export type CountArgs<TM extends TypeMap, M extends keyof TM> = { where?: WhereI
 
 export type BatchResult = { count: number };
 
+// ---------------------------------------------------------------------------
+// aggregate / groupBy
+// ---------------------------------------------------------------------------
+
+type ScalarKeys<TM extends TypeMap, M extends keyof TM> = keyof Scalars<TM, M> & string;
+
+/** Scalar keys whose (non-null) type is `number` (`Int`, `Float`): valid for `_sum` / `_avg`. */
+export type NumericKeys<TM extends TypeMap, M extends keyof TM> = {
+  [K in ScalarKeys<TM, M>]: NonNullable<Scalars<TM, M>[K]> extends number ? K : never;
+}[ScalarKeys<TM, M>];
+
+/** Scalar keys of `Int`, `Float`, `String`, `DateTime` and `Date` fields: valid for `_min` / `_max`. */
+export type MinMaxKeys<TM extends TypeMap, M extends keyof TM> = {
+  [K in ScalarKeys<TM, M>]: NonNullable<Scalars<TM, M>[K]> extends number | string | Date
+    ? K
+    : never;
+}[ScalarKeys<TM, M>];
+
+/** Rejects keys outside `Allowed` (TypeScript does not check excess keys of inferred generics). */
+type OnlyKeys<T, Allowed extends PropertyKey> = {
+  [K in keyof T]: K extends Allowed ? T[K] : never;
+};
+
+/** `_count: { _all: true, email: true }`: `_all` counts nodes, a field counts non-null values. */
+export type CountAggregateInput<TM extends TypeMap, M extends keyof TM> = {
+  [K in ScalarKeys<TM, M> | "_all"]?: boolean;
+};
+
+export type AggregateFieldsInput<K extends PropertyKey> = { [P in K]?: boolean };
+
+type CountSel<TM extends TypeMap, M extends keyof TM> =
+  true | CountAggregateInput<TM, M> | undefined;
+type FieldSel<K extends PropertyKey> = AggregateFieldsInput<K> | undefined;
+
+/**
+ * The aggregate selections, each captured as its own type parameter (like `select` / `include`)
+ * so the result type follows them exactly while the other arguments keep excess-property checks.
+ */
+type AggregateProjection<TM extends TypeMap, M extends keyof TM, C, Su, Av, Mi, Ma> = {
+  /** `true`: number of nodes. An object: `_all` (nodes) and/or fields (non-null values). */
+  _count?: C extends object ? C & OnlyKeys<C, ScalarKeys<TM, M> | "_all"> : C;
+  /** Sum of non-null values (`Int` / `Float`); `null` when there are none. */
+  _sum?: Su & OnlyKeys<Su, NumericKeys<TM, M>>;
+  /** Mean of non-null values (`Int` / `Float`); `null` when there are none. */
+  _avg?: Av & OnlyKeys<Av, NumericKeys<TM, M>>;
+  /** Smallest non-null value (`Int`, `Float`, `String`, `DateTime`, `Date`). */
+  _min?: Mi & OnlyKeys<Mi, MinMaxKeys<TM, M>>;
+  /** Largest non-null value (`Int`, `Float`, `String`, `DateTime`, `Date`). */
+  _max?: Ma & OnlyKeys<Ma, MinMaxKeys<TM, M>>;
+};
+
+type CountOut<C> = C extends true ? number : { [K in TrueKeys<C>]: number };
+type AggOut<Sel, V> = { [K in TrueKeys<Sel>]: V };
+type ValueOut<TM extends TypeMap, M extends keyof TM, Sel> = {
+  [K in TrueKeys<Sel> & keyof Scalars<TM, M>]: NonNullable<Scalars<TM, M>[K]> | null;
+};
+
+/** Result of the aggregate part (`_count`, `_sum`, …) of `aggregate` / `groupBy`. */
+export type AggregateResult<TM extends TypeMap, M extends keyof TM, C, Su, Av, Mi, Ma> = Simplify<
+  ([C] extends [undefined] ? unknown : { _count: CountOut<Exclude<C, undefined>> }) &
+    ([Su] extends [undefined] ? unknown : { _sum: AggOut<Su, number | null> }) &
+    ([Av] extends [undefined] ? unknown : { _avg: AggOut<Av, number | null> }) &
+    ([Mi] extends [undefined] ? unknown : { _min: ValueOut<TM, M, Mi> }) &
+    ([Ma] extends [undefined] ? unknown : { _max: ValueOut<TM, M, Ma> })
+>;
+
+export type AggregateArgs<TM extends TypeMap, M extends keyof TM> = {
+  where?: WhereInput<TM, M>;
+  /** With `skip` / `take`: aggregate over this window of matching nodes only. */
+  orderBy?: OrderByInput<TM, M>;
+  skip?: number;
+  take?: number;
+};
+
+type ToOneRelations<TM extends TypeMap, M extends keyof TM> = {
+  [R in keyof Relations<TM, M> & string]: Rel<TM, M, R>["many"] extends true ? never : R;
+}[keyof Relations<TM, M> & string];
+
+/**
+ * A field `groupBy` can group on: a scalar of the model, or `"relation.field"` for a scalar of a
+ * to-one related node (e.g. `"author.name"`).
+ */
+export type GroupByField<TM extends TypeMap, M extends keyof TM> =
+  | ScalarKeys<TM, M>
+  | {
+      [R in ToOneRelations<TM, M>]: `${R}.${keyof Scalars<TM, Target<TM, M, R>> & string}`;
+    }[ToOneRelations<TM, M>];
+
+type ByScalar<B> = B extends `${string}.${string}` ? never : B;
+type ByRelation<B> = B extends `${infer R}.${string}` ? R : never;
+type ByRelField<B, R extends string> = B extends `${R}.${infer F}` ? F : never;
+
+/** The `by` part of one `groupBy` row: `{ status, author: { name } }`. */
+export type GroupByKeys<TM extends TypeMap, M extends keyof TM, B> = {
+  [K in ByScalar<B> & keyof Scalars<TM, M>]: Scalars<TM, M>[K];
+} & {
+  [R in ByRelation<B> & keyof Relations<TM, M>]: {
+    [F in ByRelField<B, R & string> & keyof Scalars<TM, Target<TM, M, R>>]:
+      Scalars<TM, Target<TM, M, R>>[F] | null;
+  };
+};
+
+type FilterObject<T> = Exclude<ScalarFilter<T>, T>;
+
+/** Filters on one aggregate of field `K`, for `having`. */
+type HavingAggregates<TM extends TypeMap, M extends keyof TM, K> = {
+  _count?: ScalarFilter<number>;
+} & (K extends NumericKeys<TM, M>
+  ? { _sum?: ScalarFilter<number | null>; _avg?: ScalarFilter<number | null> }
+  : unknown) &
+  (K extends MinMaxKeys<TM, M>
+    ? {
+        _min?: ScalarFilter<NonNullable<Scalars<TM, M>[K & keyof Scalars<TM, M>]> | null>;
+        _max?: ScalarFilter<NonNullable<Scalars<TM, M>[K & keyof Scalars<TM, M>]> | null>;
+      }
+    : unknown);
+
+/**
+ * `having` on a `groupBy`: aggregates of any scalar (`{ views: { _avg: { gt: 10 } } }`), and plain
+ * filters on the fields listed in `by` (`{ status: "draft" }`, `{ author: { name: { not: null } } }`).
+ */
+export type HavingInput<TM extends TypeMap, M extends keyof TM, B> = {
+  [K in ScalarKeys<TM, M>]?: K extends B
+    ? Scalars<TM, M>[K] | (FilterObject<Scalars<TM, M>[K]> & HavingAggregates<TM, M, K>)
+    : HavingAggregates<TM, M, K>;
+} & {
+  [R in ByRelation<B> & keyof Relations<TM, M>]?: {
+    [F in ByRelField<B, R & string> & keyof Scalars<TM, Target<TM, M, R>>]?: ScalarFilter<
+      Scalars<TM, Target<TM, M, R>>[F]
+    >;
+  };
+} & {
+  AND?: HavingInput<TM, M, B> | readonly HavingInput<TM, M, B>[];
+  OR?: readonly HavingInput<TM, M, B>[];
+  NOT?: HavingInput<TM, M, B> | readonly HavingInput<TM, M, B>[];
+};
+
+type GroupByOrderItem<TM extends TypeMap, M extends keyof TM, B> = {
+  [K in ByScalar<B> & ScalarKeys<TM, M>]?: SortOrder;
+} & {
+  [R in ByRelation<B> & keyof Relations<TM, M>]?: {
+    [F in ByRelField<B, R & string>]?: SortOrder;
+  };
+} & {
+  _count?: { [K in ScalarKeys<TM, M> | "_all"]?: SortOrder };
+  _sum?: { [K in NumericKeys<TM, M>]?: SortOrder };
+  _avg?: { [K in NumericKeys<TM, M>]?: SortOrder };
+  _min?: { [K in MinMaxKeys<TM, M>]?: SortOrder };
+  _max?: { [K in MinMaxKeys<TM, M>]?: SortOrder };
+};
+
+/** `orderBy` on a `groupBy`: fields listed in `by`, or aggregates (`{ _count: { id: "desc" } }`). */
+export type GroupByOrderByInput<TM extends TypeMap, M extends keyof TM, B> =
+  GroupByOrderItem<TM, M, B> | readonly GroupByOrderItem<TM, M, B>[];
+
+export type GroupByArgs<TM extends TypeMap, M extends keyof TM, B> = {
+  /** Fields to group on: `"status"`, `["status", "author.name"]`. */
+  by: B | readonly B[];
+  where?: WhereInput<TM, M>;
+  having?: HavingInput<TM, M, NoInfer<B>>;
+  orderBy?: GroupByOrderByInput<TM, M, NoInfer<B>>;
+  skip?: number;
+  take?: number;
+};
+
+/** One row of a `groupBy` result. */
+export type GroupByRow<TM extends TypeMap, M extends keyof TM, B, C, Su, Av, Mi, Ma> = Simplify<
+  GroupByKeys<TM, M, B> & AggregateResult<TM, M, C, Su, Av, Mi, Ma>
+>;
+
 type Sel<TM extends TypeMap, M extends keyof TM> = SelectInput<TM, M> | undefined;
 type Inc<TM extends TypeMap, M extends keyof TM> = IncludeInput<TM, M> | undefined;
 type Out<TM extends TypeMap, M extends keyof TM, S, I> = Payload<TM, M, { select: S; include: I }>;
@@ -344,6 +514,30 @@ export type ModelDelegate<TM extends TypeMap, M extends keyof TM> = {
     args: DeleteArgs<TM, M> & Projection<S, I>,
   ): Promise<Out<TM, M, S, I>>;
   deleteMany(args?: CountArgs<TM, M>): Promise<BatchResult>;
+  /**
+   * `_count`, `_sum`, `_avg`, `_min` and `_max` over the matching nodes, in one statement.
+   * Nulls are ignored; on an empty match counts are `0` and the other aggregates `null`.
+   */
+  aggregate<
+    C extends CountSel<TM, M> = undefined,
+    Su extends FieldSel<NumericKeys<TM, M>> = undefined,
+    Av extends FieldSel<NumericKeys<TM, M>> = undefined,
+    Mi extends FieldSel<MinMaxKeys<TM, M>> = undefined,
+    Ma extends FieldSel<MinMaxKeys<TM, M>> = undefined,
+  >(
+    args?: AggregateArgs<TM, M> & AggregateProjection<TM, M, C, Su, Av, Mi, Ma>,
+  ): Promise<AggregateResult<TM, M, C, Su, Av, Mi, Ma>>;
+  /** Group matching nodes by `by` and aggregate each group, in one statement. */
+  groupBy<
+    B extends GroupByField<TM, M>,
+    C extends CountSel<TM, M> = undefined,
+    Su extends FieldSel<NumericKeys<TM, M>> = undefined,
+    Av extends FieldSel<NumericKeys<TM, M>> = undefined,
+    Mi extends FieldSel<MinMaxKeys<TM, M>> = undefined,
+    Ma extends FieldSel<MinMaxKeys<TM, M>> = undefined,
+  >(
+    args: GroupByArgs<TM, M, B> & AggregateProjection<TM, M, C, Su, Av, Mi, Ma>,
+  ): Promise<GroupByRow<TM, M, B, C, Su, Av, Mi, Ma>[]>;
 };
 
 /** Lower-cases the first character: `BlogPost` → `blogPost`. */

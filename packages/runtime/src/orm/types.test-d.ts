@@ -96,4 +96,83 @@ describe("ORM types", () => {
     // @ts-expect-error — to-one relations use is/isNot, not some
     await db.post.findMany({ where: { author: { some: {} } } });
   });
+
+  it("types aggregate results from the requested aggregates", async () => {
+    const a = await db.post.aggregate({
+      where: { published: true },
+      _count: true,
+      _sum: { views: true },
+      _avg: { views: true, score: true },
+      _min: { title: true, publishedOn: true },
+      _max: { views: true },
+    });
+    expectTypeOf(a).toEqualTypeOf<{
+      _count: number;
+      _sum: { views: number | null };
+      _avg: { views: number | null; score: number | null };
+      _min: { title: string | null; publishedOn: Date | null };
+      _max: { views: number | null };
+    }>();
+
+    const c = await db.user.aggregate({
+      _count: { _all: true, age: true },
+      _max: { createdAt: true },
+    });
+    expectTypeOf(c).toEqualTypeOf<{
+      _count: { _all: number; age: number };
+      _max: { createdAt: Date | null };
+    }>();
+    const _empty = await db.user.aggregate();
+    expectTypeOf<keyof typeof _empty>().toEqualTypeOf<never>();
+
+    // @ts-expect-error — _sum only on Int / Float fields
+    await db.post.aggregate({ _sum: { title: true } });
+    // @ts-expect-error — _avg only on numeric fields, even next to a valid one
+    await db.post.aggregate({ _avg: { views: true, title: true } });
+    // @ts-expect-error — no _min on booleans
+    await db.post.aggregate({ _min: { published: true } });
+    // @ts-expect-error — no _max on lists
+    await db.user.aggregate({ _max: { tags: true } });
+    // @ts-expect-error — unknown field in _count
+    await db.user.aggregate({ _count: { _all: true, nope: true } });
+    // @ts-expect-error — unknown field in where
+    await db.user.aggregate({ where: { nope: 1 }, _count: true });
+  });
+
+  it("types groupBy keys, aggregates, having and orderBy", async () => {
+    const rows = await db.post.groupBy({
+      by: ["published", "author.name"],
+      where: { views: { gte: 0 } },
+      _count: { _all: true },
+      _avg: { views: true },
+      having: { views: { _avg: { gt: 10 } }, published: true, author: { name: { not: null } } },
+      orderBy: [{ _count: { id: "desc" } }, { published: "asc" }, { author: { name: "asc" } }],
+      take: 10,
+    });
+    expectTypeOf(rows).toEqualTypeOf<
+      {
+        published: boolean;
+        author: { name: string | null };
+        _count: { _all: number };
+        _avg: { views: number | null };
+      }[]
+    >();
+
+    const single = await db.user.groupBy({ by: "age", _max: { createdAt: true } });
+    expectTypeOf(single).toEqualTypeOf<
+      { age: number | null; _max: { createdAt: Date | null } }[]
+    >();
+
+    // @ts-expect-error — unknown by field
+    await db.post.groupBy({ by: ["nope"] });
+    // @ts-expect-error — only to-one relations can be grouped on
+    await db.user.groupBy({ by: ["posts.title"] });
+    // @ts-expect-error — orderBy on a field that is not in by
+    await db.post.groupBy({ by: ["published"], orderBy: { title: "asc" } });
+    // @ts-expect-error — plain having filter on a field that is not in by
+    await db.post.groupBy({ by: ["published"], having: { title: "x" } });
+    // @ts-expect-error — no _sum on strings in having
+    await db.post.groupBy({ by: ["published"], having: { title: { _sum: { gt: 1 } } } });
+    await db.post.groupBy({ by: ["published"], having: { title: { _count: { gt: 1 } } } });
+  });
 });

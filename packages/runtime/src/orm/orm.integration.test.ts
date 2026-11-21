@@ -623,3 +623,238 @@ describe.skipIf(!hasNeo)("ORM write correctness (Neo4j)", () => {
     expect(seen).toEqual(["u5", "u4", "u3", "u2", "u1"]);
   });
 });
+
+describe.skipIf(!hasNeo)("ORM aggregate / groupBy (Neo4j)", () => {
+  let db: Db;
+
+  beforeEach(async () => {
+    db ??= createClient({
+      uri: process.env.NEO4J_TEST_URI!,
+      user: process.env.NEO4J_TEST_USER!,
+      password: process.env.NEO4J_TEST_PASSWORD!,
+    });
+    await db.$cypher`MATCH (n) WHERE n:User OR n:Post DETACH DELETE n`;
+  });
+
+  afterAll(async () => {
+    await db?.$disconnect();
+  });
+
+  async function seed() {
+    await db.user.create({
+      data: {
+        email: "alice@x.io",
+        name: "Alice",
+        age: 30,
+        createdAt: new Date("2024-01-01T00:00:00.000Z"),
+        posts: {
+          create: [
+            {
+              title: "a1",
+              published: true,
+              views: 10,
+              score: 1.5,
+              publishedOn: new Date("2024-02-01"),
+            },
+            { title: "a2", published: true, views: 30, score: 2.5 },
+            { title: "a3", views: 5 },
+          ],
+        },
+      },
+    });
+    await db.user.create({
+      data: {
+        email: "bob@x.io",
+        name: "Bob",
+        createdAt: new Date("2023-06-15T12:30:45.123Z"),
+        posts: {
+          create: [
+            { title: "b1", published: true, views: 100, publishedOn: new Date("2023-12-31") },
+          ],
+        },
+      },
+    });
+    await db.user.create({
+      data: { email: "carol@x.io", age: 40, createdAt: new Date("2025-03-01T08:00:00Z") },
+    });
+    await db.post.create({ data: { title: "orphan", views: 1 } });
+  }
+
+  it("aggregates with nulls ignored, typed numbers and UTC DateTime min/max", async () => {
+    await seed();
+    const posts = await db.post.aggregate({
+      _count: { _all: true, score: true, publishedOn: true },
+      _sum: { views: true, score: true },
+      _avg: { views: true, score: true },
+      _min: { views: true, title: true, publishedOn: true },
+      _max: { views: true, title: true, publishedOn: true },
+    });
+    expect(posts).toEqual({
+      _count: { _all: 5, score: 2, publishedOn: 2 },
+      _sum: { views: 146, score: 4 },
+      _avg: { views: 29.2, score: 2 },
+      _min: { views: 1, title: "a1", publishedOn: new Date("2023-12-31T00:00:00.000Z") },
+      _max: { views: 100, title: "orphan", publishedOn: new Date("2024-02-01T00:00:00.000Z") },
+    });
+
+    const users = await db.user.aggregate({
+      _count: true,
+      _avg: { age: true },
+      _min: { createdAt: true },
+      _max: { createdAt: true },
+    });
+    expect(users._count).toBe(3);
+    expect(users._avg.age).toBe(35);
+    expect(users._min.createdAt!.toISOString()).toBe("2023-06-15T12:30:45.123Z");
+    expect(users._max.createdAt!.toISOString()).toBe("2025-03-01T08:00:00.000Z");
+  });
+
+  it("returns 0 counts and null aggregates on an empty set", async () => {
+    await seed();
+    const none = await db.post.aggregate({
+      where: { title: "missing" },
+      _count: { _all: true, views: true },
+      _sum: { views: true },
+      _avg: { views: true },
+      _min: { publishedOn: true },
+      _max: { title: true },
+    });
+    expect(none).toEqual({
+      _count: { _all: 0, views: 0 },
+      _sum: { views: null },
+      _avg: { views: null },
+      _min: { publishedOn: null },
+      _max: { title: null },
+    });
+    // All-null values behave like an empty set for _sum.
+    const nulls = await db.post.aggregate({
+      where: { score: null },
+      _sum: { score: true },
+      _count: true,
+    });
+    expect(nulls).toEqual({ _count: 3, _sum: { score: null } });
+  });
+
+  it("filters with where (relations) and windows with orderBy / take", async () => {
+    await seed();
+    const alice = await db.post.aggregate({
+      where: { author: { is: { email: "alice@x.io" } } },
+      _sum: { views: true },
+    });
+    expect(alice._sum.views).toBe(45);
+    const top2 = await db.post.aggregate({
+      orderBy: { views: "desc" },
+      take: 2,
+      _sum: { views: true },
+    });
+    expect(top2._sum.views).toBe(130);
+  });
+
+  it("groupBy with having and orderBy on aggregates", async () => {
+    await seed();
+    const rows = await db.post.groupBy({
+      by: ["published"],
+      _count: { _all: true },
+      _sum: { views: true },
+      _avg: { score: true },
+      orderBy: { _sum: { views: "desc" } },
+    });
+    expect(rows).toEqual([
+      { published: true, _count: { _all: 3 }, _sum: { views: 140 }, _avg: { score: 2 } },
+      { published: false, _count: { _all: 2 }, _sum: { views: 6 }, _avg: { score: null } },
+    ]);
+
+    const busy = await db.post.groupBy({
+      by: "published",
+      having: { views: { _avg: { gt: 10 } } },
+      _count: true,
+    });
+    expect(busy).toEqual([{ published: true, _count: 3 }]);
+
+    const byKey = await db.post.groupBy({
+      by: ["published"],
+      having: { published: false, id: { _count: { gte: 1 } } },
+      _max: { views: true },
+    });
+    expect(byKey).toEqual([{ published: false, _max: { views: 5 } }]);
+
+    const paged = await db.post.groupBy({
+      by: ["title"],
+      orderBy: [{ _max: { views: "desc" } }, { title: "asc" }],
+      skip: 1,
+      take: 2,
+    });
+    expect(paged).toEqual([{ title: "a2" }, { title: "a1" }]);
+  });
+
+  it("groupBy nullable keys and fields of a to-one relation", async () => {
+    await seed();
+    const byAge = await db.user.groupBy({ by: "age", _count: true, orderBy: { age: "asc" } });
+    expect(byAge).toEqual([
+      { age: 30, _count: 1 },
+      { age: 40, _count: 1 },
+      { age: null, _count: 1 },
+    ]);
+
+    const byAuthor = await db.post.groupBy({
+      by: ["author.name", "author.email"],
+      _count: { _all: true },
+      _sum: { views: true },
+      orderBy: { author: { name: "asc" } },
+    });
+    expect(byAuthor).toEqual([
+      { author: { name: "Alice", email: "alice@x.io" }, _count: { _all: 3 }, _sum: { views: 45 } },
+      { author: { name: "Bob", email: "bob@x.io" }, _count: { _all: 1 }, _sum: { views: 100 } },
+      { author: { name: null, email: null }, _count: { _all: 1 }, _sum: { views: 1 } },
+    ]);
+
+    const named = await db.post.groupBy({
+      by: ["author.name"],
+      having: { author: { name: { not: null } }, views: { _sum: { gt: 50 } } },
+    });
+    expect(named).toEqual([{ author: { name: "Bob" } }]);
+
+    expect(
+      await db.post.groupBy({ by: ["published"], where: { title: "missing" }, _count: true }),
+    ).toEqual([]);
+  });
+
+  it("works inside $transaction and sees uncommitted writes", async () => {
+    const out = await db.$transaction(async (tx) => {
+      await tx.post.createMany({
+        data: [
+          { title: "t1", views: 2 },
+          { title: "t2", views: 4 },
+        ],
+      });
+      const agg = await tx.post.aggregate({ _count: true, _avg: { views: true } });
+      const groups = await tx.post.groupBy({
+        by: ["views"],
+        _count: true,
+        orderBy: { views: "asc" },
+      });
+      return { agg, groups };
+    });
+    expect(out).toEqual({
+      agg: { _count: 2, _avg: { views: 3 } },
+      groups: [
+        { views: 2, _count: 1 },
+        { views: 4, _count: 1 },
+      ],
+    });
+  });
+
+  it("rejects invalid aggregates at runtime", async () => {
+    const loose = db.post as unknown as {
+      aggregate(a: unknown): Promise<unknown>;
+      groupBy(a: unknown): Promise<unknown>;
+    };
+    await expect(loose.aggregate({ _sum: { title: true } })).rejects.toBeInstanceOf(
+      CyphraValidationError,
+    );
+    await expect(loose.groupBy({ by: ["nope"] })).rejects.toBeInstanceOf(CyphraValidationError);
+    await expect(
+      loose.groupBy({ by: ["published"], orderBy: { title: "asc" } }),
+    ).rejects.toBeInstanceOf(CyphraValidationError);
+  });
+});

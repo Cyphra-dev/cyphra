@@ -28,6 +28,7 @@ import {
   relationPattern,
   scalarField,
 } from "./compile.js";
+import { compileAggregate, compileGroupBy } from "./aggregate.js";
 import { CyphraError, CyphraValidationError, NotFoundError } from "./errors.js";
 import { encodeScalar, integerToNumber } from "./values.js";
 
@@ -178,6 +179,25 @@ export class ModelEngine {
         ctx.params,
       );
       return toCount(rows[0]?.c);
+    });
+  }
+
+  /** One statement; see {@link compileAggregate}. */
+  aggregate(args: AnyRecord = {}): Promise<AnyRecord> {
+    return this.runner.read(async (exec) => {
+      if (!isPlainObject(args))
+        throw new CyphraValidationError("aggregate args must be an object.");
+      const c = compileAggregate(this.ctx(), this.model, args);
+      return c.decode(await exec(c.text, c.params));
+    });
+  }
+
+  /** One statement; see {@link compileGroupBy}. */
+  groupBy(args: AnyRecord): Promise<AnyRecord[]> {
+    return this.runner.read(async (exec) => {
+      if (!isPlainObject(args)) throw new CyphraValidationError("groupBy args must be an object.");
+      const c = compileGroupBy(this.ctx(), this.model, args);
+      return c.decode(await exec(c.text, c.params));
     });
   }
 

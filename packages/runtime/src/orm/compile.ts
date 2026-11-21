@@ -153,7 +153,11 @@ function compileListFilter(
 
 type StringFilterMode = QueryMode;
 
-function compileScalarFilter(
+/**
+ * Compile a filter on one scalar `field` read from the Cypher expression `ref` (a property, or a
+ * variable holding an aggregate in `groupBy` `having`).
+ */
+export function compileScalarFilter(
   ctx: QueryContext,
   model: ResolvedNodeModel,
   field: ResolvedScalarField,
@@ -357,7 +361,7 @@ export function compileOrderBy(
   return parts.length ? parts.join(", ") : null;
 }
 
-function nonNegativeInt(v: unknown, name: string): number {
+export function nonNegativeInt(v: unknown, name: string): number {
   if (typeof v !== "number" || !Number.isInteger(v) || v < 0) {
     throw new CyphraValidationError(`${name} must be a non-negative integer.`);
   }
@@ -382,7 +386,7 @@ export function compilePaging(
 }
 
 // SKIP/LIMIT must be integers on the wire; the driver sends JS numbers as floats.
-function intParam(n: number): unknown {
+export function intParam(n: number): unknown {
   return neo4j.int(n);
 }
 

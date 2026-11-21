@@ -47,6 +47,8 @@ export type Post = {
   title: string;
   published: boolean;
   views: number;
+  score: number | null;
+  publishedOn: Date | null;
 };
 
 /** `Follows` (`:FOLLOWS`) edge properties. */
@@ -247,6 +249,26 @@ export const schemaModel: SchemaModel = {
             "kind": "literal",
             "value": 0
           }
+        },
+        {
+          "kind": "scalar",
+          "name": "score",
+          "type": "Float",
+          "optional": true,
+          "list": false,
+          "id": false,
+          "unique": false,
+          "index": false
+        },
+        {
+          "kind": "scalar",
+          "name": "publishedOn",
+          "type": "Date",
+          "optional": true,
+          "list": false,
+          "id": false,
+          "unique": false,
+          "index": false
         },
         {
           "kind": "relation",

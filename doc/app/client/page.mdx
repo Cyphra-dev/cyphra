@@ -1,5 +1,5 @@
 ---
-description: "The Cyphra typed client for Neo4j: findMany, include and select, nested writes, transactions, typed edge properties and raw Cypher, inferred from your schema."
+description: "The Cyphra typed client for Neo4j: findMany, select and include, nested writes, aggregate and groupBy, transactions and raw Cypher, typed from your schema."
 ---
 
 # Typed client
@@ -94,6 +94,91 @@ stay case-sensitive. A property index is not used for these comparisons.
 ```ts
 await db.user.findFirst({ where: { email: { equals: "Alice@Acme.io", mode: "insensitive" } } });
 ```
+
+## Aggregations
+
+`aggregate` computes `_count`, `_sum`, `_avg`, `_min` and `_max` over the nodes matching `where`, in
+one Cypher statement. The result has exactly the aggregates you ask for (same shape as Prisma).
+
+```ts
+const stats = await db.post.aggregate({
+  where: { published: true },
+  _count: true, // or { _all: true, score: true }
+  _sum: { views: true },
+  _avg: { views: true, score: true },
+  _min: { publishedOn: true },
+  _max: { views: true, title: true },
+});
+// {
+//   _count: number;
+//   _sum: { views: number | null };
+//   _avg: { views: number | null; score: number | null };
+//   _min: { publishedOn: Date | null };
+//   _max: { views: number | null; title: string | null };
+// }
+```
+
+| Aggregate      | Fields                                       | Result                                         |
+| -------------- | -------------------------------------------- | ---------------------------------------------- |
+| `_count`       | `true` (nodes), `_all` (nodes), any scalar   | `number` (non-null values for a field)         |
+| `_sum`         | `Int`, `Float`                               | `number \| null`                               |
+| `_avg`         | `Int`, `Float`                               | `number \| null` (a mean, so not always whole) |
+| `_min`, `_max` | `Int`, `Float`, `String`, `DateTime`, `Date` | the field type, or `null`                      |
+
+- `null` values (absent properties) are ignored, as in SQL.
+- On an empty match, counts are `0` and every other aggregate is `null` (Cypher's `sum()` returns 0;
+  Cyphra returns `null`, like SQL and Prisma).
+- `DateTime` and `Date` results come back as `Date` (UTC). Strings compare by code point.
+- `orderBy`, `skip` and `take` pick a window of the matching nodes first: `{ orderBy: { views: "desc" }, take: 10, _avg: { views: true } }`
+  is the average of the ten most viewed posts.
+
+Asking for an aggregate that does not fit the field (`_sum` on a `String`, `_min` on a `Boolean` or a
+list) is a type error, and a `CyphraValidationError` for untyped callers.
+
+## groupBy
+
+`groupBy` groups the matching nodes by one or more fields and aggregates each group, in one statement.
+It takes the same `_count`, `_sum`, `_avg`, `_min` and `_max` as `aggregate`, plus `having`, `orderBy`,
+`skip` and `take` on the groups.
+
+```ts
+const byStatus = await db.post.groupBy({
+  by: ["published"], // or a single field: by: "published"
+  where: { views: { gt: 0 } },
+  _count: { _all: true },
+  _avg: { views: true },
+  having: { views: { _avg: { gt: 10 } } },
+  orderBy: [{ _count: { id: "desc" } }, { published: "asc" }],
+  take: 10,
+});
+// { published: boolean; _count: { _all: number }; _avg: { views: number | null } }[]
+```
+
+- **`having`** filters groups. On any scalar field it takes aggregate filters
+  (`{ views: { _sum: { gte: 100 } } }`, `{ id: { _count: { gt: 1 } } }`); on a field listed in `by` it
+  also takes the usual filters (`{ published: true }`). `AND`, `OR` and `NOT` combine them.
+- **`orderBy`** sorts by fields listed in `by` or by aggregates (`{ _max: { views: "desc" } }`,
+  `{ _count: { _all: "asc" } }`).
+- A `null` key is a group of its own (nodes without the property).
+
+### Grouping by a related node
+
+Fields of a **to-one** relation are written `"relation.field"` in `by`, and come back nested under the
+relation name. `having` and `orderBy` use the nested form.
+
+```ts
+const perAuthor = await db.post.groupBy({
+  by: ["author.name", "author.email"],
+  _sum: { views: true },
+  having: { author: { name: { not: null } } },
+  orderBy: { author: { name: "asc" } },
+});
+// { author: { name: string | null; email: string | null }; _sum: { views: number | null } }[]
+```
+
+Posts without an author fall into the group whose related fields are all `null`. To-many relations
+cannot be grouped on (a post would belong to several groups); aggregate from the other side instead,
+for example `db.user.groupBy` with `where: { posts: { some: … } }`.
 
 ## Writing
 
