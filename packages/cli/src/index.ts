@@ -2,6 +2,7 @@
 import { createRequire } from "node:module";
 import { Command } from "commander";
 import { runDev } from "./commands/dev.js";
+import { runFormat } from "./commands/format.js";
 import { runGenerate } from "./commands/generate.js";
 import { runImportGraphql } from "./commands/importGraphql.js";
 import { runInit } from "./commands/init.js";
@@ -133,6 +134,16 @@ program
     const cwd = process.cwd();
     const config = await loadConfig(cwd);
     await runValidateSchema(cwd, config);
+  });
+
+program
+  .command("format")
+  .description("Reformat schema.cyphra in place, keeping comments")
+  .option("--check", "exit with 1 instead of writing when the schema is not formatted")
+  .action(async (opts: { check?: boolean }) => {
+    const cwd = process.cwd();
+    const config = await loadConfig(cwd);
+    process.exitCode = await runFormat(cwd, config, opts);
   });
 
 program

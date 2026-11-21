@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
 import type { NodeDeclaration } from "./ast.js";
 import { SchemaValidationError } from "./errors.js";
 import { getNodeModel, resolveSchema } from "./model.js";
 import { parseSchema } from "./parseSchema.js";
 import { printSchemaDocument } from "./printSchema.js";
 import { renderCyphraGenSource } from "./renderCyphraGen.js";
+import { SCALAR_TYPE_NAMES } from "./validate.js";
 
 const schema = `
 enum Role {
@@ -210,5 +212,21 @@ describe("printing and codegen", () => {
   it("does not import JsonValue when no field uses Json", () => {
     const src = renderCyphraGenSource(parseSchema("node A { id String @id }"));
     expect(src).not.toContain("JsonValue");
+  });
+});
+
+describe("SCALAR_TYPE_NAMES", () => {
+  it("lists exactly the scalar type names of the grammar", () => {
+    const grammar = readFileSync(new URL("../grammar.peggy", import.meta.url), "utf8");
+    const rule = /^scalarTypeName\n\s*=\s*n:\(([^)]*)\)/m.exec(grammar)?.[1] ?? "";
+    const names = [...rule.matchAll(/"([A-Za-z]+)"/g)].map((m) => m[1]);
+    expect(names.length).toBeGreaterThan(0);
+    expect([...SCALAR_TYPE_NAMES].sort()).toEqual([...names].sort());
+  });
+
+  it("parses every listed type", () => {
+    for (const t of SCALAR_TYPE_NAMES) {
+      expect(() => parseSchema(`node N { x ${t}? }`)).not.toThrow();
+    }
   });
 });

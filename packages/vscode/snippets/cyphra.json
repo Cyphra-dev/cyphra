@@ -1,0 +1,46 @@
+{
+  "Node": {
+    "prefix": "node",
+    "description": "A node model with an id",
+    "body": ["node ${1:Name} {", "\tid ${2:String} @id @default(${3|cuid(),uuid()|})", "\t$0", "}"]
+  },
+  "Relationship": {
+    "prefix": "relationship",
+    "description": "A relationship model (typed edge properties)",
+    "body": [
+      "relationship ${1:Name} {",
+      "\ttype \"${2:TYPE}\"",
+      "\tfrom ${3:Start}",
+      "\tto ${4:End}",
+      "\t$0",
+      "}"
+    ]
+  },
+  "Enum": {
+    "prefix": "enum",
+    "description": "An enum (a closed set of string values)",
+    "body": ["enum ${1:Name} {", "\t${2:VALUE}", "}"]
+  },
+  "Relation field": {
+    "prefix": "rel",
+    "description": "A relation field to another node",
+    "body": [
+      "${1:posts} ${2:Post}${3|[],?|} @relationship(type: \"${4:TYPE}\", direction: ${5|OUT,IN|})"
+    ]
+  },
+  "Id field": {
+    "prefix": "id",
+    "description": "An id field with a generated default",
+    "body": ["id String @id @default(${1|cuid(),uuid()|})"]
+  },
+  "Full-text index": {
+    "prefix": "@@fulltext",
+    "description": "A full-text index over String fields",
+    "body": ["@@fulltext([${1:title}], name: \"${2:search}\")"]
+  },
+  "Vector field": {
+    "prefix": "vector",
+    "description": "An embedding field with a vector index",
+    "body": ["${1:embedding} Vector(${2:1536})? @vectorIndex(similarity: ${3|cosine,euclidean|})"]
+  }
+}

@@ -48,6 +48,18 @@ jobs:
       - name: Test
         run: pnpm test
 
+      # The VS Code extension as a .vsix (bundled language server included), downloadable from the
+      # run's artifacts. Publishing is manual: .github/workflows/vscode-publish.yml.
+      - name: Package VS Code extension
+        run: pnpm --filter cyphra-vscode run package
+
+      - name: Upload VS Code extension
+        uses: actions/upload-artifact@v4
+        with:
+          name: cyphra-vscode-vsix
+          path: packages/vscode/cyphra-vscode.vsix
+          if-no-files-found: error
+
       - name: Example app (smoke)
         run: pnpm example:basic
 

@@ -1,0 +1,32 @@
+// A schema exercising every construct the grammar highlights.
+enum Role {
+  ADMIN
+  EDITOR, VIEWER // trailing comment
+}
+
+node User {
+  id        String        @id @default(cuid())
+  email     String        @unique
+  role      Role          @default(VIEWER)
+  bigCount  BigInt        @default(9223372036854775807)
+  ratio     Float?        @default(-1.5)
+  active    Boolean       @default(true)
+  meta      Json          @default("{\"a\": 1}")
+  tags      String[]
+  embedding Vector(1536)? @vectorIndex(similarity: cosine, quantization: false)
+  posts     Post[]        @relationship(type: "AUTHORED", direction: OUT)
+
+  @@fulltext([email], name: "userSearch", analyzer: "standard-folding")
+}
+
+node Post {
+  id     String @id
+  author User?  @relationship(type: "AUTHORED", direction: IN)
+}
+
+relationship Authored {
+  type "AUTHORED"
+  from User
+  to Post
+  since DateTime @index
+}

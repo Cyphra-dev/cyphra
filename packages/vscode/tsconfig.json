@@ -1,0 +1,11 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "noEmit": true,
+    "module": "preserve",
+    "moduleResolution": "bundler",
+    "types": ["node"]
+  },
+  "include": ["src/**/*.ts", "scripts/**/*.mts", "test/**/*.ts", "vitest.config.ts"]
+}

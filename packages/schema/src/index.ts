@@ -12,16 +12,27 @@ export type {
   ModelAttribute,
   NodeDeclaration,
   NodeField,
+  ParseSchemaOptions,
   RelationshipDeclaration,
   ScalarNodeField,
   ScalarTypeName,
   ScalarTypeRef,
   RelationalNodeField,
+  SchemaComment,
   SchemaDocument,
+  SourcePosition,
+  SourceRange,
 } from "./ast.js";
 export { SchemaValidationError } from "./errors.js";
-export { printSchemaDocument, formatDecorator, formatModelAttribute } from "./printSchema.js";
-export { MAX_SCHEMA_BYTES, parseSchema } from "./parseSchema.js";
+export {
+  printSchemaDocument,
+  formatDecorator,
+  formatModelAttribute,
+  quoteSchemaString,
+} from "./printSchema.js";
+export type { FormatSchemaOptions } from "./formatSchema.js";
+export { formatSchema } from "./formatSchema.js";
+export { MAX_SCHEMA_BYTES, parseSchema, parseSchemaSyntax } from "./parseSchema.js";
 export { parseSchemaFile } from "./readSchemaFile.js";
 export type { CodegenModel, RenderCyphraGenOptions } from "./renderCyphraGen.js";
 export {
@@ -34,6 +45,7 @@ export {
   DEFAULT_FULLTEXT_ANALYZER,
   FULLTEXT_ANALYZERS,
   MAX_VECTOR_DIMENSIONS,
+  SCALAR_TYPE_NAMES,
   VECTOR_SIMILARITIES,
   validateSchema,
 } from "./validate.js";

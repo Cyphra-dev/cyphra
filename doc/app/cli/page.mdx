@@ -27,6 +27,7 @@ App code depends on **`cyphra`** separately (see [Getting started](/getting-star
 | `cyphra import graphql <files>`  | Convert `@neo4j/graphql` v7 type definitions to `schema.cyphra` (`--out`, `--merge`, `--force`, `--print`)                |
 | `cyphra push`                    | Apply constraints and range, vector and full-text indexes directly (prototyping)                                          |
 | `cyphra validate`                | Parse and validate the schema                                                                                             |
+| `cyphra format`                  | Format the schema in place, keeping comments (`--check` exits with 1 instead of writing)                                  |
 | `cyphra schema print`            | Canonical pretty-print of the schema                                                                                      |
 | `cyphra schema ddl`              | Print the constraint and index DDL (no database)                                                                          |
 

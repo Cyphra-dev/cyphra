@@ -1,0 +1,123 @@
+{
+  "name": "cyphra-vscode",
+  "displayName": "Cyphra",
+  "description": "Cyphra schema (.cyphra) support: highlighting, diagnostics, completion, hover, go to definition, rename, formatting and client generation for the TypeScript ORM for Neo4j",
+  "version": "0.1.0",
+  "private": true,
+  "publisher": "cyphra",
+  "license": "MIT",
+  "icon": "images/icon.png",
+  "homepage": "https://www.cyphra.dev/editor",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Cyphra-dev/cyphra.git",
+    "directory": "packages/vscode"
+  },
+  "bugs": {
+    "url": "https://github.com/Cyphra-dev/cyphra/issues"
+  },
+  "engines": {
+    "vscode": "^1.91.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Formatters",
+    "Snippets"
+  ],
+  "keywords": [
+    "cyphra",
+    "neo4j",
+    "schema",
+    "orm",
+    "graph"
+  ],
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "workspaceContains:**/cyphra.json"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "cyphra",
+        "aliases": [
+          "Cyphra",
+          "cyphra"
+        ],
+        "extensions": [
+          ".cyphra"
+        ],
+        "configuration": "./language-configuration.json",
+        "icon": {
+          "light": "./icons/cyphra-light.svg",
+          "dark": "./icons/cyphra-dark.svg"
+        }
+      }
+    ],
+    "grammars": [
+      {
+        "language": "cyphra",
+        "scopeName": "source.cyphra",
+        "path": "./syntaxes/cyphra.tmLanguage.json"
+      }
+    ],
+    "snippets": [
+      {
+        "language": "cyphra",
+        "path": "./snippets/cyphra.json"
+      }
+    ],
+    "commands": [
+      {
+        "command": "cyphra.generate",
+        "title": "Generate client",
+        "category": "Cyphra"
+      },
+      {
+        "command": "cyphra.restartServer",
+        "title": "Restart language server",
+        "category": "Cyphra"
+      }
+    ],
+    "configuration": {
+      "title": "Cyphra",
+      "properties": {
+        "cyphra.generateCommand": {
+          "type": "string",
+          "default": "",
+          "scope": "resource",
+          "markdownDescription": "Command run by **Cyphra: Generate client**, from the folder holding `cyphra.json`. Empty: `cyphra generate` through the package manager of the project's lockfile (`pnpm exec`, `yarn`, `bunx` or `npx`)."
+        },
+        "cyphra.trace.server": {
+          "type": "string",
+          "enum": [
+            "off",
+            "messages",
+            "verbose"
+          ],
+          "default": "off",
+          "description": "Trace the communication between VS Code and the Cyphra language server."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "tsx scripts/build.mts",
+    "package": "tsx scripts/build.mts --production && vsce package --no-dependencies --out cyphra-vscode.vsix",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@cyphra/language-server": "workspace:*",
+    "@cyphra/schema": "workspace:*",
+    "@types/node": "^22.20.5",
+    "@types/vscode": "1.91.0",
+    "@vscode/vsce": "4.1.1",
+    "esbuild": "^0.28.2",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.12",
+    "vscode-languageclient": "11.0.0",
+    "vscode-oniguruma": "2.0.1",
+    "vscode-textmate": "9.3.2"
+  }
+}

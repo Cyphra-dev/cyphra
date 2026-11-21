@@ -35,3 +35,34 @@ describe("printSchemaDocument", () => {
     expect(out).toContain("meta String");
   });
 });
+
+describe("printSchemaDocument string literals", () => {
+  it("keeps characters the grammar has no escape for (round-trip)", () => {
+    const doc = parseSchema('node A { x String @default("tab\there \\"q\\" back\\\\slash\\nnl") }');
+    const printed = printSchemaDocument(doc);
+    expect(parseSchema(printed)).toEqual(doc);
+  });
+
+  it("prints a relation field without decorators without a trailing space", () => {
+    const out = printSchemaDocument({
+      kind: "Document",
+      declarations: [
+        {
+          kind: "Node",
+          name: "A",
+          fields: [
+            {
+              kind: "Relational",
+              name: "b",
+              target: "A",
+              cardinality: "one",
+              optional: true,
+              decorators: [],
+            },
+          ],
+        },
+      ],
+    });
+    expect(out).toContain("  b A?\n");
+  });
+});

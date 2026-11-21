@@ -182,4 +182,4 @@ The [typed client](/client) applies them on create.
 `parseSchema`, `parseSchemaFile` and `printSchemaDocument` are exported from `cyphra` (or
 `@cyphra/schema`). `parseSchemaFile(path)` loads a UTF-8 `.cyphra` file from disk (Node.js).
 
-The parser produces an AST used by `cyphra push`, `cyphra generate`, and programmatic APIs. Use `printSchemaDocument` from `@cyphra/schema` (or **`cyphra schema print`**) to emit a canonical `.cyphra` text for diffs and reviews—comments are not preserved.
+The parser produces an AST used by `cyphra push`, `cyphra generate`, and programmatic APIs. Use `printSchemaDocument` from `@cyphra/schema` (or **`cyphra schema print`**) to emit a canonical `.cyphra` text for diffs and reviews—comments are not preserved. To reformat a schema and keep its comments, use `formatSchema` (or **`cyphra format`**). For editor support (VS Code, Neovim, Helix), see [Editor](/editor).

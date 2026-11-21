@@ -1,0 +1,133 @@
+---
+title: "Editor support for .cyphra: VS Code, Neovim, Helix"
+sidebarTitle: Editor
+description: "Highlighting, errors as you type, completion, hover, go to definition, rename and formatting for Cyphra schema files, in VS Code and any LSP editor."
+---
+
+import { Callout } from "nextra/components";
+
+# Editor support
+
+Cyphra ships a **VS Code extension** and a **language server** for `schema.cyphra`. The language
+server speaks the Language Server Protocol, so the same features work in Neovim, Helix and other LSP
+editors.
+
+- **Diagnostics while you type**: the errors of [`cyphra validate`](/cli), underlined on the field,
+  type, decorator or argument at fault.
+- **Completion**: keywords, built-in types, your models and enums, decorators and their arguments
+  (`direction: OUT | IN`, vector similarity, full-text analyzers), `@default(…)` values that fit the
+  field's type, and the `String` fields of the model inside `@@fulltext([…])`.
+- **Hover**: documentation of types and decorators, and the declaration of a relation target or
+  enum.
+- **Go to definition**, **find references** and **rename** for models and enums (a rename updates
+  every field type, `from` and `to`).
+- **Outline** of nodes, relationships, enums and their fields.
+- **Formatting** that keeps your comments, the same output as `cyphra format`.
+
+## VS Code
+
+<Callout type="info">
+  The extension is not on the Visual Studio Marketplace or Open VSX yet. Until it is, install it
+  from a `.vsix` file.
+</Callout>
+
+Build the `.vsix` from a clone of the repository, then install it:
+
+```bash
+pnpm install
+pnpm -r --filter './packages/*' run build
+pnpm --filter cyphra-vscode package    # writes packages/vscode/cyphra-vscode.vsix
+code --install-extension packages/vscode/cyphra-vscode.vsix
+```
+
+Every CI run also uploads the file as the `cyphra-vscode-vsix` artifact of the workflow run. In VS
+Code, **Extensions: Install from VSIX…** in the command palette does the same as
+`code --install-extension`. Cursor, VSCodium and other VS Code forks install the same file.
+
+Besides the language features, the extension adds:
+
+| Feature                               | Description                                                                                                                                                                  |
+| ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Cyphra: Generate client** (command) | Runs `cyphra generate` in a terminal, from the folder of the schema's `cyphra.json`, through your package manager (`pnpm exec`, `yarn`, `bunx` or `npx`, from the lockfile). |
+| Status bar item                       | Whether the open schema is valid; click it to open the errors, or to generate the client when the schema is valid.                                                           |
+| Snippets                              | `node`, `relationship`, `enum`, `rel` (relation field), `id`, `vector`, `@@fulltext`.                                                                                        |
+| `cyphra.generateCommand` (setting)    | Command run by **Cyphra: Generate client** instead of the detected one.                                                                                                      |
+| **Cyphra: Restart language server**   | Restarts the language server.                                                                                                                                                |
+
+Format on save works like for any language:
+
+```json filename=".vscode/settings.json"
+{
+  "[cyphra]": {
+    "editor.formatOnSave": true
+  }
+}
+```
+
+## Other editors (language server)
+
+The language server is the npm package **`@cyphra/language-server`**. Install it globally, or as a
+dev dependency of your project and point your editor at `node_modules/.bin/cyphra-language-server`:
+
+```bash
+npm i -g @cyphra/language-server
+cyphra-language-server --stdio
+```
+
+It reads JSON-RPC on stdin and writes on stdout (`--stdio`; `--node-ipc` and `--socket=<port>` also
+work). It needs Node.js 20 or later.
+
+### Neovim
+
+With Neovim 0.11 or later:
+
+```lua filename="init.lua"
+vim.filetype.add({ extension = { cyphra = "cyphra" } })
+
+vim.lsp.config("cyphra", {
+  cmd = { "cyphra-language-server", "--stdio" },
+  filetypes = { "cyphra" },
+  root_markers = { "cyphra.json", ".git" },
+})
+vim.lsp.enable("cyphra")
+```
+
+Diagnostics, completion, hover (`K`), go to definition, references, rename and
+`vim.lsp.buf.format()` then work in `.cyphra` buffers. There is no tree-sitter grammar for
+`.cyphra` yet, so Neovim does not highlight the syntax.
+
+### Helix
+
+```toml filename="~/.config/helix/languages.toml"
+[language-server.cyphra]
+command = "cyphra-language-server"
+args = ["--stdio"]
+
+[[language]]
+name = "cyphra"
+scope = "source.cyphra"
+file-types = ["cyphra"]
+roots = ["cyphra.json"]
+comment-token = "//"
+indent = { tab-width = 2, unit = "  " }
+language-servers = ["cyphra"]
+```
+
+### Zed
+
+Zed attaches language servers through extensions that also bring a tree-sitter grammar. There is no
+Cyphra extension for Zed yet; the language server is ready for one.
+
+## Formatting from the command line
+
+`cyphra format` formats `schema.cyphra` in place with the same rules as the editors: one field per
+line with aligned names and types, model attributes after the fields, one blank line between
+declarations, comments kept. `cyphra format --check` exits with 1 when the schema is not formatted,
+for CI.
+
+## Programmatic API
+
+The editor features are plain functions of `@cyphra/language-server` (`analyze`, `completionsAt`,
+`hoverAt`, `definitionAt`, `referencesAt`, `renameEdits`, `outline`, `formatText`), and
+`@cyphra/schema` exports `parseSchemaSyntax(source, { locations: true })`, which records the source
+range of every declaration, field, type, decorator and argument, and `formatSchema(source)`.
