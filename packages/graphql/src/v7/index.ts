@@ -76,8 +76,9 @@ function attachResolvers(schema: GraphQLSchema, model: V7Model, execute: ReadExe
  *
  * Today: the full v7 schema (SDL identical to v7), and the read API (list and connection queries,
  * filters, sorting, offset and cursor pagination, nested relationships and connections with edge
- * properties). Mutations (#73), aggregations (#72), authorization (#74) and `@cypher` fields (#75)
- * are in the schema but answer with a "Not implemented yet" error.
+ * properties, connection `aggregate` selections and aggregation filters). Mutations (#73),
+ * authorization (#74) and `@cypher` fields (#75) are in the schema but answer with a "Not
+ * implemented yet" error.
  *
  * @example
  * ```ts

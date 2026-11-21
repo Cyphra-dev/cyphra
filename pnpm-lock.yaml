@@ -277,9 +277,6 @@ importers:
       '@cyphra/schema':
         specifier: workspace:*
         version: link:../schema
-      neo4j-driver:
-        specifier: ^5.28.3
-        version: 5.28.3
       pluralize:
         specifier: ^8.0.0
         version: 8.0.0
@@ -293,6 +290,9 @@ importers:
       graphql:
         specifier: 16.15.0
         version: 16.15.0
+      neo4j-driver:
+        specifier: ^5.28.3
+        version: 5.28.3
       tsup:
         specifier: ^8.5.1
         version: 8.5.1(postcss@8.5.33)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1)
