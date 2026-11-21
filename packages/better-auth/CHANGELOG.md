@@ -1,5 +1,18 @@
 # @cyphra/better-auth
 
+## 0.8.0
+
+### Minor Changes
+
+- f51239c: Add the `numberFields` option (`cyphraAdapter`, `authSchema`, `neo4jBetterAuthMigration`) to store chosen Better Auth `number` / `number[]` fields as `Float` instead of `Int`, so they accept fractional values; `createSchema` writes `Float` for them, and integers already stored in a field switched to `float` keep reading and matching unchanged. `sortBy` on a foreign key (`userId`) is now supported: it orders by the referenced field of the related node, through the edge.
+
+### Patch Changes
+
+- Updated dependencies [f51239c]
+- Updated dependencies [e22de55]
+  - @cyphra/runtime@0.8.0
+  - @cyphra/schema@0.8.0
+
 ## 0.7.0
 
 ### Patch Changes
