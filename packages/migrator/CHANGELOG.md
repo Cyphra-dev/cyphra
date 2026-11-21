@@ -1,5 +1,39 @@
 # @cyphra/migrator
 
+## 0.10.0
+
+### Minor Changes
+
+- 914535d: Schema drift detection: `cyphra migrate status` now compares the database's constraints and indexes with the ones the applied migrations created.
+
+  - **Migrator**: `detectDrift`, `replayMigrations` (runs each applied migration's `up()` against a recording `db` handle that never touches the database and keeps its `CREATE` / `DROP` constraint and index statements), `parseDdlStatement`, `expectedSchemaFromStatements`, `expectedSchemaFromModel`, `readSchemaObjects` (`SHOW CONSTRAINTS` / `SHOW INDEXES`, read-only), `schemaObjectsFromShow`, `compareSchemaObjects` and `describeSchemaObject`. Reports objects that are **extra** (in the database only), **missing** (created by migrations, absent) or **changed** (labels, properties, index or constraint type, vector dimensions / similarity / quantization, full-text analyzer / consistency, or name). `LOOKUP` indexes, constraint-backing indexes and Cyphra's bookkeeping constraint are ignored.
+  - **CLI**: `cyphra migrate status` lists migrations (`applied`, `pending`, `modified` by checksum, `missing`), uncaptured schema changes and drift. `--json` prints one JSON document; `--schema` compares with `schema.cyphra` instead of the migrations. Exit codes: `0` in sync, `1` drift or anything pending, `2` when the check could not run. `cyphra migrate dev` warns about drift before generating a migration and suggests `cyphra migrate reset` in development.
+
+- 603c4f1: `onDelete` rules on relations: `@relationship(type: "HAS_SESSION", direction: OUT, onDelete: Cascade | Restrict | SetNull)`.
+
+  - **Schema**: the rule sits on the field of the model whose deletion triggers it (`User.sessions` with `onDelete: Cascade`: deleting a User deletes its sessions). Allowed on to-one and to-many fields, either direction; each side has its own rule. Resolved into `ResolvedRelationField.onDelete` (absent = `SetNull`, the current behaviour). Unknown `@relationship` arguments, bad rule values, duplicated arguments and two fields on the same edges with different rules are validation errors.
+  - **Client**: `delete` and `deleteMany` apply the rules in the same transaction: `Cascade` deletes linked nodes recursively (following their own rules, cycle-safe), `Restrict` throws the new `RestrictError` (`model`, `relation`, `target`, `count`) before anything is deleted, `SetNull` removes the edges. Nodes are write-locked before their edges are read, so concurrent links are not missed. Models without rules keep their single `DETACH DELETE` statement.
+  - **Migrations**: rule changes need no DDL; `cyphra migrate dev` / `migrate diff` list them as notes (`MigrationPlan.notes`).
+  - **Editor**: completion of `onDelete` and its values, hover documentation, precise diagnostics.
+  - **Better Auth**: `references.onDelete` is generated into the schema (`cascade` → `Cascade`, `restrict` / `no action` → `Restrict`, `set null` / `set default` → default) and applied by the runtime; the adapter's own cascade code is gone. Re-run `npx @better-auth/cli generate` to add the rules to your `schema.cyphra`.
+
+- 13de328: Validation rules in `schema.cyphra`: `@length(min, max)`, `@size(min, max)`, `@min(value)`, `@max(value)`, `@email`, `@url`, `@regex(pattern, flags)` and `@nonEmpty` on scalar fields of nodes and relationship models.
+
+  - **Schema**: rules are checked against the field type (`@length`, `@email`, `@url`, `@regex` on `String`; `@size` on lists; `@min` / `@max` on `Int`, `Float`, `BigInt`, `DateTime`, `Date`; `@nonEmpty` on `String` and lists), with typed arguments, `min` ≤ `max`, regexes that compile and defaults that satisfy them. Arguments may be positional (`@length(3, 20)`) or named (`@length(max: 280)`). Resolved into `ResolvedScalarField.rules` (`ValidationRule[]`), printed by `cyphra format`, and documented on generated fields (`/** Validation: \`@length(3, 20)\`. */`). `checkRules`and`formatRule` are exported for other generators.
+  - **Client**: every write (`create`, `createMany`, `update`, `updateMany`, `upsert`, nested `create`, `$edge` of `create` / `connect` / `set`) is checked before any statement is sent. `CyphraValidationError` gets `issues: { path, model, field, rule, message }[]` listing every broken rule, with the path into the operation's arguments (`["data", "posts", "create", 1, "title"]`). `increment` / `decrement` / `multiply` on `@min` / `@max` fields are checked against the resulting value inside the update statement: out of range, nothing is updated.
+  - **CLI**: `cyphra validate --verbose` lists the rules of every field.
+  - **Migrations**: rule changes need no DDL; `cyphra migrate dev` lists them as notes.
+  - **Editor**: completion of the rules that fit the field type, hover documentation, argument diagnostics.
+
+### Patch Changes
+
+- Updated dependencies [603c4f1]
+- Updated dependencies [ff359dc]
+- Updated dependencies [13de328]
+  - @cyphra/schema@0.10.0
+  - @cyphra/runtime@0.10.0
+  - @cyphra/query@0.10.0
+
 ## 0.9.0
 
 ### Minor Changes
