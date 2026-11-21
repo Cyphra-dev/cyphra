@@ -23,7 +23,7 @@ import {
 } from "./compile.js";
 import { CyphraValidationError } from "./errors.js";
 import { decodeCount, decodeScalar, integerToNumber } from "./values.js";
-import { isInt } from "neo4j-driver";
+import { isInt } from "../cypher-values.js";
 
 type AnyRecord = Record<string, unknown>;
 

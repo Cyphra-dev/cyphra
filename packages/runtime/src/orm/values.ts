@@ -1,4 +1,12 @@
-import neo4j, {
+import {
+  CypherDate,
+  CypherDateTime,
+  CypherDuration,
+  CypherInteger,
+  CypherLocalDateTime,
+  CypherLocalTime,
+  CypherPoint,
+  CypherTime,
   isDate,
   isDateTime,
   isDuration,
@@ -7,8 +15,8 @@ import neo4j, {
   isLocalTime,
   isPoint,
   isTime,
-  type Integer,
-} from "neo4j-driver";
+  type IntegerLike as Integer,
+} from "../cypher-values.js";
 import {
   TEMPORAL_EXAMPLES,
   formatDuration,
@@ -51,8 +59,8 @@ export function decodeCount(v: unknown): number {
  * same instant written as `2023-12-31T19:00-05:00`. Writing every value (and every filter
  * parameter) in UTC keeps comparisons independent of the server's `TZ`.
  */
-export function utcDateTime(d: Date): InstanceType<typeof neo4j.types.DateTime> {
-  return new neo4j.types.DateTime(
+export function utcDateTime(d: Date): CypherDateTime {
+  return new CypherDateTime(
     d.getUTCFullYear(),
     d.getUTCMonth() + 1,
     d.getUTCDate(),
@@ -87,7 +95,7 @@ function encodeBigInt(value: unknown, where: string): unknown {
       `${where}: ${b} is outside the 64-bit integer range (-2^63 to 2^63-1).`,
     );
   }
-  return neo4j.int(b.toString());
+  return new CypherInteger(b);
 }
 
 /** A `Json` value as its JSON text (the stored string property). */
@@ -164,7 +172,7 @@ function encodePoint(type: "Point" | "CartesianPoint", value: unknown, where: st
       : has3d
         ? SRID.cartesian_3d
         : SRID.cartesian;
-  return has3d ? new neo4j.types.Point(srid, a, b, c) : new neo4j.types.Point(srid, a, b);
+  return has3d ? new CypherPoint(srid, a, b, c) : new CypherPoint(srid, a, b);
 }
 
 /**
@@ -181,7 +189,7 @@ function encodeTemporal(type: IsoTemporalType, value: unknown, where: string): u
   switch (type) {
     case "LocalDateTime": {
       const p = parseLocalDateTime(value) ?? fail();
-      return new neo4j.types.LocalDateTime(
+      return new CypherLocalDateTime(
         p.year,
         p.month,
         p.day,
@@ -193,20 +201,15 @@ function encodeTemporal(type: IsoTemporalType, value: unknown, where: string): u
     }
     case "LocalTime": {
       const p = parseLocalTime(value) ?? fail();
-      return new neo4j.types.LocalTime(p.hour, p.minute, p.second, p.nanosecond);
+      return new CypherLocalTime(p.hour, p.minute, p.second, p.nanosecond);
     }
     case "Time": {
       const p = parseTime(value) ?? fail();
-      return new neo4j.types.Time(p.hour, p.minute, p.second, p.nanosecond, p.offsetSeconds);
+      return new CypherTime(p.hour, p.minute, p.second, p.nanosecond, p.offsetSeconds);
     }
     case "Duration": {
       const p = parseDuration(value) ?? fail();
-      return new neo4j.types.Duration(
-        neo4j.int(p.months.toString()),
-        neo4j.int(p.days.toString()),
-        neo4j.int(p.seconds.toString()),
-        neo4j.int(p.nanoseconds),
-      );
+      return new CypherDuration(p.months, p.days, p.seconds, p.nanoseconds);
     }
   }
 }
@@ -263,8 +266,10 @@ function encodeOne(field: ResolvedScalarField, value: unknown, where: string): u
       if (typeof value !== "number") break;
       return value;
     case "Int":
-      if (typeof value === "number" && Number.isInteger(value)) return neo4j.int(value);
-      if (typeof value === "bigint") return neo4j.int(value.toString());
+      if (typeof value === "number" && Number.isInteger(value) && Math.abs(value) < 2 ** 63)
+        return new CypherInteger(value);
+      if (typeof value === "bigint" && value >= BIGINT_MIN && value <= BIGINT_MAX)
+        return new CypherInteger(value);
       break;
     case "DateTime": {
       const d = typeof value === "string" ? new Date(value) : value;
@@ -274,7 +279,7 @@ function encodeOne(field: ResolvedScalarField, value: unknown, where: string): u
     case "Date": {
       const d = typeof value === "string" ? new Date(value) : value;
       if (!(d instanceof Date) || Number.isNaN(d.getTime())) break;
-      return new neo4j.types.Date(d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate());
+      return new CypherDate(d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate());
     }
   }
   throw new CyphraValidationError(`${where}: expected ${type}, got ${describe(value)}.`);
@@ -466,7 +471,7 @@ function decodeOne(type: ScalarTypeName, value: unknown): unknown {
     return integerToNumber(value);
   }
   if (type === "Date" && isDate(value as object)) {
-    const d = value as InstanceType<typeof neo4j.types.Date>;
+    const d = value as { year: unknown; month: unknown; day: unknown };
     return new Date(Date.UTC(Number(d.year), Number(d.month) - 1, Number(d.day)));
   }
   if (isDateTime(value as object) || isLocalDateTime(value as object)) {

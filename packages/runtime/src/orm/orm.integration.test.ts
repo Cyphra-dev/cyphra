@@ -2770,8 +2770,10 @@ describe.skipIf(!hasNeo)("ORM logging and missing-index warnings (Neo4j)", () =>
     await admin.$disconnect();
   });
 
+  // `{ driver }` is a Bolt driver: not run when the suite targets the HTTP transport.
+  const overHttp = /^https?:\/\//i.test(process.env.NEO4J_TEST_URI ?? "");
   for (const [major, mod] of majors) {
-    it(`reports durations, rows and errors (neo4j-driver ${major})`, async () => {
+    it.skipIf(overHttp)(`reports durations, rows and errors (neo4j-driver ${major})`, async () => {
       const { uri, user, password } = conn();
       const driver = mod.driver(uri, mod.auth.basic(user, password));
       const events: CyphraEvent[] = [];

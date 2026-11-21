@@ -26,7 +26,7 @@ import type { ResolvedNodeModel, ResolvedRelationField, SchemaModel } from "@cyp
 import { QueryContext, q, relationPattern } from "./compile.js";
 import { RestrictError } from "./errors.js";
 import { integerToNumber } from "./values.js";
-import { isInt } from "neo4j-driver";
+import { isInt } from "../cypher-values.js";
 
 type Executor = (
   text: string,

@@ -1,5 +1,5 @@
 ---
-description: "CyphraClient wraps the official Neo4j JavaScript driver: sessions, read and write transactions, and parameterized Cypher from TypeScript."
+description: "CyphraClient wraps the Neo4j JavaScript driver, or the Neo4j Query API over HTTP for edge runtimes: sessions, transactions and parameterized Cypher."
 ---
 
 # Runtime
@@ -46,10 +46,12 @@ dependency** (`^5.28.3 || ^6.0.0`), so your app and Cyphra share one copy of the
 has (5 or 6) is reused. npm 7+ and pnpm 8+ install peer dependencies automatically; with Yarn,
 add `neo4j-driver` next to `@cyphra/runtime` if you use the subpackages.
 
-Cyphra only uses APIs that are the same in both majors (`executeRead` / `executeWrite`, `run`,
-`neo4j.int`, the temporal classes), and it recognises driver values by their markers (`isInt`,
-`isDateTime`, `isDate`, …), never with `instanceof`. Integers and temporals therefore round-trip
-the same way on 5 and 6, even if two copies of the driver end up installed.
+Cyphra only uses APIs that are the same in both majors (`executeRead` / `executeWrite`, `run`), and
+it recognises driver values by their markers (`isInt`, `isDateTime`, `isDate`, …), never with
+`instanceof`. The ORM builds its parameters with its own value classes (`CypherInteger`,
+`CypherDateTime`, …), which carry the same markers and fields as the driver's, so the driver sends
+them as Cypher `INTEGER`, `DATETIME` and so on. Integers and temporals therefore round-trip the same
+way on 5 and 6, even if two copies of the driver end up installed, and over HTTP (below).
 
 ## Using your own driver
 
@@ -238,6 +240,130 @@ It is off by default and you should keep it off in production: the cost is one `
 per distinct statement (at most 1,000 per client) and one `SHOW INDEXES` every few seconds while
 new statements appear. A property that has an index is never reported, even when the planner chose
 a label scan for that statement (it can, on a small development database). `client.close()` and `$disconnect()` wait for pending checks.
+
+## HTTP transport (Edge, Workers)
+
+Bolt needs TCP sockets, which Vercel Edge Functions and Cloudflare Workers do not offer. There, the
+client talks to the [Neo4j Query API](https://neo4j.com/docs/query-api/current/) over `fetch`
+instead: same `createClient`, same typed client, same results.
+
+```ts
+const db = createClient({
+  uri: "https://<id>.databases.neo4j.io", // Aura; http://localhost:7474 for a local server
+  user: env.NEO4J_USERNAME,
+  password: env.NEO4J_PASSWORD,
+});
+```
+
+An `https://` or `http://` URI selects the HTTP transport. To keep one `NEO4J_URI` for both Node.js
+(Bolt) and edge code, pass `transport: "http"` with the Bolt URI: `neo4j+s://host` maps to
+`https://host` and `neo4j://host` to `http://host:7474`.
+
+| Option                 | Purpose                                                       |
+| ---------------------- | ------------------------------------------------------------- |
+| `user`, `password`     | Basic auth                                                    |
+| `token`                | Bearer token (SSO) instead of `user` / `password`             |
+| `database`             | Database name (default `neo4j`)                               |
+| `fetch`                | Custom `fetch`: tests, a proxy, a Worker service binding      |
+| `headers`              | Extra headers on every request                                |
+| `maxRetryTimeMs`       | How long transactions retry transient errors (default 30 000) |
+| `maxConcurrency`       | Transactions and statements in flight at once (default 4)     |
+| `acquisitionTimeoutMs` | How long a statement waits for a free slot (default 60 000)   |
+
+**Requirements.** Neo4j 5.19 or later, or Aura. The Query API is on by default from Neo4j 5.26; on
+5.19 to 5.25, add `QUERY_API_ENDPOINTS` to `server.http_enabled_modules`. A self-managed server
+must expose its HTTP connector (port 7474, or 7473 with TLS), behind HTTPS in production.
+
+**Edge build.** `@cyphra/runtime` and `cyphra` ship a second build without `neo4j-driver` and
+without Node.js built-ins. Bundlers pick it automatically under the `workerd` (Cloudflare),
+`edge-light` (Vercel Edge) and `worker` export conditions, so the generated client needs no change.
+Import `@cyphra/runtime/edge` to choose it yourself. In that build, a Bolt URI throws an error that
+points to the HTTP transport, and the `cyphra` package leaves out `@cyphra/migrator`.
+
+### Vercel Edge route
+
+```ts filename="app/api/users/route.ts"
+import { createClient } from "@/lib/cyphra.gen";
+
+export const runtime = "edge";
+
+const db = createClient({
+  uri: process.env.NEO4J_URI!, // neo4j+s://<id>.databases.neo4j.io
+  transport: "http",
+  user: process.env.NEO4J_USERNAME!,
+  password: process.env.NEO4J_PASSWORD!,
+});
+
+export async function GET() {
+  const users = await db.user.findMany({ take: 20, orderBy: { createdAt: "desc" } });
+  return Response.json(users);
+}
+```
+
+### Cloudflare Worker
+
+```ts filename="src/index.ts"
+import { createClient } from "./cyphra.gen";
+
+type Env = { NEO4J_URL: string; NEO4J_USERNAME: string; NEO4J_PASSWORD: string };
+
+let db: ReturnType<typeof createClient> | undefined;
+
+export default {
+  async fetch(request: Request, env: Env): Promise<Response> {
+    db ??= createClient({
+      uri: env.NEO4J_URL, // https://<id>.databases.neo4j.io
+      user: env.NEO4J_USERNAME,
+      password: env.NEO4J_PASSWORD,
+    });
+    const email = new URL(request.url).searchParams.get("email") ?? "";
+    const user = await db.user.findUnique({ where: { email }, include: { posts: true } });
+    return user ? Response.json(user) : new Response("Not found", { status: 404 });
+  },
+};
+```
+
+Set the password with `wrangler secret put NEO4J_PASSWORD`. No `nodejs_compat` flag is needed.
+
+### What runs over HTTP
+
+Everything the typed client does: CRUD, nested writes, `upsert`, `aggregate` / `groupBy`,
+traversals and shortest paths, vector and full-text search, `$cypher` and `$transaction`. CI runs
+the whole ORM integration suite over both transports. Logging, OpenTelemetry spans and missing-index
+warnings work the same (`server.address` is the HTTP host).
+
+- An auto-commit statement is one `POST /db/{database}/query/v2`.
+- Writes and `$transaction` use an explicit transaction: the first statement opens it
+  (`POST …/tx`), the others follow (`POST …/tx/{id}`), then `…/commit`, or `DELETE` on error. The
+  `neo4j-cluster-affinity` header Aura returns is sent back on every request of the transaction.
+- Transient errors (deadlocks, an unreachable server) retry the whole callback, like the driver's
+  managed transactions.
+- Values use the Query API's typed JSON: a schema `Int` is sent as an `Integer`, a JS number as a
+  `Float` (as with Bolt). Results decode into the same JS values as with Bolt.
+- Errors are `Neo4jHttpError`s with the Neo4j `code` (`Neo.ClientError.Schema.ConstraintValidationFailed`, …) and the HTTP `status`.
+
+### Limitations
+
+- **Latency.** Each statement is a round trip, and a transaction adds one for the commit. A nested
+  `create` that runs three statements costs four requests. Keep the database in the same region as
+  your functions.
+- **No streaming.** The server sends the whole result in one response: bound large reads with
+  `take`.
+- **Transactions.** Neo4j supports explicit Query API transactions on Aura and single-instance
+  servers, not on self-managed clusters. A transaction idle for 60 seconds is rolled back
+  (`server.queryapi.transaction_idle_timeout`).
+- **Concurrency.** Neo4j answers Query API requests from a fixed pool of HTTP worker threads (one
+  per CPU core by default, `server.threads.worker_count`), and a request waiting for a lock keeps
+  its thread. If every thread waits on a lock held by an open transaction, the request that would
+  commit it gets no thread and they all hang. Each client therefore keeps at most
+  `maxConcurrency` transactions and statements in flight (default 4) and queues the rest. Many
+  isolates hitting one small self-managed server can still exhaust it: raise
+  `server.threads.worker_count` there.
+- **Low-level API.** `client.session()` and `rawDriver` return small HTTP stand-ins with `run`,
+  `executeRead`, `executeWrite` and `close`, whose records have `get`, `keys` and `toObject`. There
+  is no `Result` streaming, `executeQuery` or reactive API, and `{ driver }` is Bolt only.
+- **CLI and migrations.** `cyphra` CLI commands and `@cyphra/migrator` run on Node.js and are meant
+  for Bolt URIs. Run `cyphra migrate deploy` from your build or CI, not from the edge.
 
 ## See also
 

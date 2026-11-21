@@ -1,10 +1,7 @@
-import neo4j, {
-  type Config,
-  type Driver,
-  type ManagedTransaction,
-  type Session,
-} from "neo4j-driver";
+import type { Config, Driver, ManagedTransaction, Session } from "neo4j-driver";
 import { compileCypher, type CompiledCypher, type SelectQuery } from "@cyphra/query";
+import { createBoltDriver } from "./bolt.js";
+import { basicAuth, HttpDriver, type FetchLike } from "./http/driver.js";
 import { toPlainRecord, toPlainRecords } from "./records.js";
 import {
   Instrumentation,
@@ -48,7 +45,7 @@ type CommonClientOptions = ObservabilityOptions & {
   database?: string;
 };
 
-/** Connect with a URI and credentials: the client creates (and owns) its own driver. */
+/** Connect with a Bolt URI and credentials: the client creates (and owns) its own driver. */
 export type CyphraConnectionOptions = CommonClientOptions & {
   /** Bolt / Neo4j URI, e.g. `neo4j+s://xxx.databases.neo4j.io`. */
   uri: string;
@@ -56,6 +53,59 @@ export type CyphraConnectionOptions = CommonClientOptions & {
   password: string;
   /** Third argument to `neo4j.driver` — pool size, acquisition timeout, logging, etc. */
   driverConfig?: Config;
+  /**
+   * `"bolt"` (`neo4j-driver`, the default for `bolt://` / `neo4j://` URIs) or `"http"` (see
+   * {@link CyphraHttpOptions}).
+   */
+  transport?: "bolt";
+  driver?: never;
+  token?: never;
+  fetch?: never;
+};
+
+/**
+ * Connect over HTTP with the Neo4j Query API (Neo4j 5.19+ / Aura), for runtimes without TCP
+ * sockets: Vercel Edge, Cloudflare Workers, Deno Deploy, browsers. Chosen for an `https://` /
+ * `http://` URI, or with `transport: "http"`. Every auto-commit statement is one request; managed
+ * transactions (`$transaction`, nested writes) use the explicit transaction endpoints.
+ *
+ * @example
+ * ```ts
+ * const client = new CyphraClient({
+ *   uri: "https://xxxx.databases.neo4j.io", // Aura; http://localhost:7474 locally
+ *   user: env.NEO4J_USERNAME,
+ *   password: env.NEO4J_PASSWORD,
+ * });
+ * ```
+ */
+export type CyphraHttpOptions = CommonClientOptions & {
+  /**
+   * Query API base URL: `https://<id>.databases.neo4j.io`, `http://localhost:7474`. With
+   * `transport: "http"`, a Bolt URI is mapped too: `neo4j+s://host` → `https://host`,
+   * `neo4j://host` → `http://host:7474`.
+   */
+  uri: string;
+  transport?: "http";
+  /** Basic auth user (with `password`). */
+  user?: string;
+  password?: string;
+  /** Bearer token (SSO / OIDC) instead of `user` / `password`. */
+  token?: string;
+  /** Custom `fetch` (tests, proxies, a Worker service binding). Defaults to the global `fetch`. */
+  fetch?: FetchLike;
+  /** Extra headers sent with every request. */
+  headers?: Record<string, string>;
+  /** How long managed transactions keep retrying transient errors (default 30 000 ms). */
+  maxRetryTimeMs?: number;
+  /**
+   * Transactions and statements in flight at once (default 4). Keep it below the server's HTTP
+   * worker threads (`server.threads.worker_count`, one per CPU core by default): requests waiting
+   * on a lock hold a thread each, and with none left the lock holder cannot commit.
+   */
+  maxConcurrency?: number;
+  /** How long a statement waits for a free slot (see `maxConcurrency`), default 60 000 ms. */
+  acquisitionTimeoutMs?: number;
+  driverConfig?: never;
   driver?: never;
 };
 
@@ -70,12 +120,46 @@ export type CyphraDriverOptions = CommonClientOptions & {
   user?: never;
   password?: never;
   driverConfig?: never;
+  transport?: never;
 };
 
-export type CyphraClientOptions = CyphraConnectionOptions | CyphraDriverOptions;
+export type CyphraClientOptions = CyphraConnectionOptions | CyphraHttpOptions | CyphraDriverOptions;
+
+/** How a client talks to Neo4j. */
+export type CyphraTransport = "bolt" | "http";
+
+function isHttpOptions(
+  opts: CyphraConnectionOptions | CyphraHttpOptions,
+): opts is CyphraHttpOptions {
+  if (opts.transport === "http") return true;
+  if (opts.transport === "bolt") return false;
+  return /^https?:\/\//i.test(opts.uri);
+}
+
+/** The Query API base URL for `uri` (Bolt schemes mapped to their HTTP equivalent). */
+export function httpBaseUrl(uri: string): string {
+  const u = new URL(uri);
+  const scheme = u.protocol.replace(/:$/, "").toLowerCase();
+  if (scheme === "http" || scheme === "https") return uri;
+  const host = u.hostname.includes(":") ? `[${u.hostname}]` : u.hostname;
+  if (/^(neo4j|bolt)\+s(sc)?$/.test(scheme)) {
+    return `https://${host}${u.port && u.port !== "7687" ? `:${u.port}` : ""}`;
+  }
+  if (scheme === "neo4j" || scheme === "bolt") return `http://${host}:7474`;
+  throw new Error(`Unsupported URI scheme for the HTTP transport: ${scheme}://`);
+}
+
+function httpServer(base: string): { address: string; port?: number } {
+  const u = new URL(base);
+  return {
+    address: u.hostname.replace(/^\[|\]$/g, ""),
+    port: u.port ? Number(u.port) : u.protocol === "https:" ? 443 : 80,
+  };
+}
 
 /**
- * Thin facade over `neo4j-driver`: sessions, transactions, and the Cyphra `cypher` tag.
+ * Thin facade over `neo4j-driver` (Bolt) or the Neo4j Query API (HTTP, see
+ * {@link CyphraHttpOptions}): sessions, transactions, and the Cyphra `cypher` tag.
  *
  * @example
  * ```ts
@@ -107,20 +191,49 @@ export class CyphraClient {
    */
   readonly instrumentation: Instrumentation;
 
+  /** `"bolt"` (`neo4j-driver`) or `"http"` (Neo4j Query API over `fetch`). */
+  readonly transport: CyphraTransport;
+
   constructor(opts: CyphraClientOptions) {
+    let server: { address: string; port?: number } | undefined;
     if (opts.driver) {
       // A driver from another copy (or major) of `neo4j-driver` is not assignable to this copy's
       // `Driver` class type, but it is the same API at runtime: values are recognised by the
       // driver's structural markers (`isInt`, `isDateTime`, ...), not by `instanceof`.
       this.driver = opts.driver as unknown as Driver;
       this.ownsDriver = false;
-    } else {
-      this.driver = neo4j.driver(
-        opts.uri,
-        neo4j.auth.basic(opts.user, opts.password),
-        opts.driverConfig,
-      );
+      this.transport = "bolt";
+    } else if (isHttpOptions(opts)) {
+      const url = httpBaseUrl(opts.uri);
+      const authorization = opts.token
+        ? `Bearer ${opts.token}`
+        : opts.user !== undefined
+          ? basicAuth(opts.user, opts.password ?? "")
+          : undefined;
+      // The HTTP driver has the `Driver` / `Session` / `ManagedTransaction` subset Cyphra uses.
+      this.driver = new HttpDriver({
+        url,
+        authorization,
+        database: opts.database,
+        fetch: opts.fetch,
+        headers: opts.headers,
+        maxRetryTimeMs: opts.maxRetryTimeMs,
+        maxConcurrency: opts.maxConcurrency,
+        acquisitionTimeoutMs: opts.acquisitionTimeoutMs,
+      }) as unknown as Driver;
       this.ownsDriver = true;
+      this.transport = "http";
+      server = httpServer(url);
+    } else {
+      this.driver = createBoltDriver(
+        opts.uri,
+        opts.user,
+        opts.password,
+        opts.driverConfig,
+      ) as unknown as Driver;
+      this.ownsDriver = true;
+      this.transport = "bolt";
+      server = serverFromUri(opts.uri);
     }
     this.database = opts.database;
     this.instrumentation = new Instrumentation({
@@ -131,7 +244,7 @@ export class CyphraClient {
       warnMissingIndexes: opts.warnMissingIndexes,
       debug: opts.debug,
       database: opts.database,
-      server: opts.uri ? serverFromUri(opts.uri) : undefined,
+      server,
       openSession: () => this.driver.session({ database: this.database }),
     });
   }
@@ -152,7 +265,11 @@ export class CyphraClient {
     return this.instrumentation.on(level, listener);
   }
 
-  /** Underlying driver for advanced use. */
+  /**
+   * Underlying driver for advanced use. With the HTTP transport this is an
+   * {@link import("./http/driver.js").HttpDriver}, which implements only the `session()` /
+   * `run` / `executeRead` / `executeWrite` subset of `Driver`.
+   */
   get rawDriver(): Driver {
     return this.driver;
   }

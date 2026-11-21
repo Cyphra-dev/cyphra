@@ -24,3 +24,11 @@ await client.withSession(async (session) => {
 
 await client.close();
 ```
+
+## Edge runtimes (HTTP)
+
+On Vercel Edge, Cloudflare Workers, Deno Deploy or in browsers, connect with an `https://` URI (or
+`transport: "http"`): the client then uses the [Neo4j Query API](https://neo4j.com/docs/query-api/current/)
+over `fetch` (Neo4j 5.19+ or Aura), and bundlers pick a build without `neo4j-driver` under the
+`workerd` / `edge-light` / `worker` conditions (or import `@cyphra/runtime/edge`). See
+[HTTP transport](https://www.cyphra.dev/runtime#http-transport-edge-workers).
