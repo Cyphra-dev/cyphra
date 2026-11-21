@@ -21,7 +21,7 @@ export type CyphraConfig = {
   readonly zod?: ZodGeneratorConfig;
 };
 
-/** `"generators": { "zod": { "output", "coerce", "import" } }` in `cyphra.json`. */
+/** `"generators": { "zod": { "output", "coerce", "import", "omitGenerated" } }` in `cyphra.json`. */
 export type ZodGeneratorConfig = {
   /** Absolute path of the zod schemas module (default `./cyphra.zod.ts`). */
   readonly output: string;
@@ -29,6 +29,11 @@ export type ZodGeneratorConfig = {
   readonly coerce: boolean;
   /** Module the schemas import `z` from (default `"zod"`). */
   readonly import: string;
+  /**
+   * Leave generated fields (`@id` with a default, `now()` / `cuid()` / `uuid()` defaults) out of the
+   * create and update input schemas (default `false`).
+   */
+  readonly omitGenerated: boolean;
 };
 
 /** Default output of the zod generator, relative to the project root. */
@@ -40,11 +45,17 @@ function zodConfig(cwd: string, raw: unknown): ZodGeneratorConfig | undefined {
   if (!o || typeof o !== "object" || Array.isArray(o)) {
     throw new Error('cyphra.json "generators.zod" must be true or an object');
   }
-  const { output, coerce, import: zodImport, ...rest } = o as Record<string, unknown>;
+  const {
+    output,
+    coerce,
+    import: zodImport,
+    omitGenerated,
+    ...rest
+  } = o as Record<string, unknown>;
   const unknown = Object.keys(rest);
   if (unknown.length) {
     throw new Error(
-      `cyphra.json "generators.zod": unknown option "${unknown[0]}" (expected output, coerce, import)`,
+      `cyphra.json "generators.zod": unknown option "${unknown[0]}" (expected output, coerce, import, omitGenerated)`,
     );
   }
   if (output !== undefined && (typeof output !== "string" || output === "")) {
@@ -53,6 +64,9 @@ function zodConfig(cwd: string, raw: unknown): ZodGeneratorConfig | undefined {
   if (coerce !== undefined && typeof coerce !== "boolean") {
     throw new Error('cyphra.json "generators.zod.coerce" must be a boolean');
   }
+  if (omitGenerated !== undefined && typeof omitGenerated !== "boolean") {
+    throw new Error('cyphra.json "generators.zod.omitGenerated" must be a boolean');
+  }
   if (zodImport !== undefined && (typeof zodImport !== "string" || zodImport === "")) {
     throw new Error('cyphra.json "generators.zod.import" must be a module name (e.g. "zod")');
   }
@@ -60,6 +74,7 @@ function zodConfig(cwd: string, raw: unknown): ZodGeneratorConfig | undefined {
     output: resolveUnderRoot(cwd, output ?? DEFAULT_ZOD_OUTPUT),
     coerce: coerce ?? false,
     import: zodImport ?? "zod",
+    omitGenerated: omitGenerated ?? false,
   };
 }
 

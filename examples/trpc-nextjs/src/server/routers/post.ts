@@ -2,11 +2,9 @@ import { z } from "zod";
 import { PostCreateInputSchema, PostStatusSchema, PostUpdateInputSchema } from "../../cyphra.zod";
 import { publicProcedure, router } from "../trpc";
 
-// The generated schemas accept every scalar field. The API sets `id` and `createdAt` itself.
-const PostCreateInput = PostCreateInputSchema.omit({ id: true, createdAt: true }).extend({
-  authorId: z.string(),
-});
-const PostUpdateInput = PostUpdateInputSchema.omit({ id: true, createdAt: true });
+// `omitGenerated` in cyphra.json leaves `id` and `createdAt` (generated on create) out of the
+// input schemas. The procedure adds the author to connect.
+const PostCreateInput = PostCreateInputSchema.extend({ authorId: z.string() });
 
 export const postRouter = router({
   create: publicProcedure.input(PostCreateInput).mutation(({ ctx, input: { authorId, ...data } }) =>
@@ -58,7 +56,7 @@ export const postRouter = router({
     ),
 
   update: publicProcedure
-    .input(z.object({ id: z.string(), data: PostUpdateInput }))
+    .input(z.object({ id: z.string(), data: PostUpdateInputSchema }))
     .mutation(({ ctx, input }) =>
       ctx.db.post.update({ where: { id: input.id }, data: input.data }),
     ),

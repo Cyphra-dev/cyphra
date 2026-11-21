@@ -1,0 +1,72 @@
+// A shop on Postgres: an explicit join model with a quantity, decimals, a category tree.
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum OrderStatus {
+  PENDING
+  PAID
+  SHIPPED
+  CANCELLED
+}
+
+model Customer {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email     String   @unique @db.Citext
+  name      String
+  addresses Json     @default("[]")
+  orders    Order[]
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+}
+
+model Category {
+  id       Int        @id @default(autoincrement())
+  name     String
+  slug     String     @unique
+  parent   Category?  @relation("CategoryTree", fields: [parentId], references: [id])
+  parentId Int?
+  children Category[] @relation("CategoryTree")
+  products Product[]
+}
+
+model Product {
+  id         String      @id @default(cuid())
+  sku        String      @unique
+  name       String
+  price      Decimal     @db.Decimal(10, 2)
+  stock      Int         @default(0)
+  tags       String[]
+  image      Bytes?
+  releasedOn DateTime?   @db.Date
+  category   Category    @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  categoryId Int
+  orderItems OrderItem[]
+
+  @@index([categoryId, price])
+}
+
+model Order {
+  id         String      @id @default(cuid())
+  status     OrderStatus @default(PENDING)
+  placedAt   DateTime    @default(now())
+  total      Decimal     @db.Decimal(12, 2)
+  customer   Customer    @relation(fields: [customerId], references: [id])
+  customerId String      @db.Uuid
+  items      OrderItem[]
+
+  @@index([customerId, placedAt])
+}
+
+model OrderItem {
+  order     Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  orderId   String
+  product   Product @relation(fields: [productId], references: [id])
+  productId String
+  quantity  Int     @default(1)
+  unitPrice Decimal @db.Decimal(10, 2)
+
+  @@id([orderId, productId])
+  @@index([productId])
+}

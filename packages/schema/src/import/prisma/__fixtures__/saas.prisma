@@ -1,0 +1,109 @@
+// A multi-tenant SaaS: organizations, memberships with a role, projects, API keys, audit log.
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["fullTextSearchPostgres"]
+}
+
+enum MemberRole {
+  OWNER
+  ADMIN
+  MEMBER
+  VIEWER
+}
+
+enum Plan {
+  FREE    @map("free")
+  PRO     @map("pro")
+  ENTERPRISE @map("enterprise")
+}
+
+model User {
+  id          String       @id @default(uuid(7))
+  email       String       @unique
+  name        String
+  avatarUrl   String?
+  memberships Membership[]
+  invitations Invitation[] @relation("InvitedBy")
+  createdAt   DateTime     @default(now())
+}
+
+model Organization {
+  id          String       @id @default(cuid())
+  slug        String       @unique
+  name        String
+  plan        Plan         @default(FREE)
+  settings    Json?
+  memberships Membership[]
+  projects    Project[]
+  apiKeys     ApiKey[]
+  invitations Invitation[]
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+}
+
+model Membership {
+  id        String       @id @default(cuid())
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  org       Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  orgId     String
+  role      MemberRole   @default(MEMBER)
+  joinedAt  DateTime     @default(now())
+
+  @@unique([userId, orgId])
+  @@index([orgId])
+}
+
+model Project {
+  id          String       @id @default(cuid())
+  name        String
+  description String?
+  archived    Boolean      @default(false)
+  org         Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  orgId       String
+  createdAt   DateTime     @default(now())
+
+  @@unique([orgId, name])
+  @@index([orgId, createdAt])
+}
+
+model ApiKey {
+  id         String       @id @default(cuid())
+  name       String
+  hashedKey  String       @unique
+  lastUsedAt DateTime?
+  expiresAt  DateTime?
+  org        Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  orgId      String
+}
+
+model Invitation {
+  id          String       @id @default(cuid())
+  email       String
+  role        MemberRole   @default(MEMBER)
+  token       String       @unique @default(uuid())
+  org         Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  orgId       String
+  invitedBy   User?        @relation("InvitedBy", fields: [invitedById], references: [id], onDelete: SetNull)
+  invitedById String?
+  expiresAt   DateTime
+
+  @@unique([orgId, email])
+}
+
+model AuditEvent {
+  id        BigInt   @id @default(autoincrement())
+  orgId     String
+  actorId   String?
+  action    String
+  payload   Json
+  at        DateTime @default(now())
+
+  @@index([orgId, at])
+}

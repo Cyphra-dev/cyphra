@@ -26,7 +26,11 @@ function generateFrom(source: string, config: CyphraConfig): Output[] {
   if (config.zod) {
     out.push({
       path: config.zod.output,
-      content: renderZodSource(doc, { coerce: config.zod.coerce, zodImport: config.zod.import }),
+      content: renderZodSource(doc, {
+        coerce: config.zod.coerce,
+        zodImport: config.zod.import,
+        omitGenerated: config.zod.omitGenerated,
+      }),
     });
   }
   return out;
@@ -49,14 +53,17 @@ export type ZodFlags = {
   readonly zod?: string | boolean;
   /** `--zod-coerce`. */
   readonly zodCoerce?: boolean;
+  /** `--zod-omit-generated`. */
+  readonly zodOmitGenerated?: boolean;
 };
 
 /**
  * `config` with the zod generator flags applied: `--zod [output]` turns the generator on (and sets
- * its output), `--zod-coerce` turns it on with coercion. Other options come from `cyphra.json`.
+ * its output), `--zod-coerce` turns it on with coercion, `--zod-omit-generated` turns it on and leaves
+ * generated fields out of the input schemas. Other options come from `cyphra.json`.
  */
 export function withZodFlags(cwd: string, config: CyphraConfig, flags: ZodFlags): CyphraConfig {
-  if (!flags.zod && !flags.zodCoerce) return config;
+  if (!flags.zod && !flags.zodCoerce && !flags.zodOmitGenerated) return config;
   const output =
     typeof flags.zod === "string"
       ? resolveUnderRoot(cwd, flags.zod)
@@ -67,6 +74,7 @@ export function withZodFlags(cwd: string, config: CyphraConfig, flags: ZodFlags)
       output,
       coerce: flags.zodCoerce ?? config.zod?.coerce ?? false,
       import: config.zod?.import ?? "zod",
+      omitGenerated: flags.zodOmitGenerated || (config.zod?.omitGenerated ?? false),
     },
   };
 }

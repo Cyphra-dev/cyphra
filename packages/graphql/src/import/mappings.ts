@@ -19,26 +19,16 @@
 
 import type { ConstDirectiveNode, ConstValueNode } from "graphql";
 import { Kind, valueFromASTUntyped } from "graphql";
-import { isValidTemporalText, type Decorator, type ScalarTypeName } from "@cyphra/schema";
+import {
+  isValidTemporalText,
+  type Decorator,
+  type ImportIssue,
+  type ImportSeverity,
+  type ScalarTypeName,
+} from "@cyphra/schema";
 
-/** How serious a report entry is. */
-export type ImportSeverity =
-  /** Not converted: the type, field or directive is missing from the Cyphra schema. */
-  | "unsupported"
-  /** Converted, but it behaves differently in Cyphra: review it. */
-  | "changed"
-  /** API-level setting of `@neo4j/graphql` with no effect on the data model. */
-  | "ignored";
-
-/** One line of the import report. */
-export type ImportIssue = {
-  readonly severity: ImportSeverity;
-  /** GraphQL location: `Type` or `Type.field`. */
-  readonly at: string;
-  /** What it is about, e.g. `@cypher`, `Duration`, `enum`. */
-  readonly feature: string;
-  readonly message: string;
-};
+/** How serious a report entry is, and one line of the import report (shared by the importers). */
+export type { ImportIssue, ImportSeverity };
 
 /** An issue before its location is attached. */
 export type IssueDraft = Omit<ImportIssue, "at">;

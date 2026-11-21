@@ -1,0 +1,23 @@
+Not converted (3):
+  Project        @@unique: covers the foreign key of org: Neo4j constraints cannot span a relationship, so this is not converted; check it in your code before you create
+  Invitation     @@unique: covers the foreign key of org: Neo4j constraints cannot span a relationship, so this is not converted; check it in your code before you create
+  AuditEvent.id  @default(autoincrement()): Neo4j has no sequences: not converted; keep the existing ids when you migrate the data, and set new ones yourself (or switch to String @id @default(cuid()))
+
+Converted with differences (13):
+  Plan.FREE               @map: Cyphra stores the value's name ("FREE"), not the mapped database value (Prisma Client returns the name, so export through it)
+  Plan.PRO                @map: Cyphra stores the value's name ("PRO"), not the mapped database value (Prisma Client returns the name, so export through it)
+  Plan.ENTERPRISE         @map: Cyphra stores the value's name ("ENTERPRISE"), not the mapped database value (Prisma Client returns the name, so export through it)
+  Membership              join model: became relationship Membership: (User)-[:MEMBERSHIP]->(Organization) edges with its other fields as properties; User.memberships and Organization.memberships now list Organization and User nodes (the properties are on $edge)
+  User.id                 @default(uuid(7)): became uuid(): Cyphra generates version 4 UUIDs, which are not time-ordered
+  Organization.updatedAt  @updatedAt: became @default(now()): set on create, but Cyphra does not refresh it on update; set it in your updates
+  Membership.id           @id: the join row's own id is not needed on an edge (the edge is found from its nodes): dropped
+  Membership              @@unique: became the edge's endpoints: Neo4j has no constraint over relationships, but the client's connect keeps one MEMBERSHIP edge per pair of nodes (it MERGEs); raw Cypher CREATE does not
+  Project.orgId           foreign key: dropped: the HAS_PROJECTS edge of org replaces the key (Neo4j links nodes with edges, not key columns)
+  Project                 @@index: the foreign key of org is not a property: indexed the other fields (createdAt)
+  ApiKey.orgId            foreign key: dropped: the HAS_API_KEYS edge of org replaces the key (Neo4j links nodes with edges, not key columns)
+  Invitation.orgId        foreign key: dropped: the HAS_INVITATIONS edge of org replaces the key (Neo4j links nodes with edges, not key columns)
+  Invitation.invitedById  foreign key: dropped: the INVITED_BY edge of invitedBy replaces the key (Neo4j links nodes with edges, not key columns)
+
+Ignored (no effect on the graph) (2):
+  datasource db     datasource: Prisma connection settings (provider "postgresql"): Cyphra connects to Neo4j with NEO4J_URI
+  generator client  generator: Prisma generator (provider "prisma-client-js"): run cyphra generate instead

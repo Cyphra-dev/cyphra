@@ -4,7 +4,7 @@ import { publicProcedure, router } from "../trpc";
 
 export const userRouter = router({
   create: publicProcedure
-    .input(UserCreateInputSchema.omit({ id: true, createdAt: true }))
+    .input(UserCreateInputSchema)
     .mutation(({ ctx, input }) => ctx.db.user.create({ data: input })),
 
   list: publicProcedure.query(({ ctx }) =>

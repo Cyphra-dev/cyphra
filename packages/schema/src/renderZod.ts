@@ -31,7 +31,22 @@ export type RenderZodOptions = {
    * integers for `BigInt` (turned into a `bigint`). Default `false`: only `Date` and `bigint` values.
    */
   readonly coerce?: boolean;
+  /**
+   * Leave the fields Cyphra generates out of the create and update input schemas: an `@id` with a
+   * `@default(…)`, and every field with a function default (`@default(now())`, `cuid()`,
+   * `uuid()`). APIs usually set those themselves. Default `false`: the inputs take every field.
+   */
+  readonly omitGenerated?: boolean;
 };
+
+/**
+ * Whether the client generates the field's value on create: an `@id` with a default, or a function
+ * default (`now()`, `cuid()`, `uuid()`). These are the fields {@link RenderZodOptions.omitGenerated}
+ * leaves out of input schemas.
+ */
+export function isGeneratedField(f: ResolvedScalarField): boolean {
+  return f.default !== undefined && (f.id || f.default.kind === "fn");
+}
 
 /** Helpers a generated module may need, emitted once and only when used. */
 type Helper =
@@ -437,9 +452,13 @@ function renderModel(
   name: string,
   fields: readonly ResolvedScalarField[],
   what: string,
+  omitGenerated: boolean,
   abstract = false,
 ): string[] {
   const base = `${name}Fields`;
+  const inputs = omitGenerated ? fields.filter((f) => !isGeneratedField(f)) : fields;
+  const left =
+    omitGenerated && inputs.length < fields.length ? "; generated fields are left out" : "";
   const lines: string[] = [];
   if (fields.length > 0) {
     lines.push(`const ${base} = {`);
@@ -459,17 +478,17 @@ function renderModel(
       ? []
       : renderObject(
           `${name}CreateInputSchema`,
-          fields,
+          inputs,
           base,
           "create",
-          `${what} accepted by a create (fields with a default, optional fields and lists may be left out).`,
+          `${what} accepted by a create (fields with a default, optional fields and lists may be left out${left}).`,
         )),
     ...renderObject(
       `${name}UpdateInputSchema`,
-      fields,
+      inputs,
       base,
       "update",
-      `${what} accepted by an update (every field may be left out).`,
+      `${what} accepted by an update (every field may be left out${left}).`,
     ),
   );
   return lines;
@@ -483,6 +502,7 @@ function renderModel(
  */
 export function renderZodFromModel(model: SchemaModel, options: RenderZodOptions = {}): string {
   const w = new ZodWriter(options.coerce ?? false);
+  const omitGenerated = options.omitGenerated ?? false;
   const body: string[] = [];
   for (const e of model.enums ?? []) {
     body.push(`/** \`${e.name}\` enum values. */`);
@@ -499,13 +519,20 @@ export function renderZodFromModel(model: SchemaModel, options: RenderZodOptions
         n.name,
         scalars,
         n.abstract ? `\`${n.name}\` interface properties` : `\`${n.name}\` node properties`,
+        omitGenerated,
         n.abstract === true,
       ),
     );
   }
   for (const r of model.relationships) {
     body.push(
-      ...renderModel(w, r.name, r.properties, `\`${r.name}\` (\`:${r.relType}\`) edge properties`),
+      ...renderModel(
+        w,
+        r.name,
+        r.properties,
+        `\`${r.name}\` (\`:${r.relType}\`) edge properties`,
+        omitGenerated,
+      ),
     );
   }
 
@@ -518,6 +545,11 @@ export function renderZodFromModel(model: SchemaModel, options: RenderZodOptions
     " * schema's validation rules.",
     ...(options.coerce
       ? [" * Coercing: ISO 8601 strings are read as `Date`s and decimal strings as `bigint`s."]
+      : []),
+    ...(omitGenerated
+      ? [
+          " * Input schemas leave out generated fields (`@id` with a default, `now()`, `cuid()`, `uuid()`).",
+        ]
       : []),
     " */",
     "",

@@ -923,6 +923,10 @@ JSON has no dates or bigints: with `"coerce": true` the schemas read ISO 8601 st
 decimal strings as `bigint`s (`"2025-01-01T00:00:00Z"`, `"42"`), as you would send them from a
 browser. Without it they expect `Date` and `bigint` values, for input that is already typed.
 
+A public API rarely lets callers choose an `id` or a `createdAt`. With `"omitGenerated": true` the
+create and update schemas leave out every field Cyphra generates (an `@id` with a `@default`, and
+`now()`, `cuid()` and `uuid()` defaults), so no `.omit({ id: true, createdAt: true })` is needed.
+
 Relation fields are not part of the schemas (unknown keys are dropped). To accept a nested write,
 extend the input schema, for example
 `UserCreateInputSchema.extend({ posts: z.object({ connect: z.array(z.object({ id: z.string() })) }).optional() })`.
