@@ -1,6 +1,6 @@
 {
   "name": "cyphra",
-  "version": "0.10.0",
+  "version": "0.11.0",
   "description": "Cyphra — the TypeScript ORM for Neo4j: typed client, schema DSL, Cypher helpers and migrations",
   "type": "module",
   "sideEffects": false,
