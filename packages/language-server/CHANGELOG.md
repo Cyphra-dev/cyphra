@@ -1,5 +1,12 @@
 # @cyphra/language-server
 
+## 0.13.0
+
+### Patch Changes
+
+- Updated dependencies [ec7fd51]
+  - @cyphra/schema@0.13.0
+
 ## 0.12.0
 
 ### Patch Changes

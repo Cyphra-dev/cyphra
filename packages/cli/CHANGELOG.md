@@ -1,5 +1,28 @@
 # @cyphra/cli
 
+## 0.13.0
+
+### Minor Changes
+
+- c1b2b85: `cyphra studio`: a local data browser built from `schema.cyphra`. It serves a bundled web UI on
+  `127.0.0.1` (`--port`, `--host`, `--no-open`, `--read-only`) to browse node models, interfaces and
+  relationship models with counts, filter, sort and page, edit records with typed inputs (writes go
+  through the ORM, so validation rules and unique constraints apply), follow relations, preview
+  `onDelete` effects before a delete, and run raw Cypher (read transactions unless writes are allowed).
+  The API requires a per-session token (moved from the URL to an HttpOnly cookie) and a custom header,
+  and refuses foreign `Host` and `Origin` headers.
+- ec7fd51: `cyphra import neogma <files|dir>` converts neogma models to `schema.cyphra`: neogma 2 decorator classes (`@Node`, `@PrimaryKey`, `@Property`, `@Relationship`, from `neogma` or `neogma/legacy`) and `ModelFactory` models (neogma 1, revalidator or TypeBox schemas). The files are read with the TypeScript compiler, never run. Labels become nodes (extra labels become interfaces), TypeBox and revalidator types become Cyphra types, validation keywords become rules (`minLength` / `maxLength` to `@length`, `minimum` / `maximum` to `@min` / `@max`, `format: 'email' | 'url' | 'uri'` to `@email` / `@url`, `pattern` to `@regex`, `minItems` / `maxItems` to `@size`), string literal unions become enums, the primary key becomes `@id`, relationship aliases become relation fields and relationship properties become `relationship` models. Hooks, statics, instance methods and custom validators are reported, with `--out`, `--merge`, `--force` and `--print` as for the other importers. `@cyphra/schema` exports `convertNeogmaModels` (pass it the TypeScript compiler API), `printNeogmaImport`, `mergeNeogmaImport` and `formatNeogmaImportReport`.
+
+### Patch Changes
+
+- Updated dependencies [e586ac4]
+- Updated dependencies [ec7fd51]
+- Updated dependencies [ec7fd51]
+  - @cyphra/runtime@0.13.0
+  - @cyphra/schema@0.13.0
+  - @cyphra/graphql@0.13.0
+  - @cyphra/migrator@0.13.0
+
 ## 0.12.0
 
 ### Minor Changes
