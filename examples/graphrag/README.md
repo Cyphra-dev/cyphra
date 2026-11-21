@@ -4,13 +4,15 @@ Retrieval for a question-answering app, on Neo4j, with the typed client. The gui
 through it is at [cyphra.dev/guides/graphrag](https://cyphra.dev/guides/graphrag).
 
 - `schema.cyphra`: `(Document)-[:HAS_CHUNK]->(Chunk)`, `(Chunk)-[:NEXT]->(Chunk)`,
-  `(Chunk)-[:MENTIONS]->(Entity)`, `(Entity)-[:RELATED_TO]->(Entity)`. `Chunk.embedding` is a
+  `(Chunk)-[:MENTIONS]->(Entity)`, `(Entity)-[:RELATED_TO {weight}]->(Entity)` (`weight`: the
+  chunks that mention both entities, counted with `$edge: { weight: { increment: 1 } }`). `Chunk.embedding` is a
   `Vector(256)` with a vector index; `Chunk.heading` and `Chunk.text` have a full-text index.
 - `src/ingest.ts`: chunks Markdown by paragraph (`src/chunk.ts`), embeds each chunk, extracts its
   entities and writes the graph, one transaction per document.
 - `src/retrieve.ts`: `findSimilar` and full-text `search`, merged with reciprocal rank fusion, then
   graph expansion (the chunks around each match, and chunks that mention the same or related
-  entities, through `traverse`), returned as a context block with numbered citations.
+  entities: one `traverse` across models, Entity → RELATED_TO → Entity → Chunk, ranked by
+  relation counts filtered by distance), returned as a context block with numbered citations.
 - `docs/`: four short articles on early computing (written for this example) to ingest.
 
 No API key is needed. By default embeddings come from a deterministic hashed bag of words

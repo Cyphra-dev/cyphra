@@ -409,15 +409,20 @@ type PointKeys<TM extends TypeMap, M extends keyof TM> = {
 export type DistanceOrder<P> = { distanceFrom: P; sort?: SortOrder };
 
 /**
- * One `orderBy` entry: scalars, a to-many relation by its count (`{ posts: { _count: "desc" } }`),
- * or a to-one relation by a scalar of the related node (`{ author: { name: "asc" } }`).
+ * One `orderBy` entry: scalars, a to-many relation by its count (`{ posts: { _count: "desc" } }`,
+ * optionally filtered: `{ posts: { _count: "desc", where: { published: true } } }`), or a to-one
+ * relation by a scalar of the related node (`{ author: { name: "asc" } }`).
  */
 type OrderByItem<TM extends TypeMap, M extends keyof TM> = {
   [K in Exclude<keyof Scalars<TM, M>, VectorKeys<TM, M> | UnsortableKeys<TM, M>>]?: SortOrder;
 } & {
   [K in PointKeys<TM, M>]?: DistanceOrder<NonNullable<Scalars<TM, M>[K]>>;
 } & {
-  [R in ToManyRelations<TM, M>]?: { _count?: SortOrder };
+  [R in ToManyRelations<TM, M>]?: {
+    _count?: SortOrder;
+    /** Count only the related nodes matching this filter. */
+    where?: WhereInput<TM, Target<TM, M, R>>;
+  };
 } & {
   [R in ToOneRelations<TM, M>]?: {
     [
@@ -565,6 +570,24 @@ type ArgOf<A, K extends string> = A extends { [P in K]?: infer V } ? Exclude<V, 
 type EdgeInput<D extends RelationTypeDef> =
   D["edge"] extends Record<string, unknown> ? { $edge?: Partial<D["edge"]> } : unknown;
 
+/**
+ * `$edge` on `connect` / `set`, which may update an existing edge: a number property also takes
+ * `{ increment, decrement, multiply }` (applied to the current value, or to the default on a new
+ * edge).
+ */
+type EdgeUpdateInput<D extends RelationTypeDef> =
+  D["edge"] extends Record<string, unknown>
+    ? {
+        $edge?: {
+          [K in keyof D["edge"]]?: D["edge"][K] extends number | null
+            ? D["edge"][K] | NumberUpdate
+            : D["edge"][K] extends bigint | null
+              ? D["edge"][K] | BigIntUpdate
+              : D["edge"][K];
+        };
+      }
+    : unknown;
+
 type OneOrMany<D extends RelationTypeDef, T> = D["many"] extends true ? T | readonly T[] : T;
 
 type ScalarCreate<TM extends TypeMap, M extends keyof TM> = {
@@ -582,7 +605,7 @@ type RelationCreateAny<TM extends TypeMap, D extends RelationTypeDef> = {
   /** Create related node(s) and link them. */
   create?: OneOrMany<D, CreateInput<TM, D["target"] & keyof TM> & EdgeInput<D>>;
   /** Link existing node(s); throws if a target does not exist. */
-  connect?: OneOrMany<D, WhereUniqueInput<TM, D["target"] & keyof TM> & EdgeInput<D>>;
+  connect?: OneOrMany<D, WhereUniqueInput<TM, D["target"] & keyof TM> & EdgeUpdateInput<D>>;
 };
 
 export type CreateInput<TM extends TypeMap, M extends keyof TM> = ScalarCreate<TM, M> & {
@@ -605,8 +628,11 @@ type RelationUpdate<TM extends TypeMap, D extends RelationTypeDef> = RelationCre
     ? {
         /** Remove the edge(s) to these nodes (the nodes are kept). */
         disconnect?: OneOrMany<D, WhereUniqueInput<TM, D["target"] & keyof TM>>;
-        /** Replace all edges of this relation with edges to these nodes. */
-        set?: readonly (WhereUniqueInput<TM, D["target"] & keyof TM> & EdgeInput<D>)[];
+        /**
+         * Make these nodes the only ones linked by this relation: edges to other nodes are
+         * removed, edges to these nodes are kept (and get the `$edge` values) or created.
+         */
+        set?: readonly (WhereUniqueInput<TM, D["target"] & keyof TM> & EdgeUpdateInput<D>)[];
       }
     : {
         /** Remove the edge (the related node is kept). */
@@ -952,6 +978,122 @@ export type TraverseArgs<TM extends TypeMap, M extends keyof TM, R extends SelfR
   take?: number;
 };
 
+// --- Multi-hop traversals (`via: [{ rel }, { rel }, …]`) -----------------------------------
+
+/** What a hop's `rel` names: one relation of the model you step from, or a list of them. */
+export type HopRelInput<TM extends TypeMap, M extends keyof TM> =
+  (keyof Relations<TM, M> & string) | readonly (keyof Relations<TM, M> & string)[];
+
+/** Relation names of a hop's `rel` (`"a"` or `["a", "b"]` → `"a" | "b"`). */
+type HopNames<X> = X extends readonly (infer E)[] ? E : X;
+
+/** The model one hop along the relation(s) `X` of `M` steps to. */
+export type HopTarget<TM extends TypeMap, M extends keyof TM, X> =
+  HopNames<X> extends infer R
+    ? R extends keyof Relations<TM, M>
+      ? Target<TM, M, R>
+      : never
+    : never;
+
+/** The model hop `K` (`"0"`, `"1"`, …) of the hop list `V` steps from, starting at `M`. */
+export type HopModelAt<
+  TM extends TypeMap,
+  M extends keyof TM,
+  V extends readonly unknown[],
+  K,
+  Acc extends unknown[] = [],
+> = `${Acc["length"]}` extends K
+  ? M
+  : V extends readonly [infer H, ...infer Rest]
+    ? HopModelAt<TM, HopTarget<TM, M, H>, Rest, K, [...Acc, 0]>
+    : never;
+
+/** The model the hops `V` (the `rel` of each hop) end on, starting at `M`. */
+export type HopEndModel<TM extends TypeMap, M extends keyof TM, V> = V extends readonly [
+  infer H,
+  ...infer Rest,
+]
+  ? HopEndModel<TM, HopTarget<TM, M, H>, Rest>
+  : M;
+
+/**
+ * One hop of a multi-hop traversal, from model `M` along the relation(s) `X` (the `rel` the
+ * caller wrote, checked against the relations of `M`).
+ */
+export type TraverseHop<TM extends TypeMap, M extends keyof TM, X> = {
+  /** Relation(s) of the model you step from; several: any of them (same target model). */
+  rel: X extends HopRelInput<TM, M> ? X : HopRelInput<TM, M>;
+  /** Arrow direction of this hop. Default: each relation's declared `direction`. */
+  direction?: TraversalDirection;
+  /**
+   * Repeat this hop `min` (default `1`, `0` allows skipping it) to `max` times. Only on a relation
+   * that leads back to the same model (`Entity.related`); without it, the hop is taken once.
+   */
+  depth?: [HopTarget<TM, M, X>] extends [M] ? { min?: number; max: number } : never;
+  /** Filter on every node this hop steps to. */
+  where?: WhereInput<TM, HopTarget<TM, M, X>>;
+  /** Filter on the properties of every edge of this hop. */
+  edgeWhere?: HopNames<X> extends keyof Relations<TM, M> ? EdgeWhereFor<TM, M, HopNames<X>> : never;
+};
+
+/** `via` of a multi-hop traversal: one {@link TraverseHop} per element of `V`. */
+export type TraverseHops<TM extends TypeMap, M extends keyof TM, V extends readonly unknown[]> = {
+  [K in keyof V]: TraverseHop<TM, HopModelAt<TM, M, V, K>, V[K]>;
+};
+
+/** Node and edge types of every hop of `V` (for the {@link Path} of a multi-hop traversal). */
+type HopParts<TM extends TypeMap, M extends keyof TM, V> = V extends readonly [
+  infer H,
+  ...infer Rest,
+]
+  ? HopNames<H> extends infer R extends keyof Relations<TM, M>
+    ? | { node: Simplify<Scalars<TM, Target<TM, M, R>>>; edge: EdgeProps<Rel<TM, M, R>> }
+      | HopParts<TM, Target<TM, M, R>, Rest>
+    : never
+  : never;
+
+/**
+ * The {@link Path} of a multi-hop traversal from `M` along the hops `V`: its nodes are the
+ * models met along the way (a union) and its edges those of the hops' relations.
+ */
+export type HopPath<TM extends TypeMap, M extends keyof TM, V> = Path<
+  Simplify<Scalars<TM, M>> | HopParts<TM, M, V>["node"],
+  PathEdge<HopParts<TM, M, V>["edge"]>
+>;
+
+/**
+ * Arguments of a multi-hop traversal: `via` is a list of hops, each along relation(s) of the
+ * model the previous hop reached, possibly across models (`Chunk` → `Entity` → `Chunk`). The
+ * reached nodes, filtered by `where` and shaped by `select` / `include`, are of the last hop's
+ * model `E`.
+ */
+export type TraverseHopsArgs<
+  TM extends TypeMap,
+  M extends keyof TM,
+  V extends readonly unknown[],
+  E extends keyof TM,
+> = {
+  /** Start node(s): any filter on `M`. */
+  from: WhereInput<TM, M>;
+  /** The hops, in order: `[{ rel: "entities" }, { rel: "related", depth: { max: 2 } }, …]`. */
+  via: TraverseHops<TM, M, V>;
+  /** Filter on the reached nodes (of the last hop's model). */
+  where?: WhereInput<TM, E>;
+  /** Return each reached node once (default `true`); `false`: one result per path. */
+  distinct?: boolean;
+  orderBy?: OrderByInput<TM, E>;
+  skip?: number;
+  take?: number;
+};
+
+/** One multi-hop `traverse` result with `returnPaths: true`. */
+export type HopTraversalResult<TM extends TypeMap, M extends keyof TM, V, N> = {
+  /** The reached node (honours `select` / `include`). */
+  node: N;
+  /** How it was reached from a start node (the shortest such path when `distinct`). */
+  path: HopPath<TM, M, V>;
+};
+
 /** One `traverse` result with `returnPaths: true`. */
 export type TraversalResult<
   TM extends TypeMap,
@@ -1156,6 +1298,25 @@ type BaseModelDelegate<TM extends TypeMap, M extends keyof TM> = {
   >(
     args?: AggregateArgs<TM, M> & AggregateProjection<TM, M, C, Su, Av, Mi, Ma>,
   ): Promise<AggregateResult<TM, M, C, Su, Av, Mi, Ma>>;
+  /**
+   * Multi-hop traversal: follow the hops of `via` in order, each along relation(s) of the model the
+   * previous hop reached (`[{ rel: "entities" }, { rel: "related", depth: { max: 2 } },
+   * { rel: "chunks" }]`), and return the nodes the last hop reaches, in one statement. Each hop
+   * takes its own `direction`, `depth` (self-relations only), `where` and `edgeWhere`.
+   */
+  traverse<
+    const V extends readonly (string | readonly string[])[],
+    S extends Sel<TM, HopEndModel<TM, M, V>> = undefined,
+    I extends Inc<TM, HopEndModel<TM, M, V>> = undefined,
+    P extends boolean = false,
+  >(
+    args: TraverseHopsArgs<TM, M, V, HopEndModel<TM, M, V>> &
+      Projection<S, I> & { returnPaths?: P },
+  ): Promise<
+    (P extends true
+      ? HopTraversalResult<TM, M, V, Out<TM, HopEndModel<TM, M, V>, S, I>>
+      : Out<TM, HopEndModel<TM, M, V>, S, I>)[]
+  >;
   /**
    * Follow `via` from the `from` node(s) for `depth.min`..`depth.max` hops and return the reached
    * nodes, in one statement (a quantified path pattern, Neo4j 5.9+). `returnPaths: true` returns

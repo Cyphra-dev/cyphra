@@ -1,5 +1,6 @@
 // GraphRAG: documents are split into chunks; chunks carry an embedding, a full-text index and
-// the entities they mention; entities that are mentioned together are RELATED_TO each other.
+// the entities they mention; entities that are mentioned together are RELATED_TO each other, the
+// edge's weight counting the chunks that mention both.
 
 node Document {
   id     String  @id
@@ -31,3 +32,11 @@ node Entity {
   relatedFrom Entity[] @relationship(type: "RELATED_TO", direction: IN)
 }
 
+relationship RelatedTo {
+  type "RELATED_TO"
+  from Entity
+  to   Entity
+  // Chunks that mention both entities, counted at ingestion (re-ingesting a document counts its
+  // chunks again).
+  weight Int @default(0) @min(0)
+}

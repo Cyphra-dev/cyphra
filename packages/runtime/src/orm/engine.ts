@@ -80,6 +80,9 @@ function sameValue(a: unknown, b: unknown): boolean {
   return a === b;
 }
 
+/** Where a value sits in the operation's arguments, for validation issues (`data.posts.connect`). */
+type IssuePath = readonly (string | number)[];
+
 function asArray(v: unknown): unknown[] {
   return Array.isArray(v) ? v : [v];
 }
@@ -436,6 +439,55 @@ export class ModelEngine {
     return props;
   }
 
+  /**
+   * Split the number updates (`{ weight: { increment: 1 } }`) out of `$edge`: the other
+   * properties, and the `SET` assignments on edge variable `r` with the `@min` / `@max` checks of
+   * the values they produce. A missing value counts as `0`; a new edge starts from the field's
+   * default (or `0`), so `{ increment: 1 }` counts how many times an edge was connected.
+   */
+  private edgeUpdates(
+    ctx: QueryContext,
+    rel: ResolvedRelationField,
+    input: unknown,
+    at: string,
+  ): { plain: unknown; base: AnyRecord; sets: string[]; checks: NumericCheck[] } {
+    const none = { plain: input, base: {}, sets: [], checks: [] };
+    if (!rel.edge || !isPlainObject(input)) return none;
+    const edgeModel = this.schema.relationships.find((r) => r.name === rel.edge)!;
+    const plain: AnyRecord = {};
+    const base: AnyRecord = {};
+    const sets: string[] = [];
+    const checks: NumericCheck[] = [];
+    for (const [k, v] of Object.entries(input)) {
+      const f = edgeModel.properties.find((p) => p.name === k);
+      const numeric =
+        f && !f.list && (f.type === "Int" || f.type === "Float" || f.type === "BigInt");
+      if (!f || !numeric || !isPlainObject(v)) {
+        plain[k] = v;
+        continue;
+      }
+      const ref = `r.${q(k)}`;
+      const zero = ctx.param(encodeScalar(f, f.type === "BigInt" ? 0n : 0, edgeModel.name));
+      let result = `coalesce(${ref}, ${zero})`;
+      for (const [op, amount] of Object.entries(v)) {
+        if (amount === undefined) continue;
+        const sym = { increment: "+", decrement: "-", multiply: "*" }[op];
+        if (!sym) throw new CyphraValidationError(`${at}.${k}: unknown number update "${op}".`);
+        result = `(${result} ${sym} ${ctx.param(encodeScalar(f, amount, edgeModel.name))})`;
+      }
+      sets.push(`${ref} = ${result}`);
+      // A new edge gets the operators applied to the default, or to 0 when there is none.
+      if (!f.default) base[k] = f.type === "BigInt" ? 0n : 0;
+      for (const r of f.rules ?? []) {
+        if (r.rule !== "min" && r.rule !== "max") continue;
+        const limit = f.type === "BigInt" ? BigInt(r.value) : r.value;
+        const bound = ctx.param(encodeScalar(f, limit, edgeModel.name));
+        checks.push({ field: f, rule: r.rule, result: ref, bound });
+      }
+    }
+    return { plain, base, sets, checks };
+  }
+
   private edgeText(
     ctx: QueryContext,
     rel: ResolvedRelationField,
@@ -449,7 +501,7 @@ export class ModelEngine {
   }
 
   /** CREATE a node with nested relation writes; returns its elementId. */
-  async createNode(exec: Executor, data: unknown): Promise<string> {
+  async createNode(exec: Executor, data: unknown, path: IssuePath = ["data"]): Promise<string> {
     assertCreatable(this.model, `${this.model.name}.create`);
     const { scalars, relations } = this.splitData(data, "create");
     const fields = this.model.fields.filter((f): f is ResolvedScalarField => f.kind === "scalar");
@@ -461,7 +513,7 @@ export class ModelEngine {
     );
     const id = rows[0]!.id as string;
     for (const [k, v] of Object.entries(relations)) {
-      await this.writeRelation(exec, id, relationField(this.model, k)!, v, "create");
+      await this.writeRelation(exec, id, relationField(this.model, k)!, v, "create", [...path, k]);
     }
     return id;
   }
@@ -477,6 +529,7 @@ export class ModelEngine {
     id: string,
     rel: ResolvedRelationField,
     item: unknown,
+    path: IssuePath,
   ): Promise<void> {
     if (!isPlainObject(item))
       throw new CyphraValidationError(`${rel.name}.connect expects unique where objects.`);
@@ -486,9 +539,13 @@ export class ModelEngine {
       unique,
       `${this.model.name}.${rel.name}.connect`,
     );
-    const onCreate = this.edgeProps(rel, $edge);
-    const onMatch = this.explicitEdgeProps(rel, $edge);
     const ctx = this.ctx();
+    const updates = this.edgeUpdates(ctx, rel, $edge, `${this.model.name}.${rel.name}.$edge`);
+    const onCreate = this.edgeProps(
+      rel,
+      isPlainObject(updates.plain) ? { ...updates.plain, ...updates.base } : updates.plain,
+    );
+    const onMatch = this.explicitEdgeProps(rel, updates.plain);
     const w = compileWhere(ctx, target, "b", where);
     const link = (from: string, r: string) => {
       const e = `[${r}:${q(rel.relType)}]`;
@@ -518,9 +575,21 @@ export class ModelEngine {
     text += `MERGE ${link("a", "r")}`;
     if (Object.keys(onCreate).length) text += ` ON CREATE SET r += ${ctx.param(onCreate)}`;
     if (Object.keys(onMatch).length) text += ` ON MATCH SET r += ${ctx.param(onMatch)}`;
-    const rows = await exec(`${text} RETURN count(r) AS c`, ctx.params);
+    if (updates.sets.length) text += ` SET ${updates.sets.join(", ")}`;
+    // The checks run on the values the updates produced: a broken one throws, which rolls the
+    // write transaction back.
+    const guard = numericGuard(updates.checks);
+    const rows = await exec(
+      `${text} RETURN count(r) AS c${guard ? `, collect(${guard})[0] AS bad` : ""}`,
+      ctx.params,
+    );
     if (toCount(rows[0]?.c) === 0) {
       throw new NotFoundError(`connect: no ${target.name} matches ${JSON.stringify(where)}.`);
+    }
+    if (guard) {
+      const edgeModel = this.schema.relationships.find((r) => r.name === rel.edge)!;
+      const owner = { ...this.model, name: edgeModel.name };
+      throwGuardIssues("update", owner, updates.checks, rows[0]?.bad, [...path, "$edge"]);
     }
   }
 
@@ -529,12 +598,18 @@ export class ModelEngine {
     id: string,
     rel: ResolvedRelationField,
     item: unknown,
+    path: IssuePath,
   ): Promise<void> {
     if (!isPlainObject(item))
       throw new CyphraValidationError(`${rel.name}.create expects objects.`);
     const { $edge, ...data } = item;
+    if (this.edgeUpdates(this.ctx(), rel, $edge, "").sets.length) {
+      throw new CyphraValidationError(
+        `${this.model.name}.${rel.name}.create: $edge number updates ({ increment, … }) are for connect and set; create makes a new edge, so give the value itself.`,
+      );
+    }
     const props = this.edgeProps(rel, $edge);
-    const childId = await this.engineFor(this.node(rel.target)).createNode(exec, data);
+    const childId = await this.engineFor(this.node(rel.target)).createNode(exec, data, path);
     const ctx = this.ctx();
     await exec(
       `MATCH (a), (b) WHERE elementId(a) = ${ctx.param(id)} AND elementId(b) = ${ctx.param(childId)} ` +
@@ -566,6 +641,7 @@ export class ModelEngine {
     rel: ResolvedRelationField,
     spec: unknown,
     mode: "create" | "update",
+    path: IssuePath,
   ): Promise<void> {
     if (!isPlainObject(spec)) {
       throw new CyphraValidationError(
@@ -614,8 +690,19 @@ export class ModelEngine {
       if (set !== undefined) {
         if (!Array.isArray(set))
           throw new CyphraValidationError(`${rel.name}.set expects an array.`);
-        await this.deleteEdges(exec, id, rel);
-        for (const item of set) await this.connect(exec, id, rel, item);
+        // Drop the edges to nodes not in the list; the others are kept and updated by connect
+        // (so `$edge` number updates apply to the existing edge).
+        const engine = this.engineFor(this.node(rel.target));
+        const keep = set.map((item: unknown) => {
+          if (!isPlainObject(item))
+            throw new CyphraValidationError(`${rel.name}.set expects unique where objects.`);
+          const { $edge: _edge, ...unique } = item;
+          return engine.assertUnique(unique, `${this.model.name}.${rel.name}.set`);
+        });
+        await this.deleteEdges(exec, id, rel, { NOT: { OR: keep } });
+        for (const [i, item] of set.entries()) {
+          await this.connect(exec, id, rel, item, [...path, "set", i]);
+        }
       }
     } else if (disconnect === true || (mode === "update" && create !== undefined)) {
       // To-one: replace the existing edge (`connect` replaces it in its own statement).
@@ -626,10 +713,18 @@ export class ModelEngine {
       );
     }
 
-    if (connect !== undefined)
-      for (const item of asArray(connect)) await this.connect(exec, id, rel, item);
+    if (connect !== undefined) {
+      const items = asArray(connect);
+      for (const [i, item] of items.entries()) {
+        const at = Array.isArray(connect) ? [...path, "connect", i] : [...path, "connect"];
+        await this.connect(exec, id, rel, item, at);
+      }
+    }
     if (create !== undefined)
-      for (const item of asArray(create)) await this.createRelated(exec, id, rel, item);
+      for (const [i, item] of asArray(create).entries()) {
+        const at = Array.isArray(create) ? [...path, "create", i] : [...path, "create"];
+        await this.createRelated(exec, id, rel, item, at);
+      }
   }
 
   /**
@@ -689,7 +784,12 @@ export class ModelEngine {
     );
   }
 
-  private async updateNode(exec: Executor, id: string, data: unknown): Promise<void> {
+  private async updateNode(
+    exec: Executor,
+    id: string,
+    data: unknown,
+    path: IssuePath = ["data"],
+  ): Promise<void> {
     const { scalars, relations } = this.splitData(data, "update");
     const ctx = this.ctx();
     const { sets, checks } = this.setClauses(ctx, scalars);
@@ -703,7 +803,7 @@ export class ModelEngine {
       if (guarded) throwGuardIssues("update", this.model, checks, rows[0]?.bad, ["data"]);
     }
     for (const [k, v] of Object.entries(relations)) {
-      await this.writeRelation(exec, id, relationField(this.model, k)!, v, "update");
+      await this.writeRelation(exec, id, relationField(this.model, k)!, v, "update", [...path, k]);
     }
   }
 
@@ -877,7 +977,7 @@ export class ModelEngine {
         ? ([create.relations, "create"] as const)
         : ([update.relations, "update"] as const);
       for (const [k, v] of Object.entries(relations)) {
-        await this.writeRelation(exec, id, relationField(this.model, k)!, v, mode);
+        await this.writeRelation(exec, id, relationField(this.model, k)!, v, mode, [mode, k]);
       }
       return this.readById(exec, id, args);
     });

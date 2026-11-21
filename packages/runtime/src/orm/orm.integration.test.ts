@@ -21,6 +21,13 @@ import {
   createClient as createCompoundClient,
   type Db as CompoundDb,
 } from "./__fixtures__/compound.gen.js";
+import {
+  createClient as createGraphClient,
+  type CyphraTypeMap as GraphTypeMap,
+  type Db as GraphDb,
+  type GrRelated,
+} from "./__fixtures__/graph.gen.js";
+import type { EdgeWhereInput, WhereInput } from "./types.js";
 import { escapeLucene } from "./fulltext.js";
 import neo4j5 from "neo4j-driver-5";
 import neo4j6 from "neo4j-driver-6";
@@ -3464,3 +3471,302 @@ describe.skipIf(!hasNeo)("ORM unique constraint errors (Neo4j)", () => {
     expect(await db.uqAccount.count()).toBe(1);
   });
 });
+
+describe.skipIf(!hasNeo)(
+  "ORM multi-hop traversals, filtered counts and edge updates (Neo4j)",
+  () => {
+    let db: GraphDb;
+
+    beforeEach(async () => {
+      db ??= createGraphClient({
+        uri: process.env.NEO4J_TEST_URI!,
+        user: process.env.NEO4J_TEST_USER!,
+        password: process.env.NEO4J_TEST_PASSWORD!,
+      });
+      await db.$cypher`MATCH (n) WHERE n:GrDoc OR n:GrChunk OR n:GrEntity DETACH DELETE n`;
+    });
+
+    afterAll(async () => {
+      await db?.$disconnect();
+    });
+
+    /**
+     * d1 has c1 (ada, babbage) and c2 (babbage); d2 has c3 (engine, loom); c4 is a draft (ada).
+     * GR_RELATED: ada→babbage (weight 3), babbage→engine (1), engine→loom (2), loom→hollerith (1).
+     * ada, babbage and hollerith are people, engine and loom machines.
+     */
+    async function seed() {
+      const kinds: Record<string, string> = {
+        ada: "person",
+        babbage: "person",
+        engine: "machine",
+        loom: "machine",
+        hollerith: "person",
+      };
+      for (const [id, kind] of Object.entries(kinds)) {
+        await db.grEntity.create({ data: { id, name: id[0]!.toUpperCase() + id.slice(1), kind } });
+      }
+      const mentions = (...ids: string[]) => ({ connect: ids.map((id) => ({ id })) });
+      await db.grDoc.create({
+        data: {
+          id: "d1",
+          title: "Notes",
+          chunks: {
+            create: [
+              { id: "c1", text: "Ada and Babbage", entities: mentions("ada", "babbage") },
+              { id: "c2", text: "Babbage alone", entities: mentions("babbage") },
+            ],
+          },
+        },
+      });
+      await db.grDoc.create({
+        data: {
+          id: "d2",
+          title: "Machines",
+          chunks: {
+            create: [{ id: "c3", text: "Engine and loom", entities: mentions("engine", "loom") }],
+          },
+        },
+      });
+      await db.grChunk.create({
+        data: { id: "c4", text: "Ada, draft", draft: true, entities: mentions("ada") },
+      });
+      for (const [from, to, weight] of [
+        ["ada", "babbage", 3],
+        ["babbage", "engine", 1],
+        ["engine", "loom", 2],
+        ["loom", "hollerith", 1],
+      ] as const) {
+        await db.grEntity.update({
+          where: { id: from },
+          data: { related: { connect: { id: to, $edge: { weight } } } },
+        });
+      }
+    }
+
+    const ids = (rows: readonly { id: string }[]) => rows.map((r) => r.id).sort();
+
+    it("traverses across models (chunk → entity → chunk), skipping the start node", async () => {
+      await seed();
+      const others = await db.grChunk.traverse({
+        from: { id: "c1" },
+        via: [{ rel: "entities" }, { rel: "chunks" }],
+      });
+      expect(ids(others)).toEqual(["c2", "c4"]);
+      const published = await db.grChunk.traverse({
+        from: { id: "c1" },
+        via: [{ rel: "entities" }, { rel: "chunks" }],
+        where: { draft: false },
+        select: { id: true, doc: { select: { title: true } } },
+      });
+      expect(published).toEqual([{ id: "c2", doc: { title: "Notes" } }]);
+      // Ending on another model: the entities of d1's chunks.
+      const entities = await db.grDoc.traverse({
+        from: { id: "d1" },
+        via: [{ rel: "chunks" }, { rel: "entities" }],
+        orderBy: { name: "asc" },
+        select: { name: true },
+      });
+      expect(entities).toEqual([{ name: "Ada" }, { name: "Babbage" }]);
+    });
+
+    it("filters intermediate nodes and edges per hop, with repeated hops in the middle", async () => {
+      await seed();
+      const via = (relatedHop: {
+        where?: WhereInput<GraphTypeMap, "GrEntity">;
+        edgeWhere?: EdgeWhereInput<GrRelated>;
+      }) =>
+        db.grChunk.traverse({
+          from: { id: "c1" },
+          via: [
+            { rel: "entities", where: { kind: "person" } },
+            { rel: "related", direction: "both", depth: { min: 0, max: 1 }, ...relatedHop },
+            { rel: "chunks" },
+          ],
+          select: { id: true },
+        });
+      // People of c1 (ada, babbage), then zero or one RELATED_TO hop: engine joins.
+      expect(ids(await via({}))).toEqual(["c2", "c3", "c4"]);
+      // Only strong relations: babbage→engine (weight 1) is not followed.
+      expect(ids(await via({ edgeWhere: { weight: { gte: 2 } } }))).toEqual(["c2", "c4"]);
+      // Every node a hop steps to must match its where (zero hops: none to check).
+      expect(ids(await via({ where: { kind: "person" } }))).toEqual(["c2", "c4"]);
+      expect(ids(await via({ where: { chunks: { some: { id: "c3" } } } }))).toEqual([
+        "c2",
+        "c3",
+        "c4",
+      ]);
+      // Typed: two hops from ada along RELATED_TO in either direction, then the chunks.
+      const far = await db.grEntity.traverse({
+        from: { id: "ada" },
+        via: [
+          { rel: ["related", "relatedFrom"], depth: { min: 2, max: 2 } },
+          { rel: "chunks", where: { draft: false } },
+        ],
+        select: { id: true },
+      });
+      expect(ids(far)).toEqual(["c3"]);
+    });
+
+    it("returns paths through several models, with typed edges", async () => {
+      await seed();
+      const rows = await db.grChunk.traverse({
+        from: { id: "c1" },
+        via: [
+          { rel: "entities" },
+          { rel: "related", depth: { min: 0, max: 3 } },
+          { rel: "chunks" },
+        ],
+        where: { id: "c3" },
+        select: { id: true },
+        returnPaths: true,
+      });
+      expect(rows).toHaveLength(1);
+      const { node, path } = rows[0]!;
+      expect(node).toEqual({ id: "c3" });
+      // The shortest way: c1 → babbage → engine ← c3.
+      expect(path.nodes.map((n) => n.id)).toEqual(["c1", "babbage", "engine", "c3"]);
+      expect(path.edges.map((e) => [e.type, e.direction])).toEqual([
+        ["GR_MENTIONS", "out"],
+        ["GR_RELATED", "out"],
+        ["GR_MENTIONS", "in"],
+      ]);
+      expect(path.edges[0]!.properties).toEqual({ count: 1 });
+      expect(path.edges[1]!.properties).toEqual({ weight: 1, score: null, note: null });
+      // Without distinct, one result per path.
+      const all = await db.grChunk.traverse({
+        from: { id: "c1" },
+        via: [{ rel: "entities" }, { rel: "chunks" }],
+        distinct: false,
+        returnPaths: true,
+      });
+      expect(all.map((r) => r.path.nodes[1]!.id).sort()).toEqual(["ada", "babbage"]);
+    });
+
+    it("orders by a filtered relation count, top level, nested and in traversals", async () => {
+      await seed();
+      // Chunks that are not drafts: ada 1 (c1), babbage 2 (c1, c2), engine 1, loom 1, hollerith 0.
+      const entities = await db.grEntity.findMany({
+        orderBy: [{ chunks: { _count: "desc", where: { draft: false } } }, { id: "asc" }],
+        select: { id: true },
+      });
+      expect(entities.map((e) => e.id)).toEqual(["babbage", "ada", "engine", "loom", "hollerith"]);
+      // Without the filter, ada's draft counts too: ada and babbage tie at 2.
+      const unfiltered = await db.grEntity.findMany({
+        orderBy: [{ chunks: { _count: "desc" } }, { id: "asc" }],
+        take: 2,
+        select: { id: true },
+      });
+      expect(unfiltered.map((e) => e.id)).toEqual(["ada", "babbage"]);
+      // Nested: d1's chunks by the number of people they mention.
+      const doc = await db.grDoc.findUniqueOrThrow({
+        where: { id: "d1" },
+        select: {
+          chunks: {
+            orderBy: { entities: { _count: "desc", where: { kind: "person" } } },
+            select: { id: true },
+          },
+        },
+      });
+      expect(doc.chunks.map((c) => c.id)).toEqual(["c1", "c2"]);
+      // In a traversal: the chunks related to c1, most people mentioned first, paged.
+      const ranked = await db.grChunk.traverse({
+        from: { id: "c1" },
+        via: [
+          { rel: "entities" },
+          { rel: "related", depth: { min: 0, max: 1 } },
+          { rel: "chunks" },
+        ],
+        orderBy: [{ entities: { _count: "asc", where: { kind: "machine" } } }, { id: "desc" }],
+        take: 2,
+        select: { id: true },
+      });
+      expect(ranked.map((c) => c.id)).toEqual(["c4", "c2"]);
+    });
+
+    it("increments edge properties on connect and set, checking @min / @max", async () => {
+      await seed();
+      const weight = async (from: string, to: string) => {
+        const [row] = await db.$cypher<{ w: number; c: number }>`
+        MATCH (:GrEntity {id: ${from}})-[r:GR_RELATED]->(:GrEntity {id: ${to}})
+        RETURN r.weight AS w, count(*) AS c`;
+        return row ? [row.w, row.c] : null;
+      };
+      const bump = (to: string, by = 1) =>
+        db.grEntity.update({
+          where: { id: "hollerith" },
+          data: { related: { connect: { id: to, $edge: { weight: { increment: by } } } } },
+        });
+      // A new edge starts from the default (0); connecting again increments the same edge.
+      await bump("ada");
+      expect(await weight("hollerith", "ada")).toEqual([1, 1]);
+      await bump("ada", 2);
+      expect(await weight("hollerith", "ada")).toEqual([3, 1]);
+
+      // @max(5): the update is rejected and nothing is written.
+      const err = await bump("ada", 3).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(CyphraValidationError);
+      expect((err as CyphraValidationError).issues).toMatchObject([
+        {
+          path: ["data", "related", "connect", "$edge", "weight"],
+          model: "GrRelated",
+          rule: "max",
+        },
+      ]);
+      expect(await weight("hollerith", "ada")).toEqual([3, 1]);
+
+      // set keeps the listed edges (so updates apply to them) and drops the others.
+      await bump("loom");
+      await db.grEntity.update({
+        where: { id: "hollerith" },
+        data: {
+          related: {
+            set: [{ id: "ada", $edge: { weight: { decrement: 1 }, score: { increment: 0.5 } } }],
+          },
+        },
+      });
+      expect(await weight("hollerith", "ada")).toEqual([2, 1]);
+      expect(await weight("hollerith", "loom")).toBeNull();
+      const [edge] = await db.grEntity
+        .findUniqueOrThrow({
+          where: { id: "hollerith" },
+          select: { related: { select: { id: true } } },
+        })
+        .then((h) => [h.related]);
+      expect(edge).toMatchObject([{ id: "ada", $edge: { weight: 2, score: 0.5, note: null } }]);
+
+      // @min(0), in a transaction: the whole transaction rolls back.
+      const failed = await db
+        .$transaction(async (tx) => {
+          await tx.grEntity.update({ where: { id: "hollerith" }, data: { name: "H" } });
+          await tx.grEntity.update({
+            where: { id: "hollerith" },
+            data: { related: { connect: { id: "ada", $edge: { weight: { decrement: 5 } } } } },
+          });
+        })
+        .catch((e: unknown) => e);
+      expect((failed as CyphraValidationError).issues?.[0]?.rule).toBe("min");
+      expect(await weight("hollerith", "ada")).toEqual([2, 1]);
+      expect((await db.grEntity.findUniqueOrThrow({ where: { id: "hollerith" } })).name).toBe(
+        "Hollerith",
+      );
+    });
+
+    it("computes extension fields on the last hop's model", async () => {
+      await seed();
+      const xdb = db.$extends({
+        result: {
+          grChunk: {
+            short: { needs: { text: true }, compute: (c) => c.text.split(" ")[0]! },
+          },
+        },
+      });
+      const rows = await xdb.grEntity.traverse({
+        from: { id: "loom" },
+        via: [{ rel: "chunks" }],
+        select: { id: true, short: true },
+      });
+      expect(rows).toEqual([{ id: "c3", short: "Engine" }]);
+    });
+  },
+);

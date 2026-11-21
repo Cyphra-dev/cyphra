@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { parseSchema, resolveSchema } from "@cyphra/schema";
 import { schemaModel } from "./__fixtures__/blog.gen.js";
+import { schemaModel as graphSchema } from "./__fixtures__/graph.gen.js";
 import { QueryContext } from "./compile.js";
 import { CyphraValidationError } from "./errors.js";
 import { decodePath } from "./path.js";
@@ -217,5 +218,129 @@ describe("decodePath", () => {
     expect(path.edges[0]!.type).toBe("FOLLOWS");
     expect(path.edges[0]!.direction).toBe("out");
     expect(path.edges[1]).toEqual({ type: "OTHER", direction: "in", properties: {} });
+  });
+});
+
+describe("compileTraverse with a list of hops", () => {
+  const chunk = graphSchema.nodes.find((n) => n.name === "GrChunk")!;
+  const hops = (args: Record<string, unknown>, max = 10) =>
+    compileTraverse(new QueryContext(graphSchema), chunk, args, max);
+
+  it("chains one quantified path pattern per hop, across models", () => {
+    const c = hops({
+      from: { id: "c1" },
+      via: [
+        { rel: "entities", where: { kind: "person" } },
+        { rel: "related", direction: "both", depth: { min: 0, max: 2 } },
+        { rel: "chunks" },
+      ],
+      where: { draft: false },
+      select: { id: true },
+    });
+    expect(c.text).toBe(
+      "MATCH (s:`GrChunk`) WHERE s.`id` = $p0 " +
+        "MATCH (s)((:`GrChunk`)-[e0:`GR_MENTIONS`]->(t1:`GrEntity`) WHERE (t1.`kind` = $p1)){1,1}" +
+        "((:`GrEntity`)-[e2:`GR_RELATED`]-(:`GrEntity`)){0,2}" +
+        "((:`GrEntity`)<-[e3:`GR_MENTIONS`]-(:`GrChunk`)){1,1}(n:`GrChunk`) " +
+        "WHERE (n <> s) AND (n.`draft` = $p2) " +
+        "WITH DISTINCT n RETURN n{.`id`} AS row",
+    );
+    expect(c.params).toMatchObject({ p0: "c1", p1: "person", p2: false });
+  });
+
+  it("filters each hop's edges with its own relationship model, and nodes with relation filters", () => {
+    const c = hops({
+      from: {},
+      via: [
+        { rel: "entities", edgeWhere: { count: { gte: 2 } } },
+        {
+          rel: "related",
+          depth: { max: 3 },
+          edgeWhere: { weight: { gt: 1 } },
+          where: { chunks: { some: { draft: false } } },
+        },
+      ],
+    });
+    expect(c.text).toContain(
+      "((:`GrChunk`)-[e0:`GR_MENTIONS`]->(:`GrEntity`) WHERE (e0.`count` >= $p0)){1,1}" +
+        "((:`GrEntity`)-[e1:`GR_RELATED`]->(t2:`GrEntity`) WHERE " +
+        "(EXISTS { MATCH (t2)<-[:`GR_MENTIONS`]-(m3:`GrChunk`) WHERE m3.`draft` = $p1 }) AND " +
+        "(e1.`weight` > $p2)){1,3}(n:`GrEntity`)",
+    );
+  });
+
+  it("ends on the last hop's model: projection, ordering and paths", () => {
+    const c = hops({
+      from: { id: "c1" },
+      via: [{ rel: "entities" }],
+      orderBy: { chunks: { _count: "desc", where: { draft: false } } },
+      take: 2,
+      returnPaths: true,
+    });
+    expect(c.text).toContain("(n:`GrEntity`)");
+    expect(c.text).toContain(
+      "ORDER BY COUNT { MATCH (n)<-[:`GR_MENTIONS`]-(m1:`GrChunk`) WHERE m1.`draft` = $p1 } DESC LIMIT $p2",
+    );
+    expect(c.text).toContain("RETURN n{.`id`, .`name`, .`kind`} AS row");
+  });
+
+  it("includes the start node with zero hops only when every hop may be skipped", () => {
+    const entity = graphSchema.nodes.find((n) => n.name === "GrEntity")!;
+    const c = compileTraverse(
+      new QueryContext(graphSchema),
+      entity,
+      { from: { id: "e1" }, via: [{ rel: "related", depth: { min: 0, max: 2 } }] },
+      10,
+    );
+    expect(c.text).not.toContain("n <> s");
+  });
+
+  it("validates hops", () => {
+    const bad =
+      (via: unknown, extra: Record<string, unknown> = {}, max = 10) =>
+      () =>
+        hops({ from: {}, via, ...extra }, max);
+    expect(bad([{ rel: "entities" }, { rel: "entities" }])).toThrow(
+      'traverse: via[1]: unknown relation "GrEntity.entities"',
+    );
+    expect(bad([{ rel: "entities", depth: { max: 2 } }])).toThrow(
+      "via[0]: depth repeats a hop, so its relations must lead back to GrChunk",
+    );
+    expect(bad([{ rel: ["entities", "doc"] }])).toThrow("must lead to one model");
+    expect(bad([{ rel: "entities" }, "chunks"])).toThrow("takes objects only");
+    expect(bad([{ rel: "entities", weight: 1 }])).toThrow('unknown hop option "weight"');
+    expect(bad([{}])).toThrow("via[0]: rel is required");
+    expect(bad([{ rel: "entities" }], { depth: { max: 2 } })).toThrow("depth goes on each hop");
+    expect(bad([{ rel: "entities" }], { edgeWhere: {} })).toThrow("edgeWhere goes on each hop");
+    expect(
+      bad([{ rel: "entities" }, { rel: "related", depth: { max: 3 } }, { rel: "chunks" }], {}, 4),
+    ).toThrow("add up to more than the maximum traversal depth of 4");
+    expect(bad([{ rel: "doc", edgeWhere: { x: 1 } }])).toThrow("share one relationship");
+    for (const f of [bad([{ rel: "nope" }]), bad([{ rel: "entities", direction: "up" }])]) {
+      expect(f).toThrow(CyphraValidationError);
+    }
+  });
+
+  it("decodes paths through several models", () => {
+    const path = decodePath(graphSchema, {
+      nodes: [
+        { labels: ["GrChunk"], properties: { id: "c1", text: "t", draft: false } },
+        { labels: ["GrEntity"], properties: { id: "e1", name: "Ada", kind: "person" } },
+        { labels: ["GrEntity"], properties: { id: "e2", name: "Bab", kind: "person" } },
+      ],
+      edges: [
+        { type: "GR_MENTIONS", properties: { count: 2 }, out: true },
+        { type: "GR_RELATED", properties: { weight: 3 }, out: false },
+      ],
+    });
+    expect(path.nodes.map((n) => n.id)).toEqual(["c1", "e1", "e2"]);
+    expect(path.edges).toEqual([
+      { type: "GR_MENTIONS", direction: "out", properties: { count: 2 } },
+      {
+        type: "GR_RELATED",
+        direction: "in",
+        properties: { weight: 3, score: null, note: null },
+      },
+    ]);
   });
 });

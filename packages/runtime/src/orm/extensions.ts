@@ -4,6 +4,7 @@
  */
 import type { ResolvedNodeModel, SchemaModel } from "@cyphra/schema";
 import { CyphraValidationError } from "./errors.js";
+import { traverseEndModel } from "./traverse.js";
 import type { OrmOperation } from "./extensionTypes.js";
 
 type AnyRecord = Record<string, unknown>;
@@ -390,6 +391,8 @@ export async function withComputed(
 ): Promise<unknown> {
   const nodes = NODE_RESULTS[operation];
   if (!state.hasComputed || !nodes || !isPlainObject(args ?? {})) return run(args);
+  // A traversal along a list of hops returns nodes of the last hop's model.
+  if (operation === "traverse") node = traverseEndModel(schema, node, args);
   const prepared = prepare(state, schema, node, (args ?? {}) as AnyRecord);
   const result = await run(args === undefined ? undefined : prepared.args);
   for (const n of nodes(result, prepared.args)) applyPlan(state, prepared.plan, n);

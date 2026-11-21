@@ -25,7 +25,7 @@ export interface IngestStats {
 /**
  * Chunk, embed and extract each document, then write it in one transaction:
  * `(Document)-[:HAS_CHUNK]->(Chunk)`, `(Chunk)-[:NEXT]->(Chunk)` in reading order,
- * `(Chunk)-[:MENTIONS]->(Entity)` and `(Entity)-[:RELATED_TO]->(Entity)`.
+ * `(Chunk)-[:MENTIONS]->(Entity)` and `(Entity)-[:RELATED_TO {weight}]->(Entity)`.
  *
  * Re-ingesting a document replaces its chunks. Entities are shared between documents and kept.
  */
@@ -90,13 +90,14 @@ export async function ingest(
         });
       }
 
-      // `connect` MERGEs the edge, so a pair mentioned together many times keeps one edge.
+      // `connect` MERGEs the edge, so a pair mentioned together many times keeps one edge; its
+      // weight counts the chunks that relate them (a new edge starts from the default, 0).
       for (const r of extractions.flatMap((x) => x.relations)) {
         const [from, to] = [entityId(r.from), entityId(r.to)].sort();
         if (from === to || !entities.has(from!) || !entities.has(to!)) continue;
         await tx.entity.update({
           where: { id: from! },
-          data: { related: { connect: { id: to! } } },
+          data: { related: { connect: { id: to!, $edge: { weight: { increment: 1 } } } } },
         });
       }
     });
