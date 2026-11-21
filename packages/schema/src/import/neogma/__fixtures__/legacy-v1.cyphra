@@ -1,0 +1,39 @@
+// Imported from neogma models with `cyphra import neogma`.
+// Review before use (run the import again to see the full report):
+// - Order.items: became Int (a Neo4j INTEGER), but the driver stored neogma's JS numbers as FLOAT: convert them with toInteger() when you move the data
+// - User.nicknames: an optional list became a list: Cyphra lists are never optional, an absent list reads as []
+// - User.code: custom validator: not converted; check the value in a query hook (db.$extends({ query }))
+// - User: hook: not converted; port it to a query hook: db.$extends({ query: { user: { create, createMany } } })
+// - User: static method: not converted; add it as a model method: db.$extends({ model: { user: { label } } })
+// - User: instance method: not converted; Cyphra returns plain objects: use a computed field (db.$extends({ result })) or a function
+// - Creates.rating: the alias Rating (on User.Orders) is not kept: Cyphra uses the stored name, $edge: { rating }
+
+enum OrderStatus {
+  open
+  closed
+}
+
+node Order {
+  id String @id
+  items Int @min(1)
+  status OrderStatus?
+  Creator User[] @relationship(type: "CREATES", direction: IN)
+}
+
+node User {
+  id String @id
+  name String @length(3)
+  email String @email
+  homepage String? @url
+  age Float? @min(0) @max(150)
+  nicknames String[] @size(max: 3)
+  code String? @regex("^[a-z]{3}$", flags: "i")
+  Orders Order[] @relationship(type: "CREATES", direction: OUT)
+}
+
+relationship Creates {
+  type "CREATES"
+  from User
+  to Order
+  rating Float @min(1) @max(5)
+}

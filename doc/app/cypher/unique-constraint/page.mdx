@@ -120,13 +120,30 @@ CREATE CONSTRAINT User_email_unique IF NOT EXISTS FOR (n:`User`) REQUIRE n.`emai
 ```
 
 On a `relationship { … }` model, `@unique` becomes a relationship uniqueness constraint (Neo4j
-5.7+). Cyphra has no syntax for composite uniqueness: write that constraint by hand in a migration
-created with `cyphra migration:create` (see [Migrations](/migrations)).
+5.7+). For composite uniqueness, declare `@@unique([a, b])` on the node model (see
+[composite constraints](/schema#composite-constraints-and-indexes)); it becomes the composite constraint from the section above:
+
+```cyphra filename="schema.cyphra"
+node Membership {
+  id     String @id @default(uuid())
+  orgId  String
+  userId String
+  @@unique([orgId, userId])
+}
+```
+
+```cypher
+CREATE CONSTRAINT Membership_orgId_userId_unique IF NOT EXISTS FOR (n:`Membership`) REQUIRE (n.`orgId`, n.`userId`) IS UNIQUE
+```
+
+Each `@@unique` is also a key for `findUnique`, `upsert` and `connect`
+(`where: { orgId_userId: { orgId, userId } }`). It is supported on node models, not on
+relationships.
 
 The typed client also relies on these fields: `findUnique`, `update`, `upsert` and `delete` only
-accept `@id` / `@unique` fields in `where`. A duplicate write throws a
-[`UniqueConstraintError`](/client#unique-constraint-errors) that names the model, the fields and the
-constraint, with the driver error as its `cause`:
+accept `@id` / `@unique` fields (and `@@unique` keys) in `where`. A duplicate write, on a single
+field or a composite key, throws a [`UniqueConstraintError`](/client#unique-constraint-errors) that
+names the model, the fields and the constraint, with the driver error as its `cause`:
 
 ```ts
 import { UniqueConstraintError } from "cyphra";

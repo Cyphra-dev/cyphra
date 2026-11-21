@@ -164,6 +164,18 @@ describe("uniqueConstraintError", () => {
     });
   });
 
+  it("has a readable message when the server sends a GQL status and no message", () => {
+    for (const message of [undefined, "", "  "]) {
+      const err = uniqueConstraintError(schema, { gqlStatus: "22N79", message });
+      expect(err).toBeInstanceOf(UniqueConstraintError);
+      expect(err!.message).toBe(
+        "Unique constraint failed (GQL status 22N79): a node or relationship with the same value already exists.",
+      );
+      expect(err!.message).not.toContain("undefined");
+      expect(err).toMatchObject({ model: undefined, fields: [], gqlStatus: "22N79" });
+    }
+  });
+
   it("maps an interface's constraint to the interface", () => {
     // `Employee implements Person`: email is constrained on :Person.
     const err = uniqueConstraintError(

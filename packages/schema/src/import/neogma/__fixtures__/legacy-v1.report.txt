@@ -1,0 +1,13 @@
+Not converted (4):
+  User.code  conform: custom validator: not converted; check the value in a query hook (db.$extends({ query }))
+  User       beforeCreate: hook: not converted; port it to a query hook: db.$extends({ query: { user: { create, createMany } } })
+  User       static label: static method: not converted; add it as a model method: db.$extends({ model: { user: { label } } })
+  User       method greeting: instance method: not converted; Cyphra returns plain objects: use a computed field (db.$extends({ result })) or a function
+
+Converted with differences (3):
+  Order.items     Integer: became Int (a Neo4j INTEGER), but the driver stored neogma's JS numbers as FLOAT: convert them with toInteger() when you move the data
+  User.nicknames  Optional: an optional list became a list: Cyphra lists are never optional, an absent list reads as []
+  Creates.rating  alias: the alias Rating (on User.Orders) is not kept: Cyphra uses the stored name, $edge: { rating }
+
+Ignored (1):
+  User.email  messages: custom error messages: Cyphra's validation errors have their own

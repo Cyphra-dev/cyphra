@@ -25,12 +25,12 @@
     "@cyphra/schema": "workspace:*",
     "commander": "^12.1.0",
     "graphql": "^16.11.0",
-    "neo4j-driver": "^5.28.3 || ^6.0.0"
+    "neo4j-driver": "^5.28.3 || ^6.0.0",
+    "typescript": "^5.9.3"
   },
   "devDependencies": {
     "@types/node": "^22.20.5",
     "tsup": "^8.5.1",
-    "typescript": "^5.9.3",
     "vitest": "^4.1.12"
   },
   "license": "MIT",

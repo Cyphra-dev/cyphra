@@ -1,11 +1,14 @@
 import { parseSchema, printSchemaDocument, resolveSchema } from "@cyphra/schema";
 import { CyphraClient } from "@cyphra/runtime";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
 import { diffSchemaModels, EMPTY_SCHEMA_MODEL } from "./diff.js";
 import { introspectDatabase, schemaFromIntrospection } from "./introspect.js";
 import { fulltextIndexStatementsFromSchema, vectorIndexStatementsFromSchema } from "./push.js";
 import { applyConstraintStatements } from "./runner.js";
 import { createMigrationDb } from "./migrationDb.js";
+
+// Each test makes many round trips to Neo4j: the default 5 s is too tight on a busy CI runner.
+vi.setConfig({ testTimeout: 30_000, hookTimeout: 30_000 });
 
 const hasNeo = Boolean(
   process.env.NEO4J_TEST_URI && process.env.NEO4J_TEST_USER && process.env.NEO4J_TEST_PASSWORD,

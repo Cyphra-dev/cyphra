@@ -1,7 +1,7 @@
 /**
- * Shared by the schema importers (`cyphra import graphql`, `cyphra import prisma`): print an
- * {@link ImportResult} as `.cyphra` source, merge it into an existing schema, and format the
- * import report.
+ * Shared by the schema importers (`cyphra import graphql`, `cyphra import prisma`,
+ * `cyphra import neogma`): print an {@link ImportResult} as `.cyphra` source, merge it into an
+ * existing schema, and format the import report.
  *
  * @packageDocumentation
  */

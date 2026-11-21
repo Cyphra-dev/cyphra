@@ -5,6 +5,7 @@ import { runDev } from "./commands/dev.js";
 import { runFormat } from "./commands/format.js";
 import { runGenerate, runGenerateWatch, withZodFlags } from "./commands/generate.js";
 import { runImportGraphql } from "./commands/importGraphql.js";
+import { runImportNeogma } from "./commands/importNeogma.js";
 import { runImportPrisma } from "./commands/importPrisma.js";
 import { runInit } from "./commands/init.js";
 import { runMigrate } from "./commands/migrate.js";
@@ -260,6 +261,25 @@ importCmd
       opts: { out?: string; merge?: boolean; force?: boolean; print?: boolean },
     ) => {
       process.exitCode = await runImportPrisma(process.cwd(), files, opts);
+    },
+  );
+
+importCmd
+  .command("neogma")
+  .argument("<models...>", "neogma model files (.ts, .js) or folders holding them")
+  .description(
+    "Convert neogma models (decorator classes or ModelFactory) to schema.cyphra and report what was not converted",
+  )
+  .option("-o, --out <path>", "schema file to write (default: schema from cyphra.json)")
+  .option("--merge", "merge into the existing schema, keeping its models, fields and comments")
+  .option("--force", "overwrite an existing schema file")
+  .option("--print", "write the schema to stdout instead of a file")
+  .action(
+    async (
+      files: string[],
+      opts: { out?: string; merge?: boolean; force?: boolean; print?: boolean },
+    ) => {
+      process.exitCode = await runImportNeogma(process.cwd(), files, opts);
     },
   );
 

@@ -14,5 +14,6 @@ export default defineConfig({
     "@cyphra/schema",
     "commander",
     "graphql",
+    "typescript",
   ],
 });

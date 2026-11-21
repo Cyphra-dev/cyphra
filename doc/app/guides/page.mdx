@@ -44,6 +44,10 @@ queries, and to add migrations and the typed client on the same graph.
 [Migrate from Prisma](/guides/migrate-from-prisma) moves a Prisma and PostgreSQL app to Neo4j:
 `cyphra import prisma` turns foreign keys into edges, then the data and the queries follow.
 
+Coming from neogma? `cyphra import neogma src/models` converts its decorator classes or
+`ModelFactory` models to `schema.cyphra` and lists what to port by hand
+([details](/cli#import-from-neogma)).
+
 ## What every framework guide has in common
 
 - **One client per process.** `createClient` opens a Neo4j driver with a connection pool. Create

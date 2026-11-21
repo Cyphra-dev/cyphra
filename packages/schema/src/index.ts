@@ -135,3 +135,25 @@ export {
   parsePrismaSchema,
   printPrismaImport,
 } from "./import/prisma/index.js";
+export type {
+  NeogmaAnnotation,
+  NeogmaImportOptions,
+  NeogmaImportResult,
+  NeogmaMember,
+  NeogmaModel,
+  NeogmaProperty,
+  NeogmaRelationship,
+  NeogmaSchema,
+  NeogmaSource,
+  NeogmaValue,
+  TypeScriptApi,
+} from "./import/neogma/index.js";
+export {
+  NeogmaImportError,
+  convertNeogmaModels,
+  convertNeogmaSchema,
+  formatNeogmaImportReport,
+  mergeNeogmaImport,
+  parseNeogmaSources,
+  printNeogmaImport,
+} from "./import/neogma/index.js";

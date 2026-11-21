@@ -27,6 +27,9 @@ import neo4j6 from "neo4j-driver-6";
 import type { DriverLike } from "../client.js";
 import type { CyphraEvent, ErrorEvent, QueryEvent, WarnEvent } from "../observability.js";
 
+// Each test makes many round trips to Neo4j: the default 5 s is too tight on a busy CI runner.
+vi.setConfig({ testTimeout: 30_000, hookTimeout: 30_000 });
+
 const hasNeo = Boolean(
   process.env.NEO4J_TEST_URI && process.env.NEO4J_TEST_USER && process.env.NEO4J_TEST_PASSWORD,
 );

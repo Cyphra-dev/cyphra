@@ -9,10 +9,13 @@ import type { ResolvedScalarField } from "@cyphra/schema";
 import { cypher } from "@cyphra/query";
 import neo4j5 from "neo4j-driver-5";
 import neo4j6 from "neo4j-driver-6";
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { CyphraClient, type DriverLike } from "./client.js";
 import { createClient, type Db } from "./orm/__fixtures__/compat.gen.js";
 import { decodeScalar, encodeScalar } from "./orm/values.js";
+
+// Each test makes many round trips to Neo4j: the default 5 s is too tight on a busy CI runner.
+vi.setConfig({ testTimeout: 30_000, hookTimeout: 30_000 });
 
 const hasNeo = Boolean(
   process.env.NEO4J_TEST_URI && process.env.NEO4J_TEST_USER && process.env.NEO4J_TEST_PASSWORD,
