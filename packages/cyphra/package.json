@@ -28,7 +28,8 @@
     "@cyphra/migrator": "workspace:*",
     "@cyphra/query": "workspace:*",
     "@cyphra/runtime": "workspace:*",
-    "@cyphra/schema": "workspace:*"
+    "@cyphra/schema": "workspace:*",
+    "neo4j-driver": "^5.28.3 || ^6.0.0"
   },
   "devDependencies": {
     "@types/node": "^22.20.5",

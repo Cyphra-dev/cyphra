@@ -29,7 +29,8 @@
     "@cyphra/schema": "workspace:*"
   },
   "peerDependencies": {
-    "better-auth": "^1.7.27"
+    "better-auth": "^1.7.27",
+    "neo4j-driver": "^5.28.3 || ^6.0.0"
   },
   "devDependencies": {
     "@better-auth/core": "1.7.27",

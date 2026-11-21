@@ -31,6 +31,53 @@ await client.close();
 
 Optional **`driverConfig`** is passed through as the third argument to `neo4j.driver` (pool size, `connectionAcquisitionTimeout`, `logging`, etc.). Types: import **`Config`** from `@cyphra/runtime` or `neo4j-driver`.
 
+## Supported neo4j-driver versions
+
+| `neo4j-driver` | Status        | Node.js |
+| -------------- | ------------- | ------- |
+| `6.x`          | Supported     | 20+     |
+| `5.28.x`       | Supported     | 20+     |
+| `< 5.28`       | Not supported |         |
+
+`@cyphra/runtime`, `@cyphra/migrator` and `@cyphra/better-auth` declare `neo4j-driver` as a **peer
+dependency** (`^5.28.3 || ^6.0.0`), so your app and Cyphra share one copy of the driver. The
+`cyphra` meta-package and `@cyphra/cli` depend on it directly with the same range, so
+`npm i cyphra` works without installing the driver yourself, and a driver your project already
+has (5 or 6) is reused. npm 7+ and pnpm 8+ install peer dependencies automatically; with Yarn,
+add `neo4j-driver` next to `@cyphra/runtime` if you use the subpackages.
+
+Cyphra only uses APIs that are the same in both majors (`executeRead` / `executeWrite`, `run`,
+`neo4j.int`, the temporal classes), and it recognises driver values by their markers (`isInt`,
+`isDateTime`, `isDate`, …), never with `instanceof`. Integers and temporals therefore round-trip
+the same way on 5 and 6, even if two copies of the driver end up installed.
+
+## Using your own driver
+
+Pass a `Driver` your application already created (from `neo4j-driver` 5.28+ or 6.x) instead of a
+URI and credentials. Cyphra then shares its connection pool and leaves its lifecycle to you:
+`client.close()` and the typed client’s `$disconnect()` do not close a driver you passed in.
+
+```ts
+import neo4j from "neo4j-driver";
+import { CyphraClient } from "@cyphra/runtime";
+import { createClient } from "./cyphra.gen.js";
+
+const driver = neo4j.driver(
+  process.env.NEO4J_URI!,
+  neo4j.auth.basic(process.env.NEO4J_USERNAME!, process.env.NEO4J_PASSWORD!),
+);
+
+const client = new CyphraClient({ driver, database: "neo4j" });
+const db = createClient({ driver }); // typed client on the same driver
+
+// ... on shutdown
+await driver.close();
+```
+
+The `driver` option is typed structurally (`DriverLike`), so a `Driver` from another copy or major
+of `neo4j-driver` than the one Cyphra resolves is accepted too. The `Session` and
+`ManagedTransaction` types that Cyphra’s callbacks expose are those of the driver Cyphra resolves.
+
 ## Sessions and transactions
 
 - **`session()`** — you own `close()`; prefer **`withSession(fn)`** so the session is always closed.

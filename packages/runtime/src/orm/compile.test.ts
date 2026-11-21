@@ -104,12 +104,17 @@ describe("q", () => {
 });
 
 describe("generated fixture", () => {
-  it("is in sync with blog.cyphra (run the generator if this fails)", async () => {
-    const { readFile } = await import("node:fs/promises");
-    const { parseSchema, renderCyphraGenSource } = await import("@cyphra/schema");
-    const dir = new URL("./__fixtures__/", import.meta.url);
-    const src = await readFile(new URL("blog.cyphra", dir), "utf8");
-    const gen = await readFile(new URL("blog.gen.ts", dir), "utf8");
-    expect(renderCyphraGenSource(parseSchema(src), { runtimeImport: "../../index.js" })).toBe(gen);
-  });
+  it.each(["blog", "compat"])(
+    "is in sync with %s.cyphra (run the generator if this fails)",
+    async (name) => {
+      const { readFile } = await import("node:fs/promises");
+      const { parseSchema, renderCyphraGenSource } = await import("@cyphra/schema");
+      const dir = new URL("./__fixtures__/", import.meta.url);
+      const src = await readFile(new URL(`${name}.cyphra`, dir), "utf8");
+      const gen = await readFile(new URL(`${name}.gen.ts`, dir), "utf8");
+      expect(renderCyphraGenSource(parseSchema(src), { runtimeImport: "../../index.js" })).toBe(
+        gen,
+      );
+    },
+  );
 });

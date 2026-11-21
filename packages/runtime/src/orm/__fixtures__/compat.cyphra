@@ -1,0 +1,17 @@
+// Fixture for driver-compat.integration.test.ts (distinct labels so it can run alongside the blog
+// ORM integration tests against the same database).
+node CompatUser {
+  id        String       @id @default(cuid())
+  email     String       @unique
+  age       Int?
+  birthday  Date?
+  createdAt DateTime     @default(now())
+  posts     CompatPost[] @relationship(type: "COMPAT_AUTHORED", direction: OUT)
+}
+
+node CompatPost {
+  id     String      @id @default(uuid())
+  title  String
+  views  Int         @default(0)
+  author CompatUser? @relationship(type: "COMPAT_AUTHORED", direction: IN)
+}
