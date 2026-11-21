@@ -1,5 +1,25 @@
 # @cyphra/runtime
 
+## 0.5.0
+
+### Minor Changes
+
+- a8be483: Support `neo4j-driver` 6 alongside 5.28 (`^5.28.3 || ^6.0.0`).
+
+  - `@cyphra/runtime`, `@cyphra/migrator` and `@cyphra/better-auth` now declare `neo4j-driver` as a peer dependency, so your app and Cyphra share a single driver. `cyphra` and `@cyphra/cli` depend on it directly with the same range, so `npm i cyphra` still works on its own. If you install the `@cyphra/*` subpackages with a package manager that does not install peer dependencies (Yarn), add `neo4j-driver` yourself.
+  - `new CyphraClient({ driver })` and `createClient({ driver })` reuse a `Driver` your app already created (5.28+ or 6.x, even from another copy of the package). Cyphra does not close a driver you pass in.
+
+- e5851e2: Add `aggregate` and `groupBy` to the ORM client, with Prisma-compatible shapes typed from your schema.
+
+  - `db.post.aggregate({ where, _count, _sum, _avg, _min, _max })` returns exactly the aggregates you ask for. `_sum` / `_avg` take `Int` and `Float` fields, `_min` / `_max` also `String`, `DateTime` and `Date`. Nulls are ignored; on an empty match counts are `0` and the other aggregates `null`.
+  - `db.post.groupBy({ by: ["published"], having, orderBy, skip, take, … })` groups the matching nodes, with `having` and `orderBy` on aggregates (`{ views: { _avg: { gt: 10 } } }`, `{ _count: { id: "desc" } }`) and on the `by` fields. Fields of a to-one relation can be grouped on with `by: ["author.name"]` and come back as `{ author: { name } }`.
+  - Each call compiles to one parameterised Cypher statement and works inside `$transaction`.
+
+### Patch Changes
+
+- @cyphra/query@0.5.0
+- @cyphra/schema@0.5.0
+
 ## 0.4.0
 
 ### Minor Changes

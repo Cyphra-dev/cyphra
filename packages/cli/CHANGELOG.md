@@ -1,5 +1,26 @@
 # @cyphra/cli
 
+## 0.5.0
+
+### Minor Changes
+
+- e96ca16: Add `cyphra import graphql <typeDefs.graphql...>`: converts `@neo4j/graphql` v7 type definitions to `schema.cyphra` (nodes, scalars, lists, `@id`, `@timestamp`, `@default`, `@unique`, `@relationship` and `@relationshipProperties`) and prints a report of everything it could not convert. `--merge` adds to an existing schema and keeps your models, fields and comments.
+- a8be483: Support `neo4j-driver` 6 alongside 5.28 (`^5.28.3 || ^6.0.0`).
+
+  - `@cyphra/runtime`, `@cyphra/migrator` and `@cyphra/better-auth` now declare `neo4j-driver` as a peer dependency, so your app and Cyphra share a single driver. `cyphra` and `@cyphra/cli` depend on it directly with the same range, so `npm i cyphra` still works on its own. If you install the `@cyphra/*` subpackages with a package manager that does not install peer dependencies (Yarn), add `neo4j-driver` yourself.
+  - `new CyphraClient({ driver })` and `createClient({ driver })` reuse a `Driver` your app already created (5.28+ or 6.x, even from another copy of the package). Cyphra does not close a driver you pass in.
+
+### Patch Changes
+
+- Updated dependencies [da61e20]
+- Updated dependencies [04de22e]
+- Updated dependencies [a8be483]
+- Updated dependencies [e5851e2]
+  - @cyphra/graphql@0.5.0
+  - @cyphra/runtime@0.5.0
+  - @cyphra/migrator@0.5.0
+  - @cyphra/schema@0.5.0
+
 ## 0.4.0
 
 ### Patch Changes
