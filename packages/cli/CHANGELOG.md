@@ -1,5 +1,33 @@
 # @cyphra/cli
 
+## 0.12.0
+
+### Minor Changes
+
+- a577140: `cyphra import prisma <schema.prisma>` converts a Prisma schema to `schema.cyphra`: models become
+  nodes, foreign keys become edges (the key scalar is dropped, `onDelete` moves to the referenced
+  model's field), implicit many-to-many relations become one edge type and explicit join models
+  become `relationship` models with their extra columns as edge properties. Enums, `@id`, defaults,
+  `@unique`, `@@unique`, `@@index`, `@@fulltext` and `@db.VarChar(n)` (as `@length`) convert; what does
+  not (`Bytes`, `autoincrement()`, `@updatedAt`, `Decimal`, `@map`, constraints over foreign keys, …)
+  is listed in a report. Same options as `cyphra import graphql`: `--out`, `--merge`, `--force`,
+  `--print`. The converter is `convertPrismaSchema` in `@cyphra/schema` (no Prisma dependency), and
+  the printing, merging and report formatting shared by both importers moved there too
+  (`printImportResult`, `mergeImportResult`, `formatImportIssues`). See the new guide
+  [Migrate from Prisma](https://www.cyphra.dev/guides/migrate-from-prisma).
+- a577140: Zod generator: `"generators": { "zod": { "omitGenerated": true } }` (or `cyphra generate --zod-omit-generated`) leaves the fields Cyphra generates out of `<Model>CreateInputSchema` and `<Model>UpdateInputSchema`: an `@id` with a `@default`, and `now()`, `cuid()` and `uuid()` defaults. Public APIs no longer need `.omit({ id: true, createdAt: true })`. `isGeneratedField` is exported from `@cyphra/schema`.
+
+### Patch Changes
+
+- Updated dependencies [8c173d3]
+- Updated dependencies [a577140]
+- Updated dependencies [24588fa]
+- Updated dependencies [a577140]
+  - @cyphra/runtime@0.12.0
+  - @cyphra/schema@0.12.0
+  - @cyphra/graphql@0.12.0
+  - @cyphra/migrator@0.12.0
+
 ## 0.11.0
 
 ### Minor Changes
