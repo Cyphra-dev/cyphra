@@ -78,6 +78,9 @@ their endpoints. Review the result:
   relationships, or on properties that were not pulled as `String` / `String[]` fields are skipped
   with a warning.
 - Unsupported types (e.g. `Point`) and names that are not identifiers are skipped with a warning.
+- Integers are pulled as `Int` and strings as `String`: the database cannot tell a `BigInt`, an enum
+  or a `Json` field apart from those. Change the types by hand where it applies (for example an
+  `Int` whose values exceed 2^53 to `BigInt`, a status string to an [enum](/schema#enums)).
 
 ## Import from @neo4j/graphql
 
@@ -97,8 +100,9 @@ What converts:
 
 - `@node` types become `node` models. A custom label in `@node(labels)` becomes the model name, since a
   Cyphra model's name is its label.
-- `ID`, `String`, `Int`, `Float`, `Boolean`, `DateTime` and `Date`, lists, and required or optional
-  from nullability. Enums become `String` for now.
+- `ID`, `String`, `Int`, `Float`, `BigInt`, `Boolean`, `DateTime` and `Date`, lists, and required
+  or optional from nullability. Enums become [Cyphra enums](/schema#enums) with the same values
+  (only the ones a converted field uses).
 - `@id` becomes `@id @default(uuid())`, `@timestamp` becomes `@default(now())`, `@default` keeps its
   value, and `@unique` (from v6 and earlier) stays `@unique`.
 - `@relationship(type, direction)` becomes a relation field, and a `@relationshipProperties` type
@@ -125,7 +129,7 @@ Converted with differences (3):
   Person.name  @unique: @unique was removed in @neo4j/graphql v7; Cyphra keeps it and creates the uniqueness constraint
 ```
 
-Not converted today: `BigInt`, `Time`, `LocalTime`, `LocalDateTime`, `Duration`, `Point`,
+Not converted today: `Time`, `LocalTime`, `LocalDateTime`, `Duration`, `Point`,
 `CartesianPoint` and custom scalars, interfaces and unions, extra labels, `@cypher` and
 `@customResolver` fields, `@authentication` and `@authorization` rules, `@vector` indexes (the type
 definitions carry neither the dimensions nor the similarity: declare a

@@ -19,6 +19,7 @@ import {
 } from "graphql";
 import type {
   Decorator,
+  EnumDeclaration,
   ModelAttribute,
   NodeDeclaration,
   NodeField,
@@ -28,11 +29,12 @@ import type {
 } from "@cyphra/schema";
 import {
   CUSTOM_SCALAR_FIELD,
-  ENUM_FIELD,
+  ENUM_AS_STRING,
   FIELD_DIRECTIVES,
   RELATIONSHIP_API_ARGS,
   SCALARS,
   TYPE_DIRECTIVES,
+  enumField,
   enumListArg,
   stringArg,
   type FulltextDraft,
@@ -67,6 +69,8 @@ type TypeInfo = {
   readonly kind: TypeKind;
   readonly directives: ConstDirectiveNode[];
   readonly fields: FieldDefinitionNode[];
+  /** Values of an enum type. */
+  readonly values: string[];
   readonly source: string;
 };
 
@@ -174,6 +178,11 @@ function collectTypes(sources: readonly GraphQLSource[]): Map<string, TypeInfo> 
             ? def.fields
             : undefined) ?? []),
         ],
+        values: [
+          ...((def.kind === Kind.ENUM_TYPE_DEFINITION ? def.values : undefined) ?? []).map(
+            (v) => v.name.value,
+          ),
+        ],
         source: src.name,
       });
     }
@@ -190,6 +199,9 @@ function collectTypes(sources: readonly GraphQLSource[]): Map<string, TypeInfo> 
       def.fields
     ) {
       base.fields.push(...def.fields);
+    }
+    if (def.kind === Kind.ENUM_TYPE_EXTENSION && def.values) {
+      base.values.push(...def.values.map((v) => v.name.value));
     }
   }
   return types;
@@ -256,15 +268,7 @@ export function convertGraphQLTypeDefs(
     }
     switch (t.kind) {
       case "enum":
-        if ("unsupported" in ENUM_FIELD) {
-          report(t.name, {
-            severity: "unsupported",
-            feature: "enum",
-            message: ENUM_FIELD.unsupported,
-          });
-        } else if (ENUM_FIELD.note) {
-          report(t.name, { severity: "changed", feature: "enum", message: ENUM_FIELD.note });
-        }
+        // Converted to a Cyphra `enum` when a converted field uses it (see `enumMappings`).
         break;
       case "interface":
         report(t.name, {
@@ -365,6 +369,15 @@ export function convertGraphQLTypeDefs(
     nodeName.set(t.name, name);
   }
 
+  // Enums: a Cyphra `enum` per GraphQL enum, unless its name is taken.
+  const enumMap = enumMappings(types, new Set(nodeName.values()), report);
+  const usedEnums = new Set<string>();
+  const mapScalar = (named: string): ScalarMapping & { isEnum?: boolean } => {
+    const m = scalarMapping(named, types, enumMap);
+    if ("enum" in m && m.enum) usedEnums.add(m.enum);
+    return m;
+  };
+
   // Pass 2: fields.
   const usages: RelUsage[] = [];
   const declarations: NodeDeclaration[] = [];
@@ -396,7 +409,7 @@ export function convertGraphQLTypeDefs(
         if (rel.usage) usages.push(rel.usage);
         continue;
       }
-      const scalar = convertScalar(f, u, at, "node", hasId, types, report);
+      const scalar = convertScalar(f, u, at, "node", hasId, mapScalar, report);
       if (!scalar) {
         note(declName, skippedLine(f, "type not supported"));
         continue;
@@ -476,7 +489,7 @@ export function convertGraphQLTypeDefs(
         propNotes.push(skippedLine(f, "not a scalar"));
         continue;
       }
-      const scalar = convertScalar(f, u, at, "relationship", false, types, report);
+      const scalar = convertScalar(f, u, at, "relationship", false, mapScalar, report);
       if (!scalar) {
         propNotes.push(skippedLine(f, "type not supported"));
         continue;
@@ -510,8 +523,14 @@ export function convertGraphQLTypeDefs(
     }
   }
 
+  const enums: EnumDeclaration[] = [...types.values()]
+    .filter((t) => usedEnums.has(t.name))
+    .map((t) => ({ kind: "Enum", name: t.name, values: [...t.values] }));
   return {
-    document: { kind: "Document", declarations: [...declarations, ...relationships] },
+    document: {
+      kind: "Document",
+      declarations: [...enums, ...declarations, ...relationships],
+    },
     issues,
     notes,
   };
@@ -610,14 +629,49 @@ function dedupeNames(
   return out;
 }
 
+/** Cyphra type names an enum cannot take. */
+const CYPHRA_TYPE_NAMES = new Set([
+  "String",
+  "Int",
+  "Float",
+  "Boolean",
+  "DateTime",
+  "Date",
+  "BigInt",
+  "Json",
+  "Vector",
+]);
+
+/** How each GraphQL enum is mapped: a Cyphra enum, or `String` when its name is taken. */
+function enumMappings(
+  types: Map<string, TypeInfo>,
+  nodeNames: ReadonlySet<string>,
+  report: (at: string, d: IssueDraft) => void,
+): Map<string, ScalarMapping> {
+  const out = new Map<string, ScalarMapping>();
+  for (const t of types.values()) {
+    if (t.kind !== "enum") continue;
+    if (CYPHRA_TYPE_NAMES.has(t.name) || nodeNames.has(t.name) || t.values.length === 0) {
+      out.set(t.name, ENUM_AS_STRING);
+      if ("note" in ENUM_AS_STRING && ENUM_AS_STRING.note) {
+        report(t.name, { severity: "changed", feature: "enum", message: ENUM_AS_STRING.note });
+      }
+      continue;
+    }
+    out.set(t.name, enumField(t.name));
+  }
+  return out;
+}
+
 function scalarMapping(
   named: string,
   types: Map<string, TypeInfo>,
+  enums: ReadonlyMap<string, ScalarMapping>,
 ): ScalarMapping & { isEnum?: boolean } {
   const builtin = SCALARS[named];
   if (builtin) return builtin;
   const t = types.get(named);
-  if (t?.kind === "enum") return { ...ENUM_FIELD, isEnum: true };
+  if (t?.kind === "enum") return { ...(enums.get(named) ?? ENUM_AS_STRING), isEnum: true };
   return CUSTOM_SCALAR_FIELD;
 }
 
@@ -629,7 +683,7 @@ function convertScalar(
   at: string,
   owner: "node" | "relationship",
   nodeHasId: boolean,
-  types: Map<string, TypeInfo>,
+  mapScalar: (named: string) => ScalarMapping & { isEnum?: boolean },
   report: (at: string, d: IssueDraft) => void,
 ): { field: ScalarNodeField; takesId: boolean } | undefined {
   if (u.nested) {
@@ -640,7 +694,7 @@ function convertScalar(
     });
     return undefined;
   }
-  const mapping = scalarMapping(u.named, types);
+  const mapping = mapScalar(u.named);
   if ("unsupported" in mapping) {
     report(at, {
       severity: "unsupported",
@@ -699,9 +753,12 @@ function convertScalar(
     field: {
       kind: "Scalar",
       name,
-      type: u.list
-        ? { name: mapping.type, optional: false, list: true }
-        : { name: mapping.type, optional },
+      type: {
+        name: mapping.type,
+        optional: u.list ? false : optional,
+        ...(u.list ? { list: true } : {}),
+        ...(mapping.enum ? { enum: mapping.enum } : {}),
+      },
       decorators,
     },
     takesId,

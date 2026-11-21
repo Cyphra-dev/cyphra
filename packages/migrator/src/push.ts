@@ -70,6 +70,7 @@ export function constraintStatementsFromSchema(doc: SchemaDocument): string[] {
       }
       continue;
     }
+    if (decl.kind === "Enum") continue;
 
     const typeTok = cypherRelTypeToken(decl.relType);
     for (const f of decl.fields) {
@@ -112,6 +113,7 @@ export function indexStatementsFromSchema(doc: SchemaDocument): string[] {
       }
       continue;
     }
+    if (decl.kind === "Enum") continue;
 
     const typeTok = cypherRelTypeToken(decl.relType);
     for (const f of decl.fields) {

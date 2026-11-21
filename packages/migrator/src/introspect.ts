@@ -177,6 +177,8 @@ function neo4jInt(n: number): unknown {
 
 const IDENT = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
+// Neo4j stores no more than the property type, so `pull` cannot tell a `BigInt` from an `Int`
+// (both are INTEGER), nor an enum or a `Json` field from a `String`: change those types by hand.
 const TYPE_MAP: Record<string, ScalarTypeName> = {
   String: "String",
   Long: "Int",

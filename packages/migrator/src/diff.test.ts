@@ -287,3 +287,102 @@ describe("full-text indexes", () => {
     ]);
   });
 });
+
+describe("enum, Json and BigInt fields", () => {
+  const before = model(`
+    enum Role { ADMIN USER GUEST }
+    node User {
+      id    String @id
+      role  Role   @default(USER)
+      roles Role[]
+    }
+    relationship Knows { type "KNOWS"
+      from User
+      to User
+      level Role? }
+  `);
+
+  it("needs no DDL or data step when enum values are added", () => {
+    const after = model(`
+      enum Role { ADMIN USER GUEST OWNER }
+      node User {
+        id    String @id
+        role  Role   @default(USER)
+        roles Role[]
+      }
+      relationship Knows { type "KNOWS"
+        from User
+        to User
+        level Role? }
+    `);
+    const plan = diffSchemaModels(before, after);
+    expect(plan.steps).toEqual([]);
+    expect(plan.warnings).toEqual([]);
+  });
+
+  it("warns (with a query to find them) when a value is removed", () => {
+    const after = model(`
+      enum Role { ADMIN USER }
+      node User {
+        id    String @id
+        role  Role   @default(USER)
+        roles Role[]
+      }
+      relationship Knows { type "KNOWS"
+        from User
+        to User
+        level Role? }
+    `);
+    const plan = diffSchemaModels(before, after);
+    expect(plan.steps).toEqual([]);
+    expect(plan.warnings).toEqual([
+      "User.role no longer accepts GUEST (removed from enum Role); existing values are not migrated. Find them with `MATCH (n:`User`) WHERE n.`role` IN ['GUEST'] RETURN count(*)` and rewrite them in this migration (e.g. SET n.`role` = 'ADMIN').",
+      "User.roles no longer accepts GUEST (removed from enum Role); existing values are not migrated. Find them with `MATCH (n:`User`) WHERE any(v IN n.`roles` WHERE v IN ['GUEST']) RETURN count(*)` and rewrite them in this migration (e.g. SET n.`roles` = [v IN n.`roles` WHERE NOT v IN ['GUEST']]).",
+      "Knows.level no longer accepts GUEST (removed from enum Role); existing values are not migrated. Find them with `MATCH ()-[r:`KNOWS`]->() WHERE r.`level` IN ['GUEST'] RETURN count(*)` and rewrite them in this migration (e.g. SET r.`level` = 'ADMIN').",
+    ]);
+  });
+
+  it("reports a change of enum type by name", () => {
+    const after = model(`
+      enum Role { ADMIN USER GUEST }
+      enum Kind { A B }
+      node User {
+        id    String @id
+        role  Kind   @default(A)
+        roles Role[]
+      }
+    `);
+    expect(diffSchemaModels(before, after).warnings.join("\n")).toMatch(
+      /User\.role changed type Role → Kind/,
+    );
+  });
+
+  it("backfills BigInt (all 64 bits), Json and enum defaults", () => {
+    const after = model(`
+      enum Role { ADMIN USER GUEST }
+      node User {
+        id    String @id
+        role  Role   @default(USER)
+        roles Role[]
+        big   BigInt @default(9223372036854775807)
+        prefs Json   @default("{\\"a\\": 1}")
+        kind  Role   @default(GUEST)
+      }
+    `);
+    const steps = diffSchemaModels(before, after).steps.filter((s) => s.kind === "statement");
+    expect(steps).toEqual([
+      expect.objectContaining({
+        cypher: "MATCH (n:`User`) WHERE n.`big` IS NULL SET n.`big` = toInteger($value)",
+        params: { value: "9223372036854775807" },
+      }),
+      expect.objectContaining({
+        cypher: "MATCH (n:`User`) WHERE n.`prefs` IS NULL SET n.`prefs` = $value",
+        params: { value: '{"a":1}' },
+      }),
+      expect.objectContaining({
+        cypher: "MATCH (n:`User`) WHERE n.`kind` IS NULL SET n.`kind` = $value",
+        params: { value: "GUEST" },
+      }),
+    ]);
+  });
+});

@@ -77,7 +77,7 @@ describe("resolveSchema", () => {
 
   it.each([
     [`node A { b B @relationship(type: "X") }`, /unknown node "B"/],
-    [`node A { b A[] }`, /Expected/],
+    [`node A { b A[] }`, /need @relationship\(type/],
     [`node A { b A @relationship(direction: OUT) }`, /need @relationship\(type/],
     [`node A { b A @relationship(type: "X", direction: UP) }`, /OUT or IN/],
     [`node A { id String? @id }`, /cannot be optional/],

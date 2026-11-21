@@ -123,6 +123,26 @@ describe.skipIf(!hasNeo).each(majors)(
       expect(found).toEqual([u]);
     });
 
+    it("round-trips BigInt at the 64-bit bounds", async () => {
+      const max = 2n ** 63n - 1n;
+      const min = -(2n ** 63n);
+      await db.compatUser.create({ data: { email: "max@x.io", balance: max } });
+      await db.compatUser.create({ data: { email: "min@x.io", balance: min } });
+      const rows = await db.compatUser.findMany({
+        where: { balance: { in: [min, max] } },
+        orderBy: { balance: "asc" },
+        select: { email: true, balance: true },
+      });
+      expect(rows).toEqual([
+        { email: "min@x.io", balance: min },
+        { email: "max@x.io", balance: max },
+      ]);
+      const [row] = await db.$cypher<{ t: string; s: string }>`
+        MATCH (u:CompatUser {email: ${"max@x.io"}})
+        RETURN valueType(u.balance) AS t, toString(u.balance) AS s`;
+      expect(row).toEqual({ t: "INTEGER NOT NULL", s: max.toString() });
+    });
+
     it("commits and rolls back $transaction", async () => {
       await db.$transaction(async (tx) => {
         const author = await tx.compatUser.create({ data: { email: "t@x.io" } });

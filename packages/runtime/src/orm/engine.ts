@@ -34,7 +34,7 @@ import { compileShortestPath } from "./shortest.js";
 import { findSimilar } from "./vector.js";
 import { search } from "./fulltext.js";
 import { CyphraError, CyphraValidationError, NotFoundError } from "./errors.js";
-import { encodeScalar, integerToNumber } from "./values.js";
+import { defaultLiteralValue, encodeScalar, integerToNumber } from "./values.js";
 
 type AnyRecord = Record<string, unknown>;
 
@@ -296,7 +296,7 @@ export class ModelEngine {
         const d = f.default;
         const value =
           d.kind === "literal"
-            ? d.value
+            ? defaultLiteralValue(f, d)
             : d.fn === "uuid"
               ? randomUUID()
               : d.fn === "cuid"
@@ -570,8 +570,9 @@ export class ModelEngine {
     for (const [k, v] of Object.entries(scalars)) {
       const f = scalarField(this.model, k)!;
       const ref = `n.${q(k)}`;
-      if (isPlainObject(v) && !f.list) {
-        if (f.type !== "Int" && f.type !== "Float") {
+      // A Json value is set as a whole, even when it is an object.
+      if (isPlainObject(v) && !f.list && f.type !== "Json") {
+        if (f.type !== "Int" && f.type !== "Float" && f.type !== "BigInt") {
           throw new CyphraValidationError(
             `${this.model.name}.${k}: object updates are only for numbers.`,
           );
@@ -617,7 +618,8 @@ export class ModelEngine {
     });
   }
 
-  createMany(args: AnyRecord): Promise<{ count: number }> {
+  // `async` so that invalid data rejects the returned promise instead of throwing synchronously.
+  async createMany(args: AnyRecord): Promise<{ count: number }> {
     if (!Array.isArray(args.data))
       throw new CyphraValidationError("createMany: data must be an array.");
     const fields = this.model.fields.filter((f): f is ResolvedScalarField => f.kind === "scalar");
@@ -628,7 +630,7 @@ export class ModelEngine {
       }
       return ModelEngine.createProps(this.model.name, fields, scalars);
     });
-    if (rows.length === 0) return Promise.resolve({ count: 0 });
+    if (rows.length === 0) return { count: 0 };
     return this.runner.write(async (exec) => {
       const ctx = this.ctx();
       const res = await exec(

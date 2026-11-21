@@ -8,6 +8,7 @@ export type {
   DecoratorArg,
   DecoratorValue,
   Declaration,
+  EnumDeclaration,
   ModelAttribute,
   NodeDeclaration,
   NodeField,

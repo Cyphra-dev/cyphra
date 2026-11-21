@@ -6,6 +6,7 @@ node CompatUser {
   age       Int?
   birthday  Date?
   createdAt DateTime     @default(now())
+  balance   BigInt?
   posts     CompatPost[] @relationship(type: "COMPAT_AUTHORED", direction: OUT)
 }
 

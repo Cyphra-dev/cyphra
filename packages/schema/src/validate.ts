@@ -1,6 +1,7 @@
 import type {
   Decorator,
   DecoratorArg,
+  EnumDeclaration,
   ModelAttribute,
   NodeDeclaration,
   RelationshipDeclaration,
@@ -256,6 +257,35 @@ function decoratorCount(decorators: readonly Decorator[], name: string): number 
   return decorators.filter((d) => d.name === name).length;
 }
 
+/** Built-in type names, which an `enum` cannot reuse. */
+const BUILTIN_TYPES = [
+  "String",
+  "Int",
+  "Float",
+  "Boolean",
+  "DateTime",
+  "Date",
+  "BigInt",
+  "Json",
+  "Vector",
+];
+
+/** `enum X { … }`: not a built-in type name, at least one value, no duplicate value. */
+export function validateEnum(decl: EnumDeclaration): void {
+  const where = `Enum "${decl.name}"`;
+  if (BUILTIN_TYPES.includes(decl.name)) {
+    throw new SchemaValidationError(`${where}: ${decl.name} is a built-in type name.`);
+  }
+  if (decl.values.length === 0) {
+    throw new SchemaValidationError(`${where}: an enum needs at least one value.`);
+  }
+  const seen = new Set<string>();
+  for (const v of decl.values) {
+    if (seen.has(v)) throw new SchemaValidationError(`${where}: duplicate value ${v}.`);
+    seen.add(v);
+  }
+}
+
 /**
  * Applies semantic rules that the grammar cannot express (e.g. a single `@id` per node).
  *
@@ -264,6 +294,10 @@ function decoratorCount(decorators: readonly Decorator[], name: string): number 
  */
 export function validateSchema(doc: SchemaDocument): void {
   for (const decl of doc.declarations) {
+    if (decl.kind === "Enum") {
+      validateEnum(decl);
+      continue;
+    }
     validateModelAttributes(decl);
     if (decl.kind === "Node") {
       const idCount = countIdFields(decl);

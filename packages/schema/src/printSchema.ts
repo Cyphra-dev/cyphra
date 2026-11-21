@@ -4,15 +4,19 @@ function formatScalarType(t: ScalarTypeRef): string {
   if (t.name === "Vector") {
     return `Vector(${t.dimensions ?? 0})${t.optional ? "?" : ""}`;
   }
+  const name = t.name === "Enum" ? (t.enum ?? "") : t.name;
   if (t.list) {
-    return `${t.name}[]`;
+    return `${name}[]`;
   }
-  return t.optional ? `${t.name}?` : t.name;
+  return t.optional ? `${name}?` : name;
 }
 
 function formatDecoratorValue(v: Decorator["args"][number]["value"]): string {
   if (v.kind === "string") {
     return JSON.stringify(v.value);
+  }
+  if (v.kind === "number" && v.raw !== undefined) {
+    return v.raw;
   }
   return String(v.value);
 }
@@ -89,7 +93,9 @@ function formatNodeField(f: NodeField): string {
 export function printSchemaDocument(doc: SchemaDocument): string {
   const blocks: string[] = [];
   for (const d of doc.declarations) {
-    if (d.kind === "Node") {
+    if (d.kind === "Enum") {
+      blocks.push([`enum ${d.name} {`, ...d.values.map((v) => `  ${v}`), "}"].join("\n"));
+    } else if (d.kind === "Node") {
       const lines = [
         `node ${d.name} {`,
         ...d.fields.map((f) => `  ${formatNodeField(f)}`),

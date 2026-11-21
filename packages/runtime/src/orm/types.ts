@@ -71,15 +71,56 @@ export type FulltextIndexNames<TM extends TypeMap, M extends keyof TM> = TM[M] e
   ? V
   : never;
 
+/** Any JSON value: the TypeScript type of a `Json` field. */
+export type JsonValue =
+  string | number | boolean | null | readonly JsonValue[] | { readonly [key: string]: JsonValue };
+
 // ---------------------------------------------------------------------------
 // Filters
 // ---------------------------------------------------------------------------
 
 /** Types with `lt` / `lte` / `gt` / `gte` (strings compare lexicographically, by code point). */
-type Comparable = number | string | Date;
+type Comparable = number | bigint | string | Date;
+
+/**
+ * `true` for a union of string literals (an enum field), `false` for `string` and other types.
+ */
+type IsEnum<T> = [T] extends [string]
+  ? string extends T
+    ? false
+    : [T] extends [never]
+      ? false
+      : true
+  : false;
+
+/** `true` for `JsonValue` (a `Json` field): every JSON value is assignable to it. */
+type IsJson<T> = [JsonValue] extends [T] ? true : false;
+
+/**
+ * Json fields compare their whole stored JSON text: `null`, `{ equals }`, `{ not }` (no bare value,
+ * no deep queries).
+ */
+export type JsonFilter = null | { equals?: JsonValue; not?: JsonValue };
+
+/** Enum fields: equality and membership, typed to the enum's values. */
+export type EnumFilter<T> =
+  | T
+  | {
+      equals?: T;
+      not?: T | EnumFilter<T>;
+      in?: readonly NonNullable<T>[];
+      notIn?: readonly NonNullable<T>[];
+    };
 
 /** Filter on one scalar field. A bare value means `equals`; `null` means "property absent". */
-export type ScalarFilter<T> = [NonNullable<T>] extends [readonly (infer E)[]]
+export type ScalarFilter<T> =
+  IsJson<T> extends true
+    ? JsonFilter
+    : IsEnum<NonNullable<T>> extends true
+      ? EnumFilter<T>
+      : BaseScalarFilter<T>;
+
+type BaseScalarFilter<T> = [NonNullable<T>] extends [readonly (infer E)[]]
   ? {
       /** List contains this element. */
       has?: E;
@@ -169,9 +210,14 @@ export type ToManyRelations<TM extends TypeMap, M extends keyof TM> = {
   [R in keyof Relations<TM, M> & string]: Rel<TM, M, R>["many"] extends true ? R : never;
 }[keyof Relations<TM, M> & string];
 
+/** Scalar keys of `Json` fields (they cannot be sorted). */
+type JsonKeys<TM extends TypeMap, M extends keyof TM> = {
+  [K in keyof Scalars<TM, M>]: IsJson<Scalars<TM, M>[K]> extends true ? K : never;
+}[keyof Scalars<TM, M>];
+
 /** One `orderBy` entry: scalars, or a to-many relation by its count (`{ posts: { _count: "desc" } }`). */
 type OrderByItem<TM extends TypeMap, M extends keyof TM> = {
-  [K in Exclude<keyof Scalars<TM, M>, VectorKeys<TM, M>>]?: SortOrder;
+  [K in Exclude<keyof Scalars<TM, M>, VectorKeys<TM, M> | JsonKeys<TM, M>>]?: SortOrder;
 } & {
   [R in ToManyRelations<TM, M>]?: { _count?: SortOrder };
 };
@@ -304,11 +350,14 @@ export type CreateInput<TM extends TypeMap, M extends keyof TM> = ScalarCreate<T
 };
 
 type NumberUpdate = { increment?: number; decrement?: number; multiply?: number };
+type BigIntUpdate = { increment?: bigint; decrement?: bigint; multiply?: bigint };
 
 type ScalarUpdate<TM extends TypeMap, M extends keyof TM> = {
   [K in keyof Scalars<TM, M>]?: Scalars<TM, M>[K] extends number | null
     ? Scalars<TM, M>[K] | NumberUpdate
-    : Scalars<TM, M>[K];
+    : Scalars<TM, M>[K] extends bigint | null
+      ? Scalars<TM, M>[K] | BigIntUpdate
+      : Scalars<TM, M>[K];
 };
 
 type RelationUpdate<TM extends TypeMap, D extends RelationTypeDef> = RelationCreate<TM, D> &
@@ -388,16 +437,24 @@ export type BatchResult = { count: number };
 
 type ScalarKeys<TM extends TypeMap, M extends keyof TM> = keyof Scalars<TM, M> & string;
 
-/** Scalar keys whose (non-null) type is `number` (`Int`, `Float`): valid for `_sum` / `_avg`. */
+/**
+ * Scalar keys whose (non-null) type is `number` or `bigint` (`Int`, `Float`, `BigInt`): valid for
+ * `_sum` / `_avg`.
+ */
 export type NumericKeys<TM extends TypeMap, M extends keyof TM> = {
-  [K in ScalarKeys<TM, M>]: NonNullable<Scalars<TM, M>[K]> extends number ? K : never;
+  [K in ScalarKeys<TM, M>]: NonNullable<Scalars<TM, M>[K]> extends number | bigint ? K : never;
 }[ScalarKeys<TM, M>];
 
-/** Scalar keys of `Int`, `Float`, `String`, `DateTime` and `Date` fields: valid for `_min` / `_max`. */
+/**
+ * Scalar keys of `Int`, `Float`, `BigInt`, `String`, enum, `DateTime` and `Date` fields: valid for
+ * `_min` / `_max`.
+ */
 export type MinMaxKeys<TM extends TypeMap, M extends keyof TM> = {
-  [K in ScalarKeys<TM, M>]: NonNullable<Scalars<TM, M>[K]> extends number | string | Date
-    ? K
-    : never;
+  [K in ScalarKeys<TM, M>]: IsJson<Scalars<TM, M>[K]> extends true
+    ? never
+    : NonNullable<Scalars<TM, M>[K]> extends number | bigint | string | Date
+      ? K
+      : never;
 }[ScalarKeys<TM, M>];
 
 /** Rejects keys outside `Allowed` (TypeScript does not check excess keys of inferred generics). */
@@ -423,9 +480,9 @@ type FieldSel<K extends PropertyKey> = AggregateFieldsInput<K> | undefined;
 type AggregateProjection<TM extends TypeMap, M extends keyof TM, C, Su, Av, Mi, Ma> = {
   /** `true`: number of nodes. An object: `_all` (nodes) and/or fields (non-null values). */
   _count?: C extends object ? C & OnlyKeys<C, ScalarKeys<TM, M> | "_all"> : C;
-  /** Sum of non-null values (`Int` / `Float`); `null` when there are none. */
+  /** Sum of non-null values (`Int` / `Float` / `BigInt`); `null` when there are none. */
   _sum?: Su & OnlyKeys<Su, NumericKeys<TM, M>>;
-  /** Mean of non-null values (`Int` / `Float`); `null` when there are none. */
+  /** Mean of non-null values (`Int` / `Float` / `BigInt`, as a `number`); `null` when there are none. */
   _avg?: Av & OnlyKeys<Av, NumericKeys<TM, M>>;
   /** Smallest non-null value (`Int`, `Float`, `String`, `DateTime`, `Date`). */
   _min?: Mi & OnlyKeys<Mi, MinMaxKeys<TM, M>>;
@@ -435,6 +492,16 @@ type AggregateProjection<TM extends TypeMap, M extends keyof TM, C, Su, Av, Mi, 
 
 type CountOut<C> = C extends true ? number : { [K in TrueKeys<C>]: number };
 type AggOut<Sel, V> = { [K in TrueKeys<Sel>]: V };
+/** `_sum` of a `BigInt` field is a `bigint`; of an `Int` / `Float` field, a `number`. */
+type SumOut<TM extends TypeMap, M extends keyof TM, Sel> = {
+  [K in TrueKeys<Sel>]:
+    | (K extends keyof Scalars<TM, M>
+        ? NonNullable<Scalars<TM, M>[K]> extends bigint
+          ? bigint
+          : number
+        : number)
+    | null;
+};
 type ValueOut<TM extends TypeMap, M extends keyof TM, Sel> = {
   [K in TrueKeys<Sel> & keyof Scalars<TM, M>]: NonNullable<Scalars<TM, M>[K]> | null;
 };
@@ -442,7 +509,7 @@ type ValueOut<TM extends TypeMap, M extends keyof TM, Sel> = {
 /** Result of the aggregate part (`_count`, `_sum`, …) of `aggregate` / `groupBy`. */
 export type AggregateResult<TM extends TypeMap, M extends keyof TM, C, Su, Av, Mi, Ma> = Simplify<
   ([C] extends [undefined] ? unknown : { _count: CountOut<Exclude<C, undefined>> }) &
-    ([Su] extends [undefined] ? unknown : { _sum: AggOut<Su, number | null> }) &
+    ([Su] extends [undefined] ? unknown : { _sum: SumOut<TM, M, Su> }) &
     ([Av] extends [undefined] ? unknown : { _avg: AggOut<Av, number | null> }) &
     ([Mi] extends [undefined] ? unknown : { _min: ValueOut<TM, M, Mi> }) &
     ([Ma] extends [undefined] ? unknown : { _max: ValueOut<TM, M, Ma> })
@@ -490,7 +557,13 @@ type FilterObject<T> = Exclude<ScalarFilter<T>, T>;
 type HavingAggregates<TM extends TypeMap, M extends keyof TM, K> = {
   _count?: ScalarFilter<number>;
 } & (K extends NumericKeys<TM, M>
-  ? { _sum?: ScalarFilter<number | null>; _avg?: ScalarFilter<number | null> }
+  ? {
+      _sum?: ScalarFilter<
+        | (NonNullable<Scalars<TM, M>[K & keyof Scalars<TM, M>]> extends bigint ? bigint : number)
+        | null
+      >;
+      _avg?: ScalarFilter<number | null>;
+    }
   : unknown) &
   (K extends MinMaxKeys<TM, M>
     ? {

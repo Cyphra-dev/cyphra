@@ -177,7 +177,37 @@ function scalarsOf(n: ResolvedNodeModel): Map<string, ResolvedScalarField> {
 
 function typeLabel(f: ResolvedScalarField): string {
   if (f.type === "Vector") return `Vector(${f.dimensions})${f.optional ? "?" : ""}`;
-  return f.list ? `${f.type}[]` : f.optional ? `${f.type}?` : f.type;
+  const name = f.type === "Enum" ? (f.enum ?? "Enum") : f.type;
+  return f.list ? `${name}[]` : f.optional ? `${name}?` : name;
+}
+
+/**
+ * Enum fields are stored as strings, so enum changes need no DDL. A value removed from a field's
+ * enum may still be stored on existing nodes / edges, which then fail to read as that enum type:
+ * warn, with a query that finds (and a hint to rewrite) them.
+ */
+function enumValueWarnings(
+  owner: string,
+  match: string,
+  ref: string,
+  before: ResolvedScalarField,
+  after: ResolvedScalarField,
+  warnings: string[],
+): void {
+  if (before.type !== "Enum" || after.type !== "Enum" || before.list !== after.list) return;
+  const kept = new Set(after.enumValues ?? []);
+  const removed = (before.enumValues ?? []).filter((v) => !kept.has(v));
+  if (removed.length === 0) return;
+  const values = `[${removed.map((v) => `'${v}'`).join(", ")}]`;
+  const find = before.list
+    ? `${match} WHERE any(v IN ${ref} WHERE v IN ${values})`
+    : `${match} WHERE ${ref} IN ${values}`;
+  const rewrite = before.list
+    ? `SET ${ref} = [v IN ${ref} WHERE NOT v IN ${values}]`
+    : `SET ${ref} = '${after.enumValues?.[0] ?? ""}'`;
+  warnings.push(
+    `${owner} no longer accepts ${removed.join(", ")} (removed from enum ${after.enum}); existing values are not migrated. Find them with \`${find} RETURN count(*)\` and rewrite them in this migration (e.g. ${rewrite}).`,
+  );
 }
 
 /** Cypher expression that produces the default of `f`, plus params, or `null` if not expressible. */
@@ -187,7 +217,10 @@ function defaultExpression(
   const d = f.default;
   if (!d) return null;
   if (d.kind === "literal") {
-    if (f.type === "Int") return { expr: `toInteger($value)`, params: { value: d.value } };
+    // A BigInt default is its decimal digits: toInteger() keeps all 64 bits.
+    if (f.type === "Int" || f.type === "BigInt") {
+      return { expr: `toInteger($value)`, params: { value: d.value } };
+    }
     return { expr: "$value", params: { value: d.value } };
   }
   if (d.fn === "now") return { expr: f.type === "Date" ? "date()" : "datetime()" };
@@ -218,7 +251,7 @@ function nodeDataSteps(
         `${model}.${name} changed dimensions ${before.dimensions} → ${after.dimensions}; existing embeddings keep their old length and are not indexed (or returned by findSimilar) until re-embedded.`,
       );
     }
-  } else if (before && before.type !== after.type) {
+  } else if (before && (before.type !== after.type || before.enum !== after.enum)) {
     warnings.push(
       `${model}.${name} changed type ${typeLabel(before)} → ${typeLabel(after)}; existing values are not converted. Add a conversion step (e.g. SET ${ref} = toInteger(${ref})) if needed.`,
     );
@@ -227,6 +260,9 @@ function nodeDataSteps(
     warnings.push(
       `${model}.${name} changed between list and single value; convert existing data manually.`,
     );
+  }
+  if (before && before.enum === after.enum) {
+    enumValueWarnings(`${model}.${name}`, `MATCH (n:${q(label)})`, ref, before, after, warnings);
   }
 
   const def = defaultExpression(after);
@@ -352,6 +388,17 @@ function relationshipDataSteps(
   const ps = new Map(prev.properties.map((f) => [f.name, f]));
   for (const f of next.properties) {
     const p = ps.get(f.name);
+    if (p && p.enum === f.enum) {
+      const ref = `r.${q(f.name)}`;
+      enumValueWarnings(
+        `${next.name}.${f.name}`,
+        `MATCH ()-[r:${q(next.relType)}]->()`,
+        ref,
+        p,
+        f,
+        warnings,
+      );
+    }
     const def = defaultExpression(f);
     const nowRequired = !f.optional && !f.list;
     const wasRequired = p ? !p.optional && !p.list : false;

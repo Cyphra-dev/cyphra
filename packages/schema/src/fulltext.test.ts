@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { NodeDeclaration } from "./ast.js";
 import { SchemaValidationError } from "./errors.js";
 import { getNodeModel, resolveSchema } from "./model.js";
 import { parseSchema } from "./parseSchema.js";
@@ -25,7 +26,7 @@ const post = (body: string) =>
 
 describe("model-level attributes", () => {
   it("parses @@fulltext with a field list and named arguments", () => {
-    const node = parseSchema(schema).declarations[0]!;
+    const node = parseSchema(schema).declarations[0] as NodeDeclaration;
     expect(node.kind).toBe("Node");
     expect(node.fields.map((f) => f.name)).toEqual(["id", "title", "body", "tags", "views"]);
     expect(node.attributes).toEqual([
@@ -55,7 +56,7 @@ describe("model-level attributes", () => {
   id   String @id
   name String
 }`);
-    const a = doc.declarations[0]!;
+    const a = doc.declarations[0] as NodeDeclaration;
     expect(a.fields.map((f) => f.name)).toEqual(["id", "name"]);
     expect(a.attributes?.map((x) => x.fields)).toEqual([["name"]]);
   });

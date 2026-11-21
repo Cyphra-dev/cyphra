@@ -2,8 +2,7 @@ Not converted (2):
   Query  Query: custom Query fields (@cypher, resolvers) are not converted (compat.v7 still serves @cypher fields); with the typed client, write them as queries
   User   @authorization: authorization rules are not part of a Cyphra schema: compat.v7 still applies them; enforce them yourself around the typed client
 
-Converted with differences (10):
-  Role              enum: enums are not supported by Cyphra yet: mapped to String, allowed values are not enforced
+Converted with differences (9):
   User.id           @id: became @id @default(uuid()); Cyphra also adds a uniqueness constraint, which v7 @id does not
   User.email        @unique: @unique was removed in @neo4j/graphql v7; Cyphra keeps it and creates the uniqueness constraint
   User.displayName  @alias: Cyphra field names are the Neo4j property names: renamed to "display_name"

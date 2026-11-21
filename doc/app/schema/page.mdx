@@ -1,5 +1,5 @@
 ---
-description: "The .cyphra schema DSL for Neo4j: nodes, relationships, Vector(N) embeddings, and decorators that become constraints, range, vector and full-text indexes."
+description: "The .cyphra schema DSL for Neo4j: nodes, relationships, enums, Json, BigInt and Vector(N) fields, and decorators that become constraints and indexes."
 ---
 
 # Schema DSL
@@ -32,9 +32,67 @@ relationship Follows {
 
 ## Scalar types
 
-`String`, `Int`, `Float`, `Boolean`, `DateTime`, `Date`. Append `?` for optional
-(`String?`) or `[]` for a list (`String[]`). Lists are never optional; an absent list reads as `[]`.
-`Vector(N)` holds an embedding (see below).
+Append `?` for optional (`String?`) or `[]` for a list (`String[]`). Lists are never optional; an
+absent list reads as `[]`.
+
+| Type           | Neo4j property   | TypeScript                    |
+| -------------- | ---------------- | ----------------------------- |
+| `String`       | `STRING`         | `string`                      |
+| `Int`          | `INTEGER`        | `number` (safe integers only) |
+| `BigInt`       | `INTEGER`        | `bigint` (full 64-bit range)  |
+| `Float`        | `FLOAT`          | `number`                      |
+| `Boolean`      | `BOOLEAN`        | `boolean`                     |
+| `DateTime`     | `ZONED DATETIME` | `Date`                        |
+| `Date`         | `DATE`           | `Date`                        |
+| `Json`         | `STRING` (JSON)  | `JsonValue`                   |
+| an `enum` name | `STRING`         | the enum's union of values    |
+| `Vector(N)`    | `LIST<FLOAT>`    | `number[]` (see below)        |
+
+- **`BigInt`** holds 64-bit integers (counters, external ids) from -2^63 to 2^63-1, read and
+  written as JS `bigint` with no precision loss. `Int` uses the same Neo4j type but reads as a JS
+  `number`, and throws on a value beyond `Number.MAX_SAFE_INTEGER`. BigInt fields sort, filter with
+  `lt` / `gt` / `in` and aggregate like numbers: `_sum` is a `bigint`, `_avg` a `number`.
+  `@default(0)` and `@default(9223372036854775807)` keep every digit.
+- **`Json`** holds any JSON value (object, array, string, number, boolean). It is stored as its JSON
+  text, a string property: writes `JSON.stringify` the value, reads parse it back. A `Json?` set to
+  `null` removes the property, so a JSON `null` cannot be stored apart from "absent". Json fields
+  filter on `null`, `{ equals: value }` and `{ not: value }` only (the whole stored text is
+  compared, key order included; there are no queries into the value), cannot be sorted, and take no
+  `@id`, `@unique` or `@index`. `Json[]` is not supported: use a `Json` holding an array. A default
+  is a string of JSON text: `@default("{}")`.
+- **Enums** are declared once and used as a type (see [Enums](#enums)).
+
+## Enums
+
+```cyphra
+enum Role {
+  ADMIN
+  EDITOR
+  VIEWER
+}
+
+node User {
+  id    String @id @default(cuid())
+  role  Role   @default(VIEWER)
+  roles Role[]
+  level Role?
+}
+```
+
+- **Values** are identifiers, separated by whitespace or commas (`enum Level { LOW, HIGH }`), and
+  are stored as strings (`"ADMIN"`), so existing string data can become an enum without conversion.
+  An enum cannot reuse a built-in type name or the name of a node or relationship model.
+- **Usage.** An enum name is a field type on nodes and relationship properties: `Role`, `Role?`,
+  `Role[]`. `@default(VIEWER)` must name one of its values (lists take no default).
+- **Typed client.** `cyphra generate` emits a const object and a union type per enum:
+  `Role.ADMIN === "ADMIN"`, `type Role = "ADMIN" | "EDITOR" | "VIEWER"`. Every write (create,
+  nested create, `createMany`, `update`, `updateMany`, `upsert`, edge properties) rejects a value
+  outside the enum before reaching Neo4j. Filters are `equals`, `not`, `in` and `notIn`, typed to
+  the enum (list fields take `has`, `hasSome`, `hasEvery`, `isEmpty`); enum fields sort as strings.
+- **Migrations.** Enums need no DDL. [`cyphra migrate`](/migrations) warns when a value is removed,
+  with a query that finds the nodes still holding it, since they would no longer read as the enum.
+  [`cyphra pull`](/cli) cannot tell an enum, a `Json` or a `BigInt` from a `String` / `Int`
+  property: change those types by hand after pulling.
 
 ## Vector fields
 
@@ -105,7 +163,8 @@ so far.
 ## Defaults
 
 `@default(cuid())`, `@default(uuid())` (String), `@default(now())` (DateTime / Date), or a
-literal matching the field type: `@default("draft")`, `@default(0)`, `@default(1.5)`, `@default(true)`.
+literal matching the field type: `@default("draft")`, `@default(0)`, `@default(1.5)`, `@default(true)`,
+an enum value (`@default(VIEWER)`), JSON text on a `Json` field (`@default("[]")`).
 The [typed client](/client) applies them on create.
 
 ## Relationships

@@ -102,9 +102,12 @@ function scalarType(attr: DBFieldAttribute): { type: ScalarTypeName; list: boole
   const t = attr.type;
   if (Array.isArray(t)) return { type: "String", list: false }; // enum of string literals
   switch (t) {
+    // `supportsJSON: false`: Better Auth stringifies JSON itself, so it stays a String (not Json).
     case "string":
     case "json":
       return { type: "String", list: false };
+    // Also with `bigint: true`: a Neo4j INTEGER is always 64-bit, and Better Auth reads and writes
+    // these fields as JS numbers, which a Cyphra `BigInt` (a JS bigint) would not give it.
     case "number":
       return { type: "Int", list: false };
     case "boolean":
