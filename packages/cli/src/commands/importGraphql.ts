@@ -8,7 +8,7 @@ import {
   formatImportReport,
   mergeImportedSchema,
   printImportedSchema,
-} from "../import/graphql/index.js";
+} from "@cyphra/graphql";
 
 export type ImportGraphqlOptions = {
   /** Output schema path (default: `schema` from cyphra.json, else `./schema.cyphra`). */

@@ -35,6 +35,17 @@ function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
+/** ` (error: …)` when the actual result has errors and the golden does not explain the diff. */
+function firstError(actual: string): string {
+  try {
+    const parsed = JSON.parse(actual) as { errors?: { message?: string }[] };
+    const message = parsed.errors?.[0]?.message;
+    return message ? ` (error: ${message})` : "";
+  } catch {
+    return "";
+  }
+}
+
 function compareText(
   check: string,
   features: string[],
@@ -48,7 +59,7 @@ function compareText(
     check,
     features,
     status: "fail",
-    detail: "output differs from golden",
+    detail: `output differs from golden${firstError(actual)}`,
     actual,
     expected,
   };

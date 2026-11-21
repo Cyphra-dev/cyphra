@@ -1,0 +1,29 @@
+{
+  "description": "Checks (<fixture>/schema or <fixture>/<operation>) each implementation must pass. A listed check that fails is a regression; a passing check that is not listed fails the suite until it is added. Regenerate with `pnpm --filter compat-graphql report --update-expected`.",
+  "implementations": {
+    "@cyphra/graphql": [
+      "blog/schema",
+      "movies/schema",
+      "movies/01-filter-scalar-operators",
+      "movies/02-filter-logical",
+      "movies/03-filter-relationship-quantifiers",
+      "movies/04-sort-limit-offset",
+      "movies/05-connection-cursor-pagination",
+      "movies/06-connection-edge-properties",
+      "org/schema",
+      "org/01-self-relationships",
+      "org/02-filter-date-bigint-boolean",
+      "org/03-connection-edge-filter-sort",
+      "org/04-nested-cursor-pagination",
+      "shop/schema",
+      "shop/01-filter-enum-and-scalars",
+      "shop/02-filter-relationships",
+      "shop/03-sort-and-offset",
+      "shop/08-connection-pagination",
+      "social/schema",
+      "social/01-follow-graph",
+      "social/02-filter-quantifiers-and-edges",
+      "social/04-connection-cursor-datetime"
+    ]
+  }
+}

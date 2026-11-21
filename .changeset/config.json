@@ -10,7 +10,8 @@
       "@cyphra/query",
       "@cyphra/runtime",
       "@cyphra/schema",
-      "@cyphra/better-auth"
+      "@cyphra/better-auth",
+      "@cyphra/graphql"
     ]
   ],
   "linked": [],

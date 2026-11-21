@@ -49,6 +49,7 @@ const meta: MetaRecord = {
   cli: "CLI",
   "--integrations": { type: "separator", title: "Integrations" },
   "better-auth": "Better Auth",
+  graphql: "GraphQL",
   "--lower": { type: "separator", title: "Lower-level APIs" },
   queries: "Query builder",
   runtime: "Runtime",

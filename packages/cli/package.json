@@ -19,6 +19,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@cyphra/graphql": "workspace:*",
     "@cyphra/migrator": "workspace:*",
     "@cyphra/runtime": "workspace:*",
     "@cyphra/schema": "workspace:*",

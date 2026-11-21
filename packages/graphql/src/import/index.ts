@@ -1,6 +1,6 @@
 /**
  * `@neo4j/graphql` v7 type definitions to Cyphra schema. Self-contained (no CLI or file system
- * code) so a future `@cyphra/graphql` package can reuse it.
+ * code): used by `cyphra import graphql` and by `@cyphra/graphql` to derive the Cyphra schema model.
  *
  * @packageDocumentation
  */
