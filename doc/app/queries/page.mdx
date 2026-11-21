@@ -46,6 +46,26 @@ Every value is a Neo4j parameter—only `IS NULL` / `IS NOT NULL` have no bound 
 
 Call **`returnFields({ … })`** or **`returnStar()`** before `toCypher()` (a bare `MATCH` without `RETURN` is rejected). Chain **`returnDistinct()`** after either to emit **`RETURN DISTINCT …`** (deduplicate rows before `ORDER BY` / `SKIP` / `LIMIT`).
 
+## Traversals and paths
+
+For multi-hop queries on your schema (friends of friends, everything within three hops), the typed
+client has [`traverse`](/client#traversals): it compiles to one parameterized Cypher statement with a
+quantified path pattern and can return each [path](/client#paths) as `{ nodes, edges }`, with edge
+properties typed from your `relationship { … }` models.
+
+```ts
+const rows = await db.user.traverse({
+  from: { email: "alice@acme.io" },
+  via: "following",
+  depth: { max: 2 },
+  returnPaths: true,
+});
+rows[0]?.path.edges[0]?.properties.since; // Date
+```
+
+Use the tagged template or the builder when the traversal crosses several models or needs a filter
+on the intermediate nodes.
+
 ## Runtime shortcuts
 
 `CyphraClient` provides **`queryRecords`** / **`queryRecord`** (from any `CompiledCypher`) and **`selectRecords`** / **`selectRecord`** (from a `SelectQuery`) so you rarely need to wire `run` + `toPlainRecords` by hand. See the [Runtime](/runtime) page for sessions, transactions, and options.

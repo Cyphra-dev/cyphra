@@ -520,6 +520,112 @@ export type GroupByRow<TM extends TypeMap, M extends keyof TM, B, C, Su, Av, Mi,
   GroupByKeys<TM, M, B> & AggregateResult<TM, M, C, Su, Av, Mi, Ma>
 >;
 
+// ---------------------------------------------------------------------------
+// Paths and traversals
+// ---------------------------------------------------------------------------
+
+/** Edge properties of a relation: its `relationship { … }` model, or `{}` when the edge is untyped. */
+type EdgeProps<D extends RelationTypeDef> = D extends unknown
+  ? D["edge"] extends Record<string, unknown>
+    ? D["edge"]
+    : Record<string, never>
+  : never;
+
+/** One relationship of a {@link Path}: `edges[i]` joins `nodes[i]` and `nodes[i + 1]`. */
+export type PathEdge<P = Record<string, unknown>> = {
+  /** Neo4j relationship type, e.g. `"FOLLOWS"`. */
+  type: string;
+  /** `"out"`: the edge points from `nodes[i]` to `nodes[i + 1]`; `"in"`: the other way round. */
+  direction: "out" | "in";
+  /** Edge properties, typed from the `relationship { … }` model (`{}` for an untyped edge). */
+  properties: P;
+};
+
+/**
+ * A path through the graph: `nodes[0] -edges[0]- nodes[1] -edges[1]- …`. `edges.length` is the
+ * number of hops and `nodes.length` is always `edges.length + 1`. Nodes carry their scalar fields.
+ */
+export type Path<N = Record<string, unknown>, E = PathEdge> = {
+  nodes: N[];
+  edges: E[];
+};
+
+/** A {@link Path} of `M` nodes joined by edges of the relations `R` of `M`. */
+export type ModelPath<
+  TM extends TypeMap,
+  M extends keyof TM,
+  R extends keyof Relations<TM, M>,
+> = Path<Simplify<Scalars<TM, M>>, PathEdge<EdgeProps<Rel<TM, M, R>>>>;
+
+/** Relations of `M` that lead back to `M` (e.g. `User.following`): the ones a traversal repeats. */
+export type SelfRelations<TM extends TypeMap, M extends keyof TM> = {
+  [R in keyof Relations<TM, M> & string]: [Rel<TM, M, R>["target"]] extends [M] ? R : never;
+}[keyof Relations<TM, M> & string];
+
+/** Filter on edge properties: scalar filters, `AND`, `OR`, `NOT`. */
+export type EdgeWhereInput<E> = {
+  [K in keyof E]?: ScalarFilter<E[K]>;
+} & {
+  AND?: EdgeWhereInput<E> | readonly EdgeWhereInput<E>[];
+  OR?: readonly EdgeWhereInput<E>[];
+  NOT?: EdgeWhereInput<E> | readonly EdgeWhereInput<E>[];
+};
+
+type RawEdge<D extends RelationTypeDef> = D extends unknown ? D["edge"] : never;
+
+/** `edgeWhere` is only available when every relation in `via` has a `relationship { … }` model. */
+type EdgeWhereFor<TM extends TypeMap, M extends keyof TM, R extends keyof Relations<TM, M>> =
+  null extends RawEdge<Rel<TM, M, R>> ? never : EdgeWhereInput<RawEdge<Rel<TM, M, R>>>;
+
+/**
+ * Arrow direction of each hop, from the node you step from. Default: the direction declared by
+ * each relation's `@relationship(direction: …)`.
+ */
+export type TraversalDirection = "out" | "in" | "both";
+
+export type TraverseArgs<TM extends TypeMap, M extends keyof TM, R extends SelfRelations<TM, M>> = {
+  /** Start node(s): any filter on `M` (`{ id }`, `{ email }`, …). */
+  from: WhereInput<TM, M>;
+  /** Relation(s) of `M` to follow; each must lead back to `M`. Several: any of them on each hop. */
+  via: R | readonly R[];
+  direction?: TraversalDirection;
+  /**
+   * Hops: `min` (default `1`, `0` includes the start node) to `max` (required, at most the client's
+   * `maxTraversalDepth`, default 10).
+   */
+  depth: { min?: number; max: number };
+  /** Filter on the reached nodes. */
+  where?: WhereInput<TM, M>;
+  /** Filter on the properties of every edge of the path. */
+  edgeWhere?: EdgeWhereFor<TM, M, NoInfer<R>>;
+  /** Return each reached node once (default `true`); `false`: one result per path. */
+  distinct?: boolean;
+  orderBy?: OrderByInput<TM, M>;
+  skip?: number;
+  take?: number;
+};
+
+/** One `traverse` result with `returnPaths: true`. */
+export type TraversalResult<
+  TM extends TypeMap,
+  M extends keyof TM,
+  R extends keyof Relations<TM, M>,
+  N,
+> = {
+  /** The reached node (honours `select` / `include`). */
+  node: N;
+  /** How it was reached from a start node (the shortest such path when `distinct`). */
+  path: ModelPath<TM, M, R>;
+};
+
+type TraverseOut<
+  TM extends TypeMap,
+  M extends keyof TM,
+  R extends keyof Relations<TM, M>,
+  N,
+  P,
+> = P extends true ? TraversalResult<TM, M, R, N> : N;
+
 type Sel<TM extends TypeMap, M extends keyof TM> = SelectInput<TM, M> | undefined;
 type Inc<TM extends TypeMap, M extends keyof TM> = IncludeInput<TM, M> | undefined;
 type Out<TM extends TypeMap, M extends keyof TM, S, I> = Payload<TM, M, { select: S; include: I }>;
@@ -571,6 +677,19 @@ export type ModelDelegate<TM extends TypeMap, M extends keyof TM> = {
   >(
     args?: AggregateArgs<TM, M> & AggregateProjection<TM, M, C, Su, Av, Mi, Ma>,
   ): Promise<AggregateResult<TM, M, C, Su, Av, Mi, Ma>>;
+  /**
+   * Follow `via` from the `from` node(s) for `depth.min`..`depth.max` hops and return the reached
+   * nodes, in one statement (a quantified path pattern, Neo4j 5.9+). `returnPaths: true` returns
+   * `{ node, path }` with the typed nodes and edges of the path.
+   */
+  traverse<
+    R extends SelfRelations<TM, M>,
+    S extends Sel<TM, M> = undefined,
+    I extends Inc<TM, M> = undefined,
+    P extends boolean = false,
+  >(
+    args: TraverseArgs<TM, M, R> & Projection<S, I> & { returnPaths?: P },
+  ): Promise<TraverseOut<TM, M, R, Out<TM, M, S, I>, P>[]>;
   /** Group matching nodes by `by` and aggregate each group, in one statement. */
   groupBy<
     B extends GroupByField<TM, M>,

@@ -195,28 +195,29 @@ The left column uses the names from the Prisma ORM 7
 [CLI](https://www.prisma.io/docs/orm/v7/reference/prisma-cli-reference) and
 [client](https://www.prisma.io/docs/orm/v7/reference/prisma-client-reference) references.
 
-| Prisma                                       | Cyphra                                                            |
-| -------------------------------------------- | ----------------------------------------------------------------- |
-| `schema.prisma`                              | `schema.cyphra`                                                   |
-| `model User { … }`                           | `node User { … }`                                                 |
-| `@relation(fields: […], references: […])`    | `@relationship(type: "AUTHORED", direction: OUT)`                 |
-| implicit or explicit many-to-many join table | a relationship; its properties go in a `relationship { … }` model |
-| `@id`, `@unique`, `@@index`                  | `@id`, `@unique`, `@index` (Neo4j constraints and range indexes)  |
-| `prisma generate`                            | `cyphra generate`                                                 |
-| `prisma migrate dev` / `deploy` / `status`   | `cyphra migrate dev` / `deploy` / `status`                        |
-| `prisma migrate diff`                        | `cyphra migrate diff`                                             |
-| `prisma db pull`                             | `cyphra pull`                                                     |
-| `prisma db push`                             | `cyphra push` (constraints and indexes only)                      |
-| `prisma.user.findMany({ where, include })`   | `db.user.findMany({ where, include })`                            |
-| `select`, `orderBy`, `skip`, `take`          | same names, also inside a nested relation                         |
-| `create` with nested `create` / `connect`    | same, plus `$edge` to set relationship properties                 |
-| `upsert`                                     | same; one atomic `MERGE` on the `@id` / `@unique` key             |
-| `lt`, `gt`, `contains`, `in`, … filters      | same names; `lt` / `gt` also on strings                           |
-| `aggregate`, `groupBy` with `having`         | same shapes ([Aggregations](/client#aggregations))                |
-| `_count` in `select` / `include`, `orderBy`  | same shapes ([Counting](/client#counting-related-nodes))          |
-| `$transaction(async (tx) => …)`              | `db.$transaction(async (tx) => …)`                                |
-| `$queryRaw` tagged template                  | `` db.$cypher`…` `` (parameterized Cypher)                        |
-| `$disconnect()`                              | `db.$disconnect()`                                                |
+| Prisma                                       | Cyphra                                                                      |
+| -------------------------------------------- | --------------------------------------------------------------------------- |
+| `schema.prisma`                              | `schema.cyphra`                                                             |
+| `model User { … }`                           | `node User { … }`                                                           |
+| `@relation(fields: […], references: […])`    | `@relationship(type: "AUTHORED", direction: OUT)`                           |
+| implicit or explicit many-to-many join table | a relationship; its properties go in a `relationship { … }` model           |
+| `@id`, `@unique`, `@@index`                  | `@id`, `@unique`, `@index` (Neo4j constraints and range indexes)            |
+| `prisma generate`                            | `cyphra generate`                                                           |
+| `prisma migrate dev` / `deploy` / `status`   | `cyphra migrate dev` / `deploy` / `status`                                  |
+| `prisma migrate diff`                        | `cyphra migrate diff`                                                       |
+| `prisma db pull`                             | `cyphra pull`                                                               |
+| `prisma db push`                             | `cyphra push` (constraints and indexes only)                                |
+| `prisma.user.findMany({ where, include })`   | `db.user.findMany({ where, include })`                                      |
+| `select`, `orderBy`, `skip`, `take`          | same names, also inside a nested relation                                   |
+| `create` with nested `create` / `connect`    | same, plus `$edge` to set relationship properties                           |
+| `upsert`                                     | same; one atomic `MERGE` on the `@id` / `@unique` key                       |
+| `lt`, `gt`, `contains`, `in`, … filters      | same names; `lt` / `gt` also on strings                                     |
+| `aggregate`, `groupBy` with `having`         | same shapes ([Aggregations](/client#aggregations))                          |
+| `_count` in `select` / `include`, `orderBy`  | same shapes ([Counting](/client#counting-related-nodes))                    |
+| no equivalent (no multi-hop queries)         | `db.user.traverse({ from, via, depth })` ([Traversals](/client#traversals)) |
+| `$transaction(async (tx) => …)`              | `db.$transaction(async (tx) => …)`                                          |
+| `$queryRaw` tagged template                  | `` db.$cypher`…` `` (parameterized Cypher)                                  |
+| `$disconnect()`                              | `db.$disconnect()`                                                          |
 
 Some things do not map, and it is better to know before you start:
 
@@ -250,7 +251,7 @@ No. Cyphra is a separate open-source project under the MIT license. Its client f
 
 ### Which Neo4j versions does Cyphra need?
 
-The typed client needs Neo4j 5.6 or later, because it compiles relations to COLLECT and EXISTS subqueries. Relationship property uniqueness constraints need Neo4j 5.7 or later.
+The typed client needs Neo4j 5.6 or later, because it compiles relations to COLLECT and EXISTS subqueries. Relationship property uniqueness constraints need Neo4j 5.7 or later, and traversals (traverse) need Neo4j 5.9 or later.
 
 ### Can I use Cyphra with an existing Neo4j database?
 

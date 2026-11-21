@@ -3,7 +3,8 @@
  * The runtime body never executes against a database.
  */
 import { describe, expectTypeOf, it } from "vitest";
-import type { Db } from "./__fixtures__/blog.gen.js";
+import type { CyphraTypeMap, Db } from "./__fixtures__/blog.gen.js";
+import type { ModelPath, Path, PathEdge, SelfRelations } from "./types.js";
 
 // Type-only test file: checked by `tsc` (pnpm typecheck), not executed by Vitest.
 
@@ -232,5 +233,100 @@ describe("ORM types", () => {
     await db.post.findMany({ orderBy: { author: { _count: "asc" } } });
     // @ts-expect-error — direction must be asc / desc
     await db.user.findMany({ orderBy: { posts: { _count: "up" } } });
+  });
+
+  it("types traverse results, args and paths", async () => {
+    type UserScalars = {
+      id: string;
+      email: string;
+      name: string | null;
+      age: number | null;
+      tags: string[];
+      createdAt: Date;
+    };
+
+    const reached = await db.user.traverse({
+      from: { id: "u1" },
+      via: "following",
+      depth: { max: 3 },
+      where: { age: { gte: 18 } },
+      edgeWhere: { since: { gte: new Date("2024-01-01") } },
+      orderBy: { email: "asc" },
+      take: 10,
+    });
+    expectTypeOf(reached).toEqualTypeOf<UserScalars[]>();
+
+    const picked = await db.user.traverse({
+      from: { email: "a@b.c" },
+      via: ["following", "followers"],
+      direction: "both",
+      depth: { min: 2, max: 2 },
+      distinct: false,
+      select: { email: true, _count: { select: { posts: true } } },
+    });
+    expectTypeOf(picked).toEqualTypeOf<{ email: string; _count: { posts: number } }[]>();
+
+    const _withPaths = await db.user.traverse({
+      from: { id: "u1" },
+      via: "following",
+      depth: { max: 2 },
+      include: { posts: true },
+      returnPaths: true,
+    });
+    type Row = (typeof _withPaths)[number];
+    expectTypeOf<Row["node"]["posts"][number]["title"]>().toEqualTypeOf<string>();
+    expectTypeOf<Row["path"]["nodes"]>().toEqualTypeOf<UserScalars[]>();
+    expectTypeOf<Row["path"]["edges"][number]>().toEqualTypeOf<{
+      type: string;
+      direction: "out" | "in";
+      properties: { since: Date };
+    }>();
+    expectTypeOf<Row["path"]>().toEqualTypeOf<ModelPath<CyphraTypeMap, "User", "following">>();
+
+    const noPaths = await db.user.traverse({
+      from: {},
+      via: "followers",
+      depth: { max: 1 },
+      returnPaths: false,
+    });
+    expectTypeOf(noPaths).toEqualTypeOf<UserScalars[]>();
+
+    // @ts-expect-error — depth.max is required
+    await db.user.traverse({ from: { id: "u1" }, via: "following", depth: { min: 1 } });
+    // @ts-expect-error — depth is required
+    await db.user.traverse({ from: { id: "u1" }, via: "following" });
+    // @ts-expect-error — unknown relation
+    await db.user.traverse({ from: { id: "u1" }, via: "friends", depth: { max: 2 } });
+    // @ts-expect-error — posts leads to Post, not back to User
+    await db.user.traverse({ from: { id: "u1" }, via: "posts", depth: { max: 2 } });
+    // @ts-expect-error — Post has no relation back to Post
+    await db.post.traverse({ from: { id: "p1" }, via: "author", depth: { max: 2 } });
+    await db.user.traverse({
+      from: { id: "u1" },
+      via: "following",
+      depth: { max: 2 },
+      // @ts-expect-error — edge filters are typed by the relationship model
+      edgeWhere: { since: "yesterday" },
+    });
+    await db.user.traverse({
+      from: { id: "u1" },
+      via: "following",
+      depth: { max: 2 },
+      // @ts-expect-error — unknown edge property
+      edgeWhere: { weight: 1 },
+    });
+    // @ts-expect-error — unknown direction
+    await db.user.traverse({ from: {}, via: "following", direction: "up", depth: { max: 2 } });
+    // @ts-expect-error — where is typed by the model
+    await db.user.traverse({ from: {}, via: "following", depth: { max: 2 }, where: { age: "x" } });
+  });
+
+  it("types paths generically (for traversals and shortest paths)", () => {
+    expectTypeOf<Path["edges"][number]>().toEqualTypeOf<PathEdge>();
+    expectTypeOf<
+      ModelPath<CyphraTypeMap, "User", "following" | "followers">["edges"][number]["properties"]
+    >().toEqualTypeOf<{ since: Date }>();
+    expectTypeOf<SelfRelations<CyphraTypeMap, "User">>().toEqualTypeOf<"following" | "followers">();
+    expectTypeOf<SelfRelations<CyphraTypeMap, "Post">>().toEqualTypeOf<never>();
   });
 });

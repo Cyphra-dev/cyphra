@@ -29,6 +29,7 @@ To reuse a `Driver` your app already has (`neo4j-driver` 5.28+ or 6.x), pass
 Each node model becomes a delegate with a lower-cased name: `node User` → `db.user`, `node BlogPost` → `db.blogPost`.
 
 > Requires **Neo4j 5.6+** (the client compiles relations to `COLLECT {}` / `EXISTS {}` subqueries).
+> [`traverse`](#traversals) needs **Neo4j 5.9+** (quantified path patterns).
 
 ## Reading
 
@@ -216,6 +217,121 @@ const perAuthor = await db.post.groupBy({
 Posts without an author fall into the group whose related fields are all `null`. To-many relations
 cannot be grouped on (a post would belong to several groups); aggregate from the other side instead,
 for example `db.user.groupBy` with `where: { posts: { some: … } }`.
+
+## Traversals
+
+`traverse` follows a relation for several hops and returns the nodes it reaches: "friends of friends",
+"everyone downstream of this service", "people within three introductions". It compiles to one Cypher
+statement with a [quantified path pattern](https://neo4j.com/docs/cypher-manual/current/patterns/variable-length-patterns/)
+(Neo4j 5.9+), with every value sent as a parameter.
+
+```cyphra filename="schema.cyphra"
+node User {
+  id        String @id @default(cuid())
+  email     String @unique
+  name      String?
+  age       Int?
+  following User[] @relationship(type: "FOLLOWS", direction: OUT)
+  followers User[] @relationship(type: "FOLLOWS", direction: IN)
+}
+
+relationship Follows {
+  type "FOLLOWS"
+  from User
+  to User
+  since DateTime @default(now())
+}
+```
+
+```ts
+// Friends of friends: everyone Alice follows, and everyone they follow.
+const fof = await db.user.traverse({
+  from: { email: "alice@acme.io" },
+  via: "following",
+  depth: { max: 2 },
+  where: { age: { gte: 18 } }, // filter on the reached nodes
+  orderBy: { name: "asc" },
+  take: 20,
+});
+// User[]
+```
+
+The generated Cypher is:
+
+```cypher
+MATCH (s:`User`) WHERE s.`email` = $p0
+MATCH (s)((:`User`)-[e0:`FOLLOWS`]->(:`User`)){1,2}(n:`User`)
+WHERE (n <> s) AND (n.`age` >= $p1)
+WITH DISTINCT n ORDER BY n.`name` ASC LIMIT $p2
+RETURN n{.`id`, .`email`, .`name`, .`age`} AS row ORDER BY n.`name` ASC
+```
+
+| Argument                  | Meaning                                                                                                                                                  |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `from`                    | Start node(s): any `where` filter on the model (`{ id }`, `{ email }`, `{ age: { gt: 30 } }`). Required.                                                 |
+| `via`                     | A relation of the model that leads back to the same model (`"following"`), or a list of them (`["following", "followers"]`): each hop takes any of them. |
+| `depth`                   | `{ min?, max }` hops. `max` is required; `min` defaults to `1`, and `min: 0` also returns the start node.                                                |
+| `direction`               | `"out"`, `"in"` or `"both"`: the arrow direction of every hop. Default: each relation's declared `direction`.                                            |
+| `where`                   | Filter on the reached nodes, the same as in `findMany` (relation filters included).                                                                      |
+| `edgeWhere`               | Filter on the properties of every edge of the path, typed from the `relationship { … }` model. Only when every relation in `via` has one.                |
+| `distinct`                | `true` (default): each reached node once. `false`: one result per path, so a node reached two ways appears twice.                                        |
+| `select`, `include`       | Shape the reached nodes, as in `findMany` (`_count` and nested relations included).                                                                      |
+| `orderBy`, `skip`, `take` | Sort and page the reached nodes.                                                                                                                         |
+| `returnPaths`             | `true`: return `{ node, path }` instead of the node (see [Paths](#paths)).                                                                               |
+
+- **Upper bound.** `depth.max` is required and capped by the client option `maxTraversalDepth`
+  (default `10`): `createClient({ uri, user, password, maxTraversalDepth: 4 })`. Every extra hop can
+  multiply the number of paths Neo4j explores, so set the cap as low as your queries allow. A missing
+  `max`, a `max` above the cap or an unknown relation in `via` is a type error where TypeScript can
+  see it, and a `CyphraValidationError` at run time.
+- **Cycles.** Neo4j never uses the same relationship twice in one path, so cycles end on their own. A
+  path that comes back to its own start node is skipped: Alice is not her own friend of a friend.
+- **Same model only.** Each relation in `via` must lead back to the model (`User` to `User`). Chains
+  over different models (`User` to `Post` to `Tag`) are not supported yet; use `db.$cypher` for those.
+- `traverse` works in [`$transaction`](#transactions) and sees the transaction's own writes.
+
+Edge filters apply to every hop. Only follows made since 2024, both directions, exactly two hops away:
+
+```ts
+const recent = await db.user.traverse({
+  from: { id: alice.id },
+  via: ["following", "followers"], // same as via: "following", direction: "both"
+  depth: { min: 2, max: 2 },
+  edgeWhere: { since: { gte: new Date("2024-01-01") } },
+  select: { email: true, _count: { select: { followers: true } } },
+});
+// { email: string; _count: { followers: number } }[]
+```
+
+### Paths
+
+With `returnPaths: true`, each result is `{ node, path }`. The `path` lists the nodes from the start node
+to the reached node and the edges between them, with edge properties typed from the
+`relationship { … }` model:
+
+```ts
+const rows = await db.user.traverse({
+  from: { email: "alice@acme.io" },
+  via: "following",
+  depth: { max: 3 },
+  where: { email: "dave@acme.io" },
+  select: { email: true },
+  returnPaths: true,
+});
+const { node, path } = rows[0]!;
+node.email; // string
+path.nodes.map((u) => u.name); // ["Alice", "Carol", "Dave"]: User scalars
+path.edges[0]; // { type: "FOLLOWS", direction: "out", properties: { since: Date } }
+```
+
+- `path.edges[i]` joins `path.nodes[i]` and `path.nodes[i + 1]`, and `path.edges.length` is the number
+  of hops. `direction` is `"out"` when the edge points from `nodes[i]` to `nodes[i + 1]`, `"in"` when it
+  points back (for example when walking `followers`).
+- Path nodes carry the model's scalar fields; `select` and `include` shape `node` only.
+- With `distinct` (default), `path` is one of the shortest paths to the node. With `distinct: false`,
+  every path is its own result.
+- The types are exported for your own code: `Path<Node, Edge>`, `PathEdge<Props>`, and
+  `ModelPath<CyphraTypeMap, "User", "following">` for the path of a given model and relation.
 
 ## Writing
 
