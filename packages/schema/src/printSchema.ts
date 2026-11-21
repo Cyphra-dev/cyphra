@@ -20,6 +20,15 @@ export function formatScalarType(t: ScalarTypeRef): string {
   return t.optional ? `${name}?` : name;
 }
 
+/** Arguments a rule decorator prints positionally, in order. */
+const PRINT_POSITIONAL: Readonly<Record<string, readonly string[]>> = {
+  length: ["min", "max"],
+  size: ["min", "max"],
+  min: ["value"],
+  max: ["value"],
+  regex: ["pattern"],
+};
+
 function formatDecoratorValue(v: Decorator["args"][number]["value"]): string {
   if (v.kind === "string") {
     return quoteSchemaString(v.value);
@@ -49,7 +58,18 @@ export function formatDecorator(d: Decorator): string {
   if (d.args.length === 0) {
     return `@${d.name}`;
   }
-  const inner = d.args.map((a) => `${a.key}: ${formatDecoratorValue(a.value)}`).join(", ");
+  // Rule decorators print their leading arguments positionally (`@length(3, 20)`, `@min(0)`,
+  // `@regex("^a")`) when given in that order; `@regex` flags stay named.
+  const positional = PRINT_POSITIONAL[d.name] ?? [];
+  let n = 0;
+  while (n < d.args.length && n < positional.length && d.args[n]!.key === positional[n]) n++;
+  const inner = d.args
+    .map((a, i) =>
+      i < n || a.key === ""
+        ? formatDecoratorValue(a.value)
+        : `${a.key}: ${formatDecoratorValue(a.value)}`,
+    )
+    .join(", ");
   return `@${d.name}(${inner})`;
 }
 

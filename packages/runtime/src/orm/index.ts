@@ -1,5 +1,6 @@
 export { createOrm } from "./client.js";
 export type { OrmClient, OrmOptions, OrmTransactionClient } from "./client.js";
+export type { ValidationIssue } from "./errors.js";
 export { CyphraError, CyphraValidationError, NotFoundError, RestrictError } from "./errors.js";
 export { createCuid } from "./engine.js";
 export { escapeLucene } from "./fulltext.js";

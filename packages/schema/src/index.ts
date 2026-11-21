@@ -86,4 +86,14 @@ export type {
   SchemaModel,
   VectorSimilarity,
 } from "./model.js";
+export type { RuleField, RuleViolation, ValidationRule, ValidationRuleName } from "./rules.js";
+export {
+  REGEX_FLAGS,
+  RULE_POSITIONAL_ARGS,
+  VALIDATION_RULES,
+  checkRules,
+  formatRule,
+  isRuleDecorator,
+  listRequiresElements,
+} from "./rules.js";
 export { ON_DELETE_RULES, SCHEMA_MODEL_VERSION, getNodeModel, resolveSchema } from "./model.js";

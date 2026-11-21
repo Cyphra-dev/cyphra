@@ -20,6 +20,31 @@
   function withLoc(node, locs) {
     return LOC ? Object.assign(node, locs) : node;
   }
+  // Keys of the positional arguments of the validation-rule decorators (`@length(3, 20)` is
+  // `@length(min: 3, max: 20)`). Keep in sync with RULE_POSITIONAL_ARGS (src/rules.ts).
+  const POSITIONAL = {
+    length: ["min", "max"],
+    size: ["min", "max"],
+    min: ["value"],
+    max: ["value"],
+    regex: ["pattern", "flags"],
+  };
+  // Give positional arguments their key; one without a known key keeps the key "" (rejected by
+  // validation). Positional arguments must come before named ones.
+  function nameArgs(name, args) {
+    const keys = POSITIONAL[name] ?? [];
+    let named = false;
+    let i = 0;
+    return args.map((a) => {
+      if (!a.positional) {
+        named = true;
+        return a;
+      }
+      if (named) error(`@${name}: positional arguments must come before named ones.`);
+      const { positional, ...rest } = a;
+      return { ...rest, key: keys[i++] ?? "" };
+    });
+  }
 }
 
 start
@@ -277,8 +302,8 @@ decoratorBody
         ],
       };
     }
-  / "@" name:identifier "(" _ args:decoratorArgs _ ")" {
-      return { name, args };
+  / "@" name:identifier "(" _ args:callArgs _ ")" {
+      return { name, args: nameArgs(name, args) };
     }
   / "@" name:identifier {
       return { name, args: [] };
@@ -300,6 +325,19 @@ decoratorArgs
       return [head, ...tail];
     }
   / "" { return []; }
+
+// Decorator arguments: named (`key: value`) or, before any named one, positional (`value`).
+callArgs
+  = head:callArg tail:(_ "," _ @callArg)* {
+      return [head, ...tail];
+    }
+  / "" { return []; }
+
+callArg
+  = decoratorArg
+  / v:decoratorValueTok {
+      return withLoc({ key: "", value: v.value, positional: true }, { loc: v.loc, valueLoc: v.loc });
+    }
 
 decoratorArg
   = key:nameTok _ ":" _ val:decoratorValueTok {

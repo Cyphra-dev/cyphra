@@ -75,7 +75,9 @@ export function formatSchema(source: string, options?: FormatSchemaOptions): str
         : `@default(${formatValue(a)})`;
     }
     if (d.args.length === 0) return `@${d.name}`;
-    return `@${d.name}(${d.args.map((a) => `${a.key}: ${formatValue(a)}`).join(", ")})`;
+    // Positional arguments (`@length(3, 20)`) have no key in the source: keep them positional.
+    const arg = (a: DecoratorArg) => (a.keyLoc ? `${a.key}: ${formatValue(a)}` : formatValue(a));
+    return `@${d.name}(${d.args.map(arg).join(", ")})`;
   };
   const formatAttr = (a: ModelAttribute): string => {
     const parts = [

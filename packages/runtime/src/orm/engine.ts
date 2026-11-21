@@ -35,6 +35,7 @@ import { search } from "./fulltext.js";
 import { deleteWithRules, hasDeleteRules, lockNodes } from "./onDelete.js";
 import { CyphraError, CyphraValidationError, NotFoundError } from "./errors.js";
 import { defaultLiteralValue, encodeScalar, integerToNumber, nowValue } from "./values.js";
+import { numericGuard, throwGuardIssues, validateWriteArgs, type NumericCheck } from "./rules.js";
 
 type AnyRecord = Record<string, unknown>;
 
@@ -622,9 +623,16 @@ export class ModelEngine {
       for (const item of asArray(create)) await this.createRelated(exec, id, rel, item);
   }
 
-  /** Compile scalar `data` of an update into `SET` assignments for variable `n`. */
-  private setClauses(ctx: QueryContext, scalars: AnyRecord): string[] {
+  /**
+   * Compile scalar `data` of an update into `SET` assignments for variable `n`, with the `@min` /
+   * `@max` checks of the values numeric operators produce (see {@link numericGuard}).
+   */
+  private setClauses(
+    ctx: QueryContext,
+    scalars: AnyRecord,
+  ): { sets: string[]; checks: NumericCheck[] } {
     const sets: string[] = [];
+    const checks: NumericCheck[] = [];
     for (const [k, v] of Object.entries(scalars)) {
       const f = scalarField(this.model, k)!;
       const ref = `n.${q(k)}`;
@@ -636,30 +644,54 @@ export class ModelEngine {
             `${this.model.name}.${k}: object updates are only for numbers.`,
           );
         }
+        // The value after every operator, in order, for the range checks.
+        let result = ref;
         for (const [op, amount] of Object.entries(v)) {
           if (amount === undefined) continue;
           const sym = { increment: "+", decrement: "-", multiply: "*" }[op];
           if (!sym) throw new CyphraValidationError(`Unknown number update "${op}".`);
-          sets.push(
-            `${ref} = ${ref} ${sym} ${ctx.param(encodeScalar(f, amount, this.model.name))}`,
-          );
+          const p = ctx.param(encodeScalar(f, amount, this.model.name));
+          sets.push(`${ref} = ${ref} ${sym} ${p}`);
+          result = `(${result} ${sym} ${p})`;
+        }
+        for (const r of f.rules ?? []) {
+          if (result === ref || (r.rule !== "min" && r.rule !== "max")) continue;
+          const limit = f.type === "BigInt" ? BigInt(r.value) : r.value;
+          const bound = ctx.param(encodeScalar(f, limit, this.model.name));
+          checks.push({ field: f, rule: r.rule, result, bound });
         }
         continue;
       }
       sets.push(`${ref} = ${ctx.param(encodeScalar(f, v, this.model.name))}`);
     }
-    return sets;
+    return { sets, checks };
+  }
+
+  /**
+   * `SET` the update on `n` only when the values its numeric operators produce keep within
+   * `@min` / `@max`; the clause returns the broken checks as `bad` (see {@link numericGuard}).
+   */
+  private static guardedSet(sets: readonly string[], checks: readonly NumericCheck[]): string {
+    const guard = numericGuard(checks);
+    if (!guard) return sets.length ? ` SET ${sets.join(", ")}` : "";
+    return (
+      ` WITH n, ${guard} AS bad` +
+      ` FOREACH (x IN CASE WHEN size(bad) = 0 THEN [1] ELSE [] END | SET ${sets.join(", ")})`
+    );
   }
 
   private async updateNode(exec: Executor, id: string, data: unknown): Promise<void> {
     const { scalars, relations } = this.splitData(data, "update");
     const ctx = this.ctx();
-    const sets = this.setClauses(ctx, scalars);
+    const { sets, checks } = this.setClauses(ctx, scalars);
     if (sets.length) {
-      await exec(
-        `MATCH (n) WHERE elementId(n) = ${ctx.param(id)} SET ${sets.join(", ")}`,
+      const guarded = checks.length > 0;
+      const rows = await exec(
+        `MATCH (n) WHERE elementId(n) = ${ctx.param(id)}${ModelEngine.guardedSet(sets, checks)}` +
+          (guarded ? " RETURN bad" : ""),
         ctx.params,
       );
+      if (guarded) throwGuardIssues("update", this.model, checks, rows[0]?.bad, ["data"]);
     }
     for (const [k, v] of Object.entries(relations)) {
       await this.writeRelation(exec, id, relationField(this.model, k)!, v, "update");
@@ -670,7 +702,9 @@ export class ModelEngine {
   // Writes
   // -------------------------------------------------------------------------
 
-  create(args: AnyRecord): Promise<AnyRecord> {
+  // `async` so that invalid data rejects the returned promise instead of throwing synchronously.
+  async create(args: AnyRecord): Promise<AnyRecord> {
+    validateWriteArgs(this.schema, this.model, "create", args);
     return this.runner.write(async (exec) => {
       const id = await this.createNode(exec, args.data);
       return this.readById(exec, id, args);
@@ -681,6 +715,7 @@ export class ModelEngine {
   async createMany(args: AnyRecord): Promise<{ count: number }> {
     if (!Array.isArray(args.data))
       throw new CyphraValidationError("createMany: data must be an array.");
+    validateWriteArgs(this.schema, this.model, "createMany", args);
     const fields = this.model.fields.filter((f): f is ResolvedScalarField => f.kind === "scalar");
     const rows = args.data.map((d: unknown) => {
       const { scalars, relations } = this.splitData(d, "createMany");
@@ -700,7 +735,8 @@ export class ModelEngine {
     });
   }
 
-  update(args: AnyRecord): Promise<AnyRecord> {
+  async update(args: AnyRecord): Promise<AnyRecord> {
+    validateWriteArgs(this.schema, this.model, "update", args);
     return this.runner.write(async (exec) => {
       const id = await this.findId(exec, args.where, "update");
       if (!id)
@@ -712,7 +748,12 @@ export class ModelEngine {
     });
   }
 
-  updateMany(args: AnyRecord): Promise<{ count: number }> {
+  /**
+   * One statement. When numeric operators touch `@min` / `@max` fields, every matched node is
+   * checked first and nothing is updated if one of them would break a rule.
+   */
+  async updateMany(args: AnyRecord): Promise<{ count: number }> {
+    validateWriteArgs(this.schema, this.model, "updateMany", args);
     return this.runner.write(async (exec) => {
       const { scalars, relations } = this.splitData(args.data, "updateMany");
       if (Object.keys(relations).length) {
@@ -720,9 +761,22 @@ export class ModelEngine {
       }
       const ctx = this.ctx();
       const w = compileWhere(ctx, this.model, "n", args.where);
-      const sets = this.setClauses(ctx, scalars);
+      const { sets, checks } = this.setClauses(ctx, scalars);
+      const match = `MATCH (n:${this.label})${w ? ` WHERE ${w}` : ""}`;
+      const guard = numericGuard(checks);
+      if (guard) {
+        const res = await exec(
+          `${match} WITH collect(n) AS ns` +
+            ` WITH ns, [b IN [n IN ns | ${guard}] WHERE size(b) > 0] AS bad` +
+            ` FOREACH (n IN CASE WHEN size(bad) = 0 THEN ns ELSE [] END | SET ${sets.join(", ")})` +
+            ` RETURN size(ns) AS c, bad[0] AS bad`,
+          ctx.params,
+        );
+        throwGuardIssues("updateMany", this.model, checks, res[0]?.bad, ["data"]);
+        return { count: toCount(res[0]?.c) };
+      }
       const res = await exec(
-        `MATCH (n:${this.label})${w ? ` WHERE ${w}` : ""}${sets.length ? ` SET ${sets.join(", ")}` : ""} RETURN count(n) AS c`,
+        `${match}${sets.length ? ` SET ${sets.join(", ")}` : ""} RETURN count(n) AS c`,
         ctx.params,
       );
       return { count: toCount(res[0]?.c) };
@@ -742,6 +796,7 @@ export class ModelEngine {
    */
   async upsert(args: AnyRecord): Promise<AnyRecord> {
     const { where, key: keyFields } = this.uniqueWhere(args.where, "upsert");
+    validateWriteArgs(this.schema, this.model, "upsert", args);
     const create = this.splitData(args.create, "upsert create");
     const update = this.splitData(args.update, "upsert update");
     for (const key of keyFields) {
@@ -768,19 +823,23 @@ export class ModelEngine {
     const onCreate = Object.keys(props).length ? [`n += ${ctx.param(props)}`] : [];
     const rest = Object.fromEntries(Object.entries(where).filter(([k]) => !keyFields.includes(k)));
     const restWhere = compileWhere(ctx, this.model, "n", rest);
-    const sets = this.setClauses(ctx, update.scalars);
+    const { sets, checks } = this.setClauses(ctx, update.scalars);
+    const guard = numericGuard(checks);
     const flag = `n.${q(UPSERT_FLAG)}`;
-    const trackCreated = nested || restWhere !== null;
+    const trackCreated = nested || restWhere !== null || guard !== null;
 
     let text = `MERGE (n:${this.label} {${keyProps}})`;
     if (trackCreated) onCreate.push(`${flag} = true`);
     if (onCreate.length) text += ` ON CREATE SET ${onCreate.join(", ")}`;
-    if (restWhere) {
-      // Check the extra filters against the node as it was, then update it.
+    if (restWhere || guard) {
+      // Check the extra filters (and the range of the values numeric operators produce) against
+      // the node as it was, then update it.
       text += ` WITH n, ${flag} IS NOT NULL AS created REMOVE ${flag}`;
-      text += ` WITH n, created WHERE created OR (${restWhere})`;
+      if (restWhere) text += ` WITH n, created WHERE created OR (${restWhere})`;
+      if (guard) text += ` WITH n, created, CASE WHEN created THEN [] ELSE ${guard} END AS bad`;
       if (sets.length) {
-        text += ` FOREACH (x IN CASE WHEN created THEN [] ELSE [1] END | SET ${sets.join(", ")})`;
+        const skip = guard ? "created OR size(bad) > 0" : "created";
+        text += ` FOREACH (x IN CASE WHEN ${skip} THEN [] ELSE [1] END | SET ${sets.join(", ")})`;
       }
     } else {
       if (sets.length) text += ` ON MATCH SET ${sets.join(", ")}`;
@@ -789,6 +848,7 @@ export class ModelEngine {
     const projection = nested ? null : compileProjection(ctx, this.model, "n", args);
     text += ` RETURN elementId(n) AS id`;
     if (trackCreated) text += `, created`;
+    if (guard) text += `, bad`;
     if (projection) text += `, ${projection.expr} AS row`;
 
     return this.runner.write(async (exec) => {
@@ -799,6 +859,7 @@ export class ModelEngine {
           `${this.model.name}.upsert: a node with ${keyFields.map((k) => `${k} = ${JSON.stringify(where[k])}`).join(", ")} exists but does not match the rest of where; creating another would duplicate the key.`,
         );
       }
+      throwGuardIssues("upsert", this.model, checks, row.bad, ["update"]);
       if (projection) return decodeRow(projection.shape, row.row)!;
       const id = row.id as string;
       const [relations, mode] = row.created

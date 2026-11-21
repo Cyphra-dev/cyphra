@@ -285,6 +285,28 @@ function locateFieldError(rest: string, f: NodeField): Span | undefined {
     return span(a?.keyLoc ?? a?.loc);
   }
   if (/^Vector fields are only supported on node models/.test(rest)) return span(f.typeLoc);
+  // Validation rules: `@length min must be …`, `@regex pattern does not compile`, `unknown @min
+  // argument "x"`, `@email takes no arguments`, `@x is not valid on a … field`.
+  const ruleArg = /^@(\w+) (min|max|value|pattern|flags)\b/.exec(rest);
+  if (ruleArg) {
+    const d = dec(ruleArg[1]!);
+    if (d) return argSpan(d, ruleArg[2]!, /given twice/.test(rest) ? 1 : 0) ?? decoratorSpan(d);
+  }
+  const unknownArg = /^unknown @(\w+) argument "(\w+)"/.exec(rest);
+  if (unknownArg) {
+    const a = dec(unknownArg[1]!)?.args.find((x) => x.key === unknownArg[2]);
+    if (a) return span(a.keyLoc ?? a.loc);
+  }
+  const positional = /^@(\w+) takes /.exec(rest);
+  if (positional) {
+    const d = dec(positional[1]!);
+    const a = d?.args.find((x) => x.key === "");
+    if (d) return span(a?.loc) ?? decoratorSpan(d);
+  }
+  if (/^@min \(.*\) is above @max/.test(rest)) {
+    const d = dec("max");
+    if (d) return decoratorSpan(d);
+  }
   const count = /^at most one @(\w+)/.exec(rest);
   if (count) {
     const d = dec(count[1]!, 1) ?? dec(count[1]!);

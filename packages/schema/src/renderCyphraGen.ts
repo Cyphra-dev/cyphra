@@ -1,3 +1,4 @@
+import { formatRule } from "./rules.js";
 import type { Decorator, ScalarTypeName, SchemaDocument } from "./ast.js";
 import {
   resolveSchema,
@@ -64,7 +65,14 @@ function renderObjectType(
   names: RuntimeTypeNames,
 ): string[] {
   const lines = [`/** ${doc} */`, `export type ${name} = {`];
-  for (const f of fields) lines.push(`  ${f.name}: ${tsFieldType(f, names)};`);
+  for (const f of fields) {
+    if (f.rules?.length) {
+      // `*/` inside a regex would end the comment early.
+      const rules = f.rules.map((r) => `\`${formatRule(r)}\``.replace(/\*\//g, "*\\/"));
+      lines.push(`  /** Validation: ${rules.join(", ")}. */`);
+    }
+    lines.push(`  ${f.name}: ${tsFieldType(f, names)};`);
+  }
   lines.push("};", "");
   return lines;
 }

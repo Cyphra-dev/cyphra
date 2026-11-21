@@ -169,6 +169,34 @@ describe("diagnostics", () => {
       BASE.replace("direction: IN)", "direction: IN, onDelete: Cascade, onDelete: Restrict)"),
       "Restrict",
     ],
+    // Validation rules.
+    ["rule on the wrong type", BASE.replace("bio   String?", "bio   Int @length(1)"), "@length(1)"],
+    ["rule bounds", BASE.replace("bio   String?", "bio   String @length(5, 2)"), "5"],
+    ["rule argument type", BASE.replace("bio   String?", "bio   Int @min(1.5)"), "1.5"],
+    [
+      "regex that does not compile",
+      BASE.replace("bio   String?", 'bio   String @regex("(")'),
+      '"("',
+    ],
+    ["regex flags", BASE.replace("bio   String?", 'bio   String @regex("a", flags: "g")'), '"g"'],
+    [
+      "unknown rule argument",
+      BASE.replace("bio   String?", "bio   String @length(least: 1)"),
+      "least",
+    ],
+    ["too many positional arguments", BASE.replace("bio   String?", "bio   Int @min(1, 2)"), "2"],
+    [
+      "extra positional argument",
+      BASE.replace("bio   String?", "bio   String @length(1, 2, 3)"),
+      "3",
+    ],
+    ["min above max", BASE.replace("bio   String?", "bio   Int @min(5) @max(1)"), "@max(1)"],
+    ["rule given twice", BASE.replace("bio   String?", "bio   String @email @email"), "@email"],
+    [
+      "default breaking a rule",
+      BASE.replace("bio   String?", 'bio   String @length(3) @default("a")'),
+      '"a"',
+    ],
   ];
 
   it.each(cases)("%s: same message as cyphra validate, exact range", (_name, text, underlined) => {
@@ -215,7 +243,30 @@ describe("completion", () => {
       "@unique",
       "@index",
       "@default",
+      "@length",
+      "@email",
+      "@url",
+      "@regex",
+      "@nonEmpty",
     ]);
+    // Validation rules only where they fit the type.
+    expect(labels(BASE.replace("bio   String?", "bio   Int? @|"))).toEqual([
+      "@id",
+      "@unique",
+      "@index",
+      "@default",
+      "@min",
+      "@max",
+    ]);
+    expect(labels(BASE.replace("bio   String?", "bio   Int[] @|"))).toEqual([
+      "@id",
+      "@unique",
+      "@index",
+      "@default",
+      "@size",
+      "@nonEmpty",
+    ]);
+    expect(labels(BASE.replace("bio   String?", "bio   Role @|"))).not.toContain("@length");
     expect(labels(BASE.replace("email String @unique", "email String @unique @|"))).not.toContain(
       "@unique",
     );
@@ -225,6 +276,8 @@ describe("completion", () => {
       "@unique",
       "@index",
       "@default",
+      "@min",
+      "@max",
     ]);
     // Without typing `@` first.
     expect(labels(BASE.replace("bio   String?", "bio   String? |"))).toContain("@unique");
@@ -254,6 +307,14 @@ describe("completion", () => {
     expect(
       labels(BASE.replace("bio   String?", "bio   Vector(3) @vectorIndex(similarity: |")),
     ).toEqual(["cosine", "euclidean"]);
+    expect(labels(BASE.replace("bio   String?", "bio   String? @length(|"))).toEqual([
+      "min",
+      "max",
+    ]);
+    expect(labels(BASE.replace("bio   String?", 'bio   String? @regex("a", |'))).toEqual([
+      "pattern",
+      "flags",
+    ]);
   });
 
   it("offers defaults for the field type", () => {
@@ -346,6 +407,11 @@ describe("hover", () => {
       "`Restrict` refuses",
     );
     expect(hover(BASE.replace("@@fulltext", "@@full|text"))).toContain("full-text index");
+    const rule = hover(BASE.replace("bio   String?", "bio   String? @len|gth(1, 3)"));
+    expect(rule).toContain("**@length**");
+    expect(rule).toContain("Unicode code points");
+    expect(rule).toContain("#validation-rules");
+    expect(hover(BASE.replace("bio   String?", "bio   Int? @mi|n(0)"))).toContain("`increment`");
   });
 
   it("documents @@unique / @@index on hover", () => {
