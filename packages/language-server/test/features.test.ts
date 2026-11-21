@@ -116,6 +116,30 @@ describe("diagnostics", () => {
       BASE.replace("@@fulltext([title])", "@@search([title])"),
       "@@search([title])",
     ],
+    ["unique field", BASE.replace("@@fulltext([title])", "@@unique([title, nope])"), "nope"],
+    [
+      "unique on a relation",
+      BASE.replace("@@fulltext([title])", "@@unique([title, author])"),
+      "author",
+    ],
+    [
+      "index needs two fields",
+      BASE.replace("@@fulltext([title])", "@@index([title])"),
+      "@@index([title])",
+    ],
+    [
+      "duplicate @@unique",
+      BASE.replace(
+        "@@fulltext([title])",
+        '@@unique([id, title], name: "a")\n  @@unique([title, id], name: "b")',
+      ),
+      '@@unique([title, id], name: "b")',
+    ],
+    [
+      "@@unique key clashing with a field",
+      BASE.replace("@@fulltext([title])", '@@unique([id, title], name: "tags")'),
+      '"tags"',
+    ],
     ["duplicate enum value", BASE.replace("ADMIN USER", "ADMIN USER ADMIN"), "ADMIN"],
     ["duplicate declaration", BASE + "\nnode User { id String @id }\n", "User"],
     ["unknown relationship end", BASE.replace("from User", "from Usr"), "Usr"],
@@ -243,7 +267,30 @@ describe("completion", () => {
       BASE.replace("@@fulltext([title])", '@@fulltext([title], analyzer: "|'),
     );
     expect(analyzers).toContain("english");
-    expect(labels(BASE.replace("@@fulltext([title])", "@@|"))).toEqual(["@@fulltext"]);
+    expect(labels(BASE.replace("@@fulltext([title])", "@@|"))).toEqual([
+      "@@fulltext",
+      "@@unique",
+      "@@index",
+    ]);
+  });
+
+  it("offers single-value scalar fields inside @@unique([…]) / @@index([…]) and name", () => {
+    const withExtra = BASE.replace(
+      "  tags   String[]\n",
+      "  tags   String[]\n  views  Int\n  meta   Json?\n  emb    Vector(3)\n",
+    );
+    expect(labels(withExtra.replace("@@fulltext([title])", "@@unique([title, |])"))).toEqual([
+      "id",
+      "views",
+    ]);
+    expect(labels(withExtra.replace("@@fulltext([title])", "@@index([|])"))).toEqual([
+      "id",
+      "title",
+      "views",
+    ]);
+    expect(labels(BASE.replace("@@fulltext([title])", "@@unique([id, title], |)"))).toEqual([
+      "name",
+    ]);
   });
 
   it("offers type / from / to and node names in relationship blocks", () => {
@@ -280,6 +327,15 @@ describe("hover", () => {
     expect(hover(BASE.replace("@unique", "@uni|que"))).toContain("**@unique**");
     expect(hover(BASE.replace("direction: IN", "direc|tion: IN"))).toContain("`OUT`");
     expect(hover(BASE.replace("@@fulltext", "@@full|text"))).toContain("full-text index");
+  });
+
+  it("documents @@unique / @@index on hover", () => {
+    const text = BASE.replace("@@fulltext([title])", "@@uni|que([id, title])");
+    expect(hover(text)).toContain("composite uniqueness constraint");
+    expect(hover(text)).toContain("#composite-constraints-and-indexes");
+    expect(hover(BASE.replace("@@fulltext([title])", "@@ind|ex([id, title])"))).toContain(
+      "composite range index",
+    );
   });
 
   it("summarizes relation targets and enums", () => {

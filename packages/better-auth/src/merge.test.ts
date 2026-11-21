@@ -99,6 +99,38 @@ describe("mergeAuthSchema", () => {
     expect(out).toContain('  projects Project[] @relationship(type: "OWNS", direction: OUT)');
   });
 
+  it("keeps the developer's @@ attributes and adds Better Auth's compound indexes", () => {
+    const plugin = {
+      id: "handles",
+      schema: {
+        user: {
+          fields: {
+            tenant: { type: "string", required: true },
+            handle: { type: "string", required: true },
+          },
+          indexes: [{ fields: ["tenant", "handle"], unique: true }],
+        },
+      },
+    } as const;
+    const auth = authSchema({ plugins: [plugin] }).document;
+    const withAttr = userFile.replace(
+      '  plan     String    @default("free")\n',
+      '  plan     String    @default("free")\n\n  @@index([plan, name]) // mine\n',
+    );
+    const out = mergeAuthSchema(withAttr, auth);
+    expect(out).toContain('  plan     String    @default("free")\n  emailVerified Boolean\n');
+    expect(out).toContain("  @@index([plan, name]) // mine\n  @@unique([tenant, handle])\n}");
+    expect(mergeAuthSchema(out, auth)).toBe(out);
+    const user = resolveSchema(parseSchema(out)).nodes.find((n) => n.name === "User")!;
+    expect(user.compoundUniques?.map((c) => c.key)).toEqual(["tenant_handle"]);
+
+    // Without attributes yet: added after a blank line at the end of the block.
+    const fresh = mergeAuthSchema(userFile, auth);
+    expect(fresh).toMatch(
+      /\n {2}accounts Account\[\][^\n]*\n\n {2}@@unique\(\[tenant, handle\]\)\n\}/,
+    );
+  });
+
   it("reprints a node whose layout it cannot edit line by line, keeping extra fields", () => {
     const compact = `node User { id String @id
   projects Project[] @relationship(type: "OWNS", direction: OUT) }

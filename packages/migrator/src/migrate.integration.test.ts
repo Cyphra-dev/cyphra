@@ -282,4 +282,70 @@ describe.skipIf(!hasNeo)("schema migrations and pull (Neo4j)", () => {
       await run("DROP INDEX mig_text IF EXISTS");
     }
   });
+
+  it("creates composite constraints and indexes, recreates them on change, and pulls them back", async () => {
+    const v1 = `node MigPair {
+  id       String @id
+  provider String
+  account  String
+  at       Int
+
+  @@unique([provider, account])
+  @@index([provider, at], name: "mig_pair_at")
+}
+`;
+    const v2 = v1.replace("[provider, account]", "[account, at]");
+    const names = ["MigPair_id_id", "MigPair_provider_account_unique", "MigPair_account_at_unique"];
+    const cleanup = async () => {
+      await run("MATCH (n:MigPair) DETACH DELETE n");
+      for (const name of names) await run(`DROP CONSTRAINT ${name} IF EXISTS`);
+      await run("DROP INDEX mig_pair_at IF EXISTS");
+    };
+    const schemaInfo = async () =>
+      client.withSession(async (s) => {
+        await s.run("CALL db.awaitIndexes(120)");
+        const constraints = await s.run(
+          "SHOW CONSTRAINTS YIELD name, type, properties WHERE name STARTS WITH 'MigPair_' AND size(properties) > 1 RETURN name, type, properties",
+        );
+        const indexes = await s.run(
+          "SHOW INDEXES YIELD name, type, properties WHERE name = 'mig_pair_at' RETURN name, type, properties",
+        );
+        return [...constraints.records, ...indexes.records].map((r) => r.toObject());
+      });
+    try {
+      await cleanup();
+      const plan1 = diffSchemaModels(EMPTY_SCHEMA_MODEL, resolveSchema(parseSchema(v1)));
+      await applyPlan(client, plan1);
+      expect(await schemaInfo()).toEqual([
+        {
+          name: "MigPair_provider_account_unique",
+          type: "UNIQUENESS",
+          properties: ["provider", "account"],
+        },
+        { name: "mig_pair_at", type: "RANGE", properties: ["provider", "at"] },
+      ]);
+      await run("CREATE (:MigPair {id: 'a', provider: 'gh', account: '1', at: 1})");
+      await expect(
+        run("CREATE (:MigPair {id: 'b', provider: 'gh', account: '1', at: 2})"),
+      ).rejects.toMatchObject({ code: "Neo.ClientError.Schema.ConstraintValidationFailed" });
+
+      const pulled = printSchemaDocument(
+        schemaFromIntrospection(await introspectDatabase(client)).doc,
+      );
+      expect(pulled).toContain("  @@unique([provider, account])\n");
+      expect(pulled).toContain('  @@index([provider, at], name: "mig_pair_at")\n');
+
+      const plan2 = diffSchemaModels(
+        resolveSchema(parseSchema(v1)),
+        resolveSchema(parseSchema(v2)),
+      );
+      await applyPlan(client, plan2);
+      expect((await schemaInfo()).map((o) => o.name)).toEqual([
+        "MigPair_account_at_unique",
+        "mig_pair_at",
+      ]);
+    } finally {
+      await cleanup();
+    }
+  });
 });

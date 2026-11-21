@@ -291,7 +291,8 @@ const dec = (name: string): Decorator => ({ name, args: [] });
  *
  * - Properties: required when present on every node of the label; types mapped from Neo4j's.
  * - Single-property uniqueness constraints become `@id` (property `id` or constraint `…_id`) / `@unique`;
- *   single-property range and point indexes become `@index`.
+ *   single-property range and point indexes become `@index`. Composite node uniqueness constraints
+ *   (and node keys) become `@@unique([...])`, composite range indexes `@@index([...])`.
  * - Every sampled `(start)-[:TYPE]->(end)` pair becomes an `OUT` field on the start node and an `IN`
  *   field (`…By`) on the end node, both to-many. Relationship types with properties also get a
  *   `relationship { … }` model.
@@ -356,7 +357,31 @@ export function schemaFromIntrospection(input: IntrospectionResult): {
   const uniqueOn = new Map<string, { prop: string; name: string }[]>();
   const relUnique = new Set<string>();
   const indexOn = new Set<string>();
+  /** Composite node constraints / range indexes, turned into `@@unique` / `@@index` below. */
+  const composite: {
+    attr: "unique" | "index";
+    name: string;
+    label: string;
+    properties: readonly string[];
+  }[] = [];
   for (const c of input.constraints) {
+    if (c.properties.length > 1 && c.entityType === "NODE" && c.labelsOrTypes.length === 1) {
+      const isKey = c.type === "NODE_KEY";
+      if (c.type.includes("UNIQUE") || isKey) {
+        if (isKey) {
+          warnings.push(
+            `Node key ${c.name} became @@unique: Cyphra creates a uniqueness constraint (node keys, which also require the properties, are Enterprise-only).`,
+          );
+        }
+        composite.push({
+          attr: "unique",
+          name: c.name,
+          label: c.labelsOrTypes[0]!,
+          properties: c.properties,
+        });
+      }
+      continue;
+    }
     if (c.properties.length !== 1 || c.labelsOrTypes.length !== 1) continue;
     const key = c.labelsOrTypes[0]!;
     if (c.type === "UNIQUENESS" || (c.type.includes("UNIQUE") && c.entityType === "NODE")) {
@@ -422,6 +447,21 @@ export function schemaFromIntrospection(input: IntrospectionResult): {
         similarity,
         // Neo4j turns quantization on by default (5.23+): only an explicit "off" is worth keeping.
         quantization: config?.["vector.quantization.enabled"] === false ? false : undefined,
+      });
+      continue;
+    }
+    if (
+      i.type === "RANGE" &&
+      !i.owningConstraint &&
+      i.entityType === "NODE" &&
+      i.properties.length > 1 &&
+      i.labelsOrTypes.length === 1
+    ) {
+      composite.push({
+        attr: "index",
+        name: i.name,
+        label: i.labelsOrTypes[0]!,
+        properties: i.properties,
       });
       continue;
     }
@@ -629,6 +669,40 @@ export function schemaFromIntrospection(input: IntrospectionResult): {
     const list = attributesOf.get(ft.label) ?? [];
     list.push({ kind: "ModelAttribute", name: "fulltext", fields: [...ft.properties], args });
     attributesOf.set(ft.label, list);
+  }
+
+  // --- composite constraints / indexes → @@unique / @@index ----------------------
+  for (const c of composite) {
+    const where = `${c.attr === "unique" ? "composite constraint" : "composite index"} ${c.name}`;
+    const fields = nodeFields.get(c.label);
+    if (!fields) {
+      warnings.push(`Skipped ${where}: label ${c.label} has no nodes in the database.`);
+      continue;
+    }
+    if (!IDENT.test(c.name)) {
+      warnings.push(`Skipped ${where}: its name is not a valid identifier.`);
+      continue;
+    }
+    const missing = c.properties.filter(
+      (p) =>
+        !fields.some(
+          (f) => f.kind === "Scalar" && f.name === p && !f.type.list && f.type.name !== "Vector",
+        ),
+    );
+    if (missing.length) {
+      warnings.push(
+        `Skipped ${where}: ${missing.map((p) => `${c.label}.${p}`).join(", ")} not found as single-value properties.`,
+      );
+      continue;
+    }
+    const suffix = c.attr === "unique" ? "unique" : "idx";
+    const args: DecoratorArg[] =
+      c.name === `${c.label}_${c.properties.join("_")}_${suffix}`
+        ? []
+        : [{ key: "name", value: { kind: "string", value: c.name } }];
+    const list = attributesOf.get(c.label) ?? [];
+    list.push({ kind: "ModelAttribute", name: c.attr, fields: [...c.properties], args });
+    attributesOf.set(c.label, list);
   }
 
   const nodes: NodeDeclaration[] = [...nodeFields].map(([name, fields]) => {

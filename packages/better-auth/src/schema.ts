@@ -14,6 +14,7 @@ import type { BetterAuthDBSchema, DBFieldAttribute } from "better-auth/db";
 import {
   resolveSchema,
   type Decorator,
+  type ModelAttribute,
   type NodeDeclaration,
   type NodeField,
   type ScalarNodeField,
@@ -213,6 +214,60 @@ type PendingFk = {
 };
 
 /**
+ * Map a model's table-level `indexes` onto its node: a one-field index becomes `@unique` /
+ * `@index` on the field, a compound one `@@unique([...])` / `@@index([...])` (named like Better
+ * Auth names it when it sets `name`). An index over a foreign key (stored as an edge, not a
+ * property) cannot be a property index and is skipped, as is one already covered.
+ */
+function tableIndexes(
+  key: string,
+  table: BetterAuthDBSchema[string],
+  getFieldName: SchemaNaming["getFieldName"],
+  fields: { field: NodeField; fk?: PendingFk }[],
+  mappings: Map<string, FieldMapping>,
+): ModelAttribute[] {
+  const attributes: ModelAttribute[] = [];
+  const seen = new Set<string>();
+  for (const index of table.indexes ?? []) {
+    const names = index.fields.map((f) =>
+      f === "id"
+        ? getFieldName({ model: key, field: "id" })
+        : getFieldName({ model: key, field: f }),
+    );
+    const slots = names.map((n) => fields.find((f) => !f.fk && f.field.name === n));
+    if (slots.some((s) => !s || s.field.kind !== "Scalar" || s.field.type.list)) continue;
+    const kind = index.unique ? "unique" : "index";
+    if (names.length === 1) {
+      const slot = slots[0]!;
+      const field = slot.field as ScalarNodeField;
+      const has = (n: string) => field.decorators.some((d) => d.name === n);
+      if (has("id") || has("unique") || (kind === "index" && has("index"))) continue;
+      const decorators = field.decorators.filter((d) => d.name !== "index");
+      slot.field = { ...field, decorators: [...decorators, dec(kind)] };
+      const m = mappings.get(field.name);
+      if (m?.kind === "scalar") {
+        mappings.set(field.name, { ...m, unique: m.unique || kind === "unique", index: true });
+      }
+      continue;
+    }
+    const id = `${kind}:${JSON.stringify(kind === "unique" ? [...names].sort() : names)}`;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    attributes.push({
+      kind: "ModelAttribute",
+      name: kind,
+      fields: names,
+      args: index.name ? [{ key: "name", value: { kind: "string", value: index.name } }] : [],
+    });
+  }
+  // A compound unique constraint has an index: drop a plain index over the same fields.
+  const uniques = new Set(
+    attributes.filter((a) => a.name === "unique").map((a) => JSON.stringify(a.fields)),
+  );
+  return attributes.filter((a) => a.name === "unique" || !uniques.has(JSON.stringify(a.fields)));
+}
+
+/**
  * Build the auth graph (node mappings, `.cyphra` document and resolved schema model) for a
  * Better Auth configuration.
  */
@@ -376,11 +431,28 @@ export function deriveAuthGraph(
     });
   }
 
-  const declarations: NodeDeclaration[] = keys.map((key) => ({
-    kind: "Node",
-    name: nodeOf.get(key)!,
-    fields: [...fieldsOf.get(key)!.map((f) => f.field), ...inverseFields.get(key)!],
-  }));
+  // Pass 3: table-level `indexes` (plugins' compound indexes).
+  const attributesOf = new Map<string, ModelAttribute[]>();
+  for (const key of keys) {
+    const attributes = tableIndexes(
+      key,
+      schema[key]!,
+      getFieldName,
+      fieldsOf.get(key)!,
+      mappingsOf.get(key)!,
+    );
+    if (attributes.length) attributesOf.set(key, attributes);
+  }
+
+  const declarations: NodeDeclaration[] = keys.map((key) => {
+    const attributes = attributesOf.get(key);
+    return {
+      kind: "Node",
+      name: nodeOf.get(key)!,
+      fields: [...fieldsOf.get(key)!.map((f) => f.field), ...inverseFields.get(key)!],
+      ...(attributes ? { attributes } : {}),
+    };
+  });
   const document: SchemaDocument = { kind: "Document", declarations };
 
   const models = new Map<string, ModelMapping>();

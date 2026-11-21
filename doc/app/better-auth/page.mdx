@@ -337,8 +337,11 @@ Replace `neo4jAdapter({ driver })` with `cyphraAdapter({ db })` (or `{ client }`
 
 ## Limitations
 
-- Better Auth's compound indexes (the table-level `indexes` option) are not created; field-level
-  `unique` and `index` are.
+- Better Auth's table-level `indexes` (declared by plugins) are created: a compound index becomes
+  [`@@unique([…])` or `@@index([…])`](/schema#composite-constraints-and-indexes) on the node (keeping
+  its `name` when it sets one), a one-field index `@unique` or `@index` on the field. An index that
+  includes a foreign key (`userId`, stored as an edge, not a property) cannot be a property index
+  and is left out; the edge is already how Cyphra finds the related nodes.
 - `number` fields are integers unless listed in [`numberFields`](#fractional-numbers); a fractional
   value in an `Int` field is rejected with a validation error.
 - `mode: "insensitive"` filters (used for emails) compare with `toLower()` and do not use the

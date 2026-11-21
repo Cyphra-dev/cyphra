@@ -3,7 +3,8 @@
  * current schema) and plan the migration that takes a database from one to the other.
  *
  * Neo4j is schemaless, so the plan has two parts:
- * - **DDL**: uniqueness constraints and range, point, vector and full-text indexes, named exactly like
+ * - **DDL**: uniqueness constraints (single and composite) and range (single and composite),
+ *   point, vector and full-text indexes, named exactly like
  *   `cyphra push` names them.
  * - **Data steps**: backfills for new defaults, guards for newly required fields, and
  *   (commented-out) destructive cleanups for removed fields and models.
@@ -12,6 +13,8 @@
  */
 
 import type {
+  ResolvedCompoundIndex,
+  ResolvedCompoundUnique,
   ResolvedFulltextIndex,
   ResolvedNodeModel,
   ResolvedRelationshipModel,
@@ -61,6 +64,22 @@ export function fulltextIndexStatement(label: string, index: ResolvedFulltextInd
   }
   const options = entries.length ? ` OPTIONS {indexConfig: {${entries.join(", ")}}}` : "";
   return `CREATE FULLTEXT INDEX ${index.name} IF NOT EXISTS FOR (n:${q(label)}) ON EACH [${props}]${options}`;
+}
+
+/**
+ * `CREATE CONSTRAINT … REQUIRE (n.a, n.b) IS UNIQUE` for a `@@unique([a, b])` model attribute: a
+ * composite uniqueness constraint, available on Neo4j Community (a `NODE KEY`, which also requires
+ * the properties to exist, is Enterprise-only and is not used).
+ */
+export function compoundUniqueStatement(label: string, c: ResolvedCompoundUnique): string {
+  const props = c.fields.map((f) => `n.${q(f)}`).join(", ");
+  return `CREATE CONSTRAINT ${c.name} IF NOT EXISTS FOR (n:${q(label)}) REQUIRE (${props}) IS UNIQUE`;
+}
+
+/** `CREATE RANGE INDEX … ON (n.a, n.b)` for a `@@index([a, b])` model attribute. */
+export function compoundIndexStatement(label: string, i: ResolvedCompoundIndex): string {
+  const props = i.fields.map((f) => `n.${q(f)}`).join(", ");
+  return `CREATE RANGE INDEX ${i.name} IF NOT EXISTS FOR (n:${q(label)}) ON (${props})`;
 }
 
 /** `true` for the point types, whose `@index` is a `POINT` index (for distance and box queries). */
@@ -126,6 +145,14 @@ export function ddlObjectsFromModel(model: SchemaModel): DdlObject[] {
           create: propertyIndexStatement(name, target, `n.${q(f.name)}`, f),
         });
       }
+    }
+  }
+  for (const n of model.nodes) {
+    for (const c of n.compoundUniques ?? []) {
+      out.push({ name: c.name, kind: "constraint", create: compoundUniqueStatement(n.label, c) });
+    }
+    for (const i of n.compoundIndexes ?? []) {
+      out.push({ name: i.name, kind: "index", create: compoundIndexStatement(n.label, i) });
     }
   }
   for (const n of model.nodes) {

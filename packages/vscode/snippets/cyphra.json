@@ -38,6 +38,16 @@
     "description": "A full-text index over String fields",
     "body": ["@@fulltext([${1:title}], name: \"${2:search}\")"]
   },
+  "Composite unique constraint": {
+    "prefix": "@@unique",
+    "description": "A uniqueness constraint over several fields (also a findUnique key)",
+    "body": ["@@unique([${1:a}, ${2:b}])"]
+  },
+  "Composite index": {
+    "prefix": "@@index",
+    "description": "A range index over several fields",
+    "body": ["@@index([${1:a}, ${2:b}])"]
+  },
   "Vector field": {
     "prefix": "vector",
     "description": "An embedding field with a vector index",

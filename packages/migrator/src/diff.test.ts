@@ -468,3 +468,52 @@ describe("point and temporal fields", () => {
     ]);
   });
 });
+
+describe("composite constraints and indexes", () => {
+  const src = (attrs: string) =>
+    `node Account { id String @id\n provider String\n accountId String\n createdAt DateTime\n ${attrs} }`;
+
+  it("creates composite uniqueness constraints and range indexes (named like push)", () => {
+    const doc = parseSchema(
+      src('@@unique([provider, accountId])\n @@index([provider, createdAt], name: "byDate")'),
+    );
+    const objects = ddlObjectsFromModel(resolveSchema(doc)).filter(
+      (o) => o.name !== "Account_id_id",
+    );
+    expect(objects).toEqual([
+      {
+        name: "Account_provider_accountId_unique",
+        kind: "constraint",
+        create:
+          "CREATE CONSTRAINT Account_provider_accountId_unique IF NOT EXISTS FOR (n:`Account`) REQUIRE (n.`provider`, n.`accountId`) IS UNIQUE",
+      },
+      {
+        name: "byDate",
+        kind: "index",
+        create:
+          "CREATE RANGE INDEX byDate IF NOT EXISTS FOR (n:`Account`) ON (n.`provider`, n.`createdAt`)",
+      },
+    ]);
+    expect(constraintStatementsFromSchema(doc)).toContain(objects[0]!.create);
+    expect(indexStatementsFromSchema(doc)).toContain(objects[1]!.create);
+  });
+
+  it("drops and recreates a composite constraint whose fields change", () => {
+    const before = model(src("@@unique([provider, accountId])"));
+    const after = model(
+      src('@@unique([accountId, createdAt], name: "Account_provider_accountId_unique")'),
+    );
+    const cypher = diffSchemaModels(before, after).steps.map(
+      (s) => s.kind === "statement" && s.cypher,
+    );
+    expect(cypher).toEqual([
+      "DROP CONSTRAINT Account_provider_accountId_unique IF EXISTS",
+      "CREATE CONSTRAINT Account_provider_accountId_unique IF NOT EXISTS FOR (n:`Account`) REQUIRE (n.`accountId`, n.`createdAt`) IS UNIQUE",
+    ]);
+    expect(isEmptyPlan(diffSchemaModels(before, before))).toBe(true);
+    const removed = diffSchemaModels(after, model(src("")));
+    expect(removed.steps.map((s) => s.kind === "statement" && s.cypher)).toEqual([
+      "DROP CONSTRAINT Account_provider_accountId_unique IF EXISTS",
+    ]);
+  });
+});

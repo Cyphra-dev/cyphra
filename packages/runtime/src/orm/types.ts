@@ -31,6 +31,11 @@ export type ModelTypeDef = {
   readonly vectorIndexes?: string;
   /** Names of the model's `@@fulltext` indexes: what `search` can query (absent when none). */
   readonly fulltextIndexes?: string;
+  /**
+   * `@@unique([...])` keys of the model, each mapped to its fields (`{ a_b: "a" | "b" }`):
+   * usable in `findUnique`, `connect`, … as `where: { a_b: { a, b } }` (absent when none).
+   */
+  readonly compoundUniques?: Record<string, string>;
 };
 
 export type TypeMap = Record<string, ModelTypeDef>;
@@ -308,10 +313,33 @@ type RequireAtLeastOne<T> = {
   [K in keyof T]-?: Required<Pick<T, K>> & Partial<Omit<T, K>>;
 }[keyof T];
 
-/** Identifies a single node: at least one `@id`/`@unique` field, plus optional extra filters. */
-export type WhereUniqueInput<TM extends TypeMap, M extends keyof TM> = RequireAtLeastOne<{
-  [K in TM[M]["unique"] & keyof Scalars<TM, M>]: NonNullable<Scalars<TM, M>[K]>;
-}> &
+/** `@@unique` keys of model `M`, each mapped to its fields (`{}` when the model has none). */
+type CompoundUniques<TM extends TypeMap, M extends keyof TM> = TM[M] extends {
+  compoundUniques: infer C extends Record<string, string>;
+}
+  ? C
+  : Record<never, never>;
+
+/** The value of a `@@unique` key in a unique `where`: every field of the key, non-null. */
+export type CompoundUniqueInput<TM extends TypeMap, M extends keyof TM, F extends string> = {
+  [K in F & keyof Scalars<TM, M>]: NonNullable<Scalars<TM, M>[K]>;
+};
+
+/**
+ * Identifies a single node: at least one `@id`/`@unique` field or `@@unique` key
+ * (`{ a_b: { a, b } }`), plus optional extra filters.
+ */
+export type WhereUniqueInput<TM extends TypeMap, M extends keyof TM> = RequireAtLeastOne<
+  {
+    [K in TM[M]["unique"] & keyof Scalars<TM, M>]: NonNullable<Scalars<TM, M>[K]>;
+  } & {
+    [C in keyof CompoundUniques<TM, M> & string]: CompoundUniqueInput<
+      TM,
+      M,
+      CompoundUniques<TM, M>[C] & string
+    >;
+  }
+> &
   WhereInput<TM, M>;
 
 export type SortOrder = "asc" | "desc";

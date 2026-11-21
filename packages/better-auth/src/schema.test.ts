@@ -252,4 +252,79 @@ describe("authSchema", () => {
       expect(wallet.fields.find((f) => f.name === "balance")).toMatchObject({ type: "Float" });
     });
   });
+
+  describe("table-level indexes", () => {
+    const plugin = {
+      id: "tenancy",
+      schema: {
+        membership: {
+          fields: {
+            userId: { type: "string", references: { model: "user", field: "id" }, required: true },
+            tenant: { type: "string", required: true },
+            handle: { type: "string", required: true },
+            role: { type: "string", required: true },
+            joinedAt: { type: "date", required: true },
+            code: { type: "string", required: true },
+          },
+          indexes: [
+            { fields: ["tenant", "handle"], unique: true },
+            { fields: ["tenant", "joinedAt"], name: "membership_tenant_joined" },
+            { fields: ["handle", "tenant"] }, // same fields as the unique one, other order: kept
+            { fields: ["tenant", "handle"] }, // covered by the unique constraint: dropped
+            { fields: ["code"], unique: true },
+            { fields: ["role"] },
+            { fields: ["userId", "tenant"], unique: true }, // a foreign key: skipped
+          ],
+        },
+      },
+    } as const;
+
+    it("maps compound indexes to @@unique / @@index and one-field ones to @unique / @index", () => {
+      const graph = authSchema({ plugins: [plugin] });
+      const text = printSchemaDocument(graph.document);
+      expect(text).toContain("  code String @unique\n");
+      expect(text).toContain("  role String @index\n");
+      expect(text).toContain(
+        '\n  @@unique([tenant, handle])\n  @@index([tenant, joinedAt], name: "membership_tenant_joined")\n  @@index([handle, tenant])\n}',
+      );
+      const node = graph.schema.nodes.find((n) => n.name === "Membership")!;
+      expect(node.uniqueFields).toEqual(["id", "code"]);
+      expect(node.compoundUniques).toEqual([
+        {
+          name: "Membership_tenant_handle_unique",
+          key: "tenant_handle",
+          fields: ["tenant", "handle"],
+        },
+      ]);
+      expect(node.compoundIndexes?.map((i) => i.name)).toEqual([
+        "membership_tenant_joined",
+        "Membership_handle_tenant_idx",
+      ]);
+      expect(graph.models.get("membership")!.fields.get("code")).toMatchObject({ unique: true });
+    });
+
+    it("maps Better Auth's own plugin indexes (device authorization)", async () => {
+      const { deviceAuthorization } = await import("better-auth/plugins");
+      const { schema } = authSchema({ plugins: [deviceAuthorization()] });
+      const device = schema.nodes.find((n) => n.name === "DeviceCode")!;
+      expect(device.uniqueFields).toEqual(["id", "deviceCode", "userCode"]);
+    });
+
+    it("uses database field names", () => {
+      const renamed = {
+        id: "renamed",
+        schema: {
+          slot: {
+            fields: {
+              day: { type: "number", required: true, fieldName: "slot_day" },
+              room: { type: "string", required: true },
+            },
+            indexes: [{ fields: ["day", "room"], unique: true }],
+          },
+        },
+      } as const;
+      const { document } = authSchema({ plugins: [renamed] });
+      expect(printSchemaDocument(document)).toContain("@@unique([slot_day, room])");
+    });
+  });
 });

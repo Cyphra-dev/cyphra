@@ -63,7 +63,7 @@ describe("model-level attributes", () => {
 
   it("rejects unknown attributes and attributes on relationships", () => {
     expect(bad(post("@@nope([title])"))).toThrow(
-      /unknown model attribute @@nope \(expected @@fulltext\)/,
+      /unknown model attribute @@nope \(expected @@fulltext, @@unique, @@index\)/,
     );
     expect(
       bad(`node A { id String @id }

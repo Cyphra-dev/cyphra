@@ -4,7 +4,13 @@ import {
   type ScalarNodeField,
   type SchemaDocument,
 } from "@cyphra/schema";
-import { fulltextIndexStatement, propertyIndexStatement, vectorIndexStatement } from "./diff.js";
+import {
+  compoundIndexStatement,
+  compoundUniqueStatement,
+  fulltextIndexStatement,
+  propertyIndexStatement,
+  vectorIndexStatement,
+} from "./diff.js";
 
 function isScalarWithDecorator(
   field: { readonly kind: string; readonly decorators: readonly { readonly name: string }[] },
@@ -38,8 +44,18 @@ function idPropertyName(node: NodeDeclaration): string | undefined {
   return undefined;
 }
 
+/** Resolved node models of `doc` that declare `@@unique` / `@@index` (resolving only when needed). */
+function compoundNodes(doc: SchemaDocument) {
+  const has = doc.declarations.some(
+    (d) =>
+      d.kind === "Node" && d.attributes?.some((a) => a.name === "unique" || a.name === "index"),
+  );
+  return has ? resolveSchema(doc).nodes : [];
+}
+
 /**
- * Generate `CREATE CONSTRAINT … IF NOT EXISTS` statements for node `@id` / `@unique` and relationship `@unique`.
+ * Generate `CREATE CONSTRAINT … IF NOT EXISTS` statements for node `@id` / `@unique` and relationship `@unique`,
+ * then node `@@unique([a, b])` composite constraints.
  *
  * Relationship property uniqueness uses Neo4j 5.7+ syntax (`FOR ()-[r:TYPE]-() REQUIRE r.prop IS UNIQUE`).
  *
@@ -82,12 +98,15 @@ export function constraintStatementsFromSchema(doc: SchemaDocument): string[] {
       );
     }
   }
+  for (const n of compoundNodes(doc)) {
+    for (const c of n.compoundUniques ?? []) statements.push(compoundUniqueStatement(n.label, c));
+  }
   return statements;
 }
 
 /**
  * Generate `CREATE RANGE INDEX … IF NOT EXISTS` for `@index` on **node** scalars and on **relationship** model scalars
- * (`CREATE POINT INDEX …` for `Point` / `CartesianPoint` fields).
+ * (`CREATE POINT INDEX …` for `Point` / `CartesianPoint` fields), then node `@@index([a, b])` composite indexes.
  * Node indexes use `(n:Label)`; relationship indexes use `()-[r:TYPE]-()` with the Neo4j type from `type "…"`.
  *
  * @param doc - Parsed schema AST.
@@ -138,6 +157,9 @@ export function indexStatementsFromSchema(doc: SchemaDocument): string[] {
         ),
       );
     }
+  }
+  for (const n of compoundNodes(doc)) {
+    for (const i of n.compoundIndexes ?? []) statements.push(compoundIndexStatement(n.label, i));
   }
   return statements;
 }

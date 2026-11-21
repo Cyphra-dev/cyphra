@@ -1,0 +1,25 @@
+node Tenant {
+  id       String    @id @default(cuid())
+  slug     String    @unique
+  members  Member[]  @relationship(type: "HAS_MEMBER", direction: OUT)
+}
+
+node Member {
+  id        String   @id @default(cuid())
+  tenantId  String
+  email     String
+  role      String   @default("member")
+  joinedOn  Int
+  tenant    Tenant?  @relationship(type: "HAS_MEMBER", direction: IN)
+
+  @@unique([tenantId, email])
+  @@index([tenantId, joinedOn])
+}
+
+node Slot {
+  day    Int
+  room   String
+  label  String?
+
+  @@unique([day, room], name: "dayRoom")
+}

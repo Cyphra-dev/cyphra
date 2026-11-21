@@ -186,8 +186,14 @@ function locateAttributeError(
   if (attrs.length === 0) return undefined;
   const fieldName = /field "([^"]+)"/.exec(rest)?.[1];
   const quoted = /"([^"]+)"/.exec(rest)?.[1];
-  // Several @@fulltext: pick the one the message is about.
+  // `fields [a, b] are already …`: the later of the attributes over those fields.
+  const covered = /fields \[([^\]]*)\] are already/.exec(rest)?.[1];
+  const suffix = name === "fulltext" ? "fulltext" : name === "unique" ? "unique" : "idx";
+  // Several attributes of this kind: pick the one the message is about.
   const pick =
+    (covered !== undefined
+      ? attrs.filter((a) => (a.fields ?? []).join(", ") === covered).pop()
+      : undefined) ??
     attrs.find((a) => fieldName !== undefined && a.fields?.includes(fieldName)) ??
     attrs.find(
       (a) =>
@@ -197,10 +203,10 @@ function locateAttributeError(
     attrs.find(
       (a) =>
         quoted !== undefined &&
-        `${decl.name}_${(a.fields ?? []).join("_")}_fulltext`.replace(/[^A-Za-z0-9_]/g, "_") ===
+        `${decl.name}_${(a.fields ?? []).join("_")}_${suffix}`.replace(/[^A-Za-z0-9_]/g, "_") ===
           quoted,
     ) ??
-    attrs.find((a) => /needs a list/.test(rest) && !a.fields?.length) ??
+    attrs.find((a) => /needs a list/.test(rest) && (a.fields?.length ?? 0) < 2) ??
     attrs[0]!;
   if (fieldName && pick.fields) {
     const idx = pick.fields.map((f, i) => (f === fieldName ? i : -1)).filter((i) => i >= 0);
@@ -208,15 +214,19 @@ function locateAttributeError(
     const i = /twice/.test(rest) ? (idx[1] ?? idx[0]) : idx[0];
     if (i !== undefined) return span(pick.fieldLocs?.[i]);
   }
-  const twice = /@@fulltext (\w+) given twice/.exec(rest);
+  const twice = /@@\w+ (\w+) given twice/.exec(rest);
   if (twice) return argSpan(pick, twice[1]!, 1);
-  const unknownArg = /unknown @@fulltext argument "(\w+)"/.exec(rest);
+  const unknownArg = /unknown @@\w+ argument "(\w+)"/.exec(rest);
   if (unknownArg) {
     const a = pick.args.find((x) => x.key === unknownArg[1]);
     return span(a?.keyLoc ?? a?.loc);
   }
   for (const key of ["analyzer", "name", "eventuallyConsistent"]) {
-    if (new RegExp(`@@fulltext ${key}\\b|unknown @@fulltext ${key}`).test(rest)) {
+    if (
+      new RegExp(
+        `@@\\w+ ${key}\\b|unknown @@\\w+ ${key}|${key} "[^"]*" is already used|key "[^"]*" is already a field`,
+      ).test(rest)
+    ) {
       const s = argSpan(pick, key);
       if (s) return s;
     }

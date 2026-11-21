@@ -9,9 +9,11 @@
  */
 
 import {
+  formatModelAttribute,
   parseSchema,
   printSchemaDocument,
   resolveSchema,
+  type ModelAttribute,
   type NodeDeclaration,
   type NodeField,
   type SchemaDocument,
@@ -29,6 +31,12 @@ function formatField(field: NodeField): string {
     declarations: [{ kind: "Node", name: "X", fields: [field] }],
   });
   return text.split("\n")[1]!.trim();
+}
+
+/** Attributes of `auth` that `existing` does not have yet (compared as printed). */
+function missingAttributes(existing: NodeDeclaration, auth: NodeDeclaration): ModelAttribute[] {
+  const have = new Set((existing.attributes ?? []).map(formatModelAttribute));
+  return (auth.attributes ?? []).filter((a) => !have.has(formatModelAttribute(a)));
 }
 
 function formatNode(node: NodeDeclaration): string {
@@ -105,12 +113,19 @@ function mergeBlock(
   // The closing brace must sit on its own line so new fields can go right before it.
   if (lines.length < 2 || lines[lines.length - 1]!.trim() !== "") return null;
   const names: { line: number; name: string }[] = [];
+  const attributeLines: number[] = [];
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]!;
     const cut = commentStart(line);
     const code = (cut >= 0 ? line.slice(0, cut) : line).trim();
     if (i === 0 && code !== "") return null; // a field on the `node X {` line
     if (!code) continue;
+    if (code.startsWith("@@")) {
+      // One attribute per line, closed on that line.
+      if (!code.endsWith(")")) return null;
+      attributeLines.push(i);
+      continue;
+    }
     const m = /^([A-Za-z_][A-Za-z0-9_]*)/.exec(code);
     if (!m) return null;
     names.push({ line: i, name: m[1]! });
@@ -138,7 +153,24 @@ function mergeBlock(
     const comment = cut >= 0 ? ` ${line.slice(cut)}` : "";
     lines[lineNo] = `${/^\s*/.exec(line)![0]}${formatField(field)}${comment}`;
   }
-  lines.splice(lines.length - 1, 0, ...added);
+  const newAttributes = missingAttributes(existing, auth).map(
+    (a) => `${indent}${formatModelAttribute(a)}`,
+  );
+  if (attributeLines.length) {
+    // New fields go after the last field (before the attributes), new attributes after the last one.
+    const lastAttribute = attributeLines[attributeLines.length - 1]!;
+    lines.splice(lastAttribute + 1, 0, ...newAttributes);
+    const afterField = names.length ? names[names.length - 1]!.line + 1 : 1;
+    if (afterField > lastAttribute) return null;
+    lines.splice(afterField, 0, ...added);
+  } else {
+    lines.splice(
+      lines.length - 1,
+      0,
+      ...added,
+      ...(newAttributes.length ? ["", ...newAttributes] : []),
+    );
+  }
   return lines.join("\n");
 }
 
@@ -175,7 +207,12 @@ export function mergeAuthSchema(existing: string | undefined, authDoc: SchemaDoc
     }
     // Unusual layout: reprint this node, keeping its non-auth fields after the auth ones.
     const extra = current.fields.filter((f) => !decl.fields.some((a) => a.name === f.name));
-    const node: NodeDeclaration = { ...decl, fields: [...decl.fields, ...extra] };
+    const attributes = [...(current.attributes ?? []), ...missingAttributes(current, decl)];
+    const node: NodeDeclaration = {
+      ...decl,
+      fields: [...decl.fields, ...extra],
+      ...(attributes.length ? { attributes } : {}),
+    };
     const start = existing.lastIndexOf("node", block.open);
     edits.push({ start, end: block.close + 1, text: formatNode(node) });
   }

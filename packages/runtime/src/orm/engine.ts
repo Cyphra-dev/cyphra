@@ -134,22 +134,71 @@ export class ModelEngine {
     return decodeRow(shape, rows[0].row)!;
   }
 
-  private assertUnique(where: unknown, op: string): void {
-    const ok =
-      isPlainObject(where) &&
-      this.model.uniqueFields.some((k) => {
-        const v = where[k];
-        return v !== undefined && v !== null && !isPlainObject(v);
-      });
-    if (!ok) {
-      throw new CyphraValidationError(
-        `${this.model.name}.${op}: where must set at least one unique field (${this.model.uniqueFields.join(", ") || "none declared — add @id or @unique"}).`,
-      );
+  /**
+   * Check that `where` identifies at most one node and flatten its compound keys: a `@@unique`
+   * key (`{ a_b: { a, b } }`) becomes its fields (`{ a, b }`). Returns the flattened filter and the
+   * fields of the unique key it sets (the first one, single fields before compound keys).
+   */
+  private uniqueWhere(where: unknown, op: string): { where: AnyRecord; key: readonly string[] } {
+    const present = (v: unknown) => v !== undefined && v !== null && !isPlainObject(v);
+    const compounds = this.model.compoundUniques ?? [];
+    let flat: AnyRecord | undefined;
+    if (isPlainObject(where)) {
+      flat = { ...where };
+      for (const c of compounds) {
+        const value = flat[c.key];
+        if (value === undefined) continue;
+        delete flat[c.key];
+        if (!isPlainObject(value)) {
+          throw new CyphraValidationError(
+            `${this.model.name}.${op}: where.${c.key} must be an object with ${c.fields.join(", ")}.`,
+          );
+        }
+        for (const [k, v] of Object.entries(value)) {
+          if (!c.fields.includes(k)) {
+            throw new CyphraValidationError(
+              `${this.model.name}.${op}: where.${c.key}.${k} is not a field of the key (${c.fields.join(", ")}).`,
+            );
+          }
+          if (!present(v)) {
+            throw new CyphraValidationError(
+              `${this.model.name}.${op}: where.${c.key}.${k} must be a value (not null or a filter).`,
+            );
+          }
+          if (flat[k] !== undefined && !sameValue(flat[k], v)) {
+            throw new CyphraValidationError(
+              `${this.model.name}.${op}: where.${k} and where.${c.key}.${k} differ.`,
+            );
+          }
+          flat[k] = v;
+        }
+        const missing = c.fields.filter((f) => value[f] === undefined);
+        if (missing.length) {
+          throw new CyphraValidationError(
+            `${this.model.name}.${op}: where.${c.key} must set ${missing.join(", ")}.`,
+          );
+        }
+      }
     }
+    const single = flat && this.model.uniqueFields.find((k) => present(flat[k]));
+    if (flat && single) return { where: flat, key: [single] };
+    const compound = flat && compounds.find((c) => c.fields.every((f) => present(flat[f])));
+    if (flat && compound) return { where: flat, key: compound.fields };
+    const keys = [
+      ...this.model.uniqueFields,
+      ...compounds.map((c) => `${c.key} { ${c.fields.join(", ")} }`),
+    ];
+    throw new CyphraValidationError(
+      `${this.model.name}.${op}: where must set at least one unique field (${keys.join(", ") || "none declared — add @id, @unique or @@unique"}).`,
+    );
   }
 
-  private async findId(exec: Executor, where: unknown, op: string): Promise<string | null> {
-    this.assertUnique(where, op);
+  private assertUnique(where: unknown, op: string): AnyRecord {
+    return this.uniqueWhere(where, op).where;
+  }
+
+  private async findId(exec: Executor, unique: unknown, op: string): Promise<string | null> {
+    const where = this.assertUnique(unique, op);
     const ctx = this.ctx();
     const w = compileWhere(ctx, this.model, "n", where);
     const rows = await exec(
@@ -169,8 +218,14 @@ export class ModelEngine {
   }
 
   async findUnique(args: AnyRecord): Promise<AnyRecord | null> {
-    this.assertUnique(args.where, "findUnique");
-    const rows = await this.findMany({ ...args, take: 1, skip: undefined, orderBy: undefined });
+    const where = this.assertUnique(args.where, "findUnique");
+    const rows = await this.findMany({
+      ...args,
+      where,
+      take: 1,
+      skip: undefined,
+      orderBy: undefined,
+    });
     return rows[0] ?? null;
   }
 
@@ -419,9 +474,12 @@ export class ModelEngine {
   ): Promise<void> {
     if (!isPlainObject(item))
       throw new CyphraValidationError(`${rel.name}.connect expects unique where objects.`);
-    const { $edge, ...where } = item;
+    const { $edge, ...unique } = item;
     const target = this.node(rel.target);
-    this.engineFor(target).assertUnique(where, `${this.model.name}.${rel.name}.connect`);
+    const where = this.engineFor(target).assertUnique(
+      unique,
+      `${this.model.name}.${rel.name}.connect`,
+    );
     const onCreate = this.edgeProps(rel, $edge);
     const onMatch = this.explicitEdgeProps(rel, $edge);
     const ctx = this.ctx();
@@ -536,11 +594,11 @@ export class ModelEngine {
         for (const item of asArray(disconnect)) {
           if (!isPlainObject(item))
             throw new CyphraValidationError(`${rel.name}.disconnect expects unique where objects.`);
-          this.engineFor(this.node(rel.target)).assertUnique(
+          const where = this.engineFor(this.node(rel.target)).assertUnique(
             item,
             `${this.model.name}.${rel.name}.disconnect`,
           );
-          await this.deleteEdges(exec, id, rel, item);
+          await this.deleteEdges(exec, id, rel, where);
         }
       }
       if (set !== undefined) {
@@ -674,8 +732,8 @@ export class ModelEngine {
   /**
    * Atomic upsert: one `MERGE` on a unique key of `where`, with the create data in
    * `ON CREATE SET` and the update in `ON MATCH SET`. Under concurrency this yields exactly one
-   * node only when the key has a uniqueness constraint (`@id` / `@unique` + `cyphra db push` or a
-   * migration); without one, concurrent MERGEs can still create duplicates.
+   * node only when the key has a uniqueness constraint (`@id` / `@unique` / `@@unique` +
+   * `cyphra db push` or a migration); without one, concurrent MERGEs can still create duplicates.
    *
    * Extra `where` filters (beyond the MERGE key) are checked on an existing node before it is
    * updated; if it does not match them, nothing is written and a {@link CyphraError} is thrown
@@ -683,37 +741,38 @@ export class ModelEngine {
    * transaction.
    */
   async upsert(args: AnyRecord): Promise<AnyRecord> {
-    this.assertUnique(args.where, "upsert");
-    const where = args.where as AnyRecord;
-    const key = this.model.uniqueFields.find((k) => {
-      const v = where[k];
-      return v !== undefined && v !== null && !isPlainObject(v);
-    })!;
-    const keyField = scalarField(this.model, key)!;
+    const { where, key: keyFields } = this.uniqueWhere(args.where, "upsert");
     const create = this.splitData(args.create, "upsert create");
     const update = this.splitData(args.update, "upsert update");
-    if (create.scalars[key] !== undefined && !sameValue(create.scalars[key], where[key])) {
-      throw new CyphraValidationError(
-        `${this.model.name}.upsert: create.${key} must equal where.${key} (or be omitted).`,
-      );
+    for (const key of keyFields) {
+      if (create.scalars[key] !== undefined && !sameValue(create.scalars[key], where[key])) {
+        throw new CyphraValidationError(
+          `${this.model.name}.upsert: create.${key} must equal where.${key} (or be omitted).`,
+        );
+      }
     }
     // The MERGE pattern sets the key, so no default is generated for it.
     const fields = this.model.fields.filter(
-      (f): f is ResolvedScalarField => f.kind === "scalar" && f.name !== key,
+      (f): f is ResolvedScalarField => f.kind === "scalar" && !keyFields.includes(f.name),
     );
     const props = ModelEngine.createProps(this.model.name, fields, create.scalars);
     const nested = Object.keys(create.relations).length + Object.keys(update.relations).length > 0;
 
     const ctx = this.ctx();
-    const keyParam = ctx.param(encodeScalar(keyField, where[key], this.model.name));
+    const keyProps = keyFields
+      .map(
+        (k) =>
+          `${q(k)}: ${ctx.param(encodeScalar(scalarField(this.model, k)!, where[k], this.model.name))}`,
+      )
+      .join(", ");
     const onCreate = Object.keys(props).length ? [`n += ${ctx.param(props)}`] : [];
-    const rest = Object.fromEntries(Object.entries(where).filter(([k]) => k !== key));
+    const rest = Object.fromEntries(Object.entries(where).filter(([k]) => !keyFields.includes(k)));
     const restWhere = compileWhere(ctx, this.model, "n", rest);
     const sets = this.setClauses(ctx, update.scalars);
     const flag = `n.${q(UPSERT_FLAG)}`;
     const trackCreated = nested || restWhere !== null;
 
-    let text = `MERGE (n:${this.label} {${q(key)}: ${keyParam}})`;
+    let text = `MERGE (n:${this.label} {${keyProps}})`;
     if (trackCreated) onCreate.push(`${flag} = true`);
     if (onCreate.length) text += ` ON CREATE SET ${onCreate.join(", ")}`;
     if (restWhere) {
@@ -737,7 +796,7 @@ export class ModelEngine {
       const row = rows[0];
       if (!row) {
         throw new CyphraError(
-          `${this.model.name}.upsert: a node with ${key} = ${JSON.stringify(where[key])} exists but does not match the rest of where; creating another would duplicate the key.`,
+          `${this.model.name}.upsert: a node with ${keyFields.map((k) => `${k} = ${JSON.stringify(where[k])}`).join(", ")} exists but does not match the rest of where; creating another would duplicate the key.`,
         );
       }
       if (projection) return decodeRow(projection.shape, row.row)!;
