@@ -1,5 +1,5 @@
 import { initTRPC, TRPCError } from "@trpc/server";
-import { CyphraValidationError, NotFoundError, RestrictError } from "cyphra";
+import { CyphraValidationError, NotFoundError, RestrictError, UniqueConstraintError } from "cyphra";
 import superjson from "superjson";
 import { ZodError } from "zod";
 import type { Db } from "./cyphra.gen";
@@ -37,9 +37,6 @@ const t = initTRPC.context<Context>().create({
   },
 });
 
-/** Neo4j's error code for a write that breaks a uniqueness constraint (`@unique`, `@id`). */
-const CONSTRAINT_FAILED = "Neo.ClientError.Schema.ConstraintValidationFailed";
-
 /** Turn the Cyphra client's errors into tRPC errors with the matching HTTP status. */
 export function toTRPCError(cause: unknown): TRPCError | null {
   if (cause instanceof CyphraValidationError) {
@@ -51,8 +48,10 @@ export function toTRPCError(cause: unknown): TRPCError | null {
   if (cause instanceof RestrictError) {
     return new TRPCError({ code: "CONFLICT", message: cause.message, cause });
   }
-  if ((cause as { code?: unknown } | null)?.code === CONSTRAINT_FAILED) {
-    return new TRPCError({ code: "CONFLICT", message: "Already exists.", cause: cause as Error });
+  if (cause instanceof UniqueConstraintError) {
+    // A duplicate `@unique` / `@id` value: `fields` names it (`["email"]`).
+    const what = cause.fields.length ? ` (${cause.fields.join(", ")})` : "";
+    return new TRPCError({ code: "CONFLICT", message: `Already exists${what}.`, cause });
   }
   return null;
 }

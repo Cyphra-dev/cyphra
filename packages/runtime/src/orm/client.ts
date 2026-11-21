@@ -24,6 +24,7 @@ import type {
   ResultNeedsMap,
 } from "./extensionTypes.js";
 import type { DelegateKey, ModelDelegate, TypeMap } from "./types.js";
+import { mapUniqueError } from "./unique.js";
 import { toNative } from "./values.js";
 
 /**
@@ -147,11 +148,38 @@ function delegateKey(name: string): string {
 
 type RowsResult = { records: { toObject(): Record<string, unknown> }[] };
 
-function txExecutor(instr: Instrumentation, tx: TransactionLike, meta: QueryMeta): Executor {
+/**
+ * Executor on `tx`. A uniqueness violation becomes a `UniqueConstraintError` here, after the
+ * statement's `error` event (which keeps the Neo4j code), so code catching it inside
+ * `$transaction` sees the mapped error too.
+ */
+function txExecutor(
+  instr: Instrumentation,
+  schema: SchemaModel,
+  tx: TransactionLike,
+  meta: QueryMeta,
+): Executor {
   return async (text, params) => {
-    const res = (await instr.run(text, params, meta, () => tx.run(text, params))) as RowsResult;
+    let res: RowsResult;
+    try {
+      res = (await instr.run(text, params, meta, () => tx.run(text, params))) as RowsResult;
+    } catch (e) {
+      throw mapUniqueError(schema, e);
+    }
     return res.records.map((r) => r.toObject());
   };
+}
+
+/**
+ * `work`, with a uniqueness violation raised outside a statement (at commit) mapped too. Not
+ * retried: the drivers only retry transient errors.
+ */
+async function mapped<T>(schema: SchemaModel, work: () => Promise<T>): Promise<T> {
+  try {
+    return await work();
+  } catch (e) {
+    throw mapUniqueError(schema, e);
+  }
 }
 
 /** Runner whose statements carry `meta` (model, operation) in events and spans. */
@@ -305,8 +333,14 @@ export function createOrm<TM extends TypeMap>(
   const runnerFor: RunnerFor = (meta) => {
     const m = { ...meta, transaction: false };
     return {
-      read: (fn) => client.withReadTransaction((tx) => fn(txExecutor(instr, tx, m))),
-      write: (fn) => client.withWriteTransaction((tx) => fn(txExecutor(instr, tx, m))),
+      read: (fn) =>
+        mapped(schema, () =>
+          client.withReadTransaction((tx) => fn(txExecutor(instr, schema, tx, m))),
+        ),
+      write: (fn) =>
+        mapped(schema, () =>
+          client.withWriteTransaction((tx) => fn(txExecutor(instr, schema, tx, m))),
+        ),
     };
   };
 
@@ -314,26 +348,28 @@ export function createOrm<TM extends TypeMap>(
     const self: Record<string, unknown> = {};
     const transaction = <T>(fn: (tx: unknown) => Promise<T>): Promise<T> =>
       instr.operation({ operation: "$transaction" }, () =>
-        client.withWriteTransaction((tx) => {
-          const inTx: RunnerFor = (meta) => {
-            const exec = txExecutor(instr, tx, { ...meta, transaction: true });
-            return { read: (f) => f(exec), write: (f) => f(exec) };
-          };
-          const txClient: Record<string, unknown> = {};
-          Object.assign(
-            txClient,
-            buildDelegates({
-              instr,
-              schema,
-              runnerFor: inTx,
-              options: engineOptions,
-              state,
-              parent: () => txClient,
-            }),
-            { $cypher: rawFor(instr, inTx) },
-          );
-          return fn(txClient);
-        }),
+        mapped(schema, () =>
+          client.withWriteTransaction((tx) => {
+            const inTx: RunnerFor = (meta) => {
+              const exec = txExecutor(instr, schema, tx, { ...meta, transaction: true });
+              return { read: (f) => f(exec), write: (f) => f(exec) };
+            };
+            const txClient: Record<string, unknown> = {};
+            Object.assign(
+              txClient,
+              buildDelegates({
+                instr,
+                schema,
+                runnerFor: inTx,
+                options: engineOptions,
+                state,
+                parent: () => txClient,
+              }),
+              { $cypher: rawFor(instr, inTx) },
+            );
+            return fn(txClient);
+          }),
+        ),
       );
     Object.assign(
       self,

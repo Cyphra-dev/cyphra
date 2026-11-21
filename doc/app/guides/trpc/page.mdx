@@ -118,7 +118,7 @@ the app's client, and tests give their own.
 
 ```ts filename="src/server/trpc.ts"
 import { initTRPC, TRPCError } from "@trpc/server";
-import { CyphraValidationError, NotFoundError, RestrictError } from "cyphra";
+import { CyphraValidationError, NotFoundError, RestrictError, UniqueConstraintError } from "cyphra";
 import superjson from "superjson";
 import { ZodError } from "zod";
 import type { Db } from "./cyphra.gen";
@@ -152,8 +152,6 @@ const t = initTRPC.context<Context>().create({
   },
 });
 
-const CONSTRAINT_FAILED = "Neo.ClientError.Schema.ConstraintValidationFailed";
-
 export function toTRPCError(cause: unknown): TRPCError | null {
   if (cause instanceof CyphraValidationError) {
     return new TRPCError({ code: "BAD_REQUEST", message: cause.message, cause });
@@ -164,8 +162,10 @@ export function toTRPCError(cause: unknown): TRPCError | null {
   if (cause instanceof RestrictError) {
     return new TRPCError({ code: "CONFLICT", message: cause.message, cause });
   }
-  if ((cause as { code?: unknown } | null)?.code === CONSTRAINT_FAILED) {
-    return new TRPCError({ code: "CONFLICT", message: "Already exists.", cause: cause as Error });
+  if (cause instanceof UniqueConstraintError) {
+    // A duplicate `@unique` / `@id` value: `fields` names it (`["email"]`).
+    const what = cause.fields.length ? ` (${cause.fields.join(", ")})` : "";
+    return new TRPCError({ code: "CONFLICT", message: `Already exists${what}.`, cause });
   }
   return null;
 }
@@ -193,7 +193,7 @@ Without the middleware, every error the client throws reaches the browser as
 | `CyphraValidationError`: a value breaks a rule, an unknown enum value, …   | `BAD_REQUEST` | 400  |
 | `NotFoundError`: `update`, `delete`, `connect` or `…OrThrow` found no node | `NOT_FOUND`   | 404  |
 | `RestrictError`: an `onDelete: Restrict` rule refused a delete             | `CONFLICT`    | 409  |
-| Neo4j `ConstraintValidationFailed`: a duplicate `@unique` value            | `CONFLICT`    | 409  |
+| `UniqueConstraintError`: a duplicate `@unique` value                       | `CONFLICT`    | 409  |
 
 The error formatter puts the invalid fields in `error.data.issues`, in one shape for both sources:
 `{ path, message }`. zod's paths are relative to the procedure input (`["title"]`). The Cyphra

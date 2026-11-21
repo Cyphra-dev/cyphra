@@ -340,7 +340,8 @@ warnings work the same (`server.address` is the HTTP host).
   managed transactions.
 - Values use the Query API's typed JSON: a schema `Int` is sent as an `Integer`, a JS number as a
   `Float` (as with Bolt). Results decode into the same JS values as with Bolt.
-- Errors are `Neo4jHttpError`s with the Neo4j `code` (`Neo.ClientError.Schema.ConstraintValidationFailed`, …) and the HTTP `status`.
+- Errors are `Neo4jHttpError`s with the Neo4j `code` (`Neo.ClientError.Schema.ConstraintValidationFailed`, …) and the HTTP `status`. The ORM client turns uniqueness violations into a
+  [`UniqueConstraintError`](/client#unique-constraint-errors), as with Bolt.
 
 ### Limitations
 

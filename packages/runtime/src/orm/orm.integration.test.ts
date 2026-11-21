@@ -1,6 +1,8 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createClient, type Db } from "./__fixtures__/blog.gen.js";
-import { CyphraValidationError, NotFoundError } from "./errors.js";
+import { parseSchema, resolveSchema } from "@cyphra/schema";
+import { createOrm } from "./client.js";
+import { CyphraValidationError, NotFoundError, UniqueConstraintError } from "./errors.js";
 import {
   createClient as createVectorClient,
   type Db as VectorDb,
@@ -3217,5 +3219,248 @@ describe.skipIf(!hasNeo)("ORM client extensions on vector search (Neo4j)", () =>
       select: { id: true, short: true },
     });
     expect(hits).toEqual([{ id: "x1", short: "first", $score: expect.any(Number) }]);
+  });
+});
+
+describe.skipIf(!hasNeo)("ORM unique constraint errors (Neo4j)", () => {
+  // Untyped client on an inline schema: a node @id / @unique, an interface @unique (constrained on
+  // the interface's label), a @@unique pair and a relationship @unique.
+  const schema = resolveSchema(
+    parseSchema(`
+      interface UqNamed {
+        handle String @unique
+      }
+      node UqAccount implements UqNamed {
+        id      String      @id @default(cuid())
+        email   String      @unique
+        name    String?
+        seats   UqSeat[]    @relationship(type: "UQ_HOLDS", direction: OUT)
+        friends UqAccount[] @relationship(type: "UQ_LINK", direction: OUT)
+      }
+      node UqSeat {
+        id  String @id @default(cuid())
+        row Int
+        col Int
+        @@unique([row, col])
+      }
+      relationship UqLink {
+        type "UQ_LINK"
+        from UqAccount
+        to   UqAccount
+        ref  String @unique
+      }
+    `),
+  );
+  // Same statements as `cyphra push` / migrations generate for the schema above.
+  const ddl = [
+    "CREATE CONSTRAINT UqAccount_id_id IF NOT EXISTS FOR (n:`UqAccount`) REQUIRE n.`id` IS UNIQUE",
+    "CREATE CONSTRAINT UqAccount_email_unique IF NOT EXISTS FOR (n:`UqAccount`) REQUIRE n.`email` IS UNIQUE",
+    "CREATE CONSTRAINT UqNamed_handle_unique IF NOT EXISTS FOR (n:`UqNamed`) REQUIRE n.`handle` IS UNIQUE",
+    "CREATE CONSTRAINT UqSeat_id_id IF NOT EXISTS FOR (n:`UqSeat`) REQUIRE n.`id` IS UNIQUE",
+    "CREATE CONSTRAINT UqSeat_row_col_unique IF NOT EXISTS FOR (n:`UqSeat`) REQUIRE (n.`row`, n.`col`) IS UNIQUE",
+    "CREATE CONSTRAINT UqLink_ref_rel_unique IF NOT EXISTS FOR ()-[r:`UQ_LINK`]-() REQUIRE r.`ref` IS UNIQUE",
+  ];
+  type Delegate = Record<string, (args?: unknown) => Promise<unknown>>;
+  type UntypedDb = {
+    uqAccount: Delegate;
+    uqSeat: Delegate;
+    $cypher(strings: TemplateStringsArray, ...values: unknown[]): Promise<unknown[]>;
+    $transaction<T>(fn: (tx: UntypedDb) => Promise<T>): Promise<T>;
+    $on(level: "error", listener: (event: CyphraEvent) => void): () => void;
+    $client: {
+      withSession<T>(fn: (s: { run(q: string): Promise<unknown> }) => Promise<T>): Promise<T>;
+    };
+    $disconnect(): Promise<void>;
+  };
+  let db: UntypedDb;
+  const code = "Neo.ClientError.Schema.ConstraintValidationFailed";
+  const wipe = () => db.$cypher`MATCH (n) WHERE n:UqAccount OR n:UqSeat DETACH DELETE n`;
+  const account = (n: number, extra: Record<string, unknown> = {}) => ({
+    email: `user${n}@example.com`,
+    handle: `user${n}`,
+    ...extra,
+  });
+  const reject = async (p: Promise<unknown>): Promise<UniqueConstraintError> => {
+    const err = await p.then(
+      () => undefined,
+      (e: unknown) => e,
+    );
+    expect(err).toBeInstanceOf(UniqueConstraintError);
+    return err as UniqueConstraintError;
+  };
+  const emailError = {
+    model: "UqAccount",
+    fields: ["email"],
+    constraint: "UqAccount_email_unique",
+    code,
+  };
+
+  beforeAll(async () => {
+    db = createOrm(schema, {
+      uri: process.env.NEO4J_TEST_URI!,
+      user: process.env.NEO4J_TEST_USER!,
+      password: process.env.NEO4J_TEST_PASSWORD!,
+    }) as unknown as UntypedDb;
+    await db.$client.withSession(async (s) => {
+      for (const stmt of ddl) await s.run(stmt);
+      await s.run("CALL db.awaitIndexes(120)");
+    });
+  });
+
+  beforeEach(async () => {
+    await wipe();
+    await db.uqAccount.create({ data: account(1) });
+  });
+
+  afterAll(async () => {
+    if (!db) return;
+    await wipe();
+    await db.$client.withSession(async (s) => {
+      for (const stmt of ddl) await s.run(`DROP CONSTRAINT ${stmt.split(" ")[2]} IF EXISTS`);
+    });
+    await db.$disconnect();
+  });
+
+  it("create: a duplicate @unique value, with the Neo4j error as cause", async () => {
+    const events: CyphraEvent[] = [];
+    const off = db.$on("error", (e) => events.push(e));
+    try {
+      const err = await reject(
+        db.uqAccount.create({ data: account(2, { email: "user1@example.com" }) }),
+      );
+      expect(err).toMatchObject(emailError);
+      expect(err.message).toBe(
+        "Unique constraint failed on UqAccount(email) (constraint UqAccount_email_unique): a node with the same value already exists.",
+      );
+      expect((err.cause as { code?: string }).code).toBe(code);
+      // The statement's error event still carries the Neo4j code.
+      expect(events.find((e): e is ErrorEvent => e.type === "error")).toMatchObject({ code });
+    } finally {
+      off();
+    }
+    expect(await db.uqAccount.count()).toBe(1);
+  });
+
+  it("create: a duplicate @id and an interface's @unique", async () => {
+    const [{ id }] = (await db.$cypher`MATCH (a:UqAccount) RETURN a.id AS id`) as [{ id: string }];
+    expect(await reject(db.uqAccount.create({ data: account(2, { id }) }))).toMatchObject({
+      model: "UqAccount",
+      fields: ["id"],
+      constraint: "UqAccount_id_id",
+    });
+    // `handle` is declared on the interface: constrained on :UqNamed.
+    expect(
+      await reject(db.uqAccount.create({ data: account(2, { handle: "user1" }) })),
+    ).toMatchObject({ model: "UqNamed", fields: ["handle"], constraint: "UqNamed_handle_unique" });
+  });
+
+  it("createMany rolls back the whole batch", async () => {
+    await reject(
+      db.uqAccount.createMany({
+        data: [account(2), account(3, { email: "user1@example.com" })],
+      }),
+    );
+    expect(await db.uqAccount.count()).toBe(1);
+  });
+
+  it("update and updateMany", async () => {
+    await db.uqAccount.create({ data: account(2) });
+    expect(
+      await reject(
+        db.uqAccount.update({
+          where: { email: "user2@example.com" },
+          data: { email: "user1@example.com" },
+        }),
+      ),
+    ).toMatchObject(emailError);
+    expect(
+      await reject(db.uqAccount.updateMany({ where: {}, data: { handle: "same" } })),
+    ).toMatchObject({ model: "UqNamed", fields: ["handle"] });
+  });
+
+  it("upsert: the create branch hits another unique field", async () => {
+    expect(
+      await reject(
+        db.uqAccount.upsert({
+          where: { email: "user2@example.com" },
+          create: account(2, { handle: "user1" }),
+          update: {},
+        }),
+      ),
+    ).toMatchObject({ model: "UqNamed", fields: ["handle"] });
+  });
+
+  it("nested create (in create and update): a duplicate @@unique pair", async () => {
+    await db.uqSeat.create({ data: { row: 1, col: 1 } });
+    const seatError = {
+      model: "UqSeat",
+      fields: ["row", "col"],
+      constraint: "UqSeat_row_col_unique",
+      code,
+    };
+    expect(
+      await reject(
+        db.uqAccount.create({ data: account(2, { seats: { create: [{ row: 1, col: 1 }] } }) }),
+      ),
+    ).toMatchObject(seatError);
+    expect(
+      await reject(
+        db.uqAccount.update({
+          where: { email: "user1@example.com" },
+          data: {
+            seats: {
+              create: [
+                { row: 2, col: 2 },
+                { row: 1, col: 1 },
+              ],
+            },
+          },
+        }),
+      ),
+    ).toMatchObject(seatError);
+    expect(await db.uqAccount.count()).toBe(1);
+    expect(await db.uqSeat.count()).toBe(1);
+  });
+
+  it("$edge: a duplicate relationship @unique property", async () => {
+    await db.uqAccount.create({
+      data: account(2, {
+        friends: { connect: [{ email: "user1@example.com", $edge: { ref: "r1" } }] },
+      }),
+    });
+    expect(
+      await reject(
+        db.uqAccount.create({
+          data: account(3, {
+            friends: { connect: [{ email: "user1@example.com", $edge: { ref: "r1" } }] },
+          }),
+        }),
+      ),
+    ).toMatchObject({
+      model: "UqLink",
+      fields: ["ref"],
+      constraint: "UqLink_ref_rel_unique",
+    });
+  });
+
+  it("$cypher and $transaction", async () => {
+    expect(
+      await reject(db.$cypher`CREATE (:UqAccount {email: ${"user1@example.com"}})`),
+    ).toMatchObject(emailError);
+    let inside: unknown;
+    const outside = await db
+      .$transaction(async (tx) => {
+        await tx.uqAccount.create({ data: account(2) });
+        try {
+          await tx.uqAccount.create({ data: account(3, { email: "user2@example.com" }) });
+        } catch (e) {
+          inside = e;
+          throw e;
+        }
+      })
+      .catch((e: unknown) => e);
+    expect(inside).toBeInstanceOf(UniqueConstraintError);
+    expect(outside).toBe(inside);
+    expect(await db.uqAccount.count()).toBe(1);
   });
 });

@@ -2,8 +2,8 @@ import type { ValidationRuleName } from "@cyphra/schema";
 
 /** Base class for errors raised by the Cyphra ORM client. */
 export class CyphraError extends Error {
-  constructor(message: string) {
-    super(message);
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
     this.name = new.target.name;
   }
 }
@@ -62,5 +62,65 @@ export class RestrictError extends CyphraError {
     super(
       `Cannot delete ${model}: ${count} ${target} node${count === 1 ? " is" : "s are"} still linked through ${model}.${relation} (onDelete: Restrict).`,
     );
+  }
+}
+
+/**
+ * A write broke a uniqueness constraint: a duplicate `@id` / `@unique` value, a duplicate
+ * `@@unique([a, b])` combination, or a duplicate relationship `@unique` property. Thrown by every
+ * write (`create`, `createMany`, `update`, `updateMany`, `upsert`, nested `create` /
+ * `connectOrCreate`, `$edge` data, `$cypher`) on both transports, in place of Neo4j's
+ * `Neo.ClientError.Schema.ConstraintValidationFailed`. The transaction was rolled back.
+ *
+ * @example
+ * ```ts
+ * try {
+ *   await db.user.create({ data: { email } });
+ * } catch (e) {
+ *   if (e instanceof UniqueConstraintError && e.fields.includes("email")) {
+ *     return { error: "This email is already registered." };
+ *   }
+ *   throw e;
+ * }
+ * ```
+ */
+export class UniqueConstraintError extends CyphraError {
+  /**
+   * Model that declares the constraint: the node model of the label (an interface for a field or
+   * `@@unique` declared on it) or the relationship model of the type. `undefined` when the label
+   * is not in the schema or Neo4j's message could not be read.
+   */
+  readonly model: string | undefined;
+  /** Constrained fields (in the constraint's order when the schema has it), `[]` when unknown. */
+  readonly fields: readonly string[];
+  /**
+   * Name of the constraint, as `cyphra push` / migrations create it (`User_email_unique`, a
+   * `@@unique` name, …), when the schema declares it.
+   */
+  readonly constraint: string | undefined;
+  /** Neo4j status code (`Neo.ClientError.Schema.ConstraintValidationFailed`). */
+  readonly code: string;
+  /** GQL status code reported by the server (driver 6 / newer servers), if any. */
+  readonly gqlStatus: string | undefined;
+  /** The original Neo4j error (`Neo4jError` or `Neo4jHttpError`). */
+  declare readonly cause: unknown;
+
+  constructor(
+    message: string,
+    info: {
+      model?: string;
+      fields?: readonly string[];
+      constraint?: string;
+      code: string;
+      gqlStatus?: string;
+    },
+    options?: ErrorOptions,
+  ) {
+    super(message, options);
+    this.model = info.model;
+    this.fields = info.fields ?? [];
+    this.constraint = info.constraint;
+    this.code = info.code;
+    this.gqlStatus = info.gqlStatus;
   }
 }

@@ -124,17 +124,19 @@ On a `relationship { … }` model, `@unique` becomes a relationship uniqueness c
 created with `cyphra migration:create` (see [Migrations](/migrations)).
 
 The typed client also relies on these fields: `findUnique`, `update`, `upsert` and `delete` only
-accept `@id` / `@unique` fields in `where`. A duplicate write surfaces as the driver error, with its
-`code`:
+accept `@id` / `@unique` fields in `where`. A duplicate write throws a
+[`UniqueConstraintError`](/client#unique-constraint-errors) that names the model, the fields and the
+constraint, with the driver error as its `cause`:
 
 ```ts
+import { UniqueConstraintError } from "cyphra";
 import { db } from "./db.js";
 
 async function signUp(email: string) {
   try {
     return await db.user.create({ data: { email } });
   } catch (e) {
-    if ((e as { code?: string }).code === "Neo.ClientError.Schema.ConstraintValidationFailed") {
+    if (e instanceof UniqueConstraintError && e.fields.includes("email")) {
       throw new Error(`${email} is already registered`);
     }
     throw e;

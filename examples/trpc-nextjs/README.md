@@ -9,7 +9,7 @@ through it is at [cyphra.dev/guides/trpc](https://cyphra.dev/guides/trpc).
   schemas (`src/cyphra.zod.ts`). Both are generated, so they are not committed.
 - `src/server/trpc.ts`: tRPC setup with superjson, and the error mapping: zod and
   `CyphraValidationError` give `BAD_REQUEST` with `issues`, `NotFoundError` gives `NOT_FOUND`,
-  `RestrictError` and uniqueness violations give `CONFLICT`.
+  `RestrictError` and `UniqueConstraintError` (a duplicate `@unique` value) give `CONFLICT`.
 - `src/server/routers/`: `post.create`, `post.list` (filters and pagination), `post.byId`,
   `post.update`, `post.delete`, `user.create`, `user.list`, `user.delete`. Inputs are the generated
   zod schemas.

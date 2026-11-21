@@ -96,9 +96,9 @@ await db.user.update({ where: { id: userId }, data: { accounts: { connect: key }
   values of the key fields in `create` must equal the key's. When `where` also has an `@id` / `@unique` field, the
   `MERGE` uses that field and the composite key is checked like any extra filter.
 - `connect`, `disconnect` and `set` take composite keys in their `where` objects.
-- A write that would duplicate a composite key fails with Neo4j's
-  `Neo.ClientError.Schema.ConstraintValidationFailed` error once the constraint exists
-  (`cyphra push` or a migration).
+- A write that would duplicate a composite key throws a
+  [`UniqueConstraintError`](#unique-constraint-errors) once the constraint exists (`cyphra push`
+  or a migration), with `fields: ["providerId", "accountId"]`.
 
 ### select and include
 
@@ -1190,8 +1190,49 @@ SET n.createdAt = datetime({datetime: n.createdAt, timezone: "Z"})
 - `RestrictError`: a `delete` / `deleteMany` refused by an
   [`onDelete: Restrict`](/schema#ondelete-rules) rule, with `model`, `relation`, `target` and
   `count`.
-- `CyphraError` (the base class of all three): for example an `upsert` whose `where` has extra conditions
+- `UniqueConstraintError`: a write that duplicates an `@id`, `@unique` or `@@unique` value (see
+  [below](#unique-constraint-errors)).
+- `CyphraError` (the base class of all four): for example an `upsert` whose `where` has extra conditions
   that the existing node does not match.
+
+### Unique constraint errors
+
+Neo4j enforces `@id`, `@unique` and `@@unique` with the uniqueness constraints that `cyphra push`
+and migrations create. A write that breaks one throws a `UniqueConstraintError` instead of the
+driver's `Neo.ClientError.Schema.ConstraintValidationFailed` error, on Bolt and on the HTTP
+transport. The transaction is rolled back, so nothing from the operation is written.
+
+```ts
+import { UniqueConstraintError } from "cyphra";
+import { db } from "./db.js";
+
+try {
+  await db.user.create({ data: { email: "ada@example.com" } });
+} catch (e) {
+  if (e instanceof UniqueConstraintError && e.fields.includes("email")) {
+    // e.model === "User", e.constraint === "User_email_unique"
+    throw new Error("This email is already registered.");
+  }
+  throw e;
+}
+```
+
+| Property     | Value                                                                                                                                                                                                                   |
+| ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `model`      | Model that declares the constraint: the node model of the label, the interface for a field or `@@unique` declared on an interface, or the `relationship { … }` model. `undefined` for a label the schema does not have. |
+| `fields`     | Constrained fields, in the constraint's order (`["tenantId", "email"]` for `@@unique([tenantId, email])`).                                                                                                              |
+| `constraint` | Constraint name as `cyphra push` creates it (`User_email_unique`, `User_id_id`, a `@@unique` `name`), or `undefined` when the schema does not declare it.                                                               |
+| `code`       | The Neo4j code, `Neo.ClientError.Schema.ConstraintValidationFailed`.                                                                                                                                                    |
+| `gqlStatus`  | The GQL status when the server sends one (`22N79` on Neo4j 2025+).                                                                                                                                                      |
+| `cause`      | The original error: a `Neo4jError` (Bolt) or a `Neo4jHttpError` (HTTP).                                                                                                                                                 |
+
+The message names the model, fields and constraint, never the duplicate value (that stays in
+`cause.message`). Every write throws it: `create`, `createMany`, `update`, `updateMany`, `upsert`
+(when its `create` branch hits another unique field), nested `create`, `$edge` properties with a
+relationship `@unique`, and raw [`$cypher`](#raw-cypher) statements, also inside
+[`$transaction`](#transactions) (catch it there, or around the `$transaction` call). The `error`
+[event](#logging-and-tracing) of the failing statement still carries the Neo4j code. Errors from
+`db.$client` (sessions you run yourself) and from `@cyphra/graphql` are left as Neo4j raises them.
 
 Field names, labels and relationship types always come from your schema and unknown keys are rejected,
 so arguments cannot inject Cypher. Every value is sent as a parameter.

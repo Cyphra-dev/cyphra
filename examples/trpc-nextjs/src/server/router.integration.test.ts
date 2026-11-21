@@ -2,7 +2,12 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { TRPCError } from "@trpc/server";
-import { constraintStatementsFromSchema, indexStatementsFromSchema, parseSchema } from "cyphra";
+import {
+  UniqueConstraintError,
+  constraintStatementsFromSchema,
+  indexStatementsFromSchema,
+  parseSchema,
+} from "cyphra";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { createClient, type Db } from "./cyphra.gen";
 import { httpClient } from "./http-client";
@@ -84,7 +89,10 @@ describe.skipIf(!hasNeo)("tRPC router (Neo4j)", () => {
 
   it("returns CONFLICT for a duplicate email", async () => {
     await ada();
-    expect(await code(ada())).toBe("CONFLICT");
+    const err = await ada().catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(TRPCError);
+    expect(err).toMatchObject({ code: "CONFLICT", message: "Already exists (email)." });
+    expect((err as TRPCError).cause).toBeInstanceOf(UniqueConstraintError);
   });
 
   it("lists posts with filters and pagination", async () => {
