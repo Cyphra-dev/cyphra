@@ -82,8 +82,17 @@ export type ScalarFilter<T> = [NonNullable<T>] extends [readonly (infer E)[]]
               contains?: string;
               startsWith?: string;
               endsWith?: string;
+              /**
+               * `"insensitive"` compares lower-cased values (`toLower()`) for `equals`, `not`,
+               * `in`, `notIn`, `contains`, `startsWith` and `endsWith`. Range filters
+               * (`lt`, `gte`, …) stay case-sensitive. Default: `"default"` (case-sensitive).
+               */
+              mode?: QueryMode;
             }
           : unknown));
+
+/** Case sensitivity of string filters (same values as Prisma's `QueryMode`). */
+export type QueryMode = "default" | "insensitive";
 
 type RelationFilter<TM extends TypeMap, D extends RelationTypeDef> = D["many"] extends true
   ? {

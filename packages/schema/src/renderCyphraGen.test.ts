@@ -55,6 +55,11 @@ describe("renderCyphraGenSource", () => {
     expect(src).toContain('MEMBER_OF: "MEMBER_OF"');
   });
 
+  it("types a node without relations as Record<never, never> (no empty object type)", () => {
+    const src = renderCyphraGenSource(parseSchema("node Tag {\n  id String @id\n}\n"));
+    expect(src).toContain("    relations: Record<never, never>;");
+  });
+
   it("dedupes export keys for similar sanitized rel types", () => {
     const used = new Set<string>();
     expect(relTypeToExportKey("A-B", used)).toBe("A_B");

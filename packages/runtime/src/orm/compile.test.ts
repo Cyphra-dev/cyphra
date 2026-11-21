@@ -57,6 +57,27 @@ describe("compileWhere", () => {
     expect(dt.toStandardDate().getTime()).toBe(at.getTime());
   });
 
+  it('compiles mode: "insensitive" with toLower() on both sides', () => {
+    const { text, params } = where({
+      email: { equals: "A@X.io", mode: "insensitive" },
+      name: { startsWith: "Al", not: { in: ["BOB"] }, mode: "insensitive" },
+    });
+    expect(text).toBe(
+      "(toLower(n.`email`) = $p0) AND ((toLower(n.`name`) STARTS WITH $p1) AND (NOT (toLower(n.`name`) IN $p2)))",
+    );
+    expect(params).toEqual({ p0: "a@x.io", p1: "al", p2: ["bob"] });
+    // Range filters stay case-sensitive; mode "default" is the plain comparison.
+    expect(where({ name: { gt: "B", mode: "insensitive" } }).text).toBe("n.`name` > $p0");
+    expect(where({ email: { contains: "X", mode: "default" } }).text).toBe(
+      "n.`email` CONTAINS $p0",
+    );
+  });
+
+  it("rejects mode on non-String fields and unknown modes", () => {
+    expect(() => where({ age: { equals: 3, mode: "insensitive" } })).toThrow(CyphraValidationError);
+    expect(() => where({ email: { equals: "a", mode: "loose" } })).toThrow(CyphraValidationError);
+  });
+
   it("rejects unknown fields and operators (no identifier injection)", () => {
     expect(() => where({ "x` OR 1=1 //": 1 })).toThrow(CyphraValidationError);
     expect(() => where({ email: { regex: ".*" } })).toThrow(CyphraValidationError);

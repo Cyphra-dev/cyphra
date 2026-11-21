@@ -1,0 +1,56 @@
+// The app's schema before `npx @better-auth/cli generate`: a User with business relations.
+node User {
+  id       String    @id @default(cuid())
+  email    String    @unique
+  projects Project[] @relationship(type: "OWNS", direction: OUT)
+  name String
+  emailVerified Boolean
+  image String?
+  createdAt DateTime
+  updatedAt DateTime
+  sessions Session[] @relationship(type: "HAS_SESSION", direction: OUT)
+  accounts Account[] @relationship(type: "HAS_ACCOUNT", direction: OUT)
+}
+
+node Project {
+  id        String   @id @default(uuid())
+  title     String
+  createdAt DateTime @default(now())
+  owner     User     @relationship(type: "OWNS", direction: IN)
+}
+
+node Session {
+  id String @id @default(cuid())
+  expiresAt DateTime
+  token String @unique
+  createdAt DateTime
+  updatedAt DateTime
+  ipAddress String?
+  userAgent String?
+  user User @relationship(type: "HAS_SESSION", direction: IN)
+}
+
+node Account {
+  id String @id @default(cuid())
+  accountId String
+  providerId String
+  user User @relationship(type: "HAS_ACCOUNT", direction: IN)
+  accessToken String?
+  refreshToken String?
+  idToken String?
+  accessTokenExpiresAt DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope String?
+  password String?
+  createdAt DateTime
+  updatedAt DateTime
+}
+
+node Verification {
+  id String @id @default(cuid())
+  identifier String @index
+  value String
+  expiresAt DateTime
+  createdAt DateTime
+  updatedAt DateTime
+}

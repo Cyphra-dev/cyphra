@@ -90,6 +90,9 @@ describe("ORM types", () => {
     await db.post.findMany({ where: { published: { lt: true } } });
     // @ts-expect-error — numbers have no startsWith
     await db.user.findMany({ where: { age: { startsWith: "1" } } });
+    await db.user.findMany({ where: { email: { equals: "A@X.io", mode: "insensitive" } } });
+    // @ts-expect-error — mode is only for strings
+    await db.user.findMany({ where: { age: { equals: 1, mode: "insensitive" } } });
     // @ts-expect-error — to-one relations use is/isNot, not some
     await db.post.findMany({ where: { author: { some: {} } } });
   });

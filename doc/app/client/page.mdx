@@ -77,12 +77,20 @@ properties under **`$edge`**.
 | -------------------------------------------- | --------------------------------------------------------------- |
 | any scalar                                   | value (equals), `null` (absent), `equals`, `not`, `in`, `notIn` |
 | `Int`, `Float`, `String`, `DateTime`, `Date` | `lt`, `lte`, `gt`, `gte` (strings compare lexicographically)    |
-| `String`                                     | `contains`, `startsWith`, `endsWith`                            |
+| `String`                                     | `contains`, `startsWith`, `endsWith`, `mode`                    |
 | lists (`String[]`, …)                        | `has`, `hasEvery`, `hasSome`, `isEmpty`, `equals`               |
 | to-many relation                             | `some`, `none`, `every`                                         |
 | to-one relation                              | `is`, `isNot`, `null` (no related node)                         |
 
 Combine with `AND`, `OR` and `NOT`.
+
+`mode: "insensitive"` on a `String` filter compares lower-cased values (Cypher `toLower()`) for
+`equals`, `not`, `in`, `notIn`, `contains`, `startsWith` and `endsWith`. Range filters (`lt`, `gte`, …)
+stay case-sensitive. A property index is not used for these comparisons.
+
+```ts
+await db.user.findFirst({ where: { email: { equals: "Alice@Acme.io", mode: "insensitive" } } });
+```
 
 ## Writing
 

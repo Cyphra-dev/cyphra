@@ -104,3 +104,5 @@ jobs:
         run: |
           pnpm --filter @cyphra/runtime --fail-if-no-match exec vitest run src/client.integration.test.ts src/orm/orm.integration.test.ts
           pnpm --filter @cyphra/migrator --fail-if-no-match exec vitest run src/push.integration.test.ts src/migrate.integration.test.ts
+          # Better Auth conformance suites + adapter, typed-client and migration tests.
+          pnpm --filter @cyphra/better-auth --fail-if-no-match exec vitest run test/
