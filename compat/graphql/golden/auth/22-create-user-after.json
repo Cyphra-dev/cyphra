@@ -1,0 +1,17 @@
+{
+  "data": {
+    "createUsers": {
+      "users": [
+        {
+          "id": "u-cid",
+          "documents": [
+            {
+              "id": "d-cid",
+              "title": "Cid's"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

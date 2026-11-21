@@ -1,0 +1,7 @@
+# features: auth.field, auth.authentication, errors
+query {
+  users {
+    name
+    nickname
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "data": {
+    "users": [
+      {
+        "name": "Ann",
+        "documents": [
+          {
+            "title": "Ann public"
+          }
+        ],
+        "documentsConnection": {
+          "totalCount": 1,
+          "edges": [
+            {
+              "node": {
+                "title": "Ann public"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "name": "Ben",
+        "documents": [],
+        "documentsConnection": {
+          "totalCount": 0,
+          "edges": []
+        }
+      }
+    ]
+  }
+}

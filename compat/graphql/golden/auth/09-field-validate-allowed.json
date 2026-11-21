@@ -1,0 +1,14 @@
+{
+  "data": {
+    "users": [
+      {
+        "id": "u-ann",
+        "salary": 5000
+      },
+      {
+        "id": "u-ben",
+        "salary": 4000
+      }
+    ]
+  }
+}

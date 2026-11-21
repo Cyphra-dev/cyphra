@@ -1,0 +1,6 @@
+# features: auth.filter, filter.relationship
+query {
+  users(where: { documents: { some: { title: { eq: "Ben private" } } } }) {
+    name
+  }
+}

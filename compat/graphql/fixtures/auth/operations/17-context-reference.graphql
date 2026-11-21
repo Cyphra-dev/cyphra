@@ -1,0 +1,9 @@
+# features: auth.filter, auth.context, relationship
+query {
+  tags {
+    name
+    documents {
+      title
+    }
+  }
+}

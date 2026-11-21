@@ -1,0 +1,8 @@
+# features: auth.validate, auth.jwt, mutation.update, errors
+mutation {
+  updateDocuments(update: { title: { set: "Renamed" } }) {
+    documents {
+      id
+    }
+  }
+}

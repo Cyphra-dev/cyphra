@@ -27,6 +27,7 @@
   "dependencies": {
     "@cyphra/runtime": "workspace:*",
     "@cyphra/schema": "workspace:*",
+    "jose": "^6.2.18",
     "pluralize": "^8.0.0"
   },
   "peerDependencies": {

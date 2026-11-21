@@ -1,0 +1,24 @@
+# features: auth.validate, auth.jwt, mutation.create, mutation.connect
+mutation {
+  createDocuments(
+    input: [
+      {
+        id: "d-new"
+        title: "New"
+        public: false
+        owner: { connect: [{ where: { node: { id: { eq: "u-ann" } } } }] }
+      }
+    ]
+  ) {
+    info {
+      nodesCreated
+      relationshipsCreated
+    }
+    documents {
+      id
+      owner {
+        name
+      }
+    }
+  }
+}

@@ -21,12 +21,24 @@ import {
   type ReadExecutor,
   type WriteExecutor,
 } from "./execute.js";
-import { readTypeDefs, type V7Model } from "./model.js";
+import { AUTH_OPERATIONS, readTypeDefs, UnsupportedTypeDefsError, type V7Model } from "./model.js";
 import { buildV7Schema } from "./sdl.js";
+import { authContextFor, forbidden, type AuthContext } from "./auth/context.js";
+import { JwtDecoder, type Features } from "./auth/jwt.js";
+import { AuthRules } from "./auth/rules.js";
+import { CypherContext } from "./cypher/context.js";
+import { containsForbidden } from "./cypher/select.js";
 
 export type MakeSchemaOptions = ExecutorOptions & {
   /** v7 type definitions (`@node`, `@relationship`, …). */
   typeDefs: string;
+  /**
+   * v7 `features`. `authorization` configures JWT verification for `@authentication` /
+   * `@authorization`: the request's `context.token` (`Bearer <jwt>`) is verified with `key` (a
+   * secret, a JWKS `{ url }`, or a function of the context returning one). Without it, only a
+   * decoded `context.jwt` (trusted as-is) authenticates requests.
+   */
+  features?: Features;
 };
 
 type AnyRecord = Record<string, unknown>;
@@ -35,32 +47,44 @@ type AnyRecord = Record<string, unknown>;
 const byResponseKey: GraphQLFieldResolver<unknown, unknown> = (source, _args, _ctx, info) =>
   source && typeof source === "object" ? (source as AnyRecord)[info.path.key as string] : undefined;
 
+type Auth = { model: V7Model; decoder?: JwtDecoder };
+
+/** Throws `Forbidden` when the statement replaced a selection by the forbidden marker. */
+function checked<T>(decode: (rows: readonly unknown[]) => T): (rows: readonly unknown[]) => T {
+  return (rows) => {
+    if (containsForbidden(rows)) throw forbidden();
+    return decode(rows);
+  };
+}
+
 function rootReadResolver(
-  model: V7Model,
+  { model, decoder }: Auth,
   execute: ReadExecutor,
   nodeName: string,
   kind: "list" | "connection",
 ): GraphQLFieldResolver<unknown, unknown> {
-  return async (_source, args, _ctx, info: GraphQLResolveInfo) => {
+  return async (_source, args, ctx, info: GraphQLResolveInfo) => {
     const node = model.node(nodeName);
-    const compiler = new SelectionCompiler(model, info);
+    const auth = await authContextFor(ctx, model, decoder);
+    const compiler = new SelectionCompiler(model, info, auth);
     const compiled =
       kind === "list"
         ? compiler.rootList(node, args as AnyRecord, info.fieldNodes)
         : compiler.rootConnection(node, args as AnyRecord, info.fieldNodes);
-    return compiled.decode(await execute(compiled.cypher, compiled.params));
+    return checked(compiled.decode)(await execute(compiled.cypher, compiled.params));
   };
 }
 
 function rootMutationResolver(
-  model: V7Model,
+  { model, decoder }: Auth,
   execute: WriteExecutor,
   nodeName: string,
   kind: "create" | "update" | "delete",
 ): GraphQLFieldResolver<unknown, unknown> {
-  return async (_source, args, _ctx, info: GraphQLResolveInfo) => {
+  return async (_source, args, ctx, info: GraphQLResolveInfo) => {
     const node = model.node(nodeName);
-    const compiler = new MutationCompiler(model, info);
+    const auth = await authContextFor(ctx, model, decoder);
+    const compiler = new MutationCompiler(model, info, auth);
     const a = args as AnyRecord;
     const compiled =
       kind === "create"
@@ -68,12 +92,47 @@ function rootMutationResolver(
         : kind === "update"
           ? compiler.rootUpdate(node, a, info.fieldNodes)
           : compiler.rootDelete(node, a, info.fieldNodes);
-    return execute(compiled.cypher, compiled.params, compiled.decode);
+    // Decoded inside the transaction: a failed check throws and rolls the statement back.
+    return execute(compiled.cypher, compiled.params, checked(compiled.decode));
   };
 }
 
+/**
+ * Compiles every `@authorization` rule once with an empty context, so a rule that does not fit the
+ * type (unknown field, wrong operator, …) fails when the schema is built, not on a request.
+ */
+function checkRules(model: V7Model): void {
+  const auth: AuthContext = {
+    isAuthenticated: false,
+    jwt: undefined,
+    claims: undefined,
+    context: {},
+  };
+  for (const node of model.nodes) {
+    for (const attr of [undefined, ...node.attributes]) {
+      const annotation = attr ? attr.auth : node.auth;
+      if (!annotation?.authorization) continue;
+      const target = attr ? { ...node, auth: {} } : node;
+      const attrs = attr ? [attr] : [];
+      try {
+        const rules = new AuthRules(model, new CypherContext(), auth);
+        for (const op of AUTH_OPERATIONS) {
+          rules.filter("this", target, op, attrs);
+          rules.validations("this", target, op, "BEFORE", attrs);
+          rules.validations("this", target, op, "AFTER", attrs);
+        }
+      } catch (e) {
+        throw new UnsupportedTypeDefsError(
+          `${node.name}${attr ? `.${attr.name}` : ""}: invalid @authorization rule: ${(e as Error).message}`,
+        );
+      }
+    }
+  }
+}
+
 /** Attaches resolvers: one Cypher statement (and transaction) per root field. */
-function attachResolvers(schema: GraphQLSchema, model: V7Model, executors: Executors): void {
+function attachResolvers(schema: GraphQLSchema, auth: Auth, executors: Executors): void {
+  const model = auth.model;
   const execute = executors.read;
   for (const type of Object.values(schema.getTypeMap())) {
     if (!isObjectType(type) || type.name.startsWith("__")) continue;
@@ -82,9 +141,9 @@ function attachResolvers(schema: GraphQLSchema, model: V7Model, executors: Execu
   }
   const query = schema.getQueryType()!.getFields();
   for (const node of model.nodes) {
-    query[node.plural]!.resolve = rootReadResolver(model, execute, node.name, "list");
+    query[node.plural]!.resolve = rootReadResolver(auth, execute, node.name, "list");
     query[`${node.plural}Connection`]!.resolve = rootReadResolver(
-      model,
+      auth,
       execute,
       node.name,
       "connection",
@@ -94,7 +153,7 @@ function attachResolvers(schema: GraphQLSchema, model: V7Model, executors: Execu
   for (const node of model.nodes) {
     for (const kind of ["create", "update", "delete"] as const) {
       mutation[`${kind}${node.pascalPlural}`]!.resolve = rootMutationResolver(
-        model,
+        auth,
         executors.write,
         node.name,
         kind,
@@ -109,8 +168,9 @@ function attachResolvers(schema: GraphQLSchema, model: V7Model, executors: Execu
  *
  * Today: the full v7 schema (SDL identical to v7), the read API (list and connection queries,
  * filters, sorting, offset and cursor pagination, nested relationships and connections with edge
- * properties, connection `aggregate` selections and aggregation filters) and mutations (create,
- * update, delete with every nested operation and `info` counters). Authorization (#74) and
+ * properties, connection `aggregate` selections and aggregation filters), mutations (create,
+ * update, delete with every nested operation and `info` counters) and `@authentication` /
+ * `@authorization` (compiled into each statement; JWTs verified with `features.authorization`).
  * `@cypher` fields (#75) are in the schema but answer with a "Not implemented yet" error.
  *
  * @example
@@ -121,17 +181,24 @@ function attachResolvers(schema: GraphQLSchema, model: V7Model, executors: Execu
  */
 export function makeSchema(options: MakeSchemaOptions): GraphQLSchema {
   const model = readTypeDefs(options.typeDefs);
+  checkRules(model);
   const schema = buildV7Schema(model);
-  attachResolvers(schema, model, createExecutors(options));
+  const feature = options.features?.authorization;
+  const decoder = feature ? new JwtDecoder(feature) : undefined;
+  attachResolvers(schema, { model, decoder }, createExecutors(options));
   return schema;
 }
 
 /**
- * The GraphQL `contextValue` for a request. v7 reads the decoded JWT from `context.jwt`; it is
- * accepted for compatibility (authorization itself is #74).
+ * The GraphQL `contextValue` for a request, as v7 reads it: `token` is the `Authorization` header
+ * (`Bearer <jwt>`, verified with `features.authorization`), `jwt` a payload the server already
+ * verified (trusted as-is, takes precedence over `token`). Other keys are kept for
+ * `$context.<path>` references in rules.
  */
-export function contextFor(opts: { jwt?: Record<string, unknown> } = {}): Record<string, unknown> {
-  return opts.jwt ? { jwt: opts.jwt } : {};
+export function contextFor(
+  opts: { jwt?: Record<string, unknown>; token?: string; [key: string]: unknown } = {},
+): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(opts).filter(([, v]) => v !== undefined));
 }
 
 /**
@@ -151,5 +218,6 @@ export function cyphraSchema(typeDefs: string): {
 }
 
 export { readTypeDefs, UnsupportedTypeDefsError, type V7Model } from "./model.js";
+export type { AuthorizationFeature, Features, JwtKey } from "./auth/jwt.js";
 export { buildV7Schema } from "./sdl.js";
 export { cursorToOffset, offsetToCursor } from "./cypher/select.js";

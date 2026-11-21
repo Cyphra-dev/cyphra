@@ -1,0 +1,20 @@
+{
+  "data": {
+    "createDocuments": {
+      "info": {
+        "nodesCreated": 1,
+        "relationshipsCreated": 1
+      },
+      "documents": [
+        {
+          "id": "d-new",
+          "owner": [
+            {
+              "name": "Ann"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

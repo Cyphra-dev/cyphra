@@ -1,0 +1,6 @@
+# features: auth.filter, auth.token, auth.jwt-claim
+query {
+  documents {
+    id
+  }
+}

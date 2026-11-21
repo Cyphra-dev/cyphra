@@ -73,6 +73,8 @@ export type Attribute = {
   readonly cypher?: CypherAnnotation;
   /** User `@deprecated(reason)` on the field. */
   readonly deprecated?: string;
+  /** Field-level `@authentication` / `@authorization`. */
+  readonly auth?: AuthAnnotations;
 };
 
 export type Relationship = {
@@ -90,11 +92,72 @@ export type Relationship = {
   readonly deprecated?: string;
 };
 
-export type AuthRules = {
-  /** Operations covered by `@authentication` (all operations when the directive has no args). */
-  readonly authentication?: readonly string[];
-  /** `@authorization` present on the type. */
-  readonly authorization: boolean;
+/** Operations `@authentication` / `@authorization` rules apply to. */
+export const AUTH_OPERATIONS = [
+  "READ",
+  "AGGREGATE",
+  "CREATE",
+  "UPDATE",
+  "DELETE",
+  "CREATE_RELATIONSHIP",
+  "DELETE_RELATIONSHIP",
+  "SUBSCRIBE",
+] as const;
+export type AuthOperation = (typeof AUTH_OPERATIONS)[number];
+
+/** Operations a `filter` rule can name (v7 `AuthorizationFilterOperation`): no CREATE / SUBSCRIBE. */
+const FILTER_OPERATIONS: readonly AuthOperation[] = [
+  "READ",
+  "AGGREGATE",
+  "UPDATE",
+  "DELETE",
+  "CREATE_RELATIONSHIP",
+  "DELETE_RELATIONSHIP",
+];
+/** Operations a `validate` rule can name (v7 `AuthorizationValidateOperation`). */
+const VALIDATE_OPERATIONS: readonly AuthOperation[] = [
+  "READ",
+  "AGGREGATE",
+  "CREATE",
+  "UPDATE",
+  "DELETE",
+  "CREATE_RELATIONSHIP",
+  "DELETE_RELATIONSHIP",
+];
+
+type AnyRecord = Record<string, unknown>;
+
+/** `@authentication(operations, jwt)`. */
+export type AuthenticationAnnotation = {
+  readonly operations: ReadonlySet<AuthOperation>;
+  /** `jwt: { … }` filter the decoded JWT must match (checked in JS, before the statement runs). */
+  readonly jwt?: AnyRecord;
+};
+
+/** One `filter` rule of `@authorization`. */
+export type AuthorizationRule = {
+  readonly operations: readonly AuthOperation[];
+  /** Default `true`: the rule only holds for authenticated requests. */
+  readonly requireAuthentication: boolean;
+  /** `{ node, jwt, AND, OR, NOT }` with `$jwt.<claim>` / `$context.<path>` string references. */
+  readonly where: AnyRecord;
+};
+
+/** One `validate` rule of `@authorization`. */
+export type AuthorizationValidateRule = AuthorizationRule & {
+  /** Default both: checked before and after the write. */
+  readonly when: readonly ("BEFORE" | "AFTER")[];
+};
+
+export type AuthorizationAnnotation = {
+  readonly filter: readonly AuthorizationRule[];
+  readonly validate: readonly AuthorizationValidateRule[];
+};
+
+/** `@authentication` / `@authorization` of a type or of a field. */
+export type AuthAnnotations = {
+  readonly authentication?: AuthenticationAnnotation;
+  readonly authorization?: AuthorizationAnnotation;
 };
 
 export type NodeType = {
@@ -108,7 +171,7 @@ export type NodeType = {
   readonly pascalPlural: string;
   readonly attributes: readonly Attribute[];
   readonly relationships: readonly Relationship[];
-  readonly auth: AuthRules;
+  readonly auth: AuthAnnotations;
 };
 
 export type PropertiesType = {
@@ -124,6 +187,13 @@ export type EnumType = {
 
 export type V7Model = {
   readonly nodes: readonly NodeType[];
+  /** Schema-level `extend schema @authentication(…)`: applies to every operation on every type. */
+  readonly authentication?: AuthenticationAnnotation;
+  /**
+   * `@jwtClaim(path)` of the `@jwt` type: field name → dotted path in the JWT payload. Like v7, the
+   * mapping is applied to tokens the library verified, not to a decoded `jwt` passed in the context.
+   */
+  readonly jwtClaims: ReadonlyMap<string, string>;
   readonly properties: ReadonlyMap<string, PropertiesType>;
   readonly enums: ReadonlyMap<string, EnumType>;
   node(name: string): NodeType;
@@ -190,6 +260,8 @@ function typeRef(t: TypeNode): TypeRef {
 
 /** Directives without an effect on the read API that are accepted as-is. */
 const ACCEPTED_FIELD_DIRECTIVES = new Set([
+  "authentication",
+  "authorization",
   "id",
   "default",
   "timestamp",
@@ -269,19 +341,192 @@ function readAttribute(
         }
       : undefined,
     deprecated: deprecationReason(dirs),
+    auth: readAuthAnnotations(`${owner}.${f.name.value}`, dirs),
   };
 }
 
-const ALL_OPERATIONS = [
-  "READ",
-  "AGGREGATE",
-  "CREATE",
-  "UPDATE",
-  "DELETE",
-  "CREATE_RELATIONSHIP",
-  "DELETE_RELATIONSHIP",
-  "SUBSCRIBE",
-];
+function isRecord(v: unknown): v is AnyRecord {
+  return typeof v === "object" && v !== null && !Array.isArray(v);
+}
+
+function operationList(
+  where: string,
+  value: unknown,
+  allowed: readonly AuthOperation[],
+): AuthOperation[] | undefined {
+  if (value === undefined || value === null) return undefined;
+  const list = Array.isArray(value) ? value : [value];
+  return list.map((op) => {
+    if (typeof op !== "string" || !allowed.includes(op as AuthOperation)) {
+      throw new UnsupportedTypeDefsError(`${where}: invalid operation ${String(op)}.`);
+    }
+    return op as AuthOperation;
+  });
+}
+
+const RULE_WHERE_KEYS = new Set(["node", "jwt", "AND", "OR", "NOT"]);
+
+/** Checks the shape of a rule `where` (`{ node, jwt, AND, OR, NOT }`); values are compiled later. */
+function checkRuleWhere(where: string, value: unknown): AnyRecord {
+  if (!isRecord(value))
+    throw new UnsupportedTypeDefsError(`${where}: \`where\` must be an object.`);
+  for (const [k, v] of Object.entries(value)) {
+    if (!RULE_WHERE_KEYS.has(k)) {
+      throw new UnsupportedTypeDefsError(`${where}: unknown key ${k} in \`where\`.`);
+    }
+    if (k === "AND" || k === "OR") {
+      if (!Array.isArray(v)) throw new UnsupportedTypeDefsError(`${where}: ${k} must be a list.`);
+      v.forEach((x) => checkRuleWhere(where, x));
+    } else if (k === "NOT") {
+      checkRuleWhere(where, v);
+    } else if (!isRecord(v)) {
+      throw new UnsupportedTypeDefsError(`${where}: \`${k}\` must be an object.`);
+    }
+  }
+  return value;
+}
+
+function readRules(
+  where: string,
+  value: unknown,
+  allowed: readonly AuthOperation[],
+): {
+  operations: AuthOperation[];
+  requireAuthentication: boolean;
+  where: AnyRecord;
+  raw: AnyRecord;
+}[] {
+  if (value === undefined || value === null) return [];
+  const list = Array.isArray(value) ? value : [value];
+  return list.map((rule, i) => {
+    const at = `${where}[${i}]`;
+    if (!isRecord(rule)) throw new UnsupportedTypeDefsError(`${at}: a rule must be an object.`);
+    for (const k of Object.keys(rule)) {
+      if (!["operations", "requireAuthentication", "where", "when"].includes(k)) {
+        throw new UnsupportedTypeDefsError(`${at}: unknown rule argument ${k}.`);
+      }
+    }
+    if (
+      rule.requireAuthentication !== undefined &&
+      typeof rule.requireAuthentication !== "boolean"
+    ) {
+      throw new UnsupportedTypeDefsError(`${at}: requireAuthentication must be a Boolean.`);
+    }
+    return {
+      operations: operationList(at, rule.operations, allowed) ?? [...allowed],
+      requireAuthentication: rule.requireAuthentication !== false,
+      where: checkRuleWhere(at, rule.where),
+      raw: rule,
+    };
+  });
+}
+
+function readAuthentication(
+  where: string,
+  d: ConstDirectiveNode | undefined,
+): AuthenticationAnnotation | undefined {
+  if (!d) return undefined;
+  for (const a of d.arguments ?? []) {
+    if (!["operations", "jwt"].includes(a.name.value)) {
+      throw new UnsupportedTypeDefsError(
+        `${where}: @authentication(${a.name.value}) is not supported.`,
+      );
+    }
+  }
+  const opsArg = arg(d, "operations");
+  const jwtArg = arg(d, "jwt");
+  const jwt = jwtArg ? valueFromASTUntyped(jwtArg) : undefined;
+  if (jwt !== undefined && jwt !== null && !isRecord(jwt)) {
+    throw new UnsupportedTypeDefsError(`${where}: @authentication(jwt) must be an object.`);
+  }
+  const operations =
+    operationList(
+      `${where} @authentication`,
+      opsArg ? valueFromASTUntyped(opsArg) : undefined,
+      AUTH_OPERATIONS,
+    ) ?? AUTH_OPERATIONS;
+  return { operations: new Set(operations), jwt: (jwt as AnyRecord | null) ?? undefined };
+}
+
+function readAuthorization(
+  where: string,
+  d: ConstDirectiveNode | undefined,
+): AuthorizationAnnotation | undefined {
+  if (!d) return undefined;
+  for (const a of d.arguments ?? []) {
+    if (!["filter", "validate"].includes(a.name.value)) {
+      throw new UnsupportedTypeDefsError(
+        `${where}: @authorization(${a.name.value}) is not supported.`,
+      );
+    }
+  }
+  const filterArg = arg(d, "filter");
+  const validateArg = arg(d, "validate");
+  const filter = readRules(
+    `${where} @authorization(filter)`,
+    filterArg ? valueFromASTUntyped(filterArg) : undefined,
+    FILTER_OPERATIONS,
+  ).map((r) => {
+    if (r.raw.when !== undefined) {
+      throw new UnsupportedTypeDefsError(
+        `${where} @authorization(filter): \`when\` only applies to validate rules.`,
+      );
+    }
+    return {
+      operations: r.operations,
+      requireAuthentication: r.requireAuthentication,
+      where: r.where,
+    };
+  });
+  const validate = readRules(
+    `${where} @authorization(validate)`,
+    validateArg ? valueFromASTUntyped(validateArg) : undefined,
+    VALIDATE_OPERATIONS,
+  ).map((r) => {
+    const when = r.raw.when === undefined || r.raw.when === null ? ["BEFORE", "AFTER"] : r.raw.when;
+    const list = Array.isArray(when) ? when : [when];
+    for (const w of list) {
+      if (w !== "BEFORE" && w !== "AFTER") {
+        throw new UnsupportedTypeDefsError(
+          `${where} @authorization(validate): invalid when ${String(w)}.`,
+        );
+      }
+    }
+    return {
+      operations: r.operations,
+      requireAuthentication: r.requireAuthentication,
+      where: r.where,
+      when: list as ("BEFORE" | "AFTER")[],
+    };
+  });
+  return { filter, validate };
+}
+
+function readAuthAnnotations(
+  where: string,
+  dirs: readonly ConstDirectiveNode[] | undefined,
+): AuthAnnotations | undefined {
+  const authentication = readAuthentication(where, directive(dirs, "authentication"));
+  const authorization = readAuthorization(where, directive(dirs, "authorization"));
+  return authentication || authorization ? { authentication, authorization } : undefined;
+}
+
+/** `type JWT @jwt { roles: [String!]! @jwtClaim(path: "app.roles") }`: field name → payload path. */
+function readJwtClaims(o: ObjectTypeDefinitionNode): Map<string, string> {
+  const claims = new Map<string, string>();
+  for (const f of o.fields ?? []) {
+    for (const d of f.directives ?? []) {
+      if (d.name.value !== "jwtClaim") {
+        throw new UnsupportedTypeDefsError(
+          `${o.name.value}.${f.name.value}: @${d.name.value} is not supported on the @jwt type.`,
+        );
+      }
+    }
+    const path = stringArg(directive(f.directives, "jwtClaim"), "path");
+    if (path) claims.set(f.name.value, path);
+  }
+  return claims;
+}
 
 /**
  * Read v7 type definitions. Throws {@link UnsupportedTypeDefsError} for features `@cyphra/graphql`
@@ -292,8 +537,29 @@ export function readTypeDefs(typeDefs: string): V7Model {
   const doc = parse(typeDefs);
   const objects: ObjectTypeDefinitionNode[] = [];
   const enums = new Map<string, EnumType>();
+  let schemaAuthentication: AuthenticationAnnotation | undefined;
   for (const def of doc.definitions) {
     switch (def.kind) {
+      case Kind.SCHEMA_EXTENSION:
+      case Kind.SCHEMA_DEFINITION: {
+        if (def.operationTypes?.length) {
+          throw new UnsupportedTypeDefsError(
+            "schema: custom root operation types are not supported by @cyphra/graphql yet.",
+          );
+        }
+        for (const d of def.directives ?? []) {
+          if (d.name.value !== "authentication") {
+            throw new UnsupportedTypeDefsError(
+              `schema: @${d.name.value} is not supported by @cyphra/graphql yet.`,
+            );
+          }
+          if (schemaAuthentication) {
+            throw new UnsupportedTypeDefsError("schema: @authentication is set more than once.");
+          }
+          schemaAuthentication = readAuthentication("schema", d);
+        }
+        break;
+      }
       case Kind.OBJECT_TYPE_DEFINITION:
         objects.push(def);
         break;
@@ -327,6 +593,7 @@ export function readTypeDefs(typeDefs: string): V7Model {
 
   const properties = new Map<string, PropertiesType>();
   const nodeDefs: ObjectTypeDefinitionNode[] = [];
+  let jwtClaims: Map<string, string> | undefined;
   for (const o of objects) {
     const name = o.name.value;
     if (["Query", "Mutation", "Subscription"].includes(name)) {
@@ -346,11 +613,24 @@ export function readTypeDefs(typeDefs: string): V7Model {
         );
       }
     }
-    if (directive(o.directives, "jwt")) continue;
+    if (directive(o.directives, "jwt")) {
+      if (jwtClaims)
+        throw new UnsupportedTypeDefsError(`type ${name}: only one @jwt type is allowed.`);
+      jwtClaims = readJwtClaims(o);
+      continue;
+    }
     if (directive(o.directives, "relationshipProperties")) {
       properties.set(name, {
         name,
-        attributes: (o.fields ?? []).map((f) => readAttribute(name, f, enumNames)),
+        attributes: (o.fields ?? []).map((f) => {
+          const a = readAttribute(name, f, enumNames);
+          if (a.auth) {
+            throw new UnsupportedTypeDefsError(
+              `${name}.${f.name.value}: @authentication / @authorization on relationship properties are not supported.`,
+            );
+          }
+          return a;
+        }),
       });
       continue;
     }
@@ -372,6 +652,13 @@ export function readTypeDefs(typeDefs: string): V7Model {
       if (!rel) {
         attributes.push(readAttribute(name, f, enumNames));
         continue;
+      }
+      for (const d of f.directives ?? []) {
+        if (d.name.value === "authentication" || d.name.value === "authorization") {
+          throw new UnsupportedTypeDefsError(
+            `${name}.${f.name.value}: @${d.name.value} on a relationship field is not supported (put the rules on the related type).`,
+          );
+        }
       }
       const t = typeRef(f.type);
       if (!nodeNames.has(t.name)) {
@@ -410,7 +697,6 @@ export function readTypeDefs(typeDefs: string): V7Model {
     const labels = listArg(nodeDir, "labels") ?? [name];
     const pluralDir = directive(o.directives, "plural");
     const plural = entityPlural(name, stringArg(pluralDir, "value"));
-    const authn = directive(o.directives, "authentication");
     return {
       name,
       description: o.description?.value,
@@ -419,16 +705,15 @@ export function readTypeDefs(typeDefs: string): V7Model {
       pascalPlural: upperFirst(plural),
       attributes,
       relationships,
-      auth: {
-        authentication: authn ? (listArg(authn, "operations") ?? ALL_OPERATIONS) : undefined,
-        authorization: !!directive(o.directives, "authorization"),
-      },
+      auth: readAuthAnnotations(`type ${name}`, o.directives) ?? {},
     };
   });
 
   const byName = new Map(nodes.map((n) => [n.name, n]));
   return {
     nodes,
+    authentication: schemaAuthentication,
+    jwtClaims: jwtClaims ?? new Map(),
     properties,
     enums,
     node(name: string): NodeType {
@@ -437,9 +722,4 @@ export function readTypeDefs(typeDefs: string): V7Model {
       return n;
     },
   };
-}
-
-/** Whether READ on this type needs authentication or authorization (#74, not implemented yet). */
-export function readNeedsAuth(node: NodeType): boolean {
-  return node.auth.authorization || (node.auth.authentication?.includes("READ") ?? false);
 }

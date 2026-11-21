@@ -1,0 +1,14 @@
+# features: auth.validate, auth.jwt, mutation.update, mutation.nested-update
+mutation {
+  updateUsers(
+    where: { id: { eq: "u-ann" } }
+    update: { documents: [{ update: { node: { title: { set: "Edited" } } } }] }
+  ) {
+    users {
+      name
+      documents {
+        title
+      }
+    }
+  }
+}

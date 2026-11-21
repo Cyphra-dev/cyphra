@@ -72,7 +72,7 @@ export async function runOperation(
     schema,
     document: parse(op.document),
     variableValues: op.variables,
-    contextValue: impl.contextFor(op),
+    contextValue: await impl.contextFor(op),
   });
   return stringifyResult(normalizeResult(result, { ordered: op.ordered }));
 }

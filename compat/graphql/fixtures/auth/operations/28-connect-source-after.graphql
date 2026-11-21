@@ -1,0 +1,14 @@
+# features: auth.validate, auth.jwt, mutation.update, mutation.connect
+mutation {
+  updateDocuments(
+    where: { id: { eq: "d-4" } }
+    update: { owner: [{ connect: [{ where: { node: { id: { eq: "u-ann" } } } }] }] }
+  ) {
+    documents {
+      id
+      owner {
+        name
+      }
+    }
+  }
+}

@@ -205,14 +205,21 @@ describe("delete", () => {
   });
 });
 
-describe("not implemented yet", () => {
-  it("writes to types with authorization rules (#74)", async () => {
-    const { result, statements } = await run(
-      `mutation { createSecrets(input: [{ name: "x" }]) { info { nodesCreated } } }`,
-    );
-    expect(result.errors?.[0]?.message).toMatch(
-      /^Not implemented yet in @cyphra\/graphql \(see #74\)/,
-    );
-    expect(statements).toHaveLength(0);
+describe("authorization", () => {
+  it("compiles filter rules into the statement, the JWT claim as a parameter", async () => {
+    const { driver, statements } = fakeDriver(() => [{ nc: 0, nd: 0, rc: 0, rd: 0 }]);
+    const schema = makeSchema({ typeDefs, driver });
+    const result = await execute({
+      schema,
+      document: parse(`mutation { deleteSecrets { nodesDeleted } }`),
+      contextValue: { jwt: { sub: "alice" } },
+    });
+    expect(result.errors).toBeUndefined();
+    expect(statements).toHaveLength(1);
+    expect(statements[0]!.cypher.split("\n").slice(0, 2)).toEqual([
+      "MATCH (this0:`Secret`)",
+      "WHERE ($p0 = true) AND (($p1 IS NOT NULL AND this0.`name` = $p1))",
+    ]);
+    expect(statements[0]!.params).toMatchObject({ p0: true, p1: "alice" });
   });
 });

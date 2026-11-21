@@ -1,0 +1,17 @@
+# features: auth.filter, auth.context, auth.validate, mutation.update, mutation.connect
+mutation {
+  updateDocuments(
+    where: { id: { eq: "d-3" } }
+    update: { tags: [{ connect: [{ where: { node: { name: { eq: "red" } } } }] }] }
+  ) {
+    documents {
+      id
+      tags {
+        name
+        documents {
+          title
+        }
+      }
+    }
+  }
+}

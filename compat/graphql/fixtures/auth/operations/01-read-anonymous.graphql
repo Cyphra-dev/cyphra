@@ -1,0 +1,7 @@
+# features: auth.filter, auth.require-authentication
+query {
+  documents {
+    id
+    title
+  }
+}

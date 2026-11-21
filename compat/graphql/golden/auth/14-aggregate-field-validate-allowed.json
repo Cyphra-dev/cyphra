@@ -1,0 +1,16 @@
+{
+  "data": {
+    "usersConnection": {
+      "aggregate": {
+        "count": {
+          "nodes": 2
+        },
+        "node": {
+          "salary": {
+            "max": 5000
+          }
+        }
+      }
+    }
+  }
+}

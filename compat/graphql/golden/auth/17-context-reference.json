@@ -1,0 +1,17 @@
+{
+  "data": {
+    "tags": [
+      {
+        "name": "red",
+        "documents": [
+          {
+            "title": "Ann private"
+          },
+          {
+            "title": "Ann public"
+          }
+        ]
+      }
+    ]
+  }
+}

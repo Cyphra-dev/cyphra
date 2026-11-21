@@ -1,0 +1,7 @@
+# features: auth.field, auth.validate, auth.jwt, errors
+query {
+  users {
+    id
+    salary
+  }
+}

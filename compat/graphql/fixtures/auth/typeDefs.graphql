@@ -1,0 +1,85 @@
+extend schema @authentication(operations: [DELETE])
+
+type JWT @jwt {
+  roles: [String!] @jwtClaim(path: "app.roles")
+}
+
+type User
+  @node
+  @authorization(
+    validate: [
+      { operations: [UPDATE, DELETE], where: { node: { id: { eq: "$jwt.sub" } } } }
+      { operations: [CREATE], when: [AFTER], where: { node: { id: { eq: "$jwt.sub" } } } }
+    ]
+  ) {
+  id: ID!
+  name: String!
+  nickname: String @authentication(operations: [READ, UPDATE])
+  phone: String
+    @authorization(filter: [{ operations: [READ], where: { node: { id: { eq: "$jwt.sub" } } } }])
+  salary: Int
+    @authorization(
+      validate: [
+        { operations: [READ, AGGREGATE], where: { jwt: { roles: { includes: "hr" } } } }
+        { operations: [UPDATE], where: { jwt: { roles: { includes: "hr" } } } }
+      ]
+    )
+  documents: [Document!]! @relationship(type: "OWNS", direction: OUT)
+}
+
+type Document
+  @node
+  @authorization(
+    filter: [
+      {
+        operations: [READ, AGGREGATE]
+        where: {
+          OR: [
+            { node: { public: { eq: true } } }
+            { node: { owner: { single: { id: { eq: "$jwt.sub" } } } } }
+            { jwt: { roles: { includes: "admin" } } }
+          ]
+        }
+      }
+      {
+        operations: [READ]
+        requireAuthentication: false
+        where: { node: { public: { eq: true } } }
+      }
+    ]
+    validate: [
+      {
+        operations: [CREATE, UPDATE]
+        when: [AFTER]
+        where: { node: { owner: { single: { id: { eq: "$jwt.sub" } } } } }
+      }
+      { operations: [DELETE], where: { jwt: { roles: { includes: "admin" } } } }
+      {
+        operations: [CREATE_RELATIONSHIP, DELETE_RELATIONSHIP]
+        where: { node: { owner: { single: { id: { eq: "$jwt.sub" } } } } }
+      }
+    ]
+  ) {
+  id: ID!
+  title: String!
+  public: Boolean!
+  owner: [User!]! @relationship(type: "OWNS", direction: IN)
+  tags: [Tag!]! @relationship(type: "TAGGED", direction: OUT)
+}
+
+type Tag
+  @node
+  @authorization(
+    filter: [
+      {
+        operations: [READ]
+        requireAuthentication: false
+        where: { node: { org: { eq: "$context.org" } } }
+      }
+    ]
+  )
+  @authentication(operations: [CREATE, DELETE], jwt: { roles: { includes: "admin" } }) {
+  name: String!
+  org: String!
+  documents: [Document!]! @relationship(type: "TAGGED", direction: IN)
+}

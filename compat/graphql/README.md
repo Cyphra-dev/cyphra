@@ -14,6 +14,9 @@ fixtures/<app>/
   operations/NN-name.graphql  one operation per file (header comments, see below)
   operations/NN-name.variables.json   optional variables
   operations/NN-name.jwt.json         optional decoded JWT payload (passed as context `jwt`)
+  operations/NN-name.token.json       optional { payload, key? }: signed (HS256) and passed as
+                                      context `token` (`Bearer <jwt>`); `key` forges a signature
+  operations/NN-name.context.json     optional extra context values (`$context.<path>` rules)
 golden/<app>/schema.graphql   lexicographicSortSchema + printSchema of the reference schema
 golden/<app>/NN-name.json     normalized result of each operation
 src/implementations.ts        the GraphQLImplementation adapters (@neo4j/graphql, @cyphra/graphql)
@@ -51,7 +54,9 @@ pnpm --filter compat-graphql report --update-expected   # also rewrite cyphra-ex
    - `# features: filter.string, sort` tags used to group the report by feature;
    - `# ordered` when array order is part of the expected result (sort, pagination). Without it,
      every array in the result is sorted before comparison, because Neo4j order is unspecified.
-3. Optional `NN-name.variables.json` and `NN-name.jwt.json`.
+3. Optional `NN-name.variables.json`, `NN-name.jwt.json`, `NN-name.token.json` and
+   `NN-name.context.json`. Both implementations get the same context, and verify tokens with the
+   suite's test key (`JWT_KEY` in `src/implementations.ts`, not a secret).
 4. Run `pnpm --filter compat-graphql golden`, read the new golden files to check the results are
    what `@neo4j/graphql` really returns, and commit them with `REPORT.md`.
 
@@ -74,11 +79,12 @@ type GraphQLImplementation = {
     typeDefs: string,
     options: { driver: Driver; jwt: { key: string } },
   ): Promise<GraphQLSchema>;
-  contextFor(op: Operation): Record<string, unknown>;
+  contextFor(op: Operation): Record<string, unknown> | Promise<Record<string, unknown>>;
 };
 ```
 
-`@cyphra/graphql` is registered with `compat.v7.makeSchema({ typeDefs, driver })` and checked
+`@cyphra/graphql` is registered with
+`compat.v7.makeSchema({ typeDefs, driver, features: { authorization: { key } } })` and checked
 against the same goldens. `skipReason` lets an adapter opt out (the check is then `skipped`).
 
 ## Progress mode

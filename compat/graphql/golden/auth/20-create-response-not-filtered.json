@@ -1,0 +1,12 @@
+{
+  "data": {
+    "createTags": {
+      "tags": [
+        {
+          "name": "green",
+          "org": "globex"
+        }
+      ]
+    }
+  }
+}

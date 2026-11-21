@@ -23,13 +23,31 @@
  * The response (`movies { … }`) is projected with the read compiler after every write of the
  * statement (the `collect` before the projection waits for all of them).
  *
+ * Authorization (v7 7.6): `@authentication` is checked before the statement is built. `filter` rules
+ * restrict the nodes an operation matches (UPDATE, DELETE, CREATE_RELATIONSHIP and
+ * DELETE_RELATIONSHIP on the target of `connect` / `disconnect`). `validate` rules are evaluated in
+ * the statement: BEFORE checks right after the match (captured before any write), AFTER checks once
+ * the node's writes (nested ones included) are done; for `connect` / `disconnect` the source node is
+ * checked too (AFTER only for `connect`, like v7). A failed check makes the statement return its
+ * message: the decoder throws `Forbidden` inside the transaction, which is rolled back, and the
+ * response data of that statement is not returned. The update response applies the READ rules to
+ * the updated nodes; the create response does not (v7), its nested selections do.
+ *
  * @packageDocumentation
  */
 
 import { GraphQLError, type FieldNode } from "graphql";
 import { isInt } from "neo4j-driver";
-import { FOLLOW_UP, notImplemented } from "../errors.js";
-import type { Attribute, NodeType, PropertiesType, Relationship, V7Model } from "../model.js";
+import { checkAuthentication, type AuthContext } from "../auth/context.js";
+import type { AuthRules } from "../auth/rules.js";
+import type {
+  Attribute,
+  AuthOperation,
+  NodeType,
+  PropertiesType,
+  Relationship,
+  V7Model,
+} from "../model.js";
 import { labels, q, type CypherContext } from "./context.js";
 import { collectFields, subSelections, SelectionCompiler, type SelectionInfo } from "./select.js";
 import { castValue, encodeValue, relationshipPattern, valueExpr, WhereCompiler } from "./where.js";
@@ -172,23 +190,55 @@ export class MutationCompiler {
   private readonly select: SelectionCompiler;
   private readonly where: WhereCompiler;
   private readonly ctx: CypherContext;
+  private readonly rules: AuthRules;
 
   constructor(
     private readonly model: V7Model,
     private readonly info: SelectionInfo,
+    private readonly auth: AuthContext,
   ) {
-    this.select = new SelectionCompiler(model, info);
+    this.select = new SelectionCompiler(model, info, auth);
     this.ctx = this.select.ctx;
-    this.where = new WhereCompiler(model, this.ctx, (n) => this.select.assertReadable(n));
+    this.rules = this.select.rules;
+    this.where = new WhereCompiler(model, this.ctx);
   }
 
-  private assertWritable(node: NodeType): void {
-    if (node.auth.authorization || node.auth.authentication?.length) {
-      throw notImplemented(
-        `writing ${node.name}, which has @authentication / @authorization rules`,
-        FOLLOW_UP.authorization,
-      );
+  /** `@authentication` for `operation` on the type and on the written `fields`. */
+  private authenticate(
+    node: NodeType,
+    operation: AuthOperation,
+    fields: readonly string[] = [],
+  ): void {
+    checkAuthentication(this.model, this.auth, node, [operation]);
+    for (const f of fields) checkAuthentication(this.model, this.auth, node, [operation], f);
+  }
+
+  /** Attributes written by a create / update input (`title`, `title_SET`, …). */
+  private writtenAttributes(node: NodeType, input: unknown): Attribute[] {
+    if (!isPlainObject(input)) return [];
+    const out = new Set<Attribute>();
+    for (const [key, value] of Object.entries(input)) {
+      if (value === undefined) continue;
+      const attr =
+        node.attributes.find((a) => a.name === key) ??
+        node.attributes.find(
+          (a) =>
+            key.startsWith(`${a.name}_`) && key.slice(a.name.length + 1) in LEGACY_UPDATE_OPERATORS,
+        );
+      if (attr) out.add(attr);
     }
+    return [...out];
+  }
+
+  /**
+   * Evaluates `check` (a `CASE WHEN … THEN 'Forbidden' END`) on the current rows and keeps its result
+   * (`WITH *, … AS authN`), so a BEFORE check sees the graph as it was before the writes that follow.
+   */
+  private capture(block: Block, check: string | undefined): void {
+    if (check === undefined) return;
+    const v = this.ctx.variable("auth");
+    block.add(`WITH *, ${check} AS ${v}`);
+    block.check([v]);
   }
 
   private props(rel: Relationship): PropertiesType | undefined {
@@ -353,7 +403,12 @@ export class MutationCompiler {
     input: unknown,
     afterCreate?: () => void,
   ): void {
-    this.assertWritable(node);
+    const written = this.writtenAttributes(node, input);
+    this.authenticate(
+      node,
+      "CREATE",
+      written.map((a) => a.name),
+    );
     block.add(`CREATE (${v}${labels(node.labels)})`);
     const sets = [
       ...onCreateGenerated(v, node.attributes),
@@ -362,13 +417,17 @@ export class MutationCompiler {
     if (sets.length) block.add(`SET ${sets.join(", ")}`);
     block.count("nc", "1");
     afterCreate?.();
-    if (!isPlainObject(input)) return;
-    for (const rel of node.relationships) {
-      const field = input[rel.name];
-      if (!isPlainObject(field)) continue;
-      for (const el of asList(field.create)) this.nestedCreate(block, v, rel, el);
-      for (const el of asList(field.connect)) this.connect(block, v, rel, el);
+    if (isPlainObject(input)) {
+      for (const rel of node.relationships) {
+        const field = input[rel.name];
+        if (!isPlainObject(field)) continue;
+        for (const el of asList(field.create)) this.nestedCreate(block, v, rel, el);
+        for (const el of asList(field.connect)) this.connect(block, v, rel, el);
+      }
     }
+    // CREATE rules are AFTER rules (v7), checked once the nested writes are done.
+    const after = this.rules.check(this.rules.fails(v, node, "CREATE", "AFTER", written));
+    if (after) block.check([after]);
   }
 
   /** `{ node, edge }` of a relationship `create`: a new related node and the edge to it. */
@@ -397,12 +456,21 @@ export class MutationCompiler {
   private connect(block: Block, from: string, rel: Relationship, el: unknown): void {
     if (!isPlainObject(el)) return;
     const target = this.model.node(rel.target);
-    this.assertWritable(target);
+    const source = this.model.node(rel.source);
+    this.authenticate(target, "CREATE_RELATIONSHIP");
+    this.authenticate(source, "CREATE_RELATIONSHIP");
     const inner = new Block();
     const t = this.ctx.variable("this");
     const where = isPlainObject(el.where) ? el.where.node : undefined;
-    const pred = this.where.node(t, target, where);
+    const pred = and([
+      this.where.node(t, target, where),
+      this.rules.filter(t, target, "CREATE_RELATIONSHIP"),
+    ]);
     inner.add(`MATCH (${t}${labels(target.labels)})${pred ? ` WHERE ${pred}` : ""}`);
+    this.capture(
+      inner,
+      this.rules.check(this.rules.fails(t, target, "CREATE_RELATIONSHIP", "BEFORE")),
+    );
     for (const nested of asList(el.connect)) {
       if (!isPlainObject(nested)) continue;
       for (const [name, els] of Object.entries(nested)) {
@@ -418,6 +486,11 @@ export class MutationCompiler {
       if (sets.length) inner.add(`SET ${sets.join(", ")}`);
     }
     inner.count("rc", "1");
+    const after = [
+      this.rules.check(this.rules.fails(t, target, "CREATE_RELATIONSHIP", "AFTER")),
+      this.rules.check(this.rules.fails(from, source, "CREATE_RELATIONSHIP", "AFTER")),
+    ].filter((c): c is string => c !== undefined);
+    if (after.length) inner.check(after);
     this.call(block, [from], inner);
   }
 
@@ -462,15 +535,26 @@ export class MutationCompiler {
   private nestedUpdate(block: Block, from: string, rel: Relationship, el: unknown): void {
     if (!isPlainObject(el)) return;
     const target = this.model.node(rel.target);
-    this.assertWritable(target);
+    const written = this.writtenAttributes(target, el.node);
+    this.authenticate(
+      target,
+      "UPDATE",
+      written.map((a) => a.name),
+    );
+    // v7 applies the type's UPDATE rules when attributes or nested `update`s are written.
+    const typeRules = written.length > 0 || this.hasNestedUpdate(target, el.node);
     const props = this.props(rel);
     const inner = new Block();
     const t = this.ctx.variable("this");
     const r = this.ctx.variable("edge");
-    const pred = this.where.connection(r, t, rel, el.where);
+    const pred = and([
+      this.where.connection(r, t, rel, el.where),
+      typeRules ? this.rules.filter(t, target, "UPDATE") : undefined,
+    ]);
     inner.add(
       `MATCH ${relationshipPattern(this.model, from, rel, t, r)}${pred ? ` WHERE ${pred}` : ""}`,
     );
+    this.capture(inner, this.updateCheck(t, target, "BEFORE", written, typeRules));
     const checks: string[] = [];
     const sets = [
       ...onUpdateGenerated(t, target.attributes),
@@ -488,21 +572,78 @@ export class MutationCompiler {
     if (sets.length) inner.add(`SET ${sets.join(", ")}`);
     inner.check(checks);
     this.updateRelationships(inner, t, target, el.node);
+    const after = this.updateCheck(t, target, "AFTER", written, typeRules);
+    if (after) inner.check([after]);
     if (!inner.hasCounts() && inner.clauses.length === 1) return;
     this.call(block, [from], inner);
+  }
+
+  /** Whether an update input has a nested `update` on one of its relationships. */
+  private hasNestedUpdate(node: NodeType, input: unknown): boolean {
+    if (!isPlainObject(input)) return false;
+    return node.relationships.some((rel) =>
+      asList(input[rel.name]).some(
+        (el) => isPlainObject(el) && el.update !== undefined && el.update !== null,
+      ),
+    );
+  }
+
+  /** UPDATE `validate` check: the type's rules (when they apply) and the written attributes' rules. */
+  private updateCheck(
+    v: string,
+    node: NodeType,
+    when: "BEFORE" | "AFTER",
+    written: readonly Attribute[],
+    typeRules: boolean,
+  ): string | undefined {
+    const validations = [
+      ...(typeRules ? this.rules.validations(v, node, "UPDATE", when) : []),
+      ...written.flatMap((a) =>
+        this.rules.validations(v, { ...node, auth: {} }, "UPDATE", when, [a]),
+      ),
+    ];
+    return this.rules.check(this.rules.failure(validations));
   }
 
   /** `{ where, disconnect }`: deletes the matching relationships (then nested disconnects). */
   private disconnect(block: Block, from: string, rel: Relationship, el: unknown): void {
     if (!isPlainObject(el)) return;
     const target = this.model.node(rel.target);
-    this.assertWritable(target);
+    const source = this.model.node(rel.source);
+    this.authenticate(target, "DELETE_RELATIONSHIP");
+    this.authenticate(source, "DELETE_RELATIONSHIP");
     const inner = new Block();
     const t = this.ctx.variable("this");
     const r = this.ctx.variable("edge");
-    const pred = this.where.connection(r, t, rel, el.where);
-    inner.add(
-      `MATCH ${relationshipPattern(this.model, from, rel, t, r)}${pred ? ` WHERE ${pred}` : ""}`,
+    const pred = and([
+      this.where.connection(r, t, rel, el.where),
+      this.rules.filter(t, target, "DELETE_RELATIONSHIP"),
+    ]);
+    const pattern = relationshipPattern(this.model, from, rel, t, r);
+    // v7 matches the targets with OPTIONAL MATCH: the source is checked even when nothing matches,
+    // and the target rules are then evaluated once on `null`.
+    const sourceBefore = this.rules.fails(from, source, "DELETE_RELATIONSHIP", "BEFORE");
+    const targetOnNull = this.onNull(t, (n) =>
+      this.rules.failure([
+        ...this.rules.validations(n, target, "DELETE_RELATIONSHIP", "BEFORE"),
+        ...this.rules.validations(n, target, "DELETE_RELATIONSHIP", "AFTER"),
+      ]),
+    );
+    this.capture(
+      block,
+      this.rules.check(
+        orParts([
+          sourceBefore,
+          targetOnNull
+            ? `(NOT EXISTS { MATCH ${pattern}${pred ? ` WHERE ${pred}` : ""} } AND ${targetOnNull})`
+            : undefined,
+        ]),
+      ),
+    );
+    inner.add(`MATCH ${pattern}${pred ? ` WHERE ${pred}` : ""}`);
+    this.capture(
+      inner,
+      this.rules.check(this.rules.fails(t, target, "DELETE_RELATIONSHIP", "BEFORE")),
     );
     if (isPlainObject(el.disconnect)) {
       for (const [name, els] of Object.entries(el.disconnect)) {
@@ -513,7 +654,25 @@ export class MutationCompiler {
     if (inner.clauses.length > 1) inner.add("WITH *");
     inner.add(`DELETE ${r}`);
     inner.count("rd", "1");
+    const targetAfter = this.rules.check(
+      this.rules.fails(t, target, "DELETE_RELATIONSHIP", "AFTER"),
+    );
+    if (targetAfter) inner.check([targetAfter]);
     this.call(block, [from], inner);
+    this.capture(
+      block,
+      this.rules.check(this.rules.fails(from, source, "DELETE_RELATIONSHIP", "AFTER")),
+    );
+  }
+
+  /**
+   * `failure(n)` evaluated with `n` bound to `null` (`[n IN [null] | …][0]`), or `undefined` when there
+   * are no rules: what v7's OPTIONAL MATCH checks when no node matched.
+   */
+  private onNull(name: string, failure: (n: string) => string | undefined): string | undefined {
+    const n = this.ctx.variable(`${name}_null`);
+    const f = failure(n);
+    return f === undefined ? undefined : `[${n} IN [null] | ${f}][0]`;
   }
 
   // ---------------------------------------------------------------------------------------------
@@ -525,8 +684,13 @@ export class MutationCompiler {
    * matching `where` and, through nested `delete`, nodes related to them. `match` is the chain of
    * `MATCH … WHERE …` that binds `t`.
    */
-  private deleteLists(match: string, t: string, node: NodeType, del: unknown): string[] {
-    this.assertWritable(node);
+  private deleteLists(
+    match: string,
+    t: string,
+    node: NodeType,
+    del: unknown,
+    failures: string[],
+  ): string[] {
     const lists = [`COLLECT { ${match} RETURN DISTINCT ${t} }`];
     if (!isPlainObject(del)) return lists;
     for (const [name, els] of Object.entries(del)) {
@@ -534,14 +698,41 @@ export class MutationCompiler {
       const target = this.model.node(rel.target);
       for (const el of asList(els)) {
         if (!isPlainObject(el)) continue;
-        const u = this.ctx.variable("this");
-        const r = this.ctx.variable("edge");
-        const pred = this.where.connection(r, u, rel, el.where);
-        const chain = `${match} MATCH ${relationshipPattern(this.model, t, rel, u, r)}${pred ? ` WHERE ${pred}` : ""}`;
-        lists.push(...this.deleteLists(chain, u, target, el.delete));
+        const { chain, u } = this.nestedDeleteMatch(match, t, rel, target, el, failures);
+        lists.push(...this.deleteLists(chain, u, target, el.delete, failures));
       }
     }
     return lists;
+  }
+
+  /**
+   * `MATCH` of a nested `{ where, delete }` from `t` (after `parent`, the chain binding `t`), with the
+   * target's DELETE filter; pushes to `failures` the list of failed DELETE validations of the matched
+   * nodes (v7: OPTIONAL MATCH, so the rules are also evaluated on `null` when nothing matches).
+   */
+  private nestedDeleteMatch(
+    parent: string,
+    t: string,
+    rel: Relationship,
+    target: NodeType,
+    el: AnyRecord,
+    failures: string[],
+  ): { chain: string; u: string } {
+    this.authenticate(target, "DELETE");
+    const u = this.ctx.variable("this");
+    const r = this.ctx.variable("edge");
+    const pred = and([
+      this.where.connection(r, u, rel, el.where),
+      this.rules.filter(u, target, "DELETE"),
+    ]);
+    const step = `${relationshipPattern(this.model, t, rel, u, r)}${pred ? ` WHERE ${pred}` : ""}`;
+    const failure = this.rules.fails(u, target, "DELETE", "BEFORE");
+    if (failure) {
+      failures.push(
+        `COLLECT { ${parent ? `${parent} ` : ""}OPTIONAL MATCH ${step} WITH * WHERE ${failure} RETURN ${this.rules.forbiddenMessage()} }`,
+      );
+    }
+    return { chain: `${parent ? `${parent} ` : ""}MATCH ${step}`, u };
   }
 
   /**
@@ -567,13 +758,19 @@ export class MutationCompiler {
   private nestedDelete(block: Block, from: string, rel: Relationship, el: unknown): void {
     if (!isPlainObject(el)) return;
     const target = this.model.node(rel.target);
-    const t = this.ctx.variable("this");
-    const r = this.ctx.variable("edge");
-    const pred = this.where.connection(r, t, rel, el.where);
-    const match = `MATCH ${relationshipPattern(this.model, from, rel, t, r)}${pred ? ` WHERE ${pred}` : ""}`;
-    const lists = this.deleteLists(match, t, target, el.delete);
+    const failures: string[] = [];
+    const { chain, u } = this.nestedDeleteMatch("", from, rel, target, el, failures);
+    const lists = this.deleteLists(chain, u, target, el.delete, failures);
     const inner = new Block();
-    this.deleteNodes(inner, `(${lists.join(" + ")})`, []);
+    const keep: string[] = [];
+    if (failures.length) {
+      // Evaluated before anything is deleted.
+      const f = this.ctx.variable("authDelete");
+      inner.add(`WITH ${failures.join(" + ")} AS ${f}`);
+      inner.errors.push(f);
+      keep.push(f);
+    }
+    this.deleteNodes(inner, `(${lists.join(" + ")})`, keep);
     this.call(block, [from], inner);
   }
 
@@ -591,6 +788,8 @@ export class MutationCompiler {
     info: string,
     node: NodeType,
     fieldNodes: readonly FieldNode[],
+    /** Apply the READ rules to the returned nodes (update; v7 does not for create). */
+    readRules: boolean,
   ): CompiledMutation {
     const list = this.ctx.variable("nodes");
     block.add(`WITH ${nodes} AS ${list}, ${info} AS info`);
@@ -612,9 +811,14 @@ export class MutationCompiler {
       } else if (name === node.plural) {
         const v = this.ctx.variable("this");
         const d = this.ctx.variable("data");
+        const auth = readRules ? this.select.readRules(v, node, nodesOfKey) : {};
         const proj = this.select.projectNode(v, node, nodesOfKey);
+        const value = auth.failure
+          ? `CASE WHEN ${auth.failure} THEN ${this.select.forbiddenMap()} ELSE ${proj.expr} END`
+          : proj.expr;
+        const filter = auth.filter ? `\n  WITH ${v} WHERE ${auth.filter}` : "";
         block.add(
-          `CALL (${list}) {\n  UNWIND ${list} AS ${v}\n  RETURN collect(${proj.expr}) AS ${d}\n}`,
+          `CALL (${list}) {\n  UNWIND ${list} AS ${v}${filter}\n  RETURN collect(${value}) AS ${d}\n}`,
         );
         entries.push(`${q(key)}: ${d}`);
         decoders.push([
@@ -627,7 +831,11 @@ export class MutationCompiler {
       }
     }
     const data = entries.length ? `{ ${entries.join(", ")} }` : "{}";
-    block.add(`RETURN { info: info, data: ${data} } AS this`);
+    // A failed check: the statement is rolled back and returns no data.
+    const gated = block.errors.length
+      ? `CASE WHEN size(info.errors) = 0 THEN ${data} ELSE {} END`
+      : data;
+    block.add(`RETURN { info: info, data: ${gated} } AS this`);
     return {
       cypher: block.clauses.join("\n"),
       params: this.ctx.params,
@@ -642,15 +850,17 @@ export class MutationCompiler {
 
   /** `createMovies(input: [...])`. */
   rootCreate(node: NodeType, args: AnyRecord, fieldNodes: readonly FieldNode[]): CompiledMutation {
-    this.assertWritable(node);
+    this.authenticate(node, "CREATE");
     const block = new Block();
     const groups: string[] = [];
     const inputs = asList(args.input);
+    // Inputs of types with CREATE checks are created one by one (each gets its checks).
+    const checked = this.hasCreateChecks(node);
     let i = 0;
     while (i < inputs.length) {
       // Consecutive inputs without relationship fields share one `UNWIND`.
       let j = i;
-      while (j < inputs.length && !this.hasRelationshipInput(node, inputs[j])) j++;
+      while (j < inputs.length && !checked && !this.hasRelationshipInput(node, inputs[j])) j++;
       if (j > i) {
         groups.push(this.createFlat(block, node, inputs.slice(i, j)));
         i = j;
@@ -675,6 +885,17 @@ export class MutationCompiler {
       block.aggregate(false),
       node,
       fieldNodes,
+      false,
+    );
+  }
+
+  /** Whether creating `node` has `validate` rules or field-level `@authentication` to check. */
+  private hasCreateChecks(node: NodeType): boolean {
+    const rules = [node.auth, ...node.attributes.map((a) => a.auth)];
+    return rules.some(
+      (a) =>
+        a?.authorization?.validate.some((r) => r.operations.includes("CREATE")) ||
+        (a !== node.auth && a?.authentication !== undefined),
     );
   }
 
@@ -687,6 +908,7 @@ export class MutationCompiler {
 
   /** `UNWIND $rows AS row CREATE (n:Label) SET n.p = row.p, …` for inputs without relationships. */
   private createFlat(block: Block, node: NodeType, inputs: readonly unknown[]): string {
+    this.authenticate(node, "CREATE");
     const keys = new Set<string>();
     for (const input of inputs) {
       if (!isPlainObject(input)) continue;
@@ -723,11 +945,22 @@ export class MutationCompiler {
 
   /** `updateMovies(where, update)`; without `update` it only reads (and refreshes UPDATE timestamps). */
   rootUpdate(node: NodeType, args: AnyRecord, fieldNodes: readonly FieldNode[]): CompiledMutation {
-    this.assertWritable(node);
+    const written = this.writtenAttributes(node, args.update);
+    this.authenticate(
+      node,
+      "UPDATE",
+      written.map((a) => a.name),
+    );
+    // v7 applies the type's UPDATE rules to a top-level update only when attributes are written.
+    const typeRules = written.length > 0;
     const block = new Block();
     const v = this.ctx.variable("this");
-    const pred = this.where.node(v, node, args.where);
+    const pred = and([
+      this.where.node(v, node, args.where),
+      typeRules ? this.rules.filter(v, node, "UPDATE") : undefined,
+    ]);
     block.add(`MATCH (${v}${labels(node.labels)})${pred ? `\nWHERE ${pred}` : ""}`);
+    this.capture(block, this.updateCheck(v, node, "BEFORE", written, typeRules));
     // v7 refreshes UPDATE timestamps even without an `update` argument.
     const checks: string[] = [];
     const sets = [
@@ -744,42 +977,60 @@ export class MutationCompiler {
     if (sets.length) block.add(`SET ${sets.join(", ")}`);
     block.check(checks);
     this.updateRelationships(block, v, node, args.update);
-    return this.response(block, `collect(${v})`, block.aggregate(), node, fieldNodes);
+    const after = this.updateCheck(v, node, "AFTER", written, typeRules);
+    if (after) block.check([after]);
+    return this.response(block, `collect(${v})`, block.aggregate(), node, fieldNodes, true);
   }
 
   /** `deleteMovies(where, delete)`: one `DeleteInfo`. */
   rootDelete(node: NodeType, args: AnyRecord, fieldNodes: readonly FieldNode[]): CompiledMutation {
-    this.assertWritable(node);
+    this.authenticate(node, "DELETE");
     const block = new Block();
     const v = this.ctx.variable("this");
-    const pred = this.where.node(v, node, args.where);
+    const pred = and([this.where.node(v, node, args.where), this.rules.filter(v, node, "DELETE")]);
     block.add(`MATCH (${v}${labels(node.labels)})${pred ? `\nWHERE ${pred}` : ""}`);
     const roots = this.ctx.variable("roots");
     const nested: string[] = [];
+    // Failed DELETE validations of the matched nodes, collected before anything is deleted.
+    const failures: string[] = [];
+    const rootFailure = this.rules.check(this.rules.fails(v, node, "DELETE", "BEFORE"));
     if (isPlainObject(args.delete)) {
       for (const [name, els] of Object.entries(args.delete)) {
         const rel = this.relationship(node, name);
         const target = this.model.node(rel.target);
         for (const el of asList(els)) {
           if (!isPlainObject(el)) continue;
-          const t = this.ctx.variable("this");
-          const r = this.ctx.variable("edge");
-          const p = this.where.connection(r, t, rel, el.where);
-          const match = `MATCH ${relationshipPattern(this.model, v, rel, t, r)}${p ? ` WHERE ${p}` : ""}`;
-          nested.push(...this.deleteLists(match, t, target, el.delete));
+          const { chain, u } = this.nestedDeleteMatch("", v, rel, target, el, failures);
+          nested.push(...this.deleteLists(chain, u, target, el.delete, failures));
         }
       }
     }
+    const errorParts = [
+      ...(rootFailure ? [`collect(${rootFailure})`] : []),
+      ...(failures.length
+        ? [`reduce(acc = [], l IN collect(${failures.join(" + ")}) | acc + l)`]
+        : []),
+    ];
+    const keep: string[] = [];
+    let errors: string | undefined;
+    if (errorParts.length) {
+      errors = this.ctx.variable("authErrors");
+      keep.push(errors);
+    }
+    const errorsItem = errors ? `, ${errorParts.join(" + ")} AS ${errors}` : "";
     let list: string;
     if (nested.length) {
       const related = this.ctx.variable("related");
-      block.add(`WITH collect(${v}) AS ${roots}, collect(${nested.join(" + ")}) AS ${related}`);
+      block.add(
+        `WITH collect(${v}) AS ${roots}, collect(${nested.join(" + ")}) AS ${related}${errorsItem}`,
+      );
       list = `(${roots} + reduce(acc = [], l IN ${related} | acc + l))`;
     } else {
-      block.add(`WITH collect(${v}) AS ${roots}`);
+      block.add(`WITH collect(${v}) AS ${roots}${errorsItem}`);
       list = roots;
     }
-    this.deleteNodes(block, list, []);
+    this.deleteNodes(block, list, keep);
+    if (errors) block.errors.push(errors);
     const fields = [...collectFields(this.info, subSelections(fieldNodes))].map(
       ([k, n]) => [k, n[0]!.name.value] as const,
     );
@@ -789,6 +1040,8 @@ export class MutationCompiler {
       params: this.ctx.params,
       decode: (rows) => {
         const counts = (rows[0] ?? {}) as AnyRecord;
+        const errors = counts.errors;
+        if (Array.isArray(errors) && errors.length) throw new GraphQLError(String(errors[0]));
         return decodeCounts(fields, counts);
       },
     };
@@ -796,6 +1049,20 @@ export class MutationCompiler {
 }
 
 /** The `pop` count is an Int. */
+function and(parts: readonly (string | undefined)[]): string | undefined {
+  const ps = parts.filter((p): p is string => p !== undefined);
+  if (ps.length === 0) return undefined;
+  if (ps.length === 1) return ps[0];
+  return ps.map((p) => `(${p})`).join(" AND ");
+}
+
+function orParts(parts: readonly (string | undefined)[]): string | undefined {
+  const ps = parts.filter((p): p is string => p !== undefined);
+  if (ps.length === 0) return undefined;
+  if (ps.length === 1) return ps[0];
+  return ps.map((p) => `(${p})`).join(" OR ");
+}
+
 const intAttribute: Attribute = {
   name: "pop",
   property: "pop",

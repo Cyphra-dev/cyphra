@@ -1,0 +1,20 @@
+# features: auth.validate, auth.jwt, mutation.create, mutation.nested-create
+mutation {
+  createUsers(
+    input: [
+      {
+        id: "u-cid"
+        name: "Cid"
+        documents: { create: [{ node: { id: "d-cid", title: "Cid's", public: false } }] }
+      }
+    ]
+  ) {
+    users {
+      id
+      documents {
+        id
+        title
+      }
+    }
+  }
+}

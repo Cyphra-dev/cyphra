@@ -1,0 +1,30 @@
+{
+  "data": {
+    "users": [
+      {
+        "id": "u-ann",
+        "phone": "555-0101"
+      }
+    ],
+    "documents": [
+      {
+        "title": "Ann private",
+        "owner": [
+          {
+            "name": "Ann",
+            "phone": "555-0101"
+          }
+        ]
+      },
+      {
+        "title": "Ann public",
+        "owner": [
+          {
+            "name": "Ann",
+            "phone": "555-0101"
+          }
+        ]
+      }
+    ]
+  }
+}

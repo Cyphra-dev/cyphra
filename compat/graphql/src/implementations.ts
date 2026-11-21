@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { compat } from "@cyphra/graphql";
 import { Neo4jGraphQL } from "@neo4j/graphql";
 import type { GraphQLSchema } from "graphql";
+import { SignJWT } from "jose";
 import type { Driver } from "neo4j-driver";
 import type { Operation } from "./fixtures.js";
 
@@ -21,11 +22,28 @@ export type GraphQLImplementation = {
   skipReason?: () => Promise<string | undefined>;
   buildSchema(typeDefs: string, options: BuildOptions): Promise<GraphQLSchema>;
   /** The `contextValue` passed to `execute` for one operation. */
-  contextFor(op: Operation): Record<string, unknown>;
+  contextFor(op: Operation): Record<string, unknown> | Promise<Record<string, unknown>>;
 };
 
 /** Test-only signing key; not a secret. */
 export const JWT_KEY = "cyphra-compat-suite-not-a-secret";
+
+/**
+ * The context of an operation, the same for every implementation: `jwt` (a decoded payload, used
+ * as-is), `token` (`Bearer <jwt>` signed with HS256 by the suite key, or by `token.key` to forge one)
+ * and the values of `<name>.context.json`.
+ */
+export async function operationContext(op: Operation): Promise<Record<string, unknown>> {
+  const context: Record<string, unknown> = { ...op.context };
+  if (op.jwt) context.jwt = op.jwt;
+  if (op.token) {
+    const jwt = await new SignJWT(op.token.payload)
+      .setProtectedHeader({ alg: "HS256", typ: "JWT" })
+      .sign(new TextEncoder().encode(op.token.key ?? JWT_KEY));
+    context.token = `Bearer ${jwt}`;
+  }
+  return context;
+}
 
 export const neo4jGraphQL: GraphQLImplementation = {
   name: "@neo4j/graphql",
@@ -38,17 +56,22 @@ export const neo4jGraphQL: GraphQLImplementation = {
     return neoSchema.getSchema();
   },
   // A decoded payload in `jwt` is used as-is (no token verification), which keeps
-  // fixtures readable: `operations/<name>.jwt.json` holds the claims.
-  contextFor: (op) => (op.jwt ? { jwt: op.jwt } : {}),
+  // fixtures readable: `operations/<name>.jwt.json` holds the claims. Tokens (`<name>.token.json`)
+  // are verified with the suite key.
+  contextFor: operationContext,
 };
 
 /** `@cyphra/graphql` (#71-#75): the same type definitions, served on the Cyphra runtime. */
 export const cyphraGraphQL: GraphQLImplementation = {
   name: "@cyphra/graphql",
-  async buildSchema(typeDefs, { driver }) {
-    return compat.v7.makeSchema({ typeDefs, driver });
+  async buildSchema(typeDefs, { driver, jwt }) {
+    return compat.v7.makeSchema({
+      typeDefs,
+      driver,
+      features: { authorization: { key: jwt.key } },
+    });
   },
-  contextFor: (op) => compat.v7.contextFor({ jwt: op.jwt }),
+  contextFor: operationContext,
 };
 
 /** The reference implementation; goldens are generated from it. */

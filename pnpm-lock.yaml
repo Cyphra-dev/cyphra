@@ -55,6 +55,9 @@ importers:
       graphql:
         specifier: 16.15.0
         version: 16.15.0
+      jose:
+        specifier: ^6.2.18
+        version: 6.2.18
       neo4j-driver:
         specifier: ^5.28.3
         version: 5.28.3
@@ -277,6 +280,9 @@ importers:
       '@cyphra/schema':
         specifier: workspace:*
         version: link:../schema
+      jose:
+        specifier: ^6.2.18
+        version: 6.2.18
       pluralize:
         specifier: ^8.0.0
         version: 8.0.0
