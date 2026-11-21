@@ -1,0 +1,1 @@
+{ "payload": { "sub": "u-admin", "app": { "roles": ["admin"] } } }

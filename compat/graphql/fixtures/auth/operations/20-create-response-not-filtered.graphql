@@ -1,0 +1,9 @@
+# features: auth.authentication, auth.context, mutation.create
+mutation {
+  createTags(input: [{ name: "green", org: "globex" }]) {
+    tags {
+      name
+      org
+    }
+  }
+}

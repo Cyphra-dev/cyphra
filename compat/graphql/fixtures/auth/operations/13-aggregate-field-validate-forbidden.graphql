@@ -1,0 +1,12 @@
+# features: auth.aggregate, auth.field, auth.validate, auth.jwt, errors
+query {
+  usersConnection {
+    aggregate {
+      node {
+        salary {
+          max
+        }
+      }
+    }
+  }
+}

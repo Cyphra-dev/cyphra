@@ -1,0 +1,8 @@
+# features: auth.authentication, auth.jwt, mutation.create, errors
+mutation {
+  createTags(input: [{ name: "green", org: "acme" }]) {
+    tags {
+      name
+    }
+  }
+}

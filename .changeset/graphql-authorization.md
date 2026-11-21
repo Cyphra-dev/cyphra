@@ -1,0 +1,5 @@
+---
+"@cyphra/graphql": minor
+---
+
+`@authentication` and `@authorization`, as in `@neo4j/graphql` v7: rules on types, on fields and for the whole schema (`extend schema @authentication`), `filter` and `validate` rules for every operation (`READ`, `AGGREGATE`, `CREATE`, `UPDATE`, `DELETE`, `CREATE_RELATIONSHIP`, `DELETE_RELATIONSHIP`) with `requireAuthentication` and `when: [BEFORE, AFTER]`, `where: { node, jwt }` with `$jwt.<claim>` and `$context.<path>` values, the `@jwt` type and `@jwtClaim`. Rules are compiled into the Cypher statement of each root field: filters are part of its `WHERE` (nested selections, connections, aggregates and nested writes included) and `validate` checks run inside it, so data the rules do not allow never leaves the database and a write that fails a check is rolled back. No APOC needed. JWTs are verified like v7 with the new `features.authorization` option of `makeSchema` (a secret, a JWKS URL or a function of the context) from the `token` context value; a decoded `jwt` in the context is still trusted as it is. A few v7 behaviours are stricter here; see the docs.

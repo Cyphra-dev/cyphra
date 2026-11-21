@@ -1,0 +1,16 @@
+# features: auth.aggregate, auth.filter, connection, aggregation
+query {
+  documentsConnection {
+    totalCount
+    aggregate {
+      count {
+        nodes
+      }
+      node {
+        title {
+          shortest
+        }
+      }
+    }
+  }
+}

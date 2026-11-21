@@ -1,0 +1,6 @@
+# features: auth.authentication, auth.schema, mutation.delete, errors
+mutation {
+  deleteTags(where: { name: { eq: "blue" } }) {
+    nodesDeleted
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "data": {
+    "updateDocuments": {
+      "documents": [
+        {
+          "id": "d-4",
+          "owner": [
+            {
+              "name": "Ann"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

@@ -15,6 +15,10 @@
  *
  * Every value becomes a parameter; every identifier comes from the type definitions and is quoted.
  *
+ * The same compiler compiles the `node` part of `@authorization` rules, where `$jwt.<claim>` and
+ * `$context.<path>` references are resolved to {@link AuthValue}s first: like v7, a comparison with
+ * such a value is guarded by `$p IS NOT NULL` (a missing claim matches nothing, even under `NOT`).
+ *
  * @packageDocumentation
  */
 
@@ -31,6 +35,14 @@ import {
 } from "./context.js";
 
 type AnyRecord = Record<string, unknown>;
+
+/**
+ * A `$jwt.<claim>` / `$context.<path>` reference of an authorization rule, resolved for the
+ * request. Always passed as a parameter (never inlined) and compared under `IS NOT NULL`.
+ */
+export class AuthValue {
+  constructor(readonly value: unknown) {}
+}
 
 const LEGACY_OPERATORS: Record<string, string> = {
   EQ: "eq",
@@ -54,8 +66,11 @@ const QUANTIFIER_KEYS: Record<string, Quantifier> = {
 
 type Quantifier = "all" | "none" | "single" | "some";
 
+/** A plain (or null-prototype, from `valueFromASTUntyped`) object; not an {@link AuthValue}. */
 function isPlainObject(v: unknown): v is AnyRecord {
-  return typeof v === "object" && v !== null && !Array.isArray(v);
+  if (typeof v !== "object" || v === null || Array.isArray(v)) return false;
+  const proto = Object.getPrototypeOf(v) as unknown;
+  return proto === Object.prototype || proto === null;
 }
 
 function and(parts: (string | undefined)[]): string | undefined {
@@ -63,6 +78,21 @@ function and(parts: (string | undefined)[]): string | undefined {
   if (ps.length === 0) return undefined;
   if (ps.length === 1) return ps[0];
   return ps.map((p) => `(${p})`).join(" AND ");
+}
+
+/**
+ * `where` as an object, `undefined` for `null` / `undefined`. Anything else is an error, never
+ * ignored: a filter that silently matched everything would widen an authorization rule.
+ */
+function objectOrNothing(where: unknown, what: string): AnyRecord | undefined {
+  return isFilterObject(where, what) ? where : undefined;
+}
+
+/** `true` for an object, `false` for `null` / `undefined`; throws for anything else. */
+function isFilterObject(where: unknown, what: string): where is AnyRecord {
+  if (where === null || where === undefined) return false;
+  if (!isPlainObject(where)) throw new Error(`Invalid ${what}: expected an object`);
+  return true;
 }
 
 /** Encode one input value for the attribute's type (Int → driver integer, …). */
@@ -101,36 +131,51 @@ function attributePredicate(
   value: unknown,
 ): string | undefined {
   if (value === undefined) return undefined;
+  if (value instanceof AuthValue) {
+    // `$jwt` / `$context` reference: passed as it is (no Int conversion), guarded like v7.
+    const p = ctx.param(value.value ?? null);
+    const pred = attributeComparison(expr, attr, op, (isList) => castValue(attr, p, isList));
+    return `(${p} IS NOT NULL AND ${pred})`;
+  }
   if (op === "eq" && value === null) return `${expr} IS NULL`;
   if (value === null) return undefined;
+  return attributeComparison(expr, attr, op, (isList) => valueExpr(ctx, attr, value, isList));
+}
+
+function attributeComparison(
+  expr: string,
+  attr: Attribute,
+  op: string,
+  v: (isList: boolean) => string,
+): string {
   if (attr.type.list) {
     switch (op) {
       case "eq":
-        return `${expr} = ${valueExpr(ctx, attr, value, true)}`;
+        return `${expr} = ${v(true)}`;
       case "includes":
-        return `${valueExpr(ctx, attr, value, false)} IN ${expr}`;
+        return `${v(false)} IN ${expr}`;
     }
     throw new Error(`Unsupported list filter operator ${op}`);
   }
   switch (op) {
     case "eq":
-      return `${expr} = ${valueExpr(ctx, attr, value, false)}`;
+      return `${expr} = ${v(false)}`;
     case "in":
-      return `${expr} IN ${valueExpr(ctx, attr, value, true)}`;
+      return `${expr} IN ${v(true)}`;
     case "contains":
-      return `${expr} CONTAINS ${valueExpr(ctx, attr, value, false)}`;
+      return `${expr} CONTAINS ${v(false)}`;
     case "startsWith":
-      return `${expr} STARTS WITH ${valueExpr(ctx, attr, value, false)}`;
+      return `${expr} STARTS WITH ${v(false)}`;
     case "endsWith":
-      return `${expr} ENDS WITH ${valueExpr(ctx, attr, value, false)}`;
+      return `${expr} ENDS WITH ${v(false)}`;
     case "lt":
-      return `${expr} < ${valueExpr(ctx, attr, value, false)}`;
+      return `${expr} < ${v(false)}`;
     case "lte":
-      return `${expr} <= ${valueExpr(ctx, attr, value, false)}`;
+      return `${expr} <= ${v(false)}`;
     case "gt":
-      return `${expr} > ${valueExpr(ctx, attr, value, false)}`;
+      return `${expr} > ${v(false)}`;
     case "gte":
-      return `${expr} >= ${valueExpr(ctx, attr, value, false)}`;
+      return `${expr} >= ${v(false)}`;
   }
   throw new Error(`Unsupported filter operator ${op}`);
 }
@@ -147,6 +192,7 @@ function attributeFilter(
   if (direct) {
     if (value === null || value === undefined) return { handled: true };
     if (direct.cypher) throw notImplemented(`filtering on @cypher field ${key}`, FOLLOW_UP.cypher);
+    if (!isPlainObject(value)) throw new Error(`Invalid filter on ${key}`);
     const expr = `${variable}.${q(direct.property)}`;
     const preds = Object.entries(value as AnyRecord).map(([op, v]) =>
       attributePredicate(ctx, expr, direct, op, v),
@@ -176,8 +222,10 @@ function logical(
 ): { handled: boolean; predicate?: string } {
   const value = where[key];
   if (key === "AND" || key === "OR") {
-    if (!Array.isArray(value)) return { handled: true };
-    const parts = value.filter(isPlainObject).map(compile);
+    if (value === null || value === undefined) return { handled: true };
+    const parts = (Array.isArray(value) ? value : [value])
+      .filter((w) => w !== null && w !== undefined)
+      .map((w) => compile(objectOrNothing(w, key)!));
     if (key === "AND") return { handled: true, predicate: and(parts) };
     // An empty member of OR matches everything.
     if (parts.length === 0) return { handled: true };
@@ -188,8 +236,9 @@ function logical(
     };
   }
   if (key === "NOT") {
-    if (!isPlainObject(value)) return { handled: true };
-    const inner = compile(value);
+    const o = objectOrNothing(value, key);
+    if (o === undefined) return { handled: true };
+    const inner = compile(o);
     return { handled: true, predicate: inner === undefined ? undefined : `NOT (${inner})` };
   }
   return { handled: false };
@@ -226,6 +275,7 @@ function quantified(
     case "all":
       return `EXISTS { MATCH ${pattern} } AND NOT EXISTS { MATCH ${pattern} WHERE NOT (${predicate}) }`;
   }
+  throw new Error(`Unknown relationship filter ${String(quantifier)}`);
 }
 
 type AggregateScope = { pattern: string; nodeVar: string; relVar: string };
@@ -283,22 +333,22 @@ function comparison(
   if (value === undefined || value === null) return undefined;
   const cmp = COMPARISON_OPERATORS[op];
   if (!cmp) throw new Error(`Invalid aggregation filter operator ${op}`);
-  const p = ctx.param(value);
+  const ref = value instanceof AuthValue;
+  const p = ctx.param(ref ? (value.value ?? null) : value);
   const isDateTime = attr?.kind === "scalar" && attr.type.name === "DateTime";
-  return `${expr} ${cmp} ${isDateTime ? `datetime(${p})` : p}`;
+  const pred = `${expr} ${cmp} ${isDateTime ? `datetime(${p})` : p}`;
+  return ref ? `(${p} IS NOT NULL AND ${pred})` : pred;
 }
 
 export class WhereCompiler {
   constructor(
     private readonly model: V7Model,
     private readonly ctx: CypherContext,
-    /** Called for every node type a filter traverses (authorization is not implemented yet). */
-    private readonly onTraverse: (node: NodeType) => void = () => {},
   ) {}
 
   /** Predicate for a `${Node}Where` input on `variable`, or `undefined` when it filters nothing. */
   node(variable: string, node: NodeType, where: unknown): string | undefined {
-    if (!isPlainObject(where)) return undefined;
+    if (!isFilterObject(where, "filter")) return undefined;
     const parts: (string | undefined)[] = [];
     for (const [key, value] of Object.entries(where)) {
       if (value === undefined) continue;
@@ -327,14 +377,14 @@ export class WhereCompiler {
     // `actors: { some: … }`
     let rel = find(key);
     if (rel) {
-      if (!isPlainObject(value)) return undefined;
+      if (!isFilterObject(value, key)) return undefined;
       return and(
         Object.entries(value).map(([q, w]) => this.related(variable, rel!, q as Quantifier, w)),
       );
     }
     // `actorsConnection: { some: … , aggregate: … }`
     if (key.endsWith("Connection") && (rel = find(key.slice(0, -"Connection".length)))) {
-      if (!isPlainObject(value)) return undefined;
+      if (!isFilterObject(value, key)) return undefined;
       return and(
         Object.entries(value).map(([q, w]) => {
           if (q === "aggregate") return this.aggregate(variable, rel!, w, false);
@@ -363,10 +413,9 @@ export class WhereCompiler {
     quantifier: Quantifier,
     where: unknown,
   ): string | undefined {
-    if (!isPlainObject(where)) return undefined;
+    if (!isFilterObject(where, "filter")) return undefined;
     const m = this.ctx.variable("n");
     const target = this.model.node(rel.target);
-    this.onTraverse(target);
     return quantified(
       relationshipPattern(this.model, variable, rel, m),
       quantifier,
@@ -380,10 +429,9 @@ export class WhereCompiler {
     quantifier: Quantifier,
     where: unknown,
   ): string | undefined {
-    if (!isPlainObject(where)) return undefined;
+    if (!isFilterObject(where, "filter")) return undefined;
     const m = this.ctx.variable("n");
     const r = this.ctx.variable("r");
-    this.onTraverse(this.model.node(rel.target));
     return quantified(
       relationshipPattern(this.model, variable, rel, m, r),
       quantifier,
@@ -401,9 +449,8 @@ export class WhereCompiler {
     where: unknown,
     deprecated: boolean,
   ): string | undefined {
-    if (!isPlainObject(where)) return undefined;
+    if (!isFilterObject(where, "filter")) return undefined;
     const target = this.model.node(rel.target);
-    this.onTraverse(target);
     const m = this.ctx.variable("n");
     const r = this.ctx.variable("r");
     const pattern = relationshipPattern(this.model, variable, rel, m, r);
@@ -418,13 +465,13 @@ export class WhereCompiler {
           continue;
         }
         if (key === "count") {
-          if (!isPlainObject(value)) continue;
+          if (!isFilterObject(value, key)) continue;
           if (deprecated) {
             parts.push(this.countFilter(scope, false, value));
             continue;
           }
           for (const [what, filters] of Object.entries(value)) {
-            if (!isPlainObject(filters)) continue;
+            if (!isFilterObject(filters, what)) continue;
             if (what === "nodes") parts.push(this.countFilter(scope, true, filters));
             else if (what === "edges") parts.push(this.countFilter(scope, false, filters));
             else throw new Error(`Unknown aggregation count filter ${what}`);
@@ -479,7 +526,7 @@ export class WhereCompiler {
     distinct: boolean,
     where: unknown,
   ): string | undefined {
-    if (!isPlainObject(where)) return undefined;
+    if (!isFilterObject(where, "filter")) return undefined;
     const parts: (string | undefined)[] = [];
     for (const [key, value] of Object.entries(where)) {
       if (value === undefined || value === null) continue;
@@ -492,9 +539,9 @@ export class WhereCompiler {
       }
       const direct = attributes.find((a) => a.name === key);
       if (direct) {
-        if (!isPlainObject(value)) continue;
-        for (const [aggOp, filters] of Object.entries(value)) {
-          if (!isPlainObject(filters)) continue;
+        if (!isFilterObject(value, key)) continue;
+        for (const [aggOp, filters] of Object.entries(value as AnyRecord)) {
+          if (!isFilterObject(filters, aggOp)) continue;
           const fn = GENERIC_AGGREGATES[aggOp];
           if (!fn) throw new Error(`Invalid aggregation operator ${aggOp}`);
           const agg = this.aggregated(scope, direct, on, distinct, fn);
@@ -539,7 +586,7 @@ export class WhereCompiler {
     rel: Relationship,
     where: unknown,
   ): string | undefined {
-    if (!isPlainObject(where)) return undefined;
+    if (!isFilterObject(where, "filter")) return undefined;
     const parts: (string | undefined)[] = [];
     for (const [key, value] of Object.entries(where)) {
       if (value === undefined) continue;
@@ -564,7 +611,7 @@ export class WhereCompiler {
 
   /** Predicate for a `${Properties}Where` input on a relationship variable. */
   edge(relVar: string, props: PropertiesType, where: unknown): string | undefined {
-    if (!isPlainObject(where)) return undefined;
+    if (!isFilterObject(where, "filter")) return undefined;
     const parts: (string | undefined)[] = [];
     for (const [key, value] of Object.entries(where)) {
       if (value === undefined) continue;

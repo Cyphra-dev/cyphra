@@ -1,0 +1,17 @@
+# features: auth.filter, relationship, connection
+query {
+  users {
+    name
+    documents {
+      title
+    }
+    documentsConnection {
+      totalCount
+      edges {
+        node {
+          title
+        }
+      }
+    }
+  }
+}

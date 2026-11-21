@@ -1,0 +1,19 @@
+{
+  "data": {
+    "updateUsers": {
+      "users": [
+        {
+          "name": "Ann",
+          "documents": [
+            {
+              "title": "Edited"
+            },
+            {
+              "title": "Edited"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

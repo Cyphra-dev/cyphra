@@ -1,0 +1,17 @@
+{
+  "data": {
+    "documentsConnection": {
+      "totalCount": 1,
+      "aggregate": {
+        "count": {
+          "nodes": 0
+        },
+        "node": {
+          "title": {
+            "shortest": null
+          }
+        }
+      }
+    }
+  }
+}

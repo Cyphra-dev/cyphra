@@ -20,6 +20,14 @@ export type Operation = {
   variables: Record<string, unknown>;
   /** Decoded JWT payload passed in the context (`operations/<name>.jwt.json`), if any. */
   jwt?: Record<string, unknown>;
+  /**
+   * A token to sign and pass as `context.token` (`operations/<name>.token.json`): `payload` (the
+   * claims, `exp` included) and optionally `key`, to sign with another key than the suite's (a
+   * forged token).
+   */
+  token?: { payload: Record<string, unknown>; key?: string };
+  /** Extra context values for `$context.<path>` rules (`operations/<name>.context.json`). */
+  context?: Record<string, unknown>;
   /** Feature tags from the `# features:` header line; used to group the report. */
   features: string[];
   /**
@@ -80,6 +88,8 @@ export function loadFixture(name: string): Fixture {
         document,
         variables: readJson(path.join(opsDir, `${opName}.variables.json`)) ?? {},
         jwt: readJson(path.join(opsDir, `${opName}.jwt.json`)),
+        token: readJson(path.join(opsDir, `${opName}.token.json`)) as Operation["token"],
+        context: readJson(path.join(opsDir, `${opName}.context.json`)),
         ...header,
       };
     });

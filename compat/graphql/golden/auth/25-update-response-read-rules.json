@@ -1,0 +1,24 @@
+{
+  "data": {
+    "updateDocuments": {
+      "documents": [
+        {
+          "id": "d-3",
+          "tags": [
+            {
+              "name": "red",
+              "documents": [
+                {
+                  "title": "Ann public"
+                },
+                {
+                  "title": "Ben private"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

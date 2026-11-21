@@ -1,0 +1,6 @@
+# features: auth.field, auth.filter, auth.jwt
+query {
+  users(where: { phone: { eq: "555-0102" } }) {
+    id
+  }
+}

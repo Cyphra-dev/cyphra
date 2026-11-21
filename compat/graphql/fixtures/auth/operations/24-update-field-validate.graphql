@@ -1,0 +1,8 @@
+# features: auth.field, auth.validate, auth.jwt, mutation.update, errors
+mutation {
+  updateUsers(where: { id: { eq: "u-ann" } }, update: { salary: { set: 9999 } }) {
+    users {
+      id
+    }
+  }
+}

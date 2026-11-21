@@ -1,0 +1,9 @@
+# features: auth.validate, auth.jwt, mutation.delete, mutation.nested-delete, errors
+mutation {
+  deleteUsers(
+    where: { id: { eq: "u-ben" } }
+    delete: { documents: [{ where: { node: { id: { eq: "missing" } } } }] }
+  ) {
+    nodesDeleted
+  }
+}

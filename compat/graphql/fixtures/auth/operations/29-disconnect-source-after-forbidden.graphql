@@ -1,0 +1,11 @@
+# features: auth.validate, auth.jwt, mutation.update, mutation.disconnect, errors
+mutation {
+  updateDocuments(
+    where: { id: { eq: "d-1" } }
+    update: { owner: [{ disconnect: [{ where: { node: { id: { eq: "u-ann" } } } }] }] }
+  ) {
+    documents {
+      id
+    }
+  }
+}

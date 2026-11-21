@@ -28,9 +28,27 @@ Status (early release):
 - Mutations: `create`, `update`, `delete` with `info` counters, nested `create` / `connect` /
   `disconnect` / `update` / `delete` with edge properties, every update operator (deprecated forms
   included), `@id`, `@timestamp` and `@default`. No APOC needed.
+- `@authentication` / `@authorization` (type, field and `extend schema` level), `@jwt` and
+  `@jwtClaim`: rules are compiled into the Cypher statement (filters in its `WHERE`, `validate`
+  checks inside it, a failed check rolls the statement back), never applied in JavaScript.
 - One Cypher statement per root field, in its own transaction. Needs Neo4j 5.23+.
-- Not yet: `@authentication` / `@authorization` (#74) and `@cypher` fields (#75). They are in the
-  schema and return a `Not implemented yet` error.
+- Not yet: `@cypher` fields (#75). They are in the schema and return a `Not implemented yet` error.
+
+JWTs are verified like v7, with `features.authorization` and the request's `Authorization` header
+as `token` in the context (a decoded `jwt` in the context is trusted as it is):
+
+```ts
+const schema = compat.v7.makeSchema({
+  typeDefs,
+  driver,
+  features: { authorization: { key: process.env.JWT_SECRET! } }, // or { key: { url: jwksUrl } }
+});
+// GraphQL server context: ({ request }) => ({ token: request.headers.get("authorization") })
+```
+
+Read the [authorization docs](https://www.cyphra.dev/graphql#authentication-and-authorization) for
+the v7 behaviours that matter for security (filters on fields the user cannot read, AGGREGATE vs
+READ rules, relationship-only updates) and the few cases where Cyphra is stricter than v7.
 
 Compatibility is measured against the real `@neo4j/graphql` by the suite in
 [`compat/graphql`](https://github.com/Cyphra-dev/cyphra/tree/main/compat/graphql).

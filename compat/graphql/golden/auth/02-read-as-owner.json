@@ -1,0 +1,24 @@
+{
+  "data": {
+    "documents": [
+      {
+        "id": "d-1",
+        "title": "Ann public",
+        "owner": [
+          {
+            "name": "Ann"
+          }
+        ]
+      },
+      {
+        "id": "d-2",
+        "title": "Ann private",
+        "owner": [
+          {
+            "name": "Ann"
+          }
+        ]
+      }
+    ]
+  }
+}

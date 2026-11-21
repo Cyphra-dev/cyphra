@@ -1,0 +1,1314 @@
+"""Boolean filters"""
+input BooleanScalarFilters {
+  eq: Boolean
+}
+
+"""Boolean mutations"""
+input BooleanScalarMutations {
+  set: Boolean
+}
+
+input ConnectionAggregationCountFilterInput {
+  edges: IntScalarFilters
+  nodes: IntScalarFilters
+}
+
+type Count {
+  nodes: Int!
+}
+
+type CountConnection {
+  edges: Int!
+  nodes: Int!
+}
+
+type CreateDocumentsMutationResponse {
+  documents: [Document!]!
+  info: CreateInfo!
+}
+
+"""
+Information about the number of nodes and relationships created during a create mutation
+"""
+type CreateInfo {
+  nodesCreated: Int!
+  relationshipsCreated: Int!
+}
+
+type CreateTagsMutationResponse {
+  info: CreateInfo!
+  tags: [Tag!]!
+}
+
+type CreateUsersMutationResponse {
+  info: CreateInfo!
+  users: [User!]!
+}
+
+"""
+Information about the number of nodes and relationships deleted during a delete mutation
+"""
+type DeleteInfo {
+  nodesDeleted: Int!
+  relationshipsDeleted: Int!
+}
+
+type Document {
+  id: ID!
+  owner(limit: Int, offset: Int, sort: [UserSort!], where: UserWhere): [User!]!
+  ownerConnection(after: String, first: Int, sort: [DocumentOwnerConnectionSort!], where: DocumentOwnerConnectionWhere): DocumentOwnerConnection!
+  public: Boolean!
+  tags(limit: Int, offset: Int, sort: [TagSort!], where: TagWhere): [Tag!]!
+  tagsConnection(after: String, first: Int, sort: [DocumentTagsConnectionSort!], where: DocumentTagsConnectionWhere): DocumentTagsConnection!
+  title: String!
+}
+
+type DocumentAggregate {
+  count: Count!
+  node: DocumentAggregateNode!
+}
+
+type DocumentAggregateNode {
+  title: StringAggregateSelection!
+}
+
+input DocumentConnectInput {
+  owner: [DocumentOwnerConnectFieldInput!]
+  tags: [DocumentTagsConnectFieldInput!]
+}
+
+input DocumentConnectWhere {
+  node: DocumentWhere!
+}
+
+input DocumentCreateInput {
+  id: ID!
+  owner: DocumentOwnerFieldInput
+  public: Boolean!
+  tags: DocumentTagsFieldInput
+  title: String!
+}
+
+input DocumentDeleteInput {
+  owner: [DocumentOwnerDeleteFieldInput!]
+  tags: [DocumentTagsDeleteFieldInput!]
+}
+
+input DocumentDisconnectInput {
+  owner: [DocumentOwnerDisconnectFieldInput!]
+  tags: [DocumentTagsDisconnectFieldInput!]
+}
+
+type DocumentEdge {
+  cursor: String!
+  node: Document!
+}
+
+input DocumentOwnerAggregateInput {
+  AND: [DocumentOwnerAggregateInput!]
+  NOT: DocumentOwnerAggregateInput
+  OR: [DocumentOwnerAggregateInput!]
+  count: IntScalarFilters
+  count_EQ: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { eq: ... } } }' instead.")
+  count_GT: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { gt: ... } } }' instead.")
+  count_GTE: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { gte: ... } } }' instead.")
+  count_LT: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { lt: ... } } }' instead.")
+  count_LTE: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { lte: ... } } }' instead.")
+  node: DocumentOwnerNodeAggregationWhereInput
+}
+
+input DocumentOwnerConnectFieldInput {
+  connect: [UserConnectInput!]
+  where: UserConnectWhere
+}
+
+type DocumentOwnerConnection {
+  aggregate: DocumentUserOwnerAggregateSelection!
+  edges: [DocumentOwnerRelationship!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+input DocumentOwnerConnectionAggregateInput {
+  AND: [DocumentOwnerConnectionAggregateInput!]
+  NOT: DocumentOwnerConnectionAggregateInput
+  OR: [DocumentOwnerConnectionAggregateInput!]
+  count: ConnectionAggregationCountFilterInput
+  node: DocumentOwnerNodeAggregationWhereInput
+}
+
+input DocumentOwnerConnectionFilters {
+  """
+  Filter Documents by aggregating results on related DocumentOwnerConnections
+  """
+  aggregate: DocumentOwnerConnectionAggregateInput
+
+  """
+  Return Documents where all of the related DocumentOwnerConnections match this filter
+  """
+  all: DocumentOwnerConnectionWhere
+
+  """
+  Return Documents where none of the related DocumentOwnerConnections match this filter
+  """
+  none: DocumentOwnerConnectionWhere
+
+  """
+  Return Documents where one of the related DocumentOwnerConnections match this filter
+  """
+  single: DocumentOwnerConnectionWhere
+
+  """
+  Return Documents where some of the related DocumentOwnerConnections match this filter
+  """
+  some: DocumentOwnerConnectionWhere
+}
+
+input DocumentOwnerConnectionSort {
+  node: UserSort
+}
+
+input DocumentOwnerConnectionWhere {
+  AND: [DocumentOwnerConnectionWhere!]
+  NOT: DocumentOwnerConnectionWhere
+  OR: [DocumentOwnerConnectionWhere!]
+  node: UserWhere
+}
+
+input DocumentOwnerCreateFieldInput {
+  node: UserCreateInput!
+}
+
+input DocumentOwnerDeleteFieldInput {
+  delete: UserDeleteInput
+  where: DocumentOwnerConnectionWhere
+}
+
+input DocumentOwnerDisconnectFieldInput {
+  disconnect: UserDisconnectInput
+  where: DocumentOwnerConnectionWhere
+}
+
+input DocumentOwnerFieldInput {
+  connect: [DocumentOwnerConnectFieldInput!]
+  create: [DocumentOwnerCreateFieldInput!]
+}
+
+input DocumentOwnerNodeAggregationWhereInput {
+  AND: [DocumentOwnerNodeAggregationWhereInput!]
+  NOT: DocumentOwnerNodeAggregationWhereInput
+  OR: [DocumentOwnerNodeAggregationWhereInput!]
+  name: StringScalarAggregationFilters
+  name_AVERAGE_LENGTH_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { eq: ... } } }' instead.")
+  name_AVERAGE_LENGTH_GT: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { gt: ... } } }' instead.")
+  name_AVERAGE_LENGTH_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { gte: ... } } }' instead.")
+  name_AVERAGE_LENGTH_LT: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { lt: ... } } }' instead.")
+  name_AVERAGE_LENGTH_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { lte: ... } } }' instead.")
+  name_LONGEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { eq: ... } } }' instead.")
+  name_LONGEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { gt: ... } } }' instead.")
+  name_LONGEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { gte: ... } } }' instead.")
+  name_LONGEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { lt: ... } } }' instead.")
+  name_LONGEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { lte: ... } } }' instead.")
+  name_SHORTEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { eq: ... } } }' instead.")
+  name_SHORTEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { gt: ... } } }' instead.")
+  name_SHORTEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { gte: ... } } }' instead.")
+  name_SHORTEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { lt: ... } } }' instead.")
+  name_SHORTEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { lte: ... } } }' instead.")
+  nickname: StringScalarAggregationFilters
+  nickname_AVERAGE_LENGTH_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'nickname: { averageLength: { eq: ... } } }' instead.")
+  nickname_AVERAGE_LENGTH_GT: Float @deprecated(reason: "Please use the relevant generic filter 'nickname: { averageLength: { gt: ... } } }' instead.")
+  nickname_AVERAGE_LENGTH_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'nickname: { averageLength: { gte: ... } } }' instead.")
+  nickname_AVERAGE_LENGTH_LT: Float @deprecated(reason: "Please use the relevant generic filter 'nickname: { averageLength: { lt: ... } } }' instead.")
+  nickname_AVERAGE_LENGTH_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'nickname: { averageLength: { lte: ... } } }' instead.")
+  nickname_LONGEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'nickname: { longestLength: { eq: ... } } }' instead.")
+  nickname_LONGEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'nickname: { longestLength: { gt: ... } } }' instead.")
+  nickname_LONGEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'nickname: { longestLength: { gte: ... } } }' instead.")
+  nickname_LONGEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'nickname: { longestLength: { lt: ... } } }' instead.")
+  nickname_LONGEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'nickname: { longestLength: { lte: ... } } }' instead.")
+  nickname_SHORTEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'nickname: { shortestLength: { eq: ... } } }' instead.")
+  nickname_SHORTEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'nickname: { shortestLength: { gt: ... } } }' instead.")
+  nickname_SHORTEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'nickname: { shortestLength: { gte: ... } } }' instead.")
+  nickname_SHORTEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'nickname: { shortestLength: { lt: ... } } }' instead.")
+  nickname_SHORTEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'nickname: { shortestLength: { lte: ... } } }' instead.")
+  phone: StringScalarAggregationFilters
+  phone_AVERAGE_LENGTH_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'phone: { averageLength: { eq: ... } } }' instead.")
+  phone_AVERAGE_LENGTH_GT: Float @deprecated(reason: "Please use the relevant generic filter 'phone: { averageLength: { gt: ... } } }' instead.")
+  phone_AVERAGE_LENGTH_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'phone: { averageLength: { gte: ... } } }' instead.")
+  phone_AVERAGE_LENGTH_LT: Float @deprecated(reason: "Please use the relevant generic filter 'phone: { averageLength: { lt: ... } } }' instead.")
+  phone_AVERAGE_LENGTH_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'phone: { averageLength: { lte: ... } } }' instead.")
+  phone_LONGEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'phone: { longestLength: { eq: ... } } }' instead.")
+  phone_LONGEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'phone: { longestLength: { gt: ... } } }' instead.")
+  phone_LONGEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'phone: { longestLength: { gte: ... } } }' instead.")
+  phone_LONGEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'phone: { longestLength: { lt: ... } } }' instead.")
+  phone_LONGEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'phone: { longestLength: { lte: ... } } }' instead.")
+  phone_SHORTEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'phone: { shortestLength: { eq: ... } } }' instead.")
+  phone_SHORTEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'phone: { shortestLength: { gt: ... } } }' instead.")
+  phone_SHORTEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'phone: { shortestLength: { gte: ... } } }' instead.")
+  phone_SHORTEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'phone: { shortestLength: { lt: ... } } }' instead.")
+  phone_SHORTEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'phone: { shortestLength: { lte: ... } } }' instead.")
+  salary: IntScalarAggregationFilters
+  salary_AVERAGE_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'salary: { average: { eq: ... } } }' instead.")
+  salary_AVERAGE_GT: Float @deprecated(reason: "Please use the relevant generic filter 'salary: { average: { gt: ... } } }' instead.")
+  salary_AVERAGE_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'salary: { average: { gte: ... } } }' instead.")
+  salary_AVERAGE_LT: Float @deprecated(reason: "Please use the relevant generic filter 'salary: { average: { lt: ... } } }' instead.")
+  salary_AVERAGE_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'salary: { average: { lte: ... } } }' instead.")
+  salary_MAX_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'salary: { max: { eq: ... } } }' instead.")
+  salary_MAX_GT: Int @deprecated(reason: "Please use the relevant generic filter 'salary: { max: { gt: ... } } }' instead.")
+  salary_MAX_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'salary: { max: { gte: ... } } }' instead.")
+  salary_MAX_LT: Int @deprecated(reason: "Please use the relevant generic filter 'salary: { max: { lt: ... } } }' instead.")
+  salary_MAX_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'salary: { max: { lte: ... } } }' instead.")
+  salary_MIN_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'salary: { min: { eq: ... } } }' instead.")
+  salary_MIN_GT: Int @deprecated(reason: "Please use the relevant generic filter 'salary: { min: { gt: ... } } }' instead.")
+  salary_MIN_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'salary: { min: { gte: ... } } }' instead.")
+  salary_MIN_LT: Int @deprecated(reason: "Please use the relevant generic filter 'salary: { min: { lt: ... } } }' instead.")
+  salary_MIN_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'salary: { min: { lte: ... } } }' instead.")
+  salary_SUM_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'salary: { sum: { eq: ... } } }' instead.")
+  salary_SUM_GT: Int @deprecated(reason: "Please use the relevant generic filter 'salary: { sum: { gt: ... } } }' instead.")
+  salary_SUM_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'salary: { sum: { gte: ... } } }' instead.")
+  salary_SUM_LT: Int @deprecated(reason: "Please use the relevant generic filter 'salary: { sum: { lt: ... } } }' instead.")
+  salary_SUM_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'salary: { sum: { lte: ... } } }' instead.")
+}
+
+type DocumentOwnerRelationship {
+  cursor: String!
+  node: User!
+}
+
+input DocumentOwnerUpdateConnectionInput {
+  node: UserUpdateInput
+  where: DocumentOwnerConnectionWhere
+}
+
+input DocumentOwnerUpdateFieldInput {
+  connect: [DocumentOwnerConnectFieldInput!]
+  create: [DocumentOwnerCreateFieldInput!]
+  delete: [DocumentOwnerDeleteFieldInput!]
+  disconnect: [DocumentOwnerDisconnectFieldInput!]
+  update: DocumentOwnerUpdateConnectionInput
+}
+
+input DocumentRelationshipFilters {
+  """Filter type where all of the related Documents match this filter"""
+  all: DocumentWhere
+
+  """Filter type where none of the related Documents match this filter"""
+  none: DocumentWhere
+
+  """Filter type where one of the related Documents match this filter"""
+  single: DocumentWhere
+
+  """Filter type where some of the related Documents match this filter"""
+  some: DocumentWhere
+}
+
+"""
+Fields to sort Documents by. The order in which sorts are applied is not guaranteed when specifying many fields in one DocumentSort object.
+"""
+input DocumentSort {
+  id: SortDirection
+  public: SortDirection
+  title: SortDirection
+}
+
+type DocumentTagTagsAggregateSelection {
+  count: CountConnection!
+  node: DocumentTagTagsNodeAggregateSelection
+}
+
+type DocumentTagTagsNodeAggregateSelection {
+  name: StringAggregateSelection!
+  org: StringAggregateSelection!
+}
+
+input DocumentTagsAggregateInput {
+  AND: [DocumentTagsAggregateInput!]
+  NOT: DocumentTagsAggregateInput
+  OR: [DocumentTagsAggregateInput!]
+  count: IntScalarFilters
+  count_EQ: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { eq: ... } } }' instead.")
+  count_GT: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { gt: ... } } }' instead.")
+  count_GTE: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { gte: ... } } }' instead.")
+  count_LT: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { lt: ... } } }' instead.")
+  count_LTE: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { lte: ... } } }' instead.")
+  node: DocumentTagsNodeAggregationWhereInput
+}
+
+input DocumentTagsConnectFieldInput {
+  connect: [TagConnectInput!]
+  where: TagConnectWhere
+}
+
+type DocumentTagsConnection {
+  aggregate: DocumentTagTagsAggregateSelection!
+  edges: [DocumentTagsRelationship!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+input DocumentTagsConnectionAggregateInput {
+  AND: [DocumentTagsConnectionAggregateInput!]
+  NOT: DocumentTagsConnectionAggregateInput
+  OR: [DocumentTagsConnectionAggregateInput!]
+  count: ConnectionAggregationCountFilterInput
+  node: DocumentTagsNodeAggregationWhereInput
+}
+
+input DocumentTagsConnectionFilters {
+  """
+  Filter Documents by aggregating results on related DocumentTagsConnections
+  """
+  aggregate: DocumentTagsConnectionAggregateInput
+
+  """
+  Return Documents where all of the related DocumentTagsConnections match this filter
+  """
+  all: DocumentTagsConnectionWhere
+
+  """
+  Return Documents where none of the related DocumentTagsConnections match this filter
+  """
+  none: DocumentTagsConnectionWhere
+
+  """
+  Return Documents where one of the related DocumentTagsConnections match this filter
+  """
+  single: DocumentTagsConnectionWhere
+
+  """
+  Return Documents where some of the related DocumentTagsConnections match this filter
+  """
+  some: DocumentTagsConnectionWhere
+}
+
+input DocumentTagsConnectionSort {
+  node: TagSort
+}
+
+input DocumentTagsConnectionWhere {
+  AND: [DocumentTagsConnectionWhere!]
+  NOT: DocumentTagsConnectionWhere
+  OR: [DocumentTagsConnectionWhere!]
+  node: TagWhere
+}
+
+input DocumentTagsCreateFieldInput {
+  node: TagCreateInput!
+}
+
+input DocumentTagsDeleteFieldInput {
+  delete: TagDeleteInput
+  where: DocumentTagsConnectionWhere
+}
+
+input DocumentTagsDisconnectFieldInput {
+  disconnect: TagDisconnectInput
+  where: DocumentTagsConnectionWhere
+}
+
+input DocumentTagsFieldInput {
+  connect: [DocumentTagsConnectFieldInput!]
+  create: [DocumentTagsCreateFieldInput!]
+}
+
+input DocumentTagsNodeAggregationWhereInput {
+  AND: [DocumentTagsNodeAggregationWhereInput!]
+  NOT: DocumentTagsNodeAggregationWhereInput
+  OR: [DocumentTagsNodeAggregationWhereInput!]
+  name: StringScalarAggregationFilters
+  name_AVERAGE_LENGTH_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { eq: ... } } }' instead.")
+  name_AVERAGE_LENGTH_GT: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { gt: ... } } }' instead.")
+  name_AVERAGE_LENGTH_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { gte: ... } } }' instead.")
+  name_AVERAGE_LENGTH_LT: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { lt: ... } } }' instead.")
+  name_AVERAGE_LENGTH_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { lte: ... } } }' instead.")
+  name_LONGEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { eq: ... } } }' instead.")
+  name_LONGEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { gt: ... } } }' instead.")
+  name_LONGEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { gte: ... } } }' instead.")
+  name_LONGEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { lt: ... } } }' instead.")
+  name_LONGEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { lte: ... } } }' instead.")
+  name_SHORTEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { eq: ... } } }' instead.")
+  name_SHORTEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { gt: ... } } }' instead.")
+  name_SHORTEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { gte: ... } } }' instead.")
+  name_SHORTEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { lt: ... } } }' instead.")
+  name_SHORTEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { lte: ... } } }' instead.")
+  org: StringScalarAggregationFilters
+  org_AVERAGE_LENGTH_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'org: { averageLength: { eq: ... } } }' instead.")
+  org_AVERAGE_LENGTH_GT: Float @deprecated(reason: "Please use the relevant generic filter 'org: { averageLength: { gt: ... } } }' instead.")
+  org_AVERAGE_LENGTH_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'org: { averageLength: { gte: ... } } }' instead.")
+  org_AVERAGE_LENGTH_LT: Float @deprecated(reason: "Please use the relevant generic filter 'org: { averageLength: { lt: ... } } }' instead.")
+  org_AVERAGE_LENGTH_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'org: { averageLength: { lte: ... } } }' instead.")
+  org_LONGEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'org: { longestLength: { eq: ... } } }' instead.")
+  org_LONGEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'org: { longestLength: { gt: ... } } }' instead.")
+  org_LONGEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'org: { longestLength: { gte: ... } } }' instead.")
+  org_LONGEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'org: { longestLength: { lt: ... } } }' instead.")
+  org_LONGEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'org: { longestLength: { lte: ... } } }' instead.")
+  org_SHORTEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'org: { shortestLength: { eq: ... } } }' instead.")
+  org_SHORTEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'org: { shortestLength: { gt: ... } } }' instead.")
+  org_SHORTEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'org: { shortestLength: { gte: ... } } }' instead.")
+  org_SHORTEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'org: { shortestLength: { lt: ... } } }' instead.")
+  org_SHORTEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'org: { shortestLength: { lte: ... } } }' instead.")
+}
+
+type DocumentTagsRelationship {
+  cursor: String!
+  node: Tag!
+}
+
+input DocumentTagsUpdateConnectionInput {
+  node: TagUpdateInput
+  where: DocumentTagsConnectionWhere
+}
+
+input DocumentTagsUpdateFieldInput {
+  connect: [DocumentTagsConnectFieldInput!]
+  create: [DocumentTagsCreateFieldInput!]
+  delete: [DocumentTagsDeleteFieldInput!]
+  disconnect: [DocumentTagsDisconnectFieldInput!]
+  update: DocumentTagsUpdateConnectionInput
+}
+
+input DocumentUpdateInput {
+  id: IDScalarMutations
+  id_SET: ID @deprecated(reason: "Please use the generic mutation 'id: { set: ... } }' instead.")
+  owner: [DocumentOwnerUpdateFieldInput!]
+  public: BooleanScalarMutations
+  public_SET: Boolean @deprecated(reason: "Please use the generic mutation 'public: { set: ... } }' instead.")
+  tags: [DocumentTagsUpdateFieldInput!]
+  title: StringScalarMutations
+  title_SET: String @deprecated(reason: "Please use the generic mutation 'title: { set: ... } }' instead.")
+}
+
+type DocumentUserOwnerAggregateSelection {
+  count: CountConnection!
+  node: DocumentUserOwnerNodeAggregateSelection
+}
+
+type DocumentUserOwnerNodeAggregateSelection {
+  name: StringAggregateSelection!
+  nickname: StringAggregateSelection!
+  phone: StringAggregateSelection!
+  salary: IntAggregateSelection!
+}
+
+input DocumentWhere {
+  AND: [DocumentWhere!]
+  NOT: DocumentWhere
+  OR: [DocumentWhere!]
+  id: IDScalarFilters
+  id_CONTAINS: ID @deprecated(reason: "Please use the relevant generic filter id: { contains: ... }")
+  id_ENDS_WITH: ID @deprecated(reason: "Please use the relevant generic filter id: { endsWith: ... }")
+  id_EQ: ID @deprecated(reason: "Please use the relevant generic filter id: { eq: ... }")
+  id_IN: [ID!] @deprecated(reason: "Please use the relevant generic filter id: { in: ... }")
+  id_STARTS_WITH: ID @deprecated(reason: "Please use the relevant generic filter id: { startsWith: ... }")
+  owner: UserRelationshipFilters
+  ownerAggregate: DocumentOwnerAggregateInput @deprecated(reason: "Aggregate filters are moved inside the ownerConnection filter, please use { ownerConnection: { aggregate: {...} } } instead")
+  ownerConnection: DocumentOwnerConnectionFilters
+
+  """
+  Return Documents where all of the related DocumentOwnerConnections match this filter
+  """
+  ownerConnection_ALL: DocumentOwnerConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'ownerConnection: { all: { node: ... } } }' instead.")
+
+  """
+  Return Documents where none of the related DocumentOwnerConnections match this filter
+  """
+  ownerConnection_NONE: DocumentOwnerConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'ownerConnection: { none: { node: ... } } }' instead.")
+
+  """
+  Return Documents where one of the related DocumentOwnerConnections match this filter
+  """
+  ownerConnection_SINGLE: DocumentOwnerConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'ownerConnection: { single: { node: ... } } }' instead.")
+
+  """
+  Return Documents where some of the related DocumentOwnerConnections match this filter
+  """
+  ownerConnection_SOME: DocumentOwnerConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'ownerConnection: { some: { node: ... } } }' instead.")
+
+  """Return Documents where all of the related Users match this filter"""
+  owner_ALL: UserWhere @deprecated(reason: "Please use the relevant generic filter 'owner: { all: ... }' instead.")
+
+  """Return Documents where none of the related Users match this filter"""
+  owner_NONE: UserWhere @deprecated(reason: "Please use the relevant generic filter 'owner: { none: ... }' instead.")
+
+  """Return Documents where one of the related Users match this filter"""
+  owner_SINGLE: UserWhere @deprecated(reason: "Please use the relevant generic filter 'owner: {  single: ... }' instead.")
+
+  """Return Documents where some of the related Users match this filter"""
+  owner_SOME: UserWhere @deprecated(reason: "Please use the relevant generic filter 'owner: {  some: ... }' instead.")
+  public: BooleanScalarFilters
+  public_EQ: Boolean @deprecated(reason: "Please use the relevant generic filter public: { eq: ... }")
+  tags: TagRelationshipFilters
+  tagsAggregate: DocumentTagsAggregateInput @deprecated(reason: "Aggregate filters are moved inside the tagsConnection filter, please use { tagsConnection: { aggregate: {...} } } instead")
+  tagsConnection: DocumentTagsConnectionFilters
+
+  """
+  Return Documents where all of the related DocumentTagsConnections match this filter
+  """
+  tagsConnection_ALL: DocumentTagsConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'tagsConnection: { all: { node: ... } } }' instead.")
+
+  """
+  Return Documents where none of the related DocumentTagsConnections match this filter
+  """
+  tagsConnection_NONE: DocumentTagsConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'tagsConnection: { none: { node: ... } } }' instead.")
+
+  """
+  Return Documents where one of the related DocumentTagsConnections match this filter
+  """
+  tagsConnection_SINGLE: DocumentTagsConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'tagsConnection: { single: { node: ... } } }' instead.")
+
+  """
+  Return Documents where some of the related DocumentTagsConnections match this filter
+  """
+  tagsConnection_SOME: DocumentTagsConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'tagsConnection: { some: { node: ... } } }' instead.")
+
+  """Return Documents where all of the related Tags match this filter"""
+  tags_ALL: TagWhere @deprecated(reason: "Please use the relevant generic filter 'tags: { all: ... }' instead.")
+
+  """Return Documents where none of the related Tags match this filter"""
+  tags_NONE: TagWhere @deprecated(reason: "Please use the relevant generic filter 'tags: { none: ... }' instead.")
+
+  """Return Documents where one of the related Tags match this filter"""
+  tags_SINGLE: TagWhere @deprecated(reason: "Please use the relevant generic filter 'tags: {  single: ... }' instead.")
+
+  """Return Documents where some of the related Tags match this filter"""
+  tags_SOME: TagWhere @deprecated(reason: "Please use the relevant generic filter 'tags: {  some: ... }' instead.")
+  title: StringScalarFilters
+  title_CONTAINS: String @deprecated(reason: "Please use the relevant generic filter title: { contains: ... }")
+  title_ENDS_WITH: String @deprecated(reason: "Please use the relevant generic filter title: { endsWith: ... }")
+  title_EQ: String @deprecated(reason: "Please use the relevant generic filter title: { eq: ... }")
+  title_IN: [String!] @deprecated(reason: "Please use the relevant generic filter title: { in: ... }")
+  title_STARTS_WITH: String @deprecated(reason: "Please use the relevant generic filter title: { startsWith: ... }")
+}
+
+type DocumentsConnection {
+  aggregate: DocumentAggregate!
+  edges: [DocumentEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+"""Float filters"""
+input FloatScalarFilters {
+  eq: Float
+  gt: Float
+  gte: Float
+  in: [Float!]
+  lt: Float
+  lte: Float
+}
+
+"""ID filters"""
+input IDScalarFilters {
+  contains: ID
+  endsWith: ID
+  eq: ID
+  in: [ID!]
+  startsWith: ID
+}
+
+"""ID mutations"""
+input IDScalarMutations {
+  set: ID
+}
+
+type IntAggregateSelection {
+  average: Float
+  max: Int
+  min: Int
+  sum: Int
+}
+
+"""Filters for an aggregation of an int field"""
+input IntScalarAggregationFilters {
+  average: FloatScalarFilters
+  max: IntScalarFilters
+  min: IntScalarFilters
+  sum: IntScalarFilters
+}
+
+"""Int filters"""
+input IntScalarFilters {
+  eq: Int
+  gt: Int
+  gte: Int
+  in: [Int!]
+  lt: Int
+  lte: Int
+}
+
+"""Int mutations"""
+input IntScalarMutations {
+  add: Int
+  set: Int
+  subtract: Int
+}
+
+type Mutation {
+  createDocuments(input: [DocumentCreateInput!]!): CreateDocumentsMutationResponse!
+  createTags(input: [TagCreateInput!]!): CreateTagsMutationResponse!
+  createUsers(input: [UserCreateInput!]!): CreateUsersMutationResponse!
+  deleteDocuments(delete: DocumentDeleteInput, where: DocumentWhere): DeleteInfo!
+  deleteTags(delete: TagDeleteInput, where: TagWhere): DeleteInfo!
+  deleteUsers(delete: UserDeleteInput, where: UserWhere): DeleteInfo!
+  updateDocuments(update: DocumentUpdateInput, where: DocumentWhere): UpdateDocumentsMutationResponse!
+  updateTags(update: TagUpdateInput, where: TagWhere): UpdateTagsMutationResponse!
+  updateUsers(update: UserUpdateInput, where: UserWhere): UpdateUsersMutationResponse!
+}
+
+"""Pagination information (Relay)"""
+type PageInfo {
+  endCursor: String
+  hasNextPage: Boolean!
+  hasPreviousPage: Boolean!
+  startCursor: String
+}
+
+type Query {
+  documents(limit: Int, offset: Int, sort: [DocumentSort!], where: DocumentWhere): [Document!]!
+  documentsConnection(after: String, first: Int, sort: [DocumentSort!], where: DocumentWhere): DocumentsConnection!
+  tags(limit: Int, offset: Int, sort: [TagSort!], where: TagWhere): [Tag!]!
+  tagsConnection(after: String, first: Int, sort: [TagSort!], where: TagWhere): TagsConnection!
+  users(limit: Int, offset: Int, sort: [UserSort!], where: UserWhere): [User!]!
+  usersConnection(after: String, first: Int, sort: [UserSort!], where: UserWhere): UsersConnection!
+}
+
+"""An enum for sorting in either ascending or descending order."""
+enum SortDirection {
+  """Sort by field values in ascending order."""
+  ASC
+
+  """Sort by field values in descending order."""
+  DESC
+}
+
+type StringAggregateSelection {
+  longest: String
+  shortest: String
+}
+
+"""Filters for an aggregation of a string field"""
+input StringScalarAggregationFilters {
+  averageLength: FloatScalarFilters
+  longestLength: IntScalarFilters
+  shortestLength: IntScalarFilters
+}
+
+"""String filters"""
+input StringScalarFilters {
+  contains: String
+  endsWith: String
+  eq: String
+  in: [String!]
+  startsWith: String
+}
+
+"""String mutations"""
+input StringScalarMutations {
+  set: String
+}
+
+type Tag {
+  documents(limit: Int, offset: Int, sort: [DocumentSort!], where: DocumentWhere): [Document!]!
+  documentsConnection(after: String, first: Int, sort: [TagDocumentsConnectionSort!], where: TagDocumentsConnectionWhere): TagDocumentsConnection!
+  name: String!
+  org: String!
+}
+
+type TagAggregate {
+  count: Count!
+  node: TagAggregateNode!
+}
+
+type TagAggregateNode {
+  name: StringAggregateSelection!
+  org: StringAggregateSelection!
+}
+
+input TagConnectInput {
+  documents: [TagDocumentsConnectFieldInput!]
+}
+
+input TagConnectWhere {
+  node: TagWhere!
+}
+
+input TagCreateInput {
+  documents: TagDocumentsFieldInput
+  name: String!
+  org: String!
+}
+
+input TagDeleteInput {
+  documents: [TagDocumentsDeleteFieldInput!]
+}
+
+input TagDisconnectInput {
+  documents: [TagDocumentsDisconnectFieldInput!]
+}
+
+type TagDocumentDocumentsAggregateSelection {
+  count: CountConnection!
+  node: TagDocumentDocumentsNodeAggregateSelection
+}
+
+type TagDocumentDocumentsNodeAggregateSelection {
+  title: StringAggregateSelection!
+}
+
+input TagDocumentsAggregateInput {
+  AND: [TagDocumentsAggregateInput!]
+  NOT: TagDocumentsAggregateInput
+  OR: [TagDocumentsAggregateInput!]
+  count: IntScalarFilters
+  count_EQ: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { eq: ... } } }' instead.")
+  count_GT: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { gt: ... } } }' instead.")
+  count_GTE: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { gte: ... } } }' instead.")
+  count_LT: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { lt: ... } } }' instead.")
+  count_LTE: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { lte: ... } } }' instead.")
+  node: TagDocumentsNodeAggregationWhereInput
+}
+
+input TagDocumentsConnectFieldInput {
+  connect: [DocumentConnectInput!]
+  where: DocumentConnectWhere
+}
+
+type TagDocumentsConnection {
+  aggregate: TagDocumentDocumentsAggregateSelection!
+  edges: [TagDocumentsRelationship!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+input TagDocumentsConnectionAggregateInput {
+  AND: [TagDocumentsConnectionAggregateInput!]
+  NOT: TagDocumentsConnectionAggregateInput
+  OR: [TagDocumentsConnectionAggregateInput!]
+  count: ConnectionAggregationCountFilterInput
+  node: TagDocumentsNodeAggregationWhereInput
+}
+
+input TagDocumentsConnectionFilters {
+  """Filter Tags by aggregating results on related TagDocumentsConnections"""
+  aggregate: TagDocumentsConnectionAggregateInput
+
+  """
+  Return Tags where all of the related TagDocumentsConnections match this filter
+  """
+  all: TagDocumentsConnectionWhere
+
+  """
+  Return Tags where none of the related TagDocumentsConnections match this filter
+  """
+  none: TagDocumentsConnectionWhere
+
+  """
+  Return Tags where one of the related TagDocumentsConnections match this filter
+  """
+  single: TagDocumentsConnectionWhere
+
+  """
+  Return Tags where some of the related TagDocumentsConnections match this filter
+  """
+  some: TagDocumentsConnectionWhere
+}
+
+input TagDocumentsConnectionSort {
+  node: DocumentSort
+}
+
+input TagDocumentsConnectionWhere {
+  AND: [TagDocumentsConnectionWhere!]
+  NOT: TagDocumentsConnectionWhere
+  OR: [TagDocumentsConnectionWhere!]
+  node: DocumentWhere
+}
+
+input TagDocumentsCreateFieldInput {
+  node: DocumentCreateInput!
+}
+
+input TagDocumentsDeleteFieldInput {
+  delete: DocumentDeleteInput
+  where: TagDocumentsConnectionWhere
+}
+
+input TagDocumentsDisconnectFieldInput {
+  disconnect: DocumentDisconnectInput
+  where: TagDocumentsConnectionWhere
+}
+
+input TagDocumentsFieldInput {
+  connect: [TagDocumentsConnectFieldInput!]
+  create: [TagDocumentsCreateFieldInput!]
+}
+
+input TagDocumentsNodeAggregationWhereInput {
+  AND: [TagDocumentsNodeAggregationWhereInput!]
+  NOT: TagDocumentsNodeAggregationWhereInput
+  OR: [TagDocumentsNodeAggregationWhereInput!]
+  title: StringScalarAggregationFilters
+  title_AVERAGE_LENGTH_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'title: { averageLength: { eq: ... } } }' instead.")
+  title_AVERAGE_LENGTH_GT: Float @deprecated(reason: "Please use the relevant generic filter 'title: { averageLength: { gt: ... } } }' instead.")
+  title_AVERAGE_LENGTH_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'title: { averageLength: { gte: ... } } }' instead.")
+  title_AVERAGE_LENGTH_LT: Float @deprecated(reason: "Please use the relevant generic filter 'title: { averageLength: { lt: ... } } }' instead.")
+  title_AVERAGE_LENGTH_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'title: { averageLength: { lte: ... } } }' instead.")
+  title_LONGEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'title: { longestLength: { eq: ... } } }' instead.")
+  title_LONGEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'title: { longestLength: { gt: ... } } }' instead.")
+  title_LONGEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'title: { longestLength: { gte: ... } } }' instead.")
+  title_LONGEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'title: { longestLength: { lt: ... } } }' instead.")
+  title_LONGEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'title: { longestLength: { lte: ... } } }' instead.")
+  title_SHORTEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'title: { shortestLength: { eq: ... } } }' instead.")
+  title_SHORTEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'title: { shortestLength: { gt: ... } } }' instead.")
+  title_SHORTEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'title: { shortestLength: { gte: ... } } }' instead.")
+  title_SHORTEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'title: { shortestLength: { lt: ... } } }' instead.")
+  title_SHORTEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'title: { shortestLength: { lte: ... } } }' instead.")
+}
+
+type TagDocumentsRelationship {
+  cursor: String!
+  node: Document!
+}
+
+input TagDocumentsUpdateConnectionInput {
+  node: DocumentUpdateInput
+  where: TagDocumentsConnectionWhere
+}
+
+input TagDocumentsUpdateFieldInput {
+  connect: [TagDocumentsConnectFieldInput!]
+  create: [TagDocumentsCreateFieldInput!]
+  delete: [TagDocumentsDeleteFieldInput!]
+  disconnect: [TagDocumentsDisconnectFieldInput!]
+  update: TagDocumentsUpdateConnectionInput
+}
+
+type TagEdge {
+  cursor: String!
+  node: Tag!
+}
+
+input TagRelationshipFilters {
+  """Filter type where all of the related Tags match this filter"""
+  all: TagWhere
+
+  """Filter type where none of the related Tags match this filter"""
+  none: TagWhere
+
+  """Filter type where one of the related Tags match this filter"""
+  single: TagWhere
+
+  """Filter type where some of the related Tags match this filter"""
+  some: TagWhere
+}
+
+"""
+Fields to sort Tags by. The order in which sorts are applied is not guaranteed when specifying many fields in one TagSort object.
+"""
+input TagSort {
+  name: SortDirection
+  org: SortDirection
+}
+
+input TagUpdateInput {
+  documents: [TagDocumentsUpdateFieldInput!]
+  name: StringScalarMutations
+  name_SET: String @deprecated(reason: "Please use the generic mutation 'name: { set: ... } }' instead.")
+  org: StringScalarMutations
+  org_SET: String @deprecated(reason: "Please use the generic mutation 'org: { set: ... } }' instead.")
+}
+
+input TagWhere {
+  AND: [TagWhere!]
+  NOT: TagWhere
+  OR: [TagWhere!]
+  documents: DocumentRelationshipFilters
+  documentsAggregate: TagDocumentsAggregateInput @deprecated(reason: "Aggregate filters are moved inside the documentsConnection filter, please use { documentsConnection: { aggregate: {...} } } instead")
+  documentsConnection: TagDocumentsConnectionFilters
+
+  """
+  Return Tags where all of the related TagDocumentsConnections match this filter
+  """
+  documentsConnection_ALL: TagDocumentsConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'documentsConnection: { all: { node: ... } } }' instead.")
+
+  """
+  Return Tags where none of the related TagDocumentsConnections match this filter
+  """
+  documentsConnection_NONE: TagDocumentsConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'documentsConnection: { none: { node: ... } } }' instead.")
+
+  """
+  Return Tags where one of the related TagDocumentsConnections match this filter
+  """
+  documentsConnection_SINGLE: TagDocumentsConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'documentsConnection: { single: { node: ... } } }' instead.")
+
+  """
+  Return Tags where some of the related TagDocumentsConnections match this filter
+  """
+  documentsConnection_SOME: TagDocumentsConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'documentsConnection: { some: { node: ... } } }' instead.")
+
+  """Return Tags where all of the related Documents match this filter"""
+  documents_ALL: DocumentWhere @deprecated(reason: "Please use the relevant generic filter 'documents: { all: ... }' instead.")
+
+  """Return Tags where none of the related Documents match this filter"""
+  documents_NONE: DocumentWhere @deprecated(reason: "Please use the relevant generic filter 'documents: { none: ... }' instead.")
+
+  """Return Tags where one of the related Documents match this filter"""
+  documents_SINGLE: DocumentWhere @deprecated(reason: "Please use the relevant generic filter 'documents: {  single: ... }' instead.")
+
+  """Return Tags where some of the related Documents match this filter"""
+  documents_SOME: DocumentWhere @deprecated(reason: "Please use the relevant generic filter 'documents: {  some: ... }' instead.")
+  name: StringScalarFilters
+  name_CONTAINS: String @deprecated(reason: "Please use the relevant generic filter name: { contains: ... }")
+  name_ENDS_WITH: String @deprecated(reason: "Please use the relevant generic filter name: { endsWith: ... }")
+  name_EQ: String @deprecated(reason: "Please use the relevant generic filter name: { eq: ... }")
+  name_IN: [String!] @deprecated(reason: "Please use the relevant generic filter name: { in: ... }")
+  name_STARTS_WITH: String @deprecated(reason: "Please use the relevant generic filter name: { startsWith: ... }")
+  org: StringScalarFilters
+  org_CONTAINS: String @deprecated(reason: "Please use the relevant generic filter org: { contains: ... }")
+  org_ENDS_WITH: String @deprecated(reason: "Please use the relevant generic filter org: { endsWith: ... }")
+  org_EQ: String @deprecated(reason: "Please use the relevant generic filter org: { eq: ... }")
+  org_IN: [String!] @deprecated(reason: "Please use the relevant generic filter org: { in: ... }")
+  org_STARTS_WITH: String @deprecated(reason: "Please use the relevant generic filter org: { startsWith: ... }")
+}
+
+type TagsConnection {
+  aggregate: TagAggregate!
+  edges: [TagEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+type UpdateDocumentsMutationResponse {
+  documents: [Document!]!
+  info: UpdateInfo!
+}
+
+"""
+Information about the number of nodes and relationships created and deleted during an update mutation
+"""
+type UpdateInfo {
+  nodesCreated: Int!
+  nodesDeleted: Int!
+  relationshipsCreated: Int!
+  relationshipsDeleted: Int!
+}
+
+type UpdateTagsMutationResponse {
+  info: UpdateInfo!
+  tags: [Tag!]!
+}
+
+type UpdateUsersMutationResponse {
+  info: UpdateInfo!
+  users: [User!]!
+}
+
+type User {
+  documents(limit: Int, offset: Int, sort: [DocumentSort!], where: DocumentWhere): [Document!]!
+  documentsConnection(after: String, first: Int, sort: [UserDocumentsConnectionSort!], where: UserDocumentsConnectionWhere): UserDocumentsConnection!
+  id: ID!
+  name: String!
+  nickname: String
+  phone: String
+  salary: Int
+}
+
+type UserAggregate {
+  count: Count!
+  node: UserAggregateNode!
+}
+
+type UserAggregateNode {
+  name: StringAggregateSelection!
+  nickname: StringAggregateSelection!
+  phone: StringAggregateSelection!
+  salary: IntAggregateSelection!
+}
+
+input UserConnectInput {
+  documents: [UserDocumentsConnectFieldInput!]
+}
+
+input UserConnectWhere {
+  node: UserWhere!
+}
+
+input UserCreateInput {
+  documents: UserDocumentsFieldInput
+  id: ID!
+  name: String!
+  nickname: String
+  phone: String
+  salary: Int
+}
+
+input UserDeleteInput {
+  documents: [UserDocumentsDeleteFieldInput!]
+}
+
+input UserDisconnectInput {
+  documents: [UserDocumentsDisconnectFieldInput!]
+}
+
+type UserDocumentDocumentsAggregateSelection {
+  count: CountConnection!
+  node: UserDocumentDocumentsNodeAggregateSelection
+}
+
+type UserDocumentDocumentsNodeAggregateSelection {
+  title: StringAggregateSelection!
+}
+
+input UserDocumentsAggregateInput {
+  AND: [UserDocumentsAggregateInput!]
+  NOT: UserDocumentsAggregateInput
+  OR: [UserDocumentsAggregateInput!]
+  count: IntScalarFilters
+  count_EQ: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { eq: ... } } }' instead.")
+  count_GT: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { gt: ... } } }' instead.")
+  count_GTE: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { gte: ... } } }' instead.")
+  count_LT: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { lt: ... } } }' instead.")
+  count_LTE: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { lte: ... } } }' instead.")
+  node: UserDocumentsNodeAggregationWhereInput
+}
+
+input UserDocumentsConnectFieldInput {
+  connect: [DocumentConnectInput!]
+  where: DocumentConnectWhere
+}
+
+type UserDocumentsConnection {
+  aggregate: UserDocumentDocumentsAggregateSelection!
+  edges: [UserDocumentsRelationship!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+input UserDocumentsConnectionAggregateInput {
+  AND: [UserDocumentsConnectionAggregateInput!]
+  NOT: UserDocumentsConnectionAggregateInput
+  OR: [UserDocumentsConnectionAggregateInput!]
+  count: ConnectionAggregationCountFilterInput
+  node: UserDocumentsNodeAggregationWhereInput
+}
+
+input UserDocumentsConnectionFilters {
+  """
+  Filter Users by aggregating results on related UserDocumentsConnections
+  """
+  aggregate: UserDocumentsConnectionAggregateInput
+
+  """
+  Return Users where all of the related UserDocumentsConnections match this filter
+  """
+  all: UserDocumentsConnectionWhere
+
+  """
+  Return Users where none of the related UserDocumentsConnections match this filter
+  """
+  none: UserDocumentsConnectionWhere
+
+  """
+  Return Users where one of the related UserDocumentsConnections match this filter
+  """
+  single: UserDocumentsConnectionWhere
+
+  """
+  Return Users where some of the related UserDocumentsConnections match this filter
+  """
+  some: UserDocumentsConnectionWhere
+}
+
+input UserDocumentsConnectionSort {
+  node: DocumentSort
+}
+
+input UserDocumentsConnectionWhere {
+  AND: [UserDocumentsConnectionWhere!]
+  NOT: UserDocumentsConnectionWhere
+  OR: [UserDocumentsConnectionWhere!]
+  node: DocumentWhere
+}
+
+input UserDocumentsCreateFieldInput {
+  node: DocumentCreateInput!
+}
+
+input UserDocumentsDeleteFieldInput {
+  delete: DocumentDeleteInput
+  where: UserDocumentsConnectionWhere
+}
+
+input UserDocumentsDisconnectFieldInput {
+  disconnect: DocumentDisconnectInput
+  where: UserDocumentsConnectionWhere
+}
+
+input UserDocumentsFieldInput {
+  connect: [UserDocumentsConnectFieldInput!]
+  create: [UserDocumentsCreateFieldInput!]
+}
+
+input UserDocumentsNodeAggregationWhereInput {
+  AND: [UserDocumentsNodeAggregationWhereInput!]
+  NOT: UserDocumentsNodeAggregationWhereInput
+  OR: [UserDocumentsNodeAggregationWhereInput!]
+  title: StringScalarAggregationFilters
+  title_AVERAGE_LENGTH_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'title: { averageLength: { eq: ... } } }' instead.")
+  title_AVERAGE_LENGTH_GT: Float @deprecated(reason: "Please use the relevant generic filter 'title: { averageLength: { gt: ... } } }' instead.")
+  title_AVERAGE_LENGTH_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'title: { averageLength: { gte: ... } } }' instead.")
+  title_AVERAGE_LENGTH_LT: Float @deprecated(reason: "Please use the relevant generic filter 'title: { averageLength: { lt: ... } } }' instead.")
+  title_AVERAGE_LENGTH_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'title: { averageLength: { lte: ... } } }' instead.")
+  title_LONGEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'title: { longestLength: { eq: ... } } }' instead.")
+  title_LONGEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'title: { longestLength: { gt: ... } } }' instead.")
+  title_LONGEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'title: { longestLength: { gte: ... } } }' instead.")
+  title_LONGEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'title: { longestLength: { lt: ... } } }' instead.")
+  title_LONGEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'title: { longestLength: { lte: ... } } }' instead.")
+  title_SHORTEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'title: { shortestLength: { eq: ... } } }' instead.")
+  title_SHORTEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'title: { shortestLength: { gt: ... } } }' instead.")
+  title_SHORTEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'title: { shortestLength: { gte: ... } } }' instead.")
+  title_SHORTEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'title: { shortestLength: { lt: ... } } }' instead.")
+  title_SHORTEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'title: { shortestLength: { lte: ... } } }' instead.")
+}
+
+type UserDocumentsRelationship {
+  cursor: String!
+  node: Document!
+}
+
+input UserDocumentsUpdateConnectionInput {
+  node: DocumentUpdateInput
+  where: UserDocumentsConnectionWhere
+}
+
+input UserDocumentsUpdateFieldInput {
+  connect: [UserDocumentsConnectFieldInput!]
+  create: [UserDocumentsCreateFieldInput!]
+  delete: [UserDocumentsDeleteFieldInput!]
+  disconnect: [UserDocumentsDisconnectFieldInput!]
+  update: UserDocumentsUpdateConnectionInput
+}
+
+type UserEdge {
+  cursor: String!
+  node: User!
+}
+
+input UserRelationshipFilters {
+  """Filter type where all of the related Users match this filter"""
+  all: UserWhere
+
+  """Filter type where none of the related Users match this filter"""
+  none: UserWhere
+
+  """Filter type where one of the related Users match this filter"""
+  single: UserWhere
+
+  """Filter type where some of the related Users match this filter"""
+  some: UserWhere
+}
+
+"""
+Fields to sort Users by. The order in which sorts are applied is not guaranteed when specifying many fields in one UserSort object.
+"""
+input UserSort {
+  id: SortDirection
+  name: SortDirection
+  nickname: SortDirection
+  phone: SortDirection
+  salary: SortDirection
+}
+
+input UserUpdateInput {
+  documents: [UserDocumentsUpdateFieldInput!]
+  id: IDScalarMutations
+  id_SET: ID @deprecated(reason: "Please use the generic mutation 'id: { set: ... } }' instead.")
+  name: StringScalarMutations
+  name_SET: String @deprecated(reason: "Please use the generic mutation 'name: { set: ... } }' instead.")
+  nickname: StringScalarMutations
+  nickname_SET: String @deprecated(reason: "Please use the generic mutation 'nickname: { set: ... } }' instead.")
+  phone: StringScalarMutations
+  phone_SET: String @deprecated(reason: "Please use the generic mutation 'phone: { set: ... } }' instead.")
+  salary: IntScalarMutations
+  salary_DECREMENT: Int @deprecated(reason: "Please use the relevant generic mutation 'salary: { decrement: ... } }' instead.")
+  salary_INCREMENT: Int @deprecated(reason: "Please use the relevant generic mutation 'salary: { increment: ... } }' instead.")
+  salary_SET: Int @deprecated(reason: "Please use the generic mutation 'salary: { set: ... } }' instead.")
+}
+
+input UserWhere {
+  AND: [UserWhere!]
+  NOT: UserWhere
+  OR: [UserWhere!]
+  documents: DocumentRelationshipFilters
+  documentsAggregate: UserDocumentsAggregateInput @deprecated(reason: "Aggregate filters are moved inside the documentsConnection filter, please use { documentsConnection: { aggregate: {...} } } instead")
+  documentsConnection: UserDocumentsConnectionFilters
+
+  """
+  Return Users where all of the related UserDocumentsConnections match this filter
+  """
+  documentsConnection_ALL: UserDocumentsConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'documentsConnection: { all: { node: ... } } }' instead.")
+
+  """
+  Return Users where none of the related UserDocumentsConnections match this filter
+  """
+  documentsConnection_NONE: UserDocumentsConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'documentsConnection: { none: { node: ... } } }' instead.")
+
+  """
+  Return Users where one of the related UserDocumentsConnections match this filter
+  """
+  documentsConnection_SINGLE: UserDocumentsConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'documentsConnection: { single: { node: ... } } }' instead.")
+
+  """
+  Return Users where some of the related UserDocumentsConnections match this filter
+  """
+  documentsConnection_SOME: UserDocumentsConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'documentsConnection: { some: { node: ... } } }' instead.")
+
+  """Return Users where all of the related Documents match this filter"""
+  documents_ALL: DocumentWhere @deprecated(reason: "Please use the relevant generic filter 'documents: { all: ... }' instead.")
+
+  """Return Users where none of the related Documents match this filter"""
+  documents_NONE: DocumentWhere @deprecated(reason: "Please use the relevant generic filter 'documents: { none: ... }' instead.")
+
+  """Return Users where one of the related Documents match this filter"""
+  documents_SINGLE: DocumentWhere @deprecated(reason: "Please use the relevant generic filter 'documents: {  single: ... }' instead.")
+
+  """Return Users where some of the related Documents match this filter"""
+  documents_SOME: DocumentWhere @deprecated(reason: "Please use the relevant generic filter 'documents: {  some: ... }' instead.")
+  id: IDScalarFilters
+  id_CONTAINS: ID @deprecated(reason: "Please use the relevant generic filter id: { contains: ... }")
+  id_ENDS_WITH: ID @deprecated(reason: "Please use the relevant generic filter id: { endsWith: ... }")
+  id_EQ: ID @deprecated(reason: "Please use the relevant generic filter id: { eq: ... }")
+  id_IN: [ID!] @deprecated(reason: "Please use the relevant generic filter id: { in: ... }")
+  id_STARTS_WITH: ID @deprecated(reason: "Please use the relevant generic filter id: { startsWith: ... }")
+  name: StringScalarFilters
+  name_CONTAINS: String @deprecated(reason: "Please use the relevant generic filter name: { contains: ... }")
+  name_ENDS_WITH: String @deprecated(reason: "Please use the relevant generic filter name: { endsWith: ... }")
+  name_EQ: String @deprecated(reason: "Please use the relevant generic filter name: { eq: ... }")
+  name_IN: [String!] @deprecated(reason: "Please use the relevant generic filter name: { in: ... }")
+  name_STARTS_WITH: String @deprecated(reason: "Please use the relevant generic filter name: { startsWith: ... }")
+  nickname: StringScalarFilters
+  nickname_CONTAINS: String @deprecated(reason: "Please use the relevant generic filter nickname: { contains: ... }")
+  nickname_ENDS_WITH: String @deprecated(reason: "Please use the relevant generic filter nickname: { endsWith: ... }")
+  nickname_EQ: String @deprecated(reason: "Please use the relevant generic filter nickname: { eq: ... }")
+  nickname_IN: [String] @deprecated(reason: "Please use the relevant generic filter nickname: { in: ... }")
+  nickname_STARTS_WITH: String @deprecated(reason: "Please use the relevant generic filter nickname: { startsWith: ... }")
+  phone: StringScalarFilters
+  phone_CONTAINS: String @deprecated(reason: "Please use the relevant generic filter phone: { contains: ... }")
+  phone_ENDS_WITH: String @deprecated(reason: "Please use the relevant generic filter phone: { endsWith: ... }")
+  phone_EQ: String @deprecated(reason: "Please use the relevant generic filter phone: { eq: ... }")
+  phone_IN: [String] @deprecated(reason: "Please use the relevant generic filter phone: { in: ... }")
+  phone_STARTS_WITH: String @deprecated(reason: "Please use the relevant generic filter phone: { startsWith: ... }")
+  salary: IntScalarFilters
+  salary_EQ: Int @deprecated(reason: "Please use the relevant generic filter salary: { eq: ... }")
+  salary_GT: Int @deprecated(reason: "Please use the relevant generic filter salary: { gt: ... }")
+  salary_GTE: Int @deprecated(reason: "Please use the relevant generic filter salary: { gte: ... }")
+  salary_IN: [Int] @deprecated(reason: "Please use the relevant generic filter salary: { in: ... }")
+  salary_LT: Int @deprecated(reason: "Please use the relevant generic filter salary: { lt: ... }")
+  salary_LTE: Int @deprecated(reason: "Please use the relevant generic filter salary: { lte: ... }")
+}
+
+type UsersConnection {
+  aggregate: UserAggregate!
+  edges: [UserEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}

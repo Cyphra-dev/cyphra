@@ -12,6 +12,13 @@
  * the last / first values ordered by `size(…)` descending; `sum` of an empty set is `0`, the other
  * aggregates are `null`. Int `average` is a Float, BigInt values (including `average`) are strings.
  *
+ * Authorization (v7 7.6): the READ `filter` rules of the type (and of the selected fields) are part
+ * of the `WHERE` of every node selection, root or nested, and of connection `totalCount`; connection
+ * `aggregate` selections use the AGGREGATE rules instead. When READ (AGGREGATE) `validate` rules fail
+ * for one node matching the selection's filters (before pagination, like v7), the selection is
+ * replaced by a {@link FORBIDDEN_KEY} marker and the field fails with `Forbidden`: the projection of
+ * a node that is not allowed is never returned by the database.
+ *
  * @packageDocumentation
  */
 
@@ -30,8 +37,9 @@ import {
 } from "graphql";
 import neo4j, { isInt } from "neo4j-driver";
 import { FOLLOW_UP, notImplemented } from "../errors.js";
+import { checkAuthentication, type AuthContext } from "../auth/context.js";
+import { AuthRules } from "../auth/rules.js";
 import {
-  readNeedsAuth,
   type Attribute,
   type NodeType,
   type PropertiesType,
@@ -50,6 +58,55 @@ import { WhereCompiler, relationshipPattern } from "./where.js";
 
 type AnyRecord = Record<string, unknown>;
 export type Decoder = (raw: unknown) => unknown;
+
+/**
+ * Key of the marker map that replaces a selection whose `validate` rules failed. Not a GraphQL name
+ * (`:`), so no alias can produce it.
+ */
+export const FORBIDDEN_KEY = "cyphra:forbidden";
+const FORBIDDEN_MARKER = `{ ${"`"}${FORBIDDEN_KEY}${"`"}: true }`;
+
+/** Whether a raw result contains the {@link FORBIDDEN_KEY} marker (maps and lists, any depth). */
+export function containsForbidden(raw: unknown): boolean {
+  if (Array.isArray(raw)) return raw.some(containsForbidden);
+  if (typeof raw !== "object" || raw === null) return false;
+  const proto = Object.getPrototypeOf(raw) as unknown;
+  if (proto !== Object.prototype && proto !== null) return false;
+  if (Object.prototype.hasOwnProperty.call(raw, FORBIDDEN_KEY)) return true;
+  return Object.values(raw as AnyRecord).some(containsForbidden);
+}
+
+function and(parts: readonly (string | undefined)[]): string | undefined {
+  const ps = parts.filter((p): p is string => p !== undefined);
+  if (ps.length === 0) return undefined;
+  if (ps.length === 1) return ps[0];
+  return ps.map((p) => `(${p})`).join(" AND ");
+}
+
+/**
+ * The projection of one row, or the marker when the row's node fails validation. Checked again on
+ * the projected row itself (on top of {@link gate}), so a concurrent change between the two cannot
+ * let a projection through.
+ */
+function rowGate(failure: string | undefined, expr: string, marker: string): string {
+  return failure === undefined ? expr : `CASE WHEN ${failure} THEN ${marker} ELSE ${expr} END`;
+}
+
+/**
+ * `CASE WHEN EXISTS { MATCH … WHERE <filters> AND <failure> } THEN <marker> ELSE expr END`: like
+ * v7, a selection fails when one node matching its filters fails validation, not only the nodes of
+ * the requested page.
+ */
+function gate(
+  match: string,
+  predicate: string | undefined,
+  failure: string | undefined,
+  expr: string,
+  marker: string,
+): string {
+  if (failure === undefined) return expr;
+  return `CASE WHEN EXISTS { MATCH ${match} WHERE ${and([predicate, failure])} } THEN ${marker} ELSE ${expr} END`;
+}
 
 /** What the compiler needs from `GraphQLResolveInfo`. */
 export type SelectionInfo = {
@@ -196,21 +253,60 @@ function mapDecoder(decoders: readonly [string, Decoder][]): Decoder {
 export class SelectionCompiler {
   readonly ctx = new CypherContext();
   private readonly where: WhereCompiler;
+  readonly rules: AuthRules;
 
   constructor(
     private readonly model: V7Model,
     private readonly info: SelectionInfo,
+    readonly auth: AuthContext,
   ) {
-    this.where = new WhereCompiler(model, this.ctx, (n) => this.assertReadable(n));
+    this.where = new WhereCompiler(model, this.ctx);
+    this.rules = new AuthRules(model, this.ctx, auth);
   }
 
-  assertReadable(node: NodeType): void {
-    if (readNeedsAuth(node)) {
-      throw notImplemented(
-        `reading ${node.name}, which has @authentication / @authorization rules`,
-        FOLLOW_UP.authorization,
-      );
-    }
+  /** `@authentication` for `operation` on the type (and on each of `fields`). */
+  authenticate(
+    node: NodeType,
+    operation: "READ" | "AGGREGATE",
+    fields: readonly string[] = [],
+  ): void {
+    checkAuthentication(this.model, this.auth, node, [operation]);
+    for (const f of fields) checkAuthentication(this.model, this.auth, node, [operation], f);
+  }
+
+  /** Attributes of `node` selected in `fieldNodes` (they bring their field-level rules). */
+  selectedAttributes(node: NodeType, fieldNodes: readonly FieldNode[]): Attribute[] {
+    const names = new Set(
+      [...collectFields(this.info, subSelections(fieldNodes)).values()].map(
+        (n) => n[0]!.name.value,
+      ),
+    );
+    return node.attributes.filter((a) => names.has(a.name));
+  }
+
+  /**
+   * READ rules of a node selection: the `filter` predicate and the `validate` failure (BEFORE) for
+   * the type and the selected attributes.
+   */
+  readRules(
+    variable: string,
+    node: NodeType,
+    fieldNodes: readonly FieldNode[],
+  ): { filter?: string; failure?: string } {
+    const attrs = this.selectedAttributes(node, fieldNodes);
+    return {
+      filter: this.rules.filter(variable, node, "READ", attrs),
+      failure: this.rules.fails(variable, node, "READ", "BEFORE", attrs),
+    };
+  }
+
+  /** `[marker]` for a list selection that is not allowed. */
+  forbiddenList(): string {
+    return `[${FORBIDDEN_MARKER}]`;
+  }
+
+  forbiddenMap(): string {
+    return FORBIDDEN_MARKER;
   }
 
   private sortItems(
@@ -269,7 +365,10 @@ export class SelectionCompiler {
     node: NodeType,
     fieldNodes: readonly FieldNode[],
   ): { expr: string; decode: Decoder } {
-    this.assertReadable(node);
+    const fields = [...collectFields(this.info, subSelections(fieldNodes)).values()].map(
+      (n) => n[0]!.name.value,
+    );
+    this.authenticate(node, "READ", fields);
     const type = objectType(this.info, node.name);
     const gqlFields = type.getFields();
     const entries: string[] = [];
@@ -352,7 +451,8 @@ export class SelectionCompiler {
     const target = this.model.node(rel.target);
     const m = this.ctx.variable("this");
     const pattern = relationshipPattern(this.model, variable, rel, m);
-    const pred = this.where.node(m, target, args.where);
+    const auth = this.readRules(m, target, fieldNodes);
+    const pred = and([this.where.node(m, target, args.where), auth.filter]);
     const order = this.nodeOrder(m, target, args.sort);
     const page = paging(this.ctx, args.offset, args.limit);
     const inner = this.projectNode(m, target, fieldNodes);
@@ -360,12 +460,12 @@ export class SelectionCompiler {
       `MATCH ${pattern}`,
       pred ? `WHERE ${pred}` : "",
       withClause(m, order, page),
-      `RETURN ${inner.expr}`,
+      `RETURN ${rowGate(auth.failure, inner.expr, this.forbiddenMap())}`,
     ]
       .filter(Boolean)
       .join(" ");
     return {
-      expr: `COLLECT { ${body} }`,
+      expr: gate(pattern, pred, auth.failure, `COLLECT { ${body} }`, this.forbiddenList()),
       decode: (raw) => (Array.isArray(raw) ? raw.map(inner.decode) : []),
     };
   }
@@ -377,6 +477,7 @@ export class SelectionCompiler {
    */
   private connection(opts: {
     match: string;
+    /** The connection `where`. */
     predicate?: string;
     order: string;
     nodeVar: string;
@@ -393,6 +494,14 @@ export class SelectionCompiler {
     const afterOffset = cursorToOffset(opts.args.after);
     const offset = afterOffset === undefined ? 0 : afterOffset + 1;
     const conn = collectFields(this.info, subSelections(opts.fieldNodes));
+    // v7: READ authentication of the type for every connection, READ rules on `totalCount` /
+    // `edges` (with the attributes selected in `edges.node`), AGGREGATE rules on `aggregate`.
+    this.authenticate(opts.node, "READ");
+    const edgeNodeFields = [...collectFields(this.info, subSelections(conn.get("edges") ?? []))]
+      .filter(([, n]) => n[0]!.name.value === "node")
+      .flatMap(([, n]) => n);
+    const readAuth = this.readRules(opts.nodeVar, opts.node, edgeNodeFields);
+    const readPredicate = and([opts.predicate, readAuth.filter]);
 
     const edgeEntries: string[] = [];
     const edgeDecoders: [string, (raw: AnyRecord, index: number) => unknown][] = [];
@@ -401,13 +510,33 @@ export class SelectionCompiler {
     const aggregateEntries: string[] = [];
     let needsTotal = false;
     let needsEdges = false;
-    const where = opts.predicate ? ` WHERE ${opts.predicate}` : "";
+    const where = readPredicate ? ` WHERE ${readPredicate}` : "";
     for (const [key, nodes] of conn) {
       const name = nodes[0]!.name.value;
       if (name === "aggregate") {
+        const aggNodeFields = [...collectFields(this.info, subSelections(nodes))]
+          .filter(([, n]) => n[0]!.name.value === "node")
+          .flatMap(([, n]) => n);
+        const aggAttrs = this.selectedAttributes(opts.node, aggNodeFields);
+        this.authenticate(
+          opts.node,
+          "AGGREGATE",
+          aggAttrs.map((a) => a.name),
+        );
+        const aggPredicate = and([
+          opts.predicate,
+          this.rules.filter(opts.nodeVar, opts.node, "AGGREGATE", aggAttrs),
+        ]);
+        const aggFailure = this.rules.fails(
+          opts.nodeVar,
+          opts.node,
+          "AGGREGATE",
+          "BEFORE",
+          aggAttrs,
+        );
         const p = this.aggregate(
           {
-            base: `MATCH ${opts.match}${where}`,
+            base: `MATCH ${opts.match}${aggPredicate ? ` WHERE ${aggPredicate}` : ""}`,
             nodeVar: opts.nodeVar,
             relVar: opts.relVar,
             node: opts.node,
@@ -416,7 +545,9 @@ export class SelectionCompiler {
           },
           nodes,
         );
-        aggregateEntries.push(`${q(key)}: ${p.expr}`);
+        aggregateEntries.push(
+          `${q(key)}: ${gate(opts.match, aggPredicate, aggFailure, p.expr, this.forbiddenMap())}`,
+        );
         aggregates.push([key, p.decode]);
       }
       if (name === "edges") edgeFieldNodes.push(...nodes);
@@ -443,7 +574,7 @@ export class SelectionCompiler {
     const edgesBody = [
       `MATCH ${opts.match}${where}`,
       withClause(withVars, opts.order, page),
-      `RETURN { ${edgeEntries.join(", ")} }`,
+      `RETURN ${rowGate(needsEdges ? readAuth.failure : undefined, `{ ${edgeEntries.join(", ")} }`, this.forbiddenMap())}`,
     ]
       .filter(Boolean)
       .join(" ");
@@ -451,7 +582,11 @@ export class SelectionCompiler {
     if (needsTotal) parts.push(`total: COUNT { MATCH ${opts.match}${where} }`);
     if (needsEdges) parts.push(`edges: COLLECT { ${edgesBody} }`);
     if (aggregateEntries.length) parts.push(`aggregate: { ${aggregateEntries.join(", ")} }`);
-    const expr = `{ ${parts.join(", ")} }`;
+    const map = `{ ${parts.join(", ")} }`;
+    const expr =
+      needsTotal || needsEdges
+        ? gate(opts.match, readPredicate, readAuth.failure, map, this.forbiddenMap())
+        : map;
 
     return {
       expr,
@@ -547,7 +682,6 @@ export class SelectionCompiler {
       const attributes = isEdge ? scope.props?.attributes : scope.node.attributes;
       if (!variable || !attributes)
         throw new Error(`Unknown field ${scope.owner}.aggregate.${name}`);
-      this.assertReadable(scope.node);
       const fieldEntries: string[] = [];
       const fieldDecoders: [string, Decoder][] = [];
       for (const [fk, fn] of collectFields(this.info, subSelections(nodes))) {
@@ -613,7 +747,6 @@ export class SelectionCompiler {
     fieldNodes: readonly FieldNode[],
   ): { expr: string; decode: Decoder } {
     const target = this.model.node(rel.target);
-    this.assertReadable(target);
     const m = this.ctx.variable("this");
     const r = this.ctx.variable("edge");
     const props = this.props(rel);
@@ -635,12 +768,29 @@ export class SelectionCompiler {
 
   /** `movies(where, sort, limit, offset)`. */
   rootList(node: NodeType, args: AnyRecord, fieldNodes: readonly FieldNode[]): CompiledQuery {
-    this.assertReadable(node);
     const v = this.ctx.variable("this");
-    const pred = this.where.node(v, node, args.where);
+    const auth = this.readRules(v, node, fieldNodes);
+    const pred = and([this.where.node(v, node, args.where), auth.filter]);
     const order = this.nodeOrder(v, node, args.sort);
     const page = paging(this.ctx, args.offset, args.limit);
     const proj = this.projectNode(v, node, fieldNodes);
+    if (auth.failure !== undefined) {
+      // One row: the projections, or the marker when a matching node fails validation.
+      const match = `(${v}${labels(node.labels)})`;
+      const body = [
+        `MATCH ${match}`,
+        pred ? `WHERE ${pred}` : "",
+        withClause(v, order, page),
+        `RETURN ${rowGate(auth.failure, proj.expr, this.forbiddenMap())}`,
+      ]
+        .filter(Boolean)
+        .join(" ");
+      return {
+        cypher: `RETURN ${gate(match, pred, auth.failure, `COLLECT { ${body} }`, this.forbiddenList())} AS this`,
+        params: this.ctx.params,
+        decode: (rows) => (Array.isArray(rows[0]) ? rows[0].map(proj.decode) : []),
+      };
+    }
     const cypher = [
       `MATCH (${v}${labels(node.labels)})`,
       pred ? `WHERE ${pred}` : "",
@@ -654,7 +804,6 @@ export class SelectionCompiler {
 
   /** `moviesConnection(where, sort, first, after)`. */
   rootConnection(node: NodeType, args: AnyRecord, fieldNodes: readonly FieldNode[]): CompiledQuery {
-    this.assertReadable(node);
     const v = this.ctx.variable("this");
     const c = this.connection({
       match: `(${v}${labels(node.labels)})`,

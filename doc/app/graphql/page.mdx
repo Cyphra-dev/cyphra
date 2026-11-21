@@ -13,9 +13,9 @@ the same types, fields, filters, sorting, pagination and results. You keep your 
 frontend queries, and the API runs on the Cyphra runtime.
 
 <Callout type="warning">
-  This is an early release. The full v7 schema is generated, and queries (aggregations included) and
-  mutations work. Authorization and `@cypher` fields are in the schema but return a `Not implemented
-  yet` error for now. See [what works today](#what-works-today).
+  This is an early release. The full v7 schema is generated, and queries (aggregations included),
+  mutations and `@authentication` / `@authorization` rules work. `@cypher` fields are in the schema
+  but return a `Not implemented yet` error for now. See [what works today](#what-works-today).
 </Callout>
 
 ## Install
@@ -45,13 +45,14 @@ const driver = neo4j.driver(
 export const schema = compat.v7.makeSchema({ typeDefs, driver });
 ```
 
-| Option     | Description                                                                 |
-| ---------- | --------------------------------------------------------------------------- |
-| `typeDefs` | Your v7 type definitions (`@node`, `@relationship`, …), as a string.        |
-| `driver`   | A `neo4j-driver` driver.                                                    |
-| `client`   | A `CyphraClient`, instead of `driver`, to share the connection of your app. |
-| `database` | Database name used with `driver`. Default: the default database.            |
-| `debug`    | Log each generated Cypher statement and its parameter names (not values).   |
+| Option     | Description                                                                                        |
+| ---------- | -------------------------------------------------------------------------------------------------- |
+| `typeDefs` | Your v7 type definitions (`@node`, `@relationship`, …), as a string.                               |
+| `driver`   | A `neo4j-driver` driver.                                                                           |
+| `client`   | A `CyphraClient`, instead of `driver`, to share the connection of your app.                        |
+| `database` | Database name used with `driver`. Default: the default database.                                   |
+| `debug`    | Log each generated Cypher statement and its parameter names (not values).                          |
+| `features` | `{ authorization }`: how JWTs are verified, as in v7 ([below](#authentication-and-authorization)). |
 
 `makeSchema` throws an `UnsupportedTypeDefsError` when the type definitions use something it cannot
 serve yet (interfaces, unions, `Point`, `Duration`, custom scalars, …). It never serves an API that
@@ -149,12 +150,149 @@ Each root field runs as one Cypher statement, in its own transaction (a read tra
 queries, a write transaction for mutations). Values are always parameters, and labels, property
 keys and relationship types come from your type definitions.
 
+## Authentication and authorization
+
+`@authentication`, `@authorization`, `@jwt` and `@jwtClaim` work as in v7, with the same results.
+The rules are compiled into the Cypher statement of each root field: `filter` rules are part of its
+`WHERE`, and `validate` rules are checked inside it. A node that the rules do not allow is never
+returned by the database, and a write that fails a rule is rolled back with the rest of the
+statement. JWT claims and context values are always passed as parameters. APOC is not needed.
+
+### Pass the JWT
+
+Configure the key like `features.authorization` in v7, and pass the `Authorization` header as
+`token` in the GraphQL context:
+
+```ts filename="lib/graphql.ts"
+export const schema = compat.v7.makeSchema({
+  typeDefs,
+  driver,
+  features: { authorization: { key: process.env.JWT_SECRET! } },
+});
+```
+
+```ts filename="app/api/graphql/route.ts"
+const { handleRequest } = createYoga({
+  schema,
+  graphqlEndpoint: "/api/graphql",
+  fetchAPI: { Response },
+  context: ({ request }) => ({ token: request.headers.get("authorization") ?? undefined }),
+});
+```
+
+| `features.authorization` | Description                                                                                                                                |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `key`                    | A secret (HS256, HS384, HS512), `{ url }` of a JWKS endpoint (keys are cached), or a function of the context that returns one of the two.  |
+| `verifyOptions`          | Passed to `jwtVerify` of [`jose`](https://github.com/panva/jose): `issuer`, `audience`, `algorithms`, `clockTolerance`, …                  |
+| `verify`                 | `false` decodes the token without checking its signature. Only for tokens already verified upstream: anyone can forge an unverified token. |
+
+The context keys are the ones v7 reads:
+
+- `token`: `Bearer <jwt>` (or the bare JWT). A missing, malformed, expired or forged token leaves
+  the request unauthenticated, without an error, as in v7.
+- `jwt`: a payload your server already verified. It is trusted as it is and takes precedence over
+  `token`.
+- Any other key can be read by a rule as `$context.<path>`, for example `$context.tenant.id`.
+
+### Rules
+
+Everything v7 accepts is supported:
+
+- `@authentication(operations, jwt)` on a type, on a field, or for every type with
+  `extend schema @authentication(…)`. It fails with `Unauthenticated` before anything runs.
+- `@authorization(filter: [...], validate: [...])` on a type or a field, with `operations` (`READ`,
+  `AGGREGATE`, `CREATE`, `UPDATE`, `DELETE`, `CREATE_RELATIONSHIP`, `DELETE_RELATIONSHIP`),
+  `requireAuthentication` and, for `validate`, `when: [BEFORE, AFTER]`. A failed `validate` rule
+  fails the root field with `Forbidden`.
+- `where: { node: …, jwt: … }` with `AND` / `OR` / `NOT`, any filter of the type in `node`
+  (relationships included), and `"$jwt.<claim>"` / `"$context.<path>"` values.
+- The rules of related types apply to nested selections, connections and nested writes.
+
+```graphql
+type JWT @jwt {
+  roles: [String!]! @jwtClaim(path: "app.roles")
+}
+
+type Post
+  @node
+  @authorization(
+    filter: [
+      {
+        operations: [READ]
+        where: {
+          OR: [
+            { node: { published: { eq: true } } }
+            { node: { author: { single: { id: { eq: "$jwt.sub" } } } } }
+          ]
+        }
+      }
+    ]
+    validate: [
+      {
+        operations: [UPDATE, DELETE]
+        when: [BEFORE]
+        where: {
+          OR: [
+            { node: { author: { single: { id: { eq: "$jwt.sub" } } } } }
+            { jwt: { roles: { includes: "admin" } } }
+          ]
+        }
+      }
+    ]
+  ) {
+  id: ID! @id
+  title: String!
+  published: Boolean!
+  author: [User!]! @relationship(type: "WROTE", direction: IN)
+}
+```
+
+### v7 authorization behaviour you get as well
+
+These come from v7 and are kept so results do not change. Some of them matter for security:
+
+- Rules require authentication by default (`requireAuthentication: true`): an anonymous request
+  reads nothing from a type with a `filter` rule, and fails its `validate` rules.
+- Rules only cover what is selected or written. `where` filters, `sort` and aggregation filters can
+  use fields and relationships the user cannot read: `users(where: { documents: { some: … } })`
+  tells which users own a matching document, even a hidden one, and filtering or sorting on a field
+  with a field-level rule is not checked. Keep data that must not be probed
+  behind a type-level rule of the type that holds it.
+- A connection `aggregate` uses the `AGGREGATE` rules, not the `READ` ones: give `AGGREGATE` the
+  same `filter` as `READ` unless counts may differ.
+- An update that only writes relationships of a node (`connect`, `disconnect`, …) does not apply
+  that node's `UPDATE` rules; the rules of the related type and the relationship rules
+  (`CREATE_RELATIONSHIP`, `DELETE_RELATIONSHIP`) still apply.
+- The response of a `create` mutation returns the created nodes without their `READ` rules (nested
+  selections apply them). The response of an `update` applies them.
+- `CREATE` rules are checked after the write (`validate` with `when: [AFTER]`), there are no
+  `filter` rules for `CREATE`. On `connect`, the source node is only checked after the
+  relationship is created.
+- A `jwt` passed in the context is trusted, and `@jwtClaim` paths only apply to tokens verified
+  from `token`, not to it.
+
+### Differences from v7
+
+`@cyphra/graphql` is stricter than v7 in a few cases, where v7 is more permissive than its rules
+read or fails with an internal error:
+
+- Inside an `AND` / `OR` element, `node` and `jwt` must both hold. v7 combines them with the
+  element's operator, so `OR: [{ node: …, jwt: … }]` passes when either holds.
+- `NOT` works at the top of a rule (v7 throws).
+- A `validate` rule that evaluates to `null` (a compared property is missing) fails with
+  `Forbidden`. v7 fails with an APOC error.
+- A `$context` value that is not in the context is `null`, so the comparison matches nothing. v7
+  fails with a Neo4j "Expected parameter" error.
+- In `@authentication(jwt: …)`, `eq` does not consider a list equal to a string.
+- A rule that does not fit its type (unknown field, wrong operator) makes `makeSchema` throw, and
+  `@authentication` / `@authorization` on relationship fields or relationship properties is
+  rejected instead of ignored.
+
 ## What works today
 
-Compatibility is checked by a suite of 5 apps and 48 operations. Its expected results come from the
-real `@neo4j/graphql` 7.6.8. Today 38 of its 53 checks pass: the printed schema of all 5 apps, and
-the 33 operations (queries, aggregations and mutations) that use no authorization or `@cypher`
-field. The full report is [`compat/graphql/REPORT.md`](https://github.com/Cyphra-dev/cyphra/blob/main/compat/graphql/REPORT.md).
+Compatibility is checked by a suite of 6 apps and 84 operations. Its expected results come from the
+real `@neo4j/graphql` 7.6.8. Today 86 of its 90 checks pass: the printed schema of all 6 apps, and
+the 80 operations (queries, aggregations, mutations and authorization) that use no `@cypher` field. The full report is [`compat/graphql/REPORT.md`](https://github.com/Cyphra-dev/cyphra/blob/main/compat/graphql/REPORT.md).
 
 | Feature                                                                                                                                       | Status                                                          |
 | --------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
@@ -169,11 +307,8 @@ field. The full report is [`compat/graphql/REPORT.md`](https://github.com/Cyphra
 | Nested writes: `create`, `connect`, `disconnect`, `update`, `delete` (nested in each other), edge properties                                  | Works                                                           |
 | Update operators: `set`, `add`, `subtract`, `multiply`, `divide`, `push`, `pop` and the deprecated `field_SET` / `field_INCREMENT` / …        | Works                                                           |
 | `@id`, `@timestamp`, `@default`                                                                                                               | Works                                                           |
-| `@authentication` / `@authorization`                                                                                                          | Not yet ([#74](https://github.com/Cyphra-dev/cyphra/issues/74)) |
+| `@authentication` / `@authorization` (type, field and schema level), `@jwt`, `@jwtClaim`, JWT verification (secret or JWKS)                   | Works ([details](#authentication-and-authorization))            |
 | `@cypher` fields                                                                                                                              | Not yet ([#75](https://github.com/Cyphra-dev/cyphra/issues/75)) |
-
-A type with `@authentication` or `@authorization` rules is never read or written without them: the
-operation returns a `Not implemented yet` error instead of unfiltered data or an unchecked write.
 
 ### v7 behaviour you get as well
 

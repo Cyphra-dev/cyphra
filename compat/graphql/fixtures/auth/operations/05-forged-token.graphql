@@ -1,0 +1,6 @@
+# features: auth.filter, auth.token
+query {
+  documents {
+    id
+  }
+}

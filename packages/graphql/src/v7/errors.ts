@@ -2,7 +2,6 @@ import { GraphQLError } from "graphql";
 
 /** Issues tracking the parts of the v7 API that are generated but not served yet. */
 export const FOLLOW_UP = {
-  authorization: 74,
   cypher: 75,
 } as const;
 

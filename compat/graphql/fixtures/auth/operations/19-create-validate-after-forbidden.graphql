@@ -1,0 +1,8 @@
+# features: auth.validate, auth.jwt, mutation.create, errors
+mutation {
+  createDocuments(input: [{ id: "d-new", title: "Unowned", public: true }]) {
+    documents {
+      id
+    }
+  }
+}

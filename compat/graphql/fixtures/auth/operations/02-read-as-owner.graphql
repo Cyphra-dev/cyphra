@@ -1,0 +1,10 @@
+# features: auth.filter, auth.jwt, relationship
+query {
+  documents {
+    id
+    title
+    owner {
+      name
+    }
+  }
+}

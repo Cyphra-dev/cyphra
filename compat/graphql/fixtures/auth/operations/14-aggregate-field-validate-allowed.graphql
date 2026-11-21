@@ -1,0 +1,15 @@
+# features: auth.aggregate, auth.field, auth.validate, auth.jwt
+query {
+  usersConnection {
+    aggregate {
+      count {
+        nodes
+      }
+      node {
+        salary {
+          max
+        }
+      }
+    }
+  }
+}

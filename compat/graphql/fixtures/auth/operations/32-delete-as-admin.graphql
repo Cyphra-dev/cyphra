@@ -1,0 +1,7 @@
+# features: auth.validate, auth.jwt, mutation.delete
+mutation {
+  deleteDocuments(where: { id: { eq: "d-4" } }) {
+    nodesDeleted
+    relationshipsDeleted
+  }
+}
