@@ -8,6 +8,8 @@ const meta: MetaRecord = {
   bun: "Bun",
   "--deploy": { type: "separator", title: "Deploy" },
   vercel: "Vercel",
+  "--ai": { type: "separator", title: "AI" },
+  graphrag: "GraphRAG",
   "--cypher": { type: "separator", title: "Cypher" },
   "cypher-howtos": { title: "Cypher how-tos", href: "/cypher" },
 };

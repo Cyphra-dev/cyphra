@@ -1,7 +1,7 @@
 ---
 title: "Neo4j guides for TypeScript frameworks"
 sidebarTitle: Guides
-description: "Step-by-step guides to use Neo4j from Next.js, NestJS and Bun with Cyphra's typed client, and to deploy a Neo4j-backed app on Vercel."
+description: "Step-by-step guides to use Neo4j from Next.js, NestJS and Bun with Cyphra's typed client, deploy on Vercel, and build GraphRAG retrieval."
 ---
 
 import { Cards } from "nextra/components";
@@ -19,9 +19,13 @@ which versions it was tested with.
   <Cards.Card title="Deploy a Neo4j app on Vercel" href="/guides/vercel" />
   <Cards.Card title="Neo4j with NestJS" href="/guides/nestjs" />
   <Cards.Card title="Neo4j with Bun" href="/guides/bun" />
+  <Cards.Card title="GraphRAG with Neo4j and TypeScript" href="/guides/graphrag" />
 </Cards>
 
-## What every guide has in common
+The [GraphRAG guide](/guides/graphrag) builds retrieval for a question-answering app: vector and
+full-text search over document chunks, then expansion through the chunks' entities.
+
+## What every framework guide has in common
 
 - **One client per process.** `createClient` opens a Neo4j driver with a connection pool. Create
   it once and share it; each guide shows the idiomatic place for that in its framework.

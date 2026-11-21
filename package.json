@@ -24,7 +24,8 @@
     "doc:seo-audit": "pnpm --filter cyphra-doc seo:audit",
     "example:basic": "pnpm --filter cyphra-example-basic start",
     "changeset": "changeset",
-    "example:blog": "pnpm --filter cyphra-example-blog start"
+    "example:blog": "pnpm --filter cyphra-example-blog start",
+    "example:graphrag": "pnpm --filter cyphra-example-graphrag start"
   },
   "devDependencies": {
     "@changesets/cli": "^2.31.1",

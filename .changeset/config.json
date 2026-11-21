@@ -18,5 +18,5 @@
   "access": "public",
   "baseBranch": "main",
   "updateInternalDependencies": "patch",
-  "ignore": ["cyphra-doc", "cyphra-example-basic", "compat-graphql"]
+  "ignore": ["cyphra-doc", "cyphra-example-basic", "cyphra-example-graphrag", "compat-graphql"]
 }

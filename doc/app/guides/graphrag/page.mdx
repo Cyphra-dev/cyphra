@@ -1,0 +1,425 @@
+---
+title: "GraphRAG with Neo4j and TypeScript"
+sidebarTitle: GraphRAG
+description: "Build GraphRAG retrieval on Neo4j with Cyphra: chunk and embed documents, link chunks to entities, combine vector and full-text search, expand via the graph."
+---
+
+import { Callout } from "nextra/components";
+import { HowToJsonLd } from "../../../components/seo/page-jsonld";
+
+# GraphRAG with Neo4j and TypeScript
+
+Retrieval-augmented generation (RAG) answers a question with a language model, but first retrieves
+the passages of your own documents that the answer should come from and puts them in the prompt. The
+usual retrieval step is a vector search: split documents into chunks, embed each chunk, and return
+the chunks whose embeddings are closest to the question's. It works when one chunk holds the answer.
+It misses answers spread over several chunks, chunks that only make sense with the paragraph before
+them, and passages that use other words than the question.
+
+GraphRAG stores the chunks in a graph and uses its edges during retrieval. Each chunk is linked to
+its document, to the chunks around it and to the entities it mentions (people, products, places),
+and entities are linked to each other. Retrieval starts with a search, then follows those edges: the
+paragraph before a match, other sections about the same person, a document about a related product.
+With Neo4j the search indexes and the graph are in one database, so Cyphra does both from one typed
+client.
+
+<Callout type="info">
+  The code on this page comes from
+  [`examples/graphrag`](https://github.com/Cyphra-dev/cyphra/tree/main/examples/graphrag), a
+  runnable example with an integration test that CI runs against Neo4j 5.26. It needs no API key:
+  embeddings and entity extraction have deterministic local defaults, and real models plug in
+  through environment variables.
+</Callout>
+
+## Model the graph
+
+Four node types and five relationships. `Chunk.embedding` gets a [vector index](/schema#vector-fields)
+for `findSimilar`, and `@@fulltext` a [full-text index](/schema#full-text-indexes) for `search`.
+
+```cyphra filename="schema.cyphra"
+node Document {
+  id     String  @id
+  title  String
+  source String
+  chunks Chunk[] @relationship(type: "HAS_CHUNK", direction: OUT)
+}
+
+node Chunk {
+  id        String      @id
+  position  Int
+  heading   String?
+  text      String
+  embedding Vector(256) @vectorIndex(similarity: cosine, name: "chunkEmbedding")
+  document  Document?   @relationship(type: "HAS_CHUNK", direction: IN)
+  next      Chunk?      @relationship(type: "NEXT", direction: OUT)
+  previous  Chunk?      @relationship(type: "NEXT", direction: IN)
+  entities  Entity[]    @relationship(type: "MENTIONS", direction: OUT)
+
+  @@fulltext([heading, text], name: "chunkText", analyzer: "english")
+}
+
+node Entity {
+  id          String   @id
+  name        String
+  type        String
+  chunks      Chunk[]  @relationship(type: "MENTIONS", direction: IN)
+  related     Entity[] @relationship(type: "RELATED_TO", direction: OUT)
+  relatedFrom Entity[] @relationship(type: "RELATED_TO", direction: IN)
+}
+```
+
+- `(Document)-[:HAS_CHUNK]->(Chunk)` gives every chunk its citation: document title and source.
+- `(Chunk)-[:NEXT]->(Chunk)` keeps reading order, so the chunks around a match are one hop away.
+- `(Chunk)-[:MENTIONS]->(Entity)` and `(Entity)-[:RELATED_TO]->(Entity)` connect chunks of different
+  sections and documents that are about the same things.
+- `Vector(256)` must match the size of your embeddings. The `english` analyzer stems words, so a
+  search for "count" also finds "counted".
+
+Create the constraints and indexes with `cyphra push` or a [migration](/migrations), then
+`cyphra generate`. The example does the same from code before ingesting, and waits until the
+indexes are online:
+
+```ts filename="src/setup.ts"
+const doc = parseSchema(await readFile(schemaPath, "utf8"));
+const statements = [
+  ...constraintStatementsFromSchema(doc),
+  ...indexStatementsFromSchema(doc),
+  ...vectorIndexStatementsFromSchema(doc),
+  ...fulltextIndexStatementsFromSchema(doc),
+];
+await db.$client.withSession(async (session) => {
+  for (const statement of statements) await session.run(statement);
+  await session.run("CALL db.awaitIndexes(300)");
+});
+```
+
+## Ingest documents
+
+Ingestion turns each document into chunks, embeds them, extracts their entities and writes the
+result.
+
+**Chunking.** `chunkMarkdown` splits Markdown on blank lines, merges consecutive paragraphs under the
+same heading up to `maxChars` (800 by default), and splits longer paragraphs between sentences. A
+chunk never spans two headings, so it stays about one thing, and the heading is stored with it.
+
+**Embeddings.** Ingestion and retrieval only see this interface:
+
+```ts filename="src/embeddings.ts"
+export interface Embedder {
+  readonly dimensions: number;
+  embed(texts: readonly string[]): Promise<number[][]>;
+}
+```
+
+The default, `hashingEmbedder()`, is a hashed bag of words: each word adds to one of 256 buckets and
+the vector is normalised, so cosine similarity measures shared words. It is deterministic and needs
+no network, which is why the example and its tests run in CI, but it does not know that "car" and
+"automobile" mean the same thing. For real data use a model; see
+[Use real models](#use-real-models).
+
+**Entities.** The extractor is an interface too. The default, `dictionaryExtractor`, finds the names
+and aliases of a list of known entities (a gazetteer) and relates the entities that appear in the
+same chunk. Co-occurrence is how many GraphRAG pipelines build their entity graph, and a dictionary
+is often enough for a product catalogue or a list of customers.
+
+```ts filename="src/entities.ts"
+export interface EntityExtractor {
+  extract(text: string): Promise<{
+    entities: { name: string; type: string }[];
+    relations: { from: string; to: string }[];
+  }>;
+}
+```
+
+**Writing.** Embedding and extraction run first, outside any transaction. Then each document is
+written in one [transaction](/client#transactions): its old chunks are deleted, entities are
+upserted, and the document is created with its chunks and their `MENTIONS` edges in one nested
+write. The `NEXT` and `RELATED_TO` edges follow:
+
+```ts filename="src/ingest.ts"
+await db.$transaction(async (tx) => {
+  await tx.chunk.deleteMany({ where: { document: { is: { id: doc.id } } } });
+  await tx.document.deleteMany({ where: { id: doc.id } });
+
+  for (const [id, e] of entities) {
+    await tx.entity.upsert({
+      where: { id },
+      create: { id, name: e.name, type: e.type },
+      update: {},
+    });
+  }
+
+  await tx.document.create({
+    data: {
+      id: doc.id,
+      title: doc.title,
+      source: doc.source,
+      chunks: {
+        create: chunks.map((c, i) => ({
+          id: chunkId(c.position),
+          position: c.position,
+          heading: c.heading,
+          text: c.text,
+          embedding: vectors[i]!,
+          entities: { connect: extractions[i]!.entities.map((e) => ({ id: entityId(e.name) })) },
+        })),
+      },
+    },
+  });
+
+  for (const c of chunks.slice(1)) {
+    await tx.chunk.update({
+      where: { id: chunkId(c.position - 1) },
+      data: { next: { connect: { id: chunkId(c.position) } } },
+    });
+  }
+
+  // `connect` MERGEs the edge, so a pair mentioned together many times keeps one edge.
+  for (const r of extractions.flatMap((x) => x.relations)) {
+    const [from, to] = [entityId(r.from), entityId(r.to)].sort();
+    await tx.entity.update({ where: { id: from! }, data: { related: { connect: { id: to! } } } });
+  }
+});
+```
+
+Running ingestion again for a document replaces its chunks and keeps one edge per entity pair. The
+example's test checks it.
+
+## Hybrid retrieval
+
+Vector search finds passages that mean the same as the question; full-text search finds the exact
+words, names and codes that embeddings blur. Run both and merge them. Their scores cannot be compared
+(cosine similarity in `[0, 1]`, BM25 with no upper bound), so merge by rank with **reciprocal rank
+fusion**: a chunk at rank `r` in a list (1 for the first) gets `1 / (60 + r)` from it, and the
+scores add up.
+
+```ts filename="src/retrieve.ts"
+const chunkSelect = {
+  id: true,
+  position: true,
+  heading: true,
+  text: true,
+  document: { select: { id: true, title: true, source: true } },
+  previous: { select: { id: true, position: true, heading: true, text: true } },
+  next: { select: { id: true, position: true, heading: true, text: true } },
+  entities: { select: { id: true, name: true } },
+} as const;
+
+const [vector] = await embedder.embed([question]);
+const [similar, keyword] = await Promise.all([
+  db.chunk.findSimilar({ field: "embedding", vector: vector!, k: 10, select: chunkSelect }),
+  db.chunk.search({
+    index: "chunkText",
+    query: question,
+    mode: "terms", // the question is plain text, not Lucene syntax
+    take: 10,
+    select: chunkSelect,
+  }),
+]);
+const fused = reciprocalRankFusion([similar.map((c) => c.id), keyword.map((c) => c.id)]);
+```
+
+```ts filename="src/retrieve.ts"
+export function reciprocalRankFusion(lists: readonly (readonly string[])[], k = 60) {
+  const scores = new Map<string, number>();
+  for (const list of lists) {
+    list.forEach((id, rank) => scores.set(id, (scores.get(id) ?? 0) + 1 / (k + rank + 1)));
+  }
+  return [...scores]
+    .map(([id, score]) => ({ id, score }))
+    .sort((a, b) => b.score - a.score || a.id.localeCompare(b.id));
+}
+```
+
+`select` does the first part of the graph work in the same statement as each search: every hit comes
+back with its document (for the citation), the chunks before and after it, and its entities. No
+second round trip per hit. Both methods return typed results with a `$score`; see
+[Vector search](/client#vector-search) and [Full-text search](/client#full-text-search) for their
+options.
+
+`mode: "terms"` escapes the question, so a question with `?`, `(` or `AND` in it never breaks the
+Lucene syntax. To add filters, such as one tenant's documents, pass the same `where` to both
+searches: `where: { document: { is: { tenantId } } }`.
+
+## Expand through the graph
+
+The example keeps the three best fused chunks (`k`) as matches and adds two kinds of related chunks.
+
+**Neighbours.** A chunk often depends on the one before it ("the last of her notes", "this idea").
+The previous and next chunks were loaded with each hit, so adding them for the best match
+(`neighboursOf`, default 1) costs nothing.
+
+**Entities.** The matches' entities are the seeds. `traverse` follows `RELATED_TO` from them for up
+to two hops, in both directions because co-occurrence has no direction. `depth.min: 0` returns the
+seeds too, and `returnPaths` gives each entity's distance, which becomes its weight: 1 for a seed,
+1/2 one hop away, 1/3 two hops away.
+
+```ts filename="src/retrieve.ts"
+const reached = await db.entity.traverse({
+  from: { id: { in: [...seeds] } },
+  via: "related",
+  direction: "both",
+  depth: { min: 0, max: 2 },
+  select: { id: true },
+  returnPaths: true,
+});
+const weights = new Map<string, number>();
+for (const { node, path } of reached) {
+  const w = 1 / (1 + path.edges.length);
+  weights.set(node.id, Math.max(weights.get(node.id) ?? 0, w));
+}
+```
+
+Then one `findMany` loads the chunks that mention any of those entities and were not retrieved yet,
+with a [relation filter](/client#filters). Each scores the sum of the weights of its entities, and
+the best two (`entityChunks`) are added:
+
+```ts filename="src/retrieve.ts"
+const mentioning = await db.chunk.findMany({
+  where: {
+    id: { notIn: [...included] },
+    entities: { some: { id: { in: [...weights.keys()] } } },
+  },
+  select: chunkSelect,
+});
+```
+
+For "What did Menabrea publish?" with `k: 1` and no neighbours, the match is the paragraph about Ada
+Lovelace translating Luigi Menabrea's paper. With `entityHops: 0`, the expansion adds the two other
+paragraphs of the same article, which mention Ada Lovelace and the Analytical Engine. With one hop,
+Charles Babbage, related to both, adds weight to the chunks that mention him, and the section on the
+Analytical Engine's design, in another article that never mentions Menabrea, takes one of the two
+places. The example's integration test asserts both cases.
+
+Each retrieved chunk says how it was found (`via: "match" | "neighbour" | "entity"`, and for matches
+`matchedBy: ["vector", "fulltext"]`), which makes retrieval easy to debug and to test.
+
+## Build the prompt with citations
+
+`retrieve(db, question, { embedder })` returns the chunks and a context block, one numbered passage
+per chunk with its document, section and source:
+
+```text
+[1] Ada Lovelace › Note G and the Bernoulli numbers (docs/ada-lovelace.md)
+The last of her notes, Note G, describes step by step how the Analytical Engine could compute the
+Bernoulli numbers. It is often called the first published computer program. …
+
+[2] Ada Lovelace › The translation and its notes (docs/ada-lovelace.md)
+In 1842 the Italian engineer Luigi Menabrea published a paper in French describing the Analytical
+Engine. …
+```
+
+Any model can answer from it. The example types a model call as a function, so the provider is your
+choice:
+
+```ts filename="src/retrieve.ts"
+type Complete = (prompt: string) => Promise<string>; // src/llm.ts
+
+export function buildPrompt(retrieval: Retrieval): string {
+  return [
+    "Answer the question using only the context below. Cite the passages you use with their",
+    'numbers, like [2]. If the context does not contain the answer, say "I don\'t know".',
+    "",
+    "Context:",
+    retrieval.context,
+    "",
+    `Question: ${retrieval.question}`,
+  ].join("\n");
+}
+
+const retrieval = await retrieve(db, question, { embedder });
+const answer = await complete(buildPrompt(retrieval));
+// Map [n] in the answer back to retrieval.chunks[n - 1] to link each citation to its source.
+```
+
+`src/llm.ts` has a `Complete` for any OpenAI-compatible `/chat/completions` API, written with
+`fetch`. An SDK call (OpenAI, Anthropic, a local model) fits the same signature in a few lines.
+
+## Use real models
+
+Set environment variables to swap the defaults; nothing else changes.
+
+| Variable                                                   | Effect                                                                                           |
+| ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `EMBEDDINGS_URL`, `EMBEDDINGS_API_KEY`, `EMBEDDINGS_MODEL` | Embeddings from an OpenAI-compatible `/embeddings` API (default model `text-embedding-3-small`). |
+| `LLM_URL`, `LLM_API_KEY`, `LLM_MODEL`                      | Answers from an OpenAI-compatible `/chat/completions` API.                                       |
+| `LLM_EXTRACT=1`                                            | Entities and relations extracted by the chat model, one call per chunk.                          |
+
+The embedder sends `dimensions: 256`, which `text-embedding-3-*` models honour. For a model with a
+fixed size, change `Vector(256)` in the schema and `EMBEDDING_DIMENSIONS` in `src/embeddings.ts`,
+then drop and recreate the `chunkEmbedding` index: a vector index has one size. Re-embed every chunk
+when you change the model; vectors from two models are not comparable.
+
+```ts filename="src/embeddings.ts"
+const embedder = openAICompatibleEmbedder({
+  baseUrl: "https://api.openai.com/v1",
+  apiKey: process.env.EMBEDDINGS_API_KEY,
+  model: "text-embedding-3-small",
+  dimensions: 256,
+});
+```
+
+`llmExtractor(complete)` asks the model for `{ entities, relations }` as JSON and drops relations to
+entities it did not list. It finds entities no dictionary has, at the cost of one model call per
+chunk at ingestion time.
+
+## Performance notes
+
+- **Quantization.** By default Neo4j (5.23+) stores quantized vectors in the index: a smaller index
+  and slightly approximate scores. Keep it unless results near the cut-off matter; then set
+  `@vectorIndex(quantization: false)` and push again.
+- **`candidates`.** Without `where`, `findSimilar` asks the index for exactly `k` neighbours. With
+  `where`, it fetches `candidates` (default `max(10 × k, 100)`), filters, and asks again for more if
+  fewer than `k` pass. For selective filters, raise `candidates` or cap the retries with
+  `maxCandidates`.
+- **`exact: true`.** When `where` narrows the search to a few thousand chunks (one tenant, one
+  document), `exact: true` scores them all without the index (Neo4j 5.18+): exact results, no
+  over-fetching. It also sees chunks written earlier in the same transaction.
+- **Index waits.** A query against an index that is still populating fails or misses nodes. Run
+  `CALL db.awaitIndexes()` after creating indexes (`cyphra push` and migrations create them; the
+  example waits in `applySchema`). The vector index only holds committed data, so search after the
+  ingestion transaction commits, not inside it.
+- **Hub entities.** An entity mentioned everywhere (your company name) links every chunk to every
+  other one. Leave such entities out of extraction, or skip them as seeds. `traverse` depth is capped
+  by `maxTraversalDepth` (default 10); two hops is enough for retrieval.
+- **Context budget.** `k`, `neighboursOf` and `entityChunks` bound the number of chunks (at most 7
+  with the defaults). Tune them on a set of real questions, with a test like the example's.
+
+## Related
+
+- [Typed client](/client): `findSimilar`, `search`, `traverse`, `include`
+- [Schema](/schema): `Vector(N)`, `@vectorIndex`, `@@fulltext`
+- [Migrations](/migrations) for vector and full-text indexes
+
+<HowToJsonLd
+  path="/guides/graphrag"
+  name="Build GraphRAG retrieval on Neo4j with Cyphra"
+  description="Model documents, chunks and entities, ingest documents with embeddings, combine vector and full-text search, expand through the graph and build a prompt with citations."
+  steps={[
+    {
+      name: "Model the graph",
+      anchor: "model-the-graph",
+      text: "Declare Document, Chunk and Entity nodes, a Vector(N) field with @vectorIndex and a @@fulltext index, then push the schema and wait for the indexes.",
+    },
+    {
+      name: "Ingest documents",
+      anchor: "ingest-documents",
+      text: "Chunk each document by paragraph, embed the chunks, extract their entities and write the document, chunks and edges in one transaction.",
+    },
+    {
+      name: "Hybrid retrieval",
+      anchor: "hybrid-retrieval",
+      text: "Run findSimilar and full-text search for the question and merge the results with reciprocal rank fusion.",
+    },
+    {
+      name: "Expand through the graph",
+      anchor: "expand-through-the-graph",
+      text: "Add the chunks around the best matches, and chunks that mention the same or related entities found with traverse.",
+    },
+    {
+      name: "Build the prompt with citations",
+      anchor: "build-the-prompt-with-citations",
+      text: "Number the retrieved chunks with their document and source, and ask any language model to answer from them.",
+    },
+  ]}
+/>

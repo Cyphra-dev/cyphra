@@ -22,6 +22,7 @@ const COLUMNS: { title: string; links: [string, string][] }[] = [
       ["Vercel", "/guides/vercel"],
       ["NestJS", "/guides/nestjs"],
       ["Bun", "/guides/bun"],
+      ["GraphRAG", "/guides/graphrag"],
       ["Cypher how-tos", "/cypher"],
     ],
   },

@@ -1,0 +1,33 @@
+// GraphRAG: documents are split into chunks; chunks carry an embedding, a full-text index and
+// the entities they mention; entities that are mentioned together are RELATED_TO each other.
+
+node Document {
+  id     String  @id
+  title  String
+  source String
+  chunks Chunk[] @relationship(type: "HAS_CHUNK", direction: OUT)
+}
+
+node Chunk {
+  id        String      @id
+  position  Int
+  heading   String?
+  text      String
+  embedding Vector(256) @vectorIndex(similarity: cosine, name: "chunkEmbedding")
+  document  Document?   @relationship(type: "HAS_CHUNK", direction: IN)
+  next      Chunk?      @relationship(type: "NEXT", direction: OUT)
+  previous  Chunk?      @relationship(type: "NEXT", direction: IN)
+  entities  Entity[]    @relationship(type: "MENTIONS", direction: OUT)
+
+  @@fulltext([heading, text], name: "chunkText", analyzer: "english")
+}
+
+node Entity {
+  id          String   @id
+  name        String
+  type        String
+  chunks      Chunk[]  @relationship(type: "MENTIONS", direction: IN)
+  related     Entity[] @relationship(type: "RELATED_TO", direction: OUT)
+  relatedFrom Entity[] @relationship(type: "RELATED_TO", direction: IN)
+}
+

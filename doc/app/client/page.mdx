@@ -482,6 +482,9 @@ CALL {
 RETURN size(hits) AS fetched, hits[-1].s AS lowest, rows
 ```
 
+For retrieval end to end (chunking, embeddings, hybrid search with [`search`](#full-text-search) and
+expansion through entities), see the [GraphRAG guide](/guides/graphrag).
+
 `findSimilar` works in [`$transaction`](#transactions) and with either driver major. Vectors are
 written with a plain `SET` of a float list, which Neo4j indexes like
 `db.create.setNodeVectorProperty` would. The `FindSimilarArgs` and `SimilarResult` types are exported.
