@@ -143,6 +143,10 @@ const mostFollowed = await db.user.findMany({
 });
 ```
 
+To **sort by a field of a to-one relation**, nest it under the relation:
+`orderBy: { author: { name: "asc" } }`. Nodes without the related node sort as `null` (last
+ascending, first descending).
+
 ## Aggregations
 
 `aggregate` computes `_count`, `_sum`, `_avg`, `_min` and `_max` over the nodes matching `where`, in

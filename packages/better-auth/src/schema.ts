@@ -39,6 +39,27 @@ export interface SchemaNaming {
   getFieldName: (args: { model: string; field: string }) => string;
 }
 
+/** How a Better Auth `number` (or `number[]`) field is stored: Cyphra `Int` or `Float`. */
+export type NumberKind = "int" | "float";
+
+/**
+ * Per-model, per-field storage of Better Auth `number` fields. Models are named by their Better
+ * Auth schema key (`user`, `apikey`) or database model name; fields by their schema key or
+ * database field name. Fields not listed are `int`.
+ *
+ * @example
+ * ```ts
+ * { wallet: { balance: "float" } }
+ * ```
+ */
+export type NumberFields = Readonly<Record<string, Readonly<Record<string, NumberKind>>>>;
+
+/** Options of {@link deriveAuthGraph} beyond naming. */
+export interface DeriveAuthGraphOptions {
+  /** Store these `number` fields as `Float` instead of `Int`. */
+  numberFields?: NumberFields;
+}
+
 export type OnDelete = "no action" | "restrict" | "cascade" | "set null" | "set default";
 
 export interface ScalarMapping {
@@ -98,8 +119,12 @@ export interface AuthGraph {
   readonly schema: SchemaModel;
 }
 
-function scalarType(attr: DBFieldAttribute): { type: ScalarTypeName; list: boolean } {
+function scalarType(
+  attr: DBFieldAttribute,
+  number: NumberKind = "int",
+): { type: ScalarTypeName; list: boolean } {
   const t = attr.type;
+  const numeric: ScalarTypeName = number === "float" ? "Float" : "Int";
   if (Array.isArray(t)) return { type: "String", list: false }; // enum of string literals
   switch (t) {
     // `supportsJSON: false`: Better Auth stringifies JSON itself, so it stays a String (not Json).
@@ -109,7 +134,7 @@ function scalarType(attr: DBFieldAttribute): { type: ScalarTypeName; list: boole
     // Also with `bigint: true`: a Neo4j INTEGER is always 64-bit, and Better Auth reads and writes
     // these fields as JS numbers, which a Cyphra `BigInt` (a JS bigint) would not give it.
     case "number":
-      return { type: "Int", list: false };
+      return { type: numeric, list: false };
     case "boolean":
       return { type: "Boolean", list: false };
     case "date":
@@ -117,7 +142,7 @@ function scalarType(attr: DBFieldAttribute): { type: ScalarTypeName; list: boole
     case "string[]":
       return { type: "String", list: true };
     case "number[]":
-      return { type: "Int", list: true };
+      return { type: numeric, list: true };
     default:
       throw new Error(`@cyphra/better-auth: unsupported field type ${JSON.stringify(t)}.`);
   }
@@ -139,6 +164,47 @@ function resolveModelKey(schema: BetterAuthDBSchema, model: string): string {
   return found[0];
 }
 
+/**
+ * Resolve `numberFields` against the Better Auth schema (by schema keys). Every
+ * entry must name an existing non-foreign-key `number` / `number[]` field, so a typo or a schema
+ * change fails loudly instead of silently storing integers.
+ */
+function numberKinds(
+  naming: SchemaNaming,
+  config: NumberFields | undefined,
+): (model: string, field: string) => NumberKind {
+  const { schema, getModelName, getFieldName } = naming;
+  const kinds = new Map<string, NumberKind>();
+  for (const [model, fields] of Object.entries(config ?? {})) {
+    const key =
+      Object.keys(schema).find((k) => k === model) ??
+      Object.keys(schema).find((k) => getModelName(k) === model);
+    if (!key) throw new Error(`@cyphra/better-auth: numberFields: unknown model "${model}".`);
+    for (const [field, kind] of Object.entries(fields)) {
+      if (kind !== "int" && kind !== "float") {
+        throw new Error(
+          `@cyphra/better-auth: numberFields.${model}.${field} must be "int" or "float".`,
+        );
+      }
+      const entries = Object.entries(schema[key]!.fields);
+      const fieldKey =
+        entries.find(([k]) => k === field)?.[0] ??
+        entries.find(([k]) => getFieldName({ model: key, field: k }) === field)?.[0];
+      if (!fieldKey) {
+        throw new Error(`@cyphra/better-auth: numberFields: unknown field "${model}.${field}".`);
+      }
+      const attr = schema[key]!.fields[fieldKey]!;
+      if ((attr.type !== "number" && attr.type !== "number[]") || attr.references) {
+        throw new Error(
+          `@cyphra/better-auth: numberFields: "${model}.${field}" is not a number field.`,
+        );
+      }
+      kinds.set(`${key}\0${fieldKey}`, kind);
+    }
+  }
+  return (model, field) => kinds.get(`${model}\0${field}`) ?? "int";
+}
+
 type PendingFk = {
   childKey: string;
   name: string;
@@ -150,8 +216,12 @@ type PendingFk = {
  * Build the auth graph (node mappings, `.cyphra` document and resolved schema model) for a
  * Better Auth configuration.
  */
-export function deriveAuthGraph(naming: SchemaNaming): AuthGraph {
+export function deriveAuthGraph(
+  naming: SchemaNaming,
+  options: DeriveAuthGraphOptions = {},
+): AuthGraph {
   const { schema, getModelName, getFieldName } = naming;
+  const numberKind = numberKinds(naming, options.numberFields);
   const keys = Object.keys(schema).sort(
     (a, b) => (schema[a]!.order ?? Infinity) - (schema[b]!.order ?? Infinity),
   );
@@ -204,7 +274,7 @@ export function deriveAuthGraph(naming: SchemaNaming): AuthGraph {
         fields.push({ field: null as unknown as NodeField, fk });
         continue;
       }
-      const { type, list } = scalarType(attr);
+      const { type, list } = scalarType(attr, numberKind(key, fieldKey));
       const decorators: Decorator[] = [];
       if (attr.unique && !list) decorators.push(dec("unique"));
       else if (attr.index && !list) decorators.push(dec("index"));

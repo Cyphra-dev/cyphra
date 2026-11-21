@@ -191,6 +191,22 @@ describe("relation counts", () => {
       CyphraValidationError,
     );
   });
+
+  it("orders by a scalar of a to-one related node", () => {
+    const ctx = new QueryContext(schemaModel);
+    expect(compileOrderBy(ctx, post, "n", [{ author: { email: "desc" } }, { title: "asc" }])).toBe(
+      "head(COLLECT { MATCH (n)<-[:`AUTHORED`]-(m0:`User`) RETURN m0.`email` }) DESC, n.`title` ASC",
+    );
+    expect(compileOrderBy(ctx, post, "n", { author: { email: undefined } })).toBeNull();
+    for (const bad of [
+      { author: "asc" },
+      { author: { nope: "asc" } },
+      { author: { posts: "asc" } },
+      { author: { email: "up" } },
+    ]) {
+      expect(() => compileOrderBy(ctx, post, "n", bad)).toThrow(CyphraValidationError);
+    }
+  });
 });
 
 describe("q", () => {

@@ -12,7 +12,13 @@ import {
 import type { BetterAuthOptions } from "better-auth/types";
 import { createOrm, type CyphraClient } from "@cyphra/runtime";
 import { mergeAuthSchema } from "./merge.js";
-import { deriveAuthGraph, type AuthGraph, type ModelMapping } from "./schema.js";
+import {
+  deriveAuthGraph,
+  type AuthGraph,
+  type DeriveAuthGraphOptions,
+  type ModelMapping,
+  type NumberFields,
+} from "./schema.js";
 import { coerceScalar, fieldOf, toCyphraWhere } from "./where.js";
 
 /** Options for {@link cyphraAdapter}. Pass `client` or `db`. */
@@ -23,6 +29,13 @@ export interface CyphraAdapterConfig {
   db?: { readonly $client: CyphraClient };
   /** Use plural model names (`users`, `sessions`, …). Default `false`. */
   usePlural?: boolean;
+  /**
+   * Better Auth `number` fields are stored as `Int` and reject fractions. List the fields that
+   * hold fractional values to store them as `Float`, by model and field (schema key or database
+   * name): `{ wallet: { balance: "float" } }`. Pass the same value to `authSchema`. Switching a
+   * field from `int` to `float` needs no data migration: stored integers read back unchanged.
+   */
+  numberFields?: NumberFields;
   /**
    * Better Auth adapter debug logs. Leave off in production: logs can contain tokens and
    * other sensitive values.
@@ -78,11 +91,12 @@ function fail(message: string): never {
 }
 
 function createOperations(
+  options: DeriveAuthGraphOptions,
   source: (graph: AuthGraph) => Source,
   onInit?: (graph: AuthGraph, source: Source) => void,
 ): AdapterFactoryCustomizeAdapterCreator {
   return (ctx) => {
-    const graph = deriveAuthGraph(ctx);
+    const graph = deriveAuthGraph(ctx, options);
     const src = source(graph);
     onInit?.(graph, src);
 
@@ -235,12 +249,12 @@ function createOperations(
       };
     }
 
+    /** A foreign key sorts by the referenced field of the related node, through the edge. */
     function orderByOf(m: ModelMapping, sortBy?: { field: string; direction: "asc" | "desc" }) {
       if (!sortBy) return undefined;
       const f = fieldOf(m, sortBy.field);
-      if (f.kind !== "scalar")
-        fail(`sorting by the foreign key ${m.dbName}.${f.name} is not supported.`);
-      return { [f.name]: sortBy.direction };
+      if (f.kind === "scalar") return { [f.name]: sortBy.direction };
+      return { [f.relation]: { [f.refField]: sortBy.direction } };
     }
 
     const adapter: CustomAdapter = {
@@ -434,11 +448,14 @@ function createOperations(
       },
 
       createSchema: async ({ file, tables }) => {
-        const authGraph = deriveAuthGraph({
-          schema: tables,
-          getModelName: ctx.getModelName,
-          getFieldName: ctx.getFieldName,
-        });
+        const authGraph = deriveAuthGraph(
+          {
+            schema: tables,
+            getModelName: ctx.getModelName,
+            getFieldName: ctx.getFieldName,
+          },
+          options,
+        );
         const { readFile } = await import("node:fs/promises");
         const path = await import("node:path");
         const target = file ?? (await configuredSchemaPath(readFile)) ?? "schema.cyphra";
@@ -493,6 +510,7 @@ export function cyphraAdapter(config: CyphraAdapterConfig): AdapterFactory<Bette
 
   /** Better Auth passes its options when it builds the adapter; transactions need them again. */
   let resolvedOptions: BetterAuthOptions | undefined;
+  const graphOptions: DeriveAuthGraphOptions = { numberFields: config.numberFields };
   let root: { graph: AuthGraph; source: Source } | undefined;
 
   const base: AdapterFactoryConfig = {
@@ -516,7 +534,7 @@ export function cyphraAdapter(config: CyphraAdapterConfig): AdapterFactory<Bette
       return root.source.write((tx) => {
         const inTx = createAdapterFactory({
           config: { ...base, transaction: false },
-          adapter: createOperations(() => ({ db: tx, write: (fn) => fn(tx) })),
+          adapter: createOperations(graphOptions, () => ({ db: tx, write: (fn) => fn(tx) })),
         });
         return callback(inTx(options) as DBTransactionAdapter);
       });
@@ -526,6 +544,7 @@ export function cyphraAdapter(config: CyphraAdapterConfig): AdapterFactory<Bette
   const factory = createAdapterFactory({
     config: factoryConfig,
     adapter: createOperations(
+      graphOptions,
       (graph) => {
         const orm = createOrm(graph.schema, { client }) as unknown as Db & {
           $transaction<T>(fn: (tx: Db) => Promise<T>): Promise<T>;
