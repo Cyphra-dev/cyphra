@@ -1,5 +1,18 @@
 # cyphra
 
+## 0.7.0
+
+### Patch Changes
+
+- Updated dependencies [fc22aac]
+- Updated dependencies [1e3c799]
+- Updated dependencies [1e3c799]
+- Updated dependencies [fc22aac]
+  - @cyphra/runtime@0.7.0
+  - @cyphra/schema@0.7.0
+  - @cyphra/migrator@0.7.0
+  - @cyphra/query@0.7.0
+
 ## 0.6.0
 
 ### Patch Changes
