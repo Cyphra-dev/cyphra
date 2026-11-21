@@ -1,5 +1,27 @@
 # @cyphra/cli
 
+## 0.9.0
+
+### Minor Changes
+
+- 4ea8191: New `cyphra db seed` command: runs the `"seed"` shell command from `cyphra.json` (for example `"tsx seed.ts"`) from the project root, with the CLI's environment and `node_modules/.bin` on `PATH`, and exits with its exit code. New `cyphra migrate reset`: drops every constraint and index (keeping the default LOOKUP indexes), deletes all data in batches (including migration records), reapplies every migration and runs the seed (`--skip-seed` to skip). It asks for confirmation (`--yes` / `-y` to skip, refused in a non-interactive shell without it) and refuses databases that do not look local (encrypted `+s` / `+ssc` schemes, Aura hosts, dotted host names, non-loopback IPs) unless `--force` is passed. New `cyphra generate --watch` (and `cyphra dev --watch`): regenerates the client when the schema file changes, debounced, printing schema errors without exiting; it watches the schema's directory so editors that save by renaming are picked up.
+- b204047: `cyphra import graphql` (and `cyphraSchema`) map `Point`, `CartesianPoint`, `Time`, `LocalTime`,
+  `LocalDateTime` and `Duration` fields to the Cyphra types of the same name instead of reporting them
+  as not converted, with their string defaults, and `@timestamp` on `Time` becomes `@default(now())`.
+- 42d02bd: Editor tooling support in `@cyphra/schema`: `parseSchemaSyntax(source, { locations: true })` (and `parseSchema(source, { locations: true })`) records source ranges on the AST (`loc`, `nameLoc`, `typeLoc`, …) and the document's `//` comments; without the option the AST is unchanged. `formatSchema(source)` reformats a schema and keeps its comments (aligned field columns, one blank line between declarations); it checks that the result parses to the same schema before returning it. `SCALAR_TYPE_NAMES` lists the built-in scalar types. `printSchemaDocument` now writes string literals the grammar can read back (a tab or control character was escaped as `\t`, which does not parse) and no longer leaves a trailing space after a relation field without decorators. New `cyphra format` command (`--check` for CI) formats `schema.cyphra` in place.
+
+### Patch Changes
+
+- Updated dependencies [05ecf49]
+- Updated dependencies [b204047]
+- Updated dependencies [00e016f]
+- Updated dependencies [42d02bd]
+- Updated dependencies [b204047]
+  - @cyphra/schema@0.9.0
+  - @cyphra/migrator@0.9.0
+  - @cyphra/runtime@0.9.0
+  - @cyphra/graphql@0.9.0
+
 ## 0.8.0
 
 ### Minor Changes

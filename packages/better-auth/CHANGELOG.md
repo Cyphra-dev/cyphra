@@ -1,5 +1,20 @@
 # @cyphra/better-auth
 
+## 0.9.0
+
+### Minor Changes
+
+- 05ecf49: Better Auth's table-level `indexes` (declared by plugins) are now created: a compound index becomes `@@unique([…])` / `@@index([…])` on the node, a one-field index `@unique` / `@index` on the field, in both the `createSchema` output and the runtime schema. An index over a foreign key (an edge in Cyphra) is left out. Merging into an existing `schema.cyphra` keeps your own `@@` attributes.
+
+### Patch Changes
+
+- Updated dependencies [05ecf49]
+- Updated dependencies [00e016f]
+- Updated dependencies [42d02bd]
+- Updated dependencies [b204047]
+  - @cyphra/schema@0.9.0
+  - @cyphra/runtime@0.9.0
+
 ## 0.8.0
 
 ### Minor Changes
