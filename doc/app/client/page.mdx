@@ -79,16 +79,24 @@ properties under **`$edge`**.
 
 ## Filters
 
-| Field type                                   | Operators                                                       |
-| -------------------------------------------- | --------------------------------------------------------------- |
-| any scalar                                   | value (equals), `null` (absent), `equals`, `not`, `in`, `notIn` |
-| `Int`, `Float`, `String`, `DateTime`, `Date` | `lt`, `lte`, `gt`, `gte` (strings compare lexicographically)    |
-| `String`                                     | `contains`, `startsWith`, `endsWith`, `mode`                    |
-| lists (`String[]`, …)                        | `has`, `hasEvery`, `hasSome`, `isEmpty`, `equals`               |
-| to-many relation                             | `some`, `none`, `every`                                         |
-| to-one relation                              | `is`, `isNot`, `null` (no related node)                         |
+| Field type                                             | Operators                                                       |
+| ------------------------------------------------------ | --------------------------------------------------------------- |
+| any scalar                                             | value (equals), `null` (absent), `equals`, `not`, `in`, `notIn` |
+| `Int`, `BigInt`, `Float`, `String`, `DateTime`, `Date` | `lt`, `lte`, `gt`, `gte` (strings compare lexicographically)    |
+| `String`                                               | `contains`, `startsWith`, `endsWith`, `mode`                    |
+| enum                                                   | the scalar operators above only, typed to the enum's values     |
+| `Json`                                                 | `null`, `equals`, `not` only (no bare value, see below)         |
+| lists (`String[]`, `Role[]`, …)                        | `has`, `hasEvery`, `hasSome`, `isEmpty`, `equals`               |
+| to-many relation                                       | `some`, `none`, `every`                                         |
+| to-one relation                                        | `is`, `isNot`, `null` (no related node)                         |
 
 Combine with `AND`, `OR` and `NOT`.
+
+BigInt filters take `bigint` values (`{ balance: { gt: 0n, lte: 2n ** 62n } }`). A `Json` filter
+compares the whole stored JSON text: `{ settings: { equals: { theme: "dark" } } }` matches a value
+written as `{ theme: "dark" }`, with the same key order. A bare value is not accepted on a `Json`
+field (an object would read as a filter), and there are no queries into the value: model a field
+you need to filter on as its own property.
 
 `mode: "insensitive"` on a `String` filter compares lower-cased values (Cypher `toLower()`) for
 `equals`, `not`, `in`, `notIn`, `contains`, `startsWith` and `endsWith`. Range filters (`lt`, `gte`, …)
@@ -158,17 +166,19 @@ const stats = await db.post.aggregate({
 // }
 ```
 
-| Aggregate      | Fields                                       | Result                                         |
-| -------------- | -------------------------------------------- | ---------------------------------------------- |
-| `_count`       | `true` (nodes), `_all` (nodes), any scalar   | `number` (non-null values for a field)         |
-| `_sum`         | `Int`, `Float`                               | `number \| null`                               |
-| `_avg`         | `Int`, `Float`                               | `number \| null` (a mean, so not always whole) |
-| `_min`, `_max` | `Int`, `Float`, `String`, `DateTime`, `Date` | the field type, or `null`                      |
+| Aggregate      | Fields                                                       | Result                                         |
+| -------------- | ------------------------------------------------------------ | ---------------------------------------------- |
+| `_count`       | `true` (nodes), `_all` (nodes), any scalar                   | `number` (non-null values for a field)         |
+| `_sum`         | `Int`, `Float`, `BigInt`                                     | `number \| null` (`bigint \| null` for BigInt) |
+| `_avg`         | `Int`, `Float`, `BigInt`                                     | `number \| null` (a mean, so not always whole) |
+| `_min`, `_max` | `Int`, `Float`, `BigInt`, `String`, enum, `DateTime`, `Date` | the field type, or `null`                      |
 
 - `null` values (absent properties) are ignored, as in SQL.
 - On an empty match, counts are `0` and every other aggregate is `null` (Cypher's `sum()` returns 0;
   Cyphra returns `null`, like SQL and Prisma).
-- `DateTime` and `Date` results come back as `Date` (UTC). Strings compare by code point.
+- `DateTime` and `Date` results come back as `Date` (UTC). Strings and enums compare by code point.
+- A `BigInt` `_sum` past 2^63-1 overflows in Neo4j (it returns a rounded float): Cyphra throws a
+  `RangeError` instead of returning a wrong value.
 - `orderBy`, `skip` and `take` pick a window of the matching nodes first: `{ orderBy: { views: "desc" }, take: 10, _avg: { views: true } }`
   is the average of the ten most viewed posts.
 
@@ -624,7 +634,12 @@ A nested write runs in **one write transaction**: if any step fails (for example
 does not exist) nothing is written.
 
 Defaults from the schema are applied on create: `cuid()`, `uuid()`, `now()` and literals
-(`@default("draft")`, `@default(0)`, `@default(true)`).
+(`@default("draft")`, `@default(0)`, `@default(true)`, an enum value, JSON text on a `Json` field).
+
+Every write checks enum values (including nested creates, `createMany`, `upsert` and `$edge`
+properties) and throws a `CyphraValidationError` before reaching Neo4j. On a `BigInt` field,
+`{ increment: 1n }` (and `decrement`, `multiply`) takes a `bigint`. On a `Json` field, an object is
+the new value, not an update: `{ settings: { increment: 1 } }` stores that object.
 
 ## Transactions
 
@@ -655,17 +670,36 @@ The [Cypher how-tos](/cypher) show common queries (upserts, pagination, counts) 
 
 ## Types and values
 
-| Schema      | TypeScript                                | Stored in Neo4j as                                               |
-| ----------- | ----------------------------------------- | ---------------------------------------------------------------- |
-| `String`    | `string`                                  | String                                                           |
-| `Int`       | `number`                                  | Integer (64-bit; values outside the JS safe range throw on read) |
-| `Float`     | `number`                                  | Float                                                            |
-| `Boolean`   | `boolean`                                 | Boolean                                                          |
-| `DateTime`  | `Date`                                    | DateTime                                                         |
-| `Date`      | `Date` (UTC midnight)                     | Date                                                             |
-| `Vector(N)` | `number[]` (length `N`, checked on write) | `LIST<FLOAT>`                                                    |
-| `T?`        | `T \| null`                               | absent property                                                  |
-| `T[]`       | `T[]`                                     | List (absent reads as `[]`)                                      |
+| Schema      | TypeScript                                 | Stored in Neo4j as                                               |
+| ----------- | ------------------------------------------ | ---------------------------------------------------------------- |
+| `String`    | `string`                                   | String                                                           |
+| `Int`       | `number`                                   | Integer (64-bit; values outside the JS safe range throw on read) |
+| `Float`     | `number`                                   | Float                                                            |
+| `Boolean`   | `boolean`                                  | Boolean                                                          |
+| `DateTime`  | `Date`                                     | DateTime                                                         |
+| `Date`      | `Date` (UTC midnight)                      | Date                                                             |
+| `BigInt`    | `bigint` (-2^63 to 2^63-1)                 | Integer (64-bit, exact)                                          |
+| `Json`      | `JsonValue` (exported)                     | String (the value's JSON text)                                   |
+| enum `Role` | `Role` (`"ADMIN" \| "USER"`), `Role.ADMIN` | String (checked against the enum on write)                       |
+| `Vector(N)` | `number[]` (length `N`, checked on write)  | `LIST<FLOAT>`                                                    |
+| `T?`        | `T \| null`                                | absent property                                                  |
+| `T[]`       | `T[]`                                      | List (absent reads as `[]`)                                      |
+
+`cyphra generate` exports each enum as a const object and a union type of the same name:
+
+```ts
+import { Role, createClient } from "./cyphra.gen";
+
+await db.user.create({ data: { email, role: Role.ADMIN } }); // or role: "ADMIN"
+await db.user.findMany({ where: { role: { in: [Role.ADMIN, Role.EDITOR] } } });
+```
+
+A `Json` field takes and returns any `JsonValue` (`import type { JsonValue } from "cyphra"`):
+writes go through `JSON.stringify` (a `Date` becomes its ISO string; a `bigint` or a cycle throws),
+reads through `JSON.parse`. `null` on a `Json?` field removes the property. `BigInt` values are read
+as `bigint` whichever integer representation the driver returns (both `neo4j-driver` majors,
+`useBigInt` or not); writes take a `bigint` (a safe-integer `number` is accepted too) and reject
+values outside the 64-bit range.
 
 ### DateTime values
 

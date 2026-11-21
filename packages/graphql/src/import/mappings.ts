@@ -2,8 +2,8 @@
  * The mapping from `@neo4j/graphql` v7 type definitions to Cyphra, in one place.
  *
  * Each GraphQL scalar, type-level directive and field-level directive has one entry here. When
- * Cyphra gains a feature (enums, `BigInt`, `Point`, …), supporting it in the importer means
- * changing that entry: the converter in `convert.ts` only walks the SDL and applies these rules.
+ * Cyphra gains a feature (`Point`, `Duration`, …), supporting it in the importer means changing
+ * that entry: the converter in `convert.ts` only walks the SDL and applies these rules.
  *
  * Semantics follow `@neo4j/graphql` 7.x (checked against 7.6.8):
  * - only object types with `@node` are nodes; `@node(labels)` sets the Neo4j labels;
@@ -49,7 +49,13 @@ export type IssueDraft = Omit<ImportIssue, "at">;
 
 /** What a GraphQL scalar (or enum) becomes. */
 export type ScalarMapping =
-  { readonly type: ScalarTypeName; readonly note?: string } | { readonly unsupported: string };
+  | {
+      readonly type: ScalarTypeName;
+      /** Name of the Cyphra `enum` (when `type` is `"Enum"`). */
+      readonly enum?: string;
+      readonly note?: string;
+    }
+  | { readonly unsupported: string };
 
 const NOT_YET = "is not supported by Cyphra yet";
 
@@ -62,7 +68,7 @@ export const SCALARS: Readonly<Record<string, ScalarMapping>> = {
   Boolean: { type: "Boolean" },
   DateTime: { type: "DateTime" },
   Date: { type: "Date" },
-  BigInt: { unsupported: `BigInt ${NOT_YET}` },
+  BigInt: { type: "BigInt" },
   Time: { unsupported: `Time ${NOT_YET}` },
   LocalTime: { unsupported: `LocalTime ${NOT_YET}` },
   LocalDateTime: { unsupported: `LocalDateTime ${NOT_YET}` },
@@ -71,10 +77,21 @@ export const SCALARS: Readonly<Record<string, ScalarMapping>> = {
   CartesianPoint: { unsupported: `CartesianPoint ${NOT_YET}` },
 };
 
-/** Fields typed with a GraphQL enum. */
-export const ENUM_FIELD: ScalarMapping = {
+/**
+ * Fields typed with a GraphQL enum become fields of a Cyphra `enum` of the same name and values
+ * (stored as strings, like `@neo4j/graphql` does).
+ */
+export function enumField(name: string): ScalarMapping {
+  return { type: "Enum", enum: name };
+}
+
+/**
+ * A GraphQL enum whose name a Cyphra enum cannot take (a built-in type name, or the name of a
+ * converted node): its fields are mapped to `String`.
+ */
+export const ENUM_AS_STRING: ScalarMapping = {
   type: "String",
-  note: "enums are not supported by Cyphra yet: mapped to String, allowed values are not enforced",
+  note: "this enum name cannot be a Cyphra enum (it clashes with a type or node name): mapped to String, allowed values are not enforced",
 };
 
 /** Fields typed with a user-declared `scalar X`. */
@@ -91,6 +108,20 @@ export const UNIQUE: Decorator = { name: "unique", args: [] };
 
 export function defaultFn(fn: "uuid" | "now" | "cuid"): Decorator {
   return { name: "default", args: [{ key: "fn", value: { kind: "identifier", value: fn } }] };
+}
+
+/** `@default(VALUE)` for an enum field. */
+export function defaultEnum(value: string): Decorator {
+  return { name: "default", args: [{ key: "value", value: { kind: "identifier", value } }] };
+}
+
+/** `@default(n)` for a BigInt field: integers beyond 2^53 keep their digits in `raw`. */
+export function defaultBigInt(digits: string): Decorator {
+  const value = Number(digits);
+  const v = Number.isSafeInteger(value)
+    ? ({ kind: "number", value } as const)
+    : ({ kind: "number", value, raw: digits } as const);
+  return { name: "default", args: [{ key: "value", value: v }] };
 }
 
 export function defaultLiteral(value: string | number | boolean): Decorator {
@@ -135,7 +166,7 @@ export type FieldContext = {
   /** Cyphra scalar the field maps to. */
   readonly type: ScalarTypeName;
   readonly list: boolean;
-  /** `true` when the field is a GraphQL enum mapped to `String`. */
+  /** `true` when the field is typed with a GraphQL enum (a Cyphra enum, or `String`). */
   readonly isEnum: boolean;
   /** `true` once another field of the same node took `@id`. */
   readonly nodeHasId: boolean;
@@ -176,9 +207,17 @@ function issue(severity: ImportSeverity, feature: string, message: string): Issu
 function defaultFromValue(
   v: ConstValueNode,
   ctx: FieldContext,
-): string | number | boolean | { error: string } {
+): Decorator | string | number | boolean | { error: string } {
   if (ctx.list) return { error: "Cyphra has no defaults for list fields" };
   switch (ctx.type) {
+    case "Enum":
+      if (v.kind === Kind.ENUM) return defaultEnum(v.value);
+      break;
+    case "BigInt":
+      if ((v.kind === Kind.INT || v.kind === Kind.STRING) && /^-?[0-9]+$/.test(v.value)) {
+        return defaultBigInt(v.value);
+      }
+      break;
     case "String":
       if (v.kind === Kind.STRING) return v.value;
       if (ctx.isEnum && v.kind === Kind.ENUM) return v.value;
@@ -292,10 +331,10 @@ export const FIELD_DIRECTIVES: Readonly<Record<string, FieldDirectiveRule>> = {
     apply: (d, ctx) => {
       const v = arg(d, "value");
       const value = v ? defaultFromValue(v, ctx) : { error: "missing value" };
-      if (typeof value === "object") {
+      if (typeof value === "object" && "error" in value) {
         return { issues: [issue("unsupported", "@default", `${value.error}; not converted`)] };
       }
-      return { decorators: [defaultLiteral(value)] };
+      return { decorators: [typeof value === "object" ? value : defaultLiteral(value)] };
     },
   },
   unique: {

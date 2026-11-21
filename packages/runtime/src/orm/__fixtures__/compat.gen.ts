@@ -32,6 +32,7 @@ export type CompatUser = {
   age: number | null;
   birthday: Date | null;
   createdAt: Date;
+  balance: bigint | null;
 };
 
 /** `CompatPost` node properties. */
@@ -131,6 +132,16 @@ export const schemaModel: SchemaModel = {
             "kind": "fn",
             "fn": "now"
           }
+        },
+        {
+          "kind": "scalar",
+          "name": "balance",
+          "type": "BigInt",
+          "optional": true,
+          "list": false,
+          "id": false,
+          "unique": false,
+          "index": false
         },
         {
           "kind": "relation",

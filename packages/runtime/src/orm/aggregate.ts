@@ -32,8 +32,8 @@ export const AGGREGATES = ["_count", "_sum", "_avg", "_min", "_max"] as const;
 export type AggregateOp = (typeof AGGREGATES)[number];
 
 const AGG_SET = new Set<string>(AGGREGATES);
-const NUMERIC = new Set(["Int", "Float"]);
-const ORDERABLE = new Set(["Int", "Float", "String", "DateTime", "Date"]);
+const NUMERIC = new Set(["Int", "Float", "BigInt"]);
+const ORDERABLE = new Set(["Int", "Float", "BigInt", "String", "Enum", "DateTime", "Date"]);
 
 function isPlainObject(v: unknown): v is AnyRecord {
   return typeof v === "object" && v !== null && !Array.isArray(v) && !(v instanceof Date);
@@ -61,7 +61,9 @@ function aggTarget(model: ResolvedNodeModel, op: AggregateOp, name: string): Agg
   const ok = !f.list && (op === "_sum" || op === "_avg" ? NUMERIC : ORDERABLE).has(f.type);
   if (!ok) {
     const allowed =
-      op === "_sum" || op === "_avg" ? "Int and Float" : "Int, Float, String, DateTime and Date";
+      op === "_sum" || op === "_avg"
+        ? "Int, Float and BigInt"
+        : "Int, Float, BigInt, String, enum, DateTime and Date";
     throw new CyphraValidationError(
       `${op} is not valid on ${model.name}.${name} (${f.type}${f.list ? "[]" : ""}); it takes ${allowed} fields.`,
     );
@@ -99,8 +101,15 @@ function decodeAgg(op: AggregateOp, target: AggTarget, v: unknown): unknown {
 function aggResultField(op: AggregateOp, target: AggTarget): ResolvedScalarField {
   const base = target === "_all" ? undefined : target;
   const name = `${base?.name ?? "_all"}.${op}`;
-  const type = op === "_count" ? "Int" : op === "_sum" || op === "_avg" ? "Float" : base!.type;
+  // `_min` / `_max` keep the field's type (and enum values); a BigInt `_sum` stays a BigInt.
+  const type =
+    op === "_count"
+      ? "Int"
+      : op === "_avg" || (op === "_sum" && base!.type !== "BigInt")
+        ? "Float"
+        : base!.type;
   return {
+    ...(op === "_min" || op === "_max" ? base : {}),
     kind: "scalar",
     name,
     type,

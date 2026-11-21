@@ -174,6 +174,34 @@ function compileVectorFilter(
   );
 }
 
+/**
+ * Json fields compare their stored JSON text: `null`, `{ equals: value | null }`,
+ * `{ not: value | null }`. There are no deep (path) queries, and a bare value is not accepted (an
+ * object would be ambiguous with a filter).
+ */
+function compileJsonFilter(
+  ctx: QueryContext,
+  model: ResolvedNodeModel,
+  field: ResolvedScalarField,
+  ref: string,
+  filter: unknown,
+): string | null {
+  if (filter === null) return `${ref} IS NULL`;
+  if (!isPlainObject(filter) || Object.keys(filter).some((k) => k !== "equals" && k !== "not")) {
+    throw new CyphraValidationError(
+      `${model.name}.${field.name}: Json fields filter with null, { equals } or { not } only.`,
+    );
+  }
+  const parts: string[] = [];
+  for (const [op, v] of Object.entries(filter)) {
+    if (v === undefined) continue;
+    const value = v === null ? null : ctx.param(encodeFilterValue(field, v, model.name));
+    if (op === "equals") parts.push(value === null ? `${ref} IS NULL` : `${ref} = ${value}`);
+    else parts.push(value === null ? `${ref} IS NOT NULL` : `${ref} <> ${value}`);
+  }
+  return and(parts);
+}
+
 type StringFilterMode = QueryMode;
 
 /**
@@ -190,6 +218,7 @@ export function compileScalarFilter(
 ): string | null {
   if (filter === undefined) return null;
   if (field.type === "Vector") return compileVectorFilter(model, field, ref, filter);
+  if (field.type === "Json") return compileJsonFilter(ctx, model, field, ref, filter);
   if (field.list) return compileListFilter(ctx, model, field, ref, filter);
   const enc = (v: unknown) => encodeFilterValue(field, v, model.name);
   if (filter === null) return `${ref} IS NULL`;
@@ -420,9 +449,10 @@ export function compileOrderBy(
         parts.push(`${compileRelationCount(ctx, model, alias, rel)} ${d}`);
         continue;
       }
-      if (scalarOrThrow(model, key).type === "Vector") {
+      const sortType = scalarOrThrow(model, key).type;
+      if (sortType === "Vector" || sortType === "Json") {
         throw new CyphraValidationError(
-          `orderBy ${model.name}.${key}: Vector fields cannot be sorted.`,
+          `orderBy ${model.name}.${key}: ${sortType} fields cannot be sorted.`,
         );
       }
       parts.push(`${alias}.${q(key)} ${sortDirection(dir, `${model.name}.${key}`)}`);

@@ -1,11 +1,36 @@
 start
   = _ decls:(_ @declaration)* _ {
-      return { kind: "Document", declarations: decls };
+      // A field typed with an enum name parses like a relation field (`role Role`); now that every
+      // enum is known, turn those into scalar fields of that enum type.
+      const enums = new Set(decls.filter((d) => d.kind === "Enum").map((d) => d.name));
+      const resolveField = (f) =>
+        f.kind === "Relational" && enums.has(f.target)
+          ? {
+              kind: "Scalar",
+              name: f.name,
+              type:
+                f.cardinality === "many"
+                  ? { name: "Enum", optional: false, list: true, enum: f.target }
+                  : { name: "Enum", optional: f.optional, enum: f.target },
+              decorators: f.decorators,
+            }
+          : f;
+      const declarations = enums.size
+        ? decls.map((d) => (d.kind === "Node" ? { ...d, fields: d.fields.map(resolveField) } : d))
+        : decls;
+      return { kind: "Document", declarations };
     }
 
 declaration
   = nodeDeclaration
   / relationshipDeclaration
+  / enumDeclaration
+
+// `enum Role { ADMIN USER }`: values separated by whitespace (or commas).
+enumDeclaration
+  = "enum" __ name:identifier _ "{" _ values:(@identifier _ ("," _)?)* "}" {
+      return { kind: "Enum", name, values };
+    }
 
 nodeDeclaration
   = "node" __ name:identifier _ "{" _ items:nodeItem* _ "}" {
@@ -80,7 +105,7 @@ toLine
   = "to" __ id:identifier _ { return id; }
 
 scalarFieldInRel
-  = name:identifier __ type:fieldType decs:(_ @decorator)* _ {
+  = name:identifier __ type:relFieldType decs:(_ @decorator)* _ {
       return { kind: "Scalar", name, type, decorators: decs };
     }
 
@@ -88,8 +113,10 @@ nodeField
   = scalarNodeField
   / relationalNodeField
 
+// Also matches enum-typed fields (`role Role`, `roles Role[]`), which `start` turns into scalars.
+// A relation field without `@relationship(...)` is rejected when the schema is resolved.
 relationalNodeField
-  = name:identifier __ target:relationalTarget decs:(_ @decorator)+ _ {
+  = name:identifier __ target:relationalTarget decs:(_ @decorator)* _ {
       return {
         kind: "Relational",
         name,
@@ -110,6 +137,12 @@ scalarNodeField
       return { kind: "Scalar", name, type, decorators: decs };
     }
 
+// Relationship properties are always scalars, so any other type name is an enum.
+relFieldType
+  = fieldType
+  / n:identifier "[]" { return { name: "Enum", optional: false, list: true, enum: n }; }
+  / n:identifier opt:"?"? { return { name: "Enum", optional: opt === "?", enum: n }; }
+
 fieldType
   = "Vector" _ "(" _ d:$([0-9]+) _ ")" opt:"?"? {
       return { name: "Vector", optional: opt === "?", dimensions: Number(d) };
@@ -122,7 +155,7 @@ fieldType
     }
 
 scalarTypeName
-  = n:("String" / "Int" / "Float" / "Boolean" / "DateTime" / "Date") ![a-zA-Z0-9_] { return n; }
+  = n:("String" / "Int" / "Float" / "Boolean" / "DateTime" / "Date" / "BigInt" / "Json") ![a-zA-Z0-9_] { return n; }
 
 decorator
   = "@" "default" "(" _ id:identifier "(" _ ")" _ ")" {
@@ -130,6 +163,9 @@ decorator
     }
   / "@" "default" "(" _ v:literalValue _ ")" {
       return { name: "default", args: [{ key: "value", value: v }] };
+    }
+  / "@" "default" "(" _ id:identifier _ ")" {
+      return { name: "default", args: [{ key: "value", value: { kind: "identifier", value: id } }] };
     }
   / "@" name:identifier "(" _ args:decoratorArgs _ ")" {
       return { name, args };
@@ -163,7 +199,11 @@ literalValue
       return { kind: "boolean", value: b === "true" };
     }
   / n:$("-"? [0-9]+ ("." [0-9]+)?) {
-      return { kind: "number", value: Number(n) };
+      // Integers beyond 2^53 keep their exact digits in `raw` (for BigInt defaults).
+      const value = Number(n);
+      return Number.isSafeInteger(value) || n.includes(".")
+        ? { kind: "number", value }
+        : { kind: "number", value, raw: n };
     }
 
 stringLiteral

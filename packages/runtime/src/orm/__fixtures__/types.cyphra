@@ -1,0 +1,32 @@
+// Fixture for the enum / Json / BigInt tests (distinct labels so they can run alongside the other
+// ORM integration tests against the same database).
+enum TyRole {
+  ADMIN
+  EDITOR
+  VIEWER
+}
+
+enum TyLevel { LOW, HIGH }
+
+node TyAccount {
+  id       String     @id
+  role     TyRole     @default(VIEWER)
+  roles    TyRole[]
+  level    TyLevel?
+  settings Json?
+  prefs    Json       @default("{\"theme\":\"light\"}")
+  balance  BigInt     @default(0)
+  external BigInt?
+  ids      BigInt[]
+  score    Int?
+  friends  TyAccount[] @relationship(type: "TY_KNOWS", direction: OUT)
+}
+
+relationship TyKnows {
+  type "TY_KNOWS"
+  from TyAccount
+  to   TyAccount
+  level TyLevel  @default(LOW)
+  meta  Json?
+  since BigInt?
+}

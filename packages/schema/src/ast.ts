@@ -10,7 +10,15 @@ export type SchemaDocument = {
   readonly declarations: readonly Declaration[];
 };
 
-export type Declaration = NodeDeclaration | RelationshipDeclaration;
+export type Declaration = NodeDeclaration | RelationshipDeclaration | EnumDeclaration;
+
+/** `enum Role { ADMIN USER }`: a closed set of string values. */
+export type EnumDeclaration = {
+  readonly kind: "Enum";
+  readonly name: string;
+  /** Values in declaration order. */
+  readonly values: readonly string[];
+};
 
 export type NodeDeclaration = {
   readonly kind: "Node";
@@ -40,8 +48,14 @@ export type ScalarTypeName =
   | "Boolean"
   | "DateTime"
   | "Date"
+  /** 64-bit integer: a Neo4j `INTEGER`, a JS `bigint`. */
+  | "BigInt"
+  /** Any JSON value, stored as its JSON text (a string property). */
+  | "Json"
   /** `Vector(N)`: an embedding of `N` floats, stored as `LIST<FLOAT>`. */
-  | "Vector";
+  | "Vector"
+  /** A value of a declared `enum` (named by `enum`), stored as a string. */
+  | "Enum";
 
 export type ScalarTypeRef = {
   readonly name: ScalarTypeName;
@@ -50,6 +64,8 @@ export type ScalarTypeRef = {
   readonly list?: boolean;
   /** Number of dimensions of a `Vector(N)` type (only set when `name` is `"Vector"`). */
   readonly dimensions?: number;
+  /** Name of the `enum` declaration (only set when `name` is `"Enum"`). */
+  readonly enum?: string;
 };
 
 export type ScalarNodeField = {
@@ -81,7 +97,12 @@ export type DecoratorArg = {
 
 export type DecoratorValue =
   | { readonly kind: "string"; readonly value: string }
-  | { readonly kind: "number"; readonly value: number }
+  | {
+      readonly kind: "number";
+      readonly value: number;
+      /** Exact digits of an integer literal beyond `Number.MAX_SAFE_INTEGER` (for BigInt). */
+      readonly raw?: string;
+    }
   | { readonly kind: "boolean"; readonly value: boolean }
   | { readonly kind: "identifier"; readonly value: string };
 

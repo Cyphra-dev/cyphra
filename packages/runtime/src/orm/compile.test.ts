@@ -200,7 +200,7 @@ describe("q", () => {
 });
 
 describe("generated fixture", () => {
-  it.each(["blog", "compat", "vector", "search"])(
+  it.each(["blog", "compat", "vector", "search", "types"])(
     "is in sync with %s.cyphra (run the generator if this fails)",
     async (name) => {
       const { readFile } = await import("node:fs/promises");

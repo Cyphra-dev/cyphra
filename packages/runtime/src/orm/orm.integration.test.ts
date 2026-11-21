@@ -9,6 +9,11 @@ import {
   createClient as createSearchClient,
   type Db as SearchDb,
 } from "./__fixtures__/search.gen.js";
+import {
+  TyRole,
+  createClient as createTypesClient,
+  type Db as TypesDb,
+} from "./__fixtures__/types.gen.js";
 import { escapeLucene } from "./fulltext.js";
 
 const hasNeo = Boolean(
@@ -2133,5 +2138,254 @@ describe.skipIf(!hasNeo)("ORM full-text search (Neo4j)", () => {
     await expect(
       db.ftPost.search({ index: "nope" as "ftPostSearch", query: "x" }),
     ).rejects.toBeInstanceOf(CyphraValidationError);
+  });
+});
+
+describe.skipIf(!hasNeo)("ORM enum / Json / BigInt (Neo4j)", () => {
+  let db: TypesDb;
+  const MAX = 2n ** 63n - 1n;
+  const MIN = -(2n ** 63n);
+
+  beforeAll(() => {
+    db = createTypesClient({
+      uri: process.env.NEO4J_TEST_URI!,
+      user: process.env.NEO4J_TEST_USER!,
+      password: process.env.NEO4J_TEST_PASSWORD!,
+    });
+  });
+
+  beforeEach(async () => {
+    await db.$cypher`MATCH (n:TyAccount) DETACH DELETE n`;
+  });
+
+  afterAll(async () => {
+    if (db) {
+      await db.$cypher`MATCH (n:TyAccount) DETACH DELETE n`;
+      await db.$disconnect();
+    }
+  });
+
+  it("applies enum, Json and BigInt defaults and stores each with its Cypher type", async () => {
+    const a = await db.tyAccount.create({ data: { id: "a" } });
+    expect(a).toEqual({
+      id: "a",
+      role: "VIEWER",
+      roles: [],
+      level: null,
+      settings: null,
+      prefs: { theme: "light" },
+      balance: 0n,
+      external: null,
+      ids: [],
+      score: null,
+    });
+    await db.tyAccount.update({
+      where: { id: "a" },
+      data: { roles: [TyRole.ADMIN], settings: { a: [1] }, external: MAX, ids: [MIN, 1n] },
+    });
+    const [types] = await db.$cypher<Record<string, string>>`
+      MATCH (n:TyAccount {id: "a"})
+      RETURN valueType(n.role) AS role, valueType(n.roles) AS roles,
+        valueType(n.settings) AS settings, valueType(n.balance) AS balance,
+        valueType(n.external) AS external, valueType(n.ids) AS ids, n.settings AS text`;
+    expect(types).toEqual({
+      role: "STRING NOT NULL",
+      roles: "LIST<STRING NOT NULL> NOT NULL",
+      settings: "STRING NOT NULL",
+      balance: "INTEGER NOT NULL",
+      external: "INTEGER NOT NULL",
+      ids: "LIST<INTEGER NOT NULL> NOT NULL",
+      text: '{"a":[1]}',
+    });
+  });
+
+  it("round-trips the full 64-bit range, filters and sorts BigInt", async () => {
+    const values = [MIN, -1n, 0n, 2n ** 53n + 1n, MAX];
+    for (const [i, v] of values.entries()) {
+      await db.tyAccount.create({ data: { id: `b${i}`, balance: v, external: v } });
+    }
+    const all = await db.tyAccount.findMany({
+      orderBy: { balance: "desc" },
+      select: { balance: true },
+    });
+    expect(all.map((r) => r.balance)).toEqual([...values].reverse());
+    // Exact at the bounds: 2^63 - 1 and -2^63 are not representable as JS numbers.
+    const [raw] = await db.$cypher<{ s: string }>`
+      MATCH (n:TyAccount {id: "b4"}) RETURN toString(n.balance) AS s`;
+    expect(raw!.s).toBe("9223372036854775807");
+    expect((await db.tyAccount.findUniqueOrThrow({ where: { id: "b0" } })).external).toBe(MIN);
+
+    const ids = async (where: Parameters<TypesDb["tyAccount"]["findMany"]>[0]) =>
+      (await db.tyAccount.findMany({ ...where, orderBy: { id: "asc" } })).map((r) => r.id);
+    expect(await ids({ where: { balance: { gt: 0n } } })).toEqual(["b3", "b4"]);
+    expect(await ids({ where: { balance: { lt: -1n } } })).toEqual(["b0"]);
+    expect(await ids({ where: { balance: { gte: 2n ** 53n + 1n, lte: MAX } } })).toEqual([
+      "b3",
+      "b4",
+    ]);
+    expect(await ids({ where: { external: { in: [MIN, MAX] } } })).toEqual(["b0", "b4"]);
+    expect(await ids({ where: { external: { notIn: [MIN, MAX], not: 0n } } })).toEqual([
+      "b1",
+      "b3",
+    ]);
+    expect(await ids({ where: { balance: MAX } })).toEqual(["b4"]);
+
+    await db.tyAccount.update({ where: { id: "b2" }, data: { balance: { increment: MAX } } });
+    expect((await db.tyAccount.findUniqueOrThrow({ where: { id: "b2" } })).balance).toBe(MAX);
+    await expect(db.tyAccount.create({ data: { id: "x", balance: MAX + 1n } })).rejects.toThrow(
+      CyphraValidationError,
+    );
+  });
+
+  it("aggregates BigInt: _sum as bigint, _avg as number, _min / _max exact", async () => {
+    const big = 2n ** 61n;
+    await db.tyAccount.createMany({
+      data: [
+        { id: "a", role: "ADMIN", balance: big, score: 1 },
+        { id: "b", role: "ADMIN", balance: big - 1n, score: 2 },
+        { id: "c", role: "EDITOR", balance: 3n },
+      ],
+    });
+    const agg = await db.tyAccount.aggregate({
+      _sum: { balance: true, score: true },
+      _avg: { balance: true },
+      _min: { balance: true },
+      _max: { balance: true, external: true },
+    });
+    const avg = Number(2n * big + 2n) / 3;
+    expect(Math.abs(agg._avg.balance! - avg) / avg).toBeLessThan(1e-12);
+    expect(agg).toEqual({
+      _sum: { balance: 2n * big + 2n, score: 3 },
+      _avg: { balance: agg._avg.balance },
+      _min: { balance: 3n },
+      _max: { balance: big, external: null },
+    });
+    const groups = await db.tyAccount.groupBy({
+      by: "role",
+      _sum: { balance: true },
+      having: { balance: { _sum: { gt: 10n } } },
+      orderBy: { role: "asc" },
+    });
+    expect(groups).toEqual([{ role: "ADMIN", _sum: { balance: 2n * big - 1n } }]);
+
+    // Past 2^63 - 1, Neo4j's sum() turns into a (rounded) float: reject it rather than round.
+    await db.tyAccount.create({ data: { id: "d", balance: MAX } });
+    await expect(db.tyAccount.aggregate({ _sum: { balance: true } })).rejects.toThrow(RangeError);
+  });
+
+  it("validates enum values on every write (nested, createMany, upsert, update, edges)", async () => {
+    const bad = "OWNER" as TyRole;
+    await expect(db.tyAccount.create({ data: { id: "x", role: bad } })).rejects.toThrow(
+      /TyAccount\.role: expected one of "ADMIN", "EDITOR", "VIEWER"/,
+    );
+    await expect(db.tyAccount.create({ data: { id: "x", roles: ["ADMIN", bad] } })).rejects.toThrow(
+      CyphraValidationError,
+    );
+    await expect(
+      db.tyAccount.createMany({ data: [{ id: "x" }, { id: "y", role: bad }] }),
+    ).rejects.toThrow(CyphraValidationError);
+    await expect(
+      db.tyAccount.create({
+        data: { id: "x", friends: { create: { id: "y", role: bad } } },
+      }),
+    ).rejects.toThrow(CyphraValidationError);
+    await expect(
+      db.tyAccount.create({
+        data: {
+          id: "x",
+          friends: { create: { id: "y", $edge: { level: "MEDIUM" as "LOW" } } },
+        },
+      }),
+    ).rejects.toThrow(/TyKnows\.level/);
+    await expect(
+      db.tyAccount.upsert({ where: { id: "x" }, create: { id: "x", role: bad }, update: {} }),
+    ).rejects.toThrow(CyphraValidationError);
+    // Nothing was written by the rejected statements.
+    expect(await db.tyAccount.count()).toBe(0);
+
+    await db.tyAccount.create({ data: { id: "x", role: "ADMIN" } });
+    await expect(db.tyAccount.update({ where: { id: "x" }, data: { role: bad } })).rejects.toThrow(
+      CyphraValidationError,
+    );
+    await expect(db.tyAccount.updateMany({ data: { role: bad } })).rejects.toThrow(
+      CyphraValidationError,
+    );
+    await expect(
+      db.tyAccount.upsert({ where: { id: "x" }, create: { id: "x" }, update: { role: bad } }),
+    ).rejects.toThrow(CyphraValidationError);
+    expect((await db.tyAccount.findUniqueOrThrow({ where: { id: "x" } })).role).toBe("ADMIN");
+  });
+
+  it("filters enums and enum lists", async () => {
+    await db.tyAccount.create({
+      data: { id: "a", role: "ADMIN", roles: ["EDITOR"], level: "LOW" },
+    });
+    await db.tyAccount.create({ data: { id: "b", role: "EDITOR", roles: ["ADMIN", "VIEWER"] } });
+    await db.tyAccount.create({ data: { id: "c" } });
+    const ids = async (where: Parameters<TypesDb["tyAccount"]["findMany"]>[0]) =>
+      (await db.tyAccount.findMany({ ...where, orderBy: { id: "asc" } })).map((r) => r.id);
+    expect(await ids({ where: { role: TyRole.ADMIN } })).toEqual(["a"]);
+    expect(await ids({ where: { role: { in: ["ADMIN", "EDITOR"] } } })).toEqual(["a", "b"]);
+    expect(await ids({ where: { role: { notIn: ["ADMIN"] } } })).toEqual(["b", "c"]);
+    expect(await ids({ where: { role: { not: "VIEWER" } } })).toEqual(["a", "b"]);
+    expect(await ids({ where: { level: null } })).toEqual(["b", "c"]);
+    expect(await ids({ where: { roles: { has: "ADMIN" } } })).toEqual(["b"]);
+    expect(await ids({ where: { roles: { hasSome: ["EDITOR", "VIEWER"] } } })).toEqual(["a", "b"]);
+    expect(await ids({ where: { roles: { isEmpty: true } } })).toEqual(["c"]);
+    await expect(db.tyAccount.findMany({ where: { role: "NOPE" as TyRole } })).rejects.toThrow(
+      CyphraValidationError,
+    );
+  });
+
+  it("round-trips Json values and filters on whole-value equality", async () => {
+    const settings = { nested: { list: [1, "two", null, true] }, n: 1.5, s: 'é"\\' };
+    await db.tyAccount.create({ data: { id: "a", settings } });
+    await db.tyAccount.create({ data: { id: "b", settings: [1, 2, 3] } });
+    await db.tyAccount.create({ data: { id: "c", settings: "just a string" } });
+    await db.tyAccount.create({ data: { id: "d", settings: 0 } });
+    await db.tyAccount.create({ data: { id: "e" } });
+    const byId = async (id: string) =>
+      (await db.tyAccount.findUniqueOrThrow({ where: { id } })).settings;
+    expect(await byId("a")).toEqual(settings);
+    expect(await byId("b")).toEqual([1, 2, 3]);
+    expect(await byId("c")).toBe("just a string");
+    expect(await byId("d")).toBe(0);
+    expect(await byId("e")).toBeNull();
+
+    const ids = async (where: Parameters<TypesDb["tyAccount"]["findMany"]>[0]) =>
+      (await db.tyAccount.findMany({ ...where, orderBy: { id: "asc" } })).map((r) => r.id);
+    expect(await ids({ where: { settings: { equals: [1, 2, 3] } } })).toEqual(["b"]);
+    expect(await ids({ where: { settings: { equals: settings } } })).toEqual(["a"]);
+    expect(await ids({ where: { settings: null } })).toEqual(["e"]);
+    expect(await ids({ where: { settings: { not: null } } })).toEqual(["a", "b", "c", "d"]);
+    expect(await ids({ where: { settings: { not: 0 } } })).toEqual(["a", "b", "c"]);
+
+    // An object update replaces the whole value (it is not a number update).
+    await db.tyAccount.update({ where: { id: "a" }, data: { settings: { increment: 1 } } });
+    expect(await byId("a")).toEqual({ increment: 1 });
+    await db.tyAccount.update({ where: { id: "a" }, data: { settings: null } });
+    expect(await byId("a")).toBeNull();
+  });
+
+  it("types edge properties: enum default, Json and BigInt", async () => {
+    await db.tyAccount.create({
+      data: {
+        id: "a",
+        friends: {
+          create: [
+            { id: "b", $edge: { meta: { via: "import" }, since: MAX } },
+            { id: "c", $edge: { level: "HIGH" } },
+          ],
+        },
+      },
+    });
+    const a = await db.tyAccount.findUniqueOrThrow({
+      where: { id: "a" },
+      include: { friends: { orderBy: { id: "asc" } } },
+    });
+    expect(a.friends.map((f) => f.$edge)).toEqual([
+      { level: "LOW", meta: { via: "import" }, since: MAX },
+      { level: "HIGH", meta: null, since: null },
+    ]);
   });
 });

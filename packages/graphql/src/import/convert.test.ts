@@ -1,4 +1,5 @@
 import { parseSchema, printSchemaDocument, resolveSchema, validateSchema } from "@cyphra/schema";
+import type { NodeDeclaration } from "@cyphra/schema";
 import { describe, expect, it } from "vitest";
 import { GraphQLImportError, convertGraphQLTypeDefs } from "./convert.js";
 import type { ImportIssue } from "./mappings.js";
@@ -45,11 +46,11 @@ describe("convertGraphQLTypeDefs: types", () => {
     expect(issues).toEqual([]);
   });
 
-  it.each(["BigInt", "Time", "LocalTime", "LocalDateTime", "Duration", "Point", "CartesianPoint"])(
+  it.each(["Time", "LocalTime", "LocalDateTime", "Duration", "Point", "CartesianPoint"])(
     "reports %s as not converted and drops the field",
     (scalar) => {
       const result = convertGraphQLTypeDefs(`type T @node { name: String!, x: ${scalar} }`);
-      const node = result.document.declarations[0]!;
+      const node = result.document.declarations[0] as NodeDeclaration;
       expect(node.fields.map((f) => f.name)).toEqual(["name"]);
       expect(issueAt(result.issues, "T.x")).toMatchObject({
         severity: "unsupported",
@@ -59,14 +60,49 @@ describe("convertGraphQLTypeDefs: types", () => {
     },
   );
 
-  it("maps enums to String and reports it once per enum", () => {
+  it("maps enums to Cyphra enums (only the ones converted fields use)", () => {
     const { schema, issues } = convert(`
       enum Genre { DRAMA COMEDY }
-      type Movie @node { genre: Genre!, genres: [Genre!]! }
+      enum SortDirection { ASC DESC }
+      extend enum Genre { HORROR }
+      type Movie @node { genre: Genre!, genres: [Genre!]!, maybe: Genre }
     `);
-    expect(schema).toContain("genre String\n");
-    expect(schema).toContain("genres String[]\n");
-    expect(issues).toEqual([expect.objectContaining({ at: "Genre", severity: "changed" })]);
+    expect(schema).toContain("enum Genre {\n  DRAMA\n  COMEDY\n  HORROR\n}\n");
+    expect(schema).not.toContain("SortDirection");
+    expect(schema).toContain("genre Genre\n");
+    expect(schema).toContain("genres Genre[]\n");
+    expect(schema).toContain("maybe Genre?\n");
+    expect(issues).toEqual([]);
+    expect(() => resolveSchema(parseSchema(schema))).not.toThrow();
+  });
+
+  it("maps an enum whose name Cyphra cannot use to String", () => {
+    const { schema, issues } = convert(`
+      enum Json { A B }
+      type T @node { j: Json }
+    `);
+    expect(schema).toContain("j String?\n");
+    expect(issueAt(issues, "Json")).toMatchObject({ severity: "changed", feature: "enum" });
+  });
+
+  it("maps BigInt to BigInt, with exact defaults", () => {
+    const { schema, issues } = convert(`
+      type T @node {
+        a: BigInt!
+        b: [BigInt!]!
+        c: BigInt @default(value: "9223372036854775807")
+        d: BigInt! @default(value: 0)
+      }
+    `);
+    expect(schema).toContain("a BigInt\n");
+    expect(schema).toContain("b BigInt[]\n");
+    expect(schema).toContain("c BigInt? @default(9223372036854775807)\n");
+    expect(schema).toContain("d BigInt @default(0)\n");
+    expect(issues).toEqual([]);
+    const model = resolveSchema(parseSchema(schema));
+    expect(model.nodes[0]!.fields[2]).toMatchObject({
+      default: { kind: "literal", value: "9223372036854775807" },
+    });
   });
 
   it("reports custom scalars and drops their fields", () => {
@@ -189,7 +225,7 @@ describe("convertGraphQLTypeDefs: field directives", () => {
     expect(schema).toContain("i Int @default(3)");
     expect(schema).toContain("f Float @default(1.5)");
     expect(schema).toContain("b Boolean @default(true)");
-    expect(schema).toContain('e String @default("B")');
+    expect(schema).toContain("e S @default(B)");
     expect(issues.filter((i) => i.feature === "@default")).toEqual([]);
   });
 

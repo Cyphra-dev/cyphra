@@ -1,5 +1,5 @@
 import neo4j, { isDate, isDateTime, isInt, isLocalDateTime, type Integer } from "neo4j-driver";
-import type { ResolvedScalarField, ScalarTypeName } from "@cyphra/schema";
+import type { DefaultValueSpec, ResolvedScalarField, ScalarTypeName } from "@cyphra/schema";
 import { CyphraValidationError } from "./errors.js";
 
 /**
@@ -40,11 +40,65 @@ export function utcDateTime(d: Date): InstanceType<typeof neo4j.types.DateTime> 
   );
 }
 
-function encodeOne(type: ScalarTypeName, value: unknown, where: string): unknown {
+/** Smallest and largest `BigInt` values (a Neo4j 64-bit `INTEGER`). */
+export const BIGINT_MIN = -(2n ** 63n);
+export const BIGINT_MAX = 2n ** 63n - 1n;
+
+/**
+ * Check a `BigInt` value: a JS `bigint` (or a safe-integer `number`) from -2^63 to 2^63-1.
+ * It goes over the wire as a driver `Integer`, so the property is stored as a Cypher `INTEGER`.
+ */
+function encodeBigInt(value: unknown, where: string): unknown {
+  let b: bigint | undefined;
+  if (typeof value === "bigint") b = value;
+  else if (typeof value === "number" && Number.isSafeInteger(value)) b = BigInt(value);
+  else if (isInt(value)) b = BigInt((value as Integer).toString());
+  if (b === undefined) {
+    throw new CyphraValidationError(
+      `${where}: expected BigInt (a bigint), got ${describe(value)}.`,
+    );
+  }
+  if (b < BIGINT_MIN || b > BIGINT_MAX) {
+    throw new CyphraValidationError(
+      `${where}: ${b} is outside the 64-bit integer range (-2^63 to 2^63-1).`,
+    );
+  }
+  return neo4j.int(b.toString());
+}
+
+/** A `Json` value as its JSON text (the stored string property). */
+function encodeJson(value: unknown, where: string): string {
+  let text: string | undefined;
+  try {
+    text = JSON.stringify(value);
+  } catch (e) {
+    throw new CyphraValidationError(
+      `${where}: value is not JSON-serializable (${e instanceof Error ? e.message : String(e)}).`,
+    );
+  }
+  if (text === undefined) {
+    throw new CyphraValidationError(`${where}: expected a JSON value, got ${describe(value)}.`);
+  }
+  return text;
+}
+
+function encodeOne(field: ResolvedScalarField, value: unknown, where: string): unknown {
+  const type = field.type;
   switch (type) {
     case "String":
       if (typeof value !== "string") break;
       return value;
+    case "Enum": {
+      const values = field.enumValues ?? [];
+      if (typeof value === "string" && values.includes(value)) return value;
+      throw new CyphraValidationError(
+        `${where}: expected one of ${values.map((v) => JSON.stringify(v)).join(", ")} (enum ${field.enum}), got ${typeof value === "string" ? JSON.stringify(value) : describe(value)}.`,
+      );
+    }
+    case "BigInt":
+      return encodeBigInt(value, where);
+    case "Json":
+      return encodeJson(value, where);
     case "Boolean":
       if (typeof value !== "boolean") break;
       return value;
@@ -120,9 +174,22 @@ export function encodeScalar(field: ResolvedScalarField, value: unknown, owner: 
     if (!Array.isArray(value)) {
       throw new CyphraValidationError(`${where}: expected an array.`);
     }
-    return value.map((v, i) => encodeOne(field.type, v, `${where}[${i}]`));
+    return value.map((v, i) => encodeOne(field, v, `${where}[${i}]`));
   }
-  return encodeOne(field.type, value, where);
+  return encodeOne(field, value, where);
+}
+
+/**
+ * The JS value of a literal `@default(...)` of `field`, ready for {@link encodeScalar}: a
+ * `BigInt` default (decimal digits) becomes a `bigint`, a `Json` default (JSON text) its parsed value.
+ */
+export function defaultLiteralValue(
+  field: ResolvedScalarField,
+  d: Extract<DefaultValueSpec, { kind: "literal" }>,
+): unknown {
+  if (field.type === "BigInt") return BigInt(d.value as string | number);
+  if (field.type === "Json") return JSON.parse(String(d.value));
+  return d.value;
 }
 
 /** Encode a value used inside a filter (compared against `field`), element-wise for lists. */
@@ -136,11 +203,38 @@ export function encodeFilterValue(
       `${owner}.${field.name}: Vector fields can only be filtered on null (use findSimilar to search them).`,
     );
   }
-  return encodeOne(field.type, value, `${owner}.${field.name}`);
+  return encodeOne(field, value, `${owner}.${field.name}`);
+}
+
+/** A stored `BigInt` as a JS `bigint` (whatever integer representation the driver returns). */
+function decodeBigInt(value: unknown): unknown {
+  if (isInt(value)) return BigInt((value as Integer).toString());
+  if (typeof value === "number") {
+    // A float here is a `sum()` that overflowed 64 bits (Neo4j then returns a FLOAT).
+    if (!Number.isSafeInteger(value)) {
+      throw new RangeError(
+        `Neo4j value ${value} is not an exact 64-bit integer (BigInt overflow?).`,
+      );
+    }
+    return BigInt(value);
+  }
+  return value;
+}
+
+/** A stored `Json` string parsed back into its value (text that is not JSON is returned as is). */
+function decodeJson(value: unknown): unknown {
+  if (typeof value !== "string") return toNative(value);
+  try {
+    return JSON.parse(value) as unknown;
+  } catch {
+    return value;
+  }
 }
 
 function decodeOne(type: ScalarTypeName, value: unknown): unknown {
   if (value === null || value === undefined) return null;
+  if (type === "BigInt") return decodeBigInt(value);
+  if (type === "Json") return decodeJson(value);
   if (isInt(value)) {
     return integerToNumber(value);
   }

@@ -2,10 +2,8 @@
 // Review before use (run the import again to see the full report):
 // - JSON: custom scalars are not supported by Cyphra: fields of this type are not converted
 // - Purchasable: interfaces are not supported by Cyphra yet: implementing @node types are converted with their own fields; relationships to the interface are not
-// - OrderStatus: enums are not supported by Cyphra yet: mapped to String, allowed values are not enforced
 // - Product: a Cyphra node's name is its label: renamed to "Item"
 // - Product.sku: @unique was removed in @neo4j/graphql v7; Cyphra keeps it and creates the uniqueness constraint
-// - Product.stock: BigInt is not supported by Cyphra yet: not converted
 // - Product.attributes: custom scalars are not supported by Cyphra: not converted
 // - Product.location: Point is not supported by Cyphra yet: not converted
 // - Category.id: became @id @default(uuid()); Cyphra also adds a uniqueness constraint, which v7 @id does not
@@ -16,15 +14,21 @@
 // - Order.total: @cypher fields are computed by a Cypher query: not converted (compat.v7 still serves it); with the typed client, write it as a query
 // - Review.id: became @id @default(uuid()); Cyphra also adds a uniqueness constraint, which v7 @id does not
 
+enum OrderStatus {
+  PENDING
+  PAID
+  SHIPPED
+}
+
 node Item {
   sku String @unique
   name String
   price Float
+  stock BigInt?
   weightKg Float?
   tags String[]
   categories Category[] @relationship(type: "IN_CATEGORY", direction: OUT)
   reviews Review[] @relationship(type: "REVIEWS", direction: IN)
-  // stock: BigInt (not converted: type not supported)
   // attributes: JSON (not converted: type not supported)
   // location: Point (not converted: type not supported)
 }
@@ -45,7 +49,7 @@ node Customer {
 
 node Order {
   id String @id @default(uuid())
-  status String @default("PENDING")
+  status OrderStatus @default(PENDING)
   placedAt DateTime @default(now())
   customer Customer @relationship(type: "PLACED", direction: IN)
   lines Item[] @relationship(type: "CONTAINS", direction: OUT)

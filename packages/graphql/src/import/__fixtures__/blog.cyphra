@@ -1,6 +1,5 @@
 // Imported from @neo4j/graphql type definitions with `cyphra import graphql`.
 // Review before use (run the import again to see the full report):
-// - Role: enums are not supported by Cyphra yet: mapped to String, allowed values are not enforced
 // - Query: custom Query fields (@cypher, resolvers) are not converted (compat.v7 still serves @cypher fields); with the typed client, write them as queries
 // - User: authorization rules are not part of a Cyphra schema: compat.v7 still applies them; enforce them yourself around the typed client
 // - User.id: became @id @default(uuid()); Cyphra also adds a uniqueness constraint, which v7 @id does not
@@ -13,11 +12,17 @@
 // - Tag.posts: queryDirection UNDIRECTED is not supported: Cyphra follows direction IN
 // - Comment.id: became @id @default(uuid()); Cyphra also adds a uniqueness constraint, which v7 @id does not
 
+enum Role {
+  ADMIN
+  AUTHOR
+  READER
+}
+
 node User {
   id String @id @default(uuid())
   email String @unique
   display_name String?
-  role String @default("READER")
+  role Role @default(READER)
   createdAt DateTime @default(now())
   updatedAt DateTime? @default(now())
   posts Post[] @relationship(type: "WROTE", direction: OUT)

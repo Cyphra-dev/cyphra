@@ -6,6 +6,8 @@ import { describe, expectTypeOf, it } from "vitest";
 import type { CyphraTypeMap, Db } from "./__fixtures__/blog.gen.js";
 import type { Db as VectorDb } from "./__fixtures__/vector.gen.js";
 import type { Db as SearchDb } from "./__fixtures__/search.gen.js";
+import { TyRole, type Db as TypesDb } from "./__fixtures__/types.gen.js";
+import type { JsonValue } from "../index.js";
 import type { ModelPath, Path, PathEdge, SelfRelations, ShortestPathResult } from "./types.js";
 
 // Type-only test file: checked by `tsc` (pnpm typecheck), not executed by Vitest.
@@ -539,5 +541,118 @@ describe("ORM full-text search types", () => {
       tx.ftPost.search({ index: "ftPostSearch", query: "x", select: { id: true } }),
     );
     expectTypeOf(out).toEqualTypeOf<{ id: string; $score: number }[]>();
+  });
+});
+
+declare const tdb: TypesDb;
+
+describe("ORM enum / Json / BigInt types", () => {
+  it("types enum fields as the union, Json as JsonValue and BigInt as bigint", async () => {
+    const a = await tdb.tyAccount.findUniqueOrThrow({ where: { id: "a" } });
+    expectTypeOf(a.role).toEqualTypeOf<"ADMIN" | "EDITOR" | "VIEWER">();
+    expectTypeOf(a.roles).toEqualTypeOf<("ADMIN" | "EDITOR" | "VIEWER")[]>();
+    expectTypeOf(a.level).toEqualTypeOf<"LOW" | "HIGH" | null>();
+    expectTypeOf(a.settings).toEqualTypeOf<JsonValue | null>();
+    expectTypeOf(a.prefs).toEqualTypeOf<JsonValue>();
+    expectTypeOf(a.balance).toEqualTypeOf<bigint>();
+    expectTypeOf(a.external).toEqualTypeOf<bigint | null>();
+    expectTypeOf(a.ids).toEqualTypeOf<bigint[]>();
+    expectTypeOf(TyRole.ADMIN).toEqualTypeOf<"ADMIN">();
+
+    const withEdges = await tdb.tyAccount.findMany({ include: { friends: true } });
+    expectTypeOf(withEdges[0]!.friends[0]!.$edge.since).toEqualTypeOf<bigint | null>();
+    expectTypeOf(withEdges[0]!.friends[0]!.$edge.level).toEqualTypeOf<"LOW" | "HIGH">();
+  });
+
+  it("accepts enum values, any JSON and bigints on write", async () => {
+    await tdb.tyAccount.create({
+      data: {
+        id: "a",
+        role: TyRole.ADMIN,
+        roles: ["EDITOR", "VIEWER"],
+        settings: { nested: [1, "two", null, { ok: true }] },
+        balance: 2n ** 63n - 1n,
+        ids: [1n, -2n],
+        friends: { create: { id: "b", $edge: { level: "HIGH", meta: [1, 2], since: 5n } } },
+      },
+    });
+    await tdb.tyAccount.createMany({ data: [{ id: "c", role: "EDITOR", settings: "text" }] });
+    await tdb.tyAccount.update({
+      where: { id: "a" },
+      data: { balance: { increment: 10n }, settings: { replaced: true }, level: null },
+    });
+    await tdb.tyAccount.upsert({
+      where: { id: "a" },
+      create: { id: "a", role: "VIEWER" },
+      update: { role: "EDITOR" },
+    });
+    // @ts-expect-error — not a TyRole value
+    await tdb.tyAccount.create({ data: { id: "x", role: "OWNER" } });
+    // @ts-expect-error — enum lists hold enum values
+    await tdb.tyAccount.create({ data: { id: "x", roles: ["OWNER"] } });
+    // @ts-expect-error — BigInt fields take a bigint, not a number
+    await tdb.tyAccount.create({ data: { id: "x", balance: 1 } });
+    // @ts-expect-error — increments of a BigInt are bigints
+    await tdb.tyAccount.update({ where: { id: "a" }, data: { balance: { increment: 1 } } });
+    // @ts-expect-error — a Date is not a JSON value
+    await tdb.tyAccount.create({ data: { id: "x", settings: new Date() } });
+  });
+
+  it("filters enums by value, Json by equality only, BigInt by range", async () => {
+    await tdb.tyAccount.findMany({
+      where: {
+        role: "ADMIN",
+        level: { in: ["LOW"], not: null },
+        roles: { has: "EDITOR", hasSome: ["ADMIN"] },
+        settings: { equals: { a: 1 } },
+        prefs: { not: null },
+        balance: { gt: 0n, lte: 2n ** 62n, in: [1n, 2n], notIn: [3n] },
+        external: null,
+        friends: { some: { role: { notIn: ["VIEWER"] } } },
+      },
+      orderBy: [{ balance: "desc" }, { role: "asc" }],
+    });
+    await tdb.tyAccount.findMany({ where: { settings: null, role: { equals: TyRole.EDITOR } } });
+    // @ts-expect-error — not a TyRole value
+    await tdb.tyAccount.findMany({ where: { role: "OWNER" } });
+    // @ts-expect-error — enums have no string operators
+    await tdb.tyAccount.findMany({ where: { role: { contains: "AD" } } });
+    // @ts-expect-error — enums have no range operators
+    await tdb.tyAccount.findMany({ where: { role: { gt: "ADMIN" } } });
+    // @ts-expect-error — Json filters take { equals } / { not } (no bare value)
+    await tdb.tyAccount.findMany({ where: { settings: "x" } });
+    // @ts-expect-error — no deep Json queries
+    await tdb.tyAccount.findMany({ where: { settings: { path: ["a"] } } });
+    // @ts-expect-error — Json fields cannot be sorted
+    await tdb.tyAccount.findMany({ orderBy: { settings: "asc" } });
+    // @ts-expect-error — BigInt filters take bigints
+    await tdb.tyAccount.findMany({ where: { balance: { gt: 1 } } });
+  });
+
+  it("aggregates BigInt fields: _sum is a bigint, _avg a number", async () => {
+    const agg = await tdb.tyAccount.aggregate({
+      _sum: { balance: true, score: true },
+      _avg: { balance: true },
+      _min: { balance: true, role: true },
+      _max: { external: true },
+    });
+    expectTypeOf(agg).toEqualTypeOf<{
+      _sum: { balance: bigint | null; score: number | null };
+      _avg: { balance: number | null };
+      _min: { balance: bigint | null; role: "ADMIN" | "EDITOR" | "VIEWER" | null };
+      _max: { external: bigint | null };
+    }>();
+    const groups = await tdb.tyAccount.groupBy({
+      by: "role",
+      _sum: { balance: true },
+      having: { balance: { _sum: { gt: 10n } } },
+    });
+    expectTypeOf(groups).toEqualTypeOf<
+      { role: "ADMIN" | "EDITOR" | "VIEWER"; _sum: { balance: bigint | null } }[]
+    >();
+    // @ts-expect-error — Json fields are not aggregated
+    await tdb.tyAccount.aggregate({ _max: { settings: true } });
+    // @ts-expect-error — nor summed
+    await tdb.tyAccount.aggregate({ _sum: { role: true } });
   });
 });

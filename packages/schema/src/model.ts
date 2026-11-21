@@ -19,7 +19,7 @@ import type {
   SchemaDocument,
 } from "./ast.js";
 import { SchemaValidationError } from "./errors.js";
-import { validateModelAttributes, validateVectorField } from "./validate.js";
+import { validateEnum, validateModelAttributes, validateVectorField } from "./validate.js";
 
 /** Bump when the shape of {@link SchemaModel} changes incompatibly. */
 export const SCHEMA_MODEL_VERSION = 1 as const;
@@ -27,9 +27,20 @@ export const SCHEMA_MODEL_VERSION = 1 as const;
 /** Built-in generator functions accepted by `@default(fn())`. */
 export type DefaultFunction = "cuid" | "uuid" | "now";
 
+/**
+ * A `@default(...)`. Literal values are JSON-friendly: a `BigInt` default is its decimal digits
+ * (`"9007199254740993"`), a `Json` default is its (normalized) JSON text, an enum default is the
+ * value's name.
+ */
 export type DefaultValueSpec =
   | { readonly kind: "fn"; readonly fn: DefaultFunction }
   | { readonly kind: "literal"; readonly value: string | number | boolean };
+
+/** An `enum` declaration: its name and values, in declaration order. */
+export type ResolvedEnum = {
+  readonly name: string;
+  readonly values: readonly string[];
+};
 
 /** Similarity function of a vector index (`vector.similarity_function`). */
 export type VectorSimilarity = "cosine" | "euclidean";
@@ -76,6 +87,10 @@ export type ResolvedScalarField = {
   readonly dimensions?: number;
   /** Vector index declared with `@vectorIndex(...)` on a `Vector(N)` field. */
   readonly vectorIndex?: ResolvedVectorIndex;
+  /** Name of the `enum` of an `Enum` field. */
+  readonly enum?: string;
+  /** Allowed values of an `Enum` field (copied from its `enum`, checked on every write). */
+  readonly enumValues?: readonly string[];
 };
 
 export type RelationDirection = "OUT" | "IN";
@@ -123,7 +138,13 @@ export type SchemaModel = {
   readonly version: typeof SCHEMA_MODEL_VERSION;
   readonly nodes: readonly ResolvedNodeModel[];
   readonly relationships: readonly ResolvedRelationshipModel[];
+  /** `enum` declarations (absent when the schema has none). */
+  readonly enums?: readonly ResolvedEnum[];
 };
+
+/** Smallest and largest values of a `BigInt` (a Neo4j 64-bit `INTEGER`). */
+const BIGINT_MIN = -(2n ** 63n);
+const BIGINT_MAX = 2n ** 63n - 1n;
 
 const DEFAULT_FUNCTIONS: Record<DefaultFunction, readonly ScalarTypeName[]> = {
   cuid: ["String"],
@@ -139,7 +160,11 @@ function argValue(dec: Decorator, key: string): DecoratorValue | undefined {
   return dec.args.find((a) => a.key === key)?.value;
 }
 
-function resolveDefault(owner: string, f: ScalarNodeField): DefaultValueSpec | undefined {
+function resolveDefault(
+  owner: string,
+  f: ScalarNodeField,
+  enumValues?: readonly string[],
+): DefaultValueSpec | undefined {
   const dec = findDecorator(f.decorators, "default");
   if (!dec) {
     return undefined;
@@ -165,10 +190,39 @@ function resolveDefault(owner: string, f: ScalarNodeField): DefaultValueSpec | u
     return { kind: "fn", fn: fn.value as DefaultFunction };
   }
   const lit = argValue(dec, "value");
+  const t = f.type.name;
+  if (lit && t === "Enum" && !f.type.list && (lit.kind === "identifier" || lit.kind === "string")) {
+    const values = enumValues ?? [];
+    if (!values.includes(lit.value)) {
+      throw new SchemaValidationError(
+        `${where}: default ${lit.value} is not a value of enum ${f.type.enum} (${values.join(", ")}).`,
+      );
+    }
+    return { kind: "literal", value: lit.value };
+  }
   if (!lit || lit.kind === "identifier") {
     throw new SchemaValidationError(`${where}: unsupported @default(...) argument.`);
   }
-  const t = f.type.name;
+  if (t === "BigInt" && !f.type.list && lit.kind === "number") {
+    const digits = lit.raw ?? String(lit.value);
+    if (!/^-?[0-9]+$/.test(digits) || BigInt(digits) < BIGINT_MIN || BigInt(digits) > BIGINT_MAX) {
+      throw new SchemaValidationError(
+        `${where}: default ${digits} is not a 64-bit integer (BigInt is -2^63 to 2^63-1).`,
+      );
+    }
+    return { kind: "literal", value: BigInt(digits).toString() };
+  }
+  if (t === "Json" && lit.kind === "string") {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(lit.value);
+    } catch {
+      throw new SchemaValidationError(
+        `${where}: a Json default must be a string holding JSON text, e.g. @default("{}") (got ${JSON.stringify(lit.value)}).`,
+      );
+    }
+    return { kind: "literal", value: JSON.stringify(parsed) };
+  }
   const ok =
     !f.type.list &&
     ((lit.kind === "string" && t === "String") ||
@@ -182,9 +236,37 @@ function resolveDefault(owner: string, f: ScalarNodeField): DefaultValueSpec | u
   return { kind: "literal", value: lit.value };
 }
 
-function resolveScalar(owner: string, f: ScalarNodeField, allowId: boolean): ResolvedScalarField {
+function resolveScalar(
+  owner: string,
+  f: ScalarNodeField,
+  allowId: boolean,
+  enums: ReadonlyMap<string, ResolvedEnum>,
+): ResolvedScalarField {
   const id = Boolean(findDecorator(f.decorators, "id"));
   const list = Boolean(f.type.list);
+  let enumDef: ResolvedEnum | undefined;
+  if (f.type.name === "Enum") {
+    enumDef = enums.get(f.type.enum ?? "");
+    if (!enumDef) {
+      throw new SchemaValidationError(
+        `${owner} field "${f.name}": unknown type "${f.type.enum}" (not a scalar type or a declared enum).`,
+      );
+    }
+  }
+  if (f.type.name === "Json") {
+    if (list) {
+      throw new SchemaValidationError(
+        `${owner} field "${f.name}": Json[] is not supported (a Json value can itself be an array).`,
+      );
+    }
+    for (const n of ["id", "unique", "index"]) {
+      if (findDecorator(f.decorators, n)) {
+        throw new SchemaValidationError(
+          `${owner} field "${f.name}": @${n} is not valid on a Json field.`,
+        );
+      }
+    }
+  }
   if (id && !allowId) {
     throw new SchemaValidationError(
       `${owner} field "${f.name}": @id is only valid on node fields.`,
@@ -214,8 +296,9 @@ function resolveScalar(owner: string, f: ScalarNodeField, allowId: boolean): Res
   if (f.type.name === "Vector") {
     return { ...field, dimensions: f.type.dimensions ?? 0 };
   }
-  const def = resolveDefault(owner, f);
-  return def ? { ...field, default: def } : field;
+  const def = resolveDefault(owner, f, enumDef?.values);
+  const typed = enumDef ? { ...field, enum: enumDef.name, enumValues: enumDef.values } : field;
+  return def ? { ...typed, default: def } : typed;
 }
 
 function resolveVectorIndex(label: string, f: ScalarNodeField): ResolvedVectorIndex | undefined {
@@ -263,6 +346,7 @@ function resolveFulltext(decl: NodeDeclaration, attr: ModelAttribute): ResolvedF
 function impliedDdlNames(doc: SchemaDocument): Map<string, string> {
   const out = new Map<string, string>();
   for (const d of doc.declarations) {
+    if (d.kind === "Enum") continue;
     for (const f of d.fields) {
       if (f.kind !== "Scalar") continue;
       const has = (n: string) => f.decorators.some((x) => x.name === n);
@@ -301,12 +385,17 @@ function assertUniqueNames(owner: string, names: readonly string[]): void {
 export function resolveSchema(doc: SchemaDocument): SchemaModel {
   const nodeNames = new Set<string>();
   const relNames = new Set<string>();
+  const enums = new Map<string, ResolvedEnum>();
   for (const d of doc.declarations) {
-    const set = d.kind === "Node" ? nodeNames : relNames;
-    if (nodeNames.has(d.name) || relNames.has(d.name)) {
+    if (nodeNames.has(d.name) || relNames.has(d.name) || enums.has(d.name)) {
       throw new SchemaValidationError(`Duplicate declaration "${d.name}".`);
     }
-    set.add(d.name);
+    if (d.kind === "Enum") {
+      validateEnum(d);
+      enums.set(d.name, { name: d.name, values: [...d.values] });
+      continue;
+    }
+    (d.kind === "Node" ? nodeNames : relNames).add(d.name);
     validateModelAttributes(d);
   }
 
@@ -330,7 +419,7 @@ export function resolveSchema(doc: SchemaDocument): SchemaModel {
       relType: d.relType,
       from: d.from,
       to: d.to,
-      properties: d.fields.map((f) => resolveScalar(owner, f, false)),
+      properties: d.fields.map((f) => resolveScalar(owner, f, false, enums)),
     });
   }
 
@@ -349,7 +438,7 @@ export function resolveSchema(doc: SchemaDocument): SchemaModel {
     const fields: ResolvedField[] = [];
     for (const f of d.fields) {
       if (f.kind === "Scalar") {
-        const field = resolveScalar(owner, f, true);
+        const field = resolveScalar(owner, f, true, enums);
         const vectorIndex = resolveVectorIndex(d.name, f);
         if (vectorIndex) {
           const clash = indexNames.get(vectorIndex.name);
@@ -365,7 +454,9 @@ export function resolveSchema(doc: SchemaDocument): SchemaModel {
       }
       const where = `${owner} field "${f.name}"`;
       if (!nodeNames.has(f.target)) {
-        throw new SchemaValidationError(`${where}: unknown node "${f.target}".`);
+        throw new SchemaValidationError(
+          `${where}: unknown node "${f.target}" (not a node model or an enum).`,
+        );
       }
       const rel = findDecorator(f.decorators, "relationship");
       const typeArg = rel ? argValue(rel, "type") : undefined;
@@ -427,7 +518,12 @@ export function resolveSchema(doc: SchemaDocument): SchemaModel {
     });
   }
 
-  return { version: SCHEMA_MODEL_VERSION, nodes, relationships };
+  return {
+    version: SCHEMA_MODEL_VERSION,
+    nodes,
+    relationships,
+    ...(enums.size ? { enums: [...enums.values()] } : {}),
+  };
 }
 
 /** Look up a node model by name. */
