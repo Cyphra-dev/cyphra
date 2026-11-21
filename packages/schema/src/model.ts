@@ -20,6 +20,40 @@ import type {
 } from "./ast.js";
 import { SchemaValidationError } from "./errors.js";
 import { validateEnum, validateModelAttributes, validateVectorField } from "./validate.js";
+import {
+  TEMPORAL_EXAMPLES,
+  formatDuration,
+  formatLocalDateTime,
+  formatLocalTime,
+  formatTime,
+  parseDuration,
+  parseLocalDateTime,
+  parseLocalTime,
+  parseTime,
+  type IsoTemporalType,
+} from "./temporal.js";
+
+/** `text` in the canonical form the runtime returns, or `null` when it is not valid. */
+function canonicalTemporalText(type: IsoTemporalType, text: string): string | null {
+  switch (type) {
+    case "LocalDateTime": {
+      const p = parseLocalDateTime(text);
+      return p && formatLocalDateTime(p);
+    }
+    case "LocalTime": {
+      const p = parseLocalTime(text);
+      return p && formatLocalTime(p);
+    }
+    case "Time": {
+      const p = parseTime(text);
+      return p && formatTime(p);
+    }
+    case "Duration": {
+      const p = parseDuration(text);
+      return p && formatDuration(p);
+    }
+  }
+}
 
 /** Bump when the shape of {@link SchemaModel} changes incompatibly. */
 export const SCHEMA_MODEL_VERSION = 1 as const;
@@ -30,7 +64,8 @@ export type DefaultFunction = "cuid" | "uuid" | "now";
 /**
  * A `@default(...)`. Literal values are JSON-friendly: a `BigInt` default is its decimal digits
  * (`"9007199254740993"`), a `Json` default is its (normalized) JSON text, an enum default is the
- * value's name.
+ * value's name, a `LocalDateTime` / `LocalTime` / `Time` / `Duration` default its ISO 8601 text
+ * (normalized: `"PT90M"` becomes `"PT1H30M"`).
  */
 export type DefaultValueSpec =
   | { readonly kind: "fn"; readonly fn: DefaultFunction }
@@ -149,7 +184,7 @@ const BIGINT_MAX = 2n ** 63n - 1n;
 const DEFAULT_FUNCTIONS: Record<DefaultFunction, readonly ScalarTypeName[]> = {
   cuid: ["String"],
   uuid: ["String"],
-  now: ["DateTime", "Date"],
+  now: ["DateTime", "Date", "LocalDateTime", "LocalTime", "Time"],
 };
 
 function findDecorator(decs: readonly Decorator[], name: string): Decorator | undefined {
@@ -222,6 +257,19 @@ function resolveDefault(
       );
     }
     return { kind: "literal", value: JSON.stringify(parsed) };
+  }
+  if (
+    (t === "LocalDateTime" || t === "LocalTime" || t === "Time" || t === "Duration") &&
+    !f.type.list &&
+    lit.kind === "string"
+  ) {
+    const text = canonicalTemporalText(t, lit.value);
+    if (text === null) {
+      throw new SchemaValidationError(
+        `${where}: default ${JSON.stringify(lit.value)} is not a valid ${t} (ISO 8601, e.g. "${TEMPORAL_EXAMPLES[t]}").`,
+      );
+    }
+    return { kind: "literal", value: text };
   }
   const ok =
     !f.type.list &&

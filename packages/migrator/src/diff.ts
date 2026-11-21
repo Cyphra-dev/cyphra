@@ -3,7 +3,7 @@
  * current schema) and plan the migration that takes a database from one to the other.
  *
  * Neo4j is schemaless, so the plan has two parts:
- * - **DDL**: uniqueness constraints and range, vector and full-text indexes, named exactly like
+ * - **DDL**: uniqueness constraints and range, point, vector and full-text indexes, named exactly like
  *   `cyphra push` names them.
  * - **Data steps**: backfills for new defaults, guards for newly required fields, and
  *   (commented-out) destructive cleanups for removed fields and models.
@@ -63,6 +63,25 @@ export function fulltextIndexStatement(label: string, index: ResolvedFulltextInd
   return `CREATE FULLTEXT INDEX ${index.name} IF NOT EXISTS FOR (n:${q(label)}) ON EACH [${props}]${options}`;
 }
 
+/** `true` for the point types, whose `@index` is a `POINT` index (for distance and box queries). */
+export function isPointType(type: string): boolean {
+  return type === "Point" || type === "CartesianPoint";
+}
+
+/**
+ * `CREATE RANGE INDEX …` for an `@index` field, or `CREATE POINT INDEX …` for a (single) point
+ * field: a range index does not serve `point.distance` / `point.withinBBox`.
+ */
+export function propertyIndexStatement(
+  name: string,
+  target: string,
+  ref: string,
+  f: { readonly type: string; readonly list?: boolean },
+): string {
+  const kind = isPointType(f.type) && !f.list ? "POINT" : "RANGE";
+  return `CREATE ${kind} INDEX ${name} IF NOT EXISTS ${target} ON (${ref})`;
+}
+
 /** One named schema object (constraint or index) and the statement that creates it. */
 export type DdlObject = {
   readonly name: string;
@@ -104,7 +123,7 @@ export function ddlObjectsFromModel(model: SchemaModel): DdlObject[] {
         out.push({
           name,
           kind: "index",
-          create: `CREATE RANGE INDEX ${name} IF NOT EXISTS ${target} ON (n.${q(f.name)})`,
+          create: propertyIndexStatement(name, target, `n.${q(f.name)}`, f),
         });
       }
     }
@@ -129,7 +148,7 @@ export function ddlObjectsFromModel(model: SchemaModel): DdlObject[] {
         out.push({
           name,
           kind: "index",
-          create: `CREATE RANGE INDEX ${name} IF NOT EXISTS ${target} ON (r.${q(f.name)})`,
+          create: propertyIndexStatement(name, target, `r.${q(f.name)}`, f),
         });
       }
     }
@@ -210,6 +229,16 @@ function enumValueWarnings(
   );
 }
 
+/** Cypher function that builds a value of each temporal type (from ISO text, or `now` without arguments). */
+const TEMPORAL_FUNCTIONS: Partial<Record<string, string>> = {
+  DateTime: "datetime",
+  Date: "date",
+  LocalDateTime: "localdatetime",
+  LocalTime: "localtime",
+  Time: "time",
+  Duration: "duration",
+};
+
 /** Cypher expression that produces the default of `f`, plus params, or `null` if not expressible. */
 function defaultExpression(
   f: ResolvedScalarField,
@@ -221,9 +250,12 @@ function defaultExpression(
     if (f.type === "Int" || f.type === "BigInt") {
       return { expr: `toInteger($value)`, params: { value: d.value } };
     }
+    // Temporal defaults are ISO 8601 text: parse it in Cypher so the property is a temporal value.
+    const temporal = TEMPORAL_FUNCTIONS[f.type];
+    if (temporal) return { expr: `${temporal}($value)`, params: { value: d.value } };
     return { expr: "$value", params: { value: d.value } };
   }
-  if (d.fn === "now") return { expr: f.type === "Date" ? "date()" : "datetime()" };
+  if (d.fn === "now") return { expr: `${TEMPORAL_FUNCTIONS[f.type] ?? "datetime"}()` };
   if (d.fn === "uuid") return { expr: "randomUUID()" };
   return {
     expr: "randomUUID()",

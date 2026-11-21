@@ -12,7 +12,7 @@ import neo4j6 from "neo4j-driver-6";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { CyphraClient, type DriverLike } from "./client.js";
 import { createClient, type Db } from "./orm/__fixtures__/compat.gen.js";
-import { encodeScalar } from "./orm/values.js";
+import { decodeScalar, encodeScalar } from "./orm/values.js";
 
 const hasNeo = Boolean(
   process.env.NEO4J_TEST_URI && process.env.NEO4J_TEST_USER && process.env.NEO4J_TEST_PASSWORD,
@@ -208,6 +208,51 @@ describe.skipIf(!hasNeo).each(majors)(
         return r.records;
       });
       expect(mod.isDateTime(rec!.get("now"))).toBe(true);
+    });
+
+    it("round-trips points and temporal values between Cyphra's driver and the user's", async () => {
+      const client = new CyphraClient({ driver });
+      const params = {
+        p: encodeScalar(field("Point"), { longitude: 2.35, latitude: 48.85, height: 30 }, "T"),
+        c: encodeScalar(field("CartesianPoint"), { x: 1, y: 2 }, "T"),
+        ldt: encodeScalar(field("LocalDateTime"), "2024-05-06T07:08:09.5", "T"),
+        lt: encodeScalar(field("LocalTime"), "07:08", "T"),
+        t: encodeScalar(field("Time"), "07:08:09-05:00", "T"),
+        d: encodeScalar(field("Duration"), "P1Y2M3DT4H5M6.5S", "T"),
+      };
+      const [row] = await client.withReadTransaction((tx) =>
+        client.queryRecordsTx(
+          tx,
+          cypher`RETURN valueType(${params.p}) AS tp, toString(${params.p}.srid) AS srid,
+                        toString(${params.ldt}) AS ldt, toString(${params.lt}) AS lt,
+                        toString(${params.t}) AS t, toString(${params.d}) AS d,
+                        ${params.c}.x AS x`,
+        ),
+      );
+      expect(row).toEqual({
+        tp: "POINT NOT NULL",
+        srid: "4979",
+        ldt: "2024-05-06T07:08:09.5",
+        lt: "07:08:00",
+        t: "07:08:09-05:00",
+        d: "P1Y2M3DT4H5M6.5S",
+        x: 1,
+      });
+      // Values the user's driver returns decode the same way.
+      const raw = await client.withSession(async (session) => {
+        const r = await client.runCompiled(
+          session,
+          cypher`RETURN point({longitude: 1, latitude: 2}) AS p, localtime("10:00") AS lt,
+                        time("10:00+01:00") AS t, duration("PT90M") AS d,
+                        localdatetime("2024-01-02T03:04") AS ldt`,
+        );
+        return r.records[0]!;
+      });
+      expect(decodeScalar(field("Point"), raw.get("p"))).toEqual({ longitude: 1, latitude: 2 });
+      expect(decodeScalar(field("LocalTime"), raw.get("lt"))).toBe("10:00:00");
+      expect(decodeScalar(field("Time"), raw.get("t"))).toBe("10:00:00+01:00");
+      expect(decodeScalar(field("Duration"), raw.get("d"))).toBe("PT1H30M");
+      expect(decodeScalar(field("LocalDateTime"), raw.get("ldt"))).toBe("2024-01-02T03:04:00");
     });
 
     it("leaves a supplied driver open on close/$disconnect", async () => {

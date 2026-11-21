@@ -7,7 +7,16 @@ import type { CyphraTypeMap, Db } from "./__fixtures__/blog.gen.js";
 import type { Db as VectorDb } from "./__fixtures__/vector.gen.js";
 import type { Db as SearchDb } from "./__fixtures__/search.gen.js";
 import { TyRole, type Db as TypesDb } from "./__fixtures__/types.gen.js";
-import type { JsonValue } from "../index.js";
+import type { Db as GeoDb } from "./__fixtures__/geo.gen.js";
+import type {
+  CartesianPoint,
+  Duration,
+  JsonValue,
+  LocalDateTime,
+  LocalTime,
+  Point,
+  Time,
+} from "../index.js";
 import type { ModelPath, Path, PathEdge, SelfRelations, ShortestPathResult } from "./types.js";
 
 // Type-only test file: checked by `tsc` (pnpm typecheck), not executed by Vitest.
@@ -657,5 +666,132 @@ describe("ORM enum / Json / BigInt types", () => {
     await tdb.tyAccount.aggregate({ _max: { settings: true } });
     // @ts-expect-error — nor summed
     await tdb.tyAccount.aggregate({ _sum: { role: true } });
+  });
+});
+
+declare const gdb: GeoDb;
+
+describe("point and temporal types", () => {
+  it("types point fields as objects and temporal fields as ISO 8601 text", async () => {
+    const p = await gdb.geoPlace.findUniqueOrThrow({ where: { id: "x" } });
+    expectTypeOf(p.location).toEqualTypeOf<Point>();
+    expectTypeOf(p.location).toEqualTypeOf<{
+      longitude: number;
+      latitude: number;
+      height?: number;
+    }>();
+    expectTypeOf(p.grid).toEqualTypeOf<CartesianPoint | null>();
+    expectTypeOf(p.route).toEqualTypeOf<Point[]>();
+    expectTypeOf(p.opens).toEqualTypeOf<LocalTime>();
+    expectTypeOf(p.slot).toEqualTypeOf<Time | null>();
+    expectTypeOf(p.seen).toEqualTypeOf<LocalDateTime>();
+    expectTypeOf(p.stay).toEqualTypeOf<Duration | null>();
+    expectTypeOf(p.windows).toEqualTypeOf<Duration[]>();
+    // Results are strings…
+    const s: string = p.seen;
+    void s;
+    // …and literals of the right shape are accepted as input.
+    await gdb.geoPlace.create({
+      data: {
+        id: "a",
+        name: "A",
+        location: { longitude: 2.35, latitude: 48.85 },
+        grid: { x: 1, y: 2, z: 3 },
+        opens: "08:30",
+        slot: "10:00:00+02:00",
+        starts: "2024-05-01T10:30:00",
+        stay: "PT1H30M",
+        windows: ["P1D", "-PT5M"],
+      },
+    });
+    // `seen` and `opens` have defaults, so they are optional on create.
+    await gdb.geoPlace.create({
+      data: { id: "b", name: "B", location: { longitude: 0, latitude: 0 } },
+    });
+    await gdb.geoPlace.create({
+      // @ts-expect-error — a WGS-84 point has longitude / latitude, not x / y
+      data: { id: "c", name: "C", location: { x: 1, y: 2 } },
+    });
+    await gdb.geoPlace.create({
+      // @ts-expect-error — a Duration is ISO 8601 text starting with P
+      data: { id: "c", name: "C", location: { longitude: 0, latitude: 0 }, stay: "1h" },
+    });
+    // A string from elsewhere needs a cast to the template type.
+    const fromApi: string = "10:00";
+    await gdb.geoPlace.update({ where: { id: "a" }, data: { opens: fromApi as LocalTime } });
+  });
+
+  it("filters points by distance and bounding box", async () => {
+    const from = { longitude: 2.35, latitude: 48.85 };
+    await gdb.geoPlace.findMany({ where: { location: { distance: { from, lt: 5000 } } } });
+    await gdb.geoPlace.findMany({ where: { location: from } });
+    await gdb.geoPlace.findMany({
+      where: {
+        location: {
+          withinBBox: { lowerLeft: { longitude: 2, latitude: 48 }, upperRight: from },
+        },
+        grid: { distance: { from: { x: 0, y: 0 }, lte: 10 } },
+      },
+    });
+    // @ts-expect-error — points are not ordered
+    await gdb.geoPlace.findMany({ where: { location: { lt: from } } });
+    // @ts-expect-error — the distance origin must be a point of the field's CRS
+    await gdb.geoPlace.findMany({ where: { grid: { distance: { from, lt: 1 } } } });
+  });
+
+  it("filters temporal fields: ranges on ordered types, equality on durations", async () => {
+    await gdb.geoPlace.findMany({
+      where: {
+        starts: { gte: "2024-01-01T00:00:00", lt: "2025-01-01T00:00:00" },
+        opens: { in: ["09:00", "10:00"] },
+        slot: { not: null },
+        stay: { in: ["PT1H", "PT2H"] },
+        windows: { has: "P1D" },
+      },
+    });
+    // @ts-expect-error — durations have no total order
+    await gdb.geoPlace.findMany({ where: { stay: { gt: "PT1H" } } });
+    // @ts-expect-error — temporal fields have no string operators
+    await gdb.geoPlace.findMany({ where: { opens: { startsWith: "09" } } });
+  });
+
+  it("sorts by distance and by ordered temporal fields", async () => {
+    await gdb.geoPlace.findMany({
+      orderBy: [
+        { location: { distanceFrom: { longitude: 0, latitude: 0 }, sort: "asc" } },
+        { starts: "desc" },
+      ],
+    });
+    // @ts-expect-error — a point field sorts by distance only
+    await gdb.geoPlace.findMany({ orderBy: { location: "asc" } });
+    // @ts-expect-error — durations cannot be sorted
+    await gdb.geoPlace.findMany({ orderBy: { stay: "asc" } });
+  });
+
+  it("aggregates _min / _max of ordered temporal fields", async () => {
+    const agg = await gdb.geoPlace.aggregate({
+      _min: { starts: true, opens: true },
+      _max: { slot: true },
+    });
+    expectTypeOf(agg).toEqualTypeOf<{
+      _min: { starts: LocalDateTime | null; opens: LocalTime | null };
+      _max: { slot: Time | null };
+    }>();
+    // @ts-expect-error — durations have no maximum
+    await gdb.geoPlace.aggregate({ _max: { stay: true } });
+    // @ts-expect-error — nor points
+    await gdb.geoPlace.aggregate({ _min: { location: true } });
+  });
+
+  it("types edge properties of the new types", async () => {
+    const p = await gdb.geoPlace.findUniqueOrThrow({
+      where: { id: "x" },
+      include: { visits: true },
+    });
+    expectTypeOf(p.visits[0]!.$edge).toEqualTypeOf<{
+      at: Point | null;
+      when: LocalDateTime | null;
+      took: Duration | null;
+    }>();
   });
 });

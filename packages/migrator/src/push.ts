@@ -4,7 +4,7 @@ import {
   type ScalarNodeField,
   type SchemaDocument,
 } from "@cyphra/schema";
-import { fulltextIndexStatement, vectorIndexStatement } from "./diff.js";
+import { fulltextIndexStatement, propertyIndexStatement, vectorIndexStatement } from "./diff.js";
 
 function isScalarWithDecorator(
   field: { readonly kind: string; readonly decorators: readonly { readonly name: string }[] },
@@ -86,7 +86,8 @@ export function constraintStatementsFromSchema(doc: SchemaDocument): string[] {
 }
 
 /**
- * Generate `CREATE RANGE INDEX … IF NOT EXISTS` for `@index` on **node** scalars and on **relationship** model scalars.
+ * Generate `CREATE RANGE INDEX … IF NOT EXISTS` for `@index` on **node** scalars and on **relationship** model scalars
+ * (`CREATE POINT INDEX …` for `Point` / `CartesianPoint` fields).
  * Node indexes use `(n:Label)`; relationship indexes use `()-[r:TYPE]-()` with the Neo4j type from `type "…"`.
  *
  * @param doc - Parsed schema AST.
@@ -108,7 +109,12 @@ export function indexStatementsFromSchema(doc: SchemaDocument): string[] {
           continue;
         }
         statements.push(
-          `CREATE RANGE INDEX ${escapeConstraintName(`${label}_${f.name}_idx`)} IF NOT EXISTS FOR (n:\`${label}\`) ON (n.\`${f.name}\`)`,
+          propertyIndexStatement(
+            escapeConstraintName(`${label}_${f.name}_idx`),
+            `FOR (n:\`${label}\`)`,
+            `n.\`${f.name}\``,
+            { type: f.type.name, list: f.type.list },
+          ),
         );
       }
       continue;
@@ -124,7 +130,12 @@ export function indexStatementsFromSchema(doc: SchemaDocument): string[] {
         continue;
       }
       statements.push(
-        `CREATE RANGE INDEX ${escapeConstraintName(`${decl.name}_${f.name}_rel_idx`)} IF NOT EXISTS FOR ()-[r:${typeTok}]-() ON (r.\`${f.name}\`)`,
+        propertyIndexStatement(
+          escapeConstraintName(`${decl.name}_${f.name}_rel_idx`),
+          `FOR ()-[r:${typeTok}]-()`,
+          `r.\`${f.name}\``,
+          { type: f.type.name, list: f.type.list },
+        ),
       );
     }
   }

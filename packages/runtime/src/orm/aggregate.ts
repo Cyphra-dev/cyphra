@@ -33,7 +33,18 @@ export type AggregateOp = (typeof AGGREGATES)[number];
 
 const AGG_SET = new Set<string>(AGGREGATES);
 const NUMERIC = new Set(["Int", "Float", "BigInt"]);
-const ORDERABLE = new Set(["Int", "Float", "BigInt", "String", "Enum", "DateTime", "Date"]);
+const ORDERABLE = new Set([
+  "Int",
+  "Float",
+  "BigInt",
+  "String",
+  "Enum",
+  "DateTime",
+  "Date",
+  "LocalDateTime",
+  "LocalTime",
+  "Time",
+]);
 
 function isPlainObject(v: unknown): v is AnyRecord {
   return typeof v === "object" && v !== null && !Array.isArray(v) && !(v instanceof Date);
@@ -63,7 +74,7 @@ function aggTarget(model: ResolvedNodeModel, op: AggregateOp, name: string): Agg
     const allowed =
       op === "_sum" || op === "_avg"
         ? "Int, Float and BigInt"
-        : "Int, Float, BigInt, String, enum, DateTime and Date";
+        : "Int, Float, BigInt, String, enum, DateTime, Date, LocalDateTime, LocalTime and Time";
     throw new CyphraValidationError(
       `${op} is not valid on ${model.name}.${name} (${f.type}${f.list ? "[]" : ""}); it takes ${allowed} fields.`,
     );

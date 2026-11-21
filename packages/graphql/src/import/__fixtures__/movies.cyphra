@@ -2,7 +2,6 @@
 // Review before use (run the import again to see the full report):
 // - Person: extra labels "Actor" are not supported: Cyphra nodes have one label
 // - Movie.id: became @id @default(uuid()); Cyphra also adds a uniqueness constraint, which v7 @id does not
-// - Movie.runtime: Duration is not supported by Cyphra yet: not converted
 // - Movie.similar: @cypher fields are computed by a Cypher query: not converted (compat.v7 still serves it); with the typed client, write it as a query
 // - Person.id: became @id @default(uuid()); Cyphra also adds a uniqueness constraint, which v7 @id does not
 // - Person.name: @unique was removed in @neo4j/graphql v7; Cyphra keeps it and creates the uniqueness constraint
@@ -12,11 +11,11 @@ node Movie {
   title String
   tagline String?
   released Int?
+  runtime Duration?
   genres String[]
   rating Float? @default(0)
   actors Person[] @relationship(type: "ACTED_IN", direction: IN)
   directors Person[] @relationship(type: "DIRECTED", direction: IN)
-  // runtime: Duration (not converted: type not supported)
   // similar: [Movie!]! (not converted: computed field)
 }
 

@@ -1,0 +1,26 @@
+// Fixture for the Point / CartesianPoint and LocalDateTime / LocalTime / Time / Duration tests
+// (distinct labels so they can run alongside the other ORM integration tests).
+node GeoPlace {
+  id       String          @id
+  name     String
+  location Point           @index
+  grid     CartesianPoint?
+  route    Point[]
+  opens    LocalTime       @default("09:00")
+  closes   LocalTime?
+  slot     Time?
+  seen     LocalDateTime   @default(now())
+  starts   LocalDateTime?
+  stay     Duration?
+  windows  Duration[]
+  visits   GeoPlace[]      @relationship(type: "GEO_VISIT", direction: OUT)
+}
+
+relationship GeoVisit {
+  type "GEO_VISIT"
+  from GeoPlace
+  to   GeoPlace
+  at   Point?
+  when LocalDateTime?
+  took Duration?
+}

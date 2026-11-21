@@ -386,3 +386,85 @@ describe("enum, Json and BigInt fields", () => {
     ]);
   });
 });
+
+describe("point and temporal fields", () => {
+  it("creates a POINT index for @index on a point field (node and relationship)", () => {
+    const src = `
+      node Place {
+        id   String @id
+        location Point @index
+        grid CartesianPoint? @index
+        opens LocalTime? @index
+      }
+      relationship Visit { type "VISITED"
+        from Place
+        to Place
+        at Point? @index }
+    `;
+    const creates = ddlObjectsFromModel(model(src)).map((o) => o.create);
+    expect(creates).toContain(
+      "CREATE POINT INDEX Place_location_idx IF NOT EXISTS FOR (n:`Place`) ON (n.`location`)",
+    );
+    expect(creates).toContain(
+      "CREATE POINT INDEX Place_grid_idx IF NOT EXISTS FOR (n:`Place`) ON (n.`grid`)",
+    );
+    expect(creates).toContain(
+      "CREATE RANGE INDEX Place_opens_idx IF NOT EXISTS FOR (n:`Place`) ON (n.`opens`)",
+    );
+    expect(creates).toContain(
+      "CREATE POINT INDEX Visit_at_rel_idx IF NOT EXISTS FOR ()-[r:`VISITED`]-() ON (r.`at`)",
+    );
+    // `cyphra push` creates the same statements.
+    const pushed = indexStatementsFromSchema(parseSchema(src));
+    expect(pushed.filter((s) => s.startsWith("CREATE POINT INDEX"))).toHaveLength(3);
+    expect(pushed).toContain(
+      "CREATE POINT INDEX Place_location_idx IF NOT EXISTS FOR (n:`Place`) ON (n.`location`)",
+    );
+  });
+
+  it("replaces the range index when a field becomes a point", () => {
+    const before = model(`node Place { id String @id\n location String @index }`);
+    const after = model(`node Place { id String @id\n location Point @index }`);
+    const cypher = diffSchemaModels(before, after).steps.map((s) =>
+      s.kind === "guard" ? s.countCypher : s.cypher,
+    );
+    expect(cypher).toContain("DROP INDEX Place_location_idx IF EXISTS");
+    expect(cypher).toContain(
+      "CREATE POINT INDEX Place_location_idx IF NOT EXISTS FOR (n:`Place`) ON (n.`location`)",
+    );
+  });
+
+  it("backfills temporal defaults with Cypher temporal values", () => {
+    const before = model(`node Shop { id String @id }`);
+    const after = model(`
+      node Shop {
+        id String @id
+        opens LocalTime @default("09:00")
+        slot  Duration  @default("PT90M")
+        seen  LocalDateTime @default(now())
+        at    Time @default(now())
+        day   LocalTime @default(now())
+      }
+    `);
+    const steps = diffSchemaModels(before, after).steps.filter((s) => s.kind === "statement");
+    expect(steps).toEqual([
+      expect.objectContaining({
+        cypher: "MATCH (n:`Shop`) WHERE n.`opens` IS NULL SET n.`opens` = localtime($value)",
+        params: { value: "09:00:00" },
+      }),
+      expect.objectContaining({
+        cypher: "MATCH (n:`Shop`) WHERE n.`slot` IS NULL SET n.`slot` = duration($value)",
+        params: { value: "PT1H30M" },
+      }),
+      expect.objectContaining({
+        cypher: "MATCH (n:`Shop`) WHERE n.`seen` IS NULL SET n.`seen` = localdatetime()",
+      }),
+      expect.objectContaining({
+        cypher: "MATCH (n:`Shop`) WHERE n.`at` IS NULL SET n.`at` = time()",
+      }),
+      expect.objectContaining({
+        cypher: "MATCH (n:`Shop`) WHERE n.`day` IS NULL SET n.`day` = localtime()",
+      }),
+    ]);
+  });
+});

@@ -11,6 +11,11 @@
     const l = location();
     return { start: pos(l.start), end: pos(l.end) };
   }
+  // Scalar type names of the grammar (`scalarTypeName`).
+  const BUILTIN_SCALARS = new Set([
+    "String", "Int", "Float", "Boolean", "DateTime", "Date", "BigInt", "Json",
+    "LocalDateTime", "LocalTime", "Time", "Duration", "Point", "CartesianPoint",
+  ]);
   // Attach source ranges only when asked for.
   function withLoc(node, locs) {
     return LOC ? Object.assign(node, locs) : node;
@@ -36,8 +41,27 @@ start
           ...locs,
         };
       };
-      const declarations = enums.size
-        ? decls.map((d) => (d.kind === "Node" ? { ...d, fields: d.fields.map(resolveField) } : d))
+      // A node named like a built-in type (`node Point { … }`) keeps working as a relation target:
+      // a node field typed with that name is a relation field, not a scalar.
+      const nodes = new Set(decls.filter((d) => d.kind === "Node").map((d) => d.name));
+      const resolveNodeField = (f) => {
+        if (f.kind !== "Scalar" || !nodes.has(f.type.name) || f.type.name === "Vector") {
+          return resolveField(f);
+        }
+        const { kind, name, type, decorators, ...locs } = f;
+        return {
+          kind: "Relational",
+          name,
+          target: type.name,
+          cardinality: type.list ? "many" : "one",
+          optional: type.list ? false : type.optional,
+          decorators,
+          ...locs,
+        };
+      };
+      const builtinNode = [...nodes].some((n) => BUILTIN_SCALARS.has(n));
+      const declarations = enums.size || builtinNode
+        ? decls.map((d) => (d.kind === "Node" ? { ...d, fields: d.fields.map(resolveNodeField) } : d))
         : decls;
       const doc = { kind: "Document", declarations };
       return withLoc(doc, {
@@ -219,7 +243,7 @@ fieldType
 
 // Keep in sync with SCALAR_TYPE_NAMES (src/validate.ts); a test checks both lists match.
 scalarTypeName
-  = n:("String" / "Int" / "Float" / "Boolean" / "DateTime" / "Date" / "BigInt" / "Json") ![a-zA-Z0-9_] { return n; }
+  = n:("String" / "Int" / "Float" / "Boolean" / "DateTime" / "Date" / "BigInt" / "Json" / "LocalDateTime" / "LocalTime" / "Time" / "Duration" / "Point" / "CartesianPoint") ![a-zA-Z0-9_] { return n; }
 
 decorator
   = d:decoratorBody { return withLoc(d, { loc: here() }); }

@@ -1,6 +1,5 @@
-Not converted (3):
+Not converted (2):
   Person         @node(labels): extra labels "Actor" are not supported: Cyphra nodes have one label
-  Movie.runtime  Duration: Duration is not supported by Cyphra yet: not converted
   Movie.similar  @cypher: @cypher fields are computed by a Cypher query: not converted (compat.v7 still serves it); with the typed client, write it as a query
 
 Converted with differences (3):

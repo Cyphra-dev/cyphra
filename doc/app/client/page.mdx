@@ -83,8 +83,11 @@ properties under **`$edge`**.
 | ------------------------------------------------------ | --------------------------------------------------------------- |
 | any scalar                                             | value (equals), `null` (absent), `equals`, `not`, `in`, `notIn` |
 | `Int`, `BigInt`, `Float`, `String`, `DateTime`, `Date` | `lt`, `lte`, `gt`, `gte` (strings compare lexicographically)    |
+| `LocalDateTime`, `LocalTime`, `Time`                   | `lt`, `lte`, `gt`, `gte` (compared as temporal values)          |
 | `String`                                               | `contains`, `startsWith`, `endsWith`, `mode`                    |
 | enum                                                   | the scalar operators above only, typed to the enum's values     |
+| `Duration`                                             | the scalar operators above only (durations have no order)       |
+| `Point`, `CartesianPoint`                              | value, `null`, `equals`, `not`, `distance`, `withinBBox`        |
 | `Json`                                                 | `null`, `equals`, `not` only (no bare value, see below)         |
 | lists (`String[]`, `Role[]`, …)                        | `has`, `hasEvery`, `hasSome`, `isEmpty`, `equals`               |
 | to-many relation                                       | `some`, `none`, `every`                                         |
@@ -98,6 +101,11 @@ written as `{ theme: "dark" }`, with the same key order. A bare value is not acc
 field (an object would read as a filter), and there are no queries into the value: model a field
 you need to filter on as its own property.
 
+Temporal filters take ISO 8601 text (`{ starts: { gte: "2024-05-01T00:00", lt: "2024-06-01T00:00" } }`,
+`{ opens: { lt: "09:30" } }`) and compare temporal values in Neo4j, not strings. A `Duration`
+compares its months, days and seconds: `{ stay: "PT3H" }` matches a value written as `"PT180M"`
+(the same number of seconds), but `"P1D"` and `"PT24H"` differ (a day is not a number of seconds).
+
 `mode: "insensitive"` on a `String` filter compares lower-cased values (Cypher `toLower()`) for
 `equals`, `not`, `in`, `notIn`, `contains`, `startsWith` and `endsWith`. Range filters (`lt`, `gte`, …)
 stay case-sensitive. A property index is not used for these comparisons.
@@ -105,6 +113,57 @@ stay case-sensitive. A property index is not used for these comparisons.
 ```ts
 await db.user.findFirst({ where: { email: { equals: "Alice@Acme.io", mode: "insensitive" } } });
 ```
+
+### Spatial queries
+
+`Point` and `CartesianPoint` fields filter on a distance from a point (`point.distance`: meters
+along the Earth's surface for `Point`, the field's units for `CartesianPoint`), on a bounding box
+(`point.withinBBox`, edges included), or on equality with a bare point. Places within 5 km of a
+location, nearest first:
+
+```ts
+const here = { longitude: 2.3522, latitude: 48.8566 };
+
+const nearby = await db.place.findMany({
+  where: { location: { distance: { from: here, lt: 5000 } } },
+  orderBy: { location: { distanceFrom: here } }, // nearest first; sort: "desc" for farthest
+  take: 20,
+});
+```
+
+| Point filter                                    | Cypher                                       |
+| ----------------------------------------------- | -------------------------------------------- |
+| `{ location: here }`, `{ equals: here }`        | `n.location = $p`                            |
+| `{ distance: { from, lt, lte, gt, gte } }`      | `point.distance(n.location, $from) < $d` …   |
+| `{ withinBBox: { lowerLeft, upperRight } }`     | `point.withinBBox(n.location, $ll, $ur)`     |
+| `orderBy: { location: { distanceFrom, sort } }` | `ORDER BY point.distance(n.location, $from)` |
+
+```ts
+// A ring: between 2 and 20 km.
+await db.place.findMany({
+  where: { location: { distance: { from: here, gte: 2000, lte: 20_000 } } },
+});
+
+// Inside a box (Paris), with the corners as points.
+await db.place.findMany({
+  where: {
+    location: {
+      withinBBox: {
+        lowerLeft: { longitude: 2.25, latitude: 48.81 },
+        upperRight: { longitude: 2.42, latitude: 48.91 },
+      },
+    },
+  },
+});
+```
+
+- Declare `location Point @index`: migrations then create a `POINT` index, which Neo4j uses for these
+  distance and bounding-box predicates.
+- The origin and the box corners must be points of the field's type (a `CartesianPoint` filter takes
+  `{ x, y }`). A point of another CRS or dimension (2D vs 3D) never matches: its distance is `null`.
+  Sorting by distance puts nodes without the property (or with such a point) last.
+- Points do not sort by value and take no `lt` / `gt`. The same filters work on point edge
+  properties (`edgeWhere` in [traversals](#traversals)).
 
 ## Counting related nodes
 
@@ -170,17 +229,19 @@ const stats = await db.post.aggregate({
 // }
 ```
 
-| Aggregate      | Fields                                                       | Result                                         |
-| -------------- | ------------------------------------------------------------ | ---------------------------------------------- |
-| `_count`       | `true` (nodes), `_all` (nodes), any scalar                   | `number` (non-null values for a field)         |
-| `_sum`         | `Int`, `Float`, `BigInt`                                     | `number \| null` (`bigint \| null` for BigInt) |
-| `_avg`         | `Int`, `Float`, `BigInt`                                     | `number \| null` (a mean, so not always whole) |
-| `_min`, `_max` | `Int`, `Float`, `BigInt`, `String`, enum, `DateTime`, `Date` | the field type, or `null`                      |
+| Aggregate      | Fields                                                                                             | Result                                         |
+| -------------- | -------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
+| `_count`       | `true` (nodes), `_all` (nodes), any scalar                                                         | `number` (non-null values for a field)         |
+| `_sum`         | `Int`, `Float`, `BigInt`                                                                           | `number \| null` (`bigint \| null` for BigInt) |
+| `_avg`         | `Int`, `Float`, `BigInt`                                                                           | `number \| null` (a mean, so not always whole) |
+| `_min`, `_max` | `Int`, `Float`, `BigInt`, `String`, enum, `DateTime`, `Date`, `LocalDateTime`, `LocalTime`, `Time` | the field type, or `null`                      |
 
 - `null` values (absent properties) are ignored, as in SQL.
 - On an empty match, counts are `0` and every other aggregate is `null` (Cypher's `sum()` returns 0;
   Cyphra returns `null`, like SQL and Prisma).
-- `DateTime` and `Date` results come back as `Date` (UTC). Strings and enums compare by code point.
+- `DateTime` and `Date` results come back as `Date` (UTC), `LocalDateTime` / `LocalTime` / `Time`
+  results as ISO text. Strings and enums compare by code point. `Duration` and point fields have
+  no `_min` / `_max`.
 - A `BigInt` `_sum` past 2^63-1 overflows in Neo4j (it returns a rounded float): Cyphra throws a
   `RangeError` instead of returning a wrong value.
 - `orderBy`, `skip` and `take` pick a window of the matching nodes first: `{ orderBy: { views: "desc" }, take: 10, _avg: { views: true } }`
@@ -638,7 +699,8 @@ A nested write runs in **one write transaction**: if any step fails (for example
 does not exist) nothing is written.
 
 Defaults from the schema are applied on create: `cuid()`, `uuid()`, `now()` and literals
-(`@default("draft")`, `@default(0)`, `@default(true)`, an enum value, JSON text on a `Json` field).
+(`@default("draft")`, `@default(0)`, `@default(true)`, an enum value, JSON text on a `Json` field,
+ISO text on a temporal field).
 
 Every write checks enum values (including nested creates, `createMany`, `upsert` and `$edge`
 properties) and throws a `CyphraValidationError` before reaching Neo4j. On a `BigInt` field,
@@ -674,20 +736,26 @@ The [Cypher how-tos](/cypher) show common queries (upserts, pagination, counts) 
 
 ## Types and values
 
-| Schema      | TypeScript                                 | Stored in Neo4j as                                               |
-| ----------- | ------------------------------------------ | ---------------------------------------------------------------- |
-| `String`    | `string`                                   | String                                                           |
-| `Int`       | `number`                                   | Integer (64-bit; values outside the JS safe range throw on read) |
-| `Float`     | `number`                                   | Float                                                            |
-| `Boolean`   | `boolean`                                  | Boolean                                                          |
-| `DateTime`  | `Date`                                     | DateTime                                                         |
-| `Date`      | `Date` (UTC midnight)                      | Date                                                             |
-| `BigInt`    | `bigint` (-2^63 to 2^63-1)                 | Integer (64-bit, exact)                                          |
-| `Json`      | `JsonValue` (exported)                     | String (the value's JSON text)                                   |
-| enum `Role` | `Role` (`"ADMIN" \| "USER"`), `Role.ADMIN` | String (checked against the enum on write)                       |
-| `Vector(N)` | `number[]` (length `N`, checked on write)  | `LIST<FLOAT>`                                                    |
-| `T?`        | `T \| null`                                | absent property                                                  |
-| `T[]`       | `T[]`                                      | List (absent reads as `[]`)                                      |
+| Schema           | TypeScript                                   | Stored in Neo4j as                                               |
+| ---------------- | -------------------------------------------- | ---------------------------------------------------------------- |
+| `String`         | `string`                                     | String                                                           |
+| `Int`            | `number`                                     | Integer (64-bit; values outside the JS safe range throw on read) |
+| `Float`          | `number`                                     | Float                                                            |
+| `Boolean`        | `boolean`                                    | Boolean                                                          |
+| `DateTime`       | `Date`                                       | DateTime                                                         |
+| `Date`           | `Date` (UTC midnight)                        | Date                                                             |
+| `BigInt`         | `bigint` (-2^63 to 2^63-1)                   | Integer (64-bit, exact)                                          |
+| `Json`           | `JsonValue` (exported)                       | String (the value's JSON text)                                   |
+| enum `Role`      | `Role` (`"ADMIN" \| "USER"`), `Role.ADMIN`   | String (checked against the enum on write)                       |
+| `Vector(N)`      | `number[]` (length `N`, checked on write)    | `LIST<FLOAT>`                                                    |
+| `LocalDateTime`  | `LocalDateTime` (`"2024-05-01T10:30:00"`)    | LocalDateTime                                                    |
+| `LocalTime`      | `LocalTime` (`"10:30:00"`)                   | LocalTime                                                        |
+| `Time`           | `Time` (`"10:30:00+02:00"`)                  | Time (with its offset)                                           |
+| `Duration`       | `Duration` (`"PT1H30M"`)                     | Duration                                                         |
+| `Point`          | `Point` (`{ longitude, latitude, height? }`) | Point (WGS-84, SRID 4326 / 4979)                                 |
+| `CartesianPoint` | `CartesianPoint` (`{ x, y, z? }`)            | Point (Cartesian, SRID 7203 / 9157)                              |
+| `T?`             | `T \| null`                                  | absent property                                                  |
+| `T[]`            | `T[]`                                        | List (absent reads as `[]`)                                      |
 
 `cyphra generate` exports each enum as a const object and a union type of the same name:
 
@@ -704,6 +772,15 @@ reads through `JSON.parse`. `null` on a `Json?` field removes the property. `Big
 as `bigint` whichever integer representation the driver returns (both `neo4j-driver` majors,
 `useBigInt` or not); writes take a `bigint` (a safe-integer `number` is accepted too) and reject
 values outside the 64-bit range.
+
+The temporal types are ISO 8601 strings in JS (see [Temporal types](/schema#temporal-types) for
+why): `"2024-05-01T10:30:00"`, `"10:30:00"`, `"10:30:00+02:00"`, `"PT1H30M"`. The generated types are
+template literal types (`import type { LocalTime, Duration } from "cyphra"`), so a literal of the
+wrong shape is a compile error; a `string` from elsewhere needs a cast (`value as LocalTime`), and
+Cyphra validates the text on write. Reads return the `Temporal` API's format (seconds always, no
+trailing zeros in fractions, `Z` for offset 0, `"PT1H30M"` rather than `"PT90M"`), from either
+`neo4j-driver` major. Points are plain objects: `{ longitude: 2.35, latitude: 48.85 }`, with
+`height` (or `z`) only for a 3D point.
 
 ### DateTime values
 

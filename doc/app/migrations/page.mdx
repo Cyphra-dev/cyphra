@@ -31,6 +31,7 @@ migration and the snapshot.
 | Schema change                                    | Generated step                                                      |
 | ------------------------------------------------ | ------------------------------------------------------------------- |
 | new `@id` / `@unique` / `@index`                 | `CREATE CONSTRAINT / RANGE INDEX … IF NOT EXISTS`                   |
+| new `@index` on a `Point` / `CartesianPoint`     | `CREATE POINT INDEX … IF NOT EXISTS`                                |
 | removed or changed `@id` / `@unique` / `@index`  | `DROP CONSTRAINT / INDEX … IF EXISTS`                               |
 | new `@vectorIndex`                               | `CREATE VECTOR INDEX … IF NOT EXISTS … OPTIONS { indexConfig }`     |
 | changed dimensions, similarity or index name     | `DROP INDEX … IF EXISTS`, then `CREATE VECTOR INDEX`                |
@@ -43,7 +44,9 @@ migration and the snapshot.
 | type change, or a likely rename                  | a review warning at the top of the file                             |
 
 Steps run in this order: drop obsolete DDL → data steps → create new DDL, so values are backfilled
-before a uniqueness constraint is created on them. `now()` backfills with `datetime()` / `date()` and
+before a uniqueness constraint is created on them. `now()` backfills with `datetime()` / `date()` /
+`localdatetime()` / `localtime()` / `time()` (by field type), a temporal literal with
+`localtime($value)`, `duration($value)`, … (so the property is a temporal value, not a string), and
 `uuid()` with `randomUUID()`. `cuid()` cannot be generated in Cypher, so it also falls back to `randomUUID()`.
 
 Example, after adding `role String @default("member")` and `handle String @unique` to `User`:
@@ -84,6 +87,20 @@ When a guard fails, add your own step above it (for example
 > Steps run as separate auto-commit statements (Neo4j does not allow schema and data changes in one
 > transaction). Generated steps are written to be safe to re-run after a failure (`IF NOT EXISTS`,
 > `WHERE … IS NULL`); keep hand-written steps re-runnable too.
+
+## Point indexes
+
+`@index` on a `Point` or `CartesianPoint` field creates a point index, which serves
+`point.distance` and `point.withinBBox` predicates ([spatial queries](/client#spatial-queries)). It
+is named like a range index:
+
+```cypher
+CREATE POINT INDEX Place_location_idx IF NOT EXISTS FOR (n:`Place`) ON (n.`location`)
+```
+
+Changing a field's type to or from a point type drops the range index and creates the point index
+(or the reverse), under the same name. `cyphra push` and `cyphra schema ddl` emit the same
+statement, and [`cyphra pull`](/cli#cyphra-pull) maps a point index back to `@index`.
 
 ## Vector indexes
 

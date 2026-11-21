@@ -4,11 +4,12 @@ import { convertGraphQLTypeDefs } from "./convert.js";
 import { mergeImportedSchema } from "./print.js";
 
 const TYPEDEFS = `
+  scalar Geo
   type User @node {
     id: ID! @id
     email: String!
     age: Int
-    loc: Point
+    loc: Geo
     posts: [Post!]! @relationship(type: "WROTE", direction: OUT)
   }
   type Post @node { id: ID! @id, title: String! }
@@ -37,7 +38,7 @@ node User {
   nickname String?
   age Int?
   posts Post[] @relationship(type: "WROTE", direction: OUT)
-  // loc: Point (not converted: type not supported)
+  // loc: Geo (not converted: type not supported)
 }
 
 node Audit {

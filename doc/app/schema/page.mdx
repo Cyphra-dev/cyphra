@@ -1,5 +1,5 @@
 ---
-description: "The .cyphra schema DSL for Neo4j: nodes, relationships, enums, Json, BigInt and Vector(N) fields, and decorators that become constraints and indexes."
+description: "The .cyphra schema DSL for Neo4j: nodes, relationships, enums, spatial, temporal, Json, BigInt and Vector(N) fields, and decorators for indexes and constraints."
 ---
 
 # Schema DSL
@@ -35,18 +35,24 @@ relationship Follows {
 Append `?` for optional (`String?`) or `[]` for a list (`String[]`). Lists are never optional; an
 absent list reads as `[]`.
 
-| Type           | Neo4j property   | TypeScript                    |
-| -------------- | ---------------- | ----------------------------- |
-| `String`       | `STRING`         | `string`                      |
-| `Int`          | `INTEGER`        | `number` (safe integers only) |
-| `BigInt`       | `INTEGER`        | `bigint` (full 64-bit range)  |
-| `Float`        | `FLOAT`          | `number`                      |
-| `Boolean`      | `BOOLEAN`        | `boolean`                     |
-| `DateTime`     | `ZONED DATETIME` | `Date`                        |
-| `Date`         | `DATE`           | `Date`                        |
-| `Json`         | `STRING` (JSON)  | `JsonValue`                   |
-| an `enum` name | `STRING`         | the enum's union of values    |
-| `Vector(N)`    | `LIST<FLOAT>`    | `number[]` (see below)        |
+| Type             | Neo4j property      | TypeScript                                         |
+| ---------------- | ------------------- | -------------------------------------------------- |
+| `String`         | `STRING`            | `string`                                           |
+| `Int`            | `INTEGER`           | `number` (safe integers only)                      |
+| `BigInt`         | `INTEGER`           | `bigint` (full 64-bit range)                       |
+| `Float`          | `FLOAT`             | `number`                                           |
+| `Boolean`        | `BOOLEAN`           | `boolean`                                          |
+| `DateTime`       | `ZONED DATETIME`    | `Date`                                             |
+| `Date`           | `DATE`              | `Date`                                             |
+| `Json`           | `STRING` (JSON)     | `JsonValue`                                        |
+| an `enum` name   | `STRING`            | the enum's union of values                         |
+| `Vector(N)`      | `LIST<FLOAT>`       | `number[]` (see below)                             |
+| `LocalDateTime`  | `LOCAL DATETIME`    | `LocalDateTime`: ISO text, `"2024-05-01T10:30:00"` |
+| `LocalTime`      | `LOCAL TIME`        | `LocalTime`: ISO text, `"10:30:00"`                |
+| `Time`           | `ZONED TIME`        | `Time`: ISO text with offset, `"10:30:00+02:00"`   |
+| `Duration`       | `DURATION`          | `Duration`: ISO text, `"P1DT2H30M"`                |
+| `Point`          | `POINT` (WGS-84)    | `Point`: `{ longitude, latitude, height? }`        |
+| `CartesianPoint` | `POINT` (Cartesian) | `CartesianPoint`: `{ x, y, z? }`                   |
 
 - **`BigInt`** holds 64-bit integers (counters, external ids) from -2^63 to 2^63-1, read and
   written as JS `bigint` with no precision loss. `Int` uses the same Neo4j type but reads as a JS
@@ -61,6 +67,81 @@ absent list reads as `[]`.
   `@id`, `@unique` or `@index`. `Json[]` is not supported: use a `Json` holding an array. A default
   is a string of JSON text: `@default("{}")`.
 - **Enums** are declared once and used as a type (see [Enums](#enums)).
+- **Temporal types** and **points** are described in [Temporal types](#temporal-types) and
+  [Spatial points](#spatial-points).
+
+## Temporal types
+
+Besides `DateTime` (an instant, a JS `Date`, stored at UTC) and `Date`, Cyphra has the other Neo4j
+temporal types:
+
+```cyphra
+node Shop {
+  id       String        @id
+  opens    LocalTime     @default("09:00")
+  closes   LocalTime?
+  slot     Time?
+  updated  LocalDateTime @default(now())
+  delivery Duration      @default("PT45M")
+}
+```
+
+| Type            | Holds                                    | Example value                     | Sorts, `lt` / `gt`, `_min` / `_max` |
+| --------------- | ---------------------------------------- | --------------------------------- | ----------------------------------- |
+| `LocalDateTime` | a date and wall-clock time, no time zone | `"2024-05-01T10:30:00"`           | yes                                 |
+| `LocalTime`     | a wall-clock time, no time zone          | `"10:30:00"`, `"08:15:30.5"`      | yes                                 |
+| `Time`          | a time of day with a UTC offset          | `"10:30:00+02:00"`, `"10:30:00Z"` | yes (by the UTC instant)            |
+| `Duration`      | an amount of months, days and seconds    | `"PT1H30M"`, `"P1Y2M"`, `"-P3D"`  | no: equality and `in` only          |
+
+- **JS values are ISO 8601 strings**, with a precision of up to nanoseconds. Neo4j stores (and
+  compares, sorts and indexes) temporal values, not strings: Cyphra converts on every write and
+  read. Strings fit JSON and HTTP as is, carry the full precision (a JS `Date` stops at
+  milliseconds, and a `Date` for a value without a time zone invites time-zone bugs), and need no
+  runtime dependency. Values come back in the form of the `Temporal` API's `toString()`, so
+  `Temporal.PlainTime.from(shop.opens)` or `Temporal.Duration.from(shop.delivery)` work where
+  `Temporal` is available.
+- **Typed strings.** `cyphra generate` types these fields with template literal types exported from
+  `cyphra` (`LocalTime` is `` `${number}:${number}${string}` ``, `Duration` is `` `P${string}` ``),
+  so a literal of the wrong shape is a compile error. A `string` from elsewhere (a request body)
+  needs a cast, `opens: body.opens as LocalTime`; Cyphra validates it on write either way and
+  throws a `CyphraValidationError` for text that is not valid ISO 8601.
+- **No time-zone conversion.** `LocalDateTime` and `LocalTime` are stored exactly as written. A
+  `Time` keeps its offset; Neo4j compares and sorts times by their UTC instant (`"11:00+01:00"` sorts
+  after `"09:00Z"`). Write the same offset everywhere if you filter with `equals`.
+- **Durations** keep months, days and seconds apart, as Neo4j does: `"P1D"` is not equal to
+  `"PT24H"` (a day is not always 24 hours), and `"PT90M"` is stored and returned as `"PT1H30M"`.
+  Durations have no total order, so they filter with `equals`, `not`, `in` and `notIn` only, and do
+  not sort or aggregate with `_min` / `_max`.
+- **Defaults.** `@default(now())` works on `LocalDateTime`, `LocalTime` and `Time`: the current UTC
+  wall-clock time (`Time` at offset `Z`), the same as Cypher's `localdatetime()` / `localtime()` /
+  `time()` with Neo4j's default time zone. All four types take an ISO text default:
+  `@default("09:00")`, `@default("PT45M")`, normalized to the form the client returns.
+
+## Spatial points
+
+```cyphra
+node Place {
+  id       String @id
+  name     String
+  location Point  @index
+  floor    CartesianPoint?
+}
+```
+
+- **`Point`** is a WGS-84 geographic point: `{ longitude, latitude }` in degrees, with an optional
+  `height` in meters (a 3D point). **`CartesianPoint`** is a point in a plane or space:
+  `{ x, y }`, or `{ x, y, z }`, in your own units. Both are Neo4j `POINT` values (SRID 4326 / 4979
+  and 7203 / 9157), and the JS types `Point` and `CartesianPoint` are exported from `cyphra`. Two
+  types instead of one type with a CRS option keep the field's JS shape fixed, and match
+  `@neo4j/graphql`'s `Point` and `CartesianPoint`.
+- **Writes are checked**: finite coordinates, longitude in [-180, 180] and latitude in [-90, 90].
+  A field accepts 2D and 3D points; distances between a 2D and a 3D point are `null` in Neo4j, so
+  they never match a distance filter.
+- **`@index`** on a point field creates a `POINT` index (instead of a range index), which serves
+  distance and bounding-box queries.
+- **Queries**: equality, distance from a point (meters for `Point`), within a bounding box, and
+  sorting by distance. See [Spatial queries](/client#spatial-queries).
+- `Point[]` lists are supported (no index, and no distance filter on a list).
 
 ## Enums
 
@@ -162,9 +243,11 @@ so far.
 
 ## Defaults
 
-`@default(cuid())`, `@default(uuid())` (String), `@default(now())` (DateTime / Date), or a
-literal matching the field type: `@default("draft")`, `@default(0)`, `@default(1.5)`, `@default(true)`,
-an enum value (`@default(VIEWER)`), JSON text on a `Json` field (`@default("[]")`).
+`@default(cuid())`, `@default(uuid())` (String), `@default(now())` (DateTime, Date, LocalDateTime,
+LocalTime, Time), or a literal matching the field type: `@default("draft")`, `@default(0)`,
+`@default(1.5)`, `@default(true)`, an enum value (`@default(VIEWER)`), JSON text on a `Json` field
+(`@default("[]")`), ISO text on a temporal field (`@default("09:00")`, `@default("PT45M")`). Point
+fields take no default.
 The [typed client](/client) applies them on create.
 
 ## Relationships
@@ -175,7 +258,7 @@ The [typed client](/client) applies them on create.
 
 ## Decorators
 
-`@id`, `@unique`, `@vectorIndex(…)` (on `Vector(N)` fields, see above), `@@fulltext([…])` (a model attribute, see above), `@index` (Neo4j 5+ **range** index: on nodes via `(n:Label)`, on rich relationships via `()-[r:TYPE]-()`), `@default(…)`, `@relationship(…)`. On **nodes**, you cannot combine `@index` with `@id` or `@unique` on the same field (those constraints already imply an index). On **relationship** models, `@unique` maps to a **relationship property uniqueness** constraint (Neo4j **5.7+**); `@id` is not allowed on relationship fields.
+`@id`, `@unique`, `@vectorIndex(…)` (on `Vector(N)` fields, see above), `@@fulltext([…])` (a model attribute, see above), `@index` (Neo4j 5+ **range** index, or a **point** index on a `Point` / `CartesianPoint` field: on nodes via `(n:Label)`, on rich relationships via `()-[r:TYPE]-()`), `@default(…)`, `@relationship(…)`. On **nodes**, you cannot combine `@index` with `@id` or `@unique` on the same field (those constraints already imply an index). On **relationship** models, `@unique` maps to a **relationship property uniqueness** constraint (Neo4j **5.7+**); `@id` is not allowed on relationship fields.
 
 ## Programmatic API
 

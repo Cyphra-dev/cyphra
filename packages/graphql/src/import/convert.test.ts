@@ -1,5 +1,4 @@
 import { parseSchema, printSchemaDocument, resolveSchema, validateSchema } from "@cyphra/schema";
-import type { NodeDeclaration } from "@cyphra/schema";
 import { describe, expect, it } from "vitest";
 import { GraphQLImportError, convertGraphQLTypeDefs } from "./convert.js";
 import type { ImportIssue } from "./mappings.js";
@@ -47,18 +46,38 @@ describe("convertGraphQLTypeDefs: types", () => {
   });
 
   it.each(["Time", "LocalTime", "LocalDateTime", "Duration", "Point", "CartesianPoint"])(
-    "reports %s as not converted and drops the field",
+    "maps %s to the Cyphra type of the same name",
     (scalar) => {
-      const result = convertGraphQLTypeDefs(`type T @node { name: String!, x: ${scalar} }`);
-      const node = result.document.declarations[0] as NodeDeclaration;
-      expect(node.fields.map((f) => f.name)).toEqual(["name"]);
-      expect(issueAt(result.issues, "T.x")).toMatchObject({
-        severity: "unsupported",
-        feature: scalar,
-      });
-      expect(result.notes.get("T")).toEqual([`x: ${scalar} (not converted: type not supported)`]);
+      const result = convertGraphQLTypeDefs(
+        `type T @node { name: String!, x: ${scalar}, xs: [${scalar}!]!, y: ${scalar}! }`,
+      );
+      expect(result.issues).toEqual([]);
+      const text = printSchemaDocument(result.document);
+      expect(text).toContain(`  x ${scalar}?\n`);
+      expect(text).toContain(`  xs ${scalar}[]\n`);
+      expect(text).toContain(`  y ${scalar}\n`);
     },
   );
+
+  it("converts temporal defaults and @timestamp on Time", () => {
+    const { schema, issues } = convert(`
+      type T @node {
+        opens: LocalTime! @default(value: "09:00:00")
+        starts: LocalDateTime! @default(value: "2024-01-01T00:00:00")
+        at: Time! @default(value: "10:30:00+02:00")
+        bad: LocalTime! @default(value: "nine")
+        stamp: Time! @timestamp(operations: [CREATE])
+      }
+    `);
+    expect(schema).toContain('opens LocalTime @default("09:00:00")');
+    expect(schema).toContain('starts LocalDateTime @default("2024-01-01T00:00:00")');
+    expect(schema).toContain('at Time @default("10:30:00+02:00")');
+    expect(schema).toContain("stamp Time @default(now())");
+    expect(issueAt(issues, "T.bad")).toMatchObject({
+      severity: "unsupported",
+      feature: "@default",
+    });
+  });
 
   it("maps enums to Cyphra enums (only the ones converted fields use)", () => {
     const { schema, issues } = convert(`

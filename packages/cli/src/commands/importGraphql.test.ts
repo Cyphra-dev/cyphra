@@ -5,10 +5,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { runImportGraphql } from "./importGraphql.js";
 
 const TYPEDEFS = `
+scalar Rating
 type Movie @node {
   id: ID! @id
   title: String!
-  runtime: Duration
+  runtime: Rating
   actors: [Person!]! @relationship(type: "ACTED_IN", direction: IN, properties: "ActedIn")
 }
 type Person @node {
@@ -44,11 +45,11 @@ describe("cyphra import graphql", () => {
     const schema = await readFile(join(dir, "schema.cyphra"), "utf8");
     expect(schema).toContain("node Movie {");
     expect(schema).toContain("relationship ActedIn {");
-    expect(schema).toContain("// runtime: Duration (not converted: type not supported)");
+    expect(schema).toContain("// runtime: Rating (not converted: type not supported)");
     expect(out.join("\n")).toBe("Wrote schema.cyphra (2 node(s), 1 relationship model(s))");
     const report = err.join("\n");
-    expect(report).toContain("Not converted (1):");
-    expect(report).toMatch(/Movie\.runtime\s+Duration: Duration is not supported/);
+    expect(report).toContain("Not converted (2):");
+    expect(report).toMatch(/Movie\.runtime\s+Rating: custom scalars are not supported/);
     expect(report).toContain("Converted with differences (1):");
   });
 
@@ -103,6 +104,6 @@ describe("cyphra import graphql", () => {
     const write = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
     expect(await runImportGraphql(dir, ["t.graphql"], { print: true })).toBe(0);
     expect(String(write.mock.calls[0]![0])).toContain("node Movie {");
-    expect(err.join("\n")).toContain("Not converted (1):");
+    expect(err.join("\n")).toContain("Not converted (2):");
   });
 });

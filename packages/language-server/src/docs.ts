@@ -24,6 +24,36 @@ const TYPE_DOCS: Record<string, { neo4j: string; ts: string; note?: string }> = 
     ts: "JsonValue",
     note: "Any JSON value, stored as its JSON text. No `@id`, `@unique` or `@index`; no `Json[]`.",
   },
+  LocalDateTime: {
+    neo4j: "LOCAL DATETIME",
+    ts: "LocalDateTime",
+    note: 'Date and time without a time zone, as ISO 8601 text (`"2024-05-01T10:30:00"`).',
+  },
+  LocalTime: {
+    neo4j: "LOCAL TIME",
+    ts: "LocalTime",
+    note: 'Time of day without a time zone, as ISO 8601 text (`"10:30:00"`).',
+  },
+  Time: {
+    neo4j: "ZONED TIME",
+    ts: "Time",
+    note: 'Time of day with a UTC offset, as ISO 8601 text (`"10:30:00+02:00"`).',
+  },
+  Duration: {
+    neo4j: "DURATION",
+    ts: "Duration",
+    note: 'ISO 8601 duration (`"PT1H30M"`). Compared for equality only (no order).',
+  },
+  Point: {
+    neo4j: "POINT (WGS-84)",
+    ts: "Point",
+    note: "`{ longitude, latitude, height? }`. `@index` creates a point index; filter by `distance` or `withinBBox`.",
+  },
+  CartesianPoint: {
+    neo4j: "POINT (Cartesian)",
+    ts: "CartesianPoint",
+    note: "`{ x, y, z? }`. `@index` creates a point index; filter by `distance` or `withinBBox`.",
+  },
   Vector: {
     neo4j: "LIST<FLOAT>",
     ts: "number[]",
