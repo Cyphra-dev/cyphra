@@ -1,5 +1,32 @@
 # @cyphra/runtime
 
+## 0.6.0
+
+### Minor Changes
+
+- 4832219: Add relation counts to the ORM client, with Prisma-compatible shapes typed from your schema.
+
+  - `include: { _count: true }` counts every to-many relation; `_count: { select: { posts: true, comments: { where: { approved: true } } } }` counts the listed ones, with an optional filter on the related node (relation filters included). Works under `select` and `include`, inside included relations at any depth, and in the results of `find*`, `create`, `update`, `upsert` and `delete`. The result has a `_count: { posts: number, … }` key typed from exactly what you ask for.
+  - `orderBy: { posts: { _count: "desc" } }` sorts by the number of related nodes, at the top level and inside included relations.
+  - Counts compile to `COUNT {}` subqueries in the same statement. As in Prisma, to-one relations cannot be counted.
+
+- 3f2c13d: Add shortest-path queries to the ORM client.
+
+  - `db.user.shortestPath({ from, to, via, maxDepth, direction, where, edgeWhere, select, include })` returns one shortest path between the nodes matching `from` and `to` along self-relations, or `null`; `db.user.allShortestPaths({ …, take })` returns every path of the minimal length. Both compile to one statement with a GQL shortest-path selector (`SHORTEST 1` / `ALL SHORTEST`), so they need Neo4j 5.21 or later.
+  - `maxDepth` is required and capped by the client option `maxTraversalDepth` (default 10). `where` (intermediate nodes) and `edgeWhere` (every edge) are applied before the shortest path is picked. When `from` / `to` match several nodes, the overall shortest paths over every pair are returned; a node matching both gives a zero-hop path.
+  - Results are typed paths (`{ nodes, edges }`): nodes are shaped by `select` / `include`, edge properties are typed from the `relationship { … }` model. The new `ShortestPathArgs` and `ShortestPathResult` types are exported.
+
+- 879de50: Add variable-length traversals and typed path results to the ORM client.
+
+  - `db.user.traverse({ from, via, depth: { min?, max }, where, edgeWhere, distinct, direction, select, include, orderBy, skip, take })` follows one or more self-relations (e.g. `following`) for `min..max` hops and returns the reached nodes, in one statement compiled to a quantified path pattern (Neo4j 5.9+). `depth.max` is required and capped by the new client option `maxTraversalDepth` (default 10). Each reached node is returned once by default; paths that loop back to their start node are skipped.
+  - `edgeWhere` filters every edge of the path on the properties of its `relationship { … }` model, typed from the schema.
+  - `returnPaths: true` returns `{ node, path }`, where `path` is `{ nodes, edges }`: the path's nodes (scalar fields) and its edges (`type`, `direction`, typed `properties`). The exported `Path`, `PathEdge` and `ModelPath` types describe them. Paths are decoded from plain maps, so they work with `neo4j-driver` 5 and 6.
+
+### Patch Changes
+
+- @cyphra/query@0.6.0
+- @cyphra/schema@0.6.0
+
 ## 0.5.0
 
 ### Minor Changes

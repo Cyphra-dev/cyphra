@@ -1,6 +1,6 @@
 {
   "name": "@cyphra/query",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Cypher-first query utilities for Neo4j: template tag and fluent builder (Cyphra)",
   "type": "module",
   "sideEffects": false,
