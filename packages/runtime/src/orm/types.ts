@@ -75,9 +75,114 @@ export type FulltextIndexNames<TM extends TypeMap, M extends keyof TM> = TM[M] e
 export type JsonValue =
   string | number | boolean | null | readonly JsonValue[] | { readonly [key: string]: JsonValue };
 
+/**
+ * A `Point` field: a WGS-84 geographic point, in degrees (`longitude` -180 to 180, `latitude` -90 to
+ * 90), with an optional `height` in meters (a 3D point). Stored as a Neo4j `POINT` (`srid` 4326, or
+ * 4979 with a height).
+ */
+export type Point = { longitude: number; latitude: number; height?: number };
+
+/**
+ * A `CartesianPoint` field: a point in a Cartesian plane (`x`, `y`) or space (`z`), in your own
+ * units. Stored as a Neo4j `POINT` (`srid` 7203, or 9157 with `z`).
+ */
+export type CartesianPoint = { x: number; y: number; z?: number };
+
+/**
+ * A `LocalDateTime` field: a date and wall-clock time without a time zone, as ISO 8601 text
+ * (`"2024-05-01T10:30:00"`, fraction up to nanoseconds: `"2024-05-01T10:30:00.123456789"`).
+ * Returned in the form of `Temporal.PlainDateTime#toString()`.
+ */
+export type LocalDateTime = `${number}-${number}-${number}T${number}:${number}${string}`;
+
+/**
+ * A `LocalTime` field: a wall-clock time without a time zone, as ISO 8601 text (`"10:30"`,
+ * `"10:30:00.5"`). Returned with seconds (`"10:30:00"`), like `Temporal.PlainTime#toString()`.
+ */
+export type LocalTime = `${number}:${number}${string}`;
+
+/**
+ * A `Time` field: a time of day with a UTC offset, as ISO 8601 text (`"10:30:00+02:00"`,
+ * `"10:30:00Z"`). The offset is required and kept as written.
+ */
+export type Time = `${number}:${number}${string}`;
+
+/**
+ * A `Duration` field: an ISO 8601 duration (`"P1Y2M"`, `"PT1H30M"`, `"P3DT4H"`, `"-PT5M"`),
+ * returned in the form of `Temporal.Duration#toString()`. Neo4j keeps months, days and seconds
+ * apart (`"P1D"` is not `"PT24H"`), so durations only compare for equality.
+ */
+export type Duration = `P${string}` | `-P${string}`;
+
 // ---------------------------------------------------------------------------
 // Filters
 // ---------------------------------------------------------------------------
+
+/** `true` when `A` and `B` are the same type (both ways assignable). */
+type Same<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
+
+/** `true` for a `Duration` field. */
+type IsDuration<T> = Same<NonNullable<T>, Duration>;
+
+/** `true` for a `LocalDateTime`, `LocalTime` or `Time` field (ordered ISO 8601 text). */
+type IsTemporalText<T> =
+  Same<NonNullable<T>, LocalDateTime> extends true ? true : Same<NonNullable<T>, LocalTime>;
+
+/** `true` for a `Point` or `CartesianPoint` field. */
+type IsPoint<T> =
+  Same<NonNullable<T>, Point> extends true ? true : Same<NonNullable<T>, CartesianPoint>;
+
+/**
+ * `LocalDateTime`, `LocalTime` and `Time` fields: equality, membership and ranges, compared as
+ * temporal values by Neo4j (not as text).
+ */
+export type TemporalFilter<T> =
+  | T
+  | {
+      equals?: T;
+      not?: T | TemporalFilter<T>;
+      in?: readonly NonNullable<T>[];
+      notIn?: readonly NonNullable<T>[];
+      lt?: NonNullable<T>;
+      lte?: NonNullable<T>;
+      gt?: NonNullable<T>;
+      gte?: NonNullable<T>;
+    };
+
+/** `Duration` fields have no total order: equality and membership only. */
+export type DurationFilter<T> =
+  | T
+  | {
+      equals?: T;
+      not?: T | DurationFilter<T>;
+      in?: readonly NonNullable<T>[];
+      notIn?: readonly NonNullable<T>[];
+    };
+
+/**
+ * Distance from the point `from` (`point.distance`): meters for a `Point` (WGS-84, along the
+ * Earth's surface), the field's units for a `CartesianPoint`.
+ */
+export type DistanceFilter<P> = {
+  from: P;
+  lt?: number;
+  lte?: number;
+  gt?: number;
+  gte?: number;
+};
+
+/**
+ * Point fields: equality (a bare point), `distance` from a point, and `withinBBox` (inside the box
+ * from `lowerLeft` to `upperRight`, edges included; `point.withinBBox`).
+ */
+export type PointFilter<T> =
+  | T
+  | {
+      equals?: T;
+      not?: T;
+      distance?: DistanceFilter<NonNullable<T>>;
+      withinBBox?: { lowerLeft: NonNullable<T>; upperRight: NonNullable<T> };
+    };
 
 /** Types with `lt` / `lte` / `gt` / `gte` (strings compare lexicographically, by code point). */
 type Comparable = number | bigint | string | Date;
@@ -116,9 +221,15 @@ export type EnumFilter<T> =
 export type ScalarFilter<T> =
   IsJson<T> extends true
     ? JsonFilter
-    : IsEnum<NonNullable<T>> extends true
-      ? EnumFilter<T>
-      : BaseScalarFilter<T>;
+    : IsDuration<T> extends true
+      ? DurationFilter<T>
+      : IsTemporalText<T> extends true
+        ? TemporalFilter<T>
+        : IsPoint<T> extends true
+          ? PointFilter<T>
+          : IsEnum<NonNullable<T>> extends true
+            ? EnumFilter<T>
+            : BaseScalarFilter<T>;
 
 type BaseScalarFilter<T> = [NonNullable<T>] extends [readonly (infer E)[]]
   ? {
@@ -210,17 +321,33 @@ export type ToManyRelations<TM extends TypeMap, M extends keyof TM> = {
   [R in keyof Relations<TM, M> & string]: Rel<TM, M, R>["many"] extends true ? R : never;
 }[keyof Relations<TM, M> & string];
 
-/** Scalar keys of `Json` fields (they cannot be sorted). */
-type JsonKeys<TM extends TypeMap, M extends keyof TM> = {
-  [K in keyof Scalars<TM, M>]: IsJson<Scalars<TM, M>[K]> extends true ? K : never;
+/** Scalar keys of `Json`, `Duration` and point fields (they cannot be sorted by value). */
+type UnsortableKeys<TM extends TypeMap, M extends keyof TM> = {
+  [K in keyof Scalars<TM, M>]: IsJson<Scalars<TM, M>[K]> extends true
+    ? K
+    : IsDuration<Scalars<TM, M>[K]> extends true
+      ? K
+      : IsPoint<Scalars<TM, M>[K]> extends true
+        ? K
+        : never;
 }[keyof Scalars<TM, M>];
+
+/** Scalar keys of `Point` / `CartesianPoint` fields (sorted by distance from a point). */
+type PointKeys<TM extends TypeMap, M extends keyof TM> = {
+  [K in keyof Scalars<TM, M>]: IsPoint<Scalars<TM, M>[K]> extends true ? K : never;
+}[keyof Scalars<TM, M>];
+
+/** Sort a point field by its distance from `distanceFrom` (nearest first with `"asc"`, the default). */
+export type DistanceOrder<P> = { distanceFrom: P; sort?: SortOrder };
 
 /**
  * One `orderBy` entry: scalars, a to-many relation by its count (`{ posts: { _count: "desc" } }`),
  * or a to-one relation by a scalar of the related node (`{ author: { name: "asc" } }`).
  */
 type OrderByItem<TM extends TypeMap, M extends keyof TM> = {
-  [K in Exclude<keyof Scalars<TM, M>, VectorKeys<TM, M> | JsonKeys<TM, M>>]?: SortOrder;
+  [K in Exclude<keyof Scalars<TM, M>, VectorKeys<TM, M> | UnsortableKeys<TM, M>>]?: SortOrder;
+} & {
+  [K in PointKeys<TM, M>]?: DistanceOrder<NonNullable<Scalars<TM, M>[K]>>;
 } & {
   [R in ToManyRelations<TM, M>]?: { _count?: SortOrder };
 } & {
@@ -228,7 +355,7 @@ type OrderByItem<TM extends TypeMap, M extends keyof TM> = {
     [
       K in Exclude<
         keyof Scalars<TM, Target<TM, M, R>>,
-        VectorKeys<TM, Target<TM, M, R>> | JsonKeys<TM, Target<TM, M, R>>
+        VectorKeys<TM, Target<TM, M, R>> | UnsortableKeys<TM, Target<TM, M, R>>
       >
     ]?: SortOrder;
   };
@@ -458,15 +585,17 @@ export type NumericKeys<TM extends TypeMap, M extends keyof TM> = {
 }[ScalarKeys<TM, M>];
 
 /**
- * Scalar keys of `Int`, `Float`, `BigInt`, `String`, enum, `DateTime` and `Date` fields: valid for
- * `_min` / `_max`.
+ * Scalar keys of `Int`, `Float`, `BigInt`, `String`, enum, `DateTime`, `Date`, `LocalDateTime`,
+ * `LocalTime` and `Time` fields: valid for `_min` / `_max`.
  */
 export type MinMaxKeys<TM extends TypeMap, M extends keyof TM> = {
   [K in ScalarKeys<TM, M>]: IsJson<Scalars<TM, M>[K]> extends true
     ? never
-    : NonNullable<Scalars<TM, M>[K]> extends number | bigint | string | Date
-      ? K
-      : never;
+    : IsDuration<Scalars<TM, M>[K]> extends true
+      ? never
+      : NonNullable<Scalars<TM, M>[K]> extends number | bigint | string | Date
+        ? K
+        : never;
 }[ScalarKeys<TM, M>];
 
 /** Rejects keys outside `Allowed` (TypeScript does not check excess keys of inferred generics). */
@@ -496,9 +625,9 @@ type AggregateProjection<TM extends TypeMap, M extends keyof TM, C, Su, Av, Mi, 
   _sum?: Su & OnlyKeys<Su, NumericKeys<TM, M>>;
   /** Mean of non-null values (`Int` / `Float` / `BigInt`, as a `number`); `null` when there are none. */
   _avg?: Av & OnlyKeys<Av, NumericKeys<TM, M>>;
-  /** Smallest non-null value (`Int`, `Float`, `String`, `DateTime`, `Date`). */
+  /** Smallest non-null value (numbers, strings, enums and ordered temporal fields). */
   _min?: Mi & OnlyKeys<Mi, MinMaxKeys<TM, M>>;
-  /** Largest non-null value (`Int`, `Float`, `String`, `DateTime`, `Date`). */
+  /** Largest non-null value (numbers, strings, enums and ordered temporal fields). */
   _max?: Ma & OnlyKeys<Ma, MinMaxKeys<TM, M>>;
 };
 

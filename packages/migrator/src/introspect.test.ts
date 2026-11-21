@@ -11,7 +11,23 @@ const sample: IntrospectionResult = {
         { propertyName: "email", propertyTypes: ["String"], mandatory: true },
         { propertyName: "age", propertyTypes: ["Long"], mandatory: false },
         { propertyName: "tags", propertyTypes: ["StringArray"], mandatory: false },
-        { propertyName: "loc", propertyTypes: ["Point"], mandatory: true },
+        { propertyName: "loc", propertyTypes: ["Point"], mandatory: true, pointCrs: ["wgs-84"] },
+        {
+          propertyName: "grid",
+          propertyTypes: ["Point"],
+          mandatory: false,
+          pointCrs: ["cartesian"],
+        },
+        {
+          propertyName: "mixed",
+          propertyTypes: ["Point"],
+          mandatory: false,
+          pointCrs: ["wgs-84", "cartesian-3d"],
+        },
+        { propertyName: "opens", propertyTypes: ["LocalTime"], mandatory: false },
+        { propertyName: "slot", propertyTypes: ["Time"], mandatory: false },
+        { propertyName: "seen", propertyTypes: ["LocalDateTime"], mandatory: false },
+        { propertyName: "ttl", propertyTypes: ["Duration"], mandatory: false },
         { propertyName: "bad-name", propertyTypes: ["String"], mandatory: true },
       ],
     },
@@ -58,6 +74,14 @@ const sample: IntrospectionResult = {
       owningConstraint: null,
     },
     {
+      name: "loc_idx",
+      type: "POINT",
+      entityType: "NODE",
+      labelsOrTypes: ["User"],
+      properties: ["loc"],
+      owningConstraint: null,
+    },
+    {
       name: "user_id",
       type: "RANGE",
       entityType: "NODE",
@@ -86,7 +110,13 @@ node User {
   id String @id
   age Int? @index
   email String @unique
+  grid CartesianPoint?
+  loc Point @index
+  opens LocalTime?
+  seen LocalDateTime?
+  slot Time?
   tags String[]
+  ttl Duration?
   authored Post[] @relationship(type: "AUTHORED", direction: OUT)
   follows User[] @relationship(type: "FOLLOWS", direction: OUT)
   followsBy User[] @relationship(type: "FOLLOWS", direction: IN)
@@ -103,7 +133,7 @@ relationship Authored {
 
   it("explains what it skipped", () => {
     expect(warnings.join("\n")).toMatch(/User\.bad-name/);
-    expect(warnings.join("\n")).toMatch(/User\.loc: unsupported/);
+    expect(warnings.join("\n")).toMatch(/User\.mixed: unsupported/);
     expect(printed).not.toContain("__CyphraMigration");
   });
 });

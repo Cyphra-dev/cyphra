@@ -5,12 +5,10 @@
 // - Product: a Cyphra node's name is its label: renamed to "Item"
 // - Product.sku: @unique was removed in @neo4j/graphql v7; Cyphra keeps it and creates the uniqueness constraint
 // - Product.attributes: custom scalars are not supported by Cyphra: not converted
-// - Product.location: Point is not supported by Cyphra yet: not converted
 // - Category.id: became @id @default(uuid()); Cyphra also adds a uniqueness constraint, which v7 @id does not
 // - Customer.id: became @id @default(uuid()); Cyphra also adds a uniqueness constraint, which v7 @id does not
 // - Customer.wishlist: relationships to an interface are not supported yet: not converted
 // - Order.id: became @id @default(uuid()); Cyphra also adds a uniqueness constraint, which v7 @id does not
-// - Order.deliveryWindow: LocalTime is not supported by Cyphra yet: not converted
 // - Order.total: @cypher fields are computed by a Cypher query: not converted (compat.v7 still serves it); with the typed client, write it as a query
 // - Review.id: became @id @default(uuid()); Cyphra also adds a uniqueness constraint, which v7 @id does not
 
@@ -26,11 +24,11 @@ node Item {
   price Float
   stock BigInt?
   weightKg Float?
+  location Point?
   tags String[]
   categories Category[] @relationship(type: "IN_CATEGORY", direction: OUT)
   reviews Review[] @relationship(type: "REVIEWS", direction: IN)
   // attributes: JSON (not converted: type not supported)
-  // location: Point (not converted: type not supported)
 }
 
 node Category {
@@ -51,9 +49,9 @@ node Order {
   id String @id @default(uuid())
   status OrderStatus @default(PENDING)
   placedAt DateTime @default(now())
+  deliveryWindow LocalTime?
   customer Customer @relationship(type: "PLACED", direction: IN)
   lines Item[] @relationship(type: "CONTAINS", direction: OUT)
-  // deliveryWindow: LocalTime (not converted: type not supported)
   // total: Float (not converted: computed field)
 }
 

@@ -1,5 +1,29 @@
-import neo4j, { isDate, isDateTime, isInt, isLocalDateTime, type Integer } from "neo4j-driver";
-import type { DefaultValueSpec, ResolvedScalarField, ScalarTypeName } from "@cyphra/schema";
+import neo4j, {
+  isDate,
+  isDateTime,
+  isDuration,
+  isInt,
+  isLocalDateTime,
+  isLocalTime,
+  isPoint,
+  isTime,
+  type Integer,
+} from "neo4j-driver";
+import {
+  TEMPORAL_EXAMPLES,
+  formatDuration,
+  formatLocalDateTime,
+  formatLocalTime,
+  formatTime,
+  parseDuration,
+  parseLocalDateTime,
+  parseLocalTime,
+  parseTime,
+  type DefaultValueSpec,
+  type IsoTemporalType,
+  type ResolvedScalarField,
+  type ScalarTypeName,
+} from "@cyphra/schema";
 import { CyphraValidationError } from "./errors.js";
 
 /**
@@ -82,9 +106,142 @@ function encodeJson(value: unknown, where: string): string {
   return text;
 }
 
+/** Spatial reference ids of the point types (2D, 3D). */
+export const SRID = {
+  wgs84: 4326,
+  wgs84_3d: 4979,
+  cartesian: 7203,
+  cartesian_3d: 9157,
+} as const;
+
+function finite(v: unknown): v is number {
+  return typeof v === "number" && Number.isFinite(v);
+}
+
+function onlyKeys(v: Record<string, unknown>, keys: readonly string[]): boolean {
+  return Object.keys(v).every((k) => keys.includes(k) || v[k] === undefined);
+}
+
+const WGS84_KEYS = ["longitude", "latitude", "height"] as const;
+const CARTESIAN_KEYS = ["x", "y", "z"] as const;
+
+/**
+ * `true` when `v` looks like a point value of `type` (only coordinate keys), as opposed to a
+ * filter object (`{ distance }`, `{ equals }`, …).
+ */
+export function isPointValue(type: ScalarTypeName, v: unknown): boolean {
+  if (typeof v !== "object" || v === null || Array.isArray(v)) return false;
+  const o = v as Record<string, unknown>;
+  return type === "Point"
+    ? "longitude" in o && "latitude" in o && onlyKeys(o, WGS84_KEYS)
+    : "x" in o && "y" in o && onlyKeys(o, CARTESIAN_KEYS);
+}
+
+/** A `Point` / `CartesianPoint` value as a driver `Point` (2D, or 3D with `height` / `z`). */
+function encodePoint(type: "Point" | "CartesianPoint", value: unknown, where: string): unknown {
+  const expected = type === "Point" ? "{ longitude, latitude, height? }" : "{ x, y, z? }";
+  if (!isPointValue(type, value)) {
+    throw new CyphraValidationError(
+      `${where}: expected a ${type} ${expected}, got ${describe(value)}.`,
+    );
+  }
+  const o = value as Record<string, unknown>;
+  const [a, b, c] = type === "Point" ? [o.longitude, o.latitude, o.height] : [o.x, o.y, o.z];
+  if (!finite(a) || !finite(b) || (c !== undefined && c !== null && !finite(c))) {
+    throw new CyphraValidationError(`${where}: ${type} coordinates must be finite numbers.`);
+  }
+  if (type === "Point" && (a < -180 || a > 180 || b < -90 || b > 90)) {
+    throw new CyphraValidationError(
+      `${where}: longitude must be within [-180, 180] and latitude within [-90, 90] (got ${a}, ${b}).`,
+    );
+  }
+  const has3d = c !== undefined && c !== null;
+  const srid =
+    type === "Point"
+      ? has3d
+        ? SRID.wgs84_3d
+        : SRID.wgs84
+      : has3d
+        ? SRID.cartesian_3d
+        : SRID.cartesian;
+  return has3d ? new neo4j.types.Point(srid, a, b, c) : new neo4j.types.Point(srid, a, b);
+}
+
+/**
+ * `LocalDateTime` / `LocalTime` / `Time` / `Duration` ISO 8601 text as the driver temporal value
+ * (so Neo4j stores, compares and sorts a temporal value, not a string).
+ */
+function encodeTemporal(type: IsoTemporalType, value: unknown, where: string): unknown {
+  const fail = (): never => {
+    throw new CyphraValidationError(
+      `${where}: expected ${type} as ISO 8601 text (e.g. "${TEMPORAL_EXAMPLES[type]}"), got ${typeof value === "string" ? JSON.stringify(value) : describe(value)}.`,
+    );
+  };
+  if (typeof value !== "string") return fail();
+  switch (type) {
+    case "LocalDateTime": {
+      const p = parseLocalDateTime(value) ?? fail();
+      return new neo4j.types.LocalDateTime(
+        p.year,
+        p.month,
+        p.day,
+        p.hour,
+        p.minute,
+        p.second,
+        p.nanosecond,
+      );
+    }
+    case "LocalTime": {
+      const p = parseLocalTime(value) ?? fail();
+      return new neo4j.types.LocalTime(p.hour, p.minute, p.second, p.nanosecond);
+    }
+    case "Time": {
+      const p = parseTime(value) ?? fail();
+      return new neo4j.types.Time(p.hour, p.minute, p.second, p.nanosecond, p.offsetSeconds);
+    }
+    case "Duration": {
+      const p = parseDuration(value) ?? fail();
+      return new neo4j.types.Duration(
+        neo4j.int(p.months.toString()),
+        neo4j.int(p.days.toString()),
+        neo4j.int(p.seconds.toString()),
+        neo4j.int(p.nanoseconds),
+      );
+    }
+  }
+}
+
+/**
+ * The value of `@default(now())` for `field`: a `Date` for `DateTime` / `Date`, the current UTC
+ * wall-clock time as ISO 8601 text for `LocalDateTime` / `LocalTime` / `Time` (`Time` at `Z`), the
+ * same as Cypher's `localdatetime()` / `localtime()` / `time()` with Neo4j's default time zone
+ * (UTC).
+ */
+export function nowValue(field: ResolvedScalarField, now = new Date()): unknown {
+  const iso = now.toISOString(); // 2024-05-01T10:30:00.123Z
+  switch (field.type) {
+    case "LocalDateTime":
+      return iso.slice(0, 23);
+    case "LocalTime":
+      return iso.slice(11, 23);
+    case "Time":
+      return `${iso.slice(11, 23)}Z`;
+    default:
+      return now;
+  }
+}
+
 function encodeOne(field: ResolvedScalarField, value: unknown, where: string): unknown {
   const type = field.type;
   switch (type) {
+    case "LocalDateTime":
+    case "LocalTime":
+    case "Time":
+    case "Duration":
+      return encodeTemporal(type, value, where);
+    case "Point":
+    case "CartesianPoint":
+      return encodePoint(type, value, where);
     case "String":
       if (typeof value !== "string") break;
       return value;
@@ -231,10 +388,80 @@ function decodeJson(value: unknown): unknown {
   }
 }
 
+/** A driver integer-ish value (`Integer`, `number` or `bigint`) as a `bigint`. */
+function big(v: unknown): bigint {
+  if (typeof v === "bigint") return v;
+  if (typeof v === "number") return BigInt(Math.trunc(v));
+  return BigInt(String(v));
+}
+
+function num(v: unknown): number {
+  return typeof v === "number" ? v : Number(big(v));
+}
+
+type DriverTime = {
+  hour: unknown;
+  minute: unknown;
+  second: unknown;
+  nanosecond: unknown;
+};
+
+function timeOf(v: DriverTime) {
+  return {
+    hour: num(v.hour),
+    minute: num(v.minute),
+    second: num(v.second),
+    nanosecond: num(v.nanosecond),
+  };
+}
+
+/** A driver `Point` as `{ longitude, latitude, height? }` (WGS-84) or `{ x, y, z? }` (Cartesian). */
+export function decodePoint(value: unknown): unknown {
+  const p = value as { srid: unknown; x: number; y: number; z?: number | null };
+  const srid = num(p.srid);
+  const has3d = p.z !== undefined && p.z !== null && !Number.isNaN(p.z);
+  if (srid === SRID.wgs84 || srid === SRID.wgs84_3d) {
+    return has3d
+      ? { longitude: p.x, latitude: p.y, height: p.z }
+      : { longitude: p.x, latitude: p.y };
+  }
+  return has3d ? { x: p.x, y: p.y, z: p.z } : { x: p.x, y: p.y };
+}
+
+/** A driver temporal value of a `LocalDateTime` / `LocalTime` / `Time` / `Duration` field as ISO text. */
+function decodeTemporal(type: IsoTemporalType, value: unknown): unknown {
+  const v = value as Record<string, unknown>;
+  if (type === "Duration" && isDuration(value)) {
+    return formatDuration({
+      months: big(v.months),
+      days: big(v.days),
+      seconds: big(v.seconds),
+      nanoseconds: num(v.nanoseconds),
+    });
+  }
+  if (type === "LocalTime" && isLocalTime(value)) return formatLocalTime(timeOf(v as DriverTime));
+  if (type === "Time" && isTime(value)) {
+    return formatTime({ ...timeOf(v as DriverTime), offsetSeconds: num(v.timeZoneOffsetSeconds) });
+  }
+  if (type === "LocalDateTime" && isLocalDateTime(value)) {
+    return formatLocalDateTime({
+      year: num(v.year),
+      month: num(v.month),
+      day: num(v.day),
+      ...timeOf(v as DriverTime),
+    });
+  }
+  return toNative(value);
+}
+
 function decodeOne(type: ScalarTypeName, value: unknown): unknown {
   if (value === null || value === undefined) return null;
   if (type === "BigInt") return decodeBigInt(value);
   if (type === "Json") return decodeJson(value);
+  if (type === "LocalDateTime" || type === "LocalTime" || type === "Time" || type === "Duration") {
+    return decodeTemporal(type, value);
+  }
+  if ((type === "Point" || type === "CartesianPoint") && isPoint(value)) return decodePoint(value);
   if (isInt(value)) {
     return integerToNumber(value);
   }

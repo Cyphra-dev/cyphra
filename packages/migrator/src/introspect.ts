@@ -31,6 +31,11 @@ export type IntrospectedProperty = {
   readonly propertyName: string;
   readonly propertyTypes: readonly string[];
   readonly mandatory: boolean;
+  /**
+   * CRS names (`point.crs`, e.g. `"wgs-84"`, `"cartesian-3d"`) sampled from the stored values of a
+   * `Point` property: they tell a `Point` from a `CartesianPoint` field. Absent when not sampled.
+   */
+  readonly pointCrs?: readonly string[];
 };
 
 export type IntrospectionResult = {
@@ -123,6 +128,35 @@ export async function introspectDatabase(client: CyphraClient): Promise<Introspe
       }
     }
 
+    // Neo4j reports every point property as "Point": sample the CRS of its stored values.
+    const sampleCrs = async (match: string, ref: string) =>
+      (
+        await rows(
+          `${match} WHERE ${ref} IS NOT NULL WITH ${ref} AS p LIMIT $limit RETURN DISTINCT p.crs AS crs`,
+          { limit: neo4jInt(ENDPOINT_SAMPLE_SIZE) },
+        )
+      ).map((r) => String(r.crs));
+    const withCrs = async (
+      props: IntrospectedProperty[],
+      match: string,
+      ref: (p: string) => string,
+    ) => {
+      for (let i = 0; i < props.length; i++) {
+        const p = props[i]!;
+        if (!p.propertyTypes.includes("Point")) continue;
+        props[i] = { ...p, pointCrs: await sampleCrs(match, ref(p.propertyName)) };
+      }
+    };
+    const quote = (id: string) => "`" + id.replace(/`/g, "``") + "`";
+    for (const entry of byCombo.values()) {
+      const labelExpr = entry.labels.map(quote).join(":");
+      if (!labelExpr) continue;
+      await withCrs(entry.properties, `MATCH (n:${labelExpr})`, (p) => `n.${quote(p)}`);
+    }
+    for (const [type, props] of byType) {
+      await withCrs(props, `MATCH ()-[r:${quote(type)}]->()`, (p) => `r.${quote(p)}`);
+    }
+
     const relTypes: IntrospectionResult["relTypes"][number][] = [];
     for (const [type, properties] of byType) {
       const ends = await rows(
@@ -179,6 +213,7 @@ const IDENT = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
 // Neo4j stores no more than the property type, so `pull` cannot tell a `BigInt` from an `Int`
 // (both are INTEGER), nor an enum or a `Json` field from a `String`: change those types by hand.
+// A `Point` is a `Point` or a `CartesianPoint` depending on the CRS of its sampled values.
 const TYPE_MAP: Record<string, ScalarTypeName> = {
   String: "String",
   Long: "Int",
@@ -188,17 +223,32 @@ const TYPE_MAP: Record<string, ScalarTypeName> = {
   Boolean: "Boolean",
   DateTime: "DateTime",
   ZonedDateTime: "DateTime",
-  LocalDateTime: "DateTime",
+  LocalDateTime: "LocalDateTime",
   Date: "Date",
+  LocalTime: "LocalTime",
+  Time: "Time",
+  OffsetTime: "Time",
+  Duration: "Duration",
+  Point: "Point",
 };
 
-function mapType(types: readonly string[]): { name: ScalarTypeName; list: boolean } | null {
+/** `Point` or `CartesianPoint` from sampled CRS names (`null` when they mix both kinds). */
+function pointType(crs: readonly string[] | undefined): ScalarTypeName | null {
+  const kinds = new Set((crs ?? []).map((c) => (c.startsWith("cartesian") ? "c" : "w")));
+  if (kinds.size > 1) return null;
+  return kinds.has("c") ? "CartesianPoint" : "Point";
+}
+
+function mapType(
+  types: readonly string[],
+  pointCrs?: readonly string[],
+): { name: ScalarTypeName; list: boolean } | null {
   const mapped = new Set<string>();
   let list: boolean | undefined;
   for (const raw of types) {
     const isList = raw.endsWith("Array") || raw.startsWith("List");
     const base = raw.replace(/Array$/, "").replace(/^List<(.*)>$/, "$1");
-    const t = TYPE_MAP[base];
+    const t = base === "Point" && !isList ? pointType(pointCrs) : TYPE_MAP[base];
     if (!t) return null;
     if (list !== undefined && list !== isList) return null;
     list = isList;
@@ -241,7 +291,7 @@ const dec = (name: string): Decorator => ({ name, args: [] });
  *
  * - Properties: required when present on every node of the label; types mapped from Neo4j's.
  * - Single-property uniqueness constraints become `@id` (property `id` or constraint `…_id`) / `@unique`;
- *   single-property range indexes become `@index`.
+ *   single-property range and point indexes become `@index`.
  * - Every sampled `(start)-[:TYPE]->(end)` pair becomes an `OUT` field on the start node and an `IN`
  *   field (`…By`) on the end node, both to-many. Relationship types with properties also get a
  *   `relationship { … }` model.
@@ -253,7 +303,12 @@ export function schemaFromIntrospection(input: IntrospectionResult): {
   const warnings: string[] = [];
 
   // --- labels and their properties ------------------------------------------------
-  type PropAcc = { types: Set<string>; mandatoryIn: number; presentIn: number };
+  type PropAcc = {
+    types: Set<string>;
+    mandatoryIn: number;
+    presentIn: number;
+    pointCrs?: Set<string>;
+  };
   const labels = new Map<string, { combos: number; props: Map<string, PropAcc> }>();
   const ensureLabel = (l: string) => {
     let e = labels.get(l);
@@ -282,6 +337,10 @@ export function schemaFromIntrospection(input: IntrospectionResult): {
         };
         e.props.set(p.propertyName, acc);
         p.propertyTypes.forEach((t) => acc.types.add(t));
+        if (p.pointCrs) {
+          acc.pointCrs ??= new Set();
+          p.pointCrs.forEach((c) => acc.pointCrs!.add(c));
+        }
         acc.presentIn += 1;
         if (p.mandatory) acc.mandatoryIn += 1;
       }
@@ -367,7 +426,7 @@ export function schemaFromIntrospection(input: IntrospectionResult): {
       continue;
     }
     if (
-      i.type !== "RANGE" ||
+      (i.type !== "RANGE" && i.type !== "POINT") ||
       i.owningConstraint ||
       i.properties.length !== 1 ||
       i.labelsOrTypes.length !== 1
@@ -416,7 +475,7 @@ export function schemaFromIntrospection(input: IntrospectionResult): {
         });
         continue;
       }
-      const t = mapType([...acc.types]);
+      const t = mapType([...acc.types], acc.pointCrs && [...acc.pointCrs]);
       if (!t) {
         warnings.push(
           `Skipped ${label}.${prop}: unsupported or mixed types (${[...acc.types].join(", ")}).`,
@@ -499,7 +558,7 @@ export function schemaFromIntrospection(input: IntrospectionResult): {
     for (const p of [...rt.properties].sort((a, b) =>
       a.propertyName.localeCompare(b.propertyName),
     )) {
-      const t = mapType(p.propertyTypes);
+      const t = mapType(p.propertyTypes, p.pointCrs);
       if (!t || !IDENT.test(p.propertyName)) {
         warnings.push(`Skipped :${rt.type}.${p.propertyName}: unsupported type or name.`);
         continue;

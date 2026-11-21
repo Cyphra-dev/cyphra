@@ -14,6 +14,7 @@ import {
   createClient as createTypesClient,
   type Db as TypesDb,
 } from "./__fixtures__/types.gen.js";
+import { createClient as createGeoClient, type Db as GeoDb } from "./__fixtures__/geo.gen.js";
 import { escapeLucene } from "./fulltext.js";
 
 const hasNeo = Boolean(
@@ -2422,5 +2423,302 @@ describe.skipIf(!hasNeo)("ORM enum / Json / BigInt (Neo4j)", () => {
       { level: "LOW", meta: { via: "import" }, since: MAX },
       { level: "HIGH", meta: null, since: null },
     ]);
+  });
+});
+
+describe.skipIf(!hasNeo)("ORM points and temporal types (Neo4j)", () => {
+  let db: GeoDb;
+  const PARIS = { longitude: 2.3522, latitude: 48.8566 };
+  const LOUVRE = { longitude: 2.3376, latitude: 48.8606 }; // ~1.2 km from PARIS
+  const EIFFEL = { longitude: 2.2945, latitude: 48.8584 }; // ~4.2 km
+  const VERSAILLES = { longitude: 2.1204, latitude: 48.8049 }; // ~17.8 km
+  const LYON = { longitude: 4.8357, latitude: 45.764 }; // ~392 km
+
+  beforeAll(() => {
+    db = createGeoClient({
+      uri: process.env.NEO4J_TEST_URI!,
+      user: process.env.NEO4J_TEST_USER!,
+      password: process.env.NEO4J_TEST_PASSWORD!,
+    });
+  });
+
+  beforeEach(async () => {
+    await db.$cypher`MATCH (n:GeoPlace) DETACH DELETE n`;
+  });
+
+  afterAll(async () => {
+    if (db) {
+      await db.$cypher`MATCH (n:GeoPlace) DETACH DELETE n`;
+      await db.$disconnect();
+    }
+  });
+
+  async function seedPlaces() {
+    const places = [
+      { id: "louvre", name: "Louvre", location: LOUVRE, opens: "09:00", stay: "PT3H" },
+      { id: "eiffel", name: "Eiffel", location: EIFFEL, opens: "09:30", stay: "PT2H" },
+      { id: "versailles", name: "Versailles", location: VERSAILLES, opens: "09:00", stay: "P1D" },
+      { id: "lyon", name: "Lyon", location: LYON, opens: "08:00", stay: "P2D" },
+    ] as const;
+    for (const p of places) await db.geoPlace.create({ data: p });
+  }
+
+  it("stores each type as its Neo4j type and reads back the JS values", async () => {
+    const before = Date.now();
+    const p = await db.geoPlace.create({
+      data: {
+        id: "a",
+        name: "A",
+        location: { ...PARIS, height: 35 },
+        grid: { x: 1.5, y: -2 },
+        route: [PARIS, LOUVRE],
+        closes: "18:30:15.25",
+        slot: "10:00:00+02:00",
+        starts: "2024-05-01T10:30",
+        stay: "PT90M",
+        windows: ["P1D", "-PT5M"],
+      },
+    });
+    expect(p).toMatchObject({
+      location: { ...PARIS, height: 35 },
+      grid: { x: 1.5, y: -2 },
+      route: [PARIS, LOUVRE],
+      opens: "09:00:00", // @default("09:00")
+      closes: "18:30:15.25",
+      slot: "10:00:00+02:00",
+      starts: "2024-05-01T10:30:00",
+      stay: "PT1H30M",
+      windows: ["P1D", "-PT5M"],
+    });
+    // @default(now()): the current UTC wall-clock time.
+    const seen = Date.parse(`${p.seen}Z`);
+    expect(seen).toBeGreaterThanOrEqual(before - 1000);
+    expect(seen).toBeLessThanOrEqual(Date.now() + 1000);
+
+    const [types] = await db.$cypher<Record<string, string>>`
+      MATCH (n:GeoPlace {id: "a"})
+      RETURN valueType(n.location) AS location, n.location.srid AS srid, n.grid.srid AS gridSrid,
+             valueType(n.route) AS route, valueType(n.opens) AS opens, valueType(n.slot) AS slot,
+             valueType(n.seen) AS seen, valueType(n.stay) AS stay, valueType(n.windows) AS windows,
+             toString(n.stay) AS stayText`;
+    expect(types).toEqual({
+      location: "POINT NOT NULL",
+      srid: 4979,
+      gridSrid: 7203,
+      route: "LIST<POINT NOT NULL> NOT NULL",
+      opens: "LOCAL TIME NOT NULL",
+      slot: "ZONED TIME NOT NULL",
+      seen: "LOCAL DATETIME NOT NULL",
+      stay: "DURATION NOT NULL",
+      windows: "LIST<DURATION NOT NULL> NOT NULL",
+      stayText: "PT1H30M",
+    });
+    expect(await db.geoPlace.findUnique({ where: { id: "a" } })).toEqual(p);
+  });
+
+  it("finds places within 5 km, nearest first", async () => {
+    await seedPlaces();
+    const near = await db.geoPlace.findMany({
+      where: { location: { distance: { from: PARIS, lt: 5000 } } },
+      orderBy: { location: { distanceFrom: PARIS } },
+      select: { name: true },
+    });
+    expect(near.map((p) => p.name)).toEqual(["Louvre", "Eiffel"]);
+
+    const ring = await db.geoPlace.findMany({
+      where: { location: { distance: { from: PARIS, gte: 2000, lte: 20_000 } } },
+      orderBy: { location: { distanceFrom: PARIS, sort: "desc" } },
+      select: { name: true },
+    });
+    expect(ring.map((p) => p.name)).toEqual(["Versailles", "Eiffel"]);
+
+    const all = await db.geoPlace.findMany({
+      orderBy: [{ location: { distanceFrom: LYON } }],
+      take: 2,
+      select: { id: true },
+    });
+    expect(all.map((p) => p.id)).toEqual(["lyon", "louvre"]);
+
+    expect(await db.geoPlace.count({ where: { location: LOUVRE } })).toBe(1);
+    expect(await db.geoPlace.count({ where: { location: { not: LOUVRE } } })).toBe(3);
+  });
+
+  it("filters with a bounding box (Paris area)", async () => {
+    await seedPlaces();
+    const inParis = await db.geoPlace.findMany({
+      where: {
+        location: {
+          withinBBox: {
+            lowerLeft: { longitude: 2.25, latitude: 48.81 },
+            upperRight: { longitude: 2.42, latitude: 48.91 },
+          },
+        },
+      },
+      orderBy: { name: "asc" },
+      select: { name: true },
+    });
+    expect(inParis.map((p) => p.name)).toEqual(["Eiffel", "Louvre"]);
+  });
+
+  it("filters Cartesian points by distance (2D and 3D)", async () => {
+    const base = { name: "c", location: PARIS };
+    await db.geoPlace.create({ data: { ...base, id: "c1", grid: { x: 0, y: 0 } } });
+    await db.geoPlace.create({ data: { ...base, id: "c2", grid: { x: 3, y: 4 } } });
+    await db.geoPlace.create({ data: { ...base, id: "c3", grid: { x: 3, y: 4, z: 12 } } });
+    const within5 = await db.geoPlace.findMany({
+      where: { grid: { distance: { from: { x: 0, y: 0 }, lte: 5 } } },
+      orderBy: { id: "asc" },
+      select: { id: true },
+    });
+    // A 3D point is not compared with a 2D one (point.distance is null).
+    expect(within5.map((p) => p.id)).toEqual(["c1", "c2"]);
+    const [far] = await db.geoPlace.findMany({
+      where: { grid: { distance: { from: { x: 0, y: 0, z: 0 }, gt: 12 } } },
+      select: { id: true, grid: true },
+    });
+    expect(far).toEqual({ id: "c3", grid: { x: 3, y: 4, z: 12 } });
+  });
+
+  it("filters and sorts ordered temporal fields, compares durations for equality", async () => {
+    await seedPlaces();
+    const early = await db.geoPlace.findMany({
+      where: { opens: { lt: "09:15" } },
+      orderBy: [{ opens: "asc" }, { name: "asc" }],
+      select: { name: true, opens: true },
+    });
+    expect(early).toEqual([
+      { name: "Lyon", opens: "08:00:00" },
+      { name: "Louvre", opens: "09:00:00" },
+      { name: "Versailles", opens: "09:00:00" },
+    ]);
+    expect(await db.geoPlace.count({ where: { opens: { in: ["09:30", "10:00"] } } })).toBe(1);
+    // Durations compare by their months / days / seconds: "PT180M" is "PT3H", "P1D" is not "PT24H".
+    expect(await db.geoPlace.count({ where: { stay: "PT180M" } })).toBe(1);
+    expect(await db.geoPlace.count({ where: { stay: "PT24H" } })).toBe(0);
+    expect(await db.geoPlace.count({ where: { stay: { in: ["P1D", "P2D"] } } })).toBe(2);
+    expect(await db.geoPlace.count({ where: { stay: { not: "P1D" } } })).toBe(3);
+
+    await db.geoPlace.update({
+      where: { id: "louvre" },
+      data: { starts: "2024-05-01T09:00", slot: "09:00:00Z" },
+    });
+    await db.geoPlace.update({
+      where: { id: "eiffel" },
+      data: { starts: "2024-06-01T09:00", slot: "11:00:00+01:00" },
+    });
+    const may = await db.geoPlace.findMany({
+      where: { starts: { gte: "2024-05-01T00:00", lt: "2024-06-01T00:00" } },
+      select: { id: true },
+    });
+    expect(may).toEqual([{ id: "louvre" }]);
+    const bySlot = await db.geoPlace.findMany({
+      where: { slot: { not: null } },
+      orderBy: { slot: "desc" },
+      select: { id: true },
+    });
+    // 11:00+01:00 is 10:00Z, after 09:00Z.
+    expect(bySlot.map((p) => p.id)).toEqual(["eiffel", "louvre"]);
+    expect(await db.geoPlace.count({ where: { slot: { gt: "09:30Z" } } })).toBe(1);
+  });
+
+  it("aggregates _min / _max of temporal fields and groups by them", async () => {
+    await seedPlaces();
+    const agg = await db.geoPlace.aggregate({
+      _min: { opens: true },
+      _max: { opens: true },
+      _count: { stay: true },
+    });
+    expect(agg).toEqual({
+      _min: { opens: "08:00:00" },
+      _max: { opens: "09:30:00" },
+      _count: { stay: 4 },
+    });
+    const groups = await db.geoPlace.groupBy({
+      by: "opens",
+      _count: true,
+      orderBy: { opens: "asc" },
+    });
+    expect(groups).toEqual([
+      { opens: "08:00:00", _count: 1 },
+      { opens: "09:00:00", _count: 2 },
+      { opens: "09:30:00", _count: 1 },
+    ]);
+  });
+
+  it("writes and filters point and temporal edge properties", async () => {
+    await seedPlaces();
+    await db.geoPlace.update({
+      where: { id: "louvre" },
+      data: {
+        visits: {
+          connect: [
+            { id: "eiffel", $edge: { at: EIFFEL, when: "2024-05-01T12:00", took: "PT20M" } },
+            { id: "lyon", $edge: { at: LYON, took: "PT2H" } },
+          ],
+        },
+      },
+    });
+    const louvre = await db.geoPlace.findUniqueOrThrow({
+      where: { id: "louvre" },
+      include: { visits: { orderBy: { name: "asc" } } },
+    });
+    expect(louvre.visits.map((v) => [v.name, v.$edge])).toEqual([
+      ["Eiffel", { at: EIFFEL, when: "2024-05-01T12:00:00", took: "PT20M" }],
+      ["Lyon", { at: LYON, when: null, took: "PT2H" }],
+    ]);
+    const reached = await db.geoPlace.traverse({
+      from: { id: "louvre" },
+      via: "visits",
+      depth: { max: 1 },
+      edgeWhere: { at: { distance: { from: PARIS, lt: 10_000 } }, took: { not: "PT2H" } },
+      select: { id: true },
+    });
+    expect(reached).toEqual([{ id: "eiffel" }]);
+  });
+
+  it("updates point and temporal fields (update, updateMany, upsert)", async () => {
+    await seedPlaces();
+    const moved = await db.geoPlace.update({
+      where: { id: "louvre" },
+      data: { location: { ...LOUVRE, height: 10 }, grid: { x: 1, y: 1 }, stay: "PT4H" },
+    });
+    expect(moved).toMatchObject({
+      location: { ...LOUVRE, height: 10 },
+      grid: { x: 1, y: 1 },
+      stay: "PT4H",
+    });
+    const { count } = await db.geoPlace.updateMany({
+      where: { location: { distance: { from: PARIS, lt: 5000 } } },
+      data: { closes: "18:00", grid: null },
+    });
+    expect(count).toBe(1); // the Louvre is now a 3D point: no distance to the 2D PARIS
+    const up = await db.geoPlace.upsert({
+      where: { id: "new" },
+      create: { id: "new", name: "New", location: PARIS, slot: "07:00Z" },
+      update: { location: LYON },
+    });
+    expect(up).toMatchObject({ location: PARIS, slot: "07:00:00Z", opens: "09:00:00" });
+    const again = await db.geoPlace.upsert({
+      where: { id: "new" },
+      create: { id: "new", name: "New", location: PARIS },
+      update: { location: LYON },
+    });
+    expect(again.location).toEqual(LYON);
+  });
+
+  it("rejects invalid values before querying", async () => {
+    await expect(
+      db.geoPlace.create({
+        data: { id: "x", name: "x", location: { longitude: 0, latitude: 95 } },
+      }),
+    ).rejects.toThrow(CyphraValidationError);
+    await expect(
+      db.geoPlace.findMany({ where: { stay: { gt: "PT1H" } } as never }),
+    ).rejects.toThrow(/durations have no total order/);
+    await expect(
+      db.geoPlace.create({
+        data: { id: "x", name: "x", location: PARIS, slot: "10:00" as never },
+      }),
+    ).rejects.toThrow(/expected Time/);
   });
 });

@@ -71,14 +71,18 @@ their endpoints. Review the result:
   and `authoredBy` on the end node), and every relation is to-many.
 - A property is required only if every node with that label had it at pull time.
 - Single-property uniqueness constraints become `@id` (on a property named `id`) or `@unique`; range
-  indexes become `@index`.
+  and point indexes become `@index`.
+- `LocalDateTime`, `LocalTime`, `Time` and `Duration` properties keep their type. A point property
+  becomes a `Point` or a `CartesianPoint` from the CRS of up to 10,000 sampled values; a property
+  holding both kinds is skipped with a warning.
 - Node vector indexes become `Vector(N)` fields with `@vectorIndex(similarity: …)`, keeping the index
   name when it is not the default one (and `quantization: false` when it is off).
 - Node full-text indexes become `@@fulltext([…])` attributes, keeping the name, analyzer and
   `eventuallyConsistent: true` when they are not the defaults. Indexes over several labels, on
   relationships, or on properties that were not pulled as `String` / `String[]` fields are skipped
   with a warning.
-- Unsupported types (e.g. `Point`) and names that are not identifiers are skipped with a warning.
+- Unsupported or mixed types (e.g. a property that is a string on some nodes and an integer on
+  others) and names that are not identifiers are skipped with a warning.
 - Integers are pulled as `Int` and strings as `String`: the database cannot tell a `BigInt`, an enum
   or a `Json` field apart from those. Change the types by hand where it applies (for example an
   `Int` whose values exceed 2^53 to `BigInt`, a status string to an [enum](/schema#enums)).
@@ -101,11 +105,12 @@ What converts:
 
 - `@node` types become `node` models. A custom label in `@node(labels)` becomes the model name, since a
   Cyphra model's name is its label.
-- `ID`, `String`, `Int`, `Float`, `BigInt`, `Boolean`, `DateTime` and `Date`, lists, and required
-  or optional from nullability. Enums become [Cyphra enums](/schema#enums) with the same values
-  (only the ones a converted field uses).
-- `@id` becomes `@id @default(uuid())`, `@timestamp` becomes `@default(now())`, `@default` keeps its
-  value, and `@unique` (from v6 and earlier) stays `@unique`.
+- `ID`, `String`, `Int`, `Float`, `BigInt`, `Boolean`, `DateTime`, `Date`, `LocalDateTime`,
+  `LocalTime`, `Time`, `Duration`, `Point` and `CartesianPoint` (the same Neo4j types), lists, and
+  required or optional from nullability. Enums become [Cyphra enums](/schema#enums) with the same
+  values (only the ones a converted field uses).
+- `@id` becomes `@id @default(uuid())`, `@timestamp` (on `DateTime` and `Time`) becomes
+  `@default(now())`, `@default` keeps its value, and `@unique` (from v6 and earlier) stays `@unique`.
 - `@relationship(type, direction)` becomes a relation field, and a `@relationshipProperties` type
   becomes a `relationship` model.
 - `@fulltext(indexes: [{ indexName, queryName, fields }])` becomes one
@@ -119,9 +124,8 @@ and with 1 only when the type definitions are not valid GraphQL:
 ```text
 Wrote schema.cyphra (2 node(s), 1 relationship model(s))
 
-Not converted (3):
+Not converted (2):
   Person         @node(labels): extra labels "Actor" are not supported: Cyphra nodes have one label
-  Movie.runtime  Duration: Duration is not supported by Cyphra yet: not converted
   Movie.similar  @cypher: @cypher fields are computed by a Cypher query: not converted (compat.v7 still serves it); with the typed client, write it as a query
 
 Converted with differences (3):
@@ -130,8 +134,7 @@ Converted with differences (3):
   Person.name  @unique: @unique was removed in @neo4j/graphql v7; Cyphra keeps it and creates the uniqueness constraint
 ```
 
-Not converted today: `Time`, `LocalTime`, `LocalDateTime`, `Duration`, `Point`,
-`CartesianPoint` and custom scalars, interfaces and unions, extra labels, `@cypher` and
+Not converted today: custom scalars, interfaces and unions, extra labels, `@cypher` and
 `@customResolver` fields, `@authentication` and `@authorization` rules, `@vector` indexes (the type
 definitions carry neither the dimensions nor the similarity: declare a
 [`Vector(N)` field with `@vectorIndex`](/schema#vector-fields) by hand), and update timestamps. API-only settings such as `@plural`, `@selectable` or `@filterable`

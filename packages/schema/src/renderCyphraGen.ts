@@ -24,12 +24,31 @@ const TS_SCALAR: Record<ScalarTypeName, string> = {
   Date: "Date",
   BigInt: "bigint",
   Json: "JsonValue",
+  LocalDateTime: "LocalDateTime",
+  LocalTime: "LocalTime",
+  Time: "Time",
+  Duration: "Duration",
+  Point: "Point",
+  CartesianPoint: "CartesianPoint",
   Vector: "number[]",
   Enum: "string",
 };
 
-function tsFieldType(f: ResolvedScalarField): string {
-  const base = f.type === "Enum" && f.enum ? f.enum : TS_SCALAR[f.type];
+/** Scalar types whose TypeScript type is imported from the runtime (by the same name). */
+const RUNTIME_VALUE_TYPES = [
+  "LocalDateTime",
+  "LocalTime",
+  "Time",
+  "Duration",
+  "Point",
+  "CartesianPoint",
+] as const satisfies readonly ScalarTypeName[];
+
+/** Local names of the runtime value types used by a generated module (see {@link renderClientSection}). */
+export type RuntimeTypeNames = Partial<Record<ScalarTypeName, string>>;
+
+function tsFieldType(f: ResolvedScalarField, names: RuntimeTypeNames): string {
+  const base = f.type === "Enum" && f.enum ? f.enum : (names[f.type] ?? TS_SCALAR[f.type]);
   if (f.list) return `${base}[]`;
   return f.optional ? `${base} | null` : base;
 }
@@ -42,15 +61,42 @@ function renderObjectType(
   name: string,
   fields: readonly ResolvedScalarField[],
   doc: string,
+  names: RuntimeTypeNames,
 ): string[] {
   const lines = [`/** ${doc} */`, `export type ${name} = {`];
-  for (const f of fields) lines.push(`  ${f.name}: ${tsFieldType(f)};`);
+  for (const f of fields) lines.push(`  ${f.name}: ${tsFieldType(f, names)};`);
   lines.push("};", "");
   return lines;
 }
 
-/** Render the typed ORM section (model types, type map, schema model, `createClient`). */
-export function renderClientSection(model: SchemaModel): string[] {
+/**
+ * The runtime value types (`Point`, `LocalTime`, …) the fields of `model` use, each with the local
+ * name to import it as: its own name, or `Cyphra<Name>` when a declaration of the schema already
+ * takes that name (`node Point { … }`).
+ */
+export function runtimeTypeImports(model: SchemaModel): { name: string; local: string }[] {
+  const fields = [
+    ...model.nodes.flatMap((n) => n.fields),
+    ...model.relationships.flatMap((r) => r.properties),
+  ];
+  const used = new Set(fields.flatMap((f) => (f.kind === "scalar" ? [f.type] : [])));
+  const declared = new Set([
+    ...model.nodes.map((n) => n.name),
+    ...model.relationships.map((r) => r.name),
+    ...(model.enums ?? []).map((e) => e.name),
+  ]);
+  return RUNTIME_VALUE_TYPES.filter((t) => used.has(t)).map((name) => ({
+    name,
+    local: declared.has(name) ? `Cyphra${name}` : name,
+  }));
+}
+
+/**
+ * Render the typed ORM section (model types, type map, schema model, `createClient`). Fields of
+ * the runtime value types are written with `names` (default: the type's own name, as imported by
+ * {@link renderCyphraGenSource}).
+ */
+export function renderClientSection(model: SchemaModel, names: RuntimeTypeNames = {}): string[] {
   const lines: string[] = [];
   for (const e of model.enums ?? []) {
     lines.push(`/** \`${e.name}\` enum values (\`${e.name}.${e.values[0]}\`, …). */`);
@@ -62,7 +108,7 @@ export function renderClientSection(model: SchemaModel): string[] {
   }
   for (const n of model.nodes) {
     const scalars = n.fields.filter((f): f is ResolvedScalarField => f.kind === "scalar");
-    lines.push(...renderObjectType(n.name, scalars, `\`${n.name}\` node properties.`));
+    lines.push(...renderObjectType(n.name, scalars, `\`${n.name}\` node properties.`, names));
   }
   for (const r of model.relationships) {
     lines.push(
@@ -70,6 +116,7 @@ export function renderClientSection(model: SchemaModel): string[] {
         r.name,
         r.properties,
         `\`${r.name}\` (\`:${r.relType}\`) edge properties.`,
+        names,
       ),
     );
   }
@@ -246,9 +293,20 @@ export function renderCyphraGenSource(
     ...resolved.nodes.flatMap((n) => n.fields),
     ...resolved.relationships.flatMap((r) => r.properties),
   ].some((f) => f.kind === "scalar" && f.type === "Json");
-  lines.push(
-    `import { createOrm, ${usesJson ? "type JsonValue, " : ""}type OrmClient, type OrmOptions, type SchemaModel } from ${JSON.stringify(runtimeImport)};`,
-  );
+  // Likewise for `Point`, `LocalTime`, … (aliased when a declaration takes the name).
+  const valueTypes = runtimeTypeImports(resolved);
+  const typeNames: RuntimeTypeNames = Object.fromEntries(valueTypes.map((t) => [t.name, t.local]));
+  const imports = [
+    "createOrm",
+    ...valueTypes.map((t) =>
+      t.local === t.name ? `type ${t.name}` : `type ${t.name} as ${t.local}`,
+    ),
+    ...(usesJson ? ["type JsonValue"] : []),
+    "type OrmClient",
+    "type OrmOptions",
+    "type SchemaModel",
+  ];
+  lines.push(`import { ${imports.join(", ")} } from ${JSON.stringify(runtimeImport)};`);
   lines.push("");
   lines.push("/** Neo4j node labels from `node` declarations. */");
   lines.push("export const NodeLabel = {");
@@ -286,6 +344,6 @@ export function renderCyphraGenSource(
   lines.push("export type RelTypeKey = keyof typeof RelType;");
   lines.push("");
 
-  lines.push(...renderClientSection(resolved));
+  lines.push(...renderClientSection(resolved, typeNames));
   return lines.join("\n");
 }

@@ -639,6 +639,12 @@ const CYPHRA_TYPE_NAMES = new Set([
   "Date",
   "BigInt",
   "Json",
+  "LocalDateTime",
+  "LocalTime",
+  "Time",
+  "Duration",
+  "Point",
+  "CartesianPoint",
   "Vector",
 ]);
 

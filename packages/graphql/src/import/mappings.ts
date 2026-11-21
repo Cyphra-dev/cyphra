@@ -2,8 +2,8 @@
  * The mapping from `@neo4j/graphql` v7 type definitions to Cyphra, in one place.
  *
  * Each GraphQL scalar, type-level directive and field-level directive has one entry here. When
- * Cyphra gains a feature (`Point`, `Duration`, …), supporting it in the importer means changing
- * that entry: the converter in `convert.ts` only walks the SDL and applies these rules.
+ * Cyphra gains a feature, supporting it in the importer means changing that entry: the converter
+ * in `convert.ts` only walks the SDL and applies these rules.
  *
  * Semantics follow `@neo4j/graphql` 7.x (checked against 7.6.8):
  * - only object types with `@node` are nodes; `@node(labels)` sets the Neo4j labels;
@@ -19,7 +19,7 @@
 
 import type { ConstDirectiveNode, ConstValueNode } from "graphql";
 import { Kind, valueFromASTUntyped } from "graphql";
-import type { Decorator, ScalarTypeName } from "@cyphra/schema";
+import { isValidTemporalText, type Decorator, type ScalarTypeName } from "@cyphra/schema";
 
 /** How serious a report entry is. */
 export type ImportSeverity =
@@ -57,8 +57,6 @@ export type ScalarMapping =
     }
   | { readonly unsupported: string };
 
-const NOT_YET = "is not supported by Cyphra yet";
-
 /** Built-in GraphQL scalars and the scalars and types `@neo4j/graphql` v7 adds. */
 export const SCALARS: Readonly<Record<string, ScalarMapping>> = {
   ID: { type: "String" },
@@ -69,12 +67,13 @@ export const SCALARS: Readonly<Record<string, ScalarMapping>> = {
   DateTime: { type: "DateTime" },
   Date: { type: "Date" },
   BigInt: { type: "BigInt" },
-  Time: { unsupported: `Time ${NOT_YET}` },
-  LocalTime: { unsupported: `LocalTime ${NOT_YET}` },
-  LocalDateTime: { unsupported: `LocalDateTime ${NOT_YET}` },
-  Duration: { unsupported: `Duration ${NOT_YET}` },
-  Point: { unsupported: `Point ${NOT_YET}` },
-  CartesianPoint: { unsupported: `CartesianPoint ${NOT_YET}` },
+  // Same Neo4j types: `Time` keeps its offset, `Point` is WGS-84, `CartesianPoint` Cartesian.
+  Time: { type: "Time" },
+  LocalTime: { type: "LocalTime" },
+  LocalDateTime: { type: "LocalDateTime" },
+  Duration: { type: "Duration" },
+  Point: { type: "Point" },
+  CartesianPoint: { type: "CartesianPoint" },
 };
 
 /**
@@ -234,6 +233,11 @@ function defaultFromValue(
     case "DateTime":
     case "Date":
       return { error: `Cyphra only supports @default(now()) on ${ctx.type} fields` };
+    case "Time":
+    case "LocalTime":
+    case "LocalDateTime":
+      if (v.kind === Kind.STRING && isValidTemporalText(ctx.type, v.value)) return v.value;
+      break;
   }
   return { error: `the default does not match type ${ctx.graphqlType}` };
 }
@@ -297,9 +301,11 @@ export const FIELD_DIRECTIVES: Readonly<Record<string, FieldDirectiveRule>> = {
     kind: "scalar",
     apply: (d, ctx) => {
       const ops = enumListArg(d, "operations") ?? ["CREATE", "UPDATE"];
-      if (ctx.type !== "DateTime" || ctx.list) {
+      if ((ctx.type !== "DateTime" && ctx.type !== "Time") || ctx.list) {
         return {
-          issues: [issue("unsupported", "@timestamp", "@timestamp is only converted on DateTime")],
+          issues: [
+            issue("unsupported", "@timestamp", "@timestamp is only converted on DateTime and Time"),
+          ],
         };
       }
       if (!ops.includes("CREATE")) {

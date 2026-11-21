@@ -34,7 +34,7 @@ import { compileShortestPath } from "./shortest.js";
 import { findSimilar } from "./vector.js";
 import { search } from "./fulltext.js";
 import { CyphraError, CyphraValidationError, NotFoundError } from "./errors.js";
-import { defaultLiteralValue, encodeScalar, integerToNumber } from "./values.js";
+import { defaultLiteralValue, encodeScalar, integerToNumber, nowValue } from "./values.js";
 
 type AnyRecord = Record<string, unknown>;
 
@@ -301,7 +301,7 @@ export class ModelEngine {
               ? randomUUID()
               : d.fn === "cuid"
                 ? createCuid()
-                : new Date();
+                : nowValue(f);
         props[f.name] = encodeScalar(f, value, owner);
         continue;
       }
@@ -570,8 +570,9 @@ export class ModelEngine {
     for (const [k, v] of Object.entries(scalars)) {
       const f = scalarField(this.model, k)!;
       const ref = `n.${q(k)}`;
-      // A Json value is set as a whole, even when it is an object.
-      if (isPlainObject(v) && !f.list && f.type !== "Json") {
+      // A Json value (or a point) is set as a whole, even when it is an object.
+      const wholeObject = f.type === "Json" || f.type === "Point" || f.type === "CartesianPoint";
+      if (isPlainObject(v) && !f.list && !wholeObject) {
         if (f.type !== "Int" && f.type !== "Float" && f.type !== "BigInt") {
           throw new CyphraValidationError(
             `${this.model.name}.${k}: object updates are only for numbers.`,

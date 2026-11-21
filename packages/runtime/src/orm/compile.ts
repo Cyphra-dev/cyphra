@@ -18,7 +18,7 @@ import type {
 } from "@cyphra/schema";
 import neo4j from "neo4j-driver";
 import { CyphraValidationError } from "./errors.js";
-import { decodeCount, decodeScalar, encodeFilterValue } from "./values.js";
+import { decodeCount, decodeScalar, encodeFilterValue, isPointValue } from "./values.js";
 import type { QueryMode } from "./types.js";
 
 /** Quote an identifier for Cypher (labels, property keys, relationship types). */
@@ -202,6 +202,90 @@ function compileJsonFilter(
   return and(parts);
 }
 
+const POINT_OPS = new Set(["equals", "not", "distance", "withinBBox"]);
+const DISTANCE_OPS = { lt: "<", lte: "<=", gt: ">", gte: ">=" } as const;
+
+/**
+ * Point fields: `null`, a bare point (equality), `{ equals, not }`, `{ distance: { from, lt, lte,
+ * gt, gte } }` (`point.distance`: meters for WGS-84) and `{ withinBBox: { lowerLeft, upperRight } }`
+ * (`point.withinBBox`). Points of another CRS or dimension never match a distance or a box.
+ */
+function compilePointFilter(
+  ctx: QueryContext,
+  model: ResolvedNodeModel,
+  field: ResolvedScalarField,
+  ref: string,
+  filter: unknown,
+): string | null {
+  const where = `${model.name}.${field.name}`;
+  const point = (v: unknown, what: string) => {
+    if (!isPointValue(field.type, v)) {
+      const shape = field.type === "Point" ? "{ longitude, latitude, height? }" : "{ x, y, z? }";
+      throw new CyphraValidationError(`${where}: ${what} must be a ${field.type} ${shape}.`);
+    }
+    return ctx.param(encodeFilterValue(field, v, model.name));
+  };
+  if (filter === null) return `${ref} IS NULL`;
+  if (isPointValue(field.type, filter)) return `${ref} = ${point(filter, "the value")}`;
+  if (!isPlainObject(filter)) {
+    throw new CyphraValidationError(
+      `${where}: point filters take a point, null or { equals, not, distance, withinBBox }.`,
+    );
+  }
+  const parts: string[] = [];
+  for (const [op, v] of Object.entries(filter)) {
+    if (v === undefined) continue;
+    if (!POINT_OPS.has(op)) {
+      throw new CyphraValidationError(
+        `Unknown filter "${op}" on ${where} (point fields take equals, not, distance and withinBBox).`,
+      );
+    }
+    if (op === "equals") {
+      parts.push(v === null ? `${ref} IS NULL` : `${ref} = ${point(v, "equals")}`);
+    } else if (op === "not") {
+      parts.push(v === null ? `${ref} IS NOT NULL` : `${ref} <> ${point(v, "not")}`);
+    } else if (op === "distance") {
+      if (!isPlainObject(v) || v.from === undefined) {
+        throw new CyphraValidationError(
+          `${where}: distance takes { from: <point>, lt?, lte?, gt?, gte? }.`,
+        );
+      }
+      const dist = `point.distance(${ref}, ${point(v.from, "distance.from")})`;
+      const bounds: string[] = [];
+      for (const [k, d] of Object.entries(v)) {
+        if (k === "from" || d === undefined) continue;
+        const sym = DISTANCE_OPS[k as keyof typeof DISTANCE_OPS];
+        if (!sym) {
+          throw new CyphraValidationError(
+            `Unknown distance filter "${k}" on ${where} (use lt, lte, gt, gte).`,
+          );
+        }
+        if (typeof d !== "number" || !Number.isFinite(d)) {
+          throw new CyphraValidationError(`${where}: distance.${k} must be a finite number.`);
+        }
+        bounds.push(`${dist} ${sym} ${ctx.param(d)}`);
+      }
+      if (bounds.length === 0) {
+        throw new CyphraValidationError(`${where}: distance needs a bound (lt, lte, gt or gte).`);
+      }
+      parts.push(...bounds);
+    } else {
+      if (!isPlainObject(v)) {
+        throw new CyphraValidationError(
+          `${where}: withinBBox takes { lowerLeft: <point>, upperRight: <point> }.`,
+        );
+      }
+      const ll = point(v.lowerLeft, "withinBBox.lowerLeft");
+      const ur = point(v.upperRight, "withinBBox.upperRight");
+      parts.push(`point.withinBBox(${ref}, ${ll}, ${ur})`);
+    }
+  }
+  return and(parts);
+}
+
+/** Filters a `Duration` field takes: durations have no total order. */
+const DURATION_OPS = new Set(["equals", "not", "in", "notIn"]);
+
 type StringFilterMode = QueryMode;
 
 /**
@@ -220,9 +304,20 @@ export function compileScalarFilter(
   if (field.type === "Vector") return compileVectorFilter(model, field, ref, filter);
   if (field.type === "Json") return compileJsonFilter(ctx, model, field, ref, filter);
   if (field.list) return compileListFilter(ctx, model, field, ref, filter);
+  if (field.type === "Point" || field.type === "CartesianPoint") {
+    return compilePointFilter(ctx, model, field, ref, filter);
+  }
   const enc = (v: unknown) => encodeFilterValue(field, v, model.name);
   if (filter === null) return `${ref} IS NULL`;
   if (!isPlainObject(filter)) return `${ref} = ${ctx.param(enc(filter))}`;
+  if (field.type === "Duration") {
+    const bad = Object.keys(filter).find((k) => filter[k] !== undefined && !DURATION_OPS.has(k));
+    if (bad) {
+      throw new CyphraValidationError(
+        `${model.name}.${field.name}: "${bad}" is not valid on a Duration field (durations have no total order; use equals, not, in, notIn).`,
+      );
+    }
+  }
 
   const mode = filter.mode ?? inheritedMode;
   if (mode !== "default" && mode !== "insensitive") {
@@ -420,6 +515,35 @@ function sortDirection(dir: unknown, what: string): string {
   return dir.toUpperCase();
 }
 
+/** Scalar types without a meaningful sort order (points sort by distance instead). */
+const UNSORTABLE = new Set(["Vector", "Json", "Duration", "Point", "CartesianPoint"]);
+
+/**
+ * `{ distanceFrom: <point>, sort?: "asc" | "desc" }` on a point field: `point.distance(…) ASC`
+ * (nearest first by default; nodes without the property, or with a point of another CRS, last).
+ */
+function compileDistanceOrder(
+  ctx: QueryContext,
+  model: ResolvedNodeModel,
+  alias: string,
+  field: ResolvedScalarField,
+  dir: unknown,
+): string {
+  const where = `orderBy ${model.name}.${field.name}`;
+  if (
+    !isPlainObject(dir) ||
+    !isPointValue(field.type, dir.distanceFrom) ||
+    Object.keys(dir).some((k) => k !== "distanceFrom" && k !== "sort")
+  ) {
+    throw new CyphraValidationError(
+      `${where}: point fields sort by distance: { distanceFrom: <point>, sort?: "asc" | "desc" }.`,
+    );
+  }
+  const from = ctx.param(encodeFilterValue(field, dir.distanceFrom, model.name));
+  const d = dir.sort === undefined ? "ASC" : sortDirection(dir.sort, `${model.name}.${field.name}`);
+  return `point.distance(${alias}.${q(field.name)}, ${from}) ${d}`;
+}
+
 /**
  * `head(COLLECT { MATCH (alias)<-[:T]-(m:Target) RETURN m.field })`: the value of a scalar of the
  * node related to `alias` through the to-one relation `rel` (`null` when there is none).
@@ -438,9 +562,9 @@ function compileRelatedScalar(
       `orderBy ${model.name}.${rel.name}: unknown scalar field "${target.name}.${name}".`,
     );
   }
-  if (f.type === "Vector" || f.type === "Json" || f.list) {
+  if (UNSORTABLE.has(f.type) || f.list) {
     throw new CyphraValidationError(
-      `orderBy ${model.name}.${rel.name}.${name}: list, Vector and Json fields cannot be sorted.`,
+      `orderBy ${model.name}.${rel.name}.${name}: list, Vector, Json, Duration and point fields cannot be sorted.`,
     );
   }
   const m = ctx.variable();
@@ -495,8 +619,13 @@ export function compileOrderBy(
         parts.push(`${compileRelationCount(ctx, model, alias, rel)} ${d}`);
         continue;
       }
-      const sortType = scalarOrThrow(model, key).type;
-      if (sortType === "Vector" || sortType === "Json") {
+      const sortField = scalarOrThrow(model, key);
+      const sortType = sortField.type;
+      if ((sortType === "Point" || sortType === "CartesianPoint") && !sortField.list) {
+        parts.push(compileDistanceOrder(ctx, model, alias, sortField, dir));
+        continue;
+      }
+      if (UNSORTABLE.has(sortType)) {
         throw new CyphraValidationError(
           `orderBy ${model.name}.${key}: ${sortType} fields cannot be sorted.`,
         );

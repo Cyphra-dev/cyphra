@@ -154,6 +154,63 @@ describe.skipIf(!hasNeo)("schema migrations and pull (Neo4j)", () => {
     }
   });
 
+  it("creates point indexes, backfills temporal defaults and pulls the new types back", async () => {
+    const v1 = resolveSchema(parseSchema(`node MigGeo { id String @id }`));
+    const v2 = resolveSchema(
+      parseSchema(`node MigGeo {
+  id String @id
+  loc Point? @index
+  grid CartesianPoint?
+  opens LocalTime @default("09:00")
+  seen LocalDateTime @default(now())
+  at Time @default(now())
+  stay Duration @default("PT90M")
+}`),
+    );
+    try {
+      await run("MATCH (n:MigGeo) DETACH DELETE n");
+      await applyPlan(client, diffSchemaModels(EMPTY_SCHEMA_MODEL, v1));
+      await run("CREATE (:MigGeo {id: 'a'})");
+      await applyPlan(client, diffSchemaModels(v1, v2));
+      await run(
+        "MATCH (n:MigGeo {id: 'a'}) SET n.loc = point({longitude: 2.35, latitude: 48.85}), n.grid = point({x: 1, y: 2})",
+      );
+      const [row] = await run(`
+        MATCH (n:MigGeo {id: 'a'})
+        RETURN toString(n.opens) AS opens, valueType(n.seen) AS seen, valueType(n.at) AS at,
+               toString(n.stay) AS stay`);
+      expect(row!.toObject()).toEqual({
+        opens: "09:00:00",
+        seen: "LOCAL DATETIME NOT NULL",
+        at: "ZONED TIME NOT NULL",
+        stay: "PT1H30M",
+      });
+      const [index] = await run(
+        "SHOW INDEXES YIELD name, type, labelsOrTypes, properties WHERE name = 'MigGeo_loc_idx' RETURN *",
+      );
+      expect(index!.toObject()).toEqual({
+        name: "MigGeo_loc_idx",
+        type: "POINT",
+        labelsOrTypes: ["MigGeo"],
+        properties: ["loc"],
+      });
+      const pulled = printSchemaDocument(
+        schemaFromIntrospection(await introspectDatabase(client)).doc,
+      );
+      const node = /node MigGeo \{[^}]*\}/.exec(pulled)![0];
+      expect(node).toContain("loc Point @index");
+      expect(node).toContain("grid CartesianPoint");
+      expect(node).toContain("opens LocalTime");
+      expect(node).toContain("seen LocalDateTime");
+      expect(node).toContain("at Time");
+      expect(node).toContain("stay Duration");
+    } finally {
+      await run("MATCH (n:MigGeo) DETACH DELETE n");
+      await run("DROP INDEX MigGeo_loc_idx IF EXISTS");
+      await run("DROP CONSTRAINT MigGeo_id_id IF EXISTS");
+    }
+  });
+
   it("creates full-text indexes, recreates them on change, and pulls them back", async () => {
     const v1 = `node MigText {
   id    String   @id

@@ -25,6 +25,12 @@ export const SCALAR_TYPE_NAMES = [
   "Date",
   "BigInt",
   "Json",
+  "LocalDateTime",
+  "LocalTime",
+  "Time",
+  "Duration",
+  "Point",
+  "CartesianPoint",
 ] as const satisfies readonly ScalarTypeName[];
 
 /** Largest `Vector(N)` dimension count Neo4j 5 vector indexes accept. */

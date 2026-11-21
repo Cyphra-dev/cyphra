@@ -98,6 +98,18 @@ export type ScalarTypeName =
   | "BigInt"
   /** Any JSON value, stored as its JSON text (a string property). */
   | "Json"
+  /** Date and time without a time zone: a Neo4j `LOCAL DATETIME`, an ISO 8601 string in JS. */
+  | "LocalDateTime"
+  /** Time of day without a time zone: a Neo4j `LOCAL TIME`, an ISO 8601 string in JS. */
+  | "LocalTime"
+  /** Time of day with a UTC offset: a Neo4j `ZONED TIME`, an ISO 8601 string in JS. */
+  | "Time"
+  /** An amount of time (months, days, seconds): a Neo4j `DURATION`, an ISO 8601 string in JS. */
+  | "Duration"
+  /** A WGS-84 geographic point (`srid` 4326, or 4979 with a height): `{ longitude, latitude, height? }`. */
+  | "Point"
+  /** A Cartesian point (`srid` 7203, or 9157 with `z`): `{ x, y, z? }`. */
+  | "CartesianPoint"
   /** `Vector(N)`: an embedding of `N` floats, stored as `LIST<FLOAT>`. */
   | "Vector"
   /** A value of a declared `enum` (named by `enum`), stored as a string. */
