@@ -102,9 +102,10 @@ request: a GraphQL client over HTTP, or your own code in the same process.
   Federation integration.
 - **Declarative authorization.** `@authentication`, `@authorization` and `@jwt` express access rules
   in the schema, so they apply to every generated operation.
-- **Search directives.** `@fulltext` and `@vector` expose full-text and vector index queries through
-  the API. Cyphra has vector search on its client ([`findSimilar`](/client#vector-search)) but no
-  full-text search yet.
+- **Search directives.** `@fulltext` and `@vector` expose full-text and vector index queries as
+  GraphQL operations. Cyphra has both searches on its client instead
+  ([`search`](/client#full-text-search) and [`findSimilar`](/client#vector-search)), not as API
+  operations.
 
 Cyphra has none of the rest. It does not serve HTTP and has no GraphQL layer; if you need an API, you
 write it (REST, tRPC, GraphQL with your own resolvers) and call the Cyphra client from it.
@@ -112,10 +113,11 @@ write it (REST, tRPC, GraphQL with your own resolvers) and call the Cyphra clien
 ## What Cyphra does that `@neo4j/graphql` does not
 
 - **Migrations.** Cyphra diffs your schema and writes [migration files](/migrations): constraints,
-  range indexes, backfills of new defaults, and guards for new required fields, tracked in the
+  range, vector and full-text indexes, backfills of new defaults, and guards for new required fields, tracked in the
   database and checked in CI with `cyphra migrate status`. The GraphQL Library does not manage the
   database schema: its docs say of `@fulltext` that "using this directive does not automatically
-  ensure the existence of these indexes. They must be created manually."
+  ensure the existence of these indexes. They must be created manually." In Cyphra,
+  [`@@fulltext`](/schema#full-text-indexes) in the schema creates the index.
 - **A typed client for server code.** `findMany`, `include`, `select`, nested writes and
   `$transaction`, with result types inferred from your arguments ([Typed client](/client)).
 - **Typed relationship properties** on reads and writes, through `$edge`.

@@ -5,6 +5,7 @@
 import { describe, expectTypeOf, it } from "vitest";
 import type { CyphraTypeMap, Db } from "./__fixtures__/blog.gen.js";
 import type { Db as VectorDb } from "./__fixtures__/vector.gen.js";
+import type { Db as SearchDb } from "./__fixtures__/search.gen.js";
 import type { ModelPath, Path, PathEdge, SelfRelations, ShortestPathResult } from "./types.js";
 
 // Type-only test file: checked by `tsc` (pnpm typecheck), not executed by Vitest.
@@ -477,5 +478,66 @@ describe("ORM vector search types", () => {
     await vdb.vecChunk.findMany({ orderBy: { embedding: "asc" } });
     // @ts-expect-error — a vector is an array of numbers
     await vdb.vecChunk.create({ data: { id: "c", text: "t", position: 0, embedding: ["x"] } });
+  });
+});
+
+declare const sdb: SearchDb;
+
+describe("ORM full-text search types", () => {
+  it("types search results with $score and honours select / include", async () => {
+    const hits = await sdb.ftPost.search({ index: "ftPostSearch", query: "graph" });
+    expectTypeOf(hits).toEqualTypeOf<
+      {
+        id: string;
+        title: string;
+        body: string | null;
+        tags: string[];
+        published: boolean;
+        $score: number;
+      }[]
+    >();
+
+    const selected = await sdb.ftPost.search({
+      index: "ftPostTags",
+      query: "neo4j",
+      mode: "terms",
+      where: { published: true, author: { is: { country: "FR" } } },
+      minScore: 0.1,
+      skip: 0,
+      take: 10,
+      select: { title: true, author: { select: { name: true } } },
+    });
+    expectTypeOf(selected).toEqualTypeOf<
+      { title: string; author: { name: string } | null; $score: number }[]
+    >();
+
+    const _included = await sdb.ftPost.search({
+      index: "ftPostTitleEnglish",
+      query: "graphs",
+      mode: "phrase",
+      include: { author: { include: { posts: true } } },
+    });
+    type Author = NonNullable<(typeof _included)[number]["author"]>;
+    expectTypeOf<Author["posts"][number]["tags"]>().toEqualTypeOf<string[]>();
+  });
+
+  it("restricts search to models with @@fulltext and to their index names", async () => {
+    // @ts-expect-error — not an index of FtPost
+    await sdb.ftPost.search({ index: "postSearch", query: "x" });
+    // @ts-expect-error — query is required
+    await sdb.ftPost.search({ index: "ftPostSearch" });
+    // @ts-expect-error — unknown mode
+    await sdb.ftPost.search({ index: "ftPostSearch", query: "x", mode: "regex" });
+    // @ts-expect-error — FtAuthor has no full-text index
+    await sdb.ftAuthor.search({ index: "ftPostSearch", query: "x" });
+    // @ts-expect-error — nor do the blog models
+    await db.post.search({ index: "x", query: "x" });
+  });
+
+  it("works on the transaction client", async () => {
+    const out = await sdb.$transaction((tx) =>
+      tx.ftPost.search({ index: "ftPostSearch", query: "x", select: { id: true } }),
+    );
+    expectTypeOf(out).toEqualTypeOf<{ id: string; $score: number }[]>();
   });
 });

@@ -29,6 +29,8 @@ export type ModelTypeDef = {
   readonly vectors?: string;
   /** `Vector(N)` keys with a `@vectorIndex`: the fields `findSimilar` can search. */
   readonly vectorIndexes?: string;
+  /** Names of the model's `@@fulltext` indexes: what `search` can query (absent when none). */
+  readonly fulltextIndexes?: string;
 };
 
 export type TypeMap = Record<string, ModelTypeDef>;
@@ -58,6 +60,13 @@ export type VectorKeys<TM extends TypeMap, M extends keyof TM> = TM[M] extends {
 /** `Vector(N)` keys of model `M` with a `@vectorIndex` (what `findSimilar` searches). */
 export type VectorIndexKeys<TM extends TypeMap, M extends keyof TM> = TM[M] extends {
   vectorIndexes: infer V extends string;
+}
+  ? V
+  : never;
+
+/** Names of the `@@fulltext` indexes of model `M` (what `search` queries). */
+export type FulltextIndexNames<TM extends TypeMap, M extends keyof TM> = TM[M] extends {
+  fulltextIndexes: infer V extends string;
 }
   ? V
   : never;
@@ -727,13 +736,59 @@ type VectorDelegate<TM extends TypeMap, M extends keyof TM> = [VectorIndexKeys<T
       ): Promise<SimilarResult<Out<TM, M, S, I>>[]>;
     };
 
+// ---------------------------------------------------------------------------
+// Full-text search
+// ---------------------------------------------------------------------------
+
+/**
+ * How `search` reads `query`: `"lucene"` passes it through as Lucene query syntax (`title:graph*`,
+ * `"exact phrase"`, `a AND NOT b`, `fuzzy~`); `"terms"` escapes it and matches any of its words
+ * (ranked by relevance); `"phrase"` escapes it and matches the words in that order.
+ */
+export type SearchMode = "lucene" | "terms" | "phrase";
+
+export type SearchArgs<TM extends TypeMap, M extends keyof TM> = {
+  /** The `@@fulltext` index to query (one of this model's index names). */
+  index: FulltextIndexNames<TM, M>;
+  /** The search text. A blank query matches nothing (`[]`). */
+  query: string;
+  /** How to read `query` (default `"lucene"`: Lucene query syntax, passed through). */
+  mode?: SearchMode;
+  /** Filter on the hits, applied in the same statement before `skip` / `take`. */
+  where?: WhereInput<TM, M>;
+  /** Drop hits scoring below this (Lucene scores: positive, unbounded, per-query). */
+  minScore?: number;
+  /** Hits to skip, after filtering and ranking. */
+  skip?: number;
+  /** Maximum number of hits (default: all of them). */
+  take?: number;
+};
+
+/** A `search` result: the node (honouring `select` / `include`) and its relevance score. */
+export type SearchResult<N> = Simplify<N & { $score: number }>;
+
+type FulltextDelegate<TM extends TypeMap, M extends keyof TM> = [
+  FulltextIndexNames<TM, M>,
+] extends [never]
+  ? unknown
+  : {
+      /**
+       * Nodes matching a full-text `query` on one of the model's `@@fulltext` indexes, best first,
+       * each with its `$score` (`db.index.fulltext.queryNodes`).
+       */
+      search<S extends Sel<TM, M> = undefined, I extends Inc<TM, M> = undefined>(
+        args: SearchArgs<TM, M> & Projection<S, I>,
+      ): Promise<SearchResult<Out<TM, M, S, I>>[]>;
+    };
+
 type Sel<TM extends TypeMap, M extends keyof TM> = SelectInput<TM, M> | undefined;
 type Inc<TM extends TypeMap, M extends keyof TM> = IncludeInput<TM, M> | undefined;
 type Out<TM extends TypeMap, M extends keyof TM, S, I> = Payload<TM, M, { select: S; include: I }>;
 
 /** Operations available on `db.<model>`. */
 export type ModelDelegate<TM extends TypeMap, M extends keyof TM> = BaseModelDelegate<TM, M> &
-  VectorDelegate<TM, M>;
+  VectorDelegate<TM, M> &
+  FulltextDelegate<TM, M>;
 
 type BaseModelDelegate<TM extends TypeMap, M extends keyof TM> = {
   findMany<S extends Sel<TM, M> = undefined, I extends Inc<TM, M> = undefined>(

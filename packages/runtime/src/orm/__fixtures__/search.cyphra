@@ -1,0 +1,21 @@
+// Fixture for the full-text search tests (distinct labels so they can run alongside the blog ORM
+// integration tests against the same database).
+node FtAuthor {
+  id      String   @id
+  name    String
+  country String
+  posts   FtPost[] @relationship(type: "FT_WROTE", direction: OUT)
+}
+
+node FtPost {
+  id        String    @id
+  title     String
+  body      String?
+  tags      String[]
+  published Boolean
+  author    FtAuthor? @relationship(type: "FT_WROTE", direction: IN)
+
+  @@fulltext([title, body], name: "ftPostSearch", eventuallyConsistent: false)
+  @@fulltext([tags], name: "ftPostTags", analyzer: "keyword")
+  @@fulltext([title], name: "ftPostTitleEnglish", analyzer: "english")
+}

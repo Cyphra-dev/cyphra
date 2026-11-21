@@ -32,6 +32,7 @@ import { compileAggregate, compileGroupBy } from "./aggregate.js";
 import { DEFAULT_MAX_TRAVERSAL_DEPTH, compileTraverse } from "./traverse.js";
 import { compileShortestPath } from "./shortest.js";
 import { findSimilar } from "./vector.js";
+import { search } from "./fulltext.js";
 import { CyphraError, CyphraValidationError, NotFoundError } from "./errors.js";
 import { encodeScalar, integerToNumber } from "./values.js";
 
@@ -250,6 +251,14 @@ export class ModelEngine {
       if (!isPlainObject(args))
         throw new CyphraValidationError("findSimilar args must be an object.");
       return findSimilar(exec, () => this.ctx(), this.model, args);
+    });
+  }
+
+  /** Full-text search through a `@@fulltext` index; see {@link search}. */
+  search(args: AnyRecord): Promise<AnyRecord[]> {
+    return this.runner.read(async (exec) => {
+      if (!isPlainObject(args)) throw new CyphraValidationError("search args must be an object.");
+      return search(exec, () => this.ctx(), this.model, args);
     });
   }
 

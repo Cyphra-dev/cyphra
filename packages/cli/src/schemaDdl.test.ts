@@ -10,7 +10,7 @@ describe("runSchemaDdl", () => {
     vi.restoreAllMocks();
   });
 
-  it("prints constraint and range index lines in push order", async () => {
+  it("prints constraint, range, vector and full-text index lines in push order", async () => {
     const dir = await mkdtemp(join(tmpdir(), "cyphra-ddl-"));
     const schemaPath = join(dir, "schema.cyphra");
     await writeFile(
@@ -18,7 +18,10 @@ describe("runSchemaDdl", () => {
       `node U {
   id   String @id
   slug String @index
+  bio  String?
   embedding Vector(3)? @vectorIndex(similarity: cosine)
+
+  @@fulltext([slug, bio], name: "uSearch", analyzer: "english")
 }
 `,
       "utf8",
@@ -42,6 +45,9 @@ describe("runSchemaDdl", () => {
     expect(cIdx).toBeGreaterThanOrEqual(0);
     expect(iIdx).toBeGreaterThan(cIdx);
     expect(lines.at(-1)).toBe(
+      "CREATE FULLTEXT INDEX uSearch IF NOT EXISTS FOR (n:`U`) ON EACH [n.`slug`, n.`bio`] OPTIONS {indexConfig: {`fulltext.analyzer`: 'english'}}",
+    );
+    expect(lines.at(-2)).toBe(
       "CREATE VECTOR INDEX U_embedding_vector IF NOT EXISTS FOR (n:`U`) ON n.`embedding` OPTIONS {indexConfig: {`vector.dimensions`: 3, `vector.similarity_function`: 'cosine'}}",
     );
   });

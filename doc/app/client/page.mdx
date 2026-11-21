@@ -1,5 +1,5 @@
 ---
-description: "The Cyphra typed client for Neo4j: findMany, select, include, relation counts, nested writes, aggregate, groupBy, vector search and transactions, schema-typed."
+description: "The Cyphra typed client for Neo4j: findMany, select, include, nested writes, aggregations, vector and full-text search, and transactions, schema-typed."
 ---
 
 # Typed client
@@ -31,6 +31,7 @@ Each node model becomes a delegate with a lower-cased name: `node User` → `db.
 > Requires **Neo4j 5.6+** (the client compiles relations to `COLLECT {}` / `EXISTS {}` subqueries).
 > [`traverse`](#traversals) needs **Neo4j 5.9+** (quantified path patterns).
 > [`findSimilar`](#vector-search) needs **Neo4j 5.15+** (vector indexes; `exact: true` needs 5.18+).
+> [`search`](#full-text-search) works on any Neo4j 5 (full-text indexes).
 
 ## Reading
 
@@ -484,6 +485,90 @@ RETURN size(hits) AS fetched, hits[-1].s AS lowest, rows
 `findSimilar` works in [`$transaction`](#transactions) and with either driver major. Vectors are
 written with a plain `SET` of a float list, which Neo4j indexes like
 `db.create.setNodeVectorProperty` would. The `FindSimilarArgs` and `SimilarResult` types are exported.
+
+## Full-text search
+
+`search` runs a full-text query through one of the model's [`@@fulltext` indexes](/schema#full-text-indexes)
+and returns the matching nodes, most relevant first: search boxes, autocomplete, keyword search
+next to (or combined with) [vector search](#vector-search). It is available on models with a
+`@@fulltext` attribute, and `index` only accepts that model's index names.
+
+```ts
+const posts = await db.post.search({
+  index: "postSearch",
+  query: userInput,
+  mode: "terms", // treat the input as plain words
+  where: { published: true, author: { is: { country: "FR" } } },
+  take: 10,
+  select: { id: true, title: true, author: { select: { name: true } } },
+});
+// { id: string; title: string; author: { name: string } | null; $score: number }[]
+```
+
+Results are shaped by `select` / `include` like `findMany`, each with a `$score`: Lucene's relevance
+score (BM25), positive and unbounded. Scores rank the hits of one query; they are not comparable
+across queries or with `findSimilar` scores.
+
+| Argument            | Meaning                                                                                |
+| ------------------- | -------------------------------------------------------------------------------------- |
+| `index`             | The `@@fulltext` index to query, by name.                                              |
+| `query`             | The search text. A blank query returns `[]` without querying.                          |
+| `mode`              | `"lucene"` (default), `"terms"` or `"phrase"`: how `query` is read (see below).        |
+| `where`             | Any filter on the model, relation filters included, applied to the hits before paging. |
+| `minScore`          | Drop hits that score below this.                                                       |
+| `skip`, `take`      | Page through the ranked hits, after filtering (default: every hit).                    |
+| `select`, `include` | Shape each result, as in `findMany`.                                                   |
+
+**Query syntax.** By default `query` is [Lucene query syntax](https://lucene.apache.org/core/9_11_0/queryparser/org/apache/lucene/queryparser/classic/package-summary.html#package.description),
+passed through to Neo4j: `graph databases` (any of the words), `"graph databases"` (the phrase),
+`+graph -sql`, `graph AND neo4j`, `title:graph` (one field of the index), `graph*` (prefix),
+`grph~` (fuzzy), `title:graph^5 OR body:graph` (boost). Malformed syntax such as `C++ (beta` makes
+Neo4j throw. For text typed by users, pick a mode that escapes it:
+
+- `mode: "terms"` escapes the input and matches any of its words, ranked by relevance.
+- `mode: "phrase"` escapes the input and matches its words in that order.
+- `escapeLucene(text)` (exported) escapes the special characters (`+ - && || ! ( ) { } [ ] ^ " ~ * ? : \ /`)
+  and the `AND` / `OR` / `NOT` operators, to mix user input into a query you build:
+
+```ts
+import { escapeLucene } from "cyphra";
+
+const prefix = await db.post.search({
+  index: "postSearch",
+  query: `title:${escapeLucene(input)}*`,
+});
+const allWords = await db.post.search({
+  index: "postSearch",
+  query: input
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((w) => `+${escapeLucene(w)}`)
+    .join(" "),
+});
+```
+
+The index's analyzer applies to the query as it does to the text: with `analyzer: "english"`,
+`run` finds "running"; with `keyword`, only the exact, case-sensitive value matches.
+
+**How `where` works.** `db.index.fulltext.queryNodes(index, query)` returns every node matching the
+query, not a top-k, so filtering afterwards loses nothing: `where` and `minScore` filter the hits in
+the same statement, then the rows are ranked by score and `skip` / `take` apply. Without a filter,
+`take` is passed to the procedure as `{limit: skip + take}` so Lucene only collects the hits it
+returns. The statement for the example above (paged with `take: 10`):
+
+```cypher
+CALL db.index.fulltext.queryNodes($p1, $p2) YIELD node, score
+WITH node AS n, score WHERE (n.`published` = $p0)
+WITH n, score ORDER BY score DESC LIMIT $p3
+RETURN n{.`title`, `author`: head(COLLECT {
+  MATCH (n)<-[r1:`WROTE`]-(m0:`Author`) RETURN m0{.`name`}
+})} AS row, score ORDER BY score DESC
+```
+
+`search` works in [`$transaction`](#transactions) and with either driver major. Unlike a vector
+index, a full-text index sees the nodes created or changed earlier in the same transaction (unless it
+is `eventuallyConsistent`, in which case it only sees committed writes, a moment after commit). The
+`SearchArgs`, `SearchMode` and `SearchResult` types are exported.
 
 ## Writing
 

@@ -16,6 +16,8 @@ export type NodeDeclaration = {
   readonly kind: "Node";
   readonly name: string;
   readonly fields: readonly NodeField[];
+  /** Model-level `@@…` attributes (absent when the model has none). */
+  readonly attributes?: readonly ModelAttribute[];
 };
 
 export type RelationshipDeclaration = {
@@ -25,6 +27,8 @@ export type RelationshipDeclaration = {
   readonly from: string;
   readonly to: string;
   readonly fields: readonly ScalarNodeField[];
+  /** Model-level `@@…` attributes (absent when the model has none). */
+  readonly attributes?: readonly ModelAttribute[];
 };
 
 export type NodeField = ScalarNodeField | RelationalNodeField;
@@ -80,3 +84,15 @@ export type DecoratorValue =
   | { readonly kind: "number"; readonly value: number }
   | { readonly kind: "boolean"; readonly value: boolean }
   | { readonly kind: "identifier"; readonly value: string };
+
+/**
+ * Parsed model-level attribute such as `@@fulltext([title, body], name: "postSearch")`: a name, an
+ * optional leading list of the model's field names, and named arguments.
+ */
+export type ModelAttribute = {
+  readonly kind: "ModelAttribute";
+  readonly name: string;
+  /** Field names of the leading `[a, b]` list (absent when the attribute has no list). */
+  readonly fields?: readonly string[];
+  readonly args: readonly DecoratorArg[];
+};

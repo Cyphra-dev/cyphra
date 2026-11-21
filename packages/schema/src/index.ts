@@ -8,6 +8,7 @@ export type {
   DecoratorArg,
   DecoratorValue,
   Declaration,
+  ModelAttribute,
   NodeDeclaration,
   NodeField,
   RelationshipDeclaration,
@@ -18,7 +19,7 @@ export type {
   SchemaDocument,
 } from "./ast.js";
 export { SchemaValidationError } from "./errors.js";
-export { printSchemaDocument, formatDecorator } from "./printSchema.js";
+export { printSchemaDocument, formatDecorator, formatModelAttribute } from "./printSchema.js";
 export { MAX_SCHEMA_BYTES, parseSchema } from "./parseSchema.js";
 export { parseSchemaFile } from "./readSchemaFile.js";
 export type { CodegenModel, RenderCyphraGenOptions } from "./renderCyphraGen.js";
@@ -28,12 +29,19 @@ export {
   renderClientSection,
   renderCyphraGenSource,
 } from "./renderCyphraGen.js";
-export { MAX_VECTOR_DIMENSIONS, VECTOR_SIMILARITIES, validateSchema } from "./validate.js";
+export {
+  DEFAULT_FULLTEXT_ANALYZER,
+  FULLTEXT_ANALYZERS,
+  MAX_VECTOR_DIMENSIONS,
+  VECTOR_SIMILARITIES,
+  validateSchema,
+} from "./validate.js";
 export type {
   DefaultFunction,
   DefaultValueSpec,
   RelationDirection,
   ResolvedField,
+  ResolvedFulltextIndex,
   ResolvedNodeModel,
   ResolvedRelationField,
   ResolvedRelationshipModel,

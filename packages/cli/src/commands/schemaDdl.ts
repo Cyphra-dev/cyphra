@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import {
   constraintStatementsFromSchema,
+  fulltextIndexStatementsFromSchema,
   indexStatementsFromSchema,
   vectorIndexStatementsFromSchema,
 } from "@cyphra/migrator";
@@ -8,7 +9,7 @@ import { parseSchema } from "@cyphra/schema";
 import type { CyphraConfig } from "../config.js";
 
 /**
- * Print `CREATE CONSTRAINT` / `CREATE RANGE INDEX` / `CREATE VECTOR INDEX` lines for the schema (same order as `cyphra push`).
+ * Print `CREATE CONSTRAINT` / `CREATE RANGE INDEX` / `CREATE VECTOR INDEX` / `CREATE FULLTEXT INDEX` lines for the schema (same order as `cyphra push`).
  * Does not connect to Neo4j.
  *
  * @param config - Config with absolute schema path.
@@ -23,6 +24,9 @@ export async function runSchemaDdl(config: CyphraConfig): Promise<void> {
     console.log(stmt);
   }
   for (const stmt of vectorIndexStatementsFromSchema(doc)) {
+    console.log(stmt);
+  }
+  for (const stmt of fulltextIndexStatementsFromSchema(doc)) {
     console.log(stmt);
   }
 }
