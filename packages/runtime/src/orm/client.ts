@@ -6,7 +6,10 @@ import { ModelEngine, type Executor, type Runner } from "./engine.js";
 import type { ModelDelegates, TypeMap } from "./types.js";
 import { toNative } from "./values.js";
 
-/** Options for {@link createOrm}: connection options, or an existing {@link CyphraClient}. */
+/**
+ * Options for {@link createOrm}: connection options, an existing `neo4j-driver` 5.28+ / 6.x
+ * `Driver` (`{ driver }`), or an existing {@link CyphraClient}.
+ */
 export type OrmOptions = CyphraClientOptions | { client: CyphraClient; debug?: boolean };
 
 type Raw = {
@@ -39,7 +42,7 @@ export type OrmClient<TM extends TypeMap> = ModelDelegates<TM> &
     readonly $client: CyphraClient;
     /** The resolved schema the client was built from. */
     readonly $schema: SchemaModel;
-    /** Close the driver (only when the client owns it, i.e. it was created from connection options). */
+    /** Close the driver (only when the client owns it, i.e. it was created from connection options, not from `{ driver }` or `{ client }`). */
     $disconnect(): Promise<void>;
   };
 

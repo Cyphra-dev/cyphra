@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { ManagedTransaction, Session } from "neo4j-driver";
 import type { CompiledCypher } from "@cyphra/query";
 import { select } from "@cyphra/query";
-import { CyphraClient } from "./client.js";
+import { CyphraClient, type CyphraClientOptions, type TransactionLike } from "./client.js";
 
 describe("CyphraClient", () => {
   it("is constructible (driver connects lazily on first use)", () => {
@@ -24,6 +24,40 @@ describe("CyphraClient", () => {
     });
     expect(c.rawDriver).toBeDefined();
     return c.close();
+  });
+
+  it("uses a supplied driver, forwards the database, and never closes it", async () => {
+    const calls: string[] = [];
+    const tx: TransactionLike = { run: async () => ({ records: [] }) };
+    const session = {
+      run: async () => ({ records: [] }),
+      executeRead: async <T>(work: (tx: TransactionLike) => Promise<T> | T) => work(tx),
+      executeWrite: async <T>(work: (tx: TransactionLike) => Promise<T> | T) => work(tx),
+      close: async () => {
+        calls.push("session.close");
+      },
+    };
+    const driver = {
+      session: (config?: { database?: string }) => {
+        calls.push(`session(${config?.database})`);
+        return session;
+      },
+      close: async () => {
+        calls.push("driver.close");
+      },
+    };
+    const c = new CyphraClient({ driver, database: "graph" });
+    expect(c.rawDriver).toBe(driver);
+    expect(await c.withReadTransaction(async () => 42)).toBe(42);
+    await c.close();
+    expect(calls).toEqual(["session(graph)", "session.close"]);
+  });
+
+  it("rejects mixing a driver with connection options at the type level", () => {
+    const driver = { session: () => ({}) as never, close: async () => {} };
+    // @ts-expect-error `driver` and `uri` are mutually exclusive
+    const opts: CyphraClientOptions = { driver, uri: "bolt://x", user: "u", password: "p" };
+    expect(opts.driver).toBe(driver);
   });
 
   it("queryRecords maps driver rows to plain objects", async () => {

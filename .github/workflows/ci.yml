@@ -66,7 +66,14 @@ jobs:
           pnpm --filter cyphra-doc seo:audit http://localhost:3100
 
   neo4j-integration:
+    name: neo4j-integration (neo4j-driver ${{ matrix.neo4j-driver }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Supported range: ^5.28.3 || ^6.0.0 (peer dependency of @cyphra/runtime and friends).
+        # "5" uses the lockfile as is; "6" overrides every neo4j-driver in the workspace.
+        neo4j-driver: ["5", "6"]
     services:
       neo4j:
         image: neo4j:5-community
@@ -96,8 +103,24 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
+      # The aliased neo4j-driver-5 / neo4j-driver-6 dev dependencies of @cyphra/runtime are not
+      # affected, so the cross-major (user driver != Cyphra's driver) tests run in both legs.
+      - name: Use neo4j-driver 6
+        if: matrix.neo4j-driver == '6'
+        run: |
+          npm pkg set 'pnpm.overrides.neo4j-driver=^6.3.2'
+          pnpm install --no-frozen-lockfile
+          git checkout -- package.json pnpm-lock.yaml
+
+      - name: Show resolved neo4j-driver
+        run: pnpm --filter @cyphra/runtime exec node -p "'neo4j-driver ' + require('neo4j-driver/package.json').version"
+
       - name: Build packages
         run: pnpm -r --filter './packages/*' run build
+
+      - name: Typecheck against the resolved driver
+        if: matrix.neo4j-driver == '6'
+        run: pnpm -r --filter './packages/*' run typecheck
 
       - name: Neo4j integration tests
         env:
@@ -105,9 +128,17 @@ jobs:
           NEO4J_TEST_USER: neo4j
           NEO4J_TEST_PASSWORD: cyphra_ci_test
         run: |
-          pnpm --filter @cyphra/runtime --fail-if-no-match exec vitest run src/client.integration.test.ts src/orm/orm.integration.test.ts
+          pnpm --filter @cyphra/runtime --fail-if-no-match exec vitest run src/client.integration.test.ts src/orm/orm.integration.test.ts src/driver-compat.integration.test.ts
           pnpm --filter @cyphra/migrator --fail-if-no-match exec vitest run src/push.integration.test.ts src/migrate.integration.test.ts
           # Better Auth conformance suites + adapter, typed-client and migration tests.
           pnpm --filter @cyphra/better-auth --fail-if-no-match exec vitest run test/
-          # @neo4j/graphql v7 compatibility suite: goldens must still match (compat/graphql).
-          pnpm --filter compat-graphql --fail-if-no-match test
+
+      # @neo4j/graphql v7 compatibility suite: goldens must still match (compat/graphql). It does
+      # not exercise Cyphra's driver handling, so it runs once.
+      - name: GraphQL compatibility suite
+        if: matrix.neo4j-driver == '5'
+        env:
+          NEO4J_TEST_URI: bolt://127.0.0.1:7687
+          NEO4J_TEST_USER: neo4j
+          NEO4J_TEST_PASSWORD: cyphra_ci_test
+        run: pnpm --filter compat-graphql --fail-if-no-match test

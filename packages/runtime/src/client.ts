@@ -7,18 +7,66 @@ import neo4j, {
 import { compileCypher, type CompiledCypher, type SelectQuery } from "@cyphra/query";
 import { toPlainRecord, toPlainRecords } from "./records.js";
 
-export type CyphraClientOptions = {
-  /** Bolt / Neo4j URI, e.g. `neo4j+s://xxx.databases.neo4j.io`. */
-  uri: string;
-  user: string;
-  password: string;
+type Params = Record<string, unknown>;
+
+/**
+ * Minimal structural shape of a `neo4j-driver` managed transaction, as Cyphra uses it.
+ * Declared structurally so transactions from either supported driver major (5.x or 6.x) fit.
+ */
+export interface TransactionLike {
+  run(query: string, parameters?: Params): PromiseLike<unknown>;
+}
+
+/** Minimal structural shape of a `neo4j-driver` session, as Cyphra uses it. */
+export interface SessionLike {
+  run(query: string, parameters?: Params): PromiseLike<unknown>;
+  executeRead<T>(work: (tx: TransactionLike) => Promise<T> | T): Promise<T>;
+  executeWrite<T>(work: (tx: TransactionLike) => Promise<T> | T): Promise<T>;
+  close(): Promise<void>;
+}
+
+/**
+ * Minimal structural shape of a `neo4j-driver` `Driver`. Any `Driver` from `neo4j-driver` 5.28+ or
+ * 6.x satisfies it, even when it comes from a different copy of the package than the one Cyphra
+ * resolves (the driver's classes are not structurally assignable across copies, this type is).
+ */
+export interface DriverLike {
+  session(config?: { database?: string }): SessionLike;
+  close(): Promise<void>;
+}
+
+type CommonClientOptions = {
   /** Optional database name (Neo4j 4+). */
   database?: string;
   /** When true, logs compiled Cypher and parameter keys (never values). */
   debug?: boolean;
+};
+
+/** Connect with a URI and credentials: the client creates (and owns) its own driver. */
+export type CyphraConnectionOptions = CommonClientOptions & {
+  /** Bolt / Neo4j URI, e.g. `neo4j+s://xxx.databases.neo4j.io`. */
+  uri: string;
+  user: string;
+  password: string;
   /** Third argument to `neo4j.driver` — pool size, acquisition timeout, logging, etc. */
   driverConfig?: Config;
+  driver?: never;
 };
+
+/**
+ * Reuse a `Driver` your application already created (`neo4j-driver` 5.28+ or 6.x). The client
+ * shares its connection pool and never closes it: {@link CyphraClient.close} is a no-op, close
+ * the driver yourself on shutdown.
+ */
+export type CyphraDriverOptions = CommonClientOptions & {
+  driver: DriverLike;
+  uri?: never;
+  user?: never;
+  password?: never;
+  driverConfig?: never;
+};
+
+export type CyphraClientOptions = CyphraConnectionOptions | CyphraDriverOptions;
 
 /**
  * Thin facade over `neo4j-driver`: sessions, transactions, and the Cyphra `cypher` tag.
@@ -38,19 +86,32 @@ export type CyphraClientOptions = {
  *   await session.close();
  * }
  * await client.close();
+ *
+ * // Or share a driver your app already has (neo4j-driver 5.28+ or 6.x):
+ * const shared = new CyphraClient({ driver: neo4j.driver(uri, neo4j.auth.basic(user, password)) });
  * ```
  */
 export class CyphraClient {
   private readonly driver: Driver;
+  private readonly ownsDriver: boolean;
   private readonly database?: string;
   private readonly debug: boolean;
 
   constructor(opts: CyphraClientOptions) {
-    this.driver = neo4j.driver(
-      opts.uri,
-      neo4j.auth.basic(opts.user, opts.password),
-      opts.driverConfig,
-    );
+    if (opts.driver) {
+      // A driver from another copy (or major) of `neo4j-driver` is not assignable to this copy's
+      // `Driver` class type, but it is the same API at runtime: values are recognised by the
+      // driver's structural markers (`isInt`, `isDateTime`, ...), not by `instanceof`.
+      this.driver = opts.driver as unknown as Driver;
+      this.ownsDriver = false;
+    } else {
+      this.driver = neo4j.driver(
+        opts.uri,
+        neo4j.auth.basic(opts.user, opts.password),
+        opts.driverConfig,
+      );
+      this.ownsDriver = true;
+    }
     this.database = opts.database;
     this.debug = opts.debug ?? false;
   }
@@ -231,9 +292,12 @@ export class CyphraClient {
     }
   }
 
-  /** Close the driver (call on shutdown). */
+  /**
+   * Close the driver (call on shutdown). A driver passed in with `{ driver }` is left open: its
+   * owner closes it.
+   */
   async close(): Promise<void> {
-    await this.driver.close();
+    if (this.ownsDriver) await this.driver.close();
   }
 }
 

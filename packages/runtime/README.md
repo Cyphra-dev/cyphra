@@ -4,6 +4,9 @@
 
 Neo4j driver wrapper for Cyphra: sessions, transactions, and safe execution of compiled Cypher.
 
+Works with `neo4j-driver` **5.28+ and 6.x**, a peer dependency (`npm i @cyphra/runtime neo4j-driver`).
+Pass `{ driver }` instead of a URI to reuse a `Driver` your app already has.
+
 ```ts
 import { CyphraClient } from "@cyphra/runtime";
 import { cypher } from "@cyphra/query";
