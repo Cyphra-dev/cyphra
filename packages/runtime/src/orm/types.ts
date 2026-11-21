@@ -626,6 +626,34 @@ type TraverseOut<
   P,
 > = P extends true ? TraversalResult<TM, M, R, N> : N;
 
+export type ShortestPathArgs<
+  TM extends TypeMap,
+  M extends keyof TM,
+  R extends SelfRelations<TM, M>,
+> = {
+  /** Start node(s): any filter on `M`. */
+  from: WhereInput<TM, M>;
+  /** End node(s): any filter on `M`. A node matching both `from` and `to` gives a zero-hop path. */
+  to: WhereInput<TM, M>;
+  /** Relation(s) of `M` to follow; each must lead back to `M`. Several: any of them on each hop. */
+  via: R | readonly R[];
+  direction?: TraversalDirection;
+  /** Longest path searched, in hops (required, at most the client's `maxTraversalDepth`). */
+  maxDepth: number;
+  /** Filter every intermediate node must match (not the start and end nodes). */
+  where?: WhereInput<TM, M>;
+  /** Filter on the properties of every edge of the path. */
+  edgeWhere?: EdgeWhereFor<TM, M, NoInfer<R>>;
+};
+
+/** A shortest path: its nodes (honouring `select` / `include`) and its typed edges. */
+export type ShortestPathResult<
+  TM extends TypeMap,
+  M extends keyof TM,
+  R extends keyof Relations<TM, M>,
+  N,
+> = Path<N, PathEdge<EdgeProps<Rel<TM, M, R>>>>;
+
 type Sel<TM extends TypeMap, M extends keyof TM> = SelectInput<TM, M> | undefined;
 type Inc<TM extends TypeMap, M extends keyof TM> = IncludeInput<TM, M> | undefined;
 type Out<TM extends TypeMap, M extends keyof TM, S, I> = Payload<TM, M, { select: S; include: I }>;
@@ -690,6 +718,29 @@ export type ModelDelegate<TM extends TypeMap, M extends keyof TM> = {
   >(
     args: TraverseArgs<TM, M, R> & Projection<S, I> & { returnPaths?: P },
   ): Promise<TraverseOut<TM, M, R, Out<TM, M, S, I>, P>[]>;
+  /**
+   * One shortest path from a `from` node to a `to` node along `via`, at most `maxDepth` hops, or
+   * `null` (one statement, `SHORTEST 1`, Neo4j 5.21+). With several start or end nodes, the
+   * shortest path over every pair.
+   */
+  shortestPath<
+    R extends SelfRelations<TM, M>,
+    S extends Sel<TM, M> = undefined,
+    I extends Inc<TM, M> = undefined,
+  >(
+    args: ShortestPathArgs<TM, M, R> & Projection<S, I>,
+  ): Promise<ShortestPathResult<TM, M, R, Out<TM, M, S, I>> | null>;
+  /**
+   * Every shortest path from a `from` node to a `to` node along `via` (all of the same, minimal
+   * length), at most `maxDepth` hops, up to `take` paths (one statement, `ALL SHORTEST`).
+   */
+  allShortestPaths<
+    R extends SelfRelations<TM, M>,
+    S extends Sel<TM, M> = undefined,
+    I extends Inc<TM, M> = undefined,
+  >(
+    args: ShortestPathArgs<TM, M, R> & Projection<S, I> & { take?: number },
+  ): Promise<ShortestPathResult<TM, M, R, Out<TM, M, S, I>>[]>;
   /** Group matching nodes by `by` and aggregate each group, in one statement. */
   groupBy<
     B extends GroupByField<TM, M>,

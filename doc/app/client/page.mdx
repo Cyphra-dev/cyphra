@@ -333,6 +333,81 @@ path.edges[0]; // { type: "FOLLOWS", direction: "out", properties: { since: Date
 - The types are exported for your own code: `Path<Node, Edge>`, `PathEdge<Props>`, and
   `ModelPath<CyphraTypeMap, "User", "following">` for the path of a given model and relation.
 
+## Shortest path
+
+`shortestPath` finds one shortest path between two nodes along a relation: "how is Alice connected to
+Dave?", "the fewest introductions between two people". `allShortestPaths` returns every path of that
+minimal length. Both compile to one Cypher statement with a
+[shortest path selector](https://neo4j.com/docs/cypher-manual/current/patterns/shortest-paths/)
+(`SHORTEST 1` / `ALL SHORTEST`, **Neo4j 5.21+**), with every value sent as a parameter.
+
+```ts
+const path = await db.user.shortestPath({
+  from: { email: "alice@acme.io" },
+  to: { email: "dave@acme.io" },
+  via: "following",
+  maxDepth: 4,
+});
+// ModelPath<CyphraTypeMap, "User", "following"> | null
+path?.nodes.map((u) => u.name); // ["Alice", "Carol", "Dave"]
+path?.edges[0]; // { type: "FOLLOWS", direction: "out", properties: { since: Date } }
+```
+
+The generated Cypher is:
+
+```cypher
+MATCH (s:`User`) WHERE s.`email` = $p0
+MATCH (t:`User`) WHERE t.`email` = $p1
+MATCH p = SHORTEST 1 (s)((:`User`)-[e0:`FOLLOWS`]->(:`User`)){0,4}(t)
+WITH p ORDER BY length(p) LIMIT 1
+RETURN [n1 IN nodes(p) | n1{.`id`, .`email`, .`name`, .`age`}] AS nodes, {…} AS path
+```
+
+| Argument            | Meaning                                                                                                        |
+| ------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `from`, `to`        | Start and end node(s): any `where` filter on the model. Both required.                                         |
+| `via`               | A relation of the model that leads back to the same model, or a list of them, as in [`traverse`](#traversals). |
+| `maxDepth`          | Longest path searched, in hops. Required, and at most the client option `maxTraversalDepth` (default `10`).    |
+| `direction`         | `"out"`, `"in"` or `"both"`, as in `traverse`. Default: each relation's declared `direction`.                  |
+| `where`             | Filter every intermediate node must match (not the start or end node), relation filters included.              |
+| `edgeWhere`         | Filter on the properties of every edge of the path, typed from the `relationship { … }` model.                 |
+| `select`, `include` | Shape the nodes of the path, as in `findMany` (`_count` and nested relations included).                        |
+| `take`              | `allShortestPaths` only: return at most this many paths.                                                       |
+
+- **Result.** A [path](#paths): `nodes` from the start node to the end node (shaped by `select` /
+  `include`, all scalar fields by default) and typed `edges`. `shortestPath` returns `null` when no path
+  of at most `maxDepth` hops exists; `allShortestPaths` returns `[]`.
+- **Several start or end nodes.** `from` and `to` are filters, so each may match several nodes. Cyphra
+  searches every start/end pair and keeps the overall shortest: `shortestPath` returns one path of the
+  minimal length (which one, when several tie, is up to Neo4j), and `allShortestPaths` returns every
+  path of that length, over all pairs. Use a unique field (`{ id }`, `{ email }`) for a single pair.
+- **Same node.** A node that matches both `from` and `to` is joined to itself by a zero-hop path:
+  `{ nodes: [node], edges: [] }`.
+- **Filters apply during the search.** `where` and `edgeWhere` are checked before the shortest path is
+  picked, so when they rule out the shortest path you get the next shortest one, not `null`.
+- **Same rules as `traverse`.** `maxDepth` is capped by `maxTraversalDepth`; `via` takes relations that
+  lead back to the same model; a missing `maxDepth` or `to`, or a bad relation, is a type error and a
+  `CyphraValidationError`. Both methods work in [`$transaction`](#transactions).
+
+Every tied shortest path, through adults only, along follows made since 2024 in either direction:
+
+```ts
+const routes = await db.user.allShortestPaths({
+  from: { id: alice.id },
+  to: { id: dave.id },
+  via: "following",
+  direction: "both",
+  maxDepth: 6,
+  where: { age: { gte: 18 } },
+  edgeWhere: { since: { gte: new Date("2024-01-01") } },
+  select: { name: true },
+  take: 10,
+});
+// { nodes: { name: string | null }[]; edges: PathEdge<{ since: Date }>[] }[]
+```
+
+The result type is exported as `ShortestPathResult<CyphraTypeMap, "User", "following", Node>`.
+
 ## Writing
 
 ```ts

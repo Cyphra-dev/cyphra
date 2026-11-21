@@ -1313,3 +1313,338 @@ describe.skipIf(!hasNeo)("ORM traversals and paths (Neo4j)", () => {
     }
   });
 });
+
+describe.skipIf(!hasNeo)("ORM shortest paths (Neo4j)", () => {
+  let db: Db;
+
+  beforeEach(async () => {
+    db ??= createClient({
+      uri: process.env.NEO4J_TEST_URI!,
+      user: process.env.NEO4J_TEST_USER!,
+      password: process.env.NEO4J_TEST_PASSWORD!,
+    });
+    await db.$cypher`MATCH (n) WHERE n:User OR n:Post DETACH DELETE n`;
+  });
+
+  afterAll(async () => {
+    await db?.$disconnect();
+  });
+
+  const day = (s: string) => new Date(`${s}T00:00:00Z`);
+  const at = (name: string) => ({ email: `${name}@x.io` });
+  const names = (path: { nodes: { name: string | null }[] } | null) =>
+    path?.nodes.map((n) => n.name);
+
+  /**
+   * FOLLOWS edges (with `since`): alice→bob (2024), alice→carol (2022), bob→dave (2024),
+   * carol→dave (2025), dave→erin (2025), erin→alice (2023). Two shortest alice→dave paths (via bob
+   * and via carol); frank has no edges. carol is 15, the others 30.
+   */
+  async function seed() {
+    for (const name of ["alice", "bob", "carol", "dave", "erin", "frank"]) {
+      await db.user.create({ data: { ...at(name), name, age: name === "carol" ? 15 : 30 } });
+    }
+    const follow = async (from: string, to: string, since: string) =>
+      db.user.update({
+        where: at(from),
+        data: { following: { connect: { ...at(to), $edge: { since: day(since) } } } },
+      });
+    await follow("alice", "bob", "2024-01-01");
+    await follow("alice", "carol", "2022-01-01");
+    await follow("bob", "dave", "2024-06-01");
+    await follow("carol", "dave", "2025-01-01");
+    await follow("dave", "erin", "2025-06-01");
+    await follow("erin", "alice", "2023-01-01");
+  }
+
+  it("returns one typed shortest path, or null when there is none", async () => {
+    await seed();
+    const path = await db.user.shortestPath({
+      from: at("alice"),
+      to: at("erin"),
+      via: "following",
+      maxDepth: 5,
+    });
+    expect(path).not.toBeNull();
+    expect(path!.nodes).toHaveLength(4);
+    expect(path!.nodes[0]).toMatchObject({ name: "alice", age: 30, tags: [] });
+    expect(path!.nodes[0]!.createdAt).toBeInstanceOf(Date);
+    expect([
+      ["alice", "bob", "dave", "erin"],
+      ["alice", "carol", "dave", "erin"],
+    ]).toContainEqual(names(path));
+    expect(path!.edges.map((e) => [e.type, e.direction])).toEqual([
+      ["FOLLOWS", "out"],
+      ["FOLLOWS", "out"],
+      ["FOLLOWS", "out"],
+    ]);
+    expect(path!.edges[2]!.properties).toEqual({ since: day("2025-06-01") });
+
+    expect(
+      await db.user.shortestPath({
+        from: at("alice"),
+        to: at("frank"),
+        via: "following",
+        maxDepth: 5,
+      }),
+    ).toBeNull();
+    expect(
+      await db.user.shortestPath({
+        from: at("nobody"),
+        to: at("bob"),
+        via: "following",
+        maxDepth: 5,
+      }),
+    ).toBeNull();
+    expect(
+      await db.user.allShortestPaths({
+        from: at("alice"),
+        to: at("frank"),
+        via: "following",
+        maxDepth: 5,
+      }),
+    ).toEqual([]);
+  });
+
+  it("joins a node to itself with a zero-hop path", async () => {
+    await seed();
+    const self = await db.user.shortestPath({
+      from: at("bob"),
+      to: at("bob"),
+      via: "following",
+      maxDepth: 3,
+    });
+    expect(names(self)).toEqual(["bob"]);
+    expect(self!.edges).toEqual([]);
+    const all = await db.user.allShortestPaths({
+      from: at("bob"),
+      to: at("bob"),
+      via: "following",
+      maxDepth: 3,
+    });
+    expect(all.map(names)).toEqual([["bob"]]);
+  });
+
+  it("returns every tied shortest path, capped by take", async () => {
+    await seed();
+    const all = await db.user.allShortestPaths({
+      from: at("alice"),
+      to: at("dave"),
+      via: "following",
+      maxDepth: 4,
+    });
+    expect(all.map(names).sort()).toEqual([
+      ["alice", "bob", "dave"],
+      ["alice", "carol", "dave"],
+    ]);
+    const one = await db.user.allShortestPaths({
+      from: at("alice"),
+      to: at("dave"),
+      via: "following",
+      maxDepth: 4,
+      take: 1,
+    });
+    expect(one).toHaveLength(1);
+
+    // Several end nodes: only the paths of the overall minimum length are kept.
+    const nearest = await db.user.allShortestPaths({
+      from: at("alice"),
+      to: { email: { in: ["dave@x.io", "erin@x.io"] } },
+      via: "following",
+      maxDepth: 4,
+    });
+    expect(nearest.map((p) => p.nodes.at(-1)!.name)).toEqual(["dave", "dave"]);
+    const first = await db.user.shortestPath({
+      from: at("alice"),
+      to: { email: { in: ["dave@x.io", "erin@x.io"] } },
+      via: "following",
+      maxDepth: 4,
+    });
+    expect(first!.nodes.at(-1)!.name).toBe("dave");
+  });
+
+  it("follows declared, reversed and undirected directions", async () => {
+    await seed();
+    const back = await db.user.shortestPath({
+      from: at("alice"),
+      to: at("erin"),
+      via: "followers",
+      maxDepth: 5,
+    });
+    expect(names(back)).toEqual(["alice", "erin"]);
+    expect(back!.edges).toEqual([
+      { type: "FOLLOWS", direction: "in", properties: { since: day("2023-01-01") } },
+    ]);
+    const reversed = await db.user.shortestPath({
+      from: at("alice"),
+      to: at("erin"),
+      via: "following",
+      direction: "in",
+      maxDepth: 5,
+    });
+    expect(names(reversed)).toEqual(["alice", "erin"]);
+    const both = await db.user.shortestPath({
+      from: at("dave"),
+      to: at("alice"),
+      via: "following",
+      direction: "both",
+      maxDepth: 5,
+    });
+    expect(both!.edges).toHaveLength(2);
+    // dave→erin→alice, or against the arrows through bob or carol: three tied paths.
+    expect([
+      ["out", "out"],
+      ["in", "in"],
+    ]).toContainEqual(both!.edges.map((e) => e.direction));
+    const ties = await db.user.allShortestPaths({
+      from: at("dave"),
+      to: at("alice"),
+      via: "following",
+      direction: "both",
+      maxDepth: 5,
+    });
+    expect(ties.map((p) => p.nodes[1]!.name).sort()).toEqual(["bob", "carol", "erin"]);
+  });
+
+  it("filters edges and intermediate nodes during the search", async () => {
+    await seed();
+    // Only edges since 2024: alice→carol (2022) is skipped, so the path goes through bob.
+    const recent = await db.user.allShortestPaths({
+      from: at("alice"),
+      to: at("dave"),
+      via: "following",
+      maxDepth: 4,
+      edgeWhere: { since: { gte: day("2024-01-01") } },
+    });
+    expect(recent.map(names)).toEqual([["alice", "bob", "dave"]]);
+
+    // Adults only on the way: carol (15) cannot be an intermediate node.
+    const adults = await db.user.allShortestPaths({
+      from: at("alice"),
+      to: at("dave"),
+      via: "following",
+      maxDepth: 4,
+      where: { age: { gte: 18 } },
+    });
+    expect(adults.map(names)).toEqual([["alice", "bob", "dave"]]);
+
+    // where does not apply to the end node.
+    const toCarol = await db.user.shortestPath({
+      from: at("alice"),
+      to: at("carol"),
+      via: "following",
+      maxDepth: 4,
+      where: { age: { gte: 18 } },
+    });
+    expect(names(toCarol)).toEqual(["alice", "carol"]);
+
+    // Filters apply before the shortest path is picked: when they rule out the shortest path,
+    // the next shortest one is returned (not null).
+    await db.user.update({
+      where: at("carol"),
+      data: { following: { connect: { ...at("erin"), $edge: { since: day("2025-02-01") } } } },
+    });
+    const base = { from: at("alice"), to: at("erin"), via: "following" as const, maxDepth: 5 };
+    expect(names(await db.user.shortestPath(base))).toEqual(["alice", "carol", "erin"]);
+    expect(names(await db.user.shortestPath({ ...base, where: { age: { gte: 18 } } }))).toEqual([
+      "alice",
+      "bob",
+      "dave",
+      "erin",
+    ]);
+    expect(
+      names(
+        await db.user.shortestPath({ ...base, edgeWhere: { since: { gte: day("2024-01-01") } } }),
+      ),
+    ).toEqual(["alice", "bob", "dave", "erin"]);
+    const viaRelation = await db.user.shortestPath({
+      from: at("alice"),
+      to: at("dave"),
+      via: "following",
+      maxDepth: 4,
+      where: { following: { some: { name: "dave" } }, NOT: { name: "bob" } },
+    });
+    expect(names(viaRelation)).toEqual(["alice", "carol", "dave"]);
+  });
+
+  it("projects path nodes with select / include", async () => {
+    await seed();
+    const path = await db.user.shortestPath({
+      from: at("alice"),
+      to: at("erin"),
+      via: "following",
+      maxDepth: 5,
+      edgeWhere: { since: { gte: day("2024-01-01") } },
+      select: { email: true, _count: { select: { followers: true } } },
+    });
+    expect(path!.nodes).toEqual([
+      { email: "alice@x.io", _count: { followers: 1 } },
+      { email: "bob@x.io", _count: { followers: 1 } },
+      { email: "dave@x.io", _count: { followers: 2 } },
+      { email: "erin@x.io", _count: { followers: 1 } },
+    ]);
+    const included = await db.user.shortestPath({
+      from: at("dave"),
+      to: at("erin"),
+      via: "following",
+      maxDepth: 1,
+      include: { following: { select: { email: true } } },
+    });
+    expect(included!.nodes.map((n) => n.following.map((f) => f.email))).toEqual([
+      ["erin@x.io"],
+      ["alice@x.io"],
+    ]);
+  });
+
+  it("respects maxDepth and the client's maxTraversalDepth", async () => {
+    await seed();
+    const base = { from: at("alice"), to: at("erin"), via: "following" as const };
+    expect(await db.user.shortestPath({ ...base, maxDepth: 2 })).toBeNull();
+    expect(names(await db.user.shortestPath({ ...base, maxDepth: 3 }))).toHaveLength(4);
+
+    const loose = db as unknown as { user: { shortestPath(args: unknown): Promise<unknown> } };
+    await expect(loose.user.shortestPath({ ...base })).rejects.toBeInstanceOf(
+      CyphraValidationError,
+    );
+    await expect(loose.user.shortestPath({ ...base, maxDepth: 11 })).rejects.toBeInstanceOf(
+      CyphraValidationError,
+    );
+    await expect(
+      loose.user.shortestPath({ ...base, via: "posts", maxDepth: 2 }),
+    ).rejects.toBeInstanceOf(CyphraValidationError);
+
+    const capped = createClient({
+      uri: process.env.NEO4J_TEST_URI!,
+      user: process.env.NEO4J_TEST_USER!,
+      password: process.env.NEO4J_TEST_PASSWORD!,
+      maxTraversalDepth: 2,
+    });
+    try {
+      await expect(capped.user.allShortestPaths({ ...base, maxDepth: 3 })).rejects.toThrow(
+        /maxTraversalDepth/,
+      );
+      expect(await capped.user.allShortestPaths({ ...base, maxDepth: 2 })).toEqual([]);
+    } finally {
+      await capped.$disconnect();
+    }
+  });
+
+  it("runs inside $transaction and sees its own writes", async () => {
+    await seed();
+    const path = await db.$transaction(async (tx) => {
+      await tx.user.update({
+        where: at("alice"),
+        data: { following: { connect: at("erin") } },
+      });
+      return tx.user.shortestPath({
+        from: at("alice"),
+        to: at("erin"),
+        via: "following",
+        maxDepth: 3,
+        select: { name: true },
+      });
+    });
+    expect(path!.nodes).toEqual([{ name: "alice" }, { name: "erin" }]);
+    expect(path!.edges[0]!.properties.since).toBeInstanceOf(Date); // @default(now())
+  });
+});
