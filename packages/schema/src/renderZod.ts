@@ -437,6 +437,7 @@ function renderModel(
   name: string,
   fields: readonly ResolvedScalarField[],
   what: string,
+  abstract = false,
 ): string[] {
   const base = `${name}Fields`;
   const lines: string[] = [];
@@ -453,13 +454,16 @@ function renderModel(
       "output",
       `${what}, as the client returns them.`,
     ),
-    ...renderObject(
-      `${name}CreateInputSchema`,
-      fields,
-      base,
-      "create",
-      `${what} accepted by a create (fields with a default, optional fields and lists may be left out).`,
-    ),
+    // An interface cannot be created (only its implementations can), so it has no create schema.
+    ...(abstract
+      ? []
+      : renderObject(
+          `${name}CreateInputSchema`,
+          fields,
+          base,
+          "create",
+          `${what} accepted by a create (fields with a default, optional fields and lists may be left out).`,
+        )),
     ...renderObject(
       `${name}UpdateInputSchema`,
       fields,
@@ -489,7 +493,15 @@ export function renderZodFromModel(model: SchemaModel, options: RenderZodOptions
   }
   for (const n of model.nodes) {
     const scalars = n.fields.filter((f): f is ResolvedScalarField => f.kind === "scalar");
-    body.push(...renderModel(w, n.name, scalars, `\`${n.name}\` node properties`));
+    body.push(
+      ...renderModel(
+        w,
+        n.name,
+        scalars,
+        n.abstract ? `\`${n.name}\` interface properties` : `\`${n.name}\` node properties`,
+        n.abstract === true,
+      ),
+    );
   }
   for (const r of model.relationships) {
     body.push(
