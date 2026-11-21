@@ -212,6 +212,7 @@ The left column uses the names from the Prisma ORM 7
 | `create` with nested `create` / `connect`    | same, plus `$edge` to set relationship properties                 |
 | `upsert`                                     | same; one atomic `MERGE` on the `@id` / `@unique` key             |
 | `lt`, `gt`, `contains`, `in`, … filters      | same names; `lt` / `gt` also on strings                           |
+| `aggregate`, `groupBy` with `having`         | same shapes ([Aggregations](/client#aggregations))                |
 | `$transaction(async (tx) => …)`              | `db.$transaction(async (tx) => …)`                                |
 | `$queryRaw` tagged template                  | `` db.$cypher`…` `` (parameterized Cypher)                        |
 | `$disconnect()`                              | `db.$disconnect()`                                                |
@@ -219,8 +220,7 @@ The left column uses the names from the Prisma ORM 7
 Some things do not map, and it is better to know before you start:
 
 - **No array form of `$transaction`.** Cyphra has the interactive form only.
-- **No `aggregate`, `groupBy` or cursor pagination** on the client yet. `count` is there;
-  aggregations are one `$cypher` query away.
+- **No cursor pagination** on the client yet: use `skip` / `take`, or a `where` on the last key.
 - **No down migrations.** Migrations are forward-only.
 - **No client extensions or middleware.**
 - **Relations are relationships, not foreign keys.** There is no `userId` field to keep in sync:
