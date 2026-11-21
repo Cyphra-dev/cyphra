@@ -41,15 +41,36 @@ export function createExecutors(opts: ExecutorOptions): Executors {
   const rows = async (tx: Tx, cypher: string, params: Record<string, unknown>) =>
     (await tx.run(cypher, params)).records.map((r) => r.get("this") as unknown);
   if (opts.client) {
+    // Through the client's instrumentation: `query` / `error` events, OpenTelemetry spans and
+    // missing-index warnings configured on the CyphraClient apply to GraphQL statements too.
     const client = opts.client;
+    const clientRows = async (
+      tx: Tx,
+      cypher: string,
+      params: Record<string, unknown>,
+      op: string,
+    ) =>
+      (
+        (await client.runCompiledTx(
+          tx,
+          { text: cypher, params },
+          { operation: op, transaction: false },
+        )) as unknown as { records: { get(key: string): unknown }[] }
+      ).records.map((r) => r.get("this"));
     return {
       read: async (cypher, params) => {
         log(cypher, params);
-        return client.withReadTransaction((tx) => rows(tx, cypher, params));
+        return client.instrumentation.operation({ operation: "graphql.read" }, () =>
+          client.withReadTransaction((tx) => clientRows(tx, cypher, params, "graphql.read")),
+        );
       },
       write: async (cypher, params, consume) => {
         log(cypher, params);
-        return client.withWriteTransaction(async (tx) => consume(await rows(tx, cypher, params)));
+        return client.instrumentation.operation({ operation: "graphql.write" }, () =>
+          client.withWriteTransaction(async (tx) =>
+            consume(await clientRows(tx, cypher, params, "graphql.write")),
+          ),
+        );
       },
     };
   }

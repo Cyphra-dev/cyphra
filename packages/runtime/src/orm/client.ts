@@ -1,7 +1,13 @@
-import type { ManagedTransaction } from "neo4j-driver";
-import type { SchemaModel } from "@cyphra/schema";
+import type { ResolvedNodeModel, SchemaModel } from "@cyphra/schema";
 import { compileCypher } from "@cyphra/query";
-import { CyphraClient, type CyphraClientOptions } from "../client.js";
+import { CyphraClient, type CyphraClientOptions, type TransactionLike } from "../client.js";
+import {
+  Instrumentation,
+  type CyphraEvent,
+  type FieldResolver,
+  type LogLevel,
+  type QueryMeta,
+} from "../observability.js";
 import { ModelEngine, type EngineOptions, type Executor, type Runner } from "./engine.js";
 import { CyphraValidationError } from "./errors.js";
 import type { ModelDelegates, TypeMap } from "./types.js";
@@ -11,7 +17,14 @@ import { toNative } from "./values.js";
  * Options for {@link createOrm}: connection options, an existing `neo4j-driver` 5.28+ / 6.x
  * `Driver` (`{ driver }`), or an existing {@link CyphraClient}.
  */
-export type OrmOptions = (CyphraClientOptions | { client: CyphraClient; debug?: boolean }) & {
+export type OrmOptions = (
+  | CyphraClientOptions
+  | {
+      client: CyphraClient;
+      /** @deprecated Set `log: ["query"]` on the `CyphraClient` instead. */
+      debug?: boolean;
+    }
+) & {
   /**
    * Largest `depth.max` a `traverse` may ask for (default 10). Each extra hop can multiply the
    * number of paths Neo4j explores, so keep it as low as your queries allow.
@@ -45,6 +58,19 @@ export type OrmClient<TM extends TypeMap> = ModelDelegates<TM> &
      * The driver may retry `fn` on transient errors, so keep it free of outside side effects.
      */
     $transaction<T>(fn: (tx: OrmTransactionClient<TM>) => Promise<T>): Promise<T>;
+    /**
+     * Listen to `"query"`, `"warn"` or `"error"` events (same as `$client.on`). Returns a
+     * function that removes the listener.
+     *
+     * @example
+     * ```ts
+     * db.$on("query", (e) => console.log(e.model, e.operation, e.durationMs));
+     * ```
+     */
+    $on<L extends LogLevel>(
+      level: L,
+      listener: (event: Extract<CyphraEvent, { type: L }>) => void,
+    ): () => void;
     /** Underlying low-level client (sessions, driver). */
     readonly $client: CyphraClient;
     /** The resolved schema the client was built from. */
@@ -57,34 +83,98 @@ function delegateKey(name: string): string {
   return name.charAt(0).toLowerCase() + name.slice(1);
 }
 
-function txExecutor(tx: ManagedTransaction, debug: boolean): Executor {
+type RowsResult = { records: { toObject(): Record<string, unknown> }[] };
+
+function txExecutor(instr: Instrumentation, tx: TransactionLike, meta: QueryMeta): Executor {
   return async (text, params) => {
-    if (debug) console.debug("[cyphra] cypher:", text, "param keys:", Object.keys(params));
-    const res = await tx.run(text, params);
+    const res = (await instr.run(text, params, meta, () => tx.run(text, params))) as RowsResult;
     return res.records.map((r) => r.toObject());
   };
 }
 
-function buildDelegates(
+/** Runner whose statements carry `meta` (model, operation) in events and spans. */
+type RunnerFor = (meta: QueryMeta) => Runner;
+
+/**
+ * One model delegate. Each call gets an engine bound to its operation name, wrapped in an
+ * operation span: statements it runs report `model` / `operation`.
+ */
+function delegate(
+  instr: Instrumentation,
   schema: SchemaModel,
-  runner: Runner,
+  node: ResolvedNodeModel,
+  runnerFor: RunnerFor,
+  options: EngineOptions,
+): ModelEngine {
+  const base = new ModelEngine(schema, node, runnerFor({}), options);
+  const cache = new Map<string, (...args: unknown[]) => unknown>();
+  return new Proxy(base, {
+    get(target, prop, receiver) {
+      const value = Reflect.get(target, prop, receiver) as unknown;
+      if (typeof prop !== "string" || typeof value !== "function" || prop === "constructor")
+        return value;
+      let wrapped = cache.get(prop);
+      if (!wrapped) {
+        const meta: QueryMeta = { model: node.name, operation: prop };
+        wrapped = (...args: unknown[]) =>
+          instr.operation(meta, async () => {
+            const engine = new ModelEngine(schema, node, runnerFor(meta), options);
+            return (engine as unknown as Record<string, (...a: unknown[]) => unknown>)[prop]!(
+              ...args,
+            );
+          });
+        cache.set(prop, wrapped);
+      }
+      return wrapped;
+    },
+  });
+}
+
+function fieldResolver(schema: SchemaModel): FieldResolver {
+  const byLabel = new Map(schema.nodes.map((n) => [n.label, n]));
+  return (label, property) => {
+    const node = byLabel.get(label);
+    if (!node) return undefined;
+    const f = node.fields.find((x) => x.kind === "scalar" && x.name === property);
+    const declared =
+      f?.kind !== "scalar"
+        ? undefined
+        : f.id
+          ? "@id"
+          : f.unique
+            ? "@unique"
+            : f.index
+              ? "@index"
+              : undefined;
+    return { model: node.name, declared };
+  };
+}
+
+function buildDelegates(
+  instr: Instrumentation,
+  schema: SchemaModel,
+  runnerFor: RunnerFor,
   options: EngineOptions,
 ): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const node of schema.nodes) {
     const key = delegateKey(node.name);
     if (key.startsWith("$")) throw new Error(`Model name "${node.name}" is reserved.`);
-    out[key] = new ModelEngine(schema, node, runner, options);
+    out[key] = delegate(instr, schema, node, runnerFor, options);
   }
   return out;
 }
 
-function rawFor(runner: Runner) {
-  return async (strings: TemplateStringsArray, ...values: unknown[]) => {
-    const { text, params } = compileCypher(strings, values);
-    const rows = await runner.write((exec) => exec(text, params as Record<string, unknown>));
-    return rows.map((r) => toNative(r));
-  };
+function rawFor(instr: Instrumentation, runnerFor: RunnerFor) {
+  const meta: QueryMeta = { operation: "$cypher" };
+  return (strings: TemplateStringsArray, ...values: unknown[]) =>
+    instr.operation(meta, async () => {
+      const { text, params } = compileCypher(strings, values);
+      const rows = await runnerFor(meta).write((exec) =>
+        exec(text, params as Record<string, unknown>),
+      );
+      return rows.map((r) => toNative(r));
+    });
 }
 
 /**
@@ -113,25 +203,44 @@ export function createOrm<TM extends TypeMap>(
   const engineOptions: EngineOptions = { maxTraversalDepth };
   const owns = !("client" in options);
   const client = "client" in options ? options.client : new CyphraClient(options);
-  const debug = options.debug ?? false;
+  // A client from another copy (or an older version) of @cyphra/runtime, or a test stub, may have
+  // no instrumentation: fall back to an inert one.
+  const instr: Instrumentation =
+    (client as { instrumentation?: Instrumentation }).instrumentation ??
+    new Instrumentation({ openSession: () => client.rawDriver.session() });
+  instr.addFieldResolver(fieldResolver(schema));
+  if ("client" in options && options.debug) {
+    instr.on("query", (e) => console.debug(`[cyphra] cypher: ${e.text}`, e.params));
+  }
 
-  const runner: Runner = {
-    read: (fn) => client.withReadTransaction((tx) => fn(txExecutor(tx, debug))),
-    write: (fn) => client.withWriteTransaction((tx) => fn(txExecutor(tx, debug))),
+  const runnerFor: RunnerFor = (meta) => {
+    const m = { ...meta, transaction: false };
+    return {
+      read: (fn) => client.withReadTransaction((tx) => fn(txExecutor(instr, tx, m))),
+      write: (fn) => client.withWriteTransaction((tx) => fn(txExecutor(instr, tx, m))),
+    };
   };
 
   const transaction = <T>(fn: (tx: OrmTransactionClient<TM>) => Promise<T>): Promise<T> =>
-    client.withWriteTransaction((tx) => {
-      const exec = txExecutor(tx, debug);
-      const inTx: Runner = { read: (f) => f(exec), write: (f) => f(exec) };
-      const txClient = { ...buildDelegates(schema, inTx, engineOptions), $cypher: rawFor(inTx) };
-      return fn(txClient as OrmTransactionClient<TM>);
-    });
+    instr.operation({ operation: "$transaction" }, () =>
+      client.withWriteTransaction((tx) => {
+        const inTx: RunnerFor = (meta) => {
+          const exec = txExecutor(instr, tx, { ...meta, transaction: true });
+          return { read: (f) => f(exec), write: (f) => f(exec) };
+        };
+        const txClient = {
+          ...buildDelegates(instr, schema, inTx, engineOptions),
+          $cypher: rawFor(instr, inTx),
+        };
+        return fn(txClient as OrmTransactionClient<TM>);
+      }),
+    );
 
   return {
-    ...buildDelegates(schema, runner, engineOptions),
-    $cypher: rawFor(runner),
+    ...buildDelegates(instr, schema, runnerFor, engineOptions),
+    $cypher: rawFor(instr, runnerFor),
     $transaction: transaction,
+    $on: (level: LogLevel, listener: (event: CyphraEvent) => void) => instr.on(level, listener),
     $client: client,
     $schema: schema,
     $disconnect: async () => {
