@@ -1,5 +1,5 @@
 ---
-description: "The Cyphra typed client for Neo4j: findMany, select and include, nested writes, aggregate and groupBy, transactions and raw Cypher, typed from your schema."
+description: "The Cyphra typed client for Neo4j: findMany, select, include, relation counts, nested writes, aggregate, groupBy, transactions and raw Cypher, schema-typed."
 ---
 
 # Typed client
@@ -93,6 +93,43 @@ stay case-sensitive. A property index is not used for these comparisons.
 
 ```ts
 await db.user.findFirst({ where: { email: { equals: "Alice@Acme.io", mode: "insensitive" } } });
+```
+
+## Counting related nodes
+
+`_count` in `include` or `select` adds the number of related nodes per **to-many** relation. Each count
+compiles to a `COUNT {}` subquery in the same statement, so no related nodes are loaded.
+
+```ts
+const users = await db.user.findMany({
+  include: {
+    _count: {
+      select: {
+        posts: { where: { published: true } }, // only count published posts
+        followers: true,
+      },
+    },
+  },
+});
+// (User & { _count: { posts: number; followers: number } })[]
+```
+
+- `_count: true` counts every to-many relation of the model.
+- Each relation in `_count.select` takes `true` or `{ where }`; the `where` is a normal filter on the
+  related node, relation filters included (`{ where: { author: { is: { name: "Alice" } } } }`).
+- `_count` also works inside an included or selected relation, at any depth
+  (`include: { author: { select: { name: true, _count: { select: { posts: true } } } } }`), and in the
+  results of `create`, `update`, `upsert` and `delete`.
+- As in Prisma, to-one relations cannot be counted; check them with an `is` / `isNot` filter instead.
+
+To **sort by a relation count**, use `orderBy: { posts: { _count: "desc" } }`. It works at the top level
+and inside an included relation, and combines with other sort keys:
+
+```ts
+const mostFollowed = await db.user.findMany({
+  orderBy: [{ followers: { _count: "desc" } }, { email: "asc" }],
+  take: 10,
+});
 ```
 
 ## Aggregations

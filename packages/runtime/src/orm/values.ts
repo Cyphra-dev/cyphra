@@ -14,6 +14,11 @@ export function integerToNumber(v: Integer): number {
   return v.toNumber();
 }
 
+/** A Cypher `count()` / `COUNT {}` result as a JS number (`0` when absent). */
+export function decodeCount(v: unknown): number {
+  return isInt(v) ? integerToNumber(v) : Number(v ?? 0);
+}
+
 /**
  * A driver `DateTime` for the instant `d`, always at UTC offset 0.
  *

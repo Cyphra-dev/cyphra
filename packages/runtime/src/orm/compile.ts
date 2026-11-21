@@ -18,7 +18,7 @@ import type {
 } from "@cyphra/schema";
 import neo4j from "neo4j-driver";
 import { CyphraValidationError } from "./errors.js";
-import { decodeScalar, encodeFilterValue } from "./values.js";
+import { decodeCount, decodeScalar, encodeFilterValue } from "./values.js";
 import type { QueryMode } from "./types.js";
 
 /** Quote an identifier for Cypher (labels, property keys, relationship types). */
@@ -338,8 +338,41 @@ export function compileWhere(
   return and(parts);
 }
 
-/** Compile `orderBy` into `a.x ASC, a.y DESC` (or `null`). */
+/**
+ * `COUNT { MATCH (alias)-[:T]->(m:Target) WHERE … }`: the number of nodes related to `alias`
+ * through the to-many relation `rel`, optionally filtered by a `where` on the related node.
+ */
+export function compileRelationCount(
+  ctx: QueryContext,
+  model: ResolvedNodeModel,
+  alias: string,
+  rel: ResolvedRelationField,
+  where?: unknown,
+): string {
+  if (!rel.many) {
+    throw new CyphraValidationError(
+      `${model.name}.${rel.name} is a to-one relation; only to-many relations can be counted.`,
+    );
+  }
+  const m = ctx.variable();
+  const pattern = relationPattern(ctx, alias, rel, m);
+  const inner = compileWhere(ctx, ctx.node(rel.target), m, where);
+  return inner ? `COUNT { MATCH ${pattern} WHERE ${inner} }` : `COUNT { MATCH ${pattern} }`;
+}
+
+function sortDirection(dir: unknown, what: string): string {
+  if (dir !== "asc" && dir !== "desc") {
+    throw new CyphraValidationError(`orderBy ${what} must be "asc" or "desc".`);
+  }
+  return dir.toUpperCase();
+}
+
+/**
+ * Compile `orderBy` into `a.x ASC, a.y DESC` (or `null`). A to-many relation sorts by its number
+ * of related nodes: `{ posts: { _count: "desc" } }`.
+ */
 export function compileOrderBy(
+  ctx: QueryContext,
   model: ResolvedNodeModel,
   alias: string,
   orderBy: unknown,
@@ -351,11 +384,20 @@ export function compileOrderBy(
     if (!isPlainObject(item)) throw new CyphraValidationError("orderBy entries must be objects.");
     for (const [key, dir] of Object.entries(item)) {
       if (dir === undefined) continue;
-      scalarOrThrow(model, key);
-      if (dir !== "asc" && dir !== "desc") {
-        throw new CyphraValidationError(`orderBy ${model.name}.${key} must be "asc" or "desc".`);
+      const rel = relationField(model, key);
+      if (rel) {
+        if (!isPlainObject(dir) || Object.keys(dir).some((k) => k !== "_count")) {
+          throw new CyphraValidationError(
+            `orderBy ${model.name}.${key} takes { _count: "asc" | "desc" }.`,
+          );
+        }
+        if (dir._count === undefined) continue;
+        const d = sortDirection(dir._count, `${model.name}.${key}._count`);
+        parts.push(`${compileRelationCount(ctx, model, alias, rel)} ${d}`);
+        continue;
       }
-      parts.push(`${alias}.${q(key)} ${dir.toUpperCase()}`);
+      scalarOrThrow(model, key);
+      parts.push(`${alias}.${q(key)} ${sortDirection(dir, `${model.name}.${key}`)}`);
     }
   }
   return parts.length ? parts.join(", ") : null;
@@ -376,7 +418,7 @@ export function compilePaging(
   args: { orderBy?: unknown; skip?: unknown; take?: unknown },
 ): string {
   let s = "";
-  const order = compileOrderBy(model, alias, args.orderBy);
+  const order = compileOrderBy(ctx, model, alias, args.orderBy);
   if (order) s += ` ORDER BY ${order}`;
   if (args.skip !== undefined)
     s += ` SKIP ${ctx.param(intParam(nonNegativeInt(args.skip, "skip")))}`;
@@ -403,6 +445,8 @@ export type Shape = {
     readonly shape: Shape;
     readonly edge?: readonly ResolvedScalarField[];
   }[];
+  /** Relations counted under `_count` (absent: no `_count` key in the result). */
+  readonly counts?: readonly ResolvedRelationField[];
 };
 
 type LoadArgs = {
@@ -431,10 +475,15 @@ export function compileProjection(
   const scalars: ResolvedScalarField[] = [];
   const rels: { field: ResolvedRelationField; args: LoadArgs }[] = [];
   const allScalars = model.fields.filter((f): f is ResolvedScalarField => f.kind === "scalar");
+  let counts: { field: ResolvedRelationField; where: unknown }[] | undefined;
 
   const takeRelations = (spec: AnyRecord, label: string) => {
     for (const [key, v] of Object.entries(spec)) {
       if (v === undefined || v === false) continue;
+      if (key === "_count") {
+        counts = relationCounts(model, v, label);
+        continue;
+      }
       const f = model.fields.find((x) => x.name === key);
       if (!f) throw new CyphraValidationError(`Unknown field "${model.name}.${key}" in ${label}.`);
       if (f.kind === "scalar") {
@@ -491,11 +540,71 @@ export function compileProjection(
       ...(edgeModel ? { edge: edgeModel.properties } : {}),
     });
   }
+  if (counts) {
+    const map = counts.map(
+      ({ field, where }) =>
+        `${q(field.name)}: ${compileRelationCount(ctx, model, alias, field, where)}`,
+    );
+    entries.push(`${q("_count")}: {${map.join(", ")}}`);
+  }
   entries.push(...extraEntries);
   return {
     expr: `${alias}{${entries.join(", ")}}`,
-    shape: { model, scalars, relations: relShapes },
+    shape: {
+      model,
+      scalars,
+      relations: relShapes,
+      ...(counts ? { counts: counts.map((c) => c.field) } : {}),
+    },
   };
+}
+
+/**
+ * Parse `_count` in `select` / `include`: `true` counts every to-many relation;
+ * `{ select: { posts: true, comments: { where } } }` counts the listed ones.
+ */
+function relationCounts(
+  model: ResolvedNodeModel,
+  spec: unknown,
+  label: string,
+): { field: ResolvedRelationField; where: unknown }[] {
+  if (spec === true) {
+    return model.fields
+      .filter((f): f is ResolvedRelationField => f.kind === "relation" && f.many)
+      .map((field) => ({ field, where: undefined }));
+  }
+  if (!isPlainObject(spec) || Object.keys(spec).some((k) => k !== "select")) {
+    throw new CyphraValidationError(
+      `${label}._count on ${model.name} takes true or { select: { <relation>: true | { where } } }.`,
+    );
+  }
+  if (!isPlainObject(spec.select)) {
+    throw new CyphraValidationError(`${label}._count.select on ${model.name} must be an object.`);
+  }
+  const out: { field: ResolvedRelationField; where: unknown }[] = [];
+  for (const [key, v] of Object.entries(spec.select)) {
+    if (v === undefined || v === false) continue;
+    const field = relationField(model, key);
+    if (!field) {
+      throw new CyphraValidationError(
+        `Unknown relation "${model.name}.${key}" in ${label}._count.select.`,
+      );
+    }
+    if (!field.many) {
+      throw new CyphraValidationError(
+        `${model.name}.${key} is a to-one relation; only to-many relations can be counted.`,
+      );
+    }
+    if (v === true) out.push({ field, where: undefined });
+    else if (isPlainObject(v) && Object.keys(v).every((k) => k === "where")) {
+      out.push({ field, where: v.where });
+    } else {
+      throw new CyphraValidationError(
+        `${label}._count.select.${key} on ${model.name} takes true or { where }.`,
+      );
+    }
+  }
+  return out;
 }
 
 /** Decode a projected map according to its {@link Shape}. */
@@ -519,6 +628,12 @@ export function decodeRow(shape: Shape, row: unknown): AnyRecord | null {
     out[r.field.name] = r.field.many
       ? ((v as unknown[] | null) ?? []).map(decodeItem)
       : decodeItem(v);
+  }
+  if (shape.counts) {
+    const raw = (src["_count"] ?? {}) as AnyRecord;
+    const counts: AnyRecord = {};
+    for (const f of shape.counts) counts[f.name] = decodeCount(raw[f.name]);
+    out._count = counts;
   }
   return out;
 }

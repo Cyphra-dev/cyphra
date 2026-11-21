@@ -213,6 +213,7 @@ The left column uses the names from the Prisma ORM 7
 | `upsert`                                     | same; one atomic `MERGE` on the `@id` / `@unique` key             |
 | `lt`, `gt`, `contains`, `in`, … filters      | same names; `lt` / `gt` also on strings                           |
 | `aggregate`, `groupBy` with `having`         | same shapes ([Aggregations](/client#aggregations))                |
+| `_count` in `select` / `include`, `orderBy`  | same shapes ([Counting](/client#counting-related-nodes))          |
 | `$transaction(async (tx) => …)`              | `db.$transaction(async (tx) => …)`                                |
 | `$queryRaw` tagged template                  | `` db.$cypher`…` `` (parameterized Cypher)                        |
 | `$disconnect()`                              | `db.$disconnect()`                                                |

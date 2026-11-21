@@ -175,4 +175,62 @@ describe("ORM types", () => {
     await db.post.groupBy({ by: ["published"], having: { title: { _sum: { gt: 1 } } } });
     await db.post.groupBy({ by: ["published"], having: { title: { _count: { gt: 1 } } } });
   });
+  it("types relation counts in select / include, at any depth", async () => {
+    const all = await db.user.findMany({ include: { _count: true } });
+    expectTypeOf(all[0]!._count).toEqualTypeOf<{
+      posts: number;
+      following: number;
+      followers: number;
+    }>();
+    expectTypeOf(all[0]!.email).toEqualTypeOf<string>();
+
+    const some = await db.user.findUniqueOrThrow({
+      where: { id: "1" },
+      select: {
+        email: true,
+        _count: { select: { posts: { where: { published: true } }, followers: true } },
+      },
+    });
+    expectTypeOf(some).toEqualTypeOf<{
+      email: string;
+      _count: { posts: number; followers: number };
+    }>();
+
+    const nested = await db.post.findFirst({
+      select: {
+        title: true,
+        author: { select: { name: true, _count: { select: { posts: true } } } },
+      },
+    });
+    expectTypeOf(nested).toEqualTypeOf<{
+      title: string;
+      author: { name: string | null; _count: { posts: number } } | null;
+    } | null>();
+
+    const created = await db.user.create({
+      data: { email: "c@d.e" },
+      include: { posts: { include: { author: true } }, _count: { select: { following: true } } },
+    });
+    expectTypeOf(created._count).toEqualTypeOf<{ following: number }>();
+
+    const _without = await db.user.findUniqueOrThrow({
+      where: { id: "1" },
+      include: { _count: false },
+    });
+    expectTypeOf<"_count" extends keyof typeof _without ? true : false>().toEqualTypeOf<false>();
+
+    // @ts-expect-error — to-one relations cannot be counted
+    await db.post.findMany({ include: { _count: { select: { author: true } } } });
+    // @ts-expect-error — the count filter is typed by the related model
+    await db.user.findMany({ include: { _count: { select: { posts: { where: { title: 1 } } } } } });
+  });
+
+  it("types orderBy on relation counts", async () => {
+    await db.user.findMany({ orderBy: [{ posts: { _count: "desc" } }, { email: "asc" }] });
+    await db.user.findMany({ include: { posts: { orderBy: { views: "desc" } } } });
+    // @ts-expect-error — only to-many relations sort by count
+    await db.post.findMany({ orderBy: { author: { _count: "asc" } } });
+    // @ts-expect-error — direction must be asc / desc
+    await db.user.findMany({ orderBy: { posts: { _count: "up" } } });
+  });
 });
