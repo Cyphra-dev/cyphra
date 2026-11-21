@@ -40,6 +40,24 @@ export {
   type IntrospectedProperty,
   type IntrospectionResult,
 } from "./introspect.js";
+export {
+  compareSchemaObjects,
+  describeSchemaObject,
+  detectDrift,
+  expectedSchemaFromModel,
+  expectedSchemaFromStatements,
+  isDriftFree,
+  parseDdlStatement,
+  readSchemaObjects,
+  replayMigrations,
+  schemaObjectsFromShow,
+  type ChangedSchemaObject,
+  type DriftReport,
+  type ParsedDdl,
+  type SchemaObject,
+  type SchemaOptionValue,
+  type ShowRow,
+} from "./drift.js";
 export { listAppliedMigrations, type AppliedMigration } from "./tracker.js";
 export {
   CYPHRA_MIGRATION_LABEL,

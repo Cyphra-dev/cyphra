@@ -21,7 +21,7 @@ App code depends on **`cyphra`** separately (see [Getting started](/getting-star
 | `cyphra migrate dev`             | Generate a migration from schema changes, then apply pending ones (`--name`, `--create-only`)                                        |
 | `cyphra migrate diff`            | Print the migration `migrate dev` would generate                                                                                     |
 | `cyphra migrate deploy`          | Apply pending migrations                                                                                                             |
-| `cyphra migrate status`          | Applied / pending / modified migrations and uncaptured schema changes (non-zero exit if any)                                         |
+| `cyphra migrate status`          | Applied / pending / modified migrations, uncaptured changes and [drift](/migrations#drift-detection) (`--json`, `--schema`; exit 1)  |
 | `cyphra migrate reset`           | Empty a local database, reapply every migration, then run the seed (`--yes`, `--force`, `--skip-seed`)                               |
 | `cyphra db seed`                 | Run the `seed` command from `cyphra.json`                                                                                            |
 | `cyphra migration:create <name>` | Empty `.mjs` migration to write by hand                                                                                              |
@@ -54,6 +54,25 @@ App code depends on **`cyphra`** separately (see [Getting started](/getting-star
 Commands that talk to Neo4j (`migrate dev | deploy | status | reset`, `pull`, `push`) read
 `NEO4J_URI`, `NEO4J_USERNAME` (`NEO4J_USER` also works), `NEO4J_PASSWORD` and optionally
 `NEO4J_DATABASE`. The seed command inherits the same environment.
+
+## cyphra migrate status
+
+Shows where the database stands against your migrations:
+
+```bash
+cyphra migrate status            # human report
+cyphra migrate status --json     # one JSON document on stdout
+cyphra migrate status --schema   # compare with schema.cyphra instead of the applied migrations
+```
+
+It lists each migration as `applied`, `pending`, `modified` (the file changed after it was applied:
+checksum mismatch) or `missing` (applied, but the file is gone), counts schema changes that no
+migration captures yet, and reports [drift](/migrations#drift-detection): constraints and indexes
+that are extra, missing or defined differently in the database than the applied migrations made
+them. It exits with `0` when everything is in sync, `1` when anything needs attention, and `2` when
+the check could not run, so it can gate CI (see the
+[GitHub Actions example](/migrations#in-ci)). `cyphra migrate dev` runs the drift check before it
+generates a migration and warns when the database has drifted.
 
 ## cyphra dev
 
