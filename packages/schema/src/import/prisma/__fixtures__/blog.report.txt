@@ -1,0 +1,22 @@
+Not converted (2):
+  Profile.id  @default(autoincrement()): Neo4j has no sequences: not converted; keep the existing ids when you migrate the data, and set new ones yourself (or switch to String @id @default(cuid()))
+  Tag.id      @default(autoincrement()): Neo4j has no sequences: not converted; keep the existing ids when you migrate the data, and set new ones yourself (or switch to String @id @default(cuid()))
+
+Converted with differences (11):
+  User.profile      one-to-one: Neo4j has no constraint across relationships, so a second HAS_PROFILE edge is not refused by the database; the client replaces the edge when you connect another node
+  User.followers    many-to-many: self relation: User.followers became the OUT side of FOLLOWS (and following the IN side); check that it matches column A of the _Follows join table when you migrate the data
+  User.name         @db.VarChar: the column length became @length(max: 80), checked by the Cyphra client on every write (Neo4j strings have no length limit)
+  User.updatedAt    @updatedAt: became @default(now()): set on create, but Cyphra does not refresh it on update; set it in your updates
+  Profile.userId    foreign key: dropped: the HAS_PROFILE edge of user replaces the key (Neo4j links nodes with edges, not key columns)
+  Post              @@map: table names are not kept: the node label is the model name
+  Post.title        @db.VarChar: the column length became @length(max: 200), checked by the Cyphra client on every write (Neo4j strings have no length limit)
+  Post.publishedAt  @map: column names are not kept: the Neo4j property is the field name (Prisma Client returns field names, so export through it)
+  Post.authorId     foreign key: dropped: the HAS_POSTS edge of author replaces the key (Neo4j links nodes with edges, not key columns)
+  Comment.postId    foreign key: dropped: the HAS_COMMENTS edge of post replaces the key (Neo4j links nodes with edges, not key columns)
+  Comment.authorId  foreign key: dropped: the HAS_COMMENTS edge of author replaces the key (Neo4j links nodes with edges, not key columns)
+
+Ignored (no effect on the graph) (4):
+  datasource db     datasource: Prisma connection settings (provider "postgresql"): Cyphra connects to Neo4j with NEO4J_URI
+  generator client  generator: Prisma generator (provider "prisma-client-js"): run cyphra generate instead
+  Post.content      @db.Text: native database type, no effect in Neo4j
+  Post              @@index: index on the foreign key of author: not needed, Neo4j follows the edge from the node

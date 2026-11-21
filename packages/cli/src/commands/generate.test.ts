@@ -66,7 +66,10 @@ describe("runGenerateWatch", () => {
     let stop!: () => void;
     const until = new Promise<void>((r) => (stop = r));
     const zodPath = path.join(dir, "src", "cyphra.zod.ts");
-    const zodConfig = { ...config, zod: { output: zodPath, coerce: false, import: "zod" } };
+    const zodConfig = {
+      ...config,
+      zod: { output: zodPath, coerce: false, import: "zod", omitGenerated: false },
+    };
     const zod = () => readFile(zodPath, "utf8");
 
     await writeFile(config.schema, "node User { id String @id }\n");
@@ -104,6 +107,7 @@ describe("zod generator config", () => {
       output: path.join(dir, "cyphra.zod.ts"),
       coerce: false,
       import: "zod",
+      omitGenerated: false,
     });
     await write({
       ...base,
@@ -113,6 +117,7 @@ describe("zod generator config", () => {
       output: path.join(dir, "src", "db", "zod.ts"),
       coerce: true,
       import: "zod/v4",
+      omitGenerated: false,
     });
   });
 
@@ -121,6 +126,7 @@ describe("zod generator config", () => {
     [{ zod: { output: 1 } }, /"generators.zod.output"/],
     [{ zod: { coerce: "yes" } }, /"generators.zod.coerce"/],
     [{ zod: { import: "" } }, /"generators.zod.import"/],
+    [{ zod: { omitGenerated: "yes" } }, /"generators.zod.omitGenerated"/],
     [{ zod: { ouput: "x.ts" } }, /unknown option "ouput"/],
     [{ zod: { output: "../x.ts" } }, /escapes project root/],
   ])("rejects %j", async (generators, message) => {
@@ -136,11 +142,13 @@ describe("zod generator config", () => {
       output: path.join(dir, "cyphra.zod.ts"),
       coerce: false,
       import: "zod",
+      omitGenerated: false,
     });
     expect(withZodFlags(dir, config, { zod: "lib/z.ts", zodCoerce: true }).zod).toEqual({
       output: path.join(dir, "lib", "z.ts"),
       coerce: true,
       import: "zod",
+      omitGenerated: false,
     });
     await write({ ...base, generators: { zod: { output: "src/z.ts", import: "zod/v4" } } });
     const configured = await loadConfig(dir);
@@ -148,7 +156,31 @@ describe("zod generator config", () => {
       output: path.join(dir, "src", "z.ts"),
       coerce: true,
       import: "zod/v4",
+      omitGenerated: false,
     });
+  });
+
+  it("--zod-omit-generated and generators.zod.omitGenerated leave generated fields out", async () => {
+    await write({ ...base, generators: { zod: { omitGenerated: true } } });
+    expect((await loadConfig(dir)).zod?.omitGenerated).toBe(true);
+    await write(base);
+    const config = await loadConfig(dir);
+    expect(withZodFlags(dir, config, { zodOmitGenerated: true }).zod).toEqual({
+      output: path.join(dir, "cyphra.zod.ts"),
+      coerce: false,
+      import: "zod",
+      omitGenerated: true,
+    });
+    await writeFile(
+      path.join(dir, "schema.cyphra"),
+      "node User {\n id String @id @default(uuid())\n name String\n at DateTime @default(now())\n}\n",
+    );
+    await runGenerate(dir, withZodFlags(dir, config, { zodOmitGenerated: true }));
+    const zod = await readFile(path.join(dir, "cyphra.zod.ts"), "utf8");
+    expect(zod).toContain("UserCreateInputSchema = z.object({\n  name: UserFields.name,\n});");
+    expect(zod).toContain(
+      "UserUpdateInputSchema = z.object({\n  name: UserFields.name.optional(),\n});",
+    );
   });
 
   it("runGenerate writes the client and the zod schemas", async () => {

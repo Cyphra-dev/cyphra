@@ -87,7 +87,7 @@ Turn on the zod generator in `cyphra.json`:
   "migrations": "./migrations",
   "generate": "./src/server/cyphra.gen.ts",
   "generators": {
-    "zod": { "output": "./src/cyphra.zod.ts" }
+    "zod": { "output": "./src/cyphra.zod.ts", "omitGenerated": true }
   }
 }
 ```
@@ -102,6 +102,10 @@ npx cyphra generate                  # src/server/cyphra.gen.ts and src/cyphra.z
 three for `Post`, and `PostStatusSchema`. It imports nothing but zod, so the browser can use it too
 (the example's page builds its status filter from `PostStatusSchema.options`). Both files are
 generated: add them to `.gitignore` and run `cyphra generate` before `next dev` and `next build`.
+
+`omitGenerated` leaves the fields Cyphra generates out of the create and update schemas: `id`
+(`@id @default(uuid())`) and `createdAt` (`@default(now())`). An API sets those itself, so a
+client cannot send its own id or backdate a post.
 
 Leave `coerce` off here. superjson already sends `Date` values as dates, so the schemas can expect
 `Date`s and the client's input types stay exact. Turn it on when the input is plain JSON, as in a
@@ -201,19 +205,16 @@ Map only errors you can name. Anything else stays a 500: log it in the handler's
 
 ### Write the router
 
-The generated input schemas accept every scalar field of the model, including `id` and `createdAt`.
-An API usually sets those itself, so remove them with `.omit()`, and add what the procedure needs
-with `.extend()`:
+With `omitGenerated`, the generated input schemas accept every scalar field of the model except
+`id` and `createdAt`. Add what the procedure needs with `.extend()` (and remove other fields with
+`.omit()`):
 
 ```ts filename="src/server/routers/post.ts"
 import { z } from "zod";
 import { PostCreateInputSchema, PostStatusSchema, PostUpdateInputSchema } from "../../cyphra.zod";
 import { publicProcedure, router } from "../trpc";
 
-const PostCreateInput = PostCreateInputSchema.omit({ id: true, createdAt: true }).extend({
-  authorId: z.string(),
-});
-const PostUpdateInput = PostUpdateInputSchema.omit({ id: true, createdAt: true });
+const PostCreateInput = PostCreateInputSchema.extend({ authorId: z.string() });
 
 export const postRouter = router({
   create: publicProcedure.input(PostCreateInput).mutation(({ ctx, input: { authorId, ...data } }) =>
@@ -264,7 +265,7 @@ export const postRouter = router({
     ),
 
   update: publicProcedure
-    .input(z.object({ id: z.string(), data: PostUpdateInput }))
+    .input(z.object({ id: z.string(), data: PostUpdateInputSchema }))
     .mutation(({ ctx, input }) =>
       ctx.db.post.update({ where: { id: input.id }, data: input.data }),
     ),
@@ -290,7 +291,7 @@ The user router is the same pattern. Its `delete` removes the user's posts too, 
 ```ts filename="src/server/routers/user.ts"
 export const userRouter = router({
   create: publicProcedure
-    .input(UserCreateInputSchema.omit({ id: true, createdAt: true }))
+    .input(UserCreateInputSchema)
     .mutation(({ ctx, input }) => ctx.db.user.create({ data: input })),
   list: publicProcedure.query(({ ctx }) =>
     ctx.db.user.findMany({ orderBy: { name: "asc" }, take: 100 }),
@@ -519,7 +520,7 @@ directly. Those tests need no database: zod rejects the input before the client 
     {
       name: "Write the router",
       anchor: "write-the-router",
-      text: "Use the generated create and update schemas, with .omit() and .extend(), as .input() of procedures that call the typed client.",
+      text: "Use the generated create and update schemas (generated fields left out with omitGenerated), with .extend(), as .input() of procedures that call the typed client.",
     },
     {
       name: "Serve it from a route handler",

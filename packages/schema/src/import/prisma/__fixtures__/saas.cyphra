@@ -1,0 +1,107 @@
+// Imported from a Prisma schema with `cyphra import prisma`.
+// Review before use (run the import again to see the full report):
+// - Plan.FREE: Cyphra stores the value's name ("FREE"), not the mapped database value (Prisma Client returns the name, so export through it)
+// - Plan.PRO: Cyphra stores the value's name ("PRO"), not the mapped database value (Prisma Client returns the name, so export through it)
+// - Plan.ENTERPRISE: Cyphra stores the value's name ("ENTERPRISE"), not the mapped database value (Prisma Client returns the name, so export through it)
+// - Membership: became relationship Membership: (User)-[:MEMBERSHIP]->(Organization) edges with its other fields as properties; User.memberships and Organization.memberships now list Organization and User nodes (the properties are on $edge)
+// - User.id: became uuid(): Cyphra generates version 4 UUIDs, which are not time-ordered
+// - Organization.updatedAt: became @default(now()): set on create, but Cyphra does not refresh it on update; set it in your updates
+// - Membership.id: the join row's own id is not needed on an edge (the edge is found from its nodes): dropped
+// - Membership: became the edge's endpoints: Neo4j has no constraint over relationships, but the client's connect keeps one MEMBERSHIP edge per pair of nodes (it MERGEs); raw Cypher CREATE does not
+// - Project.orgId: dropped: the HAS_PROJECTS edge of org replaces the key (Neo4j links nodes with edges, not key columns)
+// - Project: covers the foreign key of org: Neo4j constraints cannot span a relationship, so this is not converted; check it in your code before you create
+// - Project: the foreign key of org is not a property: indexed the other fields (createdAt)
+// - ApiKey.orgId: dropped: the HAS_API_KEYS edge of org replaces the key (Neo4j links nodes with edges, not key columns)
+// - Invitation.orgId: dropped: the HAS_INVITATIONS edge of org replaces the key (Neo4j links nodes with edges, not key columns)
+// - Invitation.invitedById: dropped: the INVITED_BY edge of invitedBy replaces the key (Neo4j links nodes with edges, not key columns)
+// - Invitation: covers the foreign key of org: Neo4j constraints cannot span a relationship, so this is not converted; check it in your code before you create
+// - AuditEvent.id: Neo4j has no sequences: not converted; keep the existing ids when you migrate the data, and set new ones yourself (or switch to String @id @default(cuid()))
+
+enum MemberRole {
+  OWNER
+  ADMIN
+  MEMBER
+  VIEWER
+}
+
+enum Plan {
+  FREE
+  PRO
+  ENTERPRISE
+}
+
+node User {
+  id String @id @default(uuid())
+  email String @unique
+  name String
+  avatarUrl String?
+  memberships Organization[] @relationship(type: "MEMBERSHIP", direction: OUT)
+  invitations Invitation[] @relationship(type: "INVITED_BY", direction: OUT)
+  createdAt DateTime @default(now())
+}
+
+node Organization {
+  id String @id @default(cuid())
+  slug String @unique
+  name String
+  plan Plan @default(FREE)
+  settings Json?
+  memberships User[] @relationship(type: "MEMBERSHIP", direction: IN)
+  projects Project[] @relationship(type: "HAS_PROJECTS", direction: OUT, onDelete: Cascade)
+  apiKeys ApiKey[] @relationship(type: "HAS_API_KEYS", direction: OUT, onDelete: Cascade)
+  invitations Invitation[] @relationship(type: "HAS_INVITATIONS", direction: OUT, onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now())
+}
+
+node Project {
+  id String @id @default(cuid())
+  name String
+  description String?
+  archived Boolean @default(false)
+  org Organization @relationship(type: "HAS_PROJECTS", direction: IN)
+  createdAt DateTime @index @default(now())
+  // orgId String (foreign key of org: replaced by the edge)
+}
+
+node ApiKey {
+  id String @id @default(cuid())
+  name String
+  hashedKey String @unique
+  lastUsedAt DateTime?
+  expiresAt DateTime?
+  org Organization @relationship(type: "HAS_API_KEYS", direction: IN)
+  // orgId String (foreign key of org: replaced by the edge)
+}
+
+node Invitation {
+  id String @id @default(cuid())
+  email String
+  role MemberRole @default(MEMBER)
+  token String @unique @default(uuid())
+  org Organization @relationship(type: "HAS_INVITATIONS", direction: IN)
+  invitedBy User? @relationship(type: "INVITED_BY", direction: IN)
+  expiresAt DateTime
+  // orgId String (foreign key of org: replaced by the edge)
+  // invitedById String? (foreign key of invitedBy: replaced by the edge)
+}
+
+node AuditEvent {
+  id BigInt @id
+  orgId String
+  actorId String?
+  action String
+  payload Json
+  at DateTime @default(now())
+
+  @@index([orgId, at])
+}
+
+relationship Membership {
+  type "MEMBERSHIP"
+  from User
+  to Organization
+  role MemberRole @default(MEMBER)
+  joinedAt DateTime @default(now())
+  // id String (not converted: id of the join row)
+}

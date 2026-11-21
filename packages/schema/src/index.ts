@@ -104,4 +104,34 @@ export {
   resolveSchema,
 } from "./model.js";
 export type { RenderZodOptions } from "./renderZod.js";
-export { renderZodFromModel, renderZodSource } from "./renderZod.js";
+export { isGeneratedField, renderZodFromModel, renderZodSource } from "./renderZod.js";
+export type {
+  ImportIssue,
+  ImportPrintOptions,
+  ImportReportOptions,
+  ImportResult,
+  ImportSeverity,
+  IssueDraft,
+} from "./import/print.js";
+export { formatImportIssues, mergeImportResult, printImportResult } from "./import/print.js";
+export type {
+  PrismaArg,
+  PrismaAttribute,
+  PrismaBlock,
+  PrismaConfigBlock,
+  PrismaEnum,
+  PrismaField,
+  PrismaImportResult,
+  PrismaModel,
+  PrismaSchema,
+  PrismaSource,
+  PrismaValue,
+} from "./import/prisma/index.js";
+export {
+  PrismaImportError,
+  convertPrismaSchema,
+  formatPrismaImportReport,
+  mergePrismaImport,
+  parsePrismaSchema,
+  printPrismaImport,
+} from "./import/prisma/index.js";

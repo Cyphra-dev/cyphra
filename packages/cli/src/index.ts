@@ -5,6 +5,7 @@ import { runDev } from "./commands/dev.js";
 import { runFormat } from "./commands/format.js";
 import { runGenerate, runGenerateWatch, withZodFlags } from "./commands/generate.js";
 import { runImportGraphql } from "./commands/importGraphql.js";
+import { runImportPrisma } from "./commands/importPrisma.js";
 import { runInit } from "./commands/init.js";
 import { runMigrate } from "./commands/migrate.js";
 import { createMigrationFromSchema, runMigrateDiff } from "./commands/migrateDev.js";
@@ -194,12 +195,23 @@ program
     "--zod-coerce",
     "zod schemas read ISO 8601 strings as Dates and decimal strings as bigints",
   )
-  .action(async (opts: { watch?: boolean; zod?: string | boolean; zodCoerce?: boolean }) => {
-    const cwd = process.cwd();
-    const config = withZodFlags(cwd, await loadConfig(cwd), opts);
-    if (opts.watch) await runGenerateWatch(cwd, config);
-    else await runGenerate(cwd, config);
-  });
+  .option(
+    "--zod-omit-generated",
+    "leave generated fields (@id with a default, now(), cuid(), uuid()) out of zod input schemas",
+  )
+  .action(
+    async (opts: {
+      watch?: boolean;
+      zod?: string | boolean;
+      zodCoerce?: boolean;
+      zodOmitGenerated?: boolean;
+    }) => {
+      const cwd = process.cwd();
+      const config = withZodFlags(cwd, await loadConfig(cwd), opts);
+      if (opts.watch) await runGenerateWatch(cwd, config);
+      else await runGenerate(cwd, config);
+    },
+  );
 
 const dbCmd = program.command("db").description("Database commands");
 
@@ -229,6 +241,25 @@ importCmd
       opts: { out?: string; merge?: boolean; force?: boolean; print?: boolean },
     ) => {
       process.exitCode = await runImportGraphql(process.cwd(), files, opts);
+    },
+  );
+
+importCmd
+  .command("prisma")
+  .argument("<schema...>", "Prisma schema: schema.prisma, several .prisma files or a schema folder")
+  .description(
+    "Convert a Prisma schema to schema.cyphra (foreign keys become edges) and report what was not converted",
+  )
+  .option("-o, --out <path>", "schema file to write (default: schema from cyphra.json)")
+  .option("--merge", "merge into the existing schema, keeping its models, fields and comments")
+  .option("--force", "overwrite an existing schema file")
+  .option("--print", "write the schema to stdout instead of a file")
+  .action(
+    async (
+      files: string[],
+      opts: { out?: string; merge?: boolean; force?: boolean; print?: boolean },
+    ) => {
+      process.exitCode = await runImportPrisma(process.cwd(), files, opts);
     },
   );
 

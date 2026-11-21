@@ -1,0 +1,348 @@
+---
+title: "Migrate from Prisma and PostgreSQL to Neo4j"
+sidebarTitle: From Prisma
+description: "Move a Prisma app from PostgreSQL to Neo4j with Cyphra: import schema.prisma, review the report, move the data with createMany and edges, and swap the queries."
+---
+
+import { Callout, Steps } from "nextra/components";
+import { HowToJsonLd } from "../../../components/seo/page-jsonld";
+
+# Migrate from Prisma to Neo4j
+
+Prisma does not support Neo4j ([why](/neo4j-orm#prisma-and-neo4j)). Cyphra gives you the same
+workflow on a graph: a schema file, a generated client whose calls follow Prisma's (`findMany`,
+`where`, `include`, `select`, nested writes) and migrations. This guide moves an app from Prisma and
+PostgreSQL to Cyphra and Neo4j in five steps: import the schema, review the report, create the
+constraints, move the data, and swap the queries.
+
+The rule to keep in mind: **foreign keys become relationships**. `Post.authorId` is not a property
+in Neo4j; a `(User)-[:HAS_POSTS]->(Post)` edge links the two nodes, and a join table becomes edges,
+with its extra columns as edge properties.
+
+<Callout type="info">
+  Tested with `@cyphra/cli` 0.11, Neo4j 5.26 and Prisma schemas for PostgreSQL. MySQL, SQLite and
+  MongoDB schemas import the same way: the importer reads `schema.prisma`, not the database.
+</Callout>
+
+## Steps
+
+<Steps>
+
+### Import the schema
+
+Install Cyphra next to Prisma (keep Prisma until the data is moved), then convert the schema:
+
+```bash
+npm i cyphra
+npm i -D @cyphra/cli
+npx cyphra init                                # cyphra.json, migrations/, .env.example
+npx cyphra import prisma prisma/schema.prisma --force
+```
+
+`--force` replaces the starter `schema.cyphra` that `cyphra init` wrote. A multi-file schema works
+too: pass the folder (`prisma/schema`). Take this Prisma schema:
+
+```prisma filename="prisma/schema.prisma"
+model User {
+  id    String @id @default(cuid())
+  email String @unique
+  posts Post[]
+}
+
+model Post {
+  id       String  @id @default(cuid())
+  title    String  @db.VarChar(200)
+  author   User    @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  authorId String
+  tags     Tag[]
+  items    OrderItem[]
+}
+
+model Tag {
+  id    String @id @default(cuid())
+  name  String @unique
+  posts Post[]
+}
+
+model Order {
+  id    String      @id @default(cuid())
+  items OrderItem[]
+}
+
+model OrderItem {
+  order    Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  orderId  String
+  post     Post   @relation(fields: [postId], references: [id])
+  postId   String
+  quantity Int    @default(1)
+
+  @@id([orderId, postId])
+}
+```
+
+The import writes:
+
+```cyphra filename="schema.cyphra"
+node User {
+  id String @id @default(cuid())
+  email String @unique
+  posts Post[] @relationship(type: "HAS_POSTS", direction: OUT, onDelete: Cascade)
+}
+
+node Post {
+  id String @id @default(cuid())
+  title String @length(max: 200)
+  author User @relationship(type: "HAS_POSTS", direction: IN)
+  tags Tag[] @relationship(type: "HAS_TAGS", direction: OUT)
+  items Order[] @relationship(type: "ORDER_ITEM", direction: IN, onDelete: Restrict)
+  // authorId String (foreign key of author: replaced by the edge)
+}
+
+node Tag {
+  id String @id @default(cuid())
+  name String @unique
+  posts Post[] @relationship(type: "HAS_TAGS", direction: IN)
+}
+
+node Order {
+  id String @id @default(cuid())
+  items Post[] @relationship(type: "ORDER_ITEM", direction: OUT)
+}
+
+relationship OrderItem {
+  type "ORDER_ITEM"
+  from Order
+  to Post
+  quantity Int @default(1)
+}
+```
+
+- `Post.author` became an edge from `User` to `Post`, and `authorId` is gone. `onDelete: Cascade`
+  moved to `User.posts`, where a [Cyphra rule](/schema#ondelete-rules) lives: deleting a user still
+  deletes their posts.
+- The implicit many-to-many `Post.tags` / `Tag.posts` is one `HAS_TAGS` edge type.
+- The join model `OrderItem` became a `relationship` model: `ORDER_ITEM` edges from `Order` to
+  `Post`, with `quantity` on the edge. `Order.items` now lists posts directly, each with its
+  `$edge`. `OrderItem.postId` had no `onDelete`, so Prisma's default for a required key,
+  `Restrict`, is now on `Post.items`.
+- Edge types come from `@relation("Name")` (upper snake case), the join model's name, or `HAS_` and
+  the field name. Rename them now if you prefer verbs (`AUTHORED`, `TAGGED`): after the data is in
+  Neo4j, a rename is a migration.
+
+Every rule is listed in [CLI: import from Prisma](/cli#import-from-prisma).
+
+### Review the report
+
+The command prints what it could not convert, and what converts with a difference in behaviour.
+The `schema.cyphra` header repeats the review items:
+
+```text
+Wrote schema.cyphra (4 node(s), 1 relationship model(s))
+
+Converted with differences (4):
+  OrderItem      join model: became relationship OrderItem: (Order)-[:ORDER_ITEM]->(Post) edges with its other fields as properties; Order.items and Post.items now list Post and Order nodes (the properties are on $edge)
+  Post.title     @db.VarChar: the column length became @length(max: 200), checked by the Cyphra client on every write (Neo4j strings have no length limit)
+  Post.authorId  foreign key: dropped: the HAS_POSTS edge of author replaces the key (Neo4j links nodes with edges, not key columns)
+  OrderItem      @@id: became the edge's endpoints: Neo4j has no constraint over relationships, but the client's connect keeps one ORDER_ITEM edge per pair of nodes (it MERGEs); raw Cypher CREATE does not
+```
+
+The items that usually need a decision:
+
+- **`autoincrement()` ids** stay `Int @id` without a default: Neo4j has no sequences. Keep the
+  existing ids when you move the data, and either set new ones yourself or switch the model to
+  `String @id @default(cuid())` (and its foreign keys with it) before moving.
+- **`Decimal`** became `Float`. For money, an `Int` of cents keeps values exact.
+- **`@updatedAt`** became `@default(now())`: Cyphra sets it on create only, so set it in your
+  updates.
+- **A `@@unique` over a foreign key** (`@@unique([orgId, name])`) cannot be a Neo4j constraint,
+  since the key is now an edge. Check it in code before you create.
+- **`Bytes`** fields are not converted: keep the bytes in object storage and store a URL.
+
+Then check the schema and generate the client:
+
+```bash
+npx cyphra validate
+npx cyphra generate   # cyphra.gen.ts
+```
+
+### Create the constraints and indexes
+
+Point `.env` at Neo4j (`npx cyphra dev` starts a local Neo4j 5 in Docker and writes it), then create
+the first migration: uniqueness constraints for `@id`, `@unique` and `@@unique`, range indexes for
+`@index` and `@@index`.
+
+```bash
+npx cyphra migrate dev --name init
+```
+
+Create them before you load the data: the loads below look nodes up by `id`, which the `@id`
+constraint indexes, and a duplicate in your data fails at once instead of later.
+
+### Move the data
+
+Export through Prisma Client rather than SQL: it returns field names (not `@map` column names), enum
+value names (not `@map` values) and the join rows of implicit many-to-many relations. Load in two
+passes: all the nodes first, then the edges, from the foreign keys.
+
+```ts filename="scripts/move-data.ts"
+import { PrismaClient } from "@prisma/client";
+import { createClient } from "../cyphra.gen.js";
+
+const prisma = new PrismaClient();
+const db = createClient({
+  uri: process.env.NEO4J_URI!,
+  user: process.env.NEO4J_USERNAME!,
+  password: process.env.NEO4J_PASSWORD!,
+});
+
+/** Read a model in pages of 1,000 rows. */
+async function* pages<T>(read: (page: { take: number; skip: number }) => Promise<T[]>) {
+  for (let skip = 0; ; skip += 1000) {
+    const rows = await read({ take: 1000, skip });
+    if (rows.length === 0) return;
+    yield rows;
+  }
+}
+
+// 1. Nodes, ids kept, without the foreign keys.
+for await (const users of pages((p) => prisma.user.findMany({ ...p, orderBy: { id: "asc" } }))) {
+  await db.user.createMany({ data: users });
+}
+for await (const posts of pages((p) => prisma.post.findMany({ ...p, orderBy: { id: "asc" } }))) {
+  await db.post.createMany({ data: posts.map(({ authorId, ...post }) => post) });
+
+  // 2. Edges: one per foreign key. MERGE keeps one edge if the script runs twice.
+  await db.$cypher`
+    UNWIND ${posts.map((p) => ({ from: p.authorId, to: p.id }))} AS row
+    MATCH (u:User { id: row.from }), (p:Post { id: row.to })
+    MERGE (u)-[:HAS_POSTS]->(p)
+  `;
+}
+```
+
+Load `Tag` and `Order` the same way (they have no foreign key), then the many-to-many relations:
+
+```ts
+// Implicit many-to-many: the _PostToTag rows, read through the relation.
+const tagged = await prisma.post.findMany({ select: { id: true, tags: { select: { id: true } } } });
+await db.$cypher`
+  UNWIND ${tagged.flatMap((p) => p.tags.map((t) => ({ from: p.id, to: t.id })))} AS row
+  MATCH (p:Post { id: row.from }), (t:Tag { id: row.to })
+  MERGE (p)-[:HAS_TAGS]->(t)
+`;
+
+// Join model: one edge per row, its other columns as edge properties.
+const items = await prisma.orderItem.findMany();
+await db.$cypher`
+  UNWIND ${items.map((i) => ({ from: i.orderId, to: i.postId, quantity: i.quantity }))} AS row
+  MATCH (o:Order { id: row.from }), (p:Post { id: row.to })
+  MERGE (o)-[e:ORDER_ITEM]->(p)
+  SET e.quantity = row.quantity
+`;
+```
+
+- `createMany` applies the schema's defaults and checks its [validation rules](/schema#validation-rules)
+  and types, so a row that breaks them stops the load with a `CyphraValidationError` naming the
+  field and the row.
+- Convert what changed type: `Number(row.price)` for a `Decimal` that became `Float`, and leave out
+  fields the import dropped (`Bytes`). `DateTime`, `BigInt` and `Json` values pass as they are.
+- The edge type and direction in each `MERGE` are the ones in `schema.cyphra`: start at the model on
+  the `OUT` side. The raw Cypher writes skip the client's checks, which is fine for keys that come
+  from a database that enforced them. For a few thousand rows, the client's
+  `update({ data: { author: { connect: { id } } } })` does the same, one row at a time.
+- Check the counts on both sides: `prisma.post.count()` against `db.post.count()`, and the number
+  of rows with a key against `` db.$cypher`MATCH ()-[r:HAS_POSTS]->() RETURN count(r) AS n` ``.
+
+For a large database, run the export once to files and load them in batches, or use
+[`neo4j-admin database import`](https://neo4j.com/docs/operations-manual/current/tools/neo4j-admin/neo4j-admin-import/)
+on an empty database with the same labels, properties and relationship types.
+
+### Swap the queries
+
+Most Prisma Client calls keep their shape. Replace `prisma` with `db`, then fix what the compiler
+reports, which is mostly foreign keys:
+
+```ts
+// Prisma
+await prisma.post.findMany({
+  where: { authorId: userId, title: { contains: "graph" } },
+  include: { author: true, tags: true },
+  orderBy: { title: "asc" },
+  take: 20,
+});
+await prisma.post.create({ data: { title, authorId: userId } });
+
+// Cyphra
+await db.post.findMany({
+  where: { author: { is: { id: userId } }, title: { contains: "graph" } },
+  include: { author: true, tags: true },
+  orderBy: { title: "asc" },
+  take: 20,
+});
+await db.post.create({ data: { title, author: { connect: { id: userId } } } });
+```
+
+| Prisma                                                         | Cyphra                                                    |
+| -------------------------------------------------------------- | --------------------------------------------------------- |
+| `findMany`, `findUnique`, `findFirst`, `count`, `…OrThrow`     | the same                                                  |
+| `where`, `select`, `include`, `orderBy`, `skip`, `take`        | the same, also inside a nested relation                   |
+| `where: { authorId: id }`                                      | `where: { author: { is: { id } } }`                       |
+| `data: { authorId: id }`                                       | `data: { author: { connect: { id } } }`                   |
+| `some`, `every`, `none` on a list relation                     | the same                                                  |
+| `include: { items: { include: { post: true } } }` (join model) | `include: { items: true }`, quantity on `items[i].$edge`  |
+| `create` with `items: { create: { postId, quantity } }`        | `items: { connect: { id: postId, $edge: { quantity } } }` |
+| `upsert`, `createMany`, `updateMany`, `deleteMany`             | the same                                                  |
+| `aggregate`, `groupBy`, `_count`                               | the same shapes                                           |
+| `$transaction(async (tx) => …)`                                | `db.$transaction(async (tx) => …)` (no array form)        |
+| `$queryRaw` (SQL)                                              | `` db.$cypher`…` `` (Cypher)                              |
+| `updatedAt` set by `@updatedAt`                                | set it in the `update` data: `updatedAt: new Date()`      |
+
+Graph queries that had no Prisma equivalent are now one call:
+[traversals](/client#traversals) (friends of friends), [shortest paths](/client#shortest-path) and
+[vector search](/client#vector-search). The [Prisma for Neo4j page](/neo4j-orm#coming-from-prisma)
+maps the CLI commands too (`prisma migrate dev` is `cyphra migrate dev`).
+
+</Steps>
+
+When the app runs on Neo4j and the counts match, remove `@prisma/client`, `prisma` and the
+`prisma/` folder.
+
+## Related
+
+- [CLI: import from Prisma](/cli#import-from-prisma): every mapping rule
+- [Prisma for Neo4j](/neo4j-orm): Cyphra for Prisma users
+- [Schema](/schema): relationships, `onDelete` rules and relationship models
+- [Typed client](/client) and [Migrations](/migrations)
+
+<HowToJsonLd
+  path="/guides/migrate-from-prisma"
+  name="Migrate from Prisma and PostgreSQL to Neo4j"
+  description="Import schema.prisma with cyphra import prisma, review the report, create constraints with a migration, move the data with createMany and edges, and swap Prisma Client calls for the Cyphra client."
+  steps={[
+    {
+      name: "Import the schema",
+      anchor: "import-the-schema",
+      text: "Install cyphra and @cyphra/cli, run cyphra init, then cyphra import prisma prisma/schema.prisma: foreign keys become edges and join models relationship models.",
+    },
+    {
+      name: "Review the report",
+      anchor: "review-the-report",
+      text: "Read what was not converted or changed (autoincrement ids, Decimal, @updatedAt, unique constraints over foreign keys), then run cyphra validate and cyphra generate.",
+    },
+    {
+      name: "Create the constraints and indexes",
+      anchor: "create-the-constraints-and-indexes",
+      text: "Run cyphra migrate dev --name init before loading the data.",
+    },
+    {
+      name: "Move the data",
+      anchor: "move-the-data",
+      text: "Export through Prisma Client, createMany the nodes with their ids, then create one edge per foreign key and join row with UNWIND and MERGE.",
+    },
+    {
+      name: "Swap the queries",
+      anchor: "swap-the-queries",
+      text: "Replace prisma with db; findMany, where, include and select keep their shape, and foreign keys become relation filters and connect.",
+    },
+  ]}
+/>

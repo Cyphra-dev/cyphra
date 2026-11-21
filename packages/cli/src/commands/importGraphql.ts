@@ -1,7 +1,5 @@
-import { access, readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { parseSchema, resolveSchema } from "@cyphra/schema";
-import { loadConfig } from "../config.js";
 import {
   GraphQLImportError,
   convertGraphQLTypeDefs,
@@ -9,29 +7,9 @@ import {
   mergeImportedSchema,
   printImportedSchema,
 } from "@cyphra/graphql";
+import { writeImportedSchema, type ImportOutputOptions } from "./importOutput.js";
 
-export type ImportGraphqlOptions = {
-  /** Output schema path (default: `schema` from cyphra.json, else `./schema.cyphra`). */
-  out?: string;
-  /** Merge into the existing schema instead of writing a new one. */
-  merge?: boolean;
-  /** Overwrite an existing output file. */
-  force?: boolean;
-  /** Write the schema to stdout instead of a file. */
-  print?: boolean;
-};
-
-async function exists(file: string): Promise<boolean> {
-  return access(file).then(
-    () => true,
-    () => false,
-  );
-}
-
-async function defaultOut(cwd: string): Promise<string> {
-  if (await exists(path.join(cwd, "cyphra.json"))) return (await loadConfig(cwd)).schema;
-  return path.join(cwd, "schema.cyphra");
-}
+export type ImportGraphqlOptions = ImportOutputOptions;
 
 /**
  * `cyphra import graphql <files…>`: convert `@neo4j/graphql` v7 type definitions to
@@ -70,46 +48,9 @@ export async function runImportGraphql(
     }
     throw err;
   }
-
-  const out = opts.out ? path.resolve(cwd, opts.out) : await defaultOut(cwd);
-  const rel = path.relative(cwd, out) || out;
-  let source: string;
-  const issues = [...result.issues];
-  if (opts.merge && (await exists(out))) {
-    try {
-      const merged = mergeImportedSchema(await readFile(out, "utf8"), result);
-      source = merged.source;
-      issues.push(...merged.issues);
-    } catch (err) {
-      console.error(err instanceof Error ? err.message : String(err));
-      return 1;
-    }
-  } else {
-    if (!opts.print && !opts.merge && !opts.force && (await exists(out))) {
-      console.error(`${rel} already exists: pass --merge to add to it or --force to overwrite it.`);
-      return 1;
-    }
-    source = printImportedSchema(result);
-  }
-  // The output must round-trip through our own parser and resolver.
-  resolveSchema(parseSchema(source));
-
-  if (opts.print) {
-    process.stdout.write(source);
-  } else {
-    await writeFile(out, source, "utf8");
-    const decls = result.document.declarations;
-    const nodes = decls.filter((d) => d.kind === "Node").length;
-    console.log(
-      `${opts.merge ? "Merged into" : "Wrote"} ${rel} (${nodes} node(s), ${decls.length - nodes} relationship model(s))`,
-    );
-  }
-  const report = formatImportReport(issues);
-  if (report) {
-    // stderr, so `--print > schema.cyphra` keeps the schema clean.
-    console.warn(`\n${report}`);
-  } else {
-    console.warn("Everything was converted.");
-  }
-  return 0;
+  return writeImportedSchema(cwd, result, opts, {
+    print: printImportedSchema,
+    merge: mergeImportedSchema,
+    report: formatImportReport,
+  });
 }

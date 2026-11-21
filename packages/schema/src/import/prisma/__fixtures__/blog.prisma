@@ -1,0 +1,73 @@
+// A blog on Postgres: users, posts, comments, tags (implicit many-to-many), followers.
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum Role {
+  USER
+  EDITOR
+  ADMIN
+}
+
+model User {
+  id        String    @id @default(cuid())
+  email     String    @unique
+  name      String?   @db.VarChar(80)
+  role      Role      @default(USER)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  posts     Post[]
+  comments  Comment[]
+  profile   Profile?
+  followers User[]    @relation("Follows")
+  following User[]    @relation("Follows")
+}
+
+model Profile {
+  id     Int     @id @default(autoincrement())
+  bio    String?
+  avatar String?
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String  @unique
+}
+
+/// A blog post.
+model Post {
+  id          String    @id @default(uuid())
+  title       String    @db.VarChar(200)
+  slug        String    @unique
+  content     String?   @db.Text
+  published   Boolean   @default(false)
+  views       Int       @default(0)
+  publishedAt DateTime? @map("published_at")
+  author      User      @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  authorId    String
+  tags        Tag[]
+  comments    Comment[]
+
+  @@index([authorId])
+  @@index([published, publishedAt])
+  @@map("posts")
+}
+
+model Comment {
+  id        String   @id @default(cuid())
+  body      String
+  createdAt DateTime @default(now())
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  postId    String
+  author    User?    @relation(fields: [authorId], references: [id], onDelete: SetNull)
+  authorId  String?
+}
+
+model Tag {
+  id    Int    @id @default(autoincrement())
+  name  String @unique
+  posts Post[]
+}

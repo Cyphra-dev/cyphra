@@ -13,25 +13,26 @@ pnpm add -D @cyphra/cli
 
 App code depends on **`cyphra`** separately (see [Getting started](/getting-started#install)). The CLI loads `./.env` automatically.
 
-| Command                          | Description                                                                                                                                 |
-| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| `cyphra init`                    | Scaffold `cyphra.json`, `schema.cyphra`, `migrations/`, `.env.example` (existing files are kept)                                            |
-| `cyphra dev`                     | Run a local Neo4j 5 in Docker for this project and write `.env` (`--stop`, `--reset`, `--port`, `--http-port`, `--image`, `--watch`)        |
-| `cyphra generate`                | Generate the [typed client](/client) (`cyphra.gen.ts`) and, if configured, [zod schemas](#zod-schemas) (`--watch`, `--zod`, `--zod-coerce`) |
-| `cyphra migrate dev`             | Generate a migration from schema changes, then apply pending ones (`--name`, `--create-only`)                                               |
-| `cyphra migrate diff`            | Print the migration `migrate dev` would generate                                                                                            |
-| `cyphra migrate deploy`          | Apply pending migrations                                                                                                                    |
-| `cyphra migrate status`          | Applied / pending / modified migrations, uncaptured changes and [drift](/migrations#drift-detection) (`--json`, `--schema`; exit 1)         |
-| `cyphra migrate reset`           | Empty a local database, reapply every migration, then run the seed (`--yes`, `--force`, `--skip-seed`)                                      |
-| `cyphra db seed`                 | Run the `seed` command from `cyphra.json`                                                                                                   |
-| `cyphra migration:create <name>` | Empty `.mjs` migration to write by hand                                                                                                     |
-| `cyphra pull`                    | Introspect the database and write `schema.cyphra` (`--print`, `--force`)                                                                    |
-| `cyphra import graphql <files>`  | Convert `@neo4j/graphql` v7 type definitions to `schema.cyphra` (`--out`, `--merge`, `--force`, `--print`)                                  |
-| `cyphra push`                    | Apply constraints and range, vector and full-text indexes directly (prototyping)                                                            |
-| `cyphra validate`                | Parse and validate the schema                                                                                                               |
-| `cyphra format`                  | Format the schema in place, keeping comments (`--check` exits with 1 instead of writing)                                                    |
-| `cyphra schema print`            | Canonical pretty-print of the schema                                                                                                        |
-| `cyphra schema ddl`              | Print the constraint and index DDL (no database)                                                                                            |
+| Command                          | Description                                                                                                                                                         |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `cyphra init`                    | Scaffold `cyphra.json`, `schema.cyphra`, `migrations/`, `.env.example` (existing files are kept)                                                                    |
+| `cyphra dev`                     | Run a local Neo4j 5 in Docker for this project and write `.env` (`--stop`, `--reset`, `--port`, `--http-port`, `--image`, `--watch`)                                |
+| `cyphra generate`                | Generate the [typed client](/client) (`cyphra.gen.ts`) and, if configured, [zod schemas](#zod-schemas) (`--watch`, `--zod`, `--zod-coerce`, `--zod-omit-generated`) |
+| `cyphra migrate dev`             | Generate a migration from schema changes, then apply pending ones (`--name`, `--create-only`)                                                                       |
+| `cyphra migrate diff`            | Print the migration `migrate dev` would generate                                                                                                                    |
+| `cyphra migrate deploy`          | Apply pending migrations                                                                                                                                            |
+| `cyphra migrate status`          | Applied / pending / modified migrations, uncaptured changes and [drift](/migrations#drift-detection) (`--json`, `--schema`; exit 1)                                 |
+| `cyphra migrate reset`           | Empty a local database, reapply every migration, then run the seed (`--yes`, `--force`, `--skip-seed`)                                                              |
+| `cyphra db seed`                 | Run the `seed` command from `cyphra.json`                                                                                                                           |
+| `cyphra migration:create <name>` | Empty `.mjs` migration to write by hand                                                                                                                             |
+| `cyphra pull`                    | Introspect the database and write `schema.cyphra` (`--print`, `--force`)                                                                                            |
+| `cyphra import graphql <files>`  | Convert `@neo4j/graphql` v7 type definitions to `schema.cyphra` (`--out`, `--merge`, `--force`, `--print`)                                                          |
+| `cyphra import prisma <schema>`  | Convert a Prisma schema to `schema.cyphra`, foreign keys to edges ([details](#import-from-prisma); `--out`, `--merge`, `--force`, `--print`)                        |
+| `cyphra push`                    | Apply constraints and range, vector and full-text indexes directly (prototyping)                                                                                    |
+| `cyphra validate`                | Parse and validate the schema                                                                                                                                       |
+| `cyphra format`                  | Format the schema in place, keeping comments (`--check` exits with 1 instead of writing)                                                                            |
+| `cyphra schema print`            | Canonical pretty-print of the schema                                                                                                                                |
+| `cyphra schema ddl`              | Print the constraint and index DDL (no database)                                                                                                                    |
 
 ## cyphra.json
 
@@ -59,19 +60,28 @@ also writes a module of [zod](https://zod.dev) schemas, to validate API input ag
 before it reaches the client. Install zod in your project (`pnpm add zod`); the generated code works
 with zod 4 and zod 3.
 
-| Option   | Default             | Description                                                                                                        |
-| -------- | ------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| `output` | `"./cyphra.zod.ts"` | File to write, under the project root                                                                              |
-| `coerce` | `false`             | Read ISO 8601 strings as `Date`s (`DateTime`, `Date`) and decimal strings or safe integers as `bigint`s (`BigInt`) |
-| `import` | `"zod"`             | Module to import `z` from (`"zod/v4"` to use zod 4 from zod 3.25)                                                  |
+| Option          | Default             | Description                                                                                                                               |
+| --------------- | ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `output`        | `"./cyphra.zod.ts"` | File to write, under the project root                                                                                                     |
+| `coerce`        | `false`             | Read ISO 8601 strings as `Date`s (`DateTime`, `Date`) and decimal strings or safe integers as `bigint`s (`BigInt`)                        |
+| `import`        | `"zod"`             | Module to import `z` from (`"zod/v4"` to use zod 4 from zod 3.25)                                                                         |
+| `omitGenerated` | `false`             | Leave generated fields out of the create and update input schemas: an `@id` with a `@default`, and `now()` / `cuid()` / `uuid()` defaults |
 
 `"zod": true` takes every default. Without the config, `cyphra generate --zod [output]` writes the
-schemas for that run (`--zod-coerce` adds coercion); the flags also override `cyphra.json`.
+schemas for that run (`--zod-coerce` adds coercion, `--zod-omit-generated` sets `omitGenerated`);
+the flags also override `cyphra.json`.
 
 ```bash
 cyphra generate --zod                       # cyphra.gen.ts and cyphra.zod.ts
 cyphra generate --zod src/db/zod.ts --zod-coerce
+cyphra generate --zod --zod-omit-generated  # no id / createdAt in the input schemas
 ```
+
+With `omitGenerated`, a public API takes `UserCreateInputSchema` as is, instead of
+`UserCreateInputSchema.omit({ id: true, createdAt: true })`: the client fills those fields on
+create, and callers cannot send them. Literal defaults (`@default("member")`) stay in the inputs,
+optional. The output schema (`UserSchema`) keeps every field. For a model that needs a generated
+field back, `.extend()` its input with `UserSchema.shape.<field>`.
 
 For each node model `User` the module exports `UserSchema` (the properties the client returns),
 `UserCreateInputSchema` and `UserUpdateInputSchema`; the same three for each relationship model
@@ -255,3 +265,91 @@ Not converted today: custom scalars, interfaces and unions (`@neo4j/graphql` int
 definitions carry neither the dimensions nor the similarity: declare a
 [`Vector(N)` field with `@vectorIndex`](/schema#vector-fields) by hand), and update timestamps. API-only settings such as `@plural`, `@selectable` or `@filterable`
 are listed as ignored. Run `cyphra validate` after the import, then `cyphra migrate dev`.
+
+## Import from Prisma
+
+Moving from Prisma and PostgreSQL (or MySQL, SQLite, MongoDB) to Neo4j? Convert `schema.prisma` to a
+Cyphra schema, with foreign keys turned into edges:
+
+```bash
+cyphra import prisma prisma/schema.prisma         # writes the schema from cyphra.json
+cyphra import prisma prisma/schema                # a multi-file schema folder
+cyphra import prisma prisma/schema.prisma --print # to stdout, report on stderr
+```
+
+The options are the ones of [`cyphra import graphql`](#import-from-neo4jgraphql): `--out <path>`,
+`--force` to overwrite, `--merge` to add to an existing schema without touching what is there, and
+`--print`. Prisma itself is not needed: the importer reads the file. The
+[migration guide](/guides/migrate-from-prisma) covers the rest of the move (data and queries).
+
+**Models, fields and attributes**
+
+| Prisma                                                            | Cyphra                                                                 |
+| ----------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| `model`, `enum`                                                   | `node`, `enum` (same names, same values)                               |
+| `String`, `Int`, `BigInt`, `Float`, `Boolean`, `DateTime`, `Json` | the same types                                                         |
+| `Decimal`                                                         | `Float`, reported: about 15 significant digits                         |
+| `?`, `[]` (scalar lists)                                          | `?`, `[]`; `Json[]` becomes one `Json` holding the array               |
+| `@id`, `@unique`, `@@unique([a, b])`, `@@index([a, b])`           | the same; one-field `@@unique` / `@@index` become `@unique` / `@index` |
+| `@@id([a, b])`                                                    | `@@unique([a, b])`, reported (a Cyphra `@id` is one field)             |
+| `@@fulltext([a, b])`                                              | `@@fulltext([a, b])`                                                   |
+| `@default(cuid())`, `uuid()`, `now()`, a literal                  | the same                                                               |
+| `@default(uuid(7))`, `ulid()`, `nanoid()`, `auto()`               | `uuid()` or `cuid()`, reported                                         |
+| `@default(dbgenerated("gen_random_uuid()"))`                      | `@default(uuid())`, reported (other SQL is not converted)              |
+| `@updatedAt`                                                      | `@default(now())`, reported: set it yourself on update                 |
+| `@db.VarChar(n)`, `@db.Char(n)`                                   | `@length(max: n)`, checked by the client                               |
+| `DateTime @db.Date`, `@db.Time`, `@db.Timetz`                     | `Date`, `LocalTime`, `Time`                                            |
+
+**Relations**
+
+- A **foreign key** (`author User @relation(fields: [authorId], references: [id])` with
+  `authorId String`) becomes an edge from the referenced model to the model holding the key,
+  `(User)-[:HAS_POSTS]->(Post)`: `User.posts` is `OUT`, `Post.author` is `IN`. The key scalar
+  (`authorId`) is dropped, since the edge is the link, and left as a comment in the model. One-to-one
+  and one-to-many work the same way.
+- An **implicit many-to-many** (`tags Tag[]` on `Post`, `posts Post[]` on `Tag`) becomes one edge
+  type, from the model whose name sorts first (Prisma's `A` side): `(Post)-[:HAS_TAGS]->(Tag)`.
+- An **explicit join model** becomes a [`relationship` model](/schema#relationships) when it has
+  exactly two required relations, a `@@id` or `@@unique` over their keys, and nothing else pointing
+  to it. Its other fields become edge properties: `OrderItem { order, product, quantity }` becomes
+  `relationship OrderItem`, `ORDER_ITEM` edges from `Order` to `Product` with a `quantity`
+  property, and `Order.items` lists products, each with its `$edge`. The row's own `id`, if any, is dropped.
+- **Edge type names.** `@relation("WrittenPosts")` gives `WRITTEN_POSTS` (upper snake case). A
+  join model gives its name (`ORDER_ITEM`). Otherwise, `HAS_` and the field on the edge's start
+  model: `User.posts` gives `HAS_POSTS`, `Post.tags` gives `HAS_TAGS`. A name already used between
+  the same two models gets a `_2` suffix. Rename them before your first migration if you prefer
+  verbs (`AUTHORED`): the type is only in `schema.cyphra`.
+- **`onDelete`** moves to the referenced model's field, where a [Cyphra rule](/schema#ondelete-rules)
+  lives: `Post.author … onDelete: Cascade` becomes `onDelete: Cascade` on `User.posts`. `Restrict`
+  stays `Restrict`, `NoAction` becomes `Restrict`, `SetNull` is Cyphra's default and `SetDefault` is
+  reported. Without `onDelete`, Prisma's default applies: `Restrict` for a required key, `SetNull`
+  for an optional one. On a join model, `Cascade` needs no rule, since deleting a node removes its
+  edges. `onUpdate` has no equivalent (edges hold no key values) and is listed as ignored.
+- `@@index` on foreign keys is dropped (Neo4j follows the edge), and a key is removed from a
+  composite `@@index`. A `@@unique` that covers a foreign key cannot be converted: Neo4j constraints
+  do not span relationships.
+
+Not converted, and reported: `Bytes`, `Unsupported(…)`, `autoincrement()` and `sequence()` (the id
+stays an `Int` without a default: keep the existing ids when you move the data), other
+`dbgenerated(…)` defaults, fixed dates as defaults, views, and `@ignore` / `@@ignore` fields and
+models. `@map` and `@@map` are reported because Cyphra uses the field and model names as property
+names and labels. Composite `type`s (MongoDB) become `Json` fields. `datasource`, `generator` and
+native types without an effect (`@db.Uuid`, `@db.Text`) are listed as ignored.
+
+The report has the same three sections as the GraphQL one:
+
+```text
+Wrote schema.cyphra (5 node(s), 1 relationship model(s))
+
+Not converted (2):
+  Category.id    @default(autoincrement()): Neo4j has no sequences: not converted; keep the existing ids when you migrate the data, and set new ones yourself (or switch to String @id @default(cuid()))
+  Product.image  Bytes: Neo4j has no byte arrays in Cyphra: not converted; store the bytes elsewhere (object storage) or as base64 text in a String
+
+Converted with differences (13):
+  OrderItem            join model: became relationship OrderItem: (Order)-[:ORDER_ITEM]->(Product) edges with its other fields as properties; Order.items and Product.orderItems now list Product and Order nodes (the properties are on $edge)
+  Product.price        Decimal: became Float: a 64-bit float keeps about 15 significant digits, so exact decimals (money) can round; use a String or an Int of cents to keep them exact
+  Product.categoryId   foreign key: dropped: the HAS_PRODUCTS edge of category replaces the key (Neo4j links nodes with edges, not key columns)
+  …
+```
+
+Run `cyphra validate` after the import, then `cyphra migrate dev` for the constraints and indexes.

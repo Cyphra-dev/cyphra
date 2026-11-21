@@ -1,0 +1,75 @@
+// Imported from a Prisma schema with `cyphra import prisma`.
+// Review before use (run the import again to see the full report):
+// - OrderItem: became relationship OrderItem: (Order)-[:ORDER_ITEM]->(Product) edges with its other fields as properties; Order.items and Product.orderItems now list Product and Order nodes (the properties are on $edge)
+// - Customer.id: gen_random_uuid() became uuid() (set by the client)
+// - Customer.email: case-insensitive text: Neo4j compares strings case-sensitively, so @unique no longer ignores case; filter with mode: "insensitive"
+// - Category.id: Neo4j has no sequences: not converted; keep the existing ids when you migrate the data, and set new ones yourself (or switch to String @id @default(cuid()))
+// - Category.parentId: dropped: the CATEGORY_TREE edge of parent replaces the key (Neo4j links nodes with edges, not key columns)
+// - Product.price: became Float: a 64-bit float keeps about 15 significant digits, so exact decimals (money) can round; use a String or an Int of cents to keep them exact
+// - Product.image: Neo4j has no byte arrays in Cyphra: not converted; store the bytes elsewhere (object storage) or as base64 text in a String
+// - Product.releasedOn: a date column became a Date field (a Neo4j DATE)
+// - Product.categoryId: dropped: the HAS_PRODUCTS edge of category replaces the key (Neo4j links nodes with edges, not key columns)
+// - Product: the foreign key of category is not a property: indexed the other fields (price)
+// - Order.total: became Float: a 64-bit float keeps about 15 significant digits, so exact decimals (money) can round; use a String or an Int of cents to keep them exact
+// - Order.customerId: dropped: the HAS_ORDERS edge of customer replaces the key (Neo4j links nodes with edges, not key columns)
+// - Order: the foreign key of customer is not a property: indexed the other fields (placedAt)
+// - OrderItem.unitPrice: became Float: a 64-bit float keeps about 15 significant digits, so exact decimals (money) can round; use a String or an Int of cents to keep them exact
+// - OrderItem: became the edge's endpoints: Neo4j has no constraint over relationships, but the client's connect keeps one ORDER_ITEM edge per pair of nodes (it MERGEs); raw Cypher CREATE does not
+
+enum OrderStatus {
+  PENDING
+  PAID
+  SHIPPED
+  CANCELLED
+}
+
+node Customer {
+  id String @id @default(uuid())
+  email String @unique
+  name String
+  addresses Json @default("[]")
+  orders Order[] @relationship(type: "HAS_ORDERS", direction: OUT, onDelete: Restrict)
+  createdAt DateTime @default(now())
+}
+
+node Category {
+  id Int @id
+  name String
+  slug String @unique
+  parent Category? @relationship(type: "CATEGORY_TREE", direction: IN)
+  children Category[] @relationship(type: "CATEGORY_TREE", direction: OUT)
+  products Product[] @relationship(type: "HAS_PRODUCTS", direction: OUT, onDelete: Restrict)
+  // parentId Int? (foreign key of parent: replaced by the edge)
+}
+
+node Product {
+  id String @id @default(cuid())
+  sku String @unique
+  name String
+  price Float @index
+  stock Int @default(0)
+  tags String[]
+  releasedOn Date?
+  category Category @relationship(type: "HAS_PRODUCTS", direction: IN)
+  orderItems Order[] @relationship(type: "ORDER_ITEM", direction: IN, onDelete: Restrict)
+  // image Bytes? (not converted: type not supported)
+  // categoryId Int (foreign key of category: replaced by the edge)
+}
+
+node Order {
+  id String @id @default(cuid())
+  status OrderStatus @default(PENDING)
+  placedAt DateTime @index @default(now())
+  total Float
+  customer Customer @relationship(type: "HAS_ORDERS", direction: IN)
+  items Product[] @relationship(type: "ORDER_ITEM", direction: OUT)
+  // customerId String (foreign key of customer: replaced by the edge)
+}
+
+relationship OrderItem {
+  type "ORDER_ITEM"
+  from Order
+  to Product
+  quantity Int @default(1)
+  unitPrice Float
+}

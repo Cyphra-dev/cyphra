@@ -1,7 +1,7 @@
 ---
 title: "Neo4j guides for TypeScript frameworks"
 sidebarTitle: Guides
-description: "Step-by-step guides for Neo4j with Cyphra: Next.js, NestJS, Bun and tRPC, deploying on Vercel, GraphRAG retrieval, and migrating from @neo4j/graphql."
+description: "Step-by-step guides for Neo4j with Cyphra: Next.js, NestJS, Bun and tRPC, deploying on Vercel, GraphRAG retrieval, and migrating from @neo4j/graphql or Prisma."
 ---
 
 import { Cards } from "nextra/components";
@@ -25,6 +25,10 @@ which versions it was tested with.
     title="Migrate from @neo4j/graphql to Cyphra"
     href="/guides/migrate-from-neo4j-graphql"
   />
+  <Cards.Card
+    title="Migrate from Prisma and PostgreSQL to Neo4j"
+    href="/guides/migrate-from-prisma"
+  />
 </Cards>
 
 The [tRPC guide](/guides/trpc) builds a typed API: the zod schemas Cyphra generates from
@@ -36,6 +40,9 @@ full-text search over document chunks, then expansion through the chunks' entiti
 [Migrate from @neo4j/graphql](/guides/migrate-from-neo4j-graphql) is a checklist to serve an
 existing `@neo4j/graphql` 7 API with `@cyphra/graphql`, with the same type definitions and frontend
 queries, and to add migrations and the typed client on the same graph.
+
+[Migrate from Prisma](/guides/migrate-from-prisma) moves a Prisma and PostgreSQL app to Neo4j:
+`cyphra import prisma` turns foreign keys into edges, then the data and the queries follow.
 
 ## What every framework guide has in common
 

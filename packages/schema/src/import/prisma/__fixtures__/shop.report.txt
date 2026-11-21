@@ -1,0 +1,26 @@
+Not converted (2):
+  Category.id    @default(autoincrement()): Neo4j has no sequences: not converted; keep the existing ids when you migrate the data, and set new ones yourself (or switch to String @id @default(cuid()))
+  Product.image  Bytes: Neo4j has no byte arrays in Cyphra: not converted; store the bytes elsewhere (object storage) or as base64 text in a String
+
+Converted with differences (13):
+  OrderItem            join model: became relationship OrderItem: (Order)-[:ORDER_ITEM]->(Product) edges with its other fields as properties; Order.items and Product.orderItems now list Product and Order nodes (the properties are on $edge)
+  Customer.id          @default(dbgenerated()): gen_random_uuid() became uuid() (set by the client)
+  Customer.email       @db.Citext: case-insensitive text: Neo4j compares strings case-sensitively, so @unique no longer ignores case; filter with mode: "insensitive"
+  Category.parentId    foreign key: dropped: the CATEGORY_TREE edge of parent replaces the key (Neo4j links nodes with edges, not key columns)
+  Product.price        Decimal: became Float: a 64-bit float keeps about 15 significant digits, so exact decimals (money) can round; use a String or an Int of cents to keep them exact
+  Product.releasedOn   @db.Date: a date column became a Date field (a Neo4j DATE)
+  Product.categoryId   foreign key: dropped: the HAS_PRODUCTS edge of category replaces the key (Neo4j links nodes with edges, not key columns)
+  Product              @@index: the foreign key of category is not a property: indexed the other fields (price)
+  Order.total          Decimal: became Float: a 64-bit float keeps about 15 significant digits, so exact decimals (money) can round; use a String or an Int of cents to keep them exact
+  Order.customerId     foreign key: dropped: the HAS_ORDERS edge of customer replaces the key (Neo4j links nodes with edges, not key columns)
+  Order                @@index: the foreign key of customer is not a property: indexed the other fields (placedAt)
+  OrderItem.unitPrice  Decimal: became Float: a 64-bit float keeps about 15 significant digits, so exact decimals (money) can round; use a String or an Int of cents to keep them exact
+  OrderItem            @@id: became the edge's endpoints: Neo4j has no constraint over relationships, but the client's connect keeps one ORDER_ITEM edge per pair of nodes (it MERGEs); raw Cypher CREATE does not
+
+Ignored (no effect on the graph) (6):
+  datasource db        datasource: Prisma connection settings (provider "postgresql"): Cyphra connects to Neo4j with NEO4J_URI
+  Customer.id          @db.Uuid: native database type, no effect in Neo4j
+  Customer.createdAt   @db.Timestamptz: native database type, no effect in Neo4j
+  Product.price        @db.Decimal: native database type, no effect in Neo4j
+  Order.total          @db.Decimal: native database type, no effect in Neo4j
+  OrderItem.unitPrice  @db.Decimal: native database type, no effect in Neo4j

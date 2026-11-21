@@ -191,13 +191,18 @@ npx cyphra migrate deploy            # production: apply pending migrations only
 
 ## Coming from Prisma
 
+Moving an existing Prisma app? `cyphra import prisma prisma/schema.prisma` converts the schema:
+models become nodes, foreign keys and join tables become relationships, and a report lists what
+does not convert. The [migration guide](/guides/migrate-from-prisma) goes on with the data and the
+queries.
+
 The left column uses the names from the Prisma ORM 7
 [CLI](https://www.prisma.io/docs/orm/v7/reference/prisma-cli-reference) and
 [client](https://www.prisma.io/docs/orm/v7/reference/prisma-client-reference) references.
 
 | Prisma                                         | Cyphra                                                                                                    |
 | ---------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| `schema.prisma`                                | `schema.cyphra`                                                                                           |
+| `schema.prisma`                                | `schema.cyphra` (`cyphra import prisma` converts one: [details](/cli#import-from-prisma))                 |
 | `model User { … }`                             | `node User { … }`                                                                                         |
 | `@relation(fields: […], references: […])`      | `@relationship(type: "AUTHORED", direction: OUT)`                                                         |
 | implicit or explicit many-to-many join table   | a relationship; its properties go in a `relationship { … }` model                                         |
@@ -277,6 +282,7 @@ No. A Cyphra migration is a module with a single up function, and applied migrat
   <Cards.Card title="Getting started" href="/getting-started" />
   <Cards.Card title="Typed client" href="/client" />
   <Cards.Card title="Migrations" href="/migrations" />
+  <Cards.Card title="Migrate from Prisma" href="/guides/migrate-from-prisma" />
   <Cards.Card title="ORM vs OGM" href="/glossary/orm-vs-ogm" />
 </Cards>
 
