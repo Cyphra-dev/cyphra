@@ -106,7 +106,7 @@ export class ModelEngine {
     if (paging) text += ` WITH n${paging}`;
     text += ` RETURN ${expr} AS row`;
     // Re-apply the order on the projected rows (WITH … ORDER BY only orders that clause).
-    const order = compileOrderBy(this.model, "n", args.orderBy);
+    const order = compileOrderBy(ctx, this.model, "n", args.orderBy);
     if (order) text += ` ORDER BY ${order}`;
     const rows = await exec(text, ctx.params);
     return rows.map((r) => decodeRow(shape, r.row)!);

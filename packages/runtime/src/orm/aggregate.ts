@@ -22,7 +22,7 @@ import {
   scalarField,
 } from "./compile.js";
 import { CyphraValidationError } from "./errors.js";
-import { decodeScalar, integerToNumber } from "./values.js";
+import { decodeCount, decodeScalar, integerToNumber } from "./values.js";
 import { isInt } from "neo4j-driver";
 
 type AnyRecord = Record<string, unknown>;
@@ -89,7 +89,7 @@ function aggExpr(alias: string, op: AggregateOp, target: AggTarget): string {
 }
 
 function decodeAgg(op: AggregateOp, target: AggTarget, v: unknown): unknown {
-  if (op === "_count") return isInt(v) ? integerToNumber(v) : Number(v ?? 0);
+  if (op === "_count") return decodeCount(v);
   if (v === null || v === undefined) return null;
   if (op === "_avg") return isInt(v) ? integerToNumber(v) : Number(v);
   return decodeScalar(target as ResolvedScalarField, v);

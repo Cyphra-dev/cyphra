@@ -132,9 +132,20 @@ export type WhereUniqueInput<TM extends TypeMap, M extends keyof TM> = RequireAt
 
 export type SortOrder = "asc" | "desc";
 
+/** Keys of the to-many relations of model `M` (the ones `_count` can count). */
+export type ToManyRelations<TM extends TypeMap, M extends keyof TM> = {
+  [R in keyof Relations<TM, M> & string]: Rel<TM, M, R>["many"] extends true ? R : never;
+}[keyof Relations<TM, M> & string];
+
+/** One `orderBy` entry: scalars, or a to-many relation by its count (`{ posts: { _count: "desc" } }`). */
+type OrderByItem<TM extends TypeMap, M extends keyof TM> = {
+  [K in keyof Scalars<TM, M>]?: SortOrder;
+} & {
+  [R in ToManyRelations<TM, M>]?: { _count?: SortOrder };
+};
+
 export type OrderByInput<TM extends TypeMap, M extends keyof TM> =
-  | { [K in keyof Scalars<TM, M>]?: SortOrder }
-  | readonly { [K in keyof Scalars<TM, M>]?: SortOrder }[];
+  OrderByItem<TM, M> | readonly OrderByItem<TM, M>[];
 
 // ---------------------------------------------------------------------------
 // Select / include and result payloads
@@ -150,14 +161,35 @@ export type RelationLoadArgs<TM extends TypeMap, T extends keyof TM> = {
   include?: IncludeInput<TM, T>;
 };
 
+/**
+ * `_count` in `select` / `include`: `true` counts every to-many relation;
+ * `{ select: { posts: true, comments: { where } } }` counts the listed ones (optionally filtered).
+ */
+export type RelationCountInput<TM extends TypeMap, M extends keyof TM> =
+  | boolean
+  | {
+      // To-one relations map to `never` so that counting one is a type error.
+      select: {
+        [R in keyof Relations<TM, M>]?: R extends ToManyRelations<TM, M>
+          ? boolean | { where?: WhereInput<TM, Target<TM, M, R>> }
+          : never;
+      };
+    };
+
 export type SelectInput<TM extends TypeMap, M extends keyof TM> = {
   [K in keyof Scalars<TM, M>]?: boolean;
 } & {
   [R in keyof Relations<TM, M>]?: boolean | RelationLoadArgs<TM, Target<TM, M, R>>;
+} & {
+  /** Number of related nodes per to-many relation. */
+  _count?: RelationCountInput<TM, M>;
 };
 
 export type IncludeInput<TM extends TypeMap, M extends keyof TM> = {
   [R in keyof Relations<TM, M>]?: boolean | RelationLoadArgs<TM, Target<TM, M, R>>;
+} & {
+  /** Number of related nodes per to-many relation. */
+  _count?: RelationCountInput<TM, M>;
 };
 
 type EdgePart<D extends RelationTypeDef> =
@@ -171,6 +203,18 @@ type RelationPayload<TM extends TypeMap, D extends RelationTypeDef, A> = D["many
 
 type TrueKeys<T> = { [K in keyof T]: T[K] extends false | undefined ? never : K }[keyof T];
 
+/** `{ posts: number, … }` for a `_count` selection `C`. */
+type RelationCountPayload<TM extends TypeMap, M extends keyof TM, C> = C extends true
+  ? { [R in ToManyRelations<TM, M>]: number }
+  : C extends { select: infer X }
+    ? { [R in TrueKeys<X> & ToManyRelations<TM, M>]: number }
+    : never;
+
+type CountPart<TM extends TypeMap, M extends keyof TM, A> =
+  "_count" extends TrueKeys<A>
+    ? { _count: Simplify<RelationCountPayload<TM, M, A["_count" & keyof A]>> }
+    : unknown;
+
 type SelectPayload<TM extends TypeMap, M extends keyof TM, S> = {
   [K in TrueKeys<S> & keyof Scalars<TM, M>]: Scalars<TM, M>[K];
 } & {
@@ -179,7 +223,7 @@ type SelectPayload<TM extends TypeMap, M extends keyof TM, S> = {
     Rel<TM, M, R>,
     S[R & keyof S] extends object ? S[R & keyof S] : object
   >;
-};
+} & CountPart<TM, M, S>;
 
 type IncludePayload<TM extends TypeMap, M extends keyof TM, I> = Scalars<TM, M> & {
   [R in TrueKeys<I> & keyof Relations<TM, M>]: RelationPayload<
@@ -187,7 +231,7 @@ type IncludePayload<TM extends TypeMap, M extends keyof TM, I> = Scalars<TM, M> 
     Rel<TM, M, R>,
     I[R & keyof I] extends object ? I[R & keyof I] : object
   >;
-};
+} & CountPart<TM, M, I>;
 
 /** Result type of a query on model `M` with args `A` (honours `select` / `include`). */
 export type Payload<TM extends TypeMap, M extends keyof TM, A> = Simplify<

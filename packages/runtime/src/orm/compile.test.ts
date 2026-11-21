@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vitest";
 import neo4j from "neo4j-driver";
 import { schemaModel } from "./__fixtures__/blog.gen.js";
-import { QueryContext, compileProjection, compileWhere, q } from "./compile.js";
+import {
+  QueryContext,
+  compileOrderBy,
+  compileProjection,
+  compileWhere,
+  decodeRow,
+  q,
+} from "./compile.js";
 import { CyphraValidationError } from "./errors.js";
 
 const user = schemaModel.nodes.find((n) => n.name === "User")!;
@@ -93,6 +100,95 @@ describe("compileProjection", () => {
     });
     expect(expr).toBe(
       "n{.`email`, `following`: COLLECT { MATCH (n)-[r1:`FOLLOWS`]->(m0:`User`) WITH m0, r1 LIMIT $p0 RETURN m0{.`email`, `$edge`: properties(r1)} }}",
+    );
+  });
+});
+
+describe("relation counts", () => {
+  const post = schemaModel.nodes.find((n) => n.name === "Post")!;
+  const project = (model: typeof user, args: Record<string, unknown>) => {
+    const ctx = new QueryContext(schemaModel);
+    return { ...compileProjection(ctx, model, "n", args), params: ctx.params };
+  };
+
+  it("_count: true counts every to-many relation, in their direction", () => {
+    const { expr, shape } = project(user, { select: { email: true, _count: true } });
+    expect(expr).toBe(
+      "n{.`email`, `_count`: {`posts`: COUNT { MATCH (n)-[:`AUTHORED`]->(m0:`Post`) }, " +
+        "`following`: COUNT { MATCH (n)-[:`FOLLOWS`]->(m1:`User`) }, " +
+        "`followers`: COUNT { MATCH (n)<-[:`FOLLOWS`]-(m2:`User`) }}}",
+    );
+    expect(shape.counts?.map((f) => f.name)).toEqual(["posts", "following", "followers"]);
+  });
+
+  it("_count.select counts the listed relations, with filters incl. nested relation filters", () => {
+    const { expr, params } = project(user, {
+      include: {
+        _count: {
+          select: {
+            posts: { where: { published: true, author: { is: { name: "A" } } } },
+            followers: true,
+            following: false,
+          },
+        },
+      },
+    });
+    expect(expr).toContain(
+      "`_count`: {`posts`: COUNT { MATCH (n)-[:`AUTHORED`]->(m0:`Post`) WHERE (m0.`published` = $p0) AND " +
+        "(EXISTS { MATCH (m0)<-[:`AUTHORED`]-(m1:`User`) WHERE m1.`name` = $p1 }) }, " +
+        "`followers`: COUNT { MATCH (n)<-[:`FOLLOWS`]-(m2:`User`) }}",
+    );
+    expect(expr.startsWith("n{.`id`, .`email`")).toBe(true);
+    expect(params).toEqual({ p0: true, p1: "A" });
+  });
+
+  it("counts inside nested relations and decodes the numbers", () => {
+    const { expr, shape } = project(post, {
+      select: { title: true, author: { select: { _count: { select: { posts: true } } } } },
+    });
+    expect(expr).toBe(
+      "n{.`title`, `author`: head(COLLECT { MATCH (n)<-[r1:`AUTHORED`]-(m0:`User`) RETURN " +
+        "m0{`_count`: {`posts`: COUNT { MATCH (m0)-[:`AUTHORED`]->(m2:`Post`) }}} })}",
+    );
+    const row = decodeRow(shape, {
+      title: "T",
+      author: { _count: { posts: neo4j.int(3) } },
+    });
+    expect(row).toEqual({ title: "T", author: { _count: { posts: 3 } } });
+  });
+
+  it("an empty _count.select yields an empty object; false omits it", () => {
+    const { expr, shape } = project(user, { select: { id: true, _count: { select: {} } } });
+    expect(expr).toBe("n{.`id`, `_count`: {}}");
+    expect(decodeRow(shape, { id: "x", _count: {} })).toEqual({ id: "x", _count: {} });
+    expect(project(user, { include: { _count: false } }).shape.counts).toBeUndefined();
+  });
+
+  it("rejects to-one relations, unknown relations and malformed specs", () => {
+    const bad = [
+      [post, { include: { _count: { select: { author: true } } } }],
+      [user, { include: { _count: { select: { email: true } } } }],
+      [user, { include: { _count: { select: { nope: true } } } }],
+      [user, { include: { _count: { posts: true } } }],
+      [user, { include: { _count: { select: { posts: { take: 1 } } } } }],
+      [user, { select: { _count: "yes" } }],
+    ] as const;
+    for (const [model, args] of bad) {
+      expect(() => project(model, args)).toThrow(CyphraValidationError);
+    }
+  });
+
+  it("orders by relation count", () => {
+    const ctx = new QueryContext(schemaModel);
+    expect(
+      compileOrderBy(ctx, user, "n", [{ followers: { _count: "desc" } }, { email: "asc" }]),
+    ).toBe("COUNT { MATCH (n)<-[:`FOLLOWS`]-(m0:`User`) } DESC, n.`email` ASC");
+    expect(() => compileOrderBy(ctx, post, "n", { author: { _count: "asc" } })).toThrow(
+      CyphraValidationError,
+    );
+    expect(() => compileOrderBy(ctx, user, "n", { posts: "asc" })).toThrow(CyphraValidationError);
+    expect(() => compileOrderBy(ctx, user, "n", { posts: { _count: "up" } })).toThrow(
+      CyphraValidationError,
     );
   });
 });

@@ -858,3 +858,184 @@ describe.skipIf(!hasNeo)("ORM aggregate / groupBy (Neo4j)", () => {
     ).rejects.toBeInstanceOf(CyphraValidationError);
   });
 });
+
+describe.skipIf(!hasNeo)("ORM relation counts (Neo4j)", () => {
+  let db: Db;
+
+  beforeEach(async () => {
+    db ??= createClient({
+      uri: process.env.NEO4J_TEST_URI!,
+      user: process.env.NEO4J_TEST_USER!,
+      password: process.env.NEO4J_TEST_PASSWORD!,
+    });
+    await db.$cypher`MATCH (n) WHERE n:User OR n:Post DETACH DELETE n`;
+  });
+
+  afterAll(async () => {
+    await db?.$disconnect();
+  });
+
+  /** alice: 3 posts (2 published), follows bob and carol; bob: 1 post, follows alice; carol: none. */
+  async function seed() {
+    await db.user.create({ data: { email: "carol@x.io", name: "Carol" } });
+    await db.user.create({
+      data: { email: "bob@x.io", name: "Bob", posts: { create: [{ title: "b1" }] } },
+    });
+    await db.user.create({
+      data: {
+        email: "alice@x.io",
+        name: "Alice",
+        posts: {
+          create: [
+            { title: "a1", published: true, views: 10 },
+            { title: "a2", published: true, views: 1 },
+            { title: "a3" },
+          ],
+        },
+        following: { connect: [{ email: "bob@x.io" }, { email: "carol@x.io" }] },
+      },
+    });
+    await db.user.update({
+      where: { email: "bob@x.io" },
+      data: { following: { connect: { email: "alice@x.io" } } },
+    });
+  }
+
+  it("include: { _count: true } counts every to-many relation, in its direction", async () => {
+    await seed();
+    const users = await db.user.findMany({
+      include: { _count: true },
+      orderBy: { email: "asc" },
+    });
+    expect(users.map((u) => [u.email, u._count])).toEqual([
+      ["alice@x.io", { posts: 3, following: 2, followers: 1 }],
+      ["bob@x.io", { posts: 1, following: 1, followers: 1 }],
+      ["carol@x.io", { posts: 0, following: 0, followers: 1 }],
+    ]);
+    expect(users[0]!.name).toBe("Alice");
+  });
+
+  it("_count.select with where (incl. nested relation filters), under select and nested", async () => {
+    await seed();
+    const alice = await db.user.findUniqueOrThrow({
+      where: { email: "alice@x.io" },
+      select: {
+        name: true,
+        _count: {
+          select: {
+            posts: { where: { published: true, views: { gt: 5 } } },
+            following: { where: { posts: { some: {} } } },
+          },
+        },
+      },
+    });
+    expect(alice).toEqual({ name: "Alice", _count: { posts: 1, following: 1 } });
+
+    const posts = await db.post.findMany({
+      where: { title: { in: ["a1", "b1"] } },
+      orderBy: { title: "asc" },
+      select: {
+        title: true,
+        author: {
+          select: {
+            email: true,
+            _count: { select: { posts: true } },
+            followers: { select: { email: true, _count: { select: { following: true } } } },
+          },
+        },
+      },
+    });
+    expect(posts).toEqual([
+      {
+        title: "a1",
+        author: {
+          email: "alice@x.io",
+          _count: { posts: 3 },
+          followers: [{ email: "bob@x.io", _count: { following: 1 }, $edge: expect.anything() }],
+        },
+      },
+      {
+        title: "b1",
+        author: {
+          email: "bob@x.io",
+          _count: { posts: 1 },
+          followers: [{ email: "alice@x.io", _count: { following: 2 }, $edge: expect.anything() }],
+        },
+      },
+    ]);
+  });
+
+  it("counts in write results and inside $transaction", async () => {
+    await seed();
+    const created = await db.user.create({
+      data: { email: "dan@x.io", posts: { create: [{ title: "d1" }, { title: "d2" }] } },
+      include: { _count: { select: { posts: true } } },
+    });
+    expect(created._count).toEqual({ posts: 2 });
+
+    const updated = await db.user.update({
+      where: { email: "dan@x.io" },
+      data: { following: { connect: { email: "alice@x.io" } } },
+      select: { _count: { select: { following: true } } },
+    });
+    expect(updated).toEqual({ _count: { following: 1 } });
+
+    const upserted = await db.user.upsert({
+      where: { email: "carol@x.io" },
+      create: { email: "carol@x.io" },
+      update: { name: "Caroline" },
+      select: { name: true, _count: { select: { followers: true } } },
+    });
+    expect(upserted).toEqual({ name: "Caroline", _count: { followers: 1 } });
+
+    const [counted, deleted] = await db.$transaction(async (tx) => [
+      await tx.user.findFirst({
+        where: { email: "alice@x.io" },
+        select: { _count: { select: { followers: true } } },
+      }),
+      await tx.user.delete({
+        where: { email: "dan@x.io" },
+        select: { email: true, _count: { select: { posts: true } } },
+      }),
+    ]);
+    expect(counted).toEqual({ _count: { followers: 2 } });
+    expect(deleted).toEqual({ email: "dan@x.io", _count: { posts: 2 } });
+  });
+
+  it("orders by relation count (with paging and inside included relations)", async () => {
+    await seed();
+    const byPosts = await db.user.findMany({
+      orderBy: [{ posts: { _count: "desc" } }, { email: "asc" }],
+      select: { email: true },
+    });
+    expect(byPosts.map((u) => u.email)).toEqual(["alice@x.io", "bob@x.io", "carol@x.io"]);
+
+    const top = await db.user.findMany({
+      orderBy: [{ following: { _count: "asc" } }, { email: "asc" }],
+      skip: 1,
+      take: 1,
+      select: { email: true },
+    });
+    expect(top.map((u) => u.email)).toEqual(["bob@x.io"]);
+
+    const alice = await db.user.findUniqueOrThrow({
+      where: { email: "alice@x.io" },
+      select: {
+        following: { orderBy: { posts: { _count: "desc" } }, select: { email: true } },
+      },
+    });
+    expect(alice.following.map((u) => u.email)).toEqual(["bob@x.io", "carol@x.io"]);
+  });
+
+  it("rejects counting a to-one relation", async () => {
+    const loose = db as unknown as {
+      post: { findMany(args: unknown): Promise<unknown> };
+    };
+    await expect(
+      loose.post.findMany({ include: { _count: { select: { author: true } } } }),
+    ).rejects.toBeInstanceOf(CyphraValidationError);
+    await expect(
+      loose.post.findMany({ orderBy: { author: { _count: "asc" } } }),
+    ).rejects.toBeInstanceOf(CyphraValidationError);
+  });
+});
