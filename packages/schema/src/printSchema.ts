@@ -1,6 +1,15 @@
 import type { Decorator, ModelAttribute, NodeField, ScalarTypeRef, SchemaDocument } from "./ast.js";
 
-function formatScalarType(t: ScalarTypeRef): string {
+/**
+ * A `.cyphra` string literal: the grammar only knows the `\\`, `\"` and `\n` escapes, so other
+ * characters (tabs, control characters) stay as they are (`JSON.stringify` would escape them).
+ */
+export function quoteSchemaString(s: string): string {
+  return `"${s.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\n/g, "\\n")}"`;
+}
+
+/** @internal Surface syntax of a scalar field type (`String?`, `Vector(3)`, `Role[]`). */
+export function formatScalarType(t: ScalarTypeRef): string {
   if (t.name === "Vector") {
     return `Vector(${t.dimensions ?? 0})${t.optional ? "?" : ""}`;
   }
@@ -13,7 +22,7 @@ function formatScalarType(t: ScalarTypeRef): string {
 
 function formatDecoratorValue(v: Decorator["args"][number]["value"]): string {
   if (v.kind === "string") {
-    return JSON.stringify(v.value);
+    return quoteSchemaString(v.value);
   }
   if (v.kind === "number" && v.raw !== undefined) {
     return v.raw;
@@ -69,15 +78,16 @@ function formatScalarField(f: Extract<NodeField, { kind: "Scalar" }>): string {
   return decs ? `${base} ${decs}` : base;
 }
 
+/** @internal Surface syntax of a relation field's type (`User`, `User?`, `Post[]`). */
+export function formatRelationalType(f: Extract<NodeField, { kind: "Relational" }>): string {
+  if (f.cardinality === "many") return `${f.target}[]`;
+  return f.optional ? `${f.target}?` : f.target;
+}
+
 function formatRelationalField(f: Extract<NodeField, { kind: "Relational" }>): string {
-  let typeSuffix = f.target;
-  if (f.cardinality === "many") {
-    typeSuffix += "[]";
-  } else if (f.optional) {
-    typeSuffix += "?";
-  }
   const decs = f.decorators.map(formatDecorator).join(" ");
-  return `${f.name} ${typeSuffix} ${decs}`;
+  const base = `${f.name} ${formatRelationalType(f)}`;
+  return decs ? `${base} ${decs}` : base;
 }
 
 function formatNodeField(f: NodeField): string {
@@ -85,7 +95,8 @@ function formatNodeField(f: NodeField): string {
 }
 
 /**
- * Pretty-print a schema document as `.cyphra` text (comments are not preserved).
+ * Pretty-print a schema document as `.cyphra` text (comments are not preserved: use
+ * `formatSchema` to reformat source text and keep them).
  *
  * @param doc - Parsed document.
  * @returns UTF-8 source suitable for review, diffs, or round-trip testing.
@@ -107,7 +118,7 @@ export function printSchemaDocument(doc: SchemaDocument): string {
       const fieldLines = d.fields.map((f) => `  ${formatScalarField(f)}`);
       const lines = [
         `relationship ${d.name} {`,
-        `  type ${JSON.stringify(d.relType)}`,
+        `  type ${quoteSchemaString(d.relType)}`,
         `  from ${d.from}`,
         `  to ${d.to}`,
         ...fieldLines,

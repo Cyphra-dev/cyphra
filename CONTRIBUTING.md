@@ -80,6 +80,21 @@ Configure **npm Trusted Publishers** for this repository so OIDC can authenticat
 
 Some organizations block the default `GITHUB_TOKEN` from **creating pull requests** (Changesets opens a “Version Packages” PR). If the Release workflow fails with that error, add a repository secret **`CHANGESET_RELEASE_PAT`**: a fine-grained PAT with **Contents** and **Pull requests** read/write on this repo (or a classic PAT with `repo` scope). The workflow uses it instead of `GITHUB_TOKEN` for the Changesets step. Alternatively, an org owner can allow GitHub Actions to create pull requests for this repository.
 
+### New npm packages
+
+npm trusted publishing can only be configured on a package that already exists. Before the first release that contains a new package (for example `@cyphra/language-server`), publish it once by hand from an npm account with access to the `@cyphra` scope (`pnpm --filter <name> publish --access public` after a build), then add this repository as its Trusted Publisher on npmjs.com, so later releases go through the Release workflow.
+
+### VS Code extension
+
+`packages/vscode` (`cyphra-vscode`, private on npm and ignored by Changesets) is the VS Code extension; it bundles `@cyphra/language-server`. CI builds `packages/vscode/cyphra-vscode.vsix` on every run and uploads it as the `cyphra-vscode-vsix` artifact. Version it by hand (`version` in `packages/vscode/package.json`, plus `packages/vscode/CHANGELOG.md`).
+
+Publishing is manual, with [`.github/workflows/vscode-publish.yml`](./.github/workflows/vscode-publish.yml) (Actions tab, **Publish VS Code extension**, **Run workflow**; choose `both`, `marketplace` or `open-vsx`). One-time setup:
+
+1. **Visual Studio Marketplace.** Create a publisher at <https://marketplace.visualstudio.com/manage> (its ID must equal `publisher` in `packages/vscode/package.json`, currently the placeholder `cyphra`: change one or the other). In Azure DevOps (<https://dev.azure.com>, same Microsoft account), create a personal access token with organization **All accessible organizations** and scope **Marketplace > Manage**. Save it as the repository secret **`VSCE_PAT`**.
+2. **Open VSX.** Sign in at <https://open-vsx.org> with GitHub, sign the Eclipse Foundation publisher agreement (profile page), and create an access token (Settings > Access Tokens). Create the namespace once: `npx ovsx create-namespace <publisher> -p <token>` (same name as `publisher`). Save the token as the repository secret **`OVSX_PAT`**.
+
+A target whose secret is missing is skipped with a warning. To publish by hand instead: `pnpm --filter cyphra-vscode run package`, then `npx @vscode/vsce publish --no-dependencies --packagePath packages/vscode/cyphra-vscode.vsix` (with `VSCE_PAT` set) and `npx ovsx publish packages/vscode/cyphra-vscode.vsix -p <token>`.
+
 ## Dependency audit exceptions
 
 `pnpm audit --audit-level=high` runs in CI. Exceptions live in `pnpm.auditConfig.ignoreGhsas` in the root `package.json` and must be listed here:

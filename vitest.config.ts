@@ -11,6 +11,8 @@ export default defineConfig({
       "packages/cyphra",
       "packages/better-auth",
       "packages/graphql",
+      "packages/language-server",
+      "packages/vscode",
       "compat/graphql",
     ],
   },

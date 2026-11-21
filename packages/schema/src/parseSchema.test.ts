@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseSchema } from "./parseSchema.js";
+import { parseSchema, parseSchemaSyntax } from "./parseSchema.js";
 import { SchemaValidationError } from "./errors.js";
 
 const fullExample = `
@@ -169,5 +169,80 @@ describe("parseSchema", () => {
       }
     `);
     expect(doc.declarations[1]).toMatchObject({ kind: "Relationship", name: "R" });
+  });
+});
+
+describe("parseSchemaSyntax with locations", () => {
+  const source = `// users
+node User {
+  id   String @id @default(cuid())
+  role Role   @default(ADMIN)
+  posts Post[] @relationship(type: "AUTHORED", direction: OUT)
+
+  @@fulltext([id], name: "x")
+}
+
+enum Role { ADMIN USER }
+
+relationship Wrote {
+  type "AUTHORED"
+  from User
+  to Post
+}
+
+node Post { id String @id }
+`;
+  const at = (r: { start: { offset: number }; end: { offset: number } } | undefined) =>
+    r ? source.slice(r.start.offset, r.end.offset) : undefined;
+
+  it("adds no location to the default AST", () => {
+    const plain = parseSchemaSyntax(source);
+    expect(JSON.stringify(plain)).not.toMatch(/"loc"|Loc"|"comments"/);
+    expect(parseSchema(source)).toEqual(plain);
+  });
+
+  it("records ranges of declarations, fields, types, decorators and arguments", () => {
+    const doc = parseSchemaSyntax(source, { locations: true });
+    const user = doc.declarations[0]!;
+    if (user.kind !== "Node") throw new Error("expected a node");
+    expect(at(user.nameLoc)).toBe("User");
+    expect(at(user.loc)?.startsWith("node User {")).toBe(true);
+    expect(at(user.loc)?.endsWith("}")).toBe(true);
+    const [id, role, posts] = user.fields;
+    expect(at(id!.loc)).toBe("id   String @id @default(cuid())");
+    expect(at(id!.nameLoc)).toBe("id");
+    expect(at(id!.typeLoc)).toBe("String");
+    expect(at(id!.decorators[1]!.loc)).toBe("@default(cuid())");
+    expect(at(id!.decorators[1]!.args[0]!.valueLoc)).toBe("cuid()");
+    // Enum-typed fields keep their ranges when turned into scalars.
+    expect(role).toMatchObject({ kind: "Scalar", type: { name: "Enum", enum: "Role" } });
+    expect(at(role!.typeLoc)).toBe("Role");
+    expect(at(role!.decorators[0]!.args[0]!.valueLoc)).toBe("ADMIN");
+    expect(at(posts!.typeLoc)).toBe("Post[]");
+    const relArg = posts!.decorators[0]!.args[1]!;
+    expect(at(relArg.loc)).toBe("direction: OUT");
+    expect(at(relArg.keyLoc)).toBe("direction");
+    expect(at(relArg.valueLoc)).toBe("OUT");
+    const attr = user.attributes![0]!;
+    expect(at(attr.loc)).toBe('@@fulltext([id], name: "x")');
+    expect(attr.fieldLocs?.map(at)).toEqual(["id"]);
+
+    const role2 = doc.declarations[1]!;
+    if (role2.kind !== "Enum") throw new Error("expected an enum");
+    expect(role2.valueLocs?.map(at)).toEqual(["ADMIN", "USER"]);
+
+    const wrote = doc.declarations[2]!;
+    if (wrote.kind !== "Relationship") throw new Error("expected a relationship");
+    expect(at(wrote.relTypeLoc)).toBe('"AUTHORED"');
+    expect(at(wrote.fromLoc)).toBe("User");
+    expect(at(wrote.toLoc)).toBe("Post");
+
+    expect(doc.comments).toEqual([
+      {
+        text: "// users",
+        loc: { start: { offset: 0, line: 1, column: 1 }, end: { offset: 8, line: 1, column: 9 } },
+      },
+    ]);
+    expect(id!.nameLoc!.start).toEqual({ offset: 23, line: 3, column: 3 });
   });
 });

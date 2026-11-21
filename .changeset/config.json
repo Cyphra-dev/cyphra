@@ -11,12 +11,19 @@
       "@cyphra/runtime",
       "@cyphra/schema",
       "@cyphra/better-auth",
-      "@cyphra/graphql"
+      "@cyphra/graphql",
+      "@cyphra/language-server"
     ]
   ],
   "linked": [],
   "access": "public",
   "baseBranch": "main",
   "updateInternalDependencies": "patch",
-  "ignore": ["cyphra-doc", "cyphra-example-basic", "cyphra-example-graphrag", "compat-graphql"]
+  "ignore": [
+    "cyphra-doc",
+    "cyphra-example-basic",
+    "cyphra-example-graphrag",
+    "compat-graphql",
+    "cyphra-vscode"
+  ]
 }

@@ -1,0 +1,63 @@
+{
+  "name": "@cyphra/language-server",
+  "version": "0.8.0",
+  "description": "Language server (LSP) for Cyphra .cyphra schema files: diagnostics, completion, hover, go to definition, rename and formatting",
+  "type": "module",
+  "sideEffects": false,
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "bin": {
+    "cyphra-language-server": "./dist/bin.js"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@cyphra/schema": "workspace:*",
+    "vscode-languageserver": "11.0.0",
+    "vscode-languageserver-textdocument": "1.0.16"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "tsup": "^8.5.1",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.12"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Cyphra-dev/cyphra.git",
+    "directory": "packages/language-server"
+  },
+  "homepage": "https://www.cyphra.dev/editor",
+  "bugs": {
+    "url": "https://github.com/Cyphra-dev/cyphra/issues"
+  },
+  "keywords": [
+    "neo4j",
+    "cyphra",
+    "schema",
+    "language-server",
+    "lsp",
+    "neovim",
+    "vscode"
+  ]
+}

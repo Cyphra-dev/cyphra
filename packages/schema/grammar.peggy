@@ -1,24 +1,48 @@
+// Cyphra schema grammar. `parse(source, { locations: true })` also records source ranges (`loc`,
+// `nameLoc`, …) and the document's `//` comments, for editor tooling; without it the AST carries
+// no positions, so existing consumers see the same shapes as before.
+{
+  const LOC = options.locations === true;
+  const comments = new Map();
+  function pos(p) {
+    return { offset: p.offset, line: p.line, column: p.column };
+  }
+  function here() {
+    const l = location();
+    return { start: pos(l.start), end: pos(l.end) };
+  }
+  // Attach source ranges only when asked for.
+  function withLoc(node, locs) {
+    return LOC ? Object.assign(node, locs) : node;
+  }
+}
+
 start
   = _ decls:(_ @declaration)* _ {
       // A field typed with an enum name parses like a relation field (`role Role`); now that every
       // enum is known, turn those into scalar fields of that enum type.
       const enums = new Set(decls.filter((d) => d.kind === "Enum").map((d) => d.name));
-      const resolveField = (f) =>
-        f.kind === "Relational" && enums.has(f.target)
-          ? {
-              kind: "Scalar",
-              name: f.name,
-              type:
-                f.cardinality === "many"
-                  ? { name: "Enum", optional: false, list: true, enum: f.target }
-                  : { name: "Enum", optional: f.optional, enum: f.target },
-              decorators: f.decorators,
-            }
-          : f;
+      const resolveField = (f) => {
+        if (f.kind !== "Relational" || !enums.has(f.target)) return f;
+        const { kind, name, target, cardinality, optional, decorators, ...locs } = f;
+        return {
+          kind: "Scalar",
+          name,
+          type:
+            cardinality === "many"
+              ? { name: "Enum", optional: false, list: true, enum: target }
+              : { name: "Enum", optional, enum: target },
+          decorators,
+          ...locs,
+        };
+      };
       const declarations = enums.size
         ? decls.map((d) => (d.kind === "Node" ? { ...d, fields: d.fields.map(resolveField) } : d))
         : decls;
-      return { kind: "Document", declarations };
+      const doc = { kind: "Document", declarations };
+      return withLoc(doc, {
+        comments: [...comments.values()].sort((a, b) => a.loc.start.offset - b.loc.start.offset),
+      });
     }
 
 declaration
@@ -26,62 +50,82 @@ declaration
   / relationshipDeclaration
   / enumDeclaration
 
+// An identifier with its source range.
+nameTok
+  = id:identifier { return { id, loc: here() }; }
+
 // `enum Role { ADMIN USER }`: values separated by whitespace (or commas).
 enumDeclaration
-  = "enum" __ name:identifier _ "{" _ values:(@identifier _ ("," _)?)* "}" {
-      return { kind: "Enum", name, values };
+  = "enum" __ n:nameTok _ "{" _ values:(@nameTok _ ("," _)?)* "}" {
+      return withLoc(
+        { kind: "Enum", name: n.id, values: values.map((v) => v.id) },
+        { loc: here(), nameLoc: n.loc, valueLocs: values.map((v) => v.loc) },
+      );
     }
 
 nodeDeclaration
-  = "node" __ name:identifier _ "{" _ items:nodeItem* _ "}" {
+  = "node" __ n:nameTok _ "{" _ items:nodeItem* _ "}" {
       const fields = items.filter((i) => i.kind !== "ModelAttribute");
       const attributes = items.filter((i) => i.kind === "ModelAttribute");
       // `attributes` only when present, so schemas without `@@…` parse to the same AST as before.
-      return attributes.length
-        ? { kind: "Node", name, fields, attributes }
-        : { kind: "Node", name, fields };
+      const node = attributes.length
+        ? { kind: "Node", name: n.id, fields, attributes }
+        : { kind: "Node", name: n.id, fields };
+      return withLoc(node, { loc: here(), nameLoc: n.loc });
     }
 
 nodeItem
-  = modelAttribute
-  / nodeField
+  = @modelAttribute _
+  / @nodeField _
 
 relationshipDeclaration
-  = "relationship" __ name:identifier _ "{" _ body:relationshipBody _ "}" {
-      return {
-        kind: "Relationship",
-        name,
-        relType: body.relType,
-        from: body.from,
-        to: body.to,
-        fields: body.fields,
-        ...(body.attributes ? { attributes: body.attributes } : {}),
-      };
+  = "relationship" __ n:nameTok _ "{" _ body:relationshipBody _ "}" {
+      return withLoc(
+        {
+          kind: "Relationship",
+          name: n.id,
+          relType: body.relType,
+          from: body.from.id,
+          to: body.to.id,
+          fields: body.fields,
+          ...(body.attributes ? { attributes: body.attributes } : {}),
+        },
+        {
+          loc: here(),
+          nameLoc: n.loc,
+          relTypeLoc: body.relTypeLoc,
+          fromLoc: body.from.loc,
+          toLoc: body.to.loc,
+        },
+      );
     }
 
 relationshipBody
-  = "type" __ rt:stringLiteral _ fromLine:fromLine _ toLine:toLine _ items:relationshipItem* {
+  = "type" __ rt:stringTok _ fromLine:fromLine _ toLine:toLine _ items:relationshipItem* {
       const fields = items.filter((i) => i.kind !== "ModelAttribute");
       const attributes = items.filter((i) => i.kind === "ModelAttribute");
-      return attributes.length
-        ? { relType: rt, from: fromLine, to: toLine, fields, attributes }
-        : { relType: rt, from: fromLine, to: toLine, fields };
+      const body = { relType: rt.value, relTypeLoc: rt.loc, from: fromLine, to: toLine, fields };
+      return attributes.length ? { ...body, attributes } : body;
     }
 
 relationshipItem
-  = modelAttribute
-  / scalarFieldInRel
+  = @modelAttribute _
+  / @scalarFieldInRel _
 
 // Model-level attribute: `@@name`, `@@name([a, b])`, `@@name([a, b], key: value, …)` or
 // `@@name(key: value, …)`. The optional leading list names fields of the enclosing model.
 modelAttribute
-  = "@@" name:identifier "(" _ body:modelAttributeBody _ ")" _ {
-      return body.fields
-        ? { kind: "ModelAttribute", name, fields: body.fields, args: body.args }
+  = "@@" name:identifier "(" _ body:modelAttributeBody _ ")" {
+      const attr = body.fields
+        ? { kind: "ModelAttribute", name, fields: body.fields.map((f) => f.id), args: body.args }
         : { kind: "ModelAttribute", name, args: body.args };
+      return withLoc(attr, {
+        loc: here(),
+        ...(body.fields ? { fieldLocs: body.fields.map((f) => f.loc) } : {}),
+      });
     }
-  / "@@" name:identifier _ {
-      return { kind: "ModelAttribute", name, args: [] };
+  / "@@" name:identifier {
+      return withLoc({ kind: "ModelAttribute", name, args: [] }, { loc: here() });
     }
 
 modelAttributeBody
@@ -93,21 +137,34 @@ modelAttributeBody
     }
 
 fieldList
-  = "[" _ head:identifier tail:(_ "," _ @identifier)* _ "]" {
+  = "[" _ head:nameTok tail:(_ "," _ @nameTok)* _ "]" {
       return [head, ...tail];
     }
   / "[" _ "]" { return []; }
 
 fromLine
-  = "from" __ id:identifier _ { return id; }
+  = "from" __ @nameTok
 
 toLine
-  = "to" __ id:identifier _ { return id; }
+  = "to" __ @nameTok
 
 scalarFieldInRel
-  = name:identifier __ type:relFieldType decs:(_ @decorator)* _ {
-      return { kind: "Scalar", name, type, decorators: decs };
+  = n:nameTok __ type:typedRelFieldType decs:(_ @decorator)* {
+      return withLoc(
+        { kind: "Scalar", name: n.id, type: type.t, decorators: decs },
+        { loc: here(), nameLoc: n.loc, typeLoc: type.loc },
+      );
     }
+
+// Type expressions with their source range (the name plus any `(N)`, `?` or `[]`).
+typedFieldType
+  = t:fieldType { return { t, loc: here() }; }
+
+typedRelFieldType
+  = t:relFieldType { return { t, loc: here() }; }
+
+typedRelationalTarget
+  = t:relationalTarget { return { t, loc: here() }; }
 
 nodeField
   = scalarNodeField
@@ -116,15 +173,18 @@ nodeField
 // Also matches enum-typed fields (`role Role`, `roles Role[]`), which `start` turns into scalars.
 // A relation field without `@relationship(...)` is rejected when the schema is resolved.
 relationalNodeField
-  = name:identifier __ target:relationalTarget decs:(_ @decorator)* _ {
-      return {
-        kind: "Relational",
-        name,
-        target: target.target,
-        cardinality: target.cardinality,
-        optional: target.optional,
-        decorators: decs,
-      };
+  = n:nameTok __ target:typedRelationalTarget decs:(_ @decorator)* {
+      return withLoc(
+        {
+          kind: "Relational",
+          name: n.id,
+          target: target.t.target,
+          cardinality: target.t.cardinality,
+          optional: target.t.optional,
+          decorators: decs,
+        },
+        { loc: here(), nameLoc: n.loc, typeLoc: target.loc },
+      );
     }
 
 relationalTarget
@@ -133,8 +193,11 @@ relationalTarget
   / t:identifier { return { target: t, cardinality: "one", optional: false }; }
 
 scalarNodeField
-  = name:identifier __ type:fieldType decs:(_ @decorator)* _ {
-      return { kind: "Scalar", name, type, decorators: decs };
+  = n:nameTok __ type:typedFieldType decs:(_ @decorator)* {
+      return withLoc(
+        { kind: "Scalar", name: n.id, type: type.t, decorators: decs },
+        { loc: here(), nameLoc: n.loc, typeLoc: type.loc },
+      );
     }
 
 // Relationship properties are always scalars, so any other type name is an enum.
@@ -154,18 +217,41 @@ fieldType
       return { name: n, optional: opt === "?" };
     }
 
+// Keep in sync with SCALAR_TYPE_NAMES (src/validate.ts); a test checks both lists match.
 scalarTypeName
   = n:("String" / "Int" / "Float" / "Boolean" / "DateTime" / "Date" / "BigInt" / "Json") ![a-zA-Z0-9_] { return n; }
 
 decorator
-  = "@" "default" "(" _ id:identifier "(" _ ")" _ ")" {
-      return { name: "default", args: [{ key: "fn", value: { kind: "identifier", value: id } }] };
+  = d:decoratorBody { return withLoc(d, { loc: here() }); }
+
+decoratorBody
+  = "@" "default" "(" _ v:fnCall _ ")" {
+      return {
+        name: "default",
+        args: [
+          withLoc(
+            { key: "fn", value: { kind: "identifier", value: v.id } },
+            { loc: v.loc, valueLoc: v.loc },
+          ),
+        ],
+      };
     }
-  / "@" "default" "(" _ v:literalValue _ ")" {
-      return { name: "default", args: [{ key: "value", value: v }] };
+  / "@" "default" "(" _ v:literalTok _ ")" {
+      return {
+        name: "default",
+        args: [withLoc({ key: "value", value: v.value }, { loc: v.loc, valueLoc: v.loc })],
+      };
     }
-  / "@" "default" "(" _ id:identifier _ ")" {
-      return { name: "default", args: [{ key: "value", value: { kind: "identifier", value: id } }] };
+  / "@" "default" "(" _ id:nameTok _ ")" {
+      return {
+        name: "default",
+        args: [
+          withLoc(
+            { key: "value", value: { kind: "identifier", value: id.id } },
+            { loc: id.loc, valueLoc: id.loc },
+          ),
+        ],
+      };
     }
   / "@" name:identifier "(" _ args:decoratorArgs _ ")" {
       return { name, args };
@@ -174,6 +260,17 @@ decorator
       return { name, args: [] };
     }
 
+// `cuid()`: a default function call with its source range.
+fnCall
+  = id:identifier "(" _ ")" { return { id, loc: here() }; }
+
+// Values with their source range.
+literalTok
+  = value:literalValue { return { value, loc: here() }; }
+
+decoratorValueTok
+  = value:decoratorValue { return { value, loc: here() }; }
+
 decoratorArgs
   = head:decoratorArg tail:(_ "," _ @decoratorArg)* {
       return [head, ...tail];
@@ -181,8 +278,8 @@ decoratorArgs
   / "" { return []; }
 
 decoratorArg
-  = key:identifier _ ":" _ val:decoratorValue {
-      return { key, value: val };
+  = key:nameTok _ ":" _ val:decoratorValueTok {
+      return withLoc({ key: key.id, value: val.value }, { loc: here(), keyLoc: key.loc, valueLoc: val.loc });
     }
 
 decoratorValue
@@ -206,6 +303,9 @@ literalValue
         : { kind: "number", value, raw: n };
     }
 
+stringTok
+  = value:stringLiteral { return { value, loc: here() }; }
+
 stringLiteral
   = '"' chars:char* '"' { return chars.join(""); }
 
@@ -228,4 +328,6 @@ whitespace
   = [ \t\n\r]+
 
 lineComment
-  = "//" (![\n\r] .)*
+  = "//" (![\n\r] .)* {
+      if (LOC) comments.set(offset(), { text: text(), loc: here() });
+    }

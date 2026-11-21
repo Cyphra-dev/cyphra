@@ -6,9 +6,26 @@ import type {
   NodeDeclaration,
   RelationshipDeclaration,
   ScalarNodeField,
+  ScalarTypeName,
   SchemaDocument,
 } from "./ast.js";
 import { SchemaValidationError } from "./errors.js";
+
+/**
+ * Built-in scalar type names a field can use as is (`String`, `Int?`, `Json`, …), in the order the
+ * docs list them. `Vector(N)` takes a dimension and is not listed. Editor tooling (completion,
+ * highlighting) reads this list, so a new type only needs adding here and in the grammar.
+ */
+export const SCALAR_TYPE_NAMES = [
+  "String",
+  "Int",
+  "Float",
+  "Boolean",
+  "DateTime",
+  "Date",
+  "BigInt",
+  "Json",
+] as const satisfies readonly ScalarTypeName[];
 
 /** Largest `Vector(N)` dimension count Neo4j 5 vector indexes accept. */
 export const MAX_VECTOR_DIMENSIONS = 4096;
@@ -258,17 +275,7 @@ function decoratorCount(decorators: readonly Decorator[], name: string): number 
 }
 
 /** Built-in type names, which an `enum` cannot reuse. */
-const BUILTIN_TYPES = [
-  "String",
-  "Int",
-  "Float",
-  "Boolean",
-  "DateTime",
-  "Date",
-  "BigInt",
-  "Json",
-  "Vector",
-];
+const BUILTIN_TYPES: readonly string[] = [...SCALAR_TYPE_NAMES, "Vector"];
 
 /** `enum X { … }`: not a built-in type name, at least one value, no duplicate value. */
 export function validateEnum(decl: EnumDeclaration): void {

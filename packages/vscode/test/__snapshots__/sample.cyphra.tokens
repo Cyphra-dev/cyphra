@@ -1,0 +1,168 @@
+"//" comment.line.double-slash.cyphra punctuation.definition.comment.cyphra
+" A schema exercising every construct the grammar highlights." comment.line.double-slash.cyphra
+"enum" keyword.declaration.enum.cyphra
+"Role" entity.name.type.enum.cyphra
+"{" punctuation.definition.block.begin.cyphra
+"ADMIN" variable.other.enummember.cyphra
+"EDITOR" variable.other.enummember.cyphra
+"," punctuation.separator.cyphra
+"VIEWER" variable.other.enummember.cyphra
+"//" comment.line.double-slash.cyphra punctuation.definition.comment.cyphra
+" trailing comment" comment.line.double-slash.cyphra
+"}" punctuation.definition.block.end.cyphra
+"node" keyword.declaration.node.cyphra
+"User" entity.name.type.node.cyphra
+"{" punctuation.definition.block.begin.cyphra
+"id" variable.other.property.cyphra
+"String" support.type.primitive.cyphra
+"@" punctuation.definition.decorator.cyphra
+"id" entity.name.function.decorator.cyphra
+"@" punctuation.definition.decorator.cyphra
+"default" entity.name.function.decorator.cyphra
+"(" punctuation.cyphra
+"cuid" support.function.cyphra
+"(" punctuation.definition.parameters.begin.cyphra
+")" punctuation.definition.parameters.end.cyphra
+")" punctuation.cyphra
+"email" variable.other.property.cyphra
+"String" support.type.primitive.cyphra
+"@" punctuation.definition.decorator.cyphra
+"unique" entity.name.function.decorator.cyphra
+"role" variable.other.property.cyphra
+"Role" entity.name.type.cyphra
+"@" punctuation.definition.decorator.cyphra
+"default" entity.name.function.decorator.cyphra
+"(" punctuation.cyphra
+"VIEWER" variable.other.constant.cyphra
+")" punctuation.cyphra
+"bigCount" variable.other.property.cyphra
+"BigInt" support.type.primitive.cyphra
+"@" punctuation.definition.decorator.cyphra
+"default" entity.name.function.decorator.cyphra
+"(" punctuation.cyphra
+"9223372036854775807" constant.numeric.cyphra
+")" punctuation.cyphra
+"ratio" variable.other.property.cyphra
+"Float" support.type.primitive.cyphra
+"?" keyword.operator.type.modifier.cyphra
+"@" punctuation.definition.decorator.cyphra
+"default" entity.name.function.decorator.cyphra
+"(" punctuation.cyphra
+"-1.5" constant.numeric.cyphra
+")" punctuation.cyphra
+"active" variable.other.property.cyphra
+"Boolean" support.type.primitive.cyphra
+"@" punctuation.definition.decorator.cyphra
+"default" entity.name.function.decorator.cyphra
+"(" punctuation.cyphra
+"true" constant.language.boolean.cyphra
+")" punctuation.cyphra
+"meta" variable.other.property.cyphra
+"Json" support.type.primitive.cyphra
+"@" punctuation.definition.decorator.cyphra
+"default" entity.name.function.decorator.cyphra
+"(" punctuation.cyphra
+"\"" string.quoted.double.cyphra punctuation.definition.string.begin.cyphra
+"{" string.quoted.double.cyphra
+"\\\"" string.quoted.double.cyphra constant.character.escape.cyphra
+"a" string.quoted.double.cyphra
+"\\\"" string.quoted.double.cyphra constant.character.escape.cyphra
+": 1}" string.quoted.double.cyphra
+"\"" string.quoted.double.cyphra punctuation.definition.string.end.cyphra
+")" punctuation.cyphra
+"tags" variable.other.property.cyphra
+"String" support.type.primitive.cyphra
+"[]" keyword.operator.type.modifier.cyphra
+"embedding" variable.other.property.cyphra
+"Vector" support.type.primitive.cyphra
+"(" punctuation.definition.parameters.begin.cyphra
+"1536" constant.numeric.integer.cyphra
+")" punctuation.definition.parameters.end.cyphra
+"?" keyword.operator.type.modifier.cyphra
+"@" punctuation.definition.decorator.cyphra
+"vectorIndex" entity.name.function.decorator.cyphra
+"(" punctuation.cyphra
+"similarity" variable.parameter.cyphra
+":" punctuation.separator.key-value.cyphra
+"cosine" variable.other.constant.cyphra
+"," punctuation.cyphra
+"quantization" variable.parameter.cyphra
+":" punctuation.separator.key-value.cyphra
+"false" constant.language.boolean.cyphra
+")" punctuation.cyphra
+"posts" variable.other.property.cyphra
+"Post" entity.name.type.cyphra
+"[]" keyword.operator.type.modifier.cyphra
+"@" punctuation.definition.decorator.cyphra
+"relationship" entity.name.function.decorator.cyphra
+"(" punctuation.cyphra
+"type" variable.parameter.cyphra
+":" punctuation.separator.key-value.cyphra
+"\"" string.quoted.double.cyphra punctuation.definition.string.begin.cyphra
+"AUTHORED" string.quoted.double.cyphra
+"\"" string.quoted.double.cyphra punctuation.definition.string.end.cyphra
+"," punctuation.cyphra
+"direction" variable.parameter.cyphra
+":" punctuation.separator.key-value.cyphra
+"OUT" constant.language.direction.cyphra
+")" punctuation.cyphra
+"@@" punctuation.definition.decorator.cyphra
+"fulltext" entity.name.function.decorator.model.cyphra
+"(" punctuation.cyphra
+"[" punctuation.cyphra
+"email" variable.other.constant.cyphra
+"]" punctuation.cyphra
+"," punctuation.cyphra
+"name" variable.parameter.cyphra
+":" punctuation.separator.key-value.cyphra
+"\"" string.quoted.double.cyphra punctuation.definition.string.begin.cyphra
+"userSearch" string.quoted.double.cyphra
+"\"" string.quoted.double.cyphra punctuation.definition.string.end.cyphra
+"," punctuation.cyphra
+"analyzer" variable.parameter.cyphra
+":" punctuation.separator.key-value.cyphra
+"\"" string.quoted.double.cyphra punctuation.definition.string.begin.cyphra
+"standard-folding" string.quoted.double.cyphra
+"\"" string.quoted.double.cyphra punctuation.definition.string.end.cyphra
+")" punctuation.cyphra
+"}" punctuation.definition.block.end.cyphra
+"node" keyword.declaration.node.cyphra
+"Post" entity.name.type.node.cyphra
+"{" punctuation.definition.block.begin.cyphra
+"id" variable.other.property.cyphra
+"String" support.type.primitive.cyphra
+"@" punctuation.definition.decorator.cyphra
+"id" entity.name.function.decorator.cyphra
+"author" variable.other.property.cyphra
+"User" entity.name.type.cyphra
+"?" keyword.operator.type.modifier.cyphra
+"@" punctuation.definition.decorator.cyphra
+"relationship" entity.name.function.decorator.cyphra
+"(" punctuation.cyphra
+"type" variable.parameter.cyphra
+":" punctuation.separator.key-value.cyphra
+"\"" string.quoted.double.cyphra punctuation.definition.string.begin.cyphra
+"AUTHORED" string.quoted.double.cyphra
+"\"" string.quoted.double.cyphra punctuation.definition.string.end.cyphra
+"," punctuation.cyphra
+"direction" variable.parameter.cyphra
+":" punctuation.separator.key-value.cyphra
+"IN" constant.language.direction.cyphra
+")" punctuation.cyphra
+"}" punctuation.definition.block.end.cyphra
+"relationship" keyword.declaration.relationship.cyphra
+"Authored" entity.name.type.relationship.cyphra
+"{" punctuation.definition.block.begin.cyphra
+"type" keyword.other.relationship-type.cyphra
+"\"" string.quoted.double.cyphra punctuation.definition.string.begin.cyphra
+"AUTHORED" string.quoted.double.cyphra
+"\"" string.quoted.double.cyphra punctuation.definition.string.end.cyphra
+"from" keyword.other.endpoint.cyphra
+"User" entity.name.type.cyphra
+"to" keyword.other.endpoint.cyphra
+"Post" entity.name.type.cyphra
+"since" variable.other.property.cyphra
+"DateTime" support.type.primitive.cyphra
+"@" punctuation.definition.decorator.cyphra
+"index" entity.name.function.decorator.cyphra
+"}" punctuation.definition.block.end.cyphra
