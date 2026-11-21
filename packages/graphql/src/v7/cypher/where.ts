@@ -66,7 +66,7 @@ function and(parts: (string | undefined)[]): string | undefined {
 }
 
 /** Encode one input value for the attribute's type (Int → driver integer, …). */
-function encodeValue(attr: Attribute, value: unknown): unknown {
+export function encodeValue(attr: Attribute, value: unknown): unknown {
   if (value === null || value === undefined) return null;
   if (Array.isArray(value)) return value.map((v) => encodeValue(attr, v));
   if (attr.kind === "scalar" && attr.type.name === "Int" && typeof value === "number") {
@@ -75,13 +75,22 @@ function encodeValue(attr: Attribute, value: unknown): unknown {
   return value;
 }
 
-/** `$p` or `datetime($p)` / `[x IN $p | datetime(x)]` for DateTime values (passed as strings). */
-function valueExpr(ctx: CypherContext, attr: Attribute, value: unknown, isList: boolean): string {
-  const p = ctx.param(encodeValue(attr, value));
+/** `expr`, or `datetime(expr)` / `[x IN expr | datetime(x)]` for DateTime values (passed as strings). */
+export function castValue(attr: Attribute, expr: string, isList: boolean): string {
   if (attr.kind === "scalar" && attr.type.name === "DateTime") {
-    return isList ? `[x IN ${p} | datetime(x)]` : `datetime(${p})`;
+    return isList ? `[x IN ${expr} | datetime(x)]` : `datetime(${expr})`;
   }
-  return p;
+  return expr;
+}
+
+/** The value as a parameter, cast for its type (see {@link castValue}). */
+export function valueExpr(
+  ctx: CypherContext,
+  attr: Attribute,
+  value: unknown,
+  isList: boolean,
+): string {
+  return castValue(attr, ctx.param(encodeValue(attr, value)), isList);
 }
 
 function attributePredicate(

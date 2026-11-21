@@ -13,8 +13,14 @@ import {
 import { resolveSchema, type SchemaDocument, type SchemaModel } from "@cyphra/schema";
 import { convertGraphQLTypeDefs, type ImportIssue } from "../import/index.js";
 import { SelectionCompiler } from "./cypher/select.js";
-import { FOLLOW_UP, notImplemented } from "./errors.js";
-import { createReadExecutor, type ExecutorOptions, type ReadExecutor } from "./execute.js";
+import { MutationCompiler } from "./cypher/mutate.js";
+import {
+  createExecutors,
+  type Executors,
+  type ExecutorOptions,
+  type ReadExecutor,
+  type WriteExecutor,
+} from "./execute.js";
 import { readTypeDefs, type V7Model } from "./model.js";
 import { buildV7Schema } from "./sdl.js";
 
@@ -46,8 +52,29 @@ function rootReadResolver(
   };
 }
 
-/** Attaches resolvers: one Cypher statement per root query field, mutations not implemented yet. */
-function attachResolvers(schema: GraphQLSchema, model: V7Model, execute: ReadExecutor): void {
+function rootMutationResolver(
+  model: V7Model,
+  execute: WriteExecutor,
+  nodeName: string,
+  kind: "create" | "update" | "delete",
+): GraphQLFieldResolver<unknown, unknown> {
+  return async (_source, args, _ctx, info: GraphQLResolveInfo) => {
+    const node = model.node(nodeName);
+    const compiler = new MutationCompiler(model, info);
+    const a = args as AnyRecord;
+    const compiled =
+      kind === "create"
+        ? compiler.rootCreate(node, a, info.fieldNodes)
+        : kind === "update"
+          ? compiler.rootUpdate(node, a, info.fieldNodes)
+          : compiler.rootDelete(node, a, info.fieldNodes);
+    return execute(compiled.cypher, compiled.params, compiled.decode);
+  };
+}
+
+/** Attaches resolvers: one Cypher statement (and transaction) per root field. */
+function attachResolvers(schema: GraphQLSchema, model: V7Model, executors: Executors): void {
+  const execute = executors.read;
   for (const type of Object.values(schema.getTypeMap())) {
     if (!isObjectType(type) || type.name.startsWith("__")) continue;
     if (type === schema.getQueryType() || type === schema.getMutationType()) continue;
@@ -63,10 +90,16 @@ function attachResolvers(schema: GraphQLSchema, model: V7Model, execute: ReadExe
       "connection",
     );
   }
-  for (const field of Object.values(schema.getMutationType()?.getFields() ?? {})) {
-    field.resolve = () => {
-      throw notImplemented(`mutation ${field.name}`, FOLLOW_UP.mutations);
-    };
+  const mutation = schema.getMutationType()!.getFields();
+  for (const node of model.nodes) {
+    for (const kind of ["create", "update", "delete"] as const) {
+      mutation[`${kind}${node.pascalPlural}`]!.resolve = rootMutationResolver(
+        model,
+        executors.write,
+        node.name,
+        kind,
+      );
+    }
   }
 }
 
@@ -74,11 +107,11 @@ function attachResolvers(schema: GraphQLSchema, model: V7Model, execute: ReadExe
  * Build the GraphQL schema `@neo4j/graphql` v7 generates for `typeDefs`, with resolvers that run on
  * Neo4j through `driver` or `client`. Drop-in for `new Neo4jGraphQL({ typeDefs, driver }).getSchema()`.
  *
- * Today: the full v7 schema (SDL identical to v7), and the read API (list and connection queries,
+ * Today: the full v7 schema (SDL identical to v7), the read API (list and connection queries,
  * filters, sorting, offset and cursor pagination, nested relationships and connections with edge
- * properties, connection `aggregate` selections and aggregation filters). Mutations (#73),
- * authorization (#74) and `@cypher` fields (#75) are in the schema but answer with a "Not
- * implemented yet" error.
+ * properties, connection `aggregate` selections and aggregation filters) and mutations (create,
+ * update, delete with every nested operation and `info` counters). Authorization (#74) and
+ * `@cypher` fields (#75) are in the schema but answer with a "Not implemented yet" error.
  *
  * @example
  * ```ts
@@ -89,7 +122,7 @@ function attachResolvers(schema: GraphQLSchema, model: V7Model, execute: ReadExe
 export function makeSchema(options: MakeSchemaOptions): GraphQLSchema {
   const model = readTypeDefs(options.typeDefs);
   const schema = buildV7Schema(model);
-  attachResolvers(schema, model, createReadExecutor(options));
+  attachResolvers(schema, model, createExecutors(options));
   return schema;
 }
 
