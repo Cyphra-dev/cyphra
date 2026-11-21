@@ -17,6 +17,7 @@ import {
   type ModelAttribute,
   type NodeDeclaration,
   type NodeField,
+  type OnDeleteRule,
   type ScalarNodeField,
   type ScalarTypeName,
   type SchemaDocument,
@@ -151,11 +152,29 @@ function scalarType(
 
 const dec = (name: string, args: Decorator["args"] = []): Decorator => ({ name, args });
 
-function relationDecorator(relType: string, direction: "IN" | "OUT"): Decorator {
+function relationDecorator(
+  relType: string,
+  direction: "IN" | "OUT",
+  onDelete?: OnDeleteRule,
+): Decorator {
   return dec("relationship", [
     { key: "type", value: { kind: "string", value: relType } },
     { key: "direction", value: { kind: "identifier", value: direction } },
+    ...(onDelete
+      ? [{ key: "onDelete", value: { kind: "identifier" as const, value: onDelete } }]
+      : []),
   ]);
+}
+
+/**
+ * The Cyphra rule for a Better Auth `references.onDelete`, set on the parent's list field (deleting
+ * a `User` cascades to its sessions): `cascade` → `Cascade`, `restrict` / `no action` →
+ * `Restrict`, `set null` / `set default` → none (the default, `SetNull`: the edge goes away).
+ */
+function onDeleteRule(onDelete: OnDelete): OnDeleteRule | undefined {
+  if (onDelete === "cascade") return "Cascade";
+  if (onDelete === "restrict" || onDelete === "no action") return "Restrict";
+  return undefined;
 }
 
 function resolveModelKey(schema: BetterAuthDBSchema, model: string): string {
@@ -427,7 +446,7 @@ export function deriveAuthGraph(
       target: childNode,
       cardinality: "many",
       optional: false,
-      decorators: [relationDecorator(relType, "OUT")],
+      decorators: [relationDecorator(relType, "OUT", onDeleteRule(mapping.onDelete))],
     });
   }
 

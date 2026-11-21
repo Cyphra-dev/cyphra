@@ -33,6 +33,7 @@ import { DEFAULT_MAX_TRAVERSAL_DEPTH, compileTraverse } from "./traverse.js";
 import { compileShortestPath } from "./shortest.js";
 import { findSimilar } from "./vector.js";
 import { search } from "./fulltext.js";
+import { deleteWithRules, hasDeleteRules, lockNodes } from "./onDelete.js";
 import { CyphraError, CyphraValidationError, NotFoundError } from "./errors.js";
 import { defaultLiteralValue, encodeScalar, integerToNumber, nowValue } from "./values.js";
 
@@ -811,14 +812,25 @@ export class ModelEngine {
     });
   }
 
+  /**
+   * Delete one node. With `onDelete` rules on the model (or on models its cascades reach), the
+   * node is locked, cascades are collected and `Restrict` rules checked before anything is
+   * deleted, all in this transaction (see `onDelete.ts`).
+   */
   delete(args: AnyRecord): Promise<AnyRecord> {
     return this.runner.write(async (exec) => {
       const id = await this.findId(exec, args.where, "delete");
-      if (!id)
-        throw new NotFoundError(
-          `delete: no ${this.model.name} matches ${JSON.stringify(args.where)}.`,
-        );
+      const missing = () =>
+        new NotFoundError(`delete: no ${this.model.name} matches ${JSON.stringify(args.where)}.`);
+      if (!id) throw missing();
+      const rules = hasDeleteRules(this.schema, this.model);
+      // Lock first so that the row returned is the one deleted (and the rules see every edge).
+      if (rules && (await lockNodes(exec, this.schema, [id])).length === 0) throw missing();
       const row = await this.readById(exec, id, args);
+      if (rules) {
+        await deleteWithRules(exec, this.schema, this.model, [id]);
+        return row;
+      }
       const ctx = this.ctx();
       await exec(`MATCH (n) WHERE elementId(n) = ${ctx.param(id)} DETACH DELETE n`, ctx.params);
       return row;
@@ -829,10 +841,17 @@ export class ModelEngine {
     return this.runner.write(async (exec) => {
       const ctx = this.ctx();
       const w = compileWhere(ctx, this.model, "n", args.where);
-      const res = await exec(
-        `MATCH (n:${this.label})${w ? ` WHERE ${w}` : ""} DETACH DELETE n RETURN count(*) AS c`,
-        ctx.params,
-      );
+      const match = `MATCH (n:${this.label})${w ? ` WHERE ${w}` : ""}`;
+      if (hasDeleteRules(this.schema, this.model)) {
+        const flag = `n.${q(LOCK_FLAG)}`;
+        const rows = await exec(
+          `${match} SET ${flag} = true REMOVE ${flag} RETURN elementId(n) AS id`,
+          ctx.params,
+        );
+        const ids = rows.map((r) => r.id as string);
+        return { count: await deleteWithRules(exec, this.schema, this.model, ids) };
+      }
+      const res = await exec(`${match} DETACH DELETE n RETURN count(*) AS c`, ctx.params);
       return { count: toCount(res[0]?.c) };
     });
   }

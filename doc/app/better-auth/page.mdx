@@ -118,8 +118,8 @@ node User {
   image String?
   createdAt DateTime
   updatedAt DateTime
-  sessions Session[] @relationship(type: "HAS_SESSION", direction: OUT)
-  accounts Account[] @relationship(type: "HAS_ACCOUNT", direction: OUT)
+  sessions Session[] @relationship(type: "HAS_SESSION", direction: OUT, onDelete: Cascade)
+  accounts Account[] @relationship(type: "HAS_ACCOUNT", direction: OUT, onDelete: Cascade)
 }
 
 node Session {
@@ -150,9 +150,14 @@ node Session {
 - **Sorting by a foreign key** (`sortBy: { field: "userId" }`) orders by the referenced field of the
   related node, through the edge. Nodes without the edge (an optional foreign key that is not set)
   sort as `null`: last ascending, first descending.
-- **Deletes** follow `references.onDelete` in the same transaction: `cascade` (Better Auth's default)
-  deletes the children, `restrict` and `no action` refuse the delete while children exist, and
-  `set null` removes the edge. Deleting a user never deletes your own nodes; they lose their edge to it.
+- **Deletes** follow `references.onDelete`, written into the schema as
+  [`onDelete` rules](/schema#ondelete-rules) on the parent's list field and applied by the Cyphra
+  client in the same transaction: `cascade` (Better Auth's default) becomes `onDelete: Cascade` and
+  deletes the children, `restrict` and `no action` become `onDelete: Restrict` and refuse the delete
+  while children exist, and `set null` / `set default` keep the default (`SetNull`): the edge is
+  removed. Deleting a user never deletes your own nodes unless your own fields say so; they lose
+  their edge to it. Your app's `db.user.delete(…)` applies the same rules
+  once `schema.cyphra` is regenerated (`npx @better-auth/cli generate`, then `cyphra generate`).
 - **Single-use tokens:** `consumeOne` locks the node before deleting it, so of several concurrent
   requests for the same verification token exactly one gets it. `incrementOne` is race-safe the same
   way.

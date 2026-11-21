@@ -30,6 +30,10 @@ export function renderMigrationSource(plan: MigrationPlan, opts: RenderMigration
     lines.push("//", "// REVIEW:");
     for (const w of plan.warnings) lines.push(...indentComment(`- ${w}`, ""));
   }
+  if (plan.notes?.length) {
+    lines.push("//", "// NOTES:");
+    for (const n of plan.notes) lines.push(...indentComment(`- ${n}`, ""));
+  }
   lines.push(
     `import { defineMigration } from ${JSON.stringify(opts.runtimeImport ?? "cyphra")};`,
     "",

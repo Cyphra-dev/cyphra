@@ -72,6 +72,7 @@ export {
 export type {
   DefaultFunction,
   DefaultValueSpec,
+  OnDeleteRule,
   RelationDirection,
   ResolvedField,
   ResolvedCompoundIndex,
@@ -85,4 +86,4 @@ export type {
   SchemaModel,
   VectorSimilarity,
 } from "./model.js";
-export { SCHEMA_MODEL_VERSION, getNodeModel, resolveSchema } from "./model.js";
+export { ON_DELETE_RULES, SCHEMA_MODEL_VERSION, getNodeModel, resolveSchema } from "./model.js";

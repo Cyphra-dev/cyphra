@@ -3,7 +3,12 @@
  * `SCALAR_TYPE_NAMES` in `@cyphra/schema`, so a new scalar type is offered even before it has an
  * entry here (it then gets a generic description).
  */
-import { FULLTEXT_ANALYZERS, SCALAR_TYPE_NAMES, VECTOR_SIMILARITIES } from "@cyphra/schema";
+import {
+  FULLTEXT_ANALYZERS,
+  ON_DELETE_RULES,
+  SCALAR_TYPE_NAMES,
+  VECTOR_SIMILARITIES,
+} from "@cyphra/schema";
 
 export const DOCS_URL = "https://www.cyphra.dev/schema";
 
@@ -124,7 +129,7 @@ export const DECORATORS: readonly DecoratorDoc[] = [
   {
     name: "relationship",
     on: "relation",
-    doc: 'A relation to another node: `@relationship(type: "TYPE", direction: OUT | IN)`. A `relationship { … }` model with the same type and endpoints types the edge properties.',
+    doc: 'A relation to another node: `@relationship(type: "TYPE", direction: OUT | IN, onDelete: Cascade | Restrict | SetNull)`. A `relationship { … }` model with the same type and endpoints types the edge properties.',
     snippet: 'relationship(type: "${1:TYPE}", direction: ${2|OUT,IN|})',
     args: [
       { name: "type", doc: 'The Neo4j relationship type, e.g. `"AUTHORED"`.', string: true },
@@ -132,6 +137,11 @@ export const DECORATORS: readonly DecoratorDoc[] = [
         name: "direction",
         doc: "`OUT` (from this node, the default) or `IN` (to this node).",
         values: ["OUT", "IN"],
+      },
+      {
+        name: "onDelete",
+        doc: "What deleting this node does to the nodes this field links it to: `Cascade` deletes them too (applying their own rules), `Restrict` refuses the delete while any exist, `SetNull` (the default) only removes the edges.",
+        values: [...ON_DELETE_RULES],
       },
     ],
   },

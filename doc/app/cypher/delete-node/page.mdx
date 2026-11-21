@@ -98,8 +98,21 @@ const removed = await db.user.delete({ where: { email: "alice@acme.io" } });
 const { count } = await db.post.deleteMany({ where: { published: false } });
 ```
 
-Cyphra does not cascade: `db.user.delete` leaves the user's posts in place, like `DETACH DELETE`.
-Delete owned nodes yourself, in one transaction so both deletes succeed or neither does:
+By default Cyphra does not cascade: `db.user.delete` leaves the user's posts in place, like
+`DETACH DELETE`. To delete owned nodes with their owner, or to refuse deleting a node that others
+still depend on, declare an [`onDelete` rule](/schema#ondelete-rules) on the relation field:
+
+```cyphra
+node User {
+  id    String @id @default(cuid())
+  email String @unique
+  posts Post[] @relationship(type: "AUTHORED", direction: OUT, onDelete: Cascade)
+}
+```
+
+`db.user.delete` then deletes the user's posts in the same transaction; `onDelete: Restrict`
+throws a `RestrictError` instead while posts exist. See [Deleting](/client#deleting). Without a
+rule, delete owned nodes yourself, in one transaction so both deletes succeed or neither does:
 
 ```ts
 await db.$transaction(async (tx) => {

@@ -303,6 +303,42 @@ The [typed client](/client) applies them on create.
 `OUT`. If a `relationship { … }` model has the same type and endpoints, its properties type the edge
 (`$edge` in the client).
 
+### onDelete rules
+
+`onDelete` says what deleting a node does to the nodes a relation field links it to. The rule
+belongs to the field's own model: on `User.sessions` it means "when a User is deleted, its
+sessions are …".
+
+```cyphra
+node User {
+  id       String    @id @default(cuid())
+  sessions Session[] @relationship(type: "HAS_SESSION", direction: OUT, onDelete: Cascade)
+  invoices Invoice[] @relationship(type: "BILLED", direction: OUT, onDelete: Restrict)
+  reviews  Post[]    @relationship(type: "REVIEWED", direction: OUT) // SetNull
+}
+
+node Session {
+  id   String @id @default(cuid())
+  user User   @relationship(type: "HAS_SESSION", direction: IN)
+}
+```
+
+| Rule       | Deleting a `User` …                                                                      |
+| ---------- | ---------------------------------------------------------------------------------------- |
+| `Cascade`  | deletes its sessions too, applying the sessions' own rules (chains and cycles are fine). |
+| `Restrict` | fails with a `RestrictError` while the user still has invoices; nothing is deleted.      |
+| `SetNull`  | the default: the `REVIEWED` edges are removed and the posts stay, with no reviewer.      |
+
+- Rules apply to `delete` and `deleteMany` of the [typed client](/client#deleting), in the same
+  transaction as the delete. A rule is allowed on to-one and to-many fields, `OUT` or `IN`.
+- Each side of a relation has its own rule, for deletes of its own model: `Session.user` above
+  keeps the default, so deleting a session never touches its user. Putting `onDelete: Cascade` on
+  both sides is allowed and deletes the whole connected group, whichever end you delete.
+- Two fields of one model on the same edges (same type, direction and target) must agree;
+  different rules are a validation error.
+- Rules need no DDL: `cyphra migrate dev` notes rule changes but generates no step for them. They
+  are enforced by the Cyphra client only: a raw Cypher `DETACH DELETE` ignores them.
+
 ## Decorators
 
 `@id`, `@unique`, `@vectorIndex(…)` (on `Vector(N)` fields, see above), `@@fulltext([…])`, `@@unique([…])` and `@@index([…])` (model attributes, see above), `@index` (Neo4j 5+ **range** index, or a **point** index on a `Point` / `CartesianPoint` field: on nodes via `(n:Label)`, on rich relationships via `()-[r:TYPE]-()`), `@default(…)`, `@relationship(…)`. On **nodes**, you cannot combine `@index` with `@id` or `@unique` on the same field (those constraints already imply an index). On **relationship** models, `@unique` maps to a **relationship property uniqueness** constraint (Neo4j **5.7+**); `@id` is not allowed on relationship fields.

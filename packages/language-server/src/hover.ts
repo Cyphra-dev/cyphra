@@ -51,11 +51,21 @@ function fieldMarkdown(a: Analysis, owner: Declaration, f: NodeField): string {
     const rel = f.decorators.find((d) => d.name === "relationship");
     const type = rel?.args.find((x) => x.key === "type")?.value;
     const dir = rel?.args.find((x) => x.key === "direction")?.value;
+    const rule = rel?.args.find((x) => x.key === "onDelete")?.value;
     const many = f.cardinality === "many" ? "many" : f.optional ? "zero or one" : "one";
     parts.push(
       `Relation to ${many} **${f.target}**` +
         (type?.kind === "string" ? ` through \`${type.value}\`` : "") +
         ` (${dir?.kind === "identifier" ? dir.value : "OUT"}).`,
+    );
+    parts.push(
+      `On delete: **${rule?.kind === "identifier" ? rule.value : "SetNull"}** (${
+        rule?.kind === "identifier" && rule.value === "Cascade"
+          ? `deleting a ${owner.name} deletes its ${f.target} nodes`
+          : rule?.kind === "identifier" && rule.value === "Restrict"
+            ? `a ${owner.name} linked to ${f.target} nodes cannot be deleted`
+            : `deleting a ${owner.name} removes the edges only`
+      }).`,
     );
     const target = a.doc && declarationNamed(a.doc, f.target);
     if (target) parts.push(declarationSummary(a.text, target));

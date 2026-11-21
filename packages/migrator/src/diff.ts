@@ -17,6 +17,7 @@ import type {
   ResolvedCompoundUnique,
   ResolvedFulltextIndex,
   ResolvedNodeModel,
+  ResolvedRelationField,
   ResolvedRelationshipModel,
   ResolvedScalarField,
   SchemaModel,
@@ -210,6 +211,11 @@ export type MigrationPlan = {
   readonly steps: readonly MigrationStep[];
   /** Things a human should review (type changes, likely renames, …). */
   readonly warnings: readonly string[];
+  /**
+   * Informational changes that need no migration step, such as `onDelete` rule changes (applied
+   * by the client at delete time). Absent when there are none.
+   */
+  readonly notes?: readonly string[];
 };
 
 /** An empty schema, used as the "previous" side for a project's first migration. */
@@ -429,7 +435,37 @@ export function diffSchemaModels(prev: SchemaModel, next: SchemaModel): Migratio
     relationshipDataSteps(p, r, steps, warnings);
   }
 
-  return { steps: [...drops, ...steps, ...creates], warnings };
+  const notes = onDeleteNotes(prev, next);
+  return { steps: [...drops, ...steps, ...creates], warnings, ...(notes.length ? { notes } : {}) };
+}
+
+/** `onDelete` rule changes on relation fields present on both sides (no DDL: the client applies them). */
+function onDeleteNotes(prev: SchemaModel, next: SchemaModel): string[] {
+  const notes: string[] = [];
+  const relationsOf = (n: ResolvedNodeModel) =>
+    new Map(
+      n.fields
+        .filter((f): f is ResolvedRelationField => f.kind === "relation")
+        .map((f) => [f.name, f]),
+    );
+  const prevNodes = new Map(prev.nodes.map((n) => [n.name, n]));
+  for (const n of next.nodes) {
+    const p = prevNodes.get(n.name);
+    if (!p) continue;
+    const before = relationsOf(p);
+    for (const [name, f] of relationsOf(n)) {
+      const old = before.get(name);
+      if (!old) continue;
+      const a = old.onDelete ?? "SetNull";
+      const b = f.onDelete ?? "SetNull";
+      if (a !== b) {
+        notes.push(
+          `${n.name}.${name}: onDelete ${a} → ${b} (no migration step: the client applies onDelete rules when it deletes).`,
+        );
+      }
+    }
+  }
+  return notes;
 }
 
 function relationshipDataSteps(
