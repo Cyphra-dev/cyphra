@@ -20,6 +20,8 @@ import {
   decodeRow,
   intParam,
   nonNegativeInt,
+  and,
+  labelExpr,
 } from "./compile.js";
 import { CyphraValidationError } from "./errors.js";
 
@@ -107,7 +109,12 @@ export async function search(
   const skip = args.skip === undefined ? undefined : nonNegativeInt(args.skip, `${op}: skip`);
   const take = args.take === undefined ? undefined : nonNegativeInt(args.take, `${op}: take`);
   const ctx = ctxFactory();
-  const where = compileWhere(ctx, model, "n", args.where);
+  // An index inherited from an interface covers every implementation: keep this model's nodes.
+  const inherited = indexes.find((i) => i.name === args.index)?.inheritedFrom;
+  const where = and([
+    inherited ? `n:${labelExpr(model)}` : null,
+    compileWhere(ctx, model, "n", args.where),
+  ]);
   const { expr, shape } = compileProjection(ctx, model, "n", args);
   // Lucene rejects an empty query: a blank search box simply matches nothing.
   if (args.query.trim() === "" || take === 0) return [];

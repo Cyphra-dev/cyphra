@@ -25,6 +25,7 @@ import {
   decodeRow,
   q,
   relationField,
+  labelExpr,
 } from "./compile.js";
 import { CyphraValidationError } from "./errors.js";
 import { compilePath, decodePath } from "./path.js";
@@ -163,7 +164,7 @@ export function compileHop(
   const kinds = new Set([...byType.values()].map((d) => (d.size === 2 ? "BOTH" : [...d][0]!)));
   const e = ctx.variable("e");
   const types = [...byType.keys()].map(q).join("|");
-  const label = `:${q(model.label)}`;
+  const label = `:${labelExpr(model)}`;
   const preds: string[] = [];
   let pattern: string;
   if (kinds.size === 1) {
@@ -239,7 +240,7 @@ export function compileTraverse(
     throw new CyphraValidationError("returnPaths must be a boolean.");
   }
 
-  const label = q(model.label);
+  const label = labelExpr(model);
   const from = compileWhere(ctx, model, "s", args.from);
   const hop = compileHop(ctx, model, rels, args.direction, (e) =>
     args.edgeWhere === undefined

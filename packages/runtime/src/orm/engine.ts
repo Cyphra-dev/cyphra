@@ -17,11 +17,13 @@ import type {
 } from "@cyphra/schema";
 import {
   QueryContext,
+  assertCreatable,
   compileOrderBy,
   compilePaging,
   compileProjection,
   compileWhere,
   decodeRow,
+  labelExpr,
   q,
   relationField,
   relationPattern,
@@ -101,7 +103,7 @@ export class ModelEngine {
   }
 
   private get label(): string {
-    return q(this.model.label);
+    return labelExpr(this.model);
   }
 
   // -------------------------------------------------------------------------
@@ -406,17 +408,19 @@ export class ModelEngine {
   }
 
   /**
-   * Whether the target model declares the other side of `rel` (same type, opposite direction,
-   * pointing back at this model) as a to-one relation, e.g. `Post.author` for `User.posts`.
+   * The other side of `rel` on the target model when it is a to-one relation (same type, opposite
+   * direction, pointing back at this model or one of its interfaces), e.g. `Post.author` for
+   * `User.posts`.
    */
-  private inverseIsToOne(rel: ResolvedRelationField): boolean {
-    return this.node(rel.target).fields.some(
-      (f) =>
+  private toOneInverse(rel: ResolvedRelationField): ResolvedRelationField | undefined {
+    const self = [this.model.name, ...(this.model.interfaces ?? [])];
+    return this.node(rel.target).fields.find(
+      (f): f is ResolvedRelationField =>
         f.kind === "relation" &&
         !f.many &&
         f.relType === rel.relType &&
         f.direction !== rel.direction &&
-        f.target === this.model.name,
+        self.includes(f.target),
     );
   }
 
@@ -446,6 +450,7 @@ export class ModelEngine {
 
   /** CREATE a node with nested relation writes; returns its elementId. */
   async createNode(exec: Executor, data: unknown): Promise<string> {
+    assertCreatable(this.model, `${this.model.name}.create`);
     const { scalars, relations } = this.splitData(data, "create");
     const fields = this.model.fields.filter((f): f is ResolvedScalarField => f.kind === "scalar");
     const props = ModelEngine.createProps(this.model.name, fields, scalars);
@@ -491,7 +496,7 @@ export class ModelEngine {
     };
     let text =
       `MATCH (a) WHERE elementId(a) = ${ctx.param(id)} ` +
-      `MATCH (b:${q(target.label)})${w ? ` WHERE ${w}` : ""} WITH a, b LIMIT 1 `;
+      `MATCH (b:${labelExpr(target)})${w ? ` WHERE ${w}` : ""} WITH a, b LIMIT 1 `;
     // A to-one side can hold only one such edge: lock that node (so concurrent connects
     // serialize), then drop its edge to any other node before linking `a` and `b`.
     const replace = (node: "a" | "b", old: string) => {
@@ -503,8 +508,12 @@ export class ModelEngine {
     if (!rel.many) {
       replace("a", `${relationPattern(ctx, "a", rel, "other", "old")} WHERE other <> b`);
     }
-    if (this.inverseIsToOne(rel)) {
-      replace("b", `${link(`other:${this.label}`, "old")} WHERE other <> a`);
+    const inverse = this.toOneInverse(rel);
+    if (inverse) {
+      replace(
+        "b",
+        `${link(`other:${labelExpr(this.node(inverse.target))}`, "old")} WHERE other <> a`,
+      );
     }
     text += `MERGE ${link("a", "r")}`;
     if (Object.keys(onCreate).length) text += ` ON CREATE SET r += ${ctx.param(onCreate)}`;
@@ -713,6 +722,7 @@ export class ModelEngine {
 
   // `async` so that invalid data rejects the returned promise instead of throwing synchronously.
   async createMany(args: AnyRecord): Promise<{ count: number }> {
+    assertCreatable(this.model, `${this.model.name}.createMany`);
     if (!Array.isArray(args.data))
       throw new CyphraValidationError("createMany: data must be an array.");
     validateWriteArgs(this.schema, this.model, "createMany", args);
@@ -795,6 +805,7 @@ export class ModelEngine {
    * transaction.
    */
   async upsert(args: AnyRecord): Promise<AnyRecord> {
+    assertCreatable(this.model, `${this.model.name}.upsert`);
     const { where, key: keyFields } = this.uniqueWhere(args.where, "upsert");
     validateWriteArgs(this.schema, this.model, "upsert", args);
     const create = this.splitData(args.create, "upsert create");

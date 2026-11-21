@@ -67,13 +67,13 @@ Interfaces are `ResolvedNodeModel`s in `SchemaModel.nodes`, so every consumer th
 without special cases. New optional properties (absent for plain schemas, so existing generated
 clients and migration snapshots are unchanged; `SCHEMA_MODEL_VERSION` stays 1):
 
-| Property | On | Meaning |
-| --- | --- | --- |
-| `abstract: true` | interface | Can be queried, never created. |
-| `implementations` | interface | Names of the nodes implementing it, in declaration order. |
-| `interfaces` | implementing node | Interfaces it implements, in `implements` order. |
-| `labels` | implementing node | All its labels: own label, then each interface label. |
-| `inheritedFrom` | field, `@@unique`, `@@fulltext` | Interface the item was copied from. |
+| Property          | On                              | Meaning                                                   |
+| ----------------- | ------------------------------- | --------------------------------------------------------- |
+| `abstract: true`  | interface                       | Can be queried, never created.                            |
+| `implementations` | interface                       | Names of the nodes implementing it, in declaration order. |
+| `interfaces`      | implementing node               | Interfaces it implements, in `implements` order.          |
+| `labels`          | implementing node               | All its labels: own label, then each interface label.     |
+| `inheritedFrom`   | field, `@@unique`, `@@fulltext` | Interface the item was copied from.                       |
 
 ## Client
 
@@ -93,7 +93,8 @@ clients and migration snapshots are unchanged; `SCHEMA_MODEL_VERSION` stays 1):
 ```ts
 const people = await db.person.findMany({ where: { name: { startsWith: "A" } } });
 for (const p of people) {
-  if (p.__typename === "Employee") p.salary; // number
+  if (p.__typename === "Employee")
+    p.salary; // number
   else p.tier; // "Customer": string
 }
 ```

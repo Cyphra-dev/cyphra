@@ -1,4 +1,11 @@
-import type { Decorator, ModelAttribute, NodeField, ScalarTypeRef, SchemaDocument } from "./ast.js";
+import type {
+  Decorator,
+  ModelAttribute,
+  NodeDeclaration,
+  NodeField,
+  ScalarTypeRef,
+  SchemaDocument,
+} from "./ast.js";
 
 /**
  * A `.cyphra` string literal: the grammar only knows the `\\`, `\"` and `\n` escapes, so other
@@ -110,6 +117,12 @@ function formatRelationalField(f: Extract<NodeField, { kind: "Relational" }>): s
   return decs ? `${base} ${decs}` : base;
 }
 
+/** @internal Opening line of a node or interface block (`node Employee implements Person {`). */
+export function nodeHeader(d: NodeDeclaration): string {
+  const impl = d.implements?.length ? ` implements ${d.implements.join(", ")}` : "";
+  return `${d.abstract ? "interface" : "node"} ${d.name}${impl} {`;
+}
+
 function formatNodeField(f: NodeField): string {
   return f.kind === "Scalar" ? formatScalarField(f) : formatRelationalField(f);
 }
@@ -128,7 +141,7 @@ export function printSchemaDocument(doc: SchemaDocument): string {
       blocks.push([`enum ${d.name} {`, ...d.values.map((v) => `  ${v}`), "}"].join("\n"));
     } else if (d.kind === "Node") {
       const lines = [
-        `node ${d.name} {`,
+        nodeHeader(d),
         ...d.fields.map((f) => `  ${formatNodeField(f)}`),
         ...attributeLines(d.attributes),
         "}",

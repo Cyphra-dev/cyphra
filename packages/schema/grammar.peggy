@@ -112,15 +112,28 @@ enumDeclaration
       );
     }
 
+// `node X { … }`, `node X implements A, B { … }` or `interface A { … }` (an abstract node model).
 nodeDeclaration
-  = "node" __ n:nameTok _ "{" _ items:nodeItem* _ "}" {
+  = kw:("node" / "interface") ![a-zA-Z0-9_] __ n:nameTok impl:implementsClause? _ "{" _ items:nodeItem* _ "}" {
       const fields = items.filter((i) => i.kind !== "ModelAttribute");
       const attributes = items.filter((i) => i.kind === "ModelAttribute");
-      // `attributes` only when present, so schemas without `@@…` parse to the same AST as before.
-      const node = attributes.length
-        ? { kind: "Node", name: n.id, fields, attributes }
-        : { kind: "Node", name: n.id, fields };
-      return withLoc(node, { loc: here(), nameLoc: n.loc });
+      // Optional keys only when present, so plain schemas parse to the same AST as before.
+      const node = { kind: "Node", name: n.id };
+      if (kw === "interface") node.abstract = true;
+      if (impl) node.implements = impl.map((i) => i.id);
+      node.fields = fields;
+      if (attributes.length) node.attributes = attributes;
+      return withLoc(node, {
+        loc: here(),
+        nameLoc: n.loc,
+        ...(impl ? { implementsLocs: impl.map((i) => i.loc) } : {}),
+      });
+    }
+
+// `implements A, B`: the interfaces a node implements.
+implementsClause
+  = __ "implements" ![a-zA-Z0-9_] __ head:nameTok tail:(_ "," _ @nameTok)* {
+      return [head, ...tail];
     }
 
 nodeItem

@@ -1,0 +1,44 @@
+// Interfaces and multiple labels: every Employee and Customer is also a :Person.
+interface Person {
+  id      String   @id @default(cuid())
+  email   String   @unique
+  name    String
+  bio     String?
+  manager Person?  @relationship(type: "MANAGES", direction: IN)
+  reports Person[] @relationship(type: "MANAGES", direction: OUT)
+  notes   Note[]   @relationship(type: "WROTE", direction: OUT, onDelete: Cascade)
+
+  @@fulltext([name, bio], name: "personSearch")
+}
+
+// An interface without fields is an extra label.
+interface Archivable {}
+
+node Employee implements Person, Archivable {
+  salary Int     @default(0)
+  team   Team?   @relationship(type: "MEMBER_OF", direction: OUT)
+  badges Badge[] @relationship(type: "HAS_BADGE", direction: OUT, onDelete: Cascade)
+}
+
+node Customer implements Person {
+  tier  String @default("free")
+  level Int?
+}
+
+node Team {
+  id      String     @id @default(cuid())
+  name    String     @unique
+  members Employee[] @relationship(type: "MEMBER_OF", direction: IN)
+  owner   Person?    @relationship(type: "OWNS", direction: IN)
+}
+
+node Note {
+  id     String  @id @default(cuid())
+  text   String
+  author Person? @relationship(type: "WROTE", direction: IN)
+}
+
+node Badge {
+  id   String @id @default(cuid())
+  name String
+}
