@@ -1,6 +1,7 @@
 /**
  * Adapter behaviour the conformance suite does not pin down for a graph: foreign keys as edges,
- * onDelete actions, unique foreign keys and race-safe consumeOne / incrementOne.
+ * onDelete actions, unique foreign keys, sorting by a foreign key, Float `numberFields` and
+ * race-safe consumeOne / incrementOne.
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { betterAuth, type BetterAuthOptions } from "better-auth";
@@ -42,6 +43,8 @@ const plugin = {
       fields: {
         key: { type: "string", required: true, unique: true },
         remaining: { type: "number", required: true },
+        ratio: { type: "number", required: false },
+        weights: { type: "number[]", required: false },
       },
     },
   },
@@ -52,12 +55,17 @@ const options = {
   plugins: [plugin],
 } satisfies Partial<BetterAuthOptions>;
 
+const numberFields = { counter: { ratio: "float", weights: "float" } } as const;
+
 describe.skipIf(!hasNeo4j)("cyphraAdapter (Neo4j)", () => {
   let client: CyphraClient;
   let adapter: Awaited<ReturnType<typeof adapterFor>>;
 
   async function adapterFor(c: CyphraClient) {
-    const auth = betterAuth({ ...options, database: cyphraAdapter({ client: c }) });
+    const auth = betterAuth({
+      ...options,
+      database: cyphraAdapter({ client: c, numberFields }),
+    });
     return (await auth.$context).adapter;
   }
 
@@ -74,7 +82,7 @@ describe.skipIf(!hasNeo4j)("cyphraAdapter (Neo4j)", () => {
 
   beforeAll(async () => {
     client = testClient();
-    await migrate(client, options);
+    await migrate(client, options, { numberFields });
     adapter = await adapterFor(client);
   });
 
@@ -192,6 +200,89 @@ describe.skipIf(!hasNeo4j)("cyphraAdapter (Neo4j)", () => {
   it("fails like a foreign key constraint when the parent does not exist", async () => {
     await expect(createSession("missing-user", "t")).rejects.toThrow();
     expect(await adapter.count({ model: "session" })).toBe(0);
+  });
+
+  it("sorts by a foreign key through the edge (the referenced id)", async () => {
+    const users = await Promise.all(["s1", "s2", "s3"].map((e) => createUser(`${e}@example.com`)));
+    for (const [i, u] of users.entries()) {
+      await adapter.create({ model: "note", data: { body: `n${i}`, authorId: u.id } });
+    }
+    await adapter.create({
+      model: "note",
+      data: { body: "reviewed", authorId: users[0]!.id, reviewerId: users[2]!.id },
+    });
+    const ids = users.map((u) => u.id).sort();
+    const authors = async (direction: "asc" | "desc", limit?: number) =>
+      (
+        await adapter.findMany<Row>({
+          model: "note",
+          where: [{ field: "body", operator: "starts_with", value: "n" }],
+          sortBy: { field: "authorId", direction },
+          ...(limit !== undefined ? { limit } : {}),
+        })
+      ).map((n) => n.authorId);
+    expect(await authors("asc")).toEqual(ids);
+    expect(await authors("desc")).toEqual([...ids].reverse());
+    expect(await authors("asc", 2)).toEqual(ids.slice(0, 2));
+
+    // An optional foreign key without an edge sorts as null: last ascending, first descending.
+    const reviewers = async (direction: "asc" | "desc") =>
+      (
+        await adapter.findMany<Row>({
+          model: "note",
+          sortBy: { field: "reviewerId", direction },
+          limit: 10,
+        })
+      ).map((n) => n.reviewerId);
+    expect((await reviewers("asc"))[0]).toBe(users[2]!.id);
+    expect((await reviewers("desc")).at(-1)).toBe(users[2]!.id);
+  });
+
+  it("stores numberFields: float as Float, keeps other numbers Int", async () => {
+    const row = await adapter.create<Row>({
+      model: "counter",
+      data: { key: "f", remaining: 2, ratio: 0.25, weights: [0.5, 1, 1.5] },
+    });
+    expect(row).toMatchObject({ remaining: 2, ratio: 0.25, weights: [0.5, 1, 1.5] });
+    const [rec] = await run(
+      client,
+      "MATCH (c:Counter) RETURN valueType(c.ratio) AS ratio, valueType(c.remaining) AS remaining",
+    );
+    expect(rec!.get("ratio")).toBe("FLOAT NOT NULL");
+    expect(rec!.get("remaining")).toBe("INTEGER NOT NULL");
+
+    // Int fields still reject fractions.
+    await expect(
+      adapter.create({ model: "counter", data: { key: "bad", remaining: 1.5 } }),
+    ).rejects.toThrow(/expected Int/);
+
+    const updated = await adapter.incrementOne<Row>({
+      model: "counter",
+      where: [{ field: "key", value: "f" }],
+      increment: { ratio: 0.5 },
+    });
+    expect(updated!.ratio).toBe(0.75);
+    expect(
+      await adapter.count({
+        model: "counter",
+        where: [{ field: "ratio", operator: "gt", value: 0.5 }],
+      }),
+    ).toBe(1);
+  });
+
+  it("reads integers stored before a field switched to float", async () => {
+    await run(client, "CREATE (:Counter {id: 'old', key: 'old', remaining: 1, ratio: 3})");
+    const [row] = await adapter.findMany<Row>({
+      model: "counter",
+      where: [{ field: "ratio", value: 3 }],
+    });
+    expect(row).toMatchObject({ key: "old", ratio: 3 });
+    const updated = await adapter.update<Row>({
+      model: "counter",
+      where: [{ field: "key", value: "old" }],
+      update: { ratio: 3.5 },
+    });
+    expect(updated!.ratio).toBe(3.5);
   });
 
   it("consumeOne: of N concurrent consumers exactly one gets the row", async () => {

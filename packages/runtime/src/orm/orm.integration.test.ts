@@ -149,6 +149,41 @@ describe.skipIf(!hasNeo)("ORM client (Neo4j)", () => {
     expect(await db.user.count()).toBe(3);
   });
 
+  it("orders by a scalar of a to-one related node", async () => {
+    await db.user.create({
+      data: { email: "b@x.io", posts: { create: [{ title: "b1" }, { title: "b2" }] } },
+    });
+    await db.user.create({ data: { email: "a@x.io", posts: { create: [{ title: "a1" }] } } });
+    await db.post.create({ data: { title: "orphan" } });
+
+    const titles = async (orderBy: unknown, take?: number) =>
+      (
+        await db.post.findMany({
+          orderBy: orderBy as never,
+          ...(take !== undefined ? { take } : {}),
+        })
+      ).map((p) => p.title);
+    expect(await titles([{ author: { email: "asc" } }, { title: "asc" }])).toEqual([
+      "a1",
+      "b1",
+      "b2",
+      "orphan",
+    ]);
+    expect(await titles([{ author: { email: "desc" } }, { title: "desc" }])).toEqual([
+      "orphan",
+      "b2",
+      "b1",
+      "a1",
+    ]);
+    expect(await titles([{ author: { email: "asc" } }, { title: "asc" }], 2)).toEqual(["a1", "b1"]);
+    // Nested: posts of a user loaded in author order (all the same author here).
+    const users = await db.user.findMany({
+      orderBy: { email: "asc" },
+      include: { posts: { orderBy: [{ author: { email: "asc" } }, { title: "desc" }] } },
+    });
+    expect(users.map((u) => u.posts.map((p) => p.title))).toEqual([["a1"], ["b2", "b1"]]);
+  });
+
   it("update: scalars, increments, null, to-one replace, disconnect, set", async () => {
     const a = await db.user.create({ data: { email: "a@x.io", name: "A", age: 1 } });
     const b = await db.user.create({ data: { email: "b@x.io" } });

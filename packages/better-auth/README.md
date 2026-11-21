@@ -34,6 +34,9 @@ npx cyphra generate
 - Labels are the model names in PascalCase: `User`, `Session`, `Account`, `Verification`.
 - Foreign keys are edges, not properties: `Session.userId` is `(User)-[:HAS_SESSION]->(Session)`,
   exposed in the typed client as `session.user` and `user.sessions`.
+- `number` fields are `Int`; list the ones that hold fractions in
+  `cyphraAdapter({ db, numberFields: { wallet: { balance: "float" } } })` to store them as `Float`.
+  Sorting by a foreign key (`sortBy: { field: "userId" }`) orders by the related node's id.
 - Dates are Neo4j `DateTime` values; `references.onDelete` (`cascade`, `restrict`, `set null`) is
   applied in the same transaction; `consumeOne` and `incrementOne` are race-safe.
 - Passes Better Auth's adapter conformance suites (normal, case-insensitive, transactions, joins,

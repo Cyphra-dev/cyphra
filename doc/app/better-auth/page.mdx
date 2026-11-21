@@ -63,12 +63,13 @@ const client = new CyphraClient({
 export const auth = betterAuth({ database: cyphraAdapter({ client }) });
 ```
 
-| Option      | Description                                                                                  |
-| ----------- | -------------------------------------------------------------------------------------------- |
-| `db`        | Your generated client. Its connection is reused.                                             |
-| `client`    | A `CyphraClient`, if you do not pass `db`.                                                   |
-| `usePlural` | Plural model names (`users`, `sessions`, …), so labels `Users`, `Sessions`. Default `false`. |
-| `debugLogs` | Better Auth's adapter debug logs. Logs can contain tokens: keep them off in production.      |
+| Option         | Description                                                                                        |
+| -------------- | -------------------------------------------------------------------------------------------------- |
+| `db`           | Your generated client. Its connection is reused.                                                   |
+| `client`       | A `CyphraClient`, if you do not pass `db`.                                                         |
+| `usePlural`    | Plural model names (`users`, `sessions`, …), so labels `Users`, `Sessions`. Default `false`.       |
+| `numberFields` | `number` fields stored as `Float` instead of `Int`. See [Fractional numbers](#fractional-numbers). |
+| `debugLogs`    | Better Auth's adapter debug logs. Logs can contain tokens: keep them off in production.            |
 
 The adapter builds its Cyphra schema from your Better Auth configuration when Better Auth starts, so
 it always matches the plugins you enable. It does not read `schema.cyphra` at runtime.
@@ -142,9 +143,13 @@ node Session {
   child (`user`, from `userId` without the `Id` suffix) and a list field on the parent (`sessions`).
   Better Auth still reads and writes `userId`; the adapter translates it to the edge. A model with
   two foreign keys to the same parent gets one edge type per key (`HAS_INVITATION_INVITER`).
-- **Types:** `string` → `String`, `number` → `Int`, `boolean` → `Boolean`, `date` → `DateTime`,
+- **Types:** `string` → `String`, `number` → `Int` (or `Float` with
+  [`numberFields`](#fractional-numbers)), `boolean` → `Boolean`, `date` → `DateTime`,
   `string[]` / `number[]` → lists, `json` → `String` (JSON text). `required: false` makes the
   field optional; `unique` → `@unique`; `index` → `@index`.
+- **Sorting by a foreign key** (`sortBy: { field: "userId" }`) orders by the referenced field of the
+  related node, through the edge. Nodes without the edge (an optional foreign key that is not set)
+  sort as `null`: last ascending, first descending.
 - **Deletes** follow `references.onDelete` in the same transaction: `cascade` (Better Auth's default)
   deletes the children, `restrict` and `no action` refuse the delete while children exist, and
   `set null` removes the edge. Deleting a user never deletes your own nodes; they lose their edge to it.
@@ -153,6 +158,33 @@ node Session {
   way.
 - **Joins:** with Better Auth's `advanced.database.joins`, joined models are loaded through the edges
   in the same query.
+
+## Fractional numbers
+
+Better Auth's `number` type does not say whether a field holds integers or fractions, so every
+`number` field is an `Int` by default and a fractional value is rejected with a validation error.
+Better Auth's own models and plugins store counters and timestamps-as-numbers, which are integers.
+For a field of your own (or of a plugin) that holds fractions, list it in `numberFields`, by model
+and field. Schema keys and database names both work:
+
+```ts filename="auth.ts"
+const numberFields = { wallet: { balance: "float" } } as const;
+
+export const auth = betterAuth({
+  database: cyphraAdapter({ db, numberFields }),
+  plugins: [walletPlugin()],
+});
+```
+
+`npx @better-auth/cli generate` then writes `balance Float` in `schema.cyphra`. Pass the same
+`numberFields` to `authSchema(auth.options, { numberFields })` and `neo4jBetterAuthMigration` if
+you use them. An entry that names an unknown model or field, or a field that is not a `number` /
+`number[]`, fails when Better Auth starts.
+
+Switching an existing field from `int` to `float` needs no data migration: Neo4j compares and sorts
+integers and floats as numbers, so stored integers still match filters and read back unchanged, and
+new writes store floats. `cyphra migrate dev` records the change and warns that existing values are
+not converted, which is safe here.
 
 ## Relate your models to users
 
@@ -307,8 +339,8 @@ Replace `neo4jAdapter({ driver })` with `cyphraAdapter({ db })` (or `{ client }`
 
 - Better Auth's compound indexes (the table-level `indexes` option) are not created; field-level
   `unique` and `index` are.
-- `number` fields are integers. A plugin that stores fractional numbers is rejected with a
-  validation error.
+- `number` fields are integers unless listed in [`numberFields`](#fractional-numbers); a fractional
+  value in an `Int` field is rejected with a validation error.
 - `mode: "insensitive"` filters (used for emails) compare with `toLower()` and do not use the
   property index.
 

@@ -237,6 +237,9 @@ describe("ORM types", () => {
     await db.post.findMany({ orderBy: { author: { _count: "asc" } } });
     // @ts-expect-error — direction must be asc / desc
     await db.user.findMany({ orderBy: { posts: { _count: "up" } } });
+    await db.post.findMany({ orderBy: [{ author: { email: "asc" } }, { title: "desc" }] });
+    // @ts-expect-error — not a scalar of the related node
+    await db.post.findMany({ orderBy: { author: { nope: "asc" } } });
   });
 
   it("types traverse results, args and paths", async () => {

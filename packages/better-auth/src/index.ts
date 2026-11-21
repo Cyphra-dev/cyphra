@@ -11,9 +11,12 @@ export { mergeAuthSchema } from "./merge.js";
 export {
   deriveAuthGraph,
   type AuthGraph,
+  type DeriveAuthGraphOptions,
   type FieldMapping,
   type ForeignKeyMapping,
   type ModelMapping,
+  type NumberFields,
+  type NumberKind,
   type OnDelete,
   type ScalarMapping,
   type SchemaNaming,

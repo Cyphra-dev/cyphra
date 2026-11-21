@@ -14,6 +14,9 @@ type Filter = Record<string, unknown>;
 export function coerceScalar(field: ScalarMapping, value: unknown): unknown {
   if (typeof value !== "string") return value;
   if (field.type === "Int" && /^-?\d+$/.test(value)) return Number(value);
+  if (field.type === "Float" && value.trim() !== "" && Number.isFinite(Number(value))) {
+    return Number(value);
+  }
   if (field.type === "Boolean" && (value === "true" || value === "false")) return value === "true";
   return value;
 }

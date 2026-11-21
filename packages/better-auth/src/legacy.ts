@@ -44,7 +44,8 @@ function legacyObjectName(...parts: string[]): string {
  * and float numbers to integers.
  *
  * @param options - Your Better Auth options (plugins included).
- * @param naming - Must match the `usePlural` you used with neo4j-better-auth.
+ * @param naming - Must match the `usePlural` you used with neo4j-better-auth, and the
+ *   `numberFields` you pass to `cyphraAdapter` (`float` fields are not converted to integers).
  */
 export function neo4jBetterAuthMigration(
   options: BetterAuthOptions,

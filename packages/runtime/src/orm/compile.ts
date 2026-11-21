@@ -421,8 +421,36 @@ function sortDirection(dir: unknown, what: string): string {
 }
 
 /**
+ * `head(COLLECT { MATCH (alias)<-[:T]-(m:Target) RETURN m.field })`: the value of a scalar of the
+ * node related to `alias` through the to-one relation `rel` (`null` when there is none).
+ */
+function compileRelatedScalar(
+  ctx: QueryContext,
+  model: ResolvedNodeModel,
+  alias: string,
+  rel: ResolvedRelationField,
+  name: string,
+): string {
+  const target = ctx.node(rel.target);
+  const f = scalarField(target, name);
+  if (!f) {
+    throw new CyphraValidationError(
+      `orderBy ${model.name}.${rel.name}: unknown scalar field "${target.name}.${name}".`,
+    );
+  }
+  if (f.type === "Vector" || f.type === "Json" || f.list) {
+    throw new CyphraValidationError(
+      `orderBy ${model.name}.${rel.name}.${name}: list, Vector and Json fields cannot be sorted.`,
+    );
+  }
+  const m = ctx.variable();
+  return `head(COLLECT { MATCH ${relationPattern(ctx, alias, rel, m)} RETURN ${m}.${q(name)} })`;
+}
+
+/**
  * Compile `orderBy` into `a.x ASC, a.y DESC` (or `null`). A to-many relation sorts by its number
- * of related nodes: `{ posts: { _count: "desc" } }`.
+ * of related nodes: `{ posts: { _count: "desc" } }`; a to-one relation by a scalar of the related
+ * node: `{ author: { name: "asc" } }` (nodes without one sort as `null`: last ascending).
  */
 export function compileOrderBy(
   ctx: QueryContext,
@@ -438,6 +466,24 @@ export function compileOrderBy(
     for (const [key, dir] of Object.entries(item)) {
       if (dir === undefined) continue;
       const rel = relationField(model, key);
+      if (rel && !rel.many) {
+        if (!isPlainObject(dir)) {
+          throw new CyphraValidationError(
+            `orderBy ${model.name}.${key} takes { <field>: "asc" | "desc" }.`,
+          );
+        }
+        for (const [name, d] of Object.entries(dir)) {
+          if (d === undefined) continue;
+          if (name === "_count") {
+            throw new CyphraValidationError(
+              `${model.name}.${key} is a to-one relation; only to-many relations can be counted.`,
+            );
+          }
+          const expr = compileRelatedScalar(ctx, model, alias, rel, name);
+          parts.push(`${expr} ${sortDirection(d, `${model.name}.${key}.${name}`)}`);
+        }
+        continue;
+      }
       if (rel) {
         if (!isPlainObject(dir) || Object.keys(dir).some((k) => k !== "_count")) {
           throw new CyphraValidationError(

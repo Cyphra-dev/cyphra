@@ -215,11 +215,23 @@ type JsonKeys<TM extends TypeMap, M extends keyof TM> = {
   [K in keyof Scalars<TM, M>]: IsJson<Scalars<TM, M>[K]> extends true ? K : never;
 }[keyof Scalars<TM, M>];
 
-/** One `orderBy` entry: scalars, or a to-many relation by its count (`{ posts: { _count: "desc" } }`). */
+/**
+ * One `orderBy` entry: scalars, a to-many relation by its count (`{ posts: { _count: "desc" } }`),
+ * or a to-one relation by a scalar of the related node (`{ author: { name: "asc" } }`).
+ */
 type OrderByItem<TM extends TypeMap, M extends keyof TM> = {
   [K in Exclude<keyof Scalars<TM, M>, VectorKeys<TM, M> | JsonKeys<TM, M>>]?: SortOrder;
 } & {
   [R in ToManyRelations<TM, M>]?: { _count?: SortOrder };
+} & {
+  [R in ToOneRelations<TM, M>]?: {
+    [
+      K in Exclude<
+        keyof Scalars<TM, Target<TM, M, R>>,
+        VectorKeys<TM, Target<TM, M, R>> | JsonKeys<TM, Target<TM, M, R>>
+      >
+    ]?: SortOrder;
+  };
 };
 
 export type OrderByInput<TM extends TypeMap, M extends keyof TM> =

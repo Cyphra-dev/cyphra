@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { CleanedWhere } from "better-auth/adapters";
 import { authSchema } from "./index.js";
-import { toCyphraWhere } from "./where.js";
+import { coerceScalar, toCyphraWhere } from "./where.js";
 
 const graph = authSchema({});
 const session = graph.models.get("session")!;
@@ -65,5 +65,18 @@ describe("toCyphraWhere", () => {
 
   it("rejects unknown fields", () => {
     expect(() => toCyphraWhere(user, [w("nope", 1)], parentOf)).toThrow(/unknown field/);
+  });
+});
+
+describe("coerceScalar", () => {
+  const scalar = (type: "Int" | "Float") =>
+    ({ kind: "scalar", name: "x", type, list: false, unique: false, index: false }) as const;
+  it("parses numeric strings for Int and Float fields", () => {
+    expect(coerceScalar(scalar("Int"), "42")).toBe(42);
+    expect(coerceScalar(scalar("Int"), "4.2")).toBe("4.2");
+    expect(coerceScalar(scalar("Float"), "4.2")).toBe(4.2);
+    expect(coerceScalar(scalar("Float"), "-1e3")).toBe(-1000);
+    expect(coerceScalar(scalar("Float"), " ")).toBe(" ");
+    expect(coerceScalar(scalar("Float"), "abc")).toBe("abc");
   });
 });

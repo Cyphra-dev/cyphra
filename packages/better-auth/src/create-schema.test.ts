@@ -50,4 +50,22 @@ node Team {
     expect(result.code).toMatch(/^\/\/ Better Auth models/);
     expect(result.code).toContain("node Verification {");
   });
+
+  it("writes numberFields: float as Float", async () => {
+    dir = await mkdtemp(join(tmpdir(), "cyphra-better-auth-"));
+    const file = join(dir, "schema.cyphra");
+    await writeFile(file, "node Wallet {\n  id String @id\n  balance Int\n}\n");
+    const plugin = {
+      id: "wallet",
+      schema: { wallet: { fields: { balance: { type: "number", required: true } } } },
+    } as const;
+    const options = { plugins: [plugin] };
+    const adapter = cyphraAdapter({
+      client: {} as CyphraClient,
+      numberFields: { wallet: { balance: "float" } },
+    })(options);
+    const result = await adapter.createSchema!(options, file);
+    expect(result.code).toContain("  balance Float\n");
+    expect(result.code).not.toContain("balance Int");
+  });
 });

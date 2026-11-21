@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { printSchemaDocument } from "@cyphra/schema";
 import { organization } from "better-auth/plugins";
 import type { BetterAuthDBSchema } from "better-auth/db";
-import { authSchema, deriveAuthGraph } from "./index.js";
+import { authSchema, deriveAuthGraph, type NumberFields } from "./index.js";
 import { edgeType, pascalCase, plural, relationFieldName } from "./naming.js";
 
 describe("naming", () => {
@@ -186,5 +186,70 @@ describe("authSchema", () => {
         "",
       ].join("\n"),
     );
+  });
+
+  describe("numberFields", () => {
+    const tables: BetterAuthDBSchema = {
+      wallet: {
+        modelName: "wallets",
+        fields: {
+          balance: { type: "number", required: true, fieldName: "balance_amount" },
+          rates: { type: "number[]" },
+          count: { type: "number" },
+          label: { type: "string" },
+          userId: { type: "string", references: { model: "wallet", field: "id" } },
+        },
+      },
+    };
+    const derive = (numberFields: NumberFields) =>
+      deriveAuthGraph(
+        {
+          schema: tables,
+          getModelName: (m) => tables[m]?.modelName ?? m,
+          getFieldName: ({ model, field }) => tables[model]?.fields[field]?.fieldName ?? field,
+        },
+        { numberFields },
+      );
+
+    it("stores the listed number fields as Float, by schema key or database name", () => {
+      const configs: NumberFields[] = [
+        { wallet: { balance: "float", rates: "float" } },
+        { wallets: { balance_amount: "float", rates: "float", count: "int" } },
+      ];
+      for (const config of configs) {
+        const graph = derive(config);
+        const text = printSchemaDocument(graph.document);
+        expect(text).toContain("  balance_amount Float\n");
+        expect(text).toContain("  rates Float[]\n");
+        expect(text).toContain("  count Int?\n");
+        expect(graph.models.get("wallet")!.fields.get("balance_amount")).toMatchObject({
+          type: "Float",
+        });
+      }
+      expect(printSchemaDocument(derive({}).document)).toContain("  balance_amount Int\n");
+    });
+
+    it("rejects unknown models, unknown fields and fields that are not numbers", () => {
+      expect(() => derive({ purse: { balance: "float" } })).toThrow(/unknown model "purse"/);
+      expect(() => derive({ wallet: { nope: "float" } })).toThrow(/unknown field "wallet.nope"/);
+      expect(() => derive({ wallet: { label: "float" } })).toThrow(/not a number field/);
+      expect(() => derive({ wallet: { userId: "float" } })).toThrow(/not a number field/);
+      expect(() => derive({ wallet: { balance: "double" as "float" } })).toThrow(
+        /must be "int" or "float"/,
+      );
+    });
+
+    it("is passed through by authSchema", () => {
+      const plugin = {
+        id: "wallet",
+        schema: { wallet: { fields: { balance: { type: "number", required: true } } } },
+      } as const;
+      const { schema } = authSchema(
+        { plugins: [plugin] },
+        { numberFields: { wallet: { balance: "float" } } },
+      );
+      const wallet = schema.nodes.find((n) => n.name === "Wallet")!;
+      expect(wallet.fields.find((f) => f.name === "balance")).toMatchObject({ type: "Float" });
+    });
   });
 });
