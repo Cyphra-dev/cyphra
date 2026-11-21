@@ -51,6 +51,10 @@ jobs:
       - name: Example app (smoke)
         run: pnpm example:basic
 
+      # Unit tests of examples/graphrag (its Neo4j test runs in neo4j-integration).
+      - name: Example GraphRAG (unit tests)
+        run: pnpm --filter cyphra-example-graphrag --fail-if-no-match test
+
       - name: Lint docs content (blog, glossary)
         run: pnpm --filter cyphra-doc lint:content
 
@@ -135,6 +139,18 @@ jobs:
           # @cyphra/graphql mutations (counters, nested writes, rollback, concurrent connect) and
           # adversarial authorization tests (tokens, nested reads, aggregates, rolled-back writes).
           pnpm --filter @cyphra/graphql --fail-if-no-match exec vitest run test/mutations.integration.test.ts test/auth.integration.test.ts
+
+      # examples/graphrag: ingest the sample documents and check hybrid retrieval and graph
+      # expansion. Its `cyphra generate` needs the workspace bins, linked once dist/ exists.
+      - name: Example GraphRAG (Neo4j)
+        if: matrix.neo4j-driver == '5'
+        env:
+          NEO4J_TEST_URI: bolt://127.0.0.1:7687
+          NEO4J_TEST_USER: neo4j
+          NEO4J_TEST_PASSWORD: cyphra_ci_test
+        run: |
+          pnpm install --frozen-lockfile --offline
+          pnpm --filter cyphra-example-graphrag --fail-if-no-match test
 
       # @neo4j/graphql v7 compatibility suite: goldens must still match (compat/graphql). It does
       # not exercise Cyphra's driver handling, so it runs once.

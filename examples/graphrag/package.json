@@ -1,0 +1,22 @@
+{
+  "name": "cyphra-example-graphrag",
+  "private": true,
+  "type": "module",
+  "description": "GraphRAG with Cyphra: chunks, embeddings, entities, hybrid retrieval and graph expansion",
+  "scripts": {
+    "generate": "cyphra generate",
+    "start": "cyphra generate && tsx src/main.ts",
+    "test": "cyphra generate && vitest run",
+    "typecheck": "cyphra generate && tsc --noEmit"
+  },
+  "dependencies": {
+    "cyphra": "workspace:*"
+  },
+  "devDependencies": {
+    "@cyphra/cli": "workspace:*",
+    "@types/node": "^22.20.5",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.12"
+  }
+}
