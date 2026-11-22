@@ -318,6 +318,6 @@ jobs:
 
       - name: FalkorDB integration tests
         run: |
-          pnpm --filter @cyphra/runtime --fail-if-no-match exec vitest run src/client.integration.test.ts src/orm/orm.integration.test.ts src/orm/onDelete.integration.test.ts src/orm/rules.integration.test.ts src/orm/interfaces.integration.test.ts src/orm/falkordb.integration.test.ts
+          pnpm --filter @cyphra/runtime --fail-if-no-match exec vitest run src/client.integration.test.ts src/orm/orm.integration.test.ts src/orm/onDelete.integration.test.ts src/orm/rules.integration.test.ts src/orm/interfaces.integration.test.ts src/orm/labels.integration.test.ts src/orm/falkordb.integration.test.ts
           pnpm --filter @cyphra/migrator --fail-if-no-match exec vitest run src/falkordb.integration.test.ts
           pnpm --filter @cyphra/cli --fail-if-no-match exec vitest run src/commands/migrateReset.falkordb.integration.test.ts src/studio/studio.falkordb.integration.test.ts

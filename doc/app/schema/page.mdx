@@ -531,8 +531,8 @@ node Post {
   `CREATE INDEX Archived_archivedAt IF NOT EXISTS FOR (n:Archived) ON (n.archivedAt)`. Uniqueness
   among flagged nodes only cannot be declared either; a constraint on `:Archived` would also cover
   the other models declaring it.
-- It works the same on [Memgraph](/memgraph): plain `SET n:Label` / `REMOVE n:Label` and label
-  predicates.
+- It works the same on [Memgraph](/memgraph) and [FalkorDB](/falkordb): plain `SET n:Label` /
+  `REMOVE n:Label` and label predicates.
 
 [`cyphra pull`](/cli#cyphra-pull) recognizes labels found on some nodes of a model only, with no
 property or constraint of their own, as dynamic labels.

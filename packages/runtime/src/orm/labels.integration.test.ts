@@ -1,14 +1,12 @@
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createClient, type Db } from "./__fixtures__/labels.gen.js";
 import { CyphraValidationError } from "./errors.js";
-import { testDialect } from "./__fixtures__/testDialect.js";
+import { hasTestDb, testConnection } from "./__fixtures__/testDialect.js";
 
 // Each test makes several round trips: the default 5 s is too tight on a busy CI runner.
 vi.setConfig({ testTimeout: 30_000, hookTimeout: 30_000 });
 
-const hasNeo = Boolean(
-  process.env.NEO4J_TEST_URI && process.env.NEO4J_TEST_USER && process.env.NEO4J_TEST_PASSWORD,
-);
+const hasNeo = hasTestDb;
 
 const LABELS = ["Content", "Article", "Page", "Tag", "Author"];
 
@@ -16,12 +14,7 @@ describe.skipIf(!hasNeo)("dynamic labels (@@labels)", () => {
   let db: Db;
 
   beforeEach(async () => {
-    db ??= createClient({
-      uri: process.env.NEO4J_TEST_URI!,
-      user: process.env.NEO4J_TEST_USER!,
-      password: process.env.NEO4J_TEST_PASSWORD!,
-      dialect: testDialect,
-    });
+    db ??= createClient({ ...testConnection() });
     await db.$cypher`MATCH (n) WHERE any(l IN labels(n) WHERE l IN ${LABELS}) DETACH DELETE n`;
   });
 

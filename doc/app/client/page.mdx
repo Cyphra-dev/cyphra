@@ -934,7 +934,7 @@ const featured = await db.post.findMany({
   or `$labels` on a model without `@@labels`, is a `CyphraValidationError`), and the statement uses
   the schema's spelling: `SET n:Archived`, `REMOVE n:Featured`, `WHERE n:Featured`. No label name is
   ever taken from a value, so there is no Cypher injection through `$labels`, and the same
-  statements run on [Memgraph](/memgraph).
+  statements run on [Memgraph](/memgraph) and [FalkorDB](/falkordb).
 
 ## Writing
 
