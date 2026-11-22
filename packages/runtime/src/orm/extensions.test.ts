@@ -154,6 +154,35 @@ describe("computed fields", () => {
     const [p] = await db.person.findMany();
     expect(p).toMatchObject({ __typename: "Employee", initial: "E", pay: 120 });
   });
+
+  it("computes fields selected or loaded through $on", async () => {
+    const fake = fakeDriver(() => [
+      {
+        row: {
+          __labels: ["Person", "Employee"],
+          name: "Eve",
+          __on_Employee: { salary: 10, team: { id: "t1", name: "core" } },
+        },
+      },
+    ]);
+    const db = createInterfacesClient({ driver: fake.driver }).$extends({
+      result: {
+        employee: { pay: { needs: { salary: true }, compute: (e) => e.salary * 12 } },
+        team: { shout: { needs: { name: true }, compute: (t) => t.name.toUpperCase() } },
+      },
+    });
+    const [p] = await db.person.findMany({
+      select: { name: true, $on: { Employee: { pay: true, team: true } } },
+    });
+    // `salary` was only fetched for `pay`: stripped from the result.
+    expect(p).toEqual({
+      __typename: "Employee",
+      name: "Eve",
+      pay: 120,
+      team: { id: "t1", name: "core", shout: "CORE" },
+    });
+    expect(fake.calls[0]).toContain("CASE WHEN n:`Employee` THEN n{.`salary`, `team`:");
+  });
 });
 
 describe("query hooks", () => {

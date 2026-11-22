@@ -275,6 +275,8 @@ type Plan = {
   /** `needs` fields added to `select` only for `compute`: removed from the result. */
   readonly strip: readonly string[];
   readonly relations: readonly (readonly [string, Plan])[];
+  /** On an interface: what to compute for `$on: { <implementation>: … }`, by `__typename`. */
+  readonly on?: readonly (readonly [string, Plan])[];
 };
 
 function nodeByName(schema: SchemaModel, name: string): ResolvedNodeModel | undefined {
@@ -293,6 +295,7 @@ function prepare(
 ): { args: AnyRecord; plan: Plan } {
   const computed = state.computed(node.name);
   const relations: [string, Plan][] = [];
+  const on: [string, Plan][] = [];
   const relation = (key: string) => {
     const f = node.fields.find((x) => x.name === key);
     return f?.kind === "relation" ? nodeByName(schema, f.target) : undefined;
@@ -301,6 +304,20 @@ function prepare(
     const out: AnyRecord = { ...spec };
     for (const [key, v] of Object.entries(spec)) {
       if (!v || key === "_count") continue;
+      if (key === "$on" && isPlainObject(v)) {
+        // Each implementation's part is that implementation's own select / include.
+        const kind = spec === args.select ? "select" : "include";
+        const parts: AnyRecord = { ...v };
+        for (const [name, sub] of Object.entries(v)) {
+          const impl = nodeByName(schema, name);
+          if (!impl || !isPlainObject(sub)) continue;
+          const prepared = prepare(state, schema, impl, { [kind]: sub });
+          parts[name] = prepared.args[kind];
+          on.push([name, prepared.plan]);
+        }
+        out[key] = parts;
+        continue;
+      }
       const target = relation(key);
       if (!target) continue;
       const sub = prepare(state, schema, target, isPlainObject(v) ? v : {});
@@ -330,13 +347,13 @@ function prepare(
     }
     return {
       args: { ...args, select },
-      plan: { model: node.name, selected, strip, relations },
+      plan: { model: node.name, selected, strip, relations, ...(on.length ? { on } : {}) },
     };
   }
   const include = isPlainObject(args.include) ? loadRelations(args.include) : undefined;
   return {
     args: include ? { ...args, include } : args,
-    plan: { model: node.name, selected: null, strip: [], relations },
+    plan: { model: node.name, selected: null, strip: [], relations, ...(on.length ? { on } : {}) },
   };
 }
 
@@ -360,6 +377,7 @@ function applyPlan(state: ExtensionState, plan: Plan, value: unknown): void {
     if (Array.isArray(v)) for (const item of v) applyPlan(state, sub, item);
     else applyPlan(state, sub, v);
   }
+  for (const [name, sub] of plan.on ?? []) if (typename === name) applyPlan(state, sub, value);
 }
 
 /** Operations whose results are nodes (or carry nodes), with where the nodes are. */

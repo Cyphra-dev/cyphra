@@ -154,9 +154,23 @@ describe("interfaces: resolution", () => {
     ["node A implements B {}\nnode B {}", /implements B, which is not an interface/],
     ["node A implements Nope {}", /implements Nope, which is not an interface \(not declared\)/],
     ["interface I {}\nnode A implements I, I {}", /implements I twice/],
+    ["interface I {}\ninterface J implements I {}", /write `interface J extends I`/],
+    ["interface I {}\nnode A extends I {}", /write `node A implements I`/],
+    ["node B {}\ninterface J extends B {}", /extends B, which is not an interface/],
+    ["interface I extends J {}\ninterface J extends I {}", /I extends J extends I/],
+    ["interface I extends I {}", /cannot extend themselves \(I extends I\)/],
+    ["interface I {}\ninterface J extends I, I {}", /extends I twice/],
     [
-      "interface I {}\ninterface J implements I {}",
-      /an interface cannot implement other interfaces/,
+      "interface I { name String }\ninterface J extends I { name String }",
+      /field "name": already inherited from interface I/,
+    ],
+    [
+      "interface I { name String }\ninterface J extends I {}\nnode A implements J { name Int }",
+      /field "name": already inherited from interface I/,
+    ],
+    [
+      "interface I { id String @id }\ninterface J extends I {}\ninterface K { key String @id }\nnode A implements J, K {}",
+      /I and K both declare an @id field/,
     ],
     [
       "interface I { name String }\nnode A implements I { name String }",
@@ -208,5 +222,99 @@ describe("interfaces: codegen", () => {
       "/** `Employee` node properties (labels `:Employee`, `:Person`, `:Archivable`). */",
     );
     expect(out).toMatch(/"labels": \[\s*"Employee",\s*"Person",\s*"Archivable"\s*\]/);
+  });
+});
+
+const NESTED = `
+interface Person {
+  id    String @id @default(cuid())
+  email String @unique
+  name  String
+  @@fulltext([name])
+}
+
+interface Staff extends Person {
+  badge String @unique
+  team  Team?  @relationship(type: "MEMBER_OF", direction: OUT)
+}
+
+interface Contact extends Person {
+  phone String?
+}
+
+node Employee implements Staff, Contact {
+  salary Int
+}
+
+node Customer implements Contact {
+  tier String
+}
+
+node Team {
+  id      String  @id
+  members Staff[] @relationship(type: "MEMBER_OF", direction: IN)
+}
+`;
+
+describe("interfaces extending interfaces", () => {
+  const m = resolveSchema(parseSchema(NESTED));
+  const node = (n: string) => m.nodes.find((x) => x.name === n)!;
+
+  it("inherits fields transitively, once through a diamond, tagged with the declaring interface", () => {
+    expect(node("Staff")).toMatchObject({
+      abstract: true,
+      extends: ["Person"],
+      interfaces: ["Person"],
+      implementations: ["Employee"],
+      idField: "id",
+      uniqueFields: ["id", "email", "badge"],
+    });
+    expect(node("Staff").labels).toBeUndefined();
+    expect(node("Staff").fields.map((f) => [f.name, f.inheritedFrom])).toEqual([
+      ["id", "Person"],
+      ["email", "Person"],
+      ["name", "Person"],
+      ["badge", undefined],
+      ["team", undefined],
+    ]);
+    expect(node("Employee").fields.map((f) => [f.name, f.inheritedFrom])).toEqual([
+      ["id", "Person"],
+      ["email", "Person"],
+      ["name", "Person"],
+      ["badge", "Staff"],
+      ["team", "Staff"],
+      ["phone", "Contact"],
+      ["salary", undefined],
+    ]);
+    expect(node("Employee").fulltextIndexes).toEqual([
+      expect.objectContaining({ name: "Person_name_fulltext", inheritedFrom: "Person" }),
+    ]);
+  });
+
+  it("gives a node every label it inherits and an interface every node below it", () => {
+    expect(node("Employee").interfaces).toEqual(["Staff", "Person", "Contact"]);
+    expect(nodeLabels(node("Employee"))).toEqual(["Employee", "Staff", "Person", "Contact"]);
+    expect(nodeLabels(node("Customer"))).toEqual(["Customer", "Contact", "Person"]);
+    expect(node("Person").implementations).toEqual(["Employee", "Customer"]);
+    expect(node("Contact").implementations).toEqual(["Employee", "Customer"]);
+    expect(nodeLabels(node("Staff"))).toEqual(["Staff"]);
+  });
+
+  it("prints and formats extends", () => {
+    const doc = parseSchema(NESTED);
+    expect(printSchemaDocument(doc)).toContain("interface Staff extends Person {");
+    expect(
+      formatSchema("interface A {}\ninterface   B   extends  A ,A2 {}\ninterface A2 {}\n"),
+    ).toContain("interface B extends A, A2 {");
+    expect(doc.declarations[1]).toMatchObject({
+      kind: "Node",
+      abstract: true,
+      extends: ["Person"],
+    });
+  });
+
+  it("emits the transitive implementations in the type map", () => {
+    const out = renderCyphraGenSource(parseSchema(NESTED));
+    expect(out).toMatch(/Staff: \{[^}]*abstract: true;\s*implementations: "Employee";/s);
   });
 });

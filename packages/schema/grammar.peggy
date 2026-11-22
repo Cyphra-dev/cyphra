@@ -112,28 +112,30 @@ enumDeclaration
       );
     }
 
-// `node X { … }`, `node X implements A, B { … }` or `interface A { … }` (an abstract node model).
+// `node X { … }`, `node X implements A, B { … }`, `interface A { … }` (an abstract node model) or
+// `interface B extends A { … }` (an interface extending others).
 nodeDeclaration
-  = kw:("node" / "interface") ![a-zA-Z0-9_] __ n:nameTok impl:implementsClause? _ "{" _ items:nodeItem* _ "}" {
+  = kw:("node" / "interface") ![a-zA-Z0-9_] __ n:nameTok parents:parentsClause? _ "{" _ items:nodeItem* _ "}" {
       const fields = items.filter((i) => i.kind !== "ModelAttribute");
       const attributes = items.filter((i) => i.kind === "ModelAttribute");
       // Optional keys only when present, so plain schemas parse to the same AST as before.
       const node = { kind: "Node", name: n.id };
       if (kw === "interface") node.abstract = true;
-      if (impl) node.implements = impl.map((i) => i.id);
+      if (parents) node[parents.kw] = parents.names.map((i) => i.id);
       node.fields = fields;
       if (attributes.length) node.attributes = attributes;
       return withLoc(node, {
         loc: here(),
         nameLoc: n.loc,
-        ...(impl ? { implementsLocs: impl.map((i) => i.loc) } : {}),
+        ...(parents ? { [`${parents.kw}Locs`]: parents.names.map((i) => i.loc) } : {}),
       });
     }
 
-// `implements A, B`: the interfaces a node implements.
-implementsClause
-  = __ "implements" ![a-zA-Z0-9_] __ head:nameTok tail:(_ "," _ @nameTok)* {
-      return [head, ...tail];
+// `implements A, B` (the interfaces a node implements) or `extends A, B` (the interfaces an
+// interface extends).
+parentsClause
+  = __ kw:("implements" / "extends") ![a-zA-Z0-9_] __ head:nameTok tail:(_ "," _ @nameTok)* {
+      return { kw, names: [head, ...tail] };
     }
 
 nodeItem

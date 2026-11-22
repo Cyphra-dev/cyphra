@@ -120,7 +120,8 @@ function formatRelationalField(f: Extract<NodeField, { kind: "Relational" }>): s
 /** @internal Opening line of a node or interface block (`node Employee implements Person {`). */
 export function nodeHeader(d: NodeDeclaration): string {
   const impl = d.implements?.length ? ` implements ${d.implements.join(", ")}` : "";
-  return `${d.abstract ? "interface" : "node"} ${d.name}${impl} {`;
+  const ext = d.extends?.length ? ` extends ${d.extends.join(", ")}` : "";
+  return `${d.abstract ? "interface" : "node"} ${d.name}${impl}${ext} {`;
 }
 
 function formatNodeField(f: NodeField): string {

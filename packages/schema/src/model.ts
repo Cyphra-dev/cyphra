@@ -20,7 +20,9 @@ import type {
 } from "./ast.js";
 import { SchemaValidationError } from "./errors.js";
 import {
+  ancestorInterfaces,
   nodeOwner,
+  parentInterfaces,
   validateEnum,
   validateImplements,
   validateModelAttributes,
@@ -235,13 +237,25 @@ export type ResolvedNodeModel = {
    * be queried (results are its implementations) but not created. Absent for a `node`.
    */
   readonly abstract?: true;
-  /** Nodes implementing this interface, in declaration order (only on an interface). */
+  /**
+   * Nodes implementing this interface, directly or through an interface extending it, in
+   * declaration order (only on an interface).
+   */
   readonly implementations?: readonly string[];
-  /** Interfaces this node implements, in `implements` order (absent when it implements none). */
+  /**
+   * Interfaces an interface extends, in `extends` order (only on an interface extending others;
+   * {@link ResolvedNodeModel.interfaces} adds the ones they extend).
+   */
+  readonly extends?: readonly string[];
+  /**
+   * Every interface the model inherits from: each one it implements (or, on an interface,
+   * extends), followed by the ones that one extends (absent when there are none).
+   */
   readonly interfaces?: readonly string[];
   /**
-   * Every label of the node: its own, then each interface's (absent when it implements none, i.e.
-   * when it is just `[label]`). Nodes of the model are written and matched with all of them.
+   * Every label of a node: its own, then each interface's (absent when it implements none, i.e.
+   * when it is just `[label]`, and on an interface, which is matched by its own label). Nodes of
+   * the model are written and matched with all of them.
    */
   readonly labels?: readonly string[];
   /** Name of the `@id` field, if any. */
@@ -674,7 +688,7 @@ export function resolveSchema(doc: SchemaDocument): SchemaModel {
         );
       };
       let edges = edgeModels(d.name);
-      for (const i of d.implements ?? []) if (edges.length === 0) edges = edgeModels(i);
+      for (const i of ancestorInterfaces(doc, d)) if (edges.length === 0) edges = edgeModels(i);
       if (edges.length > 1) {
         throw new SchemaValidationError(
           `${where}: several relationship models match (${edges.map((e) => e.name).join(", ")}).`,
@@ -775,41 +789,71 @@ export function resolveSchema(doc: SchemaDocument): SchemaModel {
 }
 
 /**
- * Give each node implementing interfaces the fields, `@@unique` keys and `@@fulltext` indexes it
- * inherits (first, tagged with `inheritedFrom`) and its labels; give each interface its
- * implementations.
+ * Give each node implementing interfaces (and each interface extending others) the fields,
+ * `@@unique` keys and `@@fulltext` indexes it inherits (first, tagged with the declaring
+ * interface in `inheritedFrom`) and every interface it inherits from, directly or not; give
+ * each node its labels and each interface the nodes implementing it (directly or through the
+ * interfaces extending it).
  */
 function linkInterfaces(
   nodes: readonly ResolvedNodeModel[],
   doc: SchemaDocument,
 ): ResolvedNodeModel[] {
   const byName = new Map(nodes.map((n) => [n.name, n]));
-  const implementsOf = new Map<string, readonly string[]>();
-  for (const d of doc.declarations) {
-    if (d.kind === "Node" && d.implements?.length) implementsOf.set(d.name, d.implements);
-  }
-  if (implementsOf.size === 0 && !nodes.some((n) => n.abstract)) return [...nodes];
+  const declOf = new Map<string, NodeDeclaration>();
+  for (const d of doc.declarations) if (d.kind === "Node") declOf.set(d.name, d);
+  const hasParents = (n: string) => parentInterfaces(declOf.get(n)!).length > 0;
+  if (!nodes.some((n) => n.abstract || hasParents(n.name))) return [...nodes];
   const tag = <T extends { readonly inheritedFrom?: string }>(x: T, from: string): T => ({
     ...x,
     inheritedFrom: x.inheritedFrom ?? from,
   });
-  return nodes.map((n) => {
-    if (n.abstract) {
-      const implementations = [...implementsOf]
-        .filter(([, i]) => i.includes(n.name))
-        .map(([k]) => k);
-      const { name, label, ...rest } = n;
-      return { name, label, abstract: true, implementations, ...rest };
+  /** Items of the parents then `own`, each inherited one once (a diamond reaches it twice). */
+  const merge = <T extends { readonly inheritedFrom?: string }>(
+    parents: readonly ResolvedNodeModel[],
+    pick: (m: ResolvedNodeModel) => readonly T[] | undefined,
+    keyOf: (x: T) => string,
+    own: readonly T[] | undefined,
+  ): T[] => {
+    const seen = new Set<string>();
+    const out: T[] = [];
+    for (const p of parents) {
+      for (const x of pick(p) ?? []) {
+        const t = tag(x, p.name);
+        const key = `${t.inheritedFrom}.${keyOf(t)}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        out.push(t);
+      }
     }
-    const interfaces = implementsOf.get(n.name);
-    if (!interfaces) return n;
-    const parents = interfaces.map((i) => byName.get(i)!);
-    const owner = nodeOwner({ kind: "Node", name: n.name, fields: [] });
-    const fields = [...parents.flatMap((p) => p.fields.map((f) => tag(f, p.name))), ...n.fields];
-    const compoundUniques = [
-      ...parents.flatMap((p) => (p.compoundUniques ?? []).map((c) => tag(c, p.name))),
-      ...(n.compoundUniques ?? []),
-    ];
+    return [...out, ...(own ?? [])];
+  };
+  const linked = new Map<string, ResolvedNodeModel>();
+  const link = (name: string): ResolvedNodeModel => {
+    const done = linked.get(name);
+    if (done) return done;
+    const n = byName.get(name)!;
+    const decl = declOf.get(name)!;
+    const direct = parentInterfaces(decl);
+    if (direct.length === 0) {
+      linked.set(name, n);
+      return n;
+    }
+    const parents = direct.map(link);
+    const interfaces = ancestorInterfaces(doc, decl);
+    const owner = nodeOwner(decl);
+    const fields = merge(
+      parents,
+      (p) => p.fields,
+      (f) => f.name,
+      n.fields,
+    );
+    const compoundUniques = merge(
+      parents,
+      (p) => p.compoundUniques,
+      (c) => c.key,
+      n.compoundUniques,
+    );
     const keys = new Set<string>();
     for (const c of compoundUniques) {
       if (keys.has(c.key) || fields.some((f) => f.name === c.key)) {
@@ -819,18 +863,22 @@ function linkInterfaces(
       }
       keys.add(c.key);
     }
-    const fulltextIndexes = [
-      ...parents.flatMap((p) => (p.fulltextIndexes ?? []).map((i) => tag(i, p.name))),
-      ...(n.fulltextIndexes ?? []),
-    ];
+    const fulltextIndexes = merge(
+      parents,
+      (p) => p.fulltextIndexes,
+      (i) => i.name,
+      n.fulltextIndexes,
+    );
     const scalars = fields.filter((f): f is ResolvedScalarField => f.kind === "scalar");
     const idField = scalars.find((f) => f.id)?.name;
-    const { name, label, compoundIndexes } = n;
-    return {
+    const { label, compoundIndexes } = n;
+    const out: ResolvedNodeModel = {
       name,
       label,
-      interfaces: [...interfaces],
-      labels: [label, ...interfaces.map((i) => byName.get(i)!.label)],
+      ...(n.abstract ? { abstract: true as const, extends: [...direct] } : {}),
+      interfaces,
+      // An interface is matched by its own label; a node is written and matched with all of them.
+      ...(n.abstract ? {} : { labels: [label, ...interfaces.map((i) => byName.get(i)!.label)] }),
       ...(idField ? { idField } : {}),
       uniqueFields: scalars.filter((f) => f.id || f.unique).map((f) => f.name),
       fields,
@@ -838,6 +886,17 @@ function linkInterfaces(
       ...(compoundUniques.length ? { compoundUniques } : {}),
       ...(compoundIndexes?.length ? { compoundIndexes } : {}),
     };
+    linked.set(name, out);
+    return out;
+  };
+  const all = nodes.map((n) => link(n.name));
+  return all.map((n) => {
+    if (!n.abstract) return n;
+    const implementations = all
+      .filter((x) => !x.abstract && (x.interfaces ?? []).includes(n.name))
+      .map((x) => x.name);
+    const { name, label, ...rest } = n;
+    return { name, label, abstract: true, implementations, ...rest };
   });
 }
 

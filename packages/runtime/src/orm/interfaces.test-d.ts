@@ -4,6 +4,7 @@
  */
 import { describe, expectTypeOf, it } from "vitest";
 import type { Db } from "./__fixtures__/interfaces.gen.js";
+import type { Db as NestedDb } from "./__fixtures__/nested.gen.js";
 
 declare const db: Db;
 
@@ -90,5 +91,88 @@ describe("interface types", () => {
       where: { email: "e@x" },
       data: { notes: { create: { text: "hi" } } },
     });
+  });
+
+  it("filters and sorts by __typename (implementation names only)", async () => {
+    await db.person.findMany({ where: { __typename: "Employee" }, orderBy: { __typename: "asc" } });
+    await db.person.findMany({ where: { __typename: { in: ["Employee", "Customer"] } } });
+    await db.person.findMany({ where: { __typename: { not: "Customer" }, name: "A" } });
+    await db.team.findMany({ where: { owner: { is: { __typename: "Customer" } } } });
+    // @ts-expect-error Team is not an implementation of Person
+    await db.person.findMany({ where: { __typename: "Team" } });
+    // @ts-expect-error a node has no __typename filter
+    await db.employee.findMany({ where: { __typename: "Employee" } });
+    // @ts-expect-error a node does not sort by __typename
+    await db.employee.findMany({ orderBy: { __typename: "asc" } });
+  });
+
+  it("narrows what $on loads to its implementation's results", async () => {
+    const rows = await db.person.findMany({
+      include: { manager: true, $on: { Employee: { team: true }, Customer: { notes: true } } },
+    });
+    const r = rows[0]!;
+    expectTypeOf(r.manager).toEqualTypeOf<EmployeeRow | CustomerRow | null>();
+    if (r.__typename === "Employee") {
+      expectTypeOf(r.team).toEqualTypeOf<{ id: string; name: string } | null>();
+      expectTypeOf(r.salary).toEqualTypeOf<number>();
+    } else {
+      expectTypeOf(r.notes).toEqualTypeOf<{ id: string; text: string }[]>();
+      // @ts-expect-error team is only loaded on Employee results
+      void r.team;
+    }
+    const sel = await db.person.findMany({
+      select: {
+        name: true,
+        $on: { Employee: { salary: true, badges: { select: { name: true } } } },
+      },
+    });
+    expectTypeOf(sel).toEqualTypeOf<
+      (
+        | { __typename: "Employee"; name: string; salary: number; badges: { name: string }[] }
+        | { __typename: "Customer"; name: string }
+      )[]
+    >();
+    // @ts-expect-error Team is not an implementation of Person
+    await db.person.findMany({ include: { $on: { Team: {} } } });
+    // @ts-expect-error include.$on takes relations only
+    await db.person.findMany({ include: { $on: { Employee: { salary: true } } } });
+    // @ts-expect-error $on is only on interfaces
+    await db.employee.findMany({ include: { $on: {} } });
+  });
+});
+
+declare const nested: NestedDb;
+
+describe("interfaces extending interfaces", () => {
+  it("returns every implementation below an interface", async () => {
+    const parties = await nested.party.findMany({ select: { name: true } });
+    expectTypeOf(parties.map((p) => p.__typename)).toEqualTypeOf<
+      ("Engineer" | "Temp" | "Buyer")[]
+    >();
+    const staff = await nested.staffer.findMany({ include: { unit: true } });
+    expectTypeOf(staff.map((s) => s.__typename)).toEqualTypeOf<("Engineer" | "Temp")[]>();
+    const s = staff[0]!;
+    expectTypeOf(s.email).toEqualTypeOf<string>();
+    expectTypeOf(s.unit).toEqualTypeOf<{ id: string; name: string } | null>();
+    if (s.__typename === "Temp") expectTypeOf(s.agency).toEqualTypeOf<string>();
+    await nested.reachable.findMany({ where: { __typename: "Buyer", phone: { not: null } } });
+    // @ts-expect-error Temp does not implement Reachable
+    await nested.reachable.findMany({ where: { __typename: "Temp" } });
+    // @ts-expect-error an interface extending others cannot be created either
+    void nested.staffer.create;
+  });
+
+  it("gives implementations the fields of every ancestor", async () => {
+    const e = await nested.engineer.create({
+      data: { email: "e@x", name: "E", badge: "b", phone: "1", unit: { connect: { name: "u" } } },
+    });
+    expectTypeOf(e).toEqualTypeOf<{
+      id: string;
+      email: string;
+      name: string;
+      badge: string | null;
+      phone: string | null;
+      level: number;
+    }>();
   });
 });

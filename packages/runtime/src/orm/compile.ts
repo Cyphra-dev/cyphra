@@ -464,6 +464,57 @@ function compileRelationFilter(
 }
 
 /**
+ * `__typename` in the `where` of an interface: the implementations to keep, by label. Takes a
+ * name, or `{ equals, not, in, notIn }`.
+ */
+function compileTypenameFilter(
+  ctx: QueryContext,
+  model: ResolvedNodeModel,
+  alias: string,
+  filter: unknown,
+): string | null {
+  if (!model.abstract) {
+    throw new CyphraValidationError(
+      `where.__typename: ${model.name} is not an interface (only interface queries filter by implementation).`,
+    );
+  }
+  const impls = model.implementations ?? [];
+  const label = (v: unknown, op: string) => {
+    if (typeof v !== "string" || !impls.includes(v)) {
+      throw new CyphraValidationError(
+        `where.__typename${op ? `.${op}` : ""} on ${model.name}: expected ${impls.length ? impls.map((i) => JSON.stringify(i)).join(" | ") : "an implementation (it has none)"}, got ${JSON.stringify(v)}.`,
+      );
+    }
+    return `${alias}:${q(ctx.node(v).label)}`;
+  };
+  const anyOf = (v: unknown, op: string) => {
+    if (!Array.isArray(v))
+      throw new CyphraValidationError(`where.__typename.${op} expects an array.`);
+    const labels = v.map((x) => label(x, op));
+    if (labels.length === 0) return "false";
+    return labels.length === 1 ? labels[0]! : labels.map((x) => `(${x})`).join(" OR ");
+  };
+  if (filter === null) {
+    throw new CyphraValidationError(`where.__typename on ${model.name} cannot be null.`);
+  }
+  if (!isPlainObject(filter)) return label(filter, "");
+  const parts: string[] = [];
+  for (const [op, v] of Object.entries(filter)) {
+    if (v === undefined) continue;
+    if (op === "equals") parts.push(label(v, op));
+    else if (op === "not") parts.push(`NOT (${label(v, op)})`);
+    else if (op === "in") parts.push(anyOf(v, op));
+    else if (op === "notIn") parts.push(`NOT (${anyOf(v, op)})`);
+    else {
+      throw new CyphraValidationError(
+        `Unknown filter "${op}" on ${model.name}.__typename (use equals, not, in, notIn).`,
+      );
+    }
+  }
+  return and(parts);
+}
+
+/**
  * Compile a `where` object for node variable `alias` into a Cypher predicate (or `null` if empty).
  */
 export function compileWhere(
@@ -496,6 +547,11 @@ export function compileWhere(
       } else {
         for (const c of compiled) parts.push(`NOT (${c})`);
       }
+      continue;
+    }
+    if (key === "__typename") {
+      const c = compileTypenameFilter(ctx, model, alias, value);
+      if (c) parts.push(c);
       continue;
     }
     const f = model.fields.find((x) => x.name === key);
@@ -595,6 +651,23 @@ function compileRelatedScalar(
 }
 
 /**
+ * `CASE WHEN n:A THEN 'A' … ELSE 'Interface' END`: the `__typename` of an interface's node, as
+ * its results report it (sorting by implementation name).
+ */
+function typenameExpr(ctx: QueryContext, model: ResolvedNodeModel, alias: string): string {
+  if (!model.abstract) {
+    throw new CyphraValidationError(
+      `orderBy __typename: ${model.name} is not an interface (only interface queries sort by implementation).`,
+    );
+  }
+  const whens = (model.implementations ?? []).map(
+    (i) => `WHEN ${alias}:${q(ctx.node(i).label)} THEN ${ctx.param(i)}`,
+  );
+  const fallback = ctx.param(model.name);
+  return whens.length ? `CASE ${whens.join(" ")} ELSE ${fallback} END` : fallback;
+}
+
+/**
  * Compile `orderBy` into `a.x ASC, a.y DESC` (or `null`). A to-many relation sorts by its number
  * of related nodes: `{ posts: { _count: "desc" } }`, optionally only those matching a filter
  * (`{ posts: { _count: "desc", where: { published: true } } }`); a to-one relation by a scalar of
@@ -613,6 +686,12 @@ export function compileOrderBy(
     if (!isPlainObject(item)) throw new CyphraValidationError("orderBy entries must be objects.");
     for (const [key, dir] of Object.entries(item)) {
       if (dir === undefined) continue;
+      if (key === "__typename") {
+        parts.push(
+          `${typenameExpr(ctx, model, alias)} ${sortDirection(dir, `${model.name}.__typename`)}`,
+        );
+        continue;
+      }
       const rel = relationField(model, key);
       if (rel && !rel.many) {
         if (!isPlainObject(dir)) {
@@ -699,10 +778,17 @@ export type ShapeVariant = {
   readonly label: string;
   /** Its scalars to decode (absent with `select`: the selected interface fields). */
   readonly scalars?: readonly ResolvedScalarField[];
+  /** What `$on: { <name>: … }` loads for it, projected under {@link onKey} (absent: nothing). */
+  readonly on?: Shape;
 };
 
 /** Key of the labels projected next to an interface's properties (to pick `__typename`). */
 const LABELS_KEY = "__labels";
+
+/** Key of what `$on` loads for the implementation `name`, in an interface's projection. */
+function onKey(name: string): string {
+  return `__on_${name}`;
+}
 
 /** How to decode one projected row back into JS. */
 export type Shape = {
@@ -749,12 +835,27 @@ export function compileProjection(
   const rels: { field: ResolvedRelationField; args: LoadArgs }[] = [];
   const allScalars = model.fields.filter((f): f is ResolvedScalarField => f.kind === "scalar");
   let counts: { field: ResolvedRelationField; where: unknown }[] | undefined;
+  let on: { spec: AnyRecord; label: string } | undefined;
 
   const takeRelations = (spec: AnyRecord, label: string) => {
     for (const [key, v] of Object.entries(spec)) {
       if (v === undefined || v === false) continue;
       if (key === "_count") {
         counts = relationCounts(model, v, label);
+        continue;
+      }
+      if (key === "$on") {
+        if (!model.abstract) {
+          throw new CyphraValidationError(
+            `${label}.$on: ${model.name} is not an interface ($on loads per-implementation fields of an interface query).`,
+          );
+        }
+        if (!isPlainObject(v)) {
+          throw new CyphraValidationError(
+            `${label}.$on on ${model.name} takes { <implementation>: { … } }.`,
+          );
+        }
+        on = { spec: v, label };
         continue;
       }
       const f = model.fields.find((x) => x.name === key);
@@ -807,6 +908,41 @@ export function compileProjection(
   }
   const entries: string[] = projected.map((f) => `.${q(f.name)}`);
   if (variants) entries.push(`${q(LABELS_KEY)}: labels(${alias})`);
+  if (on && variants) {
+    const { spec, label } = on;
+    const impls = model.implementations ?? [];
+    for (const [name, sub] of Object.entries(spec)) {
+      if (sub === undefined || sub === false) continue;
+      const i = variants.findIndex((v) => v.name === name);
+      if (i < 0) {
+        throw new CyphraValidationError(
+          `${label}.$on.${name}: not an implementation of ${model.name} (${impls.length ? impls.join(", ") : "it has none"}).`,
+        );
+      }
+      if (!isPlainObject(sub)) {
+        throw new CyphraValidationError(
+          `${label}.$on.${name} takes the ${label} of ${name} ({ <field>: true | { … } }).`,
+        );
+      }
+      const impl = ctx.node(name);
+      if (label === "include") {
+        for (const [key, v] of Object.entries(sub)) {
+          if (v === undefined || v === false || key === "_count") continue;
+          const f = impl.fields.find((x) => x.name === key);
+          if (!f) throw new CyphraValidationError(`Unknown field "${name}.${key}" in include.$on.`);
+          if (f.kind === "scalar") {
+            throw new CyphraValidationError(
+              `include only takes relations ("${key}" is a scalar; use select.$on.${name} to pick it).`,
+            );
+          }
+        }
+      }
+      // The implementation's own projection of the same node, evaluated only on its nodes.
+      const p = compileProjection(ctx, impl, alias, { select: sub });
+      entries.push(`${q(onKey(name))}: CASE WHEN ${alias}:${q(impl.label)} THEN ${p.expr} END`);
+      variants[i] = { ...variants[i]!, on: p.shape };
+    }
+  }
   const relShapes: Shape["relations"][number][] = [];
   for (const { field, args: sub } of rels) {
     const target = ctx.node(field.target);
@@ -911,6 +1047,8 @@ export function decodeRow(shape: Shape, row: unknown): AnyRecord | null {
   const src = row as AnyRecord;
   const out: AnyRecord = {};
   let scalars = shape.scalars;
+  /** What `$on` loaded for the node's implementation, merged into the result last. */
+  let on: AnyRecord | null = null;
   if (shape.variants) {
     // The implementation whose label the node carries; a node with none of them (written outside
     // Cyphra) is reported as the interface itself, with the interface's fields.
@@ -918,6 +1056,7 @@ export function decodeRow(shape: Shape, row: unknown): AnyRecord | null {
     const variant = shape.variants.find((v) => labels.includes(v.label));
     out.__typename = variant?.name ?? shape.model.name;
     if (variant?.scalars) scalars = variant.scalars;
+    if (variant?.on) on = decodeRow(variant.on, src[onKey(variant.name)]);
   }
   for (const f of scalars) out[f.name] = decodeScalar(f, src[f.name]);
   for (const r of shape.relations) {
@@ -941,6 +1080,11 @@ export function decodeRow(shape: Shape, row: unknown): AnyRecord | null {
     const counts: AnyRecord = {};
     for (const f of shape.counts) counts[f.name] = decodeCount(raw[f.name]);
     out._count = counts;
+  }
+  if (on) {
+    const { _count, ...rest } = on;
+    Object.assign(out, rest);
+    if (_count) out._count = { ...((out._count as AnyRecord | undefined) ?? {}), ..._count };
   }
   return out;
 }

@@ -1,5 +1,9 @@
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createClient, type Db } from "./__fixtures__/interfaces.gen.js";
+import {
+  createClient as createNestedClient,
+  type Db as NestedDb,
+} from "./__fixtures__/nested.gen.js";
 import { CyphraValidationError } from "./errors.js";
 import { onMemgraph, testDdl, testDialect } from "./__fixtures__/testDialect.js";
 
@@ -215,4 +219,216 @@ describe.skipIf(!hasNeo)("interfaces and multiple labels (Neo4j)", () => {
       expect(employees.map((h) => h.email)).toEqual(["emp@x.io"]);
     },
   );
+});
+
+describe.skipIf(!hasNeo)("interfaces: __typename filters and $on (Neo4j)", () => {
+  let db: Db;
+
+  beforeEach(async () => {
+    db ??= createClient({
+      uri: process.env.NEO4J_TEST_URI!,
+      user: process.env.NEO4J_TEST_USER!,
+      password: process.env.NEO4J_TEST_PASSWORD!,
+      dialect: testDialect,
+    });
+    await db.$cypher`MATCH (n) WHERE any(l IN labels(n) WHERE l IN ${LABELS}) DETACH DELETE n`;
+    const team = await db.team.create({ data: { name: "core" } });
+    await db.customer.create({
+      data: { email: "c@x.io", name: "Cleo", tier: "gold", notes: { create: { text: "hi" } } },
+    });
+    await db.employee.create({
+      data: {
+        email: "e@x.io",
+        name: "Eve",
+        salary: 10,
+        team: { connect: { id: team.id } },
+        manager: { connect: { email: "c@x.io" } },
+        badges: { create: [{ name: "b1" }, { name: "b2" }] },
+      },
+    });
+  });
+
+  afterAll(async () => {
+    if (!db) return;
+    await db.$cypher`MATCH (n) WHERE any(l IN labels(n) WHERE l IN ${LABELS}) DETACH DELETE n`;
+    await db.$disconnect();
+  });
+
+  it("filters and sorts an interface query by __typename", async () => {
+    const employees = await db.person.findMany({ where: { __typename: "Employee" } });
+    expect(employees.map((p) => [p.__typename, p.email])).toEqual([["Employee", "e@x.io"]]);
+    expect(await db.person.count({ where: { __typename: { in: ["Employee", "Customer"] } } })).toBe(
+      2,
+    );
+    expect(await db.person.count({ where: { __typename: { notIn: ["Employee"] } } })).toBe(1);
+    expect(await db.person.count({ where: { __typename: { in: [] } } })).toBe(0);
+    const desc = await db.person.findMany({
+      orderBy: { __typename: "desc" },
+      select: { email: true },
+    });
+    expect(desc.map((p) => p.__typename)).toEqual(["Employee", "Customer"]);
+    const managed = await db.person.findMany({
+      where: { manager: { is: { __typename: "Customer" } } },
+      select: { email: true },
+    });
+    expect(managed).toEqual([{ __typename: "Employee", email: "e@x.io" }]);
+  });
+
+  it("loads per-implementation relations and fields with $on", async () => {
+    const people = await db.person.findMany({
+      orderBy: { email: "asc" },
+      include: {
+        manager: { select: { name: true } },
+        $on: {
+          Employee: { team: true, badges: { orderBy: { name: "desc" }, take: 1 } },
+          Customer: { _count: { select: { notes: true } } },
+        },
+      },
+    });
+    const [c, e] = people;
+    expect(c).toMatchObject({ __typename: "Customer", manager: null, _count: { notes: 1 } });
+    expect(c).not.toHaveProperty("team");
+    expect(e).toMatchObject({
+      __typename: "Employee",
+      salary: 10,
+      manager: { __typename: "Customer", name: "Cleo" },
+      team: { name: "core" },
+      badges: [{ name: "b2" }],
+    });
+    expect(e).not.toHaveProperty("_count");
+
+    const selected = await db.person.findMany({
+      orderBy: { email: "asc" },
+      select: { name: true, $on: { Employee: { salary: true, team: { select: { name: true } } } } },
+    });
+    expect(selected).toEqual([
+      { __typename: "Customer", name: "Cleo" },
+      { __typename: "Employee", name: "Eve", salary: 10, team: { name: "core" } },
+    ]);
+
+    // Through a relation whose target is an interface.
+    const team = (await db.team.findFirst({
+      include: {
+        members: { include: { manager: { include: { $on: { Customer: { notes: true } } } } } },
+      },
+    }))!;
+    expect(team.members[0]!.manager).toMatchObject({
+      __typename: "Customer",
+      notes: [{ text: "hi" }],
+    });
+  });
+});
+
+describe.skipIf(!hasNeo)("interfaces extending interfaces (Neo4j)", () => {
+  const NESTED_LABELS = [
+    "Party",
+    "Staffer",
+    "Reachable",
+    "Engineer",
+    "Temp",
+    "Buyer",
+    "Unit",
+    "Task",
+  ];
+  let db: NestedDb;
+
+  beforeEach(async () => {
+    db ??= createNestedClient({
+      uri: process.env.NEO4J_TEST_URI!,
+      user: process.env.NEO4J_TEST_USER!,
+      password: process.env.NEO4J_TEST_PASSWORD!,
+      dialect: testDialect,
+    });
+    await db.$cypher`MATCH (n) WHERE any(l IN labels(n) WHERE l IN ${NESTED_LABELS}) DETACH DELETE n`;
+  });
+
+  afterAll(async () => {
+    if (!db) return;
+    await db.$cypher`MATCH (n) WHERE any(l IN labels(n) WHERE l IN ${NESTED_LABELS}) DETACH DELETE n`;
+    await db.$disconnect();
+  });
+
+  async function seed() {
+    const unit = await db.unit.create({ data: { name: "core" } });
+    await db.buyer.create({ data: { email: "b@x.io", name: "Bea", phone: "1" } });
+    await db.engineer.create({
+      data: {
+        email: "e@x.io",
+        name: "Eli",
+        badge: "E1",
+        phone: "2",
+        level: 3,
+        unit: { connect: { id: unit.id } },
+        manager: { connect: { email: "b@x.io" } },
+        tasks: { create: { title: "t1" } },
+      },
+    });
+    await db.temp.create({
+      data: { email: "t@x.io", name: "Tom", agency: "acme", unit: { connect: { id: unit.id } } },
+    });
+  }
+
+  it("writes every inherited label", async () => {
+    await seed();
+    const rows = await db.$cypher<{ email: string; labels: string[] }>`
+      MATCH (n:Party) RETURN n.email AS email, labels(n) AS labels ORDER BY email`;
+    expect(rows.map((r) => [r.email, [...r.labels].sort()])).toEqual([
+      ["b@x.io", ["Buyer", "Party", "Reachable"]],
+      ["e@x.io", ["Engineer", "Party", "Reachable", "Staffer"]],
+      ["t@x.io", ["Party", "Staffer", "Temp"]],
+    ]);
+  });
+
+  it("queries each level of the hierarchy as a union of its implementations", async () => {
+    await seed();
+    const all = await db.party.findMany({ orderBy: { email: "asc" }, select: { email: true } });
+    expect(all.map((p) => p.__typename)).toEqual(["Buyer", "Engineer", "Temp"]);
+    const staff = await db.staffer.findMany({
+      orderBy: { email: "asc" },
+      include: { unit: { select: { name: true } }, manager: { select: { name: true } } },
+    });
+    expect(staff).toEqual([
+      {
+        __typename: "Engineer",
+        id: expect.any(String),
+        email: "e@x.io",
+        name: "Eli",
+        badge: "E1",
+        phone: "2",
+        level: 3,
+        unit: { name: "core" },
+        manager: { __typename: "Buyer", name: "Bea" },
+      },
+      {
+        __typename: "Temp",
+        id: expect.any(String),
+        email: "t@x.io",
+        name: "Tom",
+        badge: null,
+        agency: "acme",
+        unit: { name: "core" },
+        manager: null,
+      },
+    ]);
+    const reachable = await db.reachable.findMany({
+      where: { __typename: "Engineer" },
+      include: { $on: { Engineer: { tasks: true } } },
+    });
+    expect(reachable).toMatchObject([{ __typename: "Engineer", tasks: [{ title: "t1" }] }]);
+    expect(await db.staffer.findUnique({ where: { email: "b@x.io" } })).toBeNull();
+    const unit = (await db.unit.findFirst({
+      include: { staff: { orderBy: { email: "asc" }, select: { name: true } } },
+    }))!;
+    expect(unit.staff.map((s) => s.__typename)).toEqual(["Engineer", "Temp"]);
+  });
+
+  it("updates and deletes through an intermediate interface with the implementation's rules", async () => {
+    await seed();
+    expect(await db.staffer.updateMany({ data: { badge: "X" } })).toEqual({ count: 2 });
+    expect((await db.engineer.findUniqueOrThrow({ where: { email: "e@x.io" } })).badge).toBe("X");
+    // Engineer.tasks cascades.
+    await db.staffer.delete({ where: { email: "e@x.io" } });
+    expect(await db.task.count()).toBe(0);
+    expect(await db.party.count()).toBe(2);
+  });
 });

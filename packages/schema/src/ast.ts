@@ -59,8 +59,9 @@ export type EnumDeclaration = {
 };
 
 /**
- * `node X { … }`, `node X implements A, B { … }`, or `interface A { … }` (`abstract: true`): an
- * abstract node model whose label and fields its implementations share.
+ * `node X { … }`, `node X implements A, B { … }`, `interface A { … }` (`abstract: true`): an
+ * abstract node model whose label and fields its implementations share, or
+ * `interface B extends A { … }`: an interface that inherits another's fields and label.
  */
 export type NodeDeclaration = {
   readonly kind: "Node";
@@ -69,6 +70,8 @@ export type NodeDeclaration = {
   readonly abstract?: true;
   /** Interfaces named after `implements`, in order (absent when there is no `implements`). */
   readonly implements?: readonly string[];
+  /** Interfaces named after `extends` on an interface, in order (absent when there is none). */
+  readonly extends?: readonly string[];
   readonly fields: readonly NodeField[];
   /** Model-level `@@…` attributes (absent when the model has none). */
   readonly attributes?: readonly ModelAttribute[];
@@ -76,6 +79,8 @@ export type NodeDeclaration = {
   readonly nameLoc?: SourceRange;
   /** Range of each name in `implements`, parallel to it. */
   readonly implementsLocs?: readonly SourceRange[];
+  /** Range of each name in `extends`, parallel to it. */
+  readonly extendsLocs?: readonly SourceRange[];
 };
 
 export type RelationshipDeclaration = {
