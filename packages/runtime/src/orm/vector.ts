@@ -65,7 +65,11 @@ function toScore(v: unknown): number {
 }
 
 /** The vector field `findSimilar` searches, checked against the schema. */
-function vectorField(model: ResolvedNodeModel, name: unknown, op: string): ResolvedScalarField {
+export function vectorField(
+  model: ResolvedNodeModel,
+  name: unknown,
+  op: string,
+): ResolvedScalarField {
   const indexed = model.fields.filter(
     (f): f is ResolvedScalarField => f.kind === "scalar" && Boolean(f.vectorIndex),
   );
@@ -170,28 +174,10 @@ export async function findSimilar(
     return decode(rows as { row: unknown; score: unknown }[]);
   }
 
-  const name = ctx.param(index.name);
-  // Memgraph's `similarity` is the raw cosine for a cosine index: rescaled to [0, 1] like Neo4j's
-  // score. For an `l2sq` index it is already 1 / (1 + d²), Neo4j's euclidean score.
-  // Memgraph's index also returns nodes deleted since its last garbage collection: each hit is
-  // matched again by id (null when deleted, filtered out below, still counted as fetched).
-  // FalkorDB's index is found by label and property, and returns a distance (lower is closer):
-  // rescaled to Neo4j's score.
-  const falkordbIndex = falkordb
-    ? `${ctx.param(field.inheritedFrom ? ctx.node(field.inheritedFrom).label : model.label)}, ${ctx.param(field.name)}`
-    : "";
-  const call = (count: string) =>
-    memgraph
-      ? `CALL vector_search.search(${name}, ${count}, ${vec}) YIELD node AS hit, similarity ` +
-        `OPTIONAL MATCH (node) WHERE id(node) = id(hit) ` +
-        `WITH node, ${index.similarity === "euclidean" ? "similarity" : "(1 + similarity) / 2"} AS score`
-      : falkordb
-        ? `CALL db.idx.vector.queryNodes(${falkordbIndex}, ${count}, ${vec}) ` +
-          `YIELD node, score AS distance WITH node, ${falkordbScore(index.similarity, "distance")} AS score`
-        : `CALL db.index.vector.queryNodes(${name}, ${count}, ${vec}) YIELD node, score`;
+  const call = (count: string | (() => string)) => vectorIndexCall(ctx, model, field, vec, count);
 
   if (!where && !memgraph) {
-    let text = `${call(ctx.param(intParam(candidates)))} WITH node AS n, score`;
+    let text = `${call(() => ctx.param(intParam(candidates)))} WITH node AS n, score`;
     if (scoreOk) text += ` WHERE ${scoreOk}`;
     text += ` WITH n, score ORDER BY score DESC LIMIT ${limit}`;
     text += ` RETURN ${expr} AS row, score ORDER BY score DESC`;
@@ -225,6 +211,48 @@ export async function findSimilar(
     if (rows.length >= k || exhausted) return decode(rows);
     asked = Math.min(asked * CANDIDATE_GROWTH, maxCandidates);
   }
+}
+
+/**
+ * The vector index query on `field` of `model` for the vector bound to `vec` (`count`: the number
+ * of neighbours to ask, a placeholder, or a function binding it after the index's own parameters),
+ * yielding `node, score` with Neo4j's score (in `[0, 1]`,
+ * higher is more similar). On Memgraph, `node` is `null` for a hit deleted since the index's last
+ * garbage collection: filter with `node IS NOT NULL`.
+ */
+export function vectorIndexCall(
+  ctx: QueryContext,
+  model: ResolvedNodeModel,
+  field: ResolvedScalarField,
+  vec: string,
+  count: string | (() => string),
+): string {
+  const index = field.vectorIndex!;
+  const n = () => (typeof count === "string" ? count : count());
+  // Memgraph's `similarity` is the raw cosine for a cosine index: rescaled to [0, 1] like Neo4j's
+  // score. For an `l2sq` index it is already 1 / (1 + d²), Neo4j's euclidean score.
+  // Memgraph's index also returns nodes deleted since its last garbage collection: each hit is
+  // matched again by id (null when deleted, filtered out by the caller, still counted as fetched).
+  // FalkorDB's index is found by label and property, and returns a distance (lower is closer):
+  // rescaled to Neo4j's score.
+  if (ctx.dialect === "memgraph") {
+    return (
+      `CALL vector_search.search(${ctx.param(index.name)}, ${n()}, ${vec}) YIELD node AS hit, similarity ` +
+      `OPTIONAL MATCH (node) WHERE id(node) = id(hit) ` +
+      `WITH node, ${index.similarity === "euclidean" ? "similarity" : "(1 + similarity) / 2"} AS score`
+    );
+  }
+  if (ctx.dialect === "falkordb") {
+    const label = ctx.param(
+      field.inheritedFrom ? ctx.node(field.inheritedFrom).label : model.label,
+    );
+    return (
+      `CALL db.idx.vector.queryNodes(${label}, ${ctx.param(field.name)}, ${n()}, ${vec}) ` +
+      `YIELD node, score AS distance WITH node, ${falkordbScore(index.similarity, "distance")} AS score`
+    );
+  }
+  const name = ctx.param(index.name);
+  return `CALL db.index.vector.queryNodes(${name}, ${n()}, ${vec}) YIELD node, score`;
 }
 
 /** FalkorDB: the distance between vectors `a` and `b` (`vec.cosineDistance` is `1 - cos`). */

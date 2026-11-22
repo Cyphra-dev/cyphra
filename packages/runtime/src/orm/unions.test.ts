@@ -125,8 +125,6 @@ describe("unions: reads", () => {
     "aggregate",
     "groupBy",
     "traverse",
-    "search",
-    "findSimilar",
     "create",
     "createMany",
     "update",
@@ -139,7 +137,7 @@ describe("unions: reads", () => {
     const call = async () => (e[op] as (a: unknown) => Promise<unknown>)({ where: {} });
     await expect(call()).rejects.toThrow(
       new CyphraValidationError(
-        `SearchHit.${op}: SearchHit is a union; it supports findMany, findFirst and count (${op} goes through one of its members: Story, Writer, Editor).`,
+        `SearchHit.${op}: SearchHit is a union; it supports findMany, findFirst, count, search and findSimilar (${op} goes through one of its members: Story, Writer, Editor).`,
       ),
     );
     expect(calls).toEqual([]);

@@ -198,6 +198,12 @@ label ([RediSearch](https://redis.io/docs/latest/develop/interact/search-and-que
 | `"phrase"`           | The exact phrase: `"graph database"`                                 |
 | `"lucene"` (default) | Passed through, in RediSearch's syntax: `grap*`, `-draft`, `%grpah%` |
 
+[Search over a union](/client#searching-a-union) runs the same statement as on Neo4j: each
+member's label index is queried (so a member's `indexes` entry covers all of its `@@fulltext`
+properties), ranked by node id between equal scores, and the lists fused by rank. RediSearch can
+give equal scores to many hits of a small index: they then normalise to `1` and keep their id
+order.
+
 FalkorDB 4.22 reports a score of 0 for full-text hits, so `minScore` filters nothing useful and
 results come back in the index's order. The `analyzer` and `eventuallyConsistent` options of
 `@@fulltext` are ignored.

@@ -1449,6 +1449,123 @@ type FulltextDelegate<TM extends TypeMap, M extends keyof TM> = [
       ): Promise<SearchResult<Out<TM, M, S, I>>[]>;
     };
 
+// ---------------------------------------------------------------------------
+// Search over a union
+// ---------------------------------------------------------------------------
+
+/** Members of the union `U` with a `@@fulltext` index (what its `search` can query). */
+type FulltextMembers<TM extends TypeMap, U extends keyof TM> = {
+  [T in MemberNames<TM, U>]: [FulltextIndexNames<TM, T>] extends [never] ? never : T;
+}[MemberNames<TM, U>];
+
+/** Members of the union `U` with a `@vectorIndex` field (what its `findSimilar` can query). */
+type VectorMembers<TM extends TypeMap, U extends keyof TM> = {
+  [T in MemberNames<TM, U>]: [VectorIndexKeys<TM, T>] extends [never] ? never : T;
+}[MemberNames<TM, U>];
+
+/** What `scores: true` reports per index for a hit of a search over a union. */
+export type IndexScore = {
+  /** The index's own score (Lucene's, or the vector similarity in `[0, 1]`). */
+  score: number;
+  /** `score` min-max normalised over the hits this index contributed: in `[0, 1]`. */
+  normalized: number;
+  /** Position of the hit in this index's list, from 1. */
+  rank: number;
+};
+
+/** Ranking options shared by `search` and `findSimilar` on a union. */
+type FusionArgs<TM extends TypeMap, U extends keyof TM> = {
+  /**
+   * Filter on the hits, applied in each index's list before ranking: `$on` gives each member its
+   * own filter (members not listed are left out), `__typename` keeps some members.
+   */
+  where?: WhereInput<TM, U>;
+  /** Drop hits whose raw score (in their own index) is below this, before ranking. */
+  minScore?: number;
+  /** Hits to skip, after fusion. */
+  skip?: number;
+  /** `k` of reciprocal rank fusion: a hit scores `Σ 1 / (k + rank)` (default 60). */
+  rrfK?: number;
+};
+
+export type UnionSearchArgs<TM extends TypeMap, U extends keyof TM> = FusionArgs<TM, U> & {
+  /** The search text, sent to each member's index. A blank query matches nothing (`[]`). */
+  query: string;
+  /** How to read `query` (default `"lucene"`). */
+  mode?: SearchMode;
+  /**
+   * The index to query for each member (only the members listed are searched). Default: every
+   * member with exactly one `@@fulltext` index; a member with several must be listed.
+   */
+  indexes?: { [T in FulltextMembers<TM, U>]?: FulltextIndexNames<TM, T> };
+  /** Maximum number of hits, after fusion (default: all of them). */
+  take?: number;
+};
+
+export type UnionFindSimilarArgs<TM extends TypeMap, U extends keyof TM> = FusionArgs<TM, U> & {
+  /** Query embedding; its length must equal the dimensions of every searched field. */
+  vector: readonly number[];
+  /**
+   * The `@vectorIndex` field to query for each member (only the members listed are searched).
+   * Default: every member with exactly one; a member with several must be listed.
+   */
+  fields?: { [T in VectorMembers<TM, U>]?: VectorIndexKeys<TM, T> };
+  /** Number of hits, after fusion. */
+  take: number;
+  /**
+   * Neighbours asked from each index (at least `skip + take`; default `skip + take`, or
+   * `max(10 × (skip + take), 100)` with a `where`). Asked once: a selective `where` may return
+   * fewer than `take` hits; ask for more candidates then.
+   */
+  candidates?: number;
+};
+
+/**
+ * A hit of a search over a union: the member (discriminated by `__typename`, honouring `select` /
+ * `include`), its fused score `$score`, and with `scores: true` each index's `$scores`.
+ */
+export type FusedResult<N, D extends boolean> = N extends unknown
+  ? Simplify<
+      N & { $score: number } & (D extends true ? { $scores: Record<string, IndexScore> } : unknown)
+    >
+  : never;
+
+type UnionSearchDelegate<TM extends TypeMap, U extends keyof TM> = [
+  FulltextMembers<TM, U>,
+] extends [never]
+  ? unknown
+  : {
+      /**
+       * Full-text search over the members' `@@fulltext` indexes: each index is queried and ranked
+       * on its own, and the lists are merged by reciprocal rank fusion (`$score`), best first.
+       */
+      search<
+        S extends Sel<TM, U> = undefined,
+        I extends Inc<TM, U> = undefined,
+        D extends boolean = false,
+      >(
+        args: UnionSearchArgs<TM, U> & Projection<S, I> & { scores?: D },
+      ): Promise<FusedResult<Out<TM, U, S, I>, D>[]>;
+    };
+
+type UnionVectorDelegate<TM extends TypeMap, U extends keyof TM> = [VectorMembers<TM, U>] extends [
+  never,
+]
+  ? unknown
+  : {
+      /**
+       * Nearest neighbours over the members' vector indexes: each index is queried and ranked on
+       * its own, and the lists are merged by reciprocal rank fusion (`$score`), best first.
+       */
+      findSimilar<
+        S extends Sel<TM, U> = undefined,
+        I extends Inc<TM, U> = undefined,
+        D extends boolean = false,
+      >(
+        args: UnionFindSimilarArgs<TM, U> & Projection<S, I> & { scores?: D },
+      ): Promise<FusedResult<Out<TM, U, S, I>, D>[]>;
+    };
+
 type Sel<TM extends TypeMap, M extends keyof TM> = SelectInput<TM, M> | undefined;
 type Inc<TM extends TypeMap, M extends keyof TM> = IncludeInput<TM, M> | undefined;
 type Out<TM extends TypeMap, M extends keyof TM, S, I> = Payload<TM, M, { select: S; include: I }>;
@@ -1456,14 +1573,19 @@ type Out<TM extends TypeMap, M extends keyof TM, S, I> = Payload<TM, M, { select
 /** Operations available on `db.<model>`. */
 export type ModelDelegate<TM extends TypeMap, M extends keyof TM> =
   IsUnion<TM, M> extends true
-    ? Pick<BaseModelDelegate<TM, M>, UnionOperations>
+    ? Pick<BaseModelDelegate<TM, M>, UnionOperations> &
+        UnionSearchDelegate<TM, M> &
+        UnionVectorDelegate<TM, M>
     : (IsAbstract<TM, M> extends true
         ? Omit<BaseModelDelegate<TM, M>, CreateOperations>
         : BaseModelDelegate<TM, M>) &
         VectorDelegate<TM, M> &
         FulltextDelegate<TM, M>;
 
-/** Operations of a union: it has no unique key and no fields, and is written through its members. */
+/**
+ * Operations of a union: it has no unique key and no fields, and is written through its members
+ * (`search` / `findSimilar` come with its members' indexes).
+ */
 type UnionOperations = "findMany" | "findFirst" | "count";
 
 /** Operations an interface has not: create one of its implementations instead. */

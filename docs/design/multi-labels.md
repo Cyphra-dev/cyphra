@@ -264,8 +264,8 @@ node Tag {
   filter inside the `WHERE` of an `(n:Employee:Person)` match), and FalkorDB has no label
   disjunction; the predicate runs everywhere (Neo4j plans it as a union of label scans).
 - **Client.** `db.searchHit` is a read-only delegate: `findMany`, `findFirst` and `count`
-  (no unique key, so no `findUnique`; no fields, so no `aggregate` / `groupBy` / `search`;
-  writes go through the members). Results are `{ __typename: "Post", …Post } | …`, with every
+  (no unique key, so no `findUnique`; no fields, so no `aggregate` / `groupBy`; writes go through
+  the members), plus `search` / `findSimilar` over the members' indexes (#195, below). Results are `{ __typename: "Post", …Post } | …`, with every
   scalar of the node's member. `where` takes `__typename` and `$on`, `select` / `include` take
   `$on` only (and `select` always returns `__typename`), `orderBy` takes `__typename`.
 - **`where.$on`.** `where: { $on: { Post: { title: { contains: "graph" } }, User: {} } }` keeps the
@@ -291,9 +291,21 @@ node Tag {
 - **`onDelete`.** `Cascade` / `Restrict` / `SetNull` on a union-typed field apply to every
   member: a cascade into it deletes each node with the rules of the member it is (as for an
   interface).
-- **Full-text and vector search over a union** (search each member's index and merge by score)
-  is not done: scores of different indexes are not comparable, so the merge would need a
-  normalisation policy. Search each member and merge in the application (follow-up issue).
+- **Full-text and vector search over a union (#195, implemented).** `db.searchHit.search(…)` /
+  `findSimilar(…)` query one index per member (`indexes: { Post: "postSearch" }` / `fields`,
+  default: each member's only index). Scores of different indexes are not comparable (Lucene's
+  depend on each index's statistics, vector indexes may use different similarity functions), so
+  each list is ranked on its own and the lists are merged by reciprocal rank fusion:
+  `$score = Σ 1 / (k + rank)`, `k = 60` (`rrfK`). Each list is min-max normalised over the hits it
+  contributes (reported in `$scores`, `scores: true`) and that breaks ties, then the member's
+  position, then the node id: a stable order. The union `where` (`$on`, `__typename`) and
+  `minScore` (raw, per index) filter each list before ranking; `skip` / `take` page the fused list,
+  each list contributing its `skip + take` best. One statement: a `CALL { … }` subquery per index
+  returns its collected list (rather than a `UNION` inside one `CALL`, which would lose the
+  per-index lists ranking needs), then fusion, paging and the `select` / `include` projection.
+  Same statement on Neo4j, Memgraph and FalkorDB (by node id: `elementId` on Neo4j, `id`
+  elsewhere). `findSimilar` asks each index once (`candidates`, no widening), takes `take` instead
+  of `k`, and has no `exact`.
 - **Codegen.** The type map entry has `abstract: true; union: true; implementations: …`, no
   scalars, relations or unique keys; the exported `SearchHit` type is the discriminated union of
   the members' property types. Zod: no create / update schemas (as for interfaces); the read
