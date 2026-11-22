@@ -37,6 +37,8 @@ type Block = {
   readonly startLine: number;
   readonly endLine: number;
   readonly items: Item[];
+  /** A one-line declaration (`union X = A | B`): no body, no closing brace. */
+  readonly oneLine?: true;
   leading: SchemaComment[];
   headerComment?: SchemaComment;
   dangling: SchemaComment[];
@@ -110,6 +112,19 @@ export function formatSchema(source: string, options?: FormatSchemaOptions): str
     const loc = range(d.loc);
     let items: Item[];
     let header: string;
+    if (d.kind === "Union") {
+      return {
+        header: `union ${d.name} = ${d.members.join(" | ")}`,
+        start: loc.start.offset,
+        end: loc.end.offset,
+        startLine: loc.start.line,
+        endLine: loc.end.line,
+        items: [],
+        oneLine: true,
+        leading: [],
+        dangling: [],
+      };
+    }
     if (d.kind === "Enum") {
       header = `enum ${d.name} {`;
       items = d.values.map((v, i) => lineItem(range(d.valueLocs?.[i]), v));
@@ -204,6 +219,15 @@ export function formatSchema(source: string, options?: FormatSchemaOptions): str
 
   blocks.forEach((b, bi) => {
     if (bi > 0) out.push("");
+    if (b.oneLine) {
+      // Comments between the members go before the line, a trailing one after it.
+      const trailing = b.trailing ?? b.headerComment;
+      const before = [...b.leading, ...b.dangling];
+      if (b.trailing && b.headerComment) before.push(b.headerComment);
+      if (!emitLeading(before, "", true) && blankBefore(b.start)) out.push("");
+      out.push(withTrailing(b.header, trailing));
+      return;
+    }
     if (!emitLeading(b.leading, "", true) && blankBefore(b.start)) out.push("");
     out.push(withTrailing(b.header, b.headerComment));
 

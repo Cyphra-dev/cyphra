@@ -118,6 +118,17 @@ export function renderClientSection(model: SchemaModel, names: RuntimeTypeNames 
     lines.push(`export type ${e.name} = (typeof ${e.name})[keyof typeof ${e.name}];`, "");
   }
   for (const n of model.nodes) {
+    if (n.union) {
+      const members = n.implementations ?? [];
+      lines.push(
+        `/** \`${n.name}\` union (${members.map((m) => `\`${m}\``).join(" | ")}): a member's properties and its \`__typename\`. */`,
+      );
+      lines.push(
+        `export type ${n.name} = ${members.length ? members.map((m) => `({ __typename: ${JSON.stringify(m)} } & ${m})`).join(" | ") : "never"};`,
+        "",
+      );
+      continue;
+    }
     const scalars = n.fields.filter((f): f is ResolvedScalarField => f.kind === "scalar");
     const doc = n.abstract
       ? `\`${n.name}\` interface properties (shared by ${n.implementations?.length ? n.implementations.map((i) => `\`${i}\``).join(", ") : "no node yet"}).`
@@ -143,10 +154,12 @@ export function renderClientSection(model: SchemaModel, names: RuntimeTypeNames 
     const scalars = n.fields.filter((f): f is ResolvedScalarField => f.kind === "scalar");
     const required = scalars.filter((f) => !f.optional && !f.list && !f.default).map((f) => f.name);
     lines.push(`  ${n.name}: {`);
-    lines.push(`    scalars: ${n.name};`);
-    // Only emitted for interfaces, so schemas without them generate the same code as before.
+    // A union has no properties of its own (its exported type is the union of its members').
+    lines.push(`    scalars: ${n.union ? "Record<never, never>" : n.name};`);
+    // Only emitted for interfaces and unions, so schemas without them generate the same code.
     if (n.abstract) {
       lines.push("    abstract: true;");
+      if (n.union) lines.push("    union: true;");
       lines.push(`    implementations: ${union(n.implementations ?? [])};`);
     }
     // Only emitted when declared, so schemas without `@@labels` generate the same code as before.
@@ -250,7 +263,8 @@ export function collectCodegenModel(doc: SchemaDocument): CodegenModel {
   const relTypes = new Set<string>();
 
   for (const decl of doc.declarations) {
-    if (decl.kind === "Enum") continue;
+    // A union adds no label.
+    if (decl.kind === "Enum" || decl.kind === "Union") continue;
     if (decl.kind === "Node") {
       nodeLabels.push(decl.name);
       for (const f of decl.fields) {

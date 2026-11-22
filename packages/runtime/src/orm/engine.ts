@@ -27,13 +27,16 @@ import {
   compileOrderBy,
   compilePaging,
   compileProjection,
+  and,
   compileWhere,
   decodeRow,
   labelExpr,
+  nodeMatch,
   q,
   relationField,
-  relationPattern,
+  relationMatch,
   scalarField,
+  unionPredicate,
 } from "./compile.js";
 import { compileAggregate, compileGroupBy } from "./aggregate.js";
 import { DEFAULT_MAX_TRAVERSAL_DEPTH, compileTraverse } from "./traverse.js";
@@ -203,8 +206,7 @@ export class ModelEngine {
     const where = compileWhere(ctx, this.model, "n", args.where);
     const paging = compilePaging(ctx, this.model, "n", args);
     const { expr, shape } = compileProjection(ctx, this.model, "n", args);
-    let text = `MATCH (n:${this.label})`;
-    if (where) text += ` WHERE ${where}`;
+    let text = `MATCH ${nodeMatch("n", this.model, where)}`;
     if (paging) text += ` WITH n${paging}`;
     text += ` RETURN ${expr} AS row`;
     // Re-apply the order on the projected rows (WITH … ORDER BY only orders that clause).
@@ -277,6 +279,18 @@ export class ModelEngine {
     return this.uniqueWhere(where, op).where;
   }
 
+  /**
+   * A union is read through `findMany`, `findFirst` and `count` only: it has no unique key, no
+   * fields to aggregate or search, and is written through its members.
+   */
+  private assertNotUnion(op: string): void {
+    if (!this.model.union) return;
+    const members = this.model.implementations ?? [];
+    throw new CyphraValidationError(
+      `${this.model.name}.${op}: ${this.model.name} is a union; it supports findMany, findFirst and count (${op} goes through one of its members: ${members.join(", ")}).`,
+    );
+  }
+
   findMany(args: AnyRecord = {}): Promise<AnyRecord[]> {
     return this.runner.read((exec) => this.readMany(exec, args), SINGLE);
   }
@@ -287,6 +301,7 @@ export class ModelEngine {
   }
 
   async findUnique(args: AnyRecord): Promise<AnyRecord | null> {
+    this.assertNotUnion("findUnique");
     const where = this.assertUnique(args.where, "findUnique");
     const rows = await this.findMany({
       ...args,
@@ -299,6 +314,7 @@ export class ModelEngine {
   }
 
   async findUniqueOrThrow(args: AnyRecord): Promise<AnyRecord> {
+    this.assertNotUnion("findUniqueOrThrow");
     const row = await this.findUnique(args);
     if (!row)
       throw new NotFoundError(`No ${this.model.name} matches ${JSON.stringify(args.where)}.`);
@@ -310,7 +326,7 @@ export class ModelEngine {
       const ctx = this.ctx();
       const w = compileWhere(ctx, this.model, "n", args.where);
       const rows = await exec(
-        `MATCH (n:${this.label})${w ? ` WHERE ${w}` : ""} RETURN count(n) AS c`,
+        `MATCH ${nodeMatch("n", this.model, w)} RETURN count(n) AS c`,
         ctx.params,
       );
       return toCount(rows[0]?.c);
@@ -319,6 +335,7 @@ export class ModelEngine {
 
   /** One statement; see {@link compileAggregate}. */
   aggregate(args: AnyRecord = {}): Promise<AnyRecord> {
+    this.assertNotUnion("aggregate");
     return this.runner.read(async (exec) => {
       if (!isPlainObject(args))
         throw new CyphraValidationError("aggregate args must be an object.");
@@ -329,6 +346,7 @@ export class ModelEngine {
 
   /** One statement; see {@link compileGroupBy}. */
   groupBy(args: AnyRecord): Promise<AnyRecord[]> {
+    this.assertNotUnion("groupBy");
     return this.runner.read(async (exec) => {
       if (!isPlainObject(args)) throw new CyphraValidationError("groupBy args must be an object.");
       const c = compileGroupBy(this.ctx(), this.model, args);
@@ -338,6 +356,7 @@ export class ModelEngine {
 
   /** One statement; see {@link compileTraverse}. */
   traverse(args: AnyRecord): Promise<unknown[]> {
+    this.assertNotUnion("traverse");
     return this.runner.read(async (exec) => {
       if (!isPlainObject(args)) throw new CyphraValidationError("traverse args must be an object.");
       const max = this.options.maxTraversalDepth ?? DEFAULT_MAX_TRAVERSAL_DEPTH;
@@ -348,11 +367,13 @@ export class ModelEngine {
 
   /** One statement; see {@link compileShortestPath}. */
   async shortestPath(args: AnyRecord): Promise<unknown> {
+    this.assertNotUnion("shortestPath");
     return (await this.shortest(args, false))[0] ?? null;
   }
 
   /** One statement; see {@link compileShortestPath}. */
   allShortestPaths(args: AnyRecord): Promise<unknown[]> {
+    this.assertNotUnion("allShortestPaths");
     return this.shortest(args, true);
   }
 
@@ -371,6 +392,7 @@ export class ModelEngine {
 
   /** Nearest neighbours on a `@vectorIndex` field; see {@link findSimilar}. */
   findSimilar(args: AnyRecord): Promise<AnyRecord[]> {
+    this.assertNotUnion("findSimilar");
     return this.runner.read(
       async (exec) => {
         if (!isPlainObject(args))
@@ -384,6 +406,7 @@ export class ModelEngine {
 
   /** Full-text search through a `@@fulltext` index; see {@link search}. */
   search(args: AnyRecord): Promise<AnyRecord[]> {
+    this.assertNotUnion("search");
     return this.runner.read(async (exec) => {
       if (!isPlainObject(args)) throw new CyphraValidationError("search args must be an object.");
       return search(exec, () => this.ctx(), this.model, args);
@@ -491,9 +514,17 @@ export class ModelEngine {
    * direction, pointing back at this model or one of its interfaces), e.g. `Post.author` for
    * `User.posts`.
    */
-  private toOneInverse(rel: ResolvedRelationField): ResolvedRelationField | undefined {
-    const self = [this.model.name, ...(this.model.interfaces ?? [])];
-    return this.node(rel.target).fields.find(
+  private toOneInverse(
+    rel: ResolvedRelationField,
+    target: ResolvedNodeModel = this.node(rel.target),
+  ): ResolvedRelationField | undefined {
+    // The fields of `target` that can point back at this model: to it, an interface of it, or a
+    // union it is a member of.
+    const unions = this.schema.nodes
+      .filter((n) => n.union && (n.implementations ?? []).includes(this.model.name))
+      .map((n) => n.name);
+    const self = [this.model.name, ...(this.model.interfaces ?? []), ...unions];
+    return target.fields.find(
       (f): f is ResolvedRelationField =>
         f.kind === "relation" &&
         !f.many &&
@@ -501,6 +532,40 @@ export class ModelEngine {
         f.direction !== rel.direction &&
         self.includes(f.target),
     );
+  }
+
+  /**
+   * The model an item of a relation write targets and the item's value: the relation's target
+   * itself, or for a union the member the item names (`{ Post: { id } }`: exactly one member).
+   */
+  private memberOf(
+    rel: ResolvedRelationField,
+    item: AnyRecord,
+    op: string,
+  ): { target: ResolvedNodeModel; value: unknown } {
+    const target = this.node(rel.target);
+    if (!target.union) return { target, value: item };
+    const members = target.implementations ?? [];
+    const keys = Object.keys(item).filter((k) => item[k] !== undefined);
+    if (keys.length !== 1 || !members.includes(keys[0]!)) {
+      throw new CyphraValidationError(
+        `${op}: ${target.name} is a union; name the member of each item, e.g. { ${members[0] ?? "Member"}: { … } } (one of ${members.join(", ")})${keys.length ? `, got ${keys.join(", ")}` : ""}.`,
+      );
+    }
+    return { target: this.node(keys[0]!), value: item[keys[0]!] };
+  }
+
+  /**
+   * The `where` matching one related node given by its unique key: the key itself, or for a union
+   * `{ $on: { Post: { id } } }` from `{ Post: { id } }`.
+   */
+  private uniqueKey(rel: ResolvedRelationField, item: AnyRecord, op: string): AnyRecord {
+    const { target, value } = this.memberOf(rel, item, op);
+    if (!isPlainObject(value)) {
+      throw new CyphraValidationError(`${op}.${target.name} expects a unique where object.`);
+    }
+    const where = this.engineFor(target).assertUnique(value, op);
+    return target.name === rel.target ? where : { $on: { [target.name]: where } };
   }
 
   /** Only the `$edge` properties the caller set (no defaults), for updating an existing edge. */
@@ -636,12 +701,13 @@ export class ModelEngine {
   ): void {
     if (!isPlainObject(item))
       throw new CyphraValidationError(`${rel.name}.connect expects unique where objects.`);
-    const { $edge, ...unique } = item;
-    const target = this.node(rel.target);
-    const where = this.engineFor(target).assertUnique(
-      unique,
-      `${this.model.name}.${rel.name}.connect`,
-    );
+    const { $edge, ...rest } = item;
+    const op = `${this.model.name}.${rel.name}.connect`;
+    const { target, value: unique } = this.memberOf(rel, rest, op);
+    if (!isPlainObject(unique)) {
+      throw new CyphraValidationError(`${op}.${target.name} expects a unique where object.`);
+    }
+    const where = this.engineFor(target).assertUnique(unique, op);
     const ctx = plan.ctx;
     const [a, b, r] = [own, ctx.variable("b"), ctx.variable("r")];
     const updates = this.edgeUpdates(ctx, rel, $edge, `${this.model.name}.${rel.name}.$edge`, r);
@@ -662,7 +728,7 @@ export class ModelEngine {
     };
     if (!rel.many) {
       const [other, old] = [ctx.variable("x"), ctx.variable("o")];
-      replace(a, `${relationPattern(ctx, a, rel, other, old)} WHERE ${other} <> ${b}`, old);
+      replace(a, relationMatch(ctx, a, rel, other, old, `${other} <> ${b}`), old);
     } else if (this.options.dialect === "memgraph") {
       // Memgraph's MERGE takes no lock: concurrent connects of one pair would each create an
       // edge. A write to `a` makes them conflict instead (a transient error, retried by the
@@ -670,11 +736,13 @@ export class ModelEngine {
       const lock = `${a}.${q(LOCK_FLAG)}`;
       text += `SET ${lock} = true REMOVE ${lock} WITH ${a}, ${b} `;
     }
-    const inverse = this.toOneInverse(rel);
+    const inverse = this.toOneInverse(rel, target);
     if (inverse) {
       const [other, old] = [ctx.variable("x"), ctx.variable("o")];
-      const from = `${other}:${labelExpr(this.node(inverse.target))}`;
-      replace(b, `${ModelEngine.edgePattern(rel, from, b, old)} WHERE ${other} <> ${a}`, old);
+      const back = this.node(inverse.target);
+      const from = back.union ? other : `${other}:${labelExpr(back)}`;
+      const cond = and([unionPredicate(other, back), `${other} <> ${a}`]);
+      replace(b, `${ModelEngine.edgePattern(rel, from, b, old)} WHERE ${cond}`, old);
     }
     text += `MERGE ${ModelEngine.edgePattern(rel, a, b, r)}`;
     if (Object.keys(onCreate).length) text += ` ON CREATE SET ${r} += ${ctx.param(onCreate)}`;
@@ -721,9 +789,8 @@ export class ModelEngine {
     items: readonly { item: unknown; path: IssuePath }[],
   ): void {
     const ctx = plan.ctx;
-    const target = this.node(rel.target);
-    const child = this.engineFor(target);
-    // A batch shares its dynamic labels (`batchLabels`): they are part of its CREATE pattern.
+    // A batch shares its labels (`batchLabels`: the target's, then its dynamic labels): they are
+    // part of its CREATE pattern. Items of a relation to a union name their member.
     let batch: { p: AnyRecord; e: AnyRecord }[] = [];
     let batchLabels = "";
     const flush = () => {
@@ -732,7 +799,7 @@ export class ModelEngine {
       const typed = batch.some((row) => Object.keys(row.e).length > 0);
       const edge = ModelEngine.edgePattern(rel, own, c, typed ? r : "");
       plan.add(
-        `FOREACH (${x} IN ${ctx.param(batch)} | CREATE (${c}:${labelExpr(target)}${batchLabels}) SET ${c} = ${x}.p ` +
+        `FOREACH (${x} IN ${ctx.param(batch)} | CREATE (${c}:${batchLabels}) SET ${c} = ${x}.p ` +
           `CREATE ${edge}${typed ? ` SET ${r} = ${x}.e` : ""})`,
       );
       batch = [];
@@ -740,7 +807,13 @@ export class ModelEngine {
     for (const { item, path } of items) {
       if (!isPlainObject(item))
         throw new CyphraValidationError(`${rel.name}.create expects objects.`);
-      const { $edge, ...data } = item;
+      const { $edge, ...rest } = item;
+      const { target, value: data } = this.memberOf(
+        rel,
+        rest,
+        `${this.model.name}.${rel.name}.create`,
+      );
+      const child = this.engineFor(target);
       if (this.edgeUpdates(ctx, rel, $edge, "").sets.length) {
         throw new CyphraValidationError(
           `${this.model.name}.${rel.name}.create: $edge number updates ({ increment, … }) are for connect and set; create makes a new edge, so give the value itself.`,
@@ -751,8 +824,9 @@ export class ModelEngine {
       const extra = labelSuffix(labels);
       plan.relations = true;
       if (Object.keys(relations).length === 0) {
-        if (extra !== batchLabels) flush();
-        batchLabels = extra;
+        const all = `${labelExpr(target)}${extra}`;
+        if (all !== batchLabels) flush();
+        batchLabels = all;
         batch.push({ p: props, e: edge });
         continue;
       }
@@ -782,7 +856,7 @@ export class ModelEngine {
     const w = where ? compileWhere(ctx, target, b, where) : null;
     plan.call(
       [own],
-      `MATCH ${relationPattern(ctx, own, rel, b, r)}${w ? ` WHERE ${w}` : ""} DELETE ${r} RETURN count(*) AS ${d}`,
+      `MATCH ${relationMatch(ctx, own, rel, b, r, w)} DELETE ${r} RETURN count(*) AS ${d}`,
       [d],
     );
     plan.relations = true;
@@ -828,13 +902,12 @@ export class ModelEngine {
       }
     }
 
-    const engine = this.engineFor(this.node(rel.target));
     if (rel.many) {
       if (disconnect !== undefined) {
         const keys = asArray(disconnect).map((item) => {
           if (!isPlainObject(item))
             throw new CyphraValidationError(`${rel.name}.disconnect expects unique where objects.`);
-          return engine.assertUnique(item, `${this.model.name}.${rel.name}.disconnect`);
+          return this.uniqueKey(rel, item, `${this.model.name}.${rel.name}.disconnect`);
         });
         if (keys.length) this.planDeleteEdges(plan, own, rel, { OR: keys });
       }
@@ -847,7 +920,7 @@ export class ModelEngine {
           if (!isPlainObject(item))
             throw new CyphraValidationError(`${rel.name}.set expects unique where objects.`);
           const { $edge: _edge, ...unique } = item;
-          return engine.assertUnique(unique, `${this.model.name}.${rel.name}.set`);
+          return this.uniqueKey(rel, unique, `${this.model.name}.${rel.name}.set`);
         });
         this.planDeleteEdges(plan, own, rel, { NOT: { OR: keep } });
         for (const [i, item] of set.entries()) {
@@ -1008,6 +1081,7 @@ export class ModelEngine {
    */
   // `async` so that invalid data rejects the returned promise instead of throwing synchronously.
   async create(args: AnyRecord): Promise<AnyRecord> {
+    this.assertNotUnion("create");
     validateWriteArgs(this.schema, this.model, "create", args);
     const plan = this.planCreate(this.ctx(), args.data);
     return this.runPlan(plan, args, { autoCommit: plan.checks.length === 0 });
@@ -1015,6 +1089,7 @@ export class ModelEngine {
 
   // `async` so that invalid data rejects the returned promise instead of throwing synchronously.
   async createMany(args: AnyRecord): Promise<{ count: number }> {
+    this.assertNotUnion("createMany");
     assertCreatable(this.model, `${this.model.name}.createMany`);
     if (!Array.isArray(args.data))
       throw new CyphraValidationError("createMany: data must be an array.");
@@ -1066,6 +1141,7 @@ export class ModelEngine {
    * (auto-commit over HTTP) when there are no relation writes: then a failed check wrote nothing.
    */
   async update(args: AnyRecord): Promise<AnyRecord> {
+    this.assertNotUnion("update");
     validateWriteArgs(this.schema, this.model, "update", args);
     const where = this.assertUnique(args.where, "update");
     const { scalars, relations, labels } = this.splitData(args.data, "update");
@@ -1099,6 +1175,7 @@ export class ModelEngine {
    * checked first and nothing is updated if one of them would break a rule.
    */
   async updateMany(args: AnyRecord): Promise<{ count: number }> {
+    this.assertNotUnion("updateMany");
     validateWriteArgs(this.schema, this.model, "updateMany", args);
     const { scalars, relations, labels } = this.splitData(args.data, "updateMany");
     if (Object.keys(relations).length) {
@@ -1145,6 +1222,7 @@ export class ModelEngine {
    * result.
    */
   async upsert(args: AnyRecord): Promise<AnyRecord> {
+    this.assertNotUnion("upsert");
     assertCreatable(this.model, `${this.model.name}.upsert`);
     const { where, key: keyFields } = this.uniqueWhere(args.where, "upsert");
     validateWriteArgs(this.schema, this.model, "upsert", args);
@@ -1278,6 +1356,7 @@ export class ModelEngine {
    */
   // `async` so that an invalid `where` rejects the returned promise instead of throwing.
   async delete(args: AnyRecord): Promise<AnyRecord> {
+    this.assertNotUnion("delete");
     const where = this.assertUnique(args.where, "delete");
     const ctx = this.ctx();
     const w = compileWhere(ctx, this.model, "n", where);
@@ -1322,6 +1401,7 @@ export class ModelEngine {
 
   // `async` so that an invalid `where` rejects the returned promise instead of throwing.
   async deleteMany(args: AnyRecord = {}): Promise<{ count: number }> {
+    this.assertNotUnion("deleteMany");
     const ctx = this.ctx();
     const w = compileWhere(ctx, this.model, "n", args.where);
     const match = `MATCH (n:${this.label})${w ? ` WHERE ${w}` : ""}`;

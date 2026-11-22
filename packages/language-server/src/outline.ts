@@ -2,7 +2,7 @@ import { formatSchema } from "@cyphra/schema";
 import { span, type Analysis, type Span } from "./analysis.js";
 
 export type OutlineKind =
-  "node" | "interface" | "relationship" | "enum" | "field" | "enumMember" | "attribute";
+  "node" | "interface" | "relationship" | "enum" | "union" | "field" | "enumMember" | "attribute";
 
 /** An editor-neutral document symbol (the server maps it to an LSP `DocumentSymbol`). */
 export type OutlineSymbol = {
@@ -34,6 +34,17 @@ export function outline(a: Analysis): OutlineSymbol[] {
     const name = span(d.nameLoc);
     if (!whole || !name) continue;
     const children: OutlineSymbol[] = [];
+    if (d.kind === "Union") {
+      out.push({
+        name: d.name,
+        kind: "union",
+        detail: d.members.join(" | "),
+        span: whole,
+        selection: name,
+        children: [],
+      });
+      continue;
+    }
     if (d.kind === "Enum") {
       d.values.forEach((v, i) => {
         const s = span(d.valueLocs?.[i]);

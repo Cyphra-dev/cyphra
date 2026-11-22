@@ -204,3 +204,20 @@
 "salary" variable.other.property.cyphra
 "Int" support.type.primitive.cyphra
 "}" punctuation.definition.block.end.cyphra
+"//" comment.line.double-slash.cyphra punctuation.definition.comment.cyphra
+" A union of unrelated nodes (members may continue after a `|`)." comment.line.double-slash.cyphra
+"union" keyword.declaration.union.cyphra
+"SearchHit" entity.name.type.union.cyphra
+"=" keyword.operator.assignment.cyphra
+"User" entity.name.type.cyphra
+"|" keyword.operator.union.cyphra
+"Post" entity.name.type.cyphra
+"union" keyword.declaration.union.cyphra
+"Attachable" entity.name.type.union.cyphra
+"=" keyword.operator.assignment.cyphra
+"|" keyword.operator.union.cyphra
+"Post" entity.name.type.cyphra
+"|" keyword.operator.union.cyphra
+"User" entity.name.type.cyphra
+"//" comment.line.double-slash.cyphra punctuation.definition.comment.cyphra
+" trailing comment" comment.line.double-slash.cyphra

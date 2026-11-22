@@ -248,7 +248,9 @@ export function createStudioApi(opts: {
     if (readOnly) throw new StudioRequestError("The studio runs in read-only mode.");
     if (n.abstract) {
       throw new StudioRequestError(
-        `${n.name} is an interface: write through one of its implementations.`,
+        n.union
+          ? `${n.name} is a union: write through one of its members.`
+          : `${n.name} is an interface: write through one of its implementations.`,
       );
     }
   };

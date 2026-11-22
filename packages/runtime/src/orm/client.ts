@@ -321,7 +321,7 @@ function delegate(ctx: DelegateContext, node: ResolvedNodeModel): ModelEngine {
 }
 
 function fieldResolver(schema: SchemaModel): FieldResolver {
-  const byLabel = new Map(schema.nodes.map((n) => [n.label, n]));
+  const byLabel = new Map(schema.nodes.filter((n) => !n.union).map((n) => [n.label, n]));
   return (label, property) => {
     const node = byLabel.get(label);
     if (!node) return undefined;

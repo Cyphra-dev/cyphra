@@ -476,7 +476,8 @@ function renderSide(): void {
       count === undefined ? null : h("span", { class: "count" }, count.toLocaleString()),
     );
   const nodes = meta().nodes.filter((n) => !n.abstract);
-  const interfaces = meta().nodes.filter((n) => n.abstract);
+  const interfaces = meta().nodes.filter((n) => n.abstract && !n.union);
+  const unions = meta().nodes.filter((n) => n.union);
   mount(
     side,
     h("h3", null, "Nodes"),
@@ -486,6 +487,10 @@ function renderSide(): void {
     interfaces.length ? h("h3", null, "Interfaces") : null,
     interfaces.map((n) =>
       item("◇", n.name, activeModel === n.name, () => openModel(n.name), state.counts[n.name]),
+    ),
+    unions.length ? h("h3", null, "Unions") : null,
+    unions.map((n) =>
+      item("|", n.name, activeModel === n.name, () => openModel(n.name), state.counts[n.name]),
     ),
     meta().relationships.length ? h("h3", null, "Relationships") : null,
     meta().relationships.map((r) =>
@@ -884,7 +889,7 @@ function renderTable(v: TableView): void {
     "div",
     { class: "toolbar" },
     state.stack.length > 1 ? crumbs() : h("span", { class: "title" }, title),
-    model.abstract ? h("span", { class: "badge" }, "interface") : null,
+    model.abstract ? h("span", { class: "badge" }, model.union ? "union" : "interface") : null,
     !model.key
       ? h(
           "span",

@@ -21,6 +21,10 @@ export function occurrences(doc: SchemaDocument): Occurrence[] {
   for (const d of doc.declarations) {
     add(d.name, span(d.nameLoc), true);
     if (d.kind === "Enum") continue;
+    if (d.kind === "Union") {
+      d.members.forEach((n, i) => add(n, span(d.memberLocs?.[i])));
+      continue;
+    }
     if (d.kind === "Relationship") {
       add(d.from, span(d.fromLoc));
       add(d.to, span(d.toLoc));
@@ -51,7 +55,7 @@ export function definitionAt(a: Analysis, offset: number): Span | undefined {
   const o = occurrenceAt(doc, offset);
   if (o) return span(declarationNamed(doc, o.name)?.nameLoc);
   for (const d of doc.declarations) {
-    if (d.kind === "Enum") continue;
+    if (d.kind === "Enum" || d.kind === "Union") continue;
     for (const attr of d.attributes ?? []) {
       const i = (attr.fieldLocs ?? []).findIndex(
         (l) => offset >= l.start.offset && offset <= l.end.offset,

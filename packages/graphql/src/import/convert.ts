@@ -283,7 +283,7 @@ export function convertGraphQLTypeDefs(
           severity: "unsupported",
           feature: "union",
           message:
-            "unions are not supported by Cyphra yet: relationships to the union are not converted",
+            "unions are not converted yet: relationships to the union are left out; declare it as a Cyphra `union` (`union Name = A | B`) and add the relation fields to it",
         });
         break;
       case "scalar":
@@ -795,7 +795,7 @@ function convertRelation(
     report(at, {
       severity: "unsupported",
       feature: "@relationship",
-      message: `relationships to ${what === "type" ? `"${u.named}" (not a @node type)` : `an ${what}`} are not supported yet: not converted`,
+      message: `relationships to ${what === "type" ? `"${u.named}" (not a @node type)` : what === "union" ? "a union" : "an interface"} are not supported yet: not converted`,
     });
     return undefined;
   }

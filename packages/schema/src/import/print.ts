@@ -63,7 +63,7 @@ function printDeclaration(decl: Declaration, notes: readonly string[] | undefine
   if (!notes?.length) return text;
   const lines = text.split("\n");
   // After the last field: before the closing brace, or before the blank line and `@@…` attributes.
-  const attributes = decl.kind === "Enum" ? undefined : decl.attributes;
+  const attributes = decl.kind === "Enum" || decl.kind === "Union" ? undefined : decl.attributes;
   const attrs = attributes?.length ? attributes.length + 1 : 0;
   lines.splice(lines.length - 1 - attrs, 0, ...notes.map((n) => `  // ${n}`));
   return lines.join("\n");

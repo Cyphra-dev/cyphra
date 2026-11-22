@@ -68,7 +68,9 @@ start
       };
       // A node named like a built-in type (`node Point { … }`) keeps working as a relation target:
       // a node field typed with that name is a relation field, not a scalar.
-      const nodes = new Set(decls.filter((d) => d.kind === "Node").map((d) => d.name));
+      const nodes = new Set(
+        decls.filter((d) => d.kind === "Node" || d.kind === "Union").map((d) => d.name),
+      );
       const resolveNodeField = (f) => {
         if (f.kind !== "Scalar" || !nodes.has(f.type.name) || f.type.name === "Vector") {
           return resolveField(f);
@@ -98,6 +100,7 @@ declaration
   = nodeDeclaration
   / relationshipDeclaration
   / enumDeclaration
+  / unionDeclaration
 
 // An identifier with its source range.
 nameTok
@@ -109,6 +112,16 @@ enumDeclaration
       return withLoc(
         { kind: "Enum", name: n.id, values: values.map((v) => v.id) },
         { loc: here(), nameLoc: n.loc, valueLocs: values.map((v) => v.loc) },
+      );
+    }
+
+// `union SearchHit = Post | User`: a type grouping unrelated node models (a leading `|` is allowed).
+unionDeclaration
+  = "union" ![a-zA-Z0-9_] __ n:nameTok _ "=" _ ("|" _)? head:nameTok tail:(_ "|" _ @nameTok)* {
+      const members = [head, ...tail];
+      return withLoc(
+        { kind: "Union", name: n.id, members: members.map((m) => m.id) },
+        { loc: here(), nameLoc: n.loc, memberLocs: members.map((m) => m.loc) },
       );
     }
 

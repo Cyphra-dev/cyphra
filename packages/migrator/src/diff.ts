@@ -495,8 +495,9 @@ export function diffSchemaModels(
   const prevNodes = new Map(prev.nodes.map((n) => [n.name, n]));
   const nextNodes = new Map(next.nodes.map((n) => [n.name, n]));
 
-  const removedNodes = prev.nodes.filter((n) => !nextNodes.has(n.name));
-  const addedNodes = next.nodes.filter((n) => !prevNodes.has(n.name));
+  // A union is a type, not a label: adding or removing one changes nothing in the database.
+  const removedNodes = prev.nodes.filter((n) => !n.union && !nextNodes.has(n.name));
+  const addedNodes = next.nodes.filter((n) => !n.union && !prevNodes.has(n.name));
   for (const r of removedNodes) {
     // An interface's nodes are its implementations' nodes: losing the interface only drops the
     // label (see labelSteps), never the nodes.

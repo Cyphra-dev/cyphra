@@ -44,7 +44,23 @@ export type SchemaDocument = {
   readonly comments?: readonly SchemaComment[];
 };
 
-export type Declaration = NodeDeclaration | RelationshipDeclaration | EnumDeclaration;
+export type Declaration =
+  NodeDeclaration | RelationshipDeclaration | EnumDeclaration | UnionDeclaration;
+
+/**
+ * `union SearchHit = Post | User`: a type grouping unrelated node models. It adds no label: relation
+ * fields may target it, and queries through it return its members.
+ */
+export type UnionDeclaration = {
+  readonly kind: "Union";
+  readonly name: string;
+  /** Member node models, in declaration order. */
+  readonly members: readonly string[];
+  readonly loc?: SourceRange;
+  readonly nameLoc?: SourceRange;
+  /** Range of each member name, parallel to `members`. */
+  readonly memberLocs?: readonly SourceRange[];
+};
 
 /** `enum Role { ADMIN USER }`: a closed set of string values. */
 export type EnumDeclaration = {

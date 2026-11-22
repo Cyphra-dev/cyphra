@@ -140,6 +140,8 @@ export function printSchemaDocument(doc: SchemaDocument): string {
   for (const d of doc.declarations) {
     if (d.kind === "Enum") {
       blocks.push([`enum ${d.name} {`, ...d.values.map((v) => `  ${v}`), "}"].join("\n"));
+    } else if (d.kind === "Union") {
+      blocks.push(`union ${d.name} = ${d.members.join(" | ")}`);
     } else if (d.kind === "Node") {
       const lines = [
         nodeHeader(d),

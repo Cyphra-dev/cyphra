@@ -133,7 +133,7 @@ export function locateValidationError(message: string, doc: SchemaDocument): Spa
     const d = declNamed(doc, dup[1]!, 1) ?? declNamed(doc, dup[1]!);
     return span(d?.nameLoc);
   }
-  const owner = /^(Node|Interface|Relationship|Enum) "([^"]+)"/.exec(message);
+  const owner = /^(Node|Interface|Relationship|Enum|Union) "([^"]+)"/.exec(message);
   if (!owner) return undefined;
   const kind = owner[1] === "Interface" ? "Node" : (owner[1] as Declaration["kind"]);
   const decl = doc.declarations.find((d) => d.name === owner[2] && d.kind === kind);
@@ -143,6 +143,16 @@ export function locateValidationError(message: string, doc: SchemaDocument): Spa
   if (decl.kind === "Node") {
     const s = locateImplementsError(rest, decl, doc);
     if (s) return s;
+  }
+
+  if (decl.kind === "Union") {
+    // `member X is listed twice` (the second one), `member X, which is …`.
+    const member = /^: member (\w+)( is listed twice)?/.exec(rest);
+    if (member) {
+      const idx = decl.members.map((m, i) => (m === member[1] ? i : -1)).filter((i) => i >= 0);
+      return span(decl.memberLocs?.[(member[2] ? idx[1] : idx[0]) ?? -1]) ?? fallback;
+    }
+    return fallback;
   }
 
   if (decl.kind === "Enum") {
@@ -158,6 +168,10 @@ export function locateValidationError(message: string, doc: SchemaDocument): Spa
   if (dupField) {
     const same = decl.fields.filter((f) => f.name === dupField[1]);
     return span((same[1] ?? same[0])?.nameLoc) ?? fallback;
+  }
+  const unionEnd = /^: (\w+) is a union; a relationship model/.exec(rest);
+  if (unionEnd && decl.kind === "Relationship") {
+    return span(decl.from === unionEnd[1] ? decl.fromLoc : decl.toLoc) ?? fallback;
   }
   const unknownEnd = /^: unknown node "([^"]+)"/.exec(rest);
   if (unknownEnd && decl.kind === "Relationship") {

@@ -52,6 +52,8 @@ export type StudioNodeModel = {
   readonly name: string;
   readonly label: string;
   readonly abstract: boolean;
+  /** `true` for a union (always abstract): a type over unrelated nodes, with no fields. */
+  readonly union?: boolean;
   readonly implementations?: readonly string[];
   readonly interfaces?: readonly string[];
   readonly fields: readonly StudioField[];

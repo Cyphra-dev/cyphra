@@ -1,0 +1,42 @@
+// Unions: a type over unrelated nodes. It adds no label: SearchHit nodes are Stories, Writers
+// and Editors (an Editor node is also a :Contributor).
+union SearchHit = Story | Writer | Editor
+
+interface Contributor {
+  id    String @id @default(cuid())
+  email String @unique
+}
+
+node Editor implements Contributor {
+  role String @default("editor")
+}
+
+node Story {
+  id      String   @id @default(cuid())
+  title   String   @length(max: 200)
+  marker  Marker?  @relationship(type: "MARKS", direction: IN)
+  remarks Remark[] @relationship(type: "HAS_REMARK", direction: OUT, onDelete: Cascade)
+}
+
+node Writer {
+  id     String @id @default(cuid())
+  name   String @unique
+  rating Int?
+}
+
+node Remark {
+  id   String @id @default(cuid())
+  text String
+}
+
+node Shelf {
+  id    String      @id @default(cuid())
+  name  String
+  items SearchHit[] @relationship(type: "SHOWS", direction: OUT, onDelete: Cascade)
+}
+
+node Marker {
+  id      String     @id @default(cuid())
+  label   String
+  subject SearchHit? @relationship(type: "MARKS", direction: OUT)
+}

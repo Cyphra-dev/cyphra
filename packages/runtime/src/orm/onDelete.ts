@@ -28,7 +28,7 @@
  */
 
 import type { ResolvedNodeModel, ResolvedRelationField, SchemaModel } from "@cyphra/schema";
-import { QueryContext, q, relationPattern } from "./compile.js";
+import { QueryContext, q, relationMatch } from "./compile.js";
 import { RestrictError } from "./errors.js";
 import { integerToNumber } from "./values.js";
 import { isInt } from "../cypher-values.js";
@@ -193,7 +193,7 @@ export function compileRulesDelete(
     const from = lists[parent!]!;
     text +=
       ` WITH ${scope.join(", ")} CALL { WITH ${from} UNWIND ${from} AS ${a}` +
-      ` MATCH ${relationPattern(ctx, a, via!, b)} WITH DISTINCT ${b} ${flag(b)}` +
+      ` MATCH ${relationMatch(ctx, a, via!, b)} WITH DISTINCT ${b} ${flag(b)}` +
       ` RETURN collect(${b}) AS ${lists[i]} }`;
     scope.push(lists[i]!);
   }
@@ -215,8 +215,8 @@ export function compileRulesDelete(
       const [a, b, column] = [ctx.variable("a"), ctx.variable("b"), ctx.variable("rc")];
       text +=
         ` WITH ${scope.join(", ")} CALL { WITH ${[all, ...new Set(ls)].join(", ")}` +
-        ` UNWIND ${ls.join(" + ")} AS ${a} MATCH ${relationPattern(ctx, a, f, b)}` +
-        ` WHERE NOT ${b} IN ${all} RETURN count(DISTINCT ${b}) AS ${column} }`;
+        ` UNWIND ${ls.join(" + ")} AS ${a} MATCH ${relationMatch(ctx, a, f, b, "", `NOT ${b} IN ${all}`)}` +
+        ` RETURN count(DISTINCT ${b}) AS ${column} }`;
       scope.push(column);
       restricts.push({ model: name, field: f, column });
     }
@@ -317,7 +317,7 @@ export async function deleteWithRules(
           field: f,
           column,
           text:
-            `CALL { MATCH ${relationPattern(ctx, "a", f, "b")} WHERE elementId(a) IN ${param} ` +
+            `CALL { MATCH ${relationMatch(ctx, "a", f, "b", "", `elementId(a) IN ${param}`)} ` +
             `WITH DISTINCT b SET ${lock} = true REMOVE ${lock} ` +
             `RETURN collect({id: elementId(b), labels: labels(b)}) AS ${column} }`,
         });
@@ -348,8 +348,8 @@ export async function deleteWithRules(
         field: f,
         column,
         text:
-          `CALL { MATCH ${relationPattern(ctx, "a", f, "b")} WHERE elementId(a) IN ${param} ` +
-          `AND NOT elementId(b) IN ${allParam} RETURN count(DISTINCT b) AS ${column} }`,
+          `CALL { MATCH ${relationMatch(ctx, "a", f, "b", "", `elementId(a) IN ${param} AND NOT elementId(b) IN ${allParam}`)} ` +
+          `RETURN count(DISTINCT b) AS ${column} }`,
       });
     }
   }

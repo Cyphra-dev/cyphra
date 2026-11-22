@@ -22,6 +22,7 @@ export type {
   SchemaDocument,
   SourcePosition,
   SourceRange,
+  UnionDeclaration,
 } from "./ast.js";
 export { SchemaValidationError } from "./errors.js";
 export {

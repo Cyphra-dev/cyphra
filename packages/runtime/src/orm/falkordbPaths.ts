@@ -29,6 +29,8 @@ import {
   decodeRow,
   intParam,
   labelExpr,
+  labelTest,
+  nodePattern,
   nonNegativeInt,
   q,
 } from "./compile.js";
@@ -83,7 +85,7 @@ function segment(
   const types = [...byType.keys()].map(q).join("|");
   const preds: string[] = [];
   const y = ctx.variable("y");
-  if (checkLabels) preds.push(`all(${y} IN tail(nodes(${path})) WHERE ${y}:${labelExpr(to)})`);
+  if (checkLabels) preds.push(`all(${y} IN tail(nodes(${path})) WHERE ${labelTest(y, to)})`);
   if (kinds.size > 1) {
     // Undirected expansion; each type keeps its own direction: an OUT edge starts at the node the
     // hop comes from (nodes(p)[k]), an IN edge ends there.
@@ -175,7 +177,7 @@ export function falkordbTraverse(
         `*${h.min}..${h.max}`,
         where,
       );
-      parts.push(`${path} = (${at})${seg.rel}(${next}:${labelExpr(h.to)})`);
+      parts.push(`${path} = (${at})${seg.rel}${nodePattern(next, h.to)}`);
       preds.push(...seg.preds);
       paths.push(path);
       at = next;

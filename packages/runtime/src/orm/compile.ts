@@ -33,13 +33,59 @@ export function q(id: string): string {
  * interfaces (written and matched with every label), `` `Person` `` for an interface.
  */
 export function labelExpr(model: ResolvedNodeModel): string {
+  if (model.union) {
+    // A union has no label: its nodes are matched with `unionPredicate`.
+    throw new Error(`Internal error: ${model.name} is a union and has no label expression.`);
+  }
   return (model.labels ?? [model.label]).map(q).join(":");
+}
+
+/**
+ * `n:`Post` OR n:`User``: the nodes of a union, as a predicate (`null` for another model, whose
+ * pattern carries its labels; combine it with {@link and}, which parenthesizes). A union is never matched with `(n:A|B)`: Neo4j rejects a clause
+ * mixing `|` with the `:A:B` of implementations, and FalkorDB has no label disjunction.
+ */
+export function unionPredicate(alias: string, model: ResolvedNodeModel): string | null {
+  if (!model.union) return null;
+  const members = model.implementations ?? [];
+  if (members.length === 0) return "false";
+  return members.map((m) => `${alias}:${q(m)}`).join(" OR ");
+}
+
+/** `(n:Label)` (every label of the model), or `(n)` for a union (see {@link unionPredicate}). */
+export function nodePattern(alias: string, model: ResolvedNodeModel): string {
+  return model.union ? `(${alias})` : `(${alias}:${labelExpr(model)})`;
+}
+
+/** A predicate true when `alias` is a node of `model`: `n:A:B`, or a union's disjunction. */
+export function labelTest(alias: string, model: ResolvedNodeModel): string {
+  const union = unionPredicate(alias, model);
+  return union === null ? `${alias}:${labelExpr(model)}` : `(${union})`;
+}
+
+/**
+ * `MATCH (n:Label) WHERE …` for the nodes of `model` bound to `alias` (`where` and, for a union,
+ * its label predicate), without the `MATCH` keyword.
+ */
+export function nodeMatch(alias: string, model: ResolvedNodeModel, where?: string | null): string {
+  const w = and([unionPredicate(alias, model), where ?? null]);
+  return `${nodePattern(alias, model)}${w ? ` WHERE ${w}` : ""}`;
+}
+
+/** `interface` or `union`: how messages name an abstract model. */
+export function abstractKind(model: ResolvedNodeModel): string {
+  return model.union ? "union" : "interface";
 }
 
 /** Throw unless `model` can be created (an interface cannot: create one of its implementations). */
 export function assertCreatable(model: ResolvedNodeModel, op: string): void {
   if (!model.abstract) return;
   const impls = model.implementations ?? [];
+  if (model.union) {
+    throw new CyphraValidationError(
+      `${op}: ${model.name} is a union and cannot be created; create one of its members (${impls.join(", ")}) instead.`,
+    );
+  }
   throw new CyphraValidationError(
     `${op}: ${model.name} is an interface and cannot be created; create ${impls.length ? `one of its implementations (${impls.join(", ")})` : "a node implementing it"} instead.`,
   );
@@ -104,7 +150,10 @@ function scalarOrThrow(model: ResolvedNodeModel, name: string): ResolvedScalarFi
   return f;
 }
 
-/** `(a)-[r:T]->(b:Label)` or `(a)<-[r:T]-(b:Label)`. */
+/**
+ * `(a)-[r:T]->(b:Label)` or `(a)<-[r:T]-(b:Label)`; `(b)` for a union target, whose label
+ * predicate the caller adds (use {@link relationMatch}).
+ */
 export function relationPattern(
   ctx: QueryContext,
   from: string,
@@ -114,8 +163,24 @@ export function relationPattern(
 ): string {
   const target = ctx.node(rel.target);
   const edge = `[${relVar}:${q(rel.relType)}]`;
-  const end = `(${to}:${labelExpr(target)})`;
+  const end = nodePattern(to, target);
   return rel.direction === "OUT" ? `(${from})-${edge}->${end}` : `(${from})<-${edge}-${end}`;
+}
+
+/**
+ * {@link relationPattern} followed by `WHERE` with `where` and, for a union target, its label
+ * predicate (no `WHERE` when there is neither): what goes after a `MATCH`.
+ */
+export function relationMatch(
+  ctx: QueryContext,
+  from: string,
+  rel: ResolvedRelationField,
+  to: string,
+  relVar = "",
+  where: string | null = null,
+): string {
+  const w = and([unionPredicate(to, ctx.node(rel.target)), where]);
+  return `${relationPattern(ctx, from, rel, to, relVar)}${w ? ` WHERE ${w}` : ""}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -418,9 +483,8 @@ function compileRelationFilter(
   const target = ctx.node(rel.target);
   const exists = (where: unknown): string => {
     const m = ctx.variable();
-    const pattern = relationPattern(ctx, alias, rel, m);
     const inner = where === undefined ? null : compileWhere(ctx, target, m, where);
-    return inner ? `EXISTS { MATCH ${pattern} WHERE ${inner} }` : `EXISTS { MATCH ${pattern} }`;
+    return `EXISTS { MATCH ${relationMatch(ctx, alias, rel, m, "", inner)} }`;
   };
 
   if (rel.many) {
@@ -440,7 +504,7 @@ function compileRelationFilter(
         const inner = compileWhere(ctx, target, m, v);
         if (inner) {
           parts.push(
-            `NOT EXISTS { MATCH ${relationPattern(ctx, alias, rel, m)} WHERE NOT (${inner}) }`,
+            `NOT EXISTS { MATCH ${relationMatch(ctx, alias, rel, m, "", `NOT (${inner})`)} }`,
           );
         }
       } else throw new CyphraValidationError(`Unknown relation filter "${op}".`);
@@ -476,7 +540,7 @@ function compileTypenameFilter(
 ): string | null {
   if (!model.abstract) {
     throw new CyphraValidationError(
-      `where.__typename: ${model.name} is not an interface (only interface queries filter by implementation).`,
+      `where.__typename: ${model.name} is not an interface or a union (only their queries filter by implementation).`,
     );
   }
   const impls = model.implementations ?? [];
@@ -513,6 +577,50 @@ function compileTypenameFilter(
     }
   }
   return and(parts);
+}
+
+/**
+ * `$on` in the `where` of an interface or a union: `{ Post: { … }, User: {} }` keeps the nodes of
+ * the listed implementations that match their filter (each the `where` of that model):
+ * `(n:Post AND …) OR (n:User)`. Implementations not listed are left out; an empty `$on` matches
+ * nothing.
+ */
+function compileOnFilter(
+  ctx: QueryContext,
+  model: ResolvedNodeModel,
+  alias: string,
+  filter: unknown,
+): string {
+  const impls = model.implementations ?? [];
+  if (!model.abstract) {
+    throw new CyphraValidationError(
+      `where.$on: ${model.name} is not an interface or a union ($on filters per implementation of their queries).`,
+    );
+  }
+  if (!isPlainObject(filter)) {
+    throw new CyphraValidationError(
+      `where.$on on ${model.name} takes { <${model.union ? "member" : "implementation"}>: { … } }.`,
+    );
+  }
+  const branches: string[] = [];
+  for (const [name, sub] of Object.entries(filter)) {
+    if (sub === undefined) continue;
+    if (!impls.includes(name)) {
+      throw new CyphraValidationError(
+        `where.$on.${name}: not ${model.union ? "a member" : "an implementation"} of ${model.name} (${impls.length ? impls.join(", ") : "it has none"}).`,
+      );
+    }
+    if (!isPlainObject(sub)) {
+      throw new CyphraValidationError(
+        `where.$on.${name} takes the where of ${name} ({} for every ${name}).`,
+      );
+    }
+    const impl = ctx.node(name);
+    const inner = compileWhere(ctx, impl, alias, sub);
+    branches.push(and([`${alias}:${q(impl.label)}`, inner])!);
+  }
+  if (branches.length === 0) return "false";
+  return branches.length === 1 ? branches[0]! : branches.map((b) => `(${b})`).join(" OR ");
 }
 
 /**
@@ -560,6 +668,10 @@ export function compileWhere(
       if (c) parts.push(c);
       continue;
     }
+    if (key === "$on") {
+      parts.push(compileOnFilter(ctx, model, alias, value));
+      continue;
+    }
     const f = model.fields.find((x) => x.name === key);
     if (!f) throw new CyphraValidationError(`Unknown field "${model.name}.${key}" in where.`);
     const c =
@@ -588,9 +700,8 @@ export function compileRelationCount(
     );
   }
   const m = ctx.variable();
-  const pattern = relationPattern(ctx, alias, rel, m);
   const inner = compileWhere(ctx, ctx.node(rel.target), m, where);
-  return inner ? `COUNT { MATCH ${pattern} WHERE ${inner} }` : `COUNT { MATCH ${pattern} }`;
+  return `COUNT { MATCH ${relationMatch(ctx, alias, rel, m, "", inner)} }`;
 }
 
 function sortDirection(dir: unknown, what: string): string {
@@ -653,7 +764,7 @@ function compileRelatedScalar(
     );
   }
   const m = ctx.variable();
-  return `head(COLLECT { MATCH ${relationPattern(ctx, alias, rel, m)} RETURN ${m}.${q(name)} })`;
+  return `head(COLLECT { MATCH ${relationMatch(ctx, alias, rel, m)} RETURN ${m}.${q(name)} })`;
 }
 
 /**
@@ -663,7 +774,7 @@ function compileRelatedScalar(
 function typenameExpr(ctx: QueryContext, model: ResolvedNodeModel, alias: string): string {
   if (!model.abstract) {
     throw new CyphraValidationError(
-      `orderBy __typename: ${model.name} is not an interface (only interface queries sort by implementation).`,
+      `orderBy __typename: ${model.name} is not an interface or a union (only their queries sort by implementation).`,
     );
   }
   const whens = (model.implementations ?? []).map(
@@ -869,7 +980,7 @@ export function compileProjection(
       if (key === "$on") {
         if (!model.abstract) {
           throw new CyphraValidationError(
-            `${label}.$on: ${model.name} is not an interface ($on loads per-implementation fields of an interface query).`,
+            `${label}.$on: ${model.name} is not an interface or a union ($on loads per-implementation fields of their queries).`,
           );
         }
         if (!isPlainObject(v)) {
@@ -938,7 +1049,7 @@ export function compileProjection(
       const i = variants.findIndex((v) => v.name === name);
       if (i < 0) {
         throw new CyphraValidationError(
-          `${label}.$on.${name}: not an implementation of ${model.name} (${impls.length ? impls.join(", ") : "it has none"}).`,
+          `${label}.$on.${name}: not ${model.union ? "a member" : "an implementation"} of ${model.name} (${impls.length ? impls.join(", ") : "it has none"}).`,
         );
       }
       if (!isPlainObject(sub)) {
@@ -983,8 +1094,7 @@ export function compileProjection(
     const item = inner.expr;
     const where = compileWhere(ctx, target, m, sub.where);
     const paging = compilePaging(ctx, target, m, sub);
-    let body = `MATCH ${relationPattern(ctx, alias, field, m, r)}`;
-    if (where) body += ` WHERE ${where}`;
+    let body = `MATCH ${relationMatch(ctx, alias, field, m, r, where)}`;
     if (paging) body += ` WITH ${m}, ${r}${paging}`;
     body += ` RETURN ${item}`;
     const collected = `COLLECT { ${body} }`;

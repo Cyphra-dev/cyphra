@@ -48,3 +48,9 @@ node Contractor implements Staff {
 node Employee implements Person, Archivable {
   salary Int
 }
+
+// A union of unrelated nodes (members may continue after a `|`).
+union SearchHit = User | Post
+union Attachable =
+  | Post
+  | User // trailing comment
