@@ -1,0 +1,10 @@
+{
+  "errors": [
+    {
+      "message": "Unauthenticated",
+      "path": [
+        "secretCreated"
+      ]
+    }
+  ]
+}

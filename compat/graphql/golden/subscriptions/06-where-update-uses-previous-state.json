@@ -1,0 +1,28 @@
+{
+  "events": [
+    {
+      "data": {
+        "movieUpdated": {
+          "previousState": {
+            "title": "The Matrix"
+          },
+          "updatedMovie": {
+            "title": "Reloaded"
+          }
+        }
+      }
+    },
+    {
+      "data": {
+        "movieUpdated": {
+          "previousState": {
+            "title": "Matrix-like"
+          },
+          "updatedMovie": {
+            "title": "Back to Amelie"
+          }
+        }
+      }
+    }
+  ]
+}

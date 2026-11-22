@@ -1,0 +1,30 @@
+{
+  "events": [
+    {
+      "data": null,
+      "errors": [
+        {
+          "message": "Cannot return null for non-nullable field MovieEventPayload.title.",
+          "path": [
+            "movieUpdated",
+            "updatedMovie",
+            "title"
+          ]
+        }
+      ]
+    },
+    {
+      "data": null,
+      "errors": [
+        {
+          "message": "Cannot return null for non-nullable field MovieEventPayload.title.",
+          "path": [
+            "movieUpdated",
+            "updatedMovie",
+            "title"
+          ]
+        }
+      ]
+    }
+  ]
+}

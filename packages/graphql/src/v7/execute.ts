@@ -1,5 +1,9 @@
 import type { CyphraClient } from "@cyphra/runtime";
 import neo4j, { type Driver, type ManagedTransaction, type Session } from "neo4j-driver";
+import { APP_ID } from "./subscriptions/engine.js";
+
+/** Transaction metadata of every statement (CDC `onlyGraphQLEvents` selects on `app`). */
+const TX_CONFIG = { metadata: { app: APP_ID } };
 
 /** Runs one statement and returns the values of its `this` column. */
 export type ReadExecutor = (cypher: string, params: Record<string, unknown>) => Promise<unknown[]>;
@@ -90,12 +94,14 @@ export function createExecutors(opts: ExecutorOptions): Executors {
     return {
       read: async (cypher, params) => {
         log(cypher, params);
-        return withSession("READ", (s) => s.executeRead((tx) => rows(tx, cypher, params)));
+        return withSession("READ", (s) =>
+          s.executeRead((tx) => rows(tx, cypher, params), TX_CONFIG),
+        );
       },
       write: async (cypher, params, consume) => {
         log(cypher, params);
         return withSession("WRITE", (s) =>
-          s.executeWrite(async (tx) => consume(await rows(tx, cypher, params))),
+          s.executeWrite(async (tx) => consume(await rows(tx, cypher, params)), TX_CONFIG),
         );
       },
     };

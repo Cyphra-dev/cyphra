@@ -17,6 +17,8 @@ fixtures/<app>/
   operations/NN-name.token.json       optional { payload, key? }: signed (HS256) and passed as
                                       context `token` (`Bearer <jwt>`); `key` forges a signature
   operations/NN-name.context.json     optional extra context values (`$context.<path>` rules)
+  operations/NN-name.script.cypher    for a `subscription` operation: statements run after
+                                      subscribing (one transaction each, same format as the seed)
 golden/<app>/schema.graphql   lexicographicSortSchema + printSchema of the reference schema
 golden/<app>/NN-name.json     normalized result of each operation
 src/implementations.ts        the GraphQLImplementation adapters (@neo4j/graphql, @cyphra/graphql)
@@ -43,8 +45,33 @@ pnpm --filter compat-graphql golden movies   # only some fixtures (REPORT.md not
 pnpm --filter compat-graphql report --update-expected   # also rewrite cyphra-expected.json
 ```
 
-`test` is skipped when the `NEO4J_TEST_*` variables are unset. Scripts run with `TZ=UTC`:
+`test` is skipped when the `NEO4J_TEST_*` variables are unset. `COMPAT_FIXTURES=a,b` restricts
+`test` to some fixtures. Scripts run with `TZ=UTC`:
 `@neo4j/graphql` parses `Date` inputs in the process time zone.
+
+### Subscriptions (Neo4j Enterprise, CDC)
+
+`subscription` operations (fixtures `subscriptions` and `subscriptions-schema`) need Change Data
+Capture, an Enterprise feature. On Community they are `skipped` (the schema checks still run), and
+`golden` keeps their goldens. To run them, use the Enterprise evaluation image with CDC enabled:
+
+```sh
+docker run -d --name cyphra-compat-ee -p 127.0.0.1:17689:7687 \
+  -e NEO4J_AUTH=neo4j/cyphra_ci_test -e NEO4J_PLUGINS='["apoc"]' \
+  -e NEO4J_ACCEPT_LICENSE_AGREEMENT=eval neo4j:5-enterprise
+docker exec cyphra-compat-ee cypher-shell -u neo4j -p cyphra_ci_test -d system \
+  "ALTER DATABASE neo4j SET OPTION txLogEnrichment 'FULL' WAIT"
+export NEO4J_TEST_URI=bolt://127.0.0.1:17689 NEO4J_TEST_USER=neo4j NEO4J_TEST_PASSWORD=cyphra_ci_test
+```
+
+For each one, the runner resets the database and applies the seed, builds a schema with a CDC engine
+(`buildSubscriptionSchema`, polling every 50 ms), subscribes, runs `NN-name.script.cypher`, waits
+until no event came for a while, and records the events. The golden is `{ "events": [...] }` (each
+event normalized like a query result, `timestamp` masked as `<generated-timestamp>`), or the
+`errors` of a subscription that fails to start. Events of one transaction come in no guaranteed
+order, so they are sorted unless the operation is `# ordered`: keep one change per statement in
+ordered scripts. A token (`NN-name.token.json`) is passed as `connectionParams.token`, where v7
+reads it for subscriptions. CI runs these in the `neo4j-enterprise-cdc` job.
 
 ## Adding a fixture or an operation
 

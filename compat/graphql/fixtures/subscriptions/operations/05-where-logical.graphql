@@ -1,0 +1,15 @@
+# features: subscription.create, subscription.where
+subscription {
+  movieCreated(
+    where: {
+      OR: [{ genre: { eq: DRAMA } }, { tags: { includes: "indie" } }]
+      NOT: { title: { contains: "Bad" } }
+    }
+  ) {
+    createdMovie {
+      title
+      genre
+      tags
+    }
+  }
+}

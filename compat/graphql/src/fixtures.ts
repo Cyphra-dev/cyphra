@@ -1,5 +1,6 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
+import { Kind, parse } from "graphql";
 import { fileURLToPath } from "node:url";
 
 // @neo4j/graphql parses Date/DateTime inputs in the process time zone: pin it so goldens
@@ -35,6 +36,13 @@ export type Operation = {
    * Otherwise every array is sorted canonically before comparison.
    */
   ordered: boolean;
+  /**
+   * `subscription` operations are subscribed to, then `<name>.script.cypher` runs and the events
+   * received are the result (needs Neo4j CDC). Others are executed once.
+   */
+  kind: "execute" | "subscription";
+  /** Cypher statements run after subscribing (`operations/<name>.script.cypher`). */
+  script?: string;
 };
 
 export type Fixture = {
@@ -48,6 +56,17 @@ export type Fixture = {
 function readJson(file: string): Record<string, unknown> | undefined {
   if (!existsSync(file)) return undefined;
   return JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>;
+}
+
+function operationKind(document: string): Operation["kind"] {
+  const isSubscription = parse(document).definitions.some(
+    (d) => d.kind === Kind.OPERATION_DEFINITION && d.operation === "subscription",
+  );
+  return isSubscription ? "subscription" : "execute";
+}
+
+function readText(file: string): string | undefined {
+  return existsSync(file) ? readFileSync(file, "utf8") : undefined;
 }
 
 function parseHeader(document: string): { features: string[]; ordered: boolean } {
@@ -91,6 +110,8 @@ export function loadFixture(name: string): Fixture {
         token: readJson(path.join(opsDir, `${opName}.token.json`)) as Operation["token"],
         context: readJson(path.join(opsDir, `${opName}.context.json`)),
         ...header,
+        kind: operationKind(document),
+        script: readText(path.join(opsDir, `${opName}.script.cypher`)),
       };
     });
   return {
@@ -102,8 +123,16 @@ export function loadFixture(name: string): Fixture {
   };
 }
 
-/** Loads every fixture, or only the named ones. */
-export function loadFixtures(only: string[] = []): Fixture[] {
+/**
+ * Loads every fixture, or only the named ones. `COMPAT_FIXTURES` (comma-separated) restricts the
+ * default set, e.g. the CI job that runs the subscription fixtures on Neo4j Enterprise.
+ */
+export function loadFixtures(
+  only: string[] = (process.env.COMPAT_FIXTURES ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean),
+): Fixture[] {
   return readdirSync(FIXTURES_DIR, { withFileTypes: true })
     .filter((d) => d.isDirectory())
     .map((d) => d.name)

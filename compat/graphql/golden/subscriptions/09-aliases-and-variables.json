@@ -1,0 +1,15 @@
+{
+  "events": [
+    {
+      "data": {
+        "newMovie": {
+          "kind": "CREATE",
+          "movie": {
+            "name": "New",
+            "year": 2020
+          }
+        }
+      }
+    }
+  ]
+}

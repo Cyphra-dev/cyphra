@@ -1,0 +1,13 @@
+{
+  "events": [
+    {
+      "data": {
+        "secretCreated": {
+          "createdSecret": {
+            "code": "s2"
+          }
+        }
+      }
+    }
+  ]
+}

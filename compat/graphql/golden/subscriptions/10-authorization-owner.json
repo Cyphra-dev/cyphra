@@ -1,0 +1,24 @@
+{
+  "events": [
+    {
+      "data": {
+        "reviewCreated": {
+          "createdReview": {
+            "author": "alice",
+            "body": "Mine"
+          }
+        }
+      }
+    },
+    {
+      "data": {
+        "reviewCreated": {
+          "createdReview": {
+            "author": "alice",
+            "body": "Mine again"
+          }
+        }
+      }
+    }
+  ]
+}

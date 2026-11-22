@@ -1,0 +1,9 @@
+# features: subscription.delete, subscription.where
+# ordered
+subscription Deleted($titles: [String!]) {
+  movieDeleted(where: { title: { in: $titles } }) {
+    deletedMovie {
+      title
+    }
+  }
+}

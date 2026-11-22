@@ -1,0 +1,10 @@
+# features: subscription.create, subscription.where
+subscription NewMovie($min: Int) {
+  newMovie: movieCreated(where: { released: { gt: $min } }) {
+    kind: event
+    movie: createdMovie {
+      name: title
+      year: released
+    }
+  }
+}

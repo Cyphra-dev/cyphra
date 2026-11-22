@@ -1,0 +1,11 @@
+# features: subscription.create, subscription.events
+# ordered
+subscription {
+  bookCreated(where: { pages: { lt: 500 } }) {
+    event
+    createdBook {
+      title
+      pages
+    }
+  }
+}

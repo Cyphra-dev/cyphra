@@ -1,0 +1,20 @@
+# features: subscription.create
+subscription {
+  movieCreated {
+    event
+    timestamp
+    createdMovie {
+      id
+      title
+      released
+      rating
+      tags
+      genre
+      premiere
+      lastScreening
+      boxOffice
+      available
+      score
+    }
+  }
+}

@@ -5,7 +5,7 @@
  * fields v7 still prints. Names, descriptions and deprecation reasons are the v7 ones, so the
  * printed SDL is identical.
  *
- * Only types reachable from `Query` / `Mutation` end up in the schema (as with v7).
+ * Only types reachable from `Query` / `Mutation` / `Subscription` end up in the schema (as with v7).
  *
  * @packageDocumentation
  */
@@ -37,6 +37,8 @@ import {
 } from "graphql";
 import {
   isUnionRelationship,
+  subscriptionEvents,
+  SUBSCRIPTION_EVENTS,
   unionMembers,
   type Attribute,
   type CypherRootField,
@@ -48,7 +50,7 @@ import {
   type UnionType,
   type V7Model,
 } from "./model.js";
-import { pluralize, upperFirst } from "./naming.js";
+import { pluralize, subscriptionNames, upperFirst } from "./naming.js";
 import { GraphQLBigInt, GraphQLDate, GraphQLDateTime } from "./scalars.js";
 
 const SCALARS: Record<string, GraphQLScalarType> = {
@@ -720,6 +722,62 @@ class TypeRegistry {
       },
       n.description,
     );
+  }
+
+  // -------------------------------------------------------------------------
+  // Subscriptions (CDC events)
+  // -------------------------------------------------------------------------
+
+  eventType(): GraphQLEnumType {
+    return this.get(
+      "EventType",
+      () =>
+        new GraphQLEnumType({
+          name: "EventType",
+          values: Object.fromEntries(
+            ["CREATE", "DELETE", "UPDATE", "CREATE_RELATIONSHIP", "DELETE_RELATIONSHIP"].map(
+              (v) => [v, { value: v }],
+            ),
+          ),
+        }),
+    );
+  }
+
+  /** `MovieEventPayload`: the scalar and enum fields (`@cypher` ones included, like v7). */
+  eventPayload(n: NodeType): GraphQLObjectType {
+    return this.object(subscriptionNames(n.name).payload, () =>
+      attributeOutputFields(this, n.attributes),
+    );
+  }
+
+  /** `MovieSubscriptionWhere`: property filters only (no relationship or `@cypher` filters). */
+  subscriptionWhere(n: NodeType): GraphQLInputObjectType {
+    return this.input(subscriptionNames(n.name).where, () => {
+      const self = this.subscriptionWhere(n);
+      return {
+        AND: { type: list(nn(self)) },
+        NOT: { type: self },
+        OR: { type: list(nn(self)) },
+        ...this.attributeWhereFields(n.attributes.filter((a) => !a.cypher)),
+      };
+    });
+  }
+
+  /** `MovieCreatedEvent` / `MovieUpdatedEvent` / `MovieDeletedEvent`. */
+  subscriptionEvent(n: NodeType, event: (typeof SUBSCRIPTION_EVENTS)[number]): GraphQLObjectType {
+    const names = subscriptionNames(n.name)[event];
+    return this.object(names.type, () => {
+      const fields: GraphQLFieldConfigMap<unknown, unknown> = {
+        event: { type: nn(this.eventType()) },
+        timestamp: { type: nn(GraphQLFloat) },
+      };
+      if (n.attributes.length) {
+        const payload = nn(this.eventPayload(n));
+        if (event === "UPDATED") fields.previousState = { type: payload };
+        fields[names.payload] = { type: payload };
+      }
+      return fields;
+    });
   }
 
   nodeSort(n: NodeType): GraphQLInputObjectType {
@@ -1452,5 +1510,19 @@ export function buildV7Schema(model: V7Model): GraphQLSchema {
       return fields;
     },
   });
-  return new GraphQLSchema({ query, mutation });
+  const subscriptionFields: GraphQLFieldConfigMap<unknown, unknown> = {};
+  for (const n of model.nodes) {
+    const events = subscriptionEvents(model, n);
+    for (const event of SUBSCRIPTION_EVENTS) {
+      if (!events.has(event)) continue;
+      subscriptionFields[subscriptionNames(n.name)[event].field] = {
+        type: nn(reg.subscriptionEvent(n, event)),
+        args: { where: { type: reg.subscriptionWhere(n) } },
+      };
+    }
+  }
+  const subscription = Object.keys(subscriptionFields).length
+    ? new GraphQLObjectType({ name: "Subscription", fields: subscriptionFields })
+    : undefined;
+  return new GraphQLSchema({ query, mutation, subscription });
 }

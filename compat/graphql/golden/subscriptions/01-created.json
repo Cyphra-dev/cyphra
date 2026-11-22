@@ -1,0 +1,90 @@
+{
+  "events": [
+    {
+      "data": {
+        "movieCreated": {
+          "event": "CREATE",
+          "timestamp": "<generated-timestamp>",
+          "createdMovie": {
+            "id": "m3",
+            "title": "Inception",
+            "released": 2010,
+            "rating": 8.8,
+            "tags": [
+              "sci-fi"
+            ],
+            "genre": "ACTION",
+            "premiere": "2010-07-16",
+            "lastScreening": "2021-05-04T18:30:00.000Z",
+            "boxOffice": "9007199254740993",
+            "available": false,
+            "score": null
+          }
+        }
+      }
+    },
+    {
+      "data": {
+        "movieCreated": {
+          "event": "CREATE",
+          "timestamp": "<generated-timestamp>",
+          "createdMovie": {
+            "id": "m4",
+            "title": "Untitled",
+            "released": null,
+            "rating": null,
+            "tags": null,
+            "genre": null,
+            "premiere": null,
+            "lastScreening": null,
+            "boxOffice": null,
+            "available": null,
+            "score": null
+          }
+        }
+      }
+    },
+    {
+      "data": {
+        "movieCreated": {
+          "event": "CREATE",
+          "timestamp": "<generated-timestamp>",
+          "createdMovie": {
+            "id": "m6",
+            "title": "First",
+            "released": null,
+            "rating": null,
+            "tags": null,
+            "genre": null,
+            "premiere": null,
+            "lastScreening": null,
+            "boxOffice": null,
+            "available": null,
+            "score": null
+          }
+        }
+      }
+    },
+    {
+      "data": {
+        "movieCreated": {
+          "event": "CREATE",
+          "timestamp": "<generated-timestamp>",
+          "createdMovie": {
+            "id": "m7",
+            "title": "Second",
+            "released": null,
+            "rating": null,
+            "tags": null,
+            "genre": null,
+            "premiere": null,
+            "lastScreening": null,
+            "boxOffice": null,
+            "available": null,
+            "score": null
+          }
+        }
+      }
+    }
+  ]
+}

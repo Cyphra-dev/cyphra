@@ -220,6 +220,19 @@ export type AuthAnnotations = {
   readonly authorization?: AuthorizationAnnotation;
 };
 
+/** `@subscription(events)` and `@subscriptionsAuthorization` events. */
+export const SUBSCRIPTION_EVENTS = ["CREATED", "UPDATED", "DELETED"] as const;
+export type SubscriptionEvent = (typeof SUBSCRIPTION_EVENTS)[number];
+
+/** One `filter` rule of `@subscriptionsAuthorization`. */
+export type SubscriptionsAuthorizationRule = {
+  readonly events: readonly SubscriptionEvent[];
+  /** Default `true`: the rule only holds for authenticated subscribers. */
+  readonly requireAuthentication: boolean;
+  /** `{ node, jwt, AND, OR, NOT }` with `$jwt.<claim>` / `$context.<path>` string references. */
+  readonly where: AnyRecord;
+};
+
 export type NodeType = {
   readonly name: string;
   readonly description?: string;
@@ -236,6 +249,10 @@ export type NodeType = {
   /** `@fulltext` indexes. */
   readonly fulltext: readonly FulltextIndex[];
   readonly auth: AuthAnnotations;
+  /** `@subscription(events)` of the type, when set (otherwise the schema-level one applies). */
+  readonly subscription?: ReadonlySet<SubscriptionEvent>;
+  /** `@subscriptionsAuthorization(filter)`: which events a subscriber receives. */
+  readonly subscriptionsAuthorization?: readonly SubscriptionsAuthorizationRule[];
 };
 
 export type PropertiesType = {
@@ -273,8 +290,15 @@ export type V7Model = {
   /** `@cypher` fields of `type Query` / `type Mutation`. */
   readonly query: CypherRootType;
   readonly mutation: CypherRootType;
+  /** Schema-level `extend schema @subscription(events)`. */
+  readonly subscription?: ReadonlySet<SubscriptionEvent>;
   node(name: string): NodeType;
 };
+
+/** The events of `node` published on the `Subscription` type (v7 `isSubscribableOn…`). */
+export function subscriptionEvents(model: V7Model, node: NodeType): ReadonlySet<SubscriptionEvent> {
+  return node.subscription ?? model.subscription ?? new Set();
+}
 
 /** Whether `rel` targets a union (and is not already the view of one member). */
 export function isUnionRelationship(model: V7Model, rel: Relationship): boolean {
@@ -380,6 +404,8 @@ const ACCEPTED_FIELD_DIRECTIVES = new Set([
   "deprecated",
   "coalesce",
   "unique",
+  // Accepted and ignored on fields, like v7 (only the type-level directive filters events).
+  "subscriptionsAuthorization",
 ]);
 const ACCEPTED_TYPE_DIRECTIVES = new Set([
   "node",
@@ -389,6 +415,8 @@ const ACCEPTED_TYPE_DIRECTIVES = new Set([
   "authorization",
   "relationshipProperties",
   "jwt",
+  "subscription",
+  "subscriptionsAuthorization",
 ]);
 
 function deprecationReason(dirs: readonly ConstDirectiveNode[] | undefined): string | undefined {
@@ -655,6 +683,128 @@ function readAuthorization(
   return { filter, validate };
 }
 
+/** `@subscription(events: [CREATED, UPDATED, DELETED])` (the default is every event). */
+function readSubscription(
+  where: string,
+  d: ConstDirectiveNode | undefined,
+): ReadonlySet<SubscriptionEvent> | undefined {
+  if (!d) return undefined;
+  for (const a of d.arguments ?? []) {
+    if (a.name.value !== "events") {
+      throw new UnsupportedTypeDefsError(
+        `${where}: @subscription(${a.name.value}) is not supported.`,
+      );
+    }
+  }
+  const eventsArg = arg(d, "events");
+  const raw = eventsArg ? valueFromASTUntyped(eventsArg) : undefined;
+  if (raw === undefined) return new Set(SUBSCRIPTION_EVENTS);
+  const list = Array.isArray(raw) ? raw : [raw];
+  for (const e of list) {
+    if (!(SUBSCRIPTION_EVENTS as readonly unknown[]).includes(e)) {
+      throw new UnsupportedTypeDefsError(`${where} @subscription: invalid event ${String(e)}.`);
+    }
+  }
+  return new Set(list as SubscriptionEvent[]);
+}
+
+const SUBSCRIPTIONS_AUTHORIZATION_WHERE_KEYS = new Set(["AND", "OR", "NOT", "node", "jwt"]);
+
+function checkSubscriptionsAuthorizationWhere(
+  where: string,
+  value: unknown,
+  fields: ReadonlySet<string>,
+): AnyRecord {
+  if (!isRecord(value)) {
+    throw new UnsupportedTypeDefsError(`${where}: \`where\` must be an object.`);
+  }
+  for (const [k, v] of Object.entries(value)) {
+    if (!SUBSCRIPTIONS_AUTHORIZATION_WHERE_KEYS.has(k)) {
+      throw new UnsupportedTypeDefsError(`${where}: unknown key ${k} in where.`);
+    }
+    if (k === "AND" || k === "OR") {
+      if (!Array.isArray(v)) throw new UnsupportedTypeDefsError(`${where}: ${k} must be a list.`);
+      for (const w of v) checkSubscriptionsAuthorizationWhere(where, w, fields);
+    } else if (k === "NOT") {
+      checkSubscriptionsAuthorizationWhere(where, v, fields);
+    } else if (k === "node") {
+      checkNodeKeys(where, v, fields);
+    } else if (!isRecord(v)) {
+      throw new UnsupportedTypeDefsError(`${where}: jwt must be an object.`);
+    }
+  }
+  return value;
+}
+
+/** The keys of a `node` filter must be filterable fields (`title`, `title_EQ`, …) or AND/OR/NOT. */
+function checkNodeKeys(where: string, value: unknown, fields: ReadonlySet<string>): void {
+  if (!isRecord(value)) throw new UnsupportedTypeDefsError(`${where}: node must be an object.`);
+  for (const [k, v] of Object.entries(value)) {
+    if (k === "AND" || k === "OR") {
+      if (!Array.isArray(v)) throw new UnsupportedTypeDefsError(`${where}: ${k} must be a list.`);
+      for (const w of v) checkNodeKeys(where, w, fields);
+      continue;
+    }
+    if (k === "NOT") {
+      checkNodeKeys(where, v, fields);
+      continue;
+    }
+    const field =
+      /^(.+?)(?:_(?:EQ|IN|INCLUDES|CONTAINS|STARTS_WITH|ENDS_WITH|LT|LTE|GT|GTE))?$/.exec(k)?.[1];
+    if (!field || !fields.has(field)) {
+      throw new UnsupportedTypeDefsError(
+        `${where}: ${k} is not a field that events can be filtered on.`,
+      );
+    }
+  }
+}
+
+/** `@subscriptionsAuthorization(filter: [{ events, requireAuthentication, where }])`. */
+function readSubscriptionsAuthorization(
+  where: string,
+  d: ConstDirectiveNode | undefined,
+  attributes: readonly Attribute[],
+): SubscriptionsAuthorizationRule[] | undefined {
+  if (!d) return undefined;
+  for (const a of d.arguments ?? []) {
+    if (a.name.value !== "filter") {
+      throw new UnsupportedTypeDefsError(
+        `${where}: @subscriptionsAuthorization(${a.name.value}) is not supported.`,
+      );
+    }
+  }
+  const at = `${where} @subscriptionsAuthorization`;
+  const filterArg = arg(d, "filter");
+  const raw = filterArg ? valueFromASTUntyped(filterArg) : undefined;
+  if (raw === undefined || raw === null)
+    throw new UnsupportedTypeDefsError(`${at}: filter is required.`);
+  const fields = new Set(attributes.filter((a) => !a.cypher).map((a) => a.name));
+  return (Array.isArray(raw) ? raw : [raw]).map((rule) => {
+    if (!isRecord(rule)) throw new UnsupportedTypeDefsError(`${at}: each rule must be an object.`);
+    for (const k of Object.keys(rule)) {
+      if (!["events", "requireAuthentication", "where"].includes(k)) {
+        throw new UnsupportedTypeDefsError(`${at}: unknown rule argument ${k}.`);
+      }
+    }
+    const events =
+      rule.events === undefined || rule.events === null ? [...SUBSCRIPTION_EVENTS] : rule.events;
+    const list = Array.isArray(events) ? events : [events];
+    for (const e of list) {
+      if (!(SUBSCRIPTION_EVENTS as readonly unknown[]).includes(e)) {
+        throw new UnsupportedTypeDefsError(`${at}: invalid event ${String(e)}.`);
+      }
+    }
+    return {
+      events: list as SubscriptionEvent[],
+      requireAuthentication: rule.requireAuthentication !== false,
+      where:
+        rule.where === undefined
+          ? {}
+          : checkSubscriptionsAuthorizationWhere(at, rule.where, fields),
+    };
+  });
+}
+
 function readAuthAnnotations(
   where: string,
   dirs: readonly ConstDirectiveNode[] | undefined,
@@ -849,6 +999,7 @@ export function readTypeDefs(typeDefs: string): V7Model {
   const unionDefs: UnionTypeDefinitionNode[] = [];
   const enums = new Map<string, EnumType>();
   let schemaAuthentication: AuthenticationAnnotation | undefined;
+  let schemaSubscription: ReadonlySet<SubscriptionEvent> | undefined;
   for (const def of doc.definitions) {
     switch (def.kind) {
       case Kind.SCHEMA_EXTENSION:
@@ -859,6 +1010,13 @@ export function readTypeDefs(typeDefs: string): V7Model {
           );
         }
         for (const d of def.directives ?? []) {
+          if (d.name.value === "subscription") {
+            if (schemaSubscription) {
+              throw new UnsupportedTypeDefsError("schema: @subscription is set more than once.");
+            }
+            schemaSubscription = readSubscription("schema", d);
+            continue;
+          }
           if (d.name.value !== "authentication") {
             throw new UnsupportedTypeDefsError(
               `schema: @${d.name.value} is not supported by @cyphra/graphql yet.`,
@@ -913,7 +1071,7 @@ export function readTypeDefs(typeDefs: string): V7Model {
     const name = o.name.value;
     if (name === "Subscription") {
       throw new UnsupportedTypeDefsError(
-        "type Subscription: subscriptions are not supported by @cyphra/graphql yet.",
+        "type Subscription: custom subscription fields are not supported by @cyphra/graphql yet (the generated ones come from @subscription).",
       );
     }
     if (name === "Query" || name === "Mutation") {
@@ -1042,6 +1200,12 @@ export function readTypeDefs(typeDefs: string): V7Model {
       cypherNodes,
       fulltext: readFulltext(name, directive(o.directives, "fulltext"), attributes),
       auth: readAuthAnnotations(`type ${name}`, o.directives) ?? {},
+      subscription: readSubscription(`type ${name}`, directive(o.directives, "subscription")),
+      subscriptionsAuthorization: readSubscriptionsAuthorization(
+        `type ${name}`,
+        directive(o.directives, "subscriptionsAuthorization"),
+        attributes,
+      ),
     };
   });
 
@@ -1101,6 +1265,7 @@ export function readTypeDefs(typeDefs: string): V7Model {
     enums,
     query,
     mutation,
+    subscription: schemaSubscription,
     node(name: string): NodeType {
       const n = byName.get(name);
       if (!n) throw new Error(`Unknown node type ${name}`);

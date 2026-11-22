@@ -1,0 +1,379 @@
+type Author {
+  name: String!
+}
+
+type AuthorAggregate {
+  count: Count!
+  node: AuthorAggregateNode!
+}
+
+type AuthorAggregateNode {
+  name: StringAggregateSelection!
+}
+
+input AuthorCreateInput {
+  name: String!
+}
+
+type AuthorDeletedEvent {
+  deletedAuthor: AuthorEventPayload!
+  event: EventType!
+  timestamp: Float!
+}
+
+type AuthorEdge {
+  cursor: String!
+  node: Author!
+}
+
+type AuthorEventPayload {
+  name: String!
+}
+
+"""
+Fields to sort Authors by. The order in which sorts are applied is not guaranteed when specifying many fields in one AuthorSort object.
+"""
+input AuthorSort {
+  name: SortDirection
+}
+
+input AuthorSubscriptionWhere {
+  AND: [AuthorSubscriptionWhere!]
+  NOT: AuthorSubscriptionWhere
+  OR: [AuthorSubscriptionWhere!]
+  name: StringScalarFilters
+  name_CONTAINS: String @deprecated(reason: "Please use the relevant generic filter name: { contains: ... }")
+  name_ENDS_WITH: String @deprecated(reason: "Please use the relevant generic filter name: { endsWith: ... }")
+  name_EQ: String @deprecated(reason: "Please use the relevant generic filter name: { eq: ... }")
+  name_IN: [String!] @deprecated(reason: "Please use the relevant generic filter name: { in: ... }")
+  name_STARTS_WITH: String @deprecated(reason: "Please use the relevant generic filter name: { startsWith: ... }")
+}
+
+input AuthorUpdateInput {
+  name: StringScalarMutations
+  name_SET: String @deprecated(reason: "Please use the generic mutation 'name: { set: ... } }' instead.")
+}
+
+input AuthorWhere {
+  AND: [AuthorWhere!]
+  NOT: AuthorWhere
+  OR: [AuthorWhere!]
+  name: StringScalarFilters
+  name_CONTAINS: String @deprecated(reason: "Please use the relevant generic filter name: { contains: ... }")
+  name_ENDS_WITH: String @deprecated(reason: "Please use the relevant generic filter name: { endsWith: ... }")
+  name_EQ: String @deprecated(reason: "Please use the relevant generic filter name: { eq: ... }")
+  name_IN: [String!] @deprecated(reason: "Please use the relevant generic filter name: { in: ... }")
+  name_STARTS_WITH: String @deprecated(reason: "Please use the relevant generic filter name: { startsWith: ... }")
+}
+
+type AuthorsConnection {
+  aggregate: AuthorAggregate!
+  edges: [AuthorEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+type Book {
+  pages: Int
+  title: String!
+}
+
+type BookAggregate {
+  count: Count!
+  node: BookAggregateNode!
+}
+
+type BookAggregateNode {
+  pages: IntAggregateSelection!
+  title: StringAggregateSelection!
+}
+
+input BookCreateInput {
+  pages: Int
+  title: String!
+}
+
+type BookCreatedEvent {
+  createdBook: BookEventPayload!
+  event: EventType!
+  timestamp: Float!
+}
+
+type BookEdge {
+  cursor: String!
+  node: Book!
+}
+
+type BookEventPayload {
+  pages: Int
+  title: String!
+}
+
+"""
+Fields to sort Books by. The order in which sorts are applied is not guaranteed when specifying many fields in one BookSort object.
+"""
+input BookSort {
+  pages: SortDirection
+  title: SortDirection
+}
+
+input BookSubscriptionWhere {
+  AND: [BookSubscriptionWhere!]
+  NOT: BookSubscriptionWhere
+  OR: [BookSubscriptionWhere!]
+  pages: IntScalarFilters
+  pages_EQ: Int @deprecated(reason: "Please use the relevant generic filter pages: { eq: ... }")
+  pages_GT: Int @deprecated(reason: "Please use the relevant generic filter pages: { gt: ... }")
+  pages_GTE: Int @deprecated(reason: "Please use the relevant generic filter pages: { gte: ... }")
+  pages_IN: [Int] @deprecated(reason: "Please use the relevant generic filter pages: { in: ... }")
+  pages_LT: Int @deprecated(reason: "Please use the relevant generic filter pages: { lt: ... }")
+  pages_LTE: Int @deprecated(reason: "Please use the relevant generic filter pages: { lte: ... }")
+  title: StringScalarFilters
+  title_CONTAINS: String @deprecated(reason: "Please use the relevant generic filter title: { contains: ... }")
+  title_ENDS_WITH: String @deprecated(reason: "Please use the relevant generic filter title: { endsWith: ... }")
+  title_EQ: String @deprecated(reason: "Please use the relevant generic filter title: { eq: ... }")
+  title_IN: [String!] @deprecated(reason: "Please use the relevant generic filter title: { in: ... }")
+  title_STARTS_WITH: String @deprecated(reason: "Please use the relevant generic filter title: { startsWith: ... }")
+}
+
+input BookUpdateInput {
+  pages: IntScalarMutations
+  pages_DECREMENT: Int @deprecated(reason: "Please use the relevant generic mutation 'pages: { decrement: ... } }' instead.")
+  pages_INCREMENT: Int @deprecated(reason: "Please use the relevant generic mutation 'pages: { increment: ... } }' instead.")
+  pages_SET: Int @deprecated(reason: "Please use the generic mutation 'pages: { set: ... } }' instead.")
+  title: StringScalarMutations
+  title_SET: String @deprecated(reason: "Please use the generic mutation 'title: { set: ... } }' instead.")
+}
+
+input BookWhere {
+  AND: [BookWhere!]
+  NOT: BookWhere
+  OR: [BookWhere!]
+  pages: IntScalarFilters
+  pages_EQ: Int @deprecated(reason: "Please use the relevant generic filter pages: { eq: ... }")
+  pages_GT: Int @deprecated(reason: "Please use the relevant generic filter pages: { gt: ... }")
+  pages_GTE: Int @deprecated(reason: "Please use the relevant generic filter pages: { gte: ... }")
+  pages_IN: [Int] @deprecated(reason: "Please use the relevant generic filter pages: { in: ... }")
+  pages_LT: Int @deprecated(reason: "Please use the relevant generic filter pages: { lt: ... }")
+  pages_LTE: Int @deprecated(reason: "Please use the relevant generic filter pages: { lte: ... }")
+  title: StringScalarFilters
+  title_CONTAINS: String @deprecated(reason: "Please use the relevant generic filter title: { contains: ... }")
+  title_ENDS_WITH: String @deprecated(reason: "Please use the relevant generic filter title: { endsWith: ... }")
+  title_EQ: String @deprecated(reason: "Please use the relevant generic filter title: { eq: ... }")
+  title_IN: [String!] @deprecated(reason: "Please use the relevant generic filter title: { in: ... }")
+  title_STARTS_WITH: String @deprecated(reason: "Please use the relevant generic filter title: { startsWith: ... }")
+}
+
+type BooksConnection {
+  aggregate: BookAggregate!
+  edges: [BookEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+type Count {
+  nodes: Int!
+}
+
+type CreateAuthorsMutationResponse {
+  authors: [Author!]!
+  info: CreateInfo!
+}
+
+type CreateBooksMutationResponse {
+  books: [Book!]!
+  info: CreateInfo!
+}
+
+type CreateDraftsMutationResponse {
+  drafts: [Draft!]!
+  info: CreateInfo!
+}
+
+"""
+Information about the number of nodes and relationships created during a create mutation
+"""
+type CreateInfo {
+  nodesCreated: Int!
+  relationshipsCreated: Int!
+}
+
+"""
+Information about the number of nodes and relationships deleted during a delete mutation
+"""
+type DeleteInfo {
+  nodesDeleted: Int!
+  relationshipsDeleted: Int!
+}
+
+type Draft {
+  text: String
+}
+
+type DraftAggregate {
+  count: Count!
+  node: DraftAggregateNode!
+}
+
+type DraftAggregateNode {
+  text: StringAggregateSelection!
+}
+
+input DraftCreateInput {
+  text: String
+}
+
+type DraftEdge {
+  cursor: String!
+  node: Draft!
+}
+
+"""
+Fields to sort Drafts by. The order in which sorts are applied is not guaranteed when specifying many fields in one DraftSort object.
+"""
+input DraftSort {
+  text: SortDirection
+}
+
+input DraftUpdateInput {
+  text: StringScalarMutations
+  text_SET: String @deprecated(reason: "Please use the generic mutation 'text: { set: ... } }' instead.")
+}
+
+input DraftWhere {
+  AND: [DraftWhere!]
+  NOT: DraftWhere
+  OR: [DraftWhere!]
+  text: StringScalarFilters
+  text_CONTAINS: String @deprecated(reason: "Please use the relevant generic filter text: { contains: ... }")
+  text_ENDS_WITH: String @deprecated(reason: "Please use the relevant generic filter text: { endsWith: ... }")
+  text_EQ: String @deprecated(reason: "Please use the relevant generic filter text: { eq: ... }")
+  text_IN: [String] @deprecated(reason: "Please use the relevant generic filter text: { in: ... }")
+  text_STARTS_WITH: String @deprecated(reason: "Please use the relevant generic filter text: { startsWith: ... }")
+}
+
+type DraftsConnection {
+  aggregate: DraftAggregate!
+  edges: [DraftEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+enum EventType {
+  CREATE
+  CREATE_RELATIONSHIP
+  DELETE
+  DELETE_RELATIONSHIP
+  UPDATE
+}
+
+type IntAggregateSelection {
+  average: Float
+  max: Int
+  min: Int
+  sum: Int
+}
+
+"""Int filters"""
+input IntScalarFilters {
+  eq: Int
+  gt: Int
+  gte: Int
+  in: [Int!]
+  lt: Int
+  lte: Int
+}
+
+"""Int mutations"""
+input IntScalarMutations {
+  add: Int
+  set: Int
+  subtract: Int
+}
+
+type Mutation {
+  createAuthors(input: [AuthorCreateInput!]!): CreateAuthorsMutationResponse!
+  createBooks(input: [BookCreateInput!]!): CreateBooksMutationResponse!
+  createDrafts(input: [DraftCreateInput!]!): CreateDraftsMutationResponse!
+  deleteAuthors(where: AuthorWhere): DeleteInfo!
+  deleteBooks(where: BookWhere): DeleteInfo!
+  deleteDrafts(where: DraftWhere): DeleteInfo!
+  updateAuthors(update: AuthorUpdateInput, where: AuthorWhere): UpdateAuthorsMutationResponse!
+  updateBooks(update: BookUpdateInput, where: BookWhere): UpdateBooksMutationResponse!
+  updateDrafts(update: DraftUpdateInput, where: DraftWhere): UpdateDraftsMutationResponse!
+}
+
+"""Pagination information (Relay)"""
+type PageInfo {
+  endCursor: String
+  hasNextPage: Boolean!
+  hasPreviousPage: Boolean!
+  startCursor: String
+}
+
+type Query {
+  authors(limit: Int, offset: Int, sort: [AuthorSort!], where: AuthorWhere): [Author!]!
+  authorsConnection(after: String, first: Int, sort: [AuthorSort!], where: AuthorWhere): AuthorsConnection!
+  books(limit: Int, offset: Int, sort: [BookSort!], where: BookWhere): [Book!]!
+  booksConnection(after: String, first: Int, sort: [BookSort!], where: BookWhere): BooksConnection!
+  drafts(limit: Int, offset: Int, sort: [DraftSort!], where: DraftWhere): [Draft!]!
+  draftsConnection(after: String, first: Int, sort: [DraftSort!], where: DraftWhere): DraftsConnection!
+}
+
+"""An enum for sorting in either ascending or descending order."""
+enum SortDirection {
+  """Sort by field values in ascending order."""
+  ASC
+
+  """Sort by field values in descending order."""
+  DESC
+}
+
+type StringAggregateSelection {
+  longest: String
+  shortest: String
+}
+
+"""String filters"""
+input StringScalarFilters {
+  contains: String
+  endsWith: String
+  eq: String
+  in: [String!]
+  startsWith: String
+}
+
+"""String mutations"""
+input StringScalarMutations {
+  set: String
+}
+
+type Subscription {
+  authorDeleted(where: AuthorSubscriptionWhere): AuthorDeletedEvent!
+  bookCreated(where: BookSubscriptionWhere): BookCreatedEvent!
+}
+
+type UpdateAuthorsMutationResponse {
+  authors: [Author!]!
+  info: UpdateInfo!
+}
+
+type UpdateBooksMutationResponse {
+  books: [Book!]!
+  info: UpdateInfo!
+}
+
+type UpdateDraftsMutationResponse {
+  drafts: [Draft!]!
+  info: UpdateInfo!
+}
+
+"""
+Information about the number of nodes and relationships created and deleted during an update mutation
+"""
+type UpdateInfo {
+  nodesCreated: Int!
+  nodesDeleted: Int!
+  relationshipsCreated: Int!
+  relationshipsDeleted: Int!
+}

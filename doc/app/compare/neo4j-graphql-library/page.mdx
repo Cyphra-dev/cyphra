@@ -13,21 +13,21 @@ GraphQL type definitions into a GraphQL API. Cyphra turns a `.cyphra` schema int
 TypeScript client (`db.user.findMany(…)`) and migration files, and its
 [`@cyphra/graphql`](/graphql) package serves the same API as `@neo4j/graphql` 7 from the same type
 definitions.** Pick `@neo4j/graphql` if you need what `@cyphra/graphql` does not support yet
-(subscriptions, Apollo Federation, interfaces, among others) or want a library maintained
+(Apollo Federation, interfaces, among others) or want a library maintained
 by Neo4j. Pick Cyphra if you want migrations and a typed client, with or without the GraphQL API.
 
 ## At a glance
 
-|                         | Cyphra                                                                                                             | `@neo4j/graphql`                                                                                |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------- |
-| GraphQL API             | `@cyphra/graphql`: the v7 API from the same type definitions, except subscriptions and some directives (see below) | An executable GraphQL schema: queries, mutations, filtering, sorting, pagination, subscriptions |
-| Typed client            | Generated from `.cyphra` (`cyphra generate`)                                                                       | None since v6 (the OGM was discontinued, see below)                                             |
-| Model written in        | `.cyphra` schema; `cyphra import graphql` converts v7 type definitions                                             | GraphQL SDL with `@node` and `@relationship`                                                    |
-| Custom Cypher           | `` db.$cypher`…` ``, query builder; `@cypher` in the GraphQL API                                                   | `@cypher` directive, custom resolvers                                                           |
-| Auth rules              | `@authentication` / `@authorization` in the GraphQL API; your own code for the client                              | `@authentication` and `@authorization` directives                                               |
-| Constraints and indexes | Generated migrations (`cyphra migrate dev`)                                                                        | Not created by the library (see below)                                                          |
-| Maintainer              | Cyphra (open source, MIT)                                                                                          | Neo4j, Inc. (open source, Apache-2.0)                                                           |
-| Current version         | `cyphra` 0.7.0 (2026-11-21)                                                                                        | 7.6.8 (latest, 2026-11-10); 5.x is LTS                                                          |
+|                         | Cyphra                                                                                                                   | `@neo4j/graphql`                                                                                |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------- |
+| GraphQL API             | `@cyphra/graphql`: the v7 API from the same type definitions, subscriptions included, except some directives (see below) | An executable GraphQL schema: queries, mutations, filtering, sorting, pagination, subscriptions |
+| Typed client            | Generated from `.cyphra` (`cyphra generate`)                                                                             | None since v6 (the OGM was discontinued, see below)                                             |
+| Model written in        | `.cyphra` schema; `cyphra import graphql` converts v7 type definitions                                                   | GraphQL SDL with `@node` and `@relationship`                                                    |
+| Custom Cypher           | `` db.$cypher`…` ``, query builder; `@cypher` in the GraphQL API                                                         | `@cypher` directive, custom resolvers                                                           |
+| Auth rules              | `@authentication` / `@authorization` in the GraphQL API; your own code for the client                                    | `@authentication` and `@authorization` directives                                               |
+| Constraints and indexes | Generated migrations (`cyphra migrate dev`)                                                                              | Not created by the library (see below)                                                          |
+| Maintainer              | Cyphra (open source, MIT)                                                                                                | Neo4j, Inc. (open source, Apache-2.0)                                                           |
+| Current version         | `cyphra` 0.7.0 (2026-11-21)                                                                                              | 7.6.8 (latest, 2026-11-10); 5.x is LTS                                                          |
 
 ## The same model, two ways
 
@@ -101,17 +101,16 @@ GraphQL](/guides/migrate-from-neo4j-graphql#using-the-typed-client-alongside-gra
 ## What `@neo4j/graphql` does that Cyphra does not
 
 `@cyphra/graphql` serves the v7 API for queries, aggregations, mutations, `@authentication` /
-`@authorization`, `@cypher` fields, `@fulltext` queries and unions. Its compatibility suite runs 113
-operations on 8 apps, with expected results recorded from `@neo4j/graphql` 7.6.8, and 119 of the 121
-checks pass, the two others on purpose ([report](https://github.com/Cyphra-dev/cyphra/blob/main/compat/graphql/REPORT.md)). What it
+`@authorization`, `@cypher` fields, `@fulltext` queries, unions and CDC subscriptions. Its
+compatibility suite runs 134 operations on 10 apps, with expected results recorded from
+`@neo4j/graphql` 7.6.8, and 142 of the 144 checks pass, the two others on purpose ([report](https://github.com/Cyphra-dev/cyphra/blob/main/compat/graphql/REPORT.md)). What it
 does not have yet:
 
-- **Subscriptions** to server events ([#76](https://github.com/Cyphra-dev/cyphra/issues/76)) and the
-  **Apollo Federation** integration.
+- The **Apollo Federation** integration.
 - **Interfaces**, `@cypher` fields returning unions, **`@vector`** queries, and the `Time`, `LocalTime`, `LocalDateTime`,
   `Duration`, `Point` and `CartesianPoint` scalars.
 - **Custom resolvers** (`@customResolver`, the `resolvers` option), `@populatedBy`, `@relayId`, and
-  the schema configuration directives (`@query`, `@mutation`, `@subscription`, `@selectable`,
+  the schema configuration directives (`@query`, `@mutation`, `@selectable`,
   `@settable`, `@filterable`, `@sortable`, `@limit`).
 - **Versions before 7.** `@cyphra/graphql` reproduces the v7 API only; the 5.x LTS API differs.
 
@@ -153,7 +152,7 @@ the type definitions and run `cyphra import graphql --merge`. The client does no
 
 ## When to choose `@neo4j/graphql` instead
 
-- You need subscriptions, Apollo Federation, interfaces, `@vector`, custom resolvers or
+- You need Apollo Federation, interfaces, `@vector`, custom resolvers or
   another feature from the list above.
 - You are on the 5.x LTS line and do not plan to move to version 7.
 - You want a library maintained by Neo4j, Inc. with a published versioning policy (current and LTS
@@ -204,7 +203,7 @@ Checked on 2026-11-21.
   5.11.4 (2025-01-24), `lts` 5.12.17 (2026-11-10)
 - GitHub, [neo4j/graphql](https://github.com/neo4j/graphql): not archived, last push 2026-11-21
 - Cyphra, [`compat/graphql/REPORT.md`](https://github.com/Cyphra-dev/cyphra/blob/main/compat/graphql/REPORT.md):
-  119 of 121 checks pass against goldens from `@neo4j/graphql` 7.6.8 (the two others are nested
+  142 of 144 checks pass against goldens from `@neo4j/graphql` 7.6.8 (the two others are nested
   union writes where v7 ignores `where`). The unsupported directives
   were checked by calling `compat.v7.makeSchema` on each one.
 - The Cyphra snippets above were generated and run with the code of `cyphra` 0.7.0 against Neo4j 5.
