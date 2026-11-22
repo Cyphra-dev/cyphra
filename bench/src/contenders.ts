@@ -7,18 +7,13 @@ import { compat } from "@cyphra/graphql";
 import { Neo4jGraphQL } from "@neo4j/graphql";
 import { execute, parse, validate, type DocumentNode, type GraphQLSchema } from "graphql";
 import type { Driver } from "neo4j-driver";
-import {
-  Neogma,
-  Node,
-  NodeEntity,
-  PrimaryKey,
-  Property,
-  Relationship,
-  Type,
-  type Related,
-} from "neogma";
+// neogma is CommonJS: Node 22 does not detect all of its named exports (`Type` is a re-export),
+// so read them from the default export.
+import neogmaModule, { type Related } from "neogma";
 import type { Config } from "./config.js";
 import { createClient, type Db } from "./cyphra.gen.js";
+
+const { Neogma, Node, NodeEntity, PrimaryKey, Property, Relationship, Type } = neogmaModule;
 
 export type ContenderId =
   | "neo4j-driver"

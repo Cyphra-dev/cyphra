@@ -6,11 +6,14 @@
  * against the baseline's (`summarize`) before anything is timed.
  */
 import { randomUUID } from "node:crypto";
-import { Op } from "neogma";
+import neogmaModule from "neogma";
 import type { GqlExec, NeogmaModels } from "./contenders.js";
 import type { Db } from "./cyphra.gen.js";
 import { int, type Row, type Runner } from "./raw.js";
 import type { Fixtures } from "./seed.js";
+
+// neogma is CommonJS (see contenders.ts).
+const { Op } = neogmaModule;
 
 export type Task = {
   /** The measured call. */
