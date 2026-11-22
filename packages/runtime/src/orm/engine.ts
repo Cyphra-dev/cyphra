@@ -37,6 +37,7 @@ import {
   relationMatch,
   scalarField,
   unionPredicate,
+  memberNames,
 } from "./compile.js";
 import { compileAggregate, compileGroupBy } from "./aggregate.js";
 import { DEFAULT_MAX_TRAVERSAL_DEPTH, compileTraverse } from "./traverse.js";
@@ -545,7 +546,8 @@ export class ModelEngine {
   ): { target: ResolvedNodeModel; value: unknown } {
     const target = this.node(rel.target);
     if (!target.union) return { target, value: item };
-    const members = target.implementations ?? [];
+    // A member, an implementation of an interface member, or the interface member itself.
+    const members = memberNames(target);
     const keys = Object.keys(item).filter((k) => item[k] !== undefined);
     if (keys.length !== 1 || !members.includes(keys[0]!)) {
       throw new CyphraValidationError(

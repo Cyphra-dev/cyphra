@@ -103,3 +103,58 @@ describe("union types", () => {
     await db.shelf.create({ data: { name: "b", items: { create: { Writer: { title: "t" } } } } });
   });
 });
+
+describe("typed edges and interface members", () => {
+  it("types $edge on a relation to a union, on writes and reads", async () => {
+    const shelf = await db.shelf.create({
+      data: {
+        name: "s",
+        picks: {
+          create: { Story: { title: "t" }, $edge: { rank: 1 } },
+          connect: { Writer: { name: "w" }, $edge: { rank: { increment: 1 }, note: null } },
+        },
+      },
+      include: { picks: true },
+    });
+    expectTypeOf(shelf.picks[0]!.$edge).toEqualTypeOf<{ rank: number; note: string | null }>();
+    await db.shelf.update({
+      where: { id: shelf.id },
+      // @ts-expect-error not an edge property
+      data: { picks: { connect: { Writer: { name: "w" }, $edge: { weight: 1 } } } },
+    });
+    const w = await db.writer.findUniqueOrThrow({
+      where: { name: "w" },
+      include: { pickedBy: true },
+    });
+    expectTypeOf(w.pickedBy[0]!.$edge.rank).toEqualTypeOf<number>();
+  });
+
+  it("reads a union with an interface member as its implementations", async () => {
+    const parties = await db.party.findMany({});
+    expectTypeOf(parties[0]!.__typename).toEqualTypeOf<"Editor" | "Reviewer" | "Writer">();
+    await db.party.findMany({ where: { $on: { Contributor: { email: "e" }, Writer: {} } } });
+    // @ts-expect-error not a member
+    await db.party.findMany({ where: { $on: { Story: {} } } });
+    const rows = await db.party.findMany({ select: { $on: { Contributor: { email: true } } } });
+    const r = rows[0]!;
+    if (r.__typename === "Reviewer") expectTypeOf(r.email).toEqualTypeOf<string>();
+    if (r.__typename === "Writer") expectTypeOf(r).toEqualTypeOf<{ __typename: "Writer" }>();
+  });
+
+  it("writes through the interface member's key, creates through an implementation", async () => {
+    await db.desk.create({
+      data: {
+        name: "d",
+        owner: { connect: { Contributor: { email: "e" } } },
+        seated: {
+          connect: { Writer: { name: "w" }, $edge: { since: 1 } },
+          create: { Reviewer: { email: "r" } },
+        },
+      },
+    });
+    await db.desk.create({
+      // @ts-expect-error an interface member cannot be created
+      data: { name: "d", seated: { create: { Contributor: { email: "x" } } } },
+    });
+  });
+});

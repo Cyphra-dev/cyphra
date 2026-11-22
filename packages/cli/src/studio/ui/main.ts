@@ -177,6 +177,23 @@ function rowModel(model: StudioNodeModel, row: AnyRecord): StudioNodeModel {
   return typeof t === "string" && t !== model.name ? (nodeModel(t) ?? model) : model;
 }
 
+/** `Post · p1` for a record of a union or an interface, its key for another model. */
+function endText(model: StudioNodeModel, row: AnyRecord): string {
+  const owner = rowModel(model, row);
+  const key = keyText(owner, row);
+  if (owner === model) return key || JSON.stringify(row);
+  return key ? `${owner.name} · ${key}` : owner.name;
+}
+
+/**
+ * The models a record linked through a relation to `target` can be: the target itself, or for
+ * a union its members as declared (an interface member addressed by the interface's key).
+ */
+function linkModels(target: StudioNodeModel): StudioNodeModel[] {
+  if (!target.union) return [target];
+  return (target.members ?? target.implementations ?? []).map(nodeModel);
+}
+
 // ---------------------------------------------------------------------------------------------
 // Feedback
 
@@ -921,6 +938,7 @@ function renderTable(v: TableView): void {
           v.conditions.length ? h("span", { class: "badge signal" }, v.conditions.length) : null,
         ),
     h("button", { class: "btn", onclick: () => reload(), title: "Reload" }, "↻"),
+    linkable(v) ? h("button", { class: "btn", onclick: () => openLink(v.parent!) }, "Link…") : null,
     !ro && !model.abstract
       ? h("button", { class: "btn primary", onclick: () => openCreate(model) }, "+ Add record")
       : null,
@@ -931,6 +949,8 @@ function renderTable(v: TableView): void {
     null,
     h("th", null, ""),
     model.abstract ? h("th", null, "Type", h("span", { class: "type" }, "__typename")) : null,
+    // A union has no fields: show each row's key in its member.
+    model.union ? h("th", null, "Key") : null,
     cols.map((f) =>
       sortHeader(f.name, typeLabel(f), f.name, !UNSORTABLE.has(f.type) && !f.list, v.sort, onSort),
     ),
@@ -969,10 +989,22 @@ function renderTable(v: TableView): void {
           },
           "↗",
         ),
+        linkable(v) && (v.parent!.relation.many || v.parent!.relation.optional)
+          ? h(
+              "button",
+              {
+                class: "btn small ghost",
+                title: `Unlink from ${v.parent!.model} ${v.parent!.label}`,
+                onclick: () => void unlink(v.parent!, owner, row),
+              },
+              "⊘",
+            )
+          : null,
       ),
       model.abstract
         ? h("td", null, h("span", { class: "tag" }, String(row.__typename ?? "")))
         : null,
+      model.union ? h("td", { class: "mono" }, keyText(owner, row)) : null,
       cols.map((f) => {
         const td = h(
           "td",
@@ -1008,7 +1040,7 @@ function renderTable(v: TableView): void {
           h(
             "button",
             { class: "link", onclick: () => follow(model, row, r) },
-            `${keyText(nodeModel(r.target), linked) || r.target} →`,
+            `${endText(nodeModel(r.target), linked) || r.target} →`,
           ),
         );
       }),
@@ -1103,8 +1135,9 @@ function renderEdges(v: EdgeView): void {
   const rel = relModel(v.name);
   const from = nodeModel(rel.from);
   const to = nodeModel(rel.to);
+  // A union end has no key of its own: each row carries its member's.
   const editable =
-    !meta().readOnly && rel.via !== undefined && from.key !== null && to.key !== null;
+    !meta().readOnly && rel.via !== undefined && from.key !== null && (to.key !== null || to.union);
   const onSort = (s: Sort) => {
     v.sort = s;
     v.skip = 0;
@@ -1176,8 +1209,11 @@ function renderEdges(v: EdgeView): void {
                     null,
                     h(
                       "button",
-                      { class: "link", onclick: () => openModelFiltered(from, row.from) },
-                      keyText(from, row.from) || JSON.stringify(row.from),
+                      {
+                        class: "link",
+                        onclick: () => openModelFiltered(rowModel(from, row.from), row.from),
+                      },
+                      endText(from, row.from),
                     ),
                   ),
                   h(
@@ -1185,8 +1221,11 @@ function renderEdges(v: EdgeView): void {
                     null,
                     h(
                       "button",
-                      { class: "link", onclick: () => openModelFiltered(to, row.to) },
-                      keyText(to, row.to) || JSON.stringify(row.to),
+                      {
+                        class: "link",
+                        onclick: () => openModelFiltered(rowModel(to, row.to), row.to),
+                      },
+                      endText(to, row.to),
                     ),
                   ),
                   rel.properties.map((p) => h("td", null, valueCell(p, row.properties[p.name]))),
@@ -1390,8 +1429,8 @@ function openRecord(
           { class: "relations" },
           h("h4", null, `Edge ${edge.name}`),
           edge.properties.map((p) => {
-            const canEdit =
-              !meta().readOnly && edge.via !== undefined && v.parent!.relation.direction === "OUT";
+            // Written through the followed relation (`connect` with `$edge`), either direction.
+            const canEdit = linkable(v) && where !== null;
             const { el, form } = formField(p, (row.$edge as AnyRecord)[p.name], "edit", !canEdit);
             edgeForms.push(form);
             return el;
@@ -1427,11 +1466,13 @@ function openRecord(
         );
         Object.assign(row, res.row);
       }
-      if (Object.keys(edgeData).length && edge && v.parent) {
-        await api(`/api/relationships/${encodeURIComponent(edge.name)}/update`, {
-          from: v.parent.where,
-          to: where,
-          data: edgeData,
+      if (Object.keys(edgeData).length && edge && v.parent && where) {
+        await api(`/api/models/${encodeURIComponent(v.parent.model)}/connect`, {
+          where: v.parent.where,
+          relation: v.parent.relation.name,
+          ...memberOf(v.parent.relation, model),
+          key: where,
+          edge: edgeData,
         });
       }
       closeDrawer();
@@ -1459,6 +1500,151 @@ function openRecord(
   );
   const target = forms.find((f) => f.field.name === focusField) ?? forms.find((f) => !f.field.id);
   target?.editor.focus();
+}
+
+/** `true` when the related records of `v` can be linked and unlinked (`connect` / `disconnect`). */
+function linkable(v: TableView): boolean {
+  const p = v.parent;
+  if (!p || meta().readOnly) return false;
+  return !nodeModel(p.model).abstract;
+}
+
+/** `{ member }` naming the model of a linked record when the relation targets a union. */
+function memberOf(relation: StudioRelationField, model: StudioNodeModel): AnyRecord {
+  return nodeModel(relation.target).union ? { member: model.name } : {};
+}
+
+/** Remove the link from the parent record of the view to `row` (of `model`). */
+async function unlink(parent: Parent, model: StudioNodeModel, row: AnyRecord): Promise<void> {
+  const key = keyWhere(model, row);
+  if (!key) {
+    toast(`${model.name} has no @id or @unique field: this link cannot be removed here.`);
+    return;
+  }
+  try {
+    await api(`/api/models/${encodeURIComponent(parent.model)}/disconnect`, {
+      where: parent.where,
+      relation: parent.relation.name,
+      ...(parent.relation.many ? { ...memberOf(parent.relation, model), key } : {}),
+    });
+    toast(`Unlinked ${endText(model, row)} from ${parent.model} ${parent.label}`);
+    void loadCounts();
+    reload();
+  } catch (e) {
+    state.error = errorOf(e);
+    render();
+  }
+}
+
+/**
+ * Link a record to the parent record of the view: pick the member (a relation to a union), give
+ * its key and, with a `relationship { … }` model, the edge properties.
+ */
+function openLink(parent: Parent): void {
+  const rel = parent.relation;
+  const choices = linkModels(nodeModel(rel.target)).filter((m) => m.key !== null);
+  if (choices.length === 0) {
+    toast(`${rel.target} has no @id or @unique field: records cannot be linked here.`);
+    return;
+  }
+  const edge = rel.edge ? relModel(rel.edge) : null;
+  const errBox = h("div");
+  const keyBox = h("div");
+  let member = choices[0]!;
+  let keyForms: FormField[] = [];
+  const renderKey = () => {
+    const key = member.key!;
+    const names = key.kind === "field" ? [key.field] : key.fields;
+    keyForms = [];
+    mount(
+      keyBox,
+      ...names.map((name) => {
+        const f = scalars(member).find((x) => x.name === name)!;
+        // A key is required: no null toggle.
+        const { el, form } = formField({ ...f, optional: false }, undefined, "edit", false);
+        form.dirty = true;
+        keyForms.push(form);
+        return el;
+      }),
+    );
+  };
+  const picker =
+    choices.length > 1
+      ? h(
+          "div",
+          { class: "field" },
+          h("label", null, "Member", h("span", { class: "type" }, rel.target)),
+          h(
+            "select",
+            {
+              onchange: (e: Event) => {
+                member = nodeModel((e.target as HTMLSelectElement).value);
+                renderKey();
+              },
+            },
+            choices.map((m) =>
+              h("option", { value: m.name }, m.abstract ? `${m.name} (interface)` : m.name),
+            ),
+          ),
+        )
+      : null;
+  const edgeForms: FormField[] = [];
+  const edgeEls = edge
+    ? [
+        h("h4", null, `Edge ${edge.name}`),
+        ...edge.properties.map((p) => {
+          const { el, form } = formField(p, undefined, "create", false);
+          edgeForms.push(form);
+          return el;
+        }),
+      ]
+    : [];
+  renderKey();
+  const save = async () => {
+    const key = member.key!;
+    const values: AnyRecord = {};
+    let bad = false;
+    for (const f of keyForms) {
+      const r = f.editor.get();
+      f.error.textContent = r.ok ? "" : r.error;
+      if (r.ok) values[f.field.name] = r.value;
+      else bad = true;
+    }
+    const edgeData: AnyRecord = {};
+    for (const f of edgeForms.filter((x) => x.dirty)) {
+      const r = f.editor.get();
+      f.error.textContent = r.ok ? "" : r.error;
+      if (r.ok && r.value !== null) edgeData[f.field.name] = r.value;
+      else if (!r.ok) bad = true;
+    }
+    if (bad) return;
+    try {
+      await api(`/api/models/${encodeURIComponent(parent.model)}/connect`, {
+        where: parent.where,
+        relation: rel.name,
+        ...memberOf(rel, member),
+        key: key.kind === "field" ? values : { [key.key]: values },
+        ...(edge ? { edge: edgeData } : {}),
+      });
+      closeDrawer();
+      toast(`Linked ${member.name} to ${parent.model} ${parent.label}`);
+      void loadCounts();
+      reload();
+    } catch (e) {
+      showIssues([...keyForms, ...edgeForms], errorOf(e), errBox);
+    }
+  };
+  openDrawer(
+    [
+      h("span", null, `Link ${rel.target}`),
+      h("span", { class: "badge mono" }, `${parent.model} ${parent.label} → ${rel.name}`),
+    ],
+    [errBox, picker, keyBox, ...edgeEls].filter((x): x is HTMLElement => x !== null),
+    [
+      h("button", { class: "btn", onclick: closeDrawer }, "Cancel"),
+      h("button", { class: "btn primary", onclick: () => void save() }, "Link"),
+    ],
+  );
 }
 
 function openCreate(model: StudioNodeModel): void {
@@ -1518,9 +1704,11 @@ function openEdge(rel: StudioRelationshipModel, row: EdgeRow): void {
       data[f.field.name] = r.value;
     }
     try {
+      const to = rowModel(nodeModel(rel.to), row.to);
       await api(`/api/relationships/${encodeURIComponent(rel.name)}/update`, {
         from: keyWhere(nodeModel(rel.from), row.from),
-        to: keyWhere(nodeModel(rel.to), row.to),
+        to: keyWhere(to, row.to),
+        ...(to.name !== rel.to ? { toMember: to.name } : {}),
         data,
       });
       closeDrawer();
@@ -1536,7 +1724,7 @@ function openEdge(rel: StudioRelationshipModel, row: EdgeRow): void {
       h(
         "span",
         { class: "badge mono" },
-        `${keyText(nodeModel(rel.from), row.from)} → ${keyText(nodeModel(rel.to), row.to)}`,
+        `${endText(nodeModel(rel.from), row.from)} → ${endText(nodeModel(rel.to), row.to)}`,
       ),
     ],
     [errBox, ...els],

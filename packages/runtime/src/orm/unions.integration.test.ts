@@ -6,7 +6,17 @@ import { hasTestDb, testConnection } from "./__fixtures__/testDialect.js";
 // Each test makes many round trips: the default 5 s is too tight on a busy CI runner.
 vi.setConfig({ testTimeout: 30_000, hookTimeout: 30_000 });
 
-const LABELS = ["Story", "Writer", "Editor", "Contributor", "Remark", "Shelf", "Marker"];
+const LABELS = [
+  "Story",
+  "Writer",
+  "Editor",
+  "Reviewer",
+  "Contributor",
+  "Remark",
+  "Shelf",
+  "Marker",
+  "Desk",
+];
 
 describe.skipIf(!hasTestDb)("unions of unrelated models", () => {
   let db: Db;
@@ -97,7 +107,7 @@ describe.skipIf(!hasTestDb)("unions of unrelated models", () => {
       },
     });
     expect(shelves).toHaveLength(1);
-    expect(shelves[0]!._count).toEqual({ items: 3 });
+    expect(shelves[0]!._count).toEqual({ items: 3, picks: 0 });
     expect(shelves[0]!.items.map((i) => i.__typename)).toEqual(["Writer", "Story"]);
     expect(
       await db.shelf.count({ where: { items: { none: { $on: { Writer: { name: "Bob" } } } } } }),
@@ -207,5 +217,152 @@ describe.skipIf(!hasTestDb)("unions of unrelated models", () => {
       }),
     ).rejects.toThrow(CyphraValidationError);
     expect(await db.shelf.count()).toBe(0);
+  });
+
+  it("writes and reads typed edges ($edge) on a relation to a union", async () => {
+    await seed();
+    const shelf = await db.shelf.create({
+      data: {
+        name: "picks",
+        picks: {
+          create: [{ Story: { title: "Edges" }, $edge: { rank: 2, note: "top" } }],
+          connect: [
+            { Writer: { name: "Ada" }, $edge: { rank: 1 } },
+            { Editor: { email: "s@x.io" } },
+          ],
+        },
+      },
+      include: { picks: { orderBy: { __typename: "asc" } } },
+    });
+    expect(shelf.picks.map((p) => [p.__typename, p.$edge])).toEqual([
+      ["Editor", { rank: 0, note: null }],
+      ["Story", { rank: 2, note: "top" }],
+      ["Writer", { rank: 1, note: null }],
+    ]);
+    // An existing edge gets the $edge values given; the inverse field reads the same edge.
+    await db.shelf.update({
+      where: { id: shelf.id },
+      data: { picks: { connect: { Writer: { name: "Ada" }, $edge: { rank: { increment: 4 } } } } },
+    });
+    const ada = await db.writer.findUniqueOrThrow({
+      where: { name: "Ada" },
+      include: { pickedBy: true },
+    });
+    expect(ada.pickedBy.map((s) => [s.name, s.$edge])).toEqual([
+      ["picks", { rank: 5, note: null }],
+    ]);
+    // set keeps the listed members (with their new $edge values) and drops the others.
+    await db.shelf.update({
+      where: { id: shelf.id },
+      data: {
+        picks: {
+          set: [
+            { Writer: { name: "Ada" }, $edge: { note: "kept" } },
+            { Writer: { name: "Bob" }, $edge: { rank: 3 } },
+          ],
+        },
+      },
+    });
+    const after = await db.shelf.findUniqueOrThrow({
+      where: { id: shelf.id },
+      select: { picks: { select: { $on: { Writer: { name: true } } } } },
+    });
+    expect(
+      after.picks
+        .map((p) => ("name" in p ? [p.name, p.$edge.rank, p.$edge.note] : [p.__typename]))
+        .sort(),
+    ).toEqual([
+      ["Ada", 5, "kept"],
+      ["Bob", 3, null],
+    ]);
+    // Edge rules run on every member's edge.
+    await expect(
+      db.shelf.update({
+        where: { id: shelf.id },
+        data: { picks: { connect: { Story: { id: shelf.id }, $edge: { rank: -1 } } } },
+      }),
+    ).rejects.toThrow(CyphraValidationError);
+    // Traversals filter on the edge model.
+    const reached = await db.shelf.traverse({
+      from: { id: shelf.id },
+      via: [{ rel: "picks", edgeWhere: { rank: { gte: 4 } } }],
+    });
+    expect(reached.map((r) => ("name" in r ? r.name : r.__typename))).toEqual(["Ada"]);
+  });
+
+  describe("with an interface member", () => {
+    async function seedParty() {
+      await db.editor.create({ data: { email: "e@x.io" } });
+      await db.reviewer.create({ data: { email: "r@x.io", level: 2 } });
+      await db.writer.create({ data: { name: "Wen" } });
+      await db.story.create({ data: { title: "not a party" } });
+    }
+
+    it("reads every implementation of the interface member, typed by __typename", async () => {
+      await seedParty();
+      const all = await db.party.findMany({ orderBy: { __typename: "asc" } });
+      expect(all.map((p) => p.__typename)).toEqual(["Editor", "Reviewer", "Writer"]);
+      expect(all[1]).toEqual({
+        __typename: "Reviewer",
+        id: expect.any(String),
+        email: "r@x.io",
+        level: 2,
+      });
+      // $on may name the interface member (every implementation) or an implementation.
+      const contributors = await db.party.findMany({
+        where: { $on: { Contributor: { email: { startsWith: "r" } }, Writer: {} } },
+        select: { $on: { Contributor: { email: true }, Writer: { name: true } } },
+        orderBy: { __typename: "asc" },
+      });
+      expect(contributors).toEqual([
+        { __typename: "Reviewer", email: "r@x.io" },
+        { __typename: "Writer", name: "Wen" },
+      ]);
+      expect(await db.party.count({ where: { $on: { Editor: {} } } })).toBe(1);
+    });
+
+    it("connects by the interface's key or an implementation's, with typed edges", async () => {
+      await seedParty();
+      const desk = await db.desk.create({
+        data: {
+          name: "d1",
+          owner: { connect: { Contributor: { email: "e@x.io" } } },
+          seated: {
+            connect: [
+              { Contributor: { email: "r@x.io" }, $edge: { since: 2020 } },
+              { Writer: { name: "Wen" } },
+            ],
+            create: { Reviewer: { email: "new@x.io" }, $edge: { since: 2024 } },
+          },
+        },
+        include: { owner: true, seated: { orderBy: { __typename: "asc" } } },
+      });
+      expect(desk.owner?.__typename).toBe("Editor");
+      const seated = desk.seated.map((p) => [
+        p.__typename,
+        p.__typename === "Writer" ? p.name : p.email,
+        p.$edge.since,
+      ]);
+      expect(seated.sort()).toEqual([
+        ["Reviewer", "new@x.io", 2024],
+        ["Reviewer", "r@x.io", 2020],
+        ["Writer", "Wen", null],
+      ]);
+      await db.desk.update({
+        where: { id: desk.id },
+        data: { seated: { disconnect: [{ Contributor: { email: "r@x.io" } }] } },
+      });
+      expect(
+        await db.desk.count({ where: { seated: { some: { $on: { Contributor: {} } } } } }),
+      ).toBe(1);
+      // An interface member cannot be created: create one of its implementations.
+      await expect(
+        db.desk.update({
+          where: { id: desk.id },
+          // @ts-expect-error Contributor is an interface
+          data: { seated: { create: { Contributor: { email: "x@x.io" } } } },
+        }),
+      ).rejects.toThrow(/Contributor is an interface and cannot be created/);
+    });
   });
 });

@@ -89,6 +89,13 @@ function pathIndex(schema: SchemaModel): PathIndex {
     );
     names.set(m, [m.name, ...(m.interfaces ?? [])]);
   }
+  // A `relationship { … }` model may name a union: its nodes match it too.
+  for (const u of schema.nodes) {
+    if (!u.union) continue;
+    for (const [m, list] of names) {
+      if ((u.implementations ?? []).includes(m.name)) names.set(m, [...list, u.name]);
+    }
+  }
   const byRelType = new Map<string, RelationshipModel[]>();
   for (const r of schema.relationships) {
     const list = byRelType.get(r.relType);

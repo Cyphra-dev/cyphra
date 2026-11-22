@@ -221,12 +221,17 @@ The token in the URL is required: keep it private. Stop with Ctrl+C.
   one to open the related records, and keep following from there (a breadcrumb leads back). Edge
   properties of a `relationship { … }` model show next to the related nodes and in the
   relationship model's own table, where they can be edited.
+- **Linking.** In a related view, _Link…_ connects another record by its key (with the edge
+  properties, if the relation has a `relationship { … }` model) and the ⊘ button of a row removes
+  its link (the record is kept). For a relation to a [union](/schema#unions), pick the member
+  first: a node, or an interface member, addressed by the interface's key.
 - **Delete.** Before deleting, the studio lists what the [`onDelete` rules](/client#deleting) will do:
   nodes deleted by a cascade, edges removed, or a `Restrict` relation that blocks the delete.
 - **Cypher.** A raw Cypher tab with JSON parameters. Queries run in a **read transaction**; tick
   _Allow writes_ to run one in a write transaction.
-- **Interfaces.** An interface lists the nodes of every implementation, with their `__typename`;
-  edits go to the implementation.
+- **Interfaces and unions.** An interface or a union lists the nodes of every implementation or
+  member, with their `__typename` (and, for a union, each row's key); edits go to the node's own
+  model.
 
 Records of a model without an `@id`, `@unique` or `@@unique` field can be browsed but not edited
 (nothing identifies one record).

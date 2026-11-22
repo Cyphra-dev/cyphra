@@ -77,8 +77,12 @@ node Y { id String @id }
     ["union U = A | A\nnode A { id String @id }", "member A is listed twice"],
     ["union U = Nope", "member Nope, which is not declared"],
     [
-      "union U = P\ninterface P { id String @id }\nnode E implements P {}\nnode F implements P {}",
-      "member P, which is an interface (list its implementations instead: E | F)",
+      "union U = P | E\ninterface P { id String @id }\nnode E implements P {}\nnode F implements P {}",
+      "E is a member twice (through P and directly); list it once",
+    ],
+    [
+      "union U = P | Q\ninterface P { id String @id }\ninterface Q { k String @unique }\nnode E implements P, Q {}",
+      "E is a member twice (through P and through Q)",
     ],
     [
       "union U = V\nunion V = A\nnode A { id String @id }",
@@ -93,10 +97,6 @@ node Y { id String @id }
     [
       "union A = B\nnode A { id String @id }\nnode B { id String @id }",
       'Duplicate declaration "A"',
-    ],
-    [
-      'union U = A\nnode A { id String @id }\nrelationship E { type "E"\n from A\n to U }',
-      "U is a union; a relationship model's ends are nodes or interfaces",
     ],
   ])("rejects %j", (src, message) => {
     expect(() => resolveSchema(parseSchema(src))).toThrow(message);
@@ -146,5 +146,130 @@ describe("unions: codegen", () => {
     expect(out).not.toContain("SearchHitCreateInputSchema");
     expect(out).not.toContain("SearchHitUpdateInputSchema");
     expect(out.indexOf("SearchHitSchema =")).toBeGreaterThan(out.indexOf("UserSchema ="));
+  });
+});
+
+describe("unions: typed edges", () => {
+  const EDGES = `
+union SearchHit = Post | User
+
+node Post {
+  id       String @id
+  taggedBy Tag[]  @relationship(type: "TAGS", direction: IN)
+}
+
+node User {
+  id String @id
+}
+
+node Tag {
+  id      String      @id
+  targets SearchHit[] @relationship(type: "TAGS", direction: OUT)
+}
+
+relationship Tagging {
+  type "TAGS"
+  from Tag
+  to   SearchHit
+  weight Int @default(1)
+}
+`;
+
+  it("lets a relationship model name a union, for the relation and its members' inverse fields", () => {
+    const m = resolveSchema(parseSchema(EDGES));
+    const field = (node: string, name: string) =>
+      m.nodes.find((n) => n.name === node)!.fields.find((f) => f.name === name);
+    expect(m.relationships[0]).toMatchObject({ name: "Tagging", from: "Tag", to: "SearchHit" });
+    expect(field("Tag", "targets")).toMatchObject({ target: "SearchHit", edge: "Tagging" });
+    expect(field("Post", "taggedBy")).toMatchObject({ target: "Tag", edge: "Tagging" });
+  });
+
+  it("types $edge on the relation to the union", () => {
+    const out = renderCyphraGenSource(parseSchema(EDGES));
+    expect(out).toContain(
+      'targets: { target: "SearchHit"; many: true; optional: false; edge: Tagging };',
+    );
+    expect(out).toContain(
+      'taggedBy: { target: "Tag"; many: true; optional: false; edge: Tagging };',
+    );
+    expect(renderZodFromModel(resolveSchema(parseSchema(EDGES)))).toContain("TaggingSchema");
+  });
+
+  it("accepts a union at either end", () => {
+    const m = resolveSchema(
+      parseSchema(EDGES.replace("from Tag\n  to   SearchHit", "from SearchHit\n  to   Tag")),
+    );
+    expect(m.relationships[0]).toMatchObject({ from: "SearchHit", to: "Tag" });
+    // Tag.targets goes Tag -> SearchHit: this model is the other way round.
+    expect(m.nodes.find((n) => n.name === "Tag")!.fields[1]).not.toHaveProperty("edge");
+  });
+});
+
+describe("unions: interface members", () => {
+  const PARTY = `
+union Party = Person | Team
+
+interface Person {
+  id    String @id
+  email String @unique
+}
+
+node Employee implements Person {
+  salary Int
+}
+
+node Customer implements Person {
+  tier String
+}
+
+node Team {
+  id String @id
+}
+`;
+
+  it("resolves an interface member to its implementations and keeps the declared members", () => {
+    const party = resolveSchema(parseSchema(PARTY)).nodes[0]!;
+    expect(party).toEqual({
+      name: "Party",
+      label: "Party",
+      abstract: true,
+      union: true,
+      implementations: ["Employee", "Customer", "Team"],
+      members: ["Person", "Team"],
+      uniqueFields: [],
+      fields: [],
+    });
+  });
+
+  it("emits the implementations and the interface members in the type map", () => {
+    const out = renderCyphraGenSource(parseSchema(PARTY));
+    expect(out).toContain(
+      '    implementations: "Employee" | "Customer" | "Team";\n    members: "Person";',
+    );
+    expect(out).toContain("/** `Party` union (`Person` | `Team`)");
+    expect(out).toContain(
+      'export type Party = ({ __typename: "Employee" } & Employee) | ({ __typename: "Customer" } & Customer) | ({ __typename: "Team" } & Team);',
+    );
+  });
+
+  it("emits a read schema over the implementations", () => {
+    const out = renderZodFromModel(resolveSchema(parseSchema(PARTY)));
+    expect(out).toContain(
+      [
+        "/** `Party` union results (`Person` | `Team`), as the client returns them. */",
+        'export const PartySchema = z.discriminatedUnion("__typename", [',
+        '  EmployeeSchema.extend({ __typename: z.literal("Employee") }),',
+        '  CustomerSchema.extend({ __typename: z.literal("Customer") }),',
+        '  TeamSchema.extend({ __typename: z.literal("Team") }),',
+        "]);",
+      ].join("\n"),
+    );
+  });
+
+  it("accepts an interface without implementations yet", () => {
+    const m = resolveSchema(
+      parseSchema("union U = P | A\ninterface P { id String @id }\nnode A { id String @id }"),
+    );
+    expect(m.nodes[0]).toMatchObject({ implementations: ["A"], members: ["P", "A"] });
   });
 });

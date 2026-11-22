@@ -964,6 +964,35 @@ await db.pin.update({ where: { id }, data: { subject: { connect: { Post: { id: p
 - [`onDelete` rules](#deleting) on a relation to a union apply to every member: `Cascade` deletes
   each related node with the rules of the model it is.
 
+With a [`relationship { … }` model](/schema#unions) to the union, `$edge` goes next to the member
+key, and every related node comes back with its edge properties under `$edge`:
+
+```ts
+const board = await db.board.update({
+  where: { id: boardId },
+  data: {
+    picks: {
+      create: { Post: { title: "Release notes" }, $edge: { rank: 1 } },
+      connect: { User: { email: "ada@example.com" }, $edge: { rank: { increment: 1 } } },
+    },
+  },
+  include: { picks: true },
+});
+board.picks[0]!.$edge.rank; // number, whatever the member
+```
+
+`set` items take `$edge` the same way, the members' inverse fields (`Post.pickedBy`) read the same
+edges with their `$edge`, and [traversals](#multi-hop-traversals) filter on them with
+`edgeWhere`.
+
+A union with an [interface member](/schema#unions) (`union Party = Person | Team`) returns the
+interface's implementations, typed by `__typename`. Writes and `$on` may name the interface to
+cover every implementation: `connect: { Person: { email } }` connects by the interface's unique
+fields, `where: { $on: { Person: { email: { endsWith: "@acme.io" } } } }` keeps every person
+matching it, and `select: { $on: { Person: { email: true } } }` applies to each implementation
+not listed itself. A nested `create` names an implementation (`create: { Employee: { … } }`): an
+interface cannot be created.
+
 ## Dynamic labels
 
 Models declaring [`@@labels([…])`](/schema#dynamic-labels) take `$labels` in writes, filters and

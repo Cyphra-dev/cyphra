@@ -47,9 +47,29 @@ export function labelExpr(model: ResolvedNodeModel): string {
  */
 export function unionPredicate(alias: string, model: ResolvedNodeModel): string | null {
   if (!model.union) return null;
-  const members = model.implementations ?? [];
+  // Members' labels: an interface member is matched by its own label (every implementation).
+  const members = unionMembers(model);
   if (members.length === 0) return "false";
   return members.map((m) => `${alias}:${q(m)}`).join(" OR ");
+}
+
+/**
+ * The members of a union as declared (an interface member by its name), or the implementations of
+ * an interface.
+ */
+export function unionMembers(model: ResolvedNodeModel): readonly string[] {
+  return model.members ?? model.implementations ?? [];
+}
+
+/**
+ * The names a relation write or `where.$on` of an abstract model may use: its implementations,
+ * plus the interface members of a union (`union Party = Person | Team`: Person stands for every
+ * node implementing it).
+ */
+export function memberNames(model: ResolvedNodeModel): readonly string[] {
+  const impls = model.implementations ?? [];
+  const extra = (model.members ?? []).filter((m) => !impls.includes(m));
+  return extra.length ? [...extra, ...impls] : impls;
 }
 
 /** `(n:Label)` (every label of the model), or `(n)` for a union (see {@link unionPredicate}). */
@@ -591,7 +611,7 @@ function compileOnFilter(
   alias: string,
   filter: unknown,
 ): string {
-  const impls = model.implementations ?? [];
+  const impls = memberNames(model);
   if (!model.abstract) {
     throw new CyphraValidationError(
       `where.$on: ${model.name} is not an interface or a union ($on filters per implementation of their queries).`,
@@ -1042,9 +1062,9 @@ export function compileProjection(
   const entries: string[] = projected.map((f) => `.${q(f.name)}`);
   if (variants || withLabels) entries.push(`${q(LABELS_KEY)}: labels(${alias})`);
   if (on && variants) {
-    const { spec, label } = on;
-    const impls = model.implementations ?? [];
-    for (const [name, sub] of Object.entries(spec)) {
+    const { label } = on;
+    const impls = memberNames(model);
+    for (const [name, sub] of Object.entries(expandInterfaceMembers(ctx, model, on.spec))) {
       if (sub === undefined || sub === false) continue;
       const i = variants.findIndex((v) => v.name === name);
       if (i < 0) {
@@ -1174,6 +1194,28 @@ function relationCounts(
   return out;
 }
 
+/**
+ * `select.$on` / `include.$on` of a union with interface members: `{ Person: … }` applies to every
+ * implementation of `Person` that the spec does not list itself.
+ */
+function expandInterfaceMembers(
+  ctx: QueryContext,
+  model: ResolvedNodeModel,
+  spec: AnyRecord,
+): AnyRecord {
+  if (!model.members) return spec;
+  const out: AnyRecord = {};
+  for (const [name, sub] of Object.entries(spec)) {
+    const m = model.members.includes(name) ? ctx.node(name) : undefined;
+    if (!m?.abstract) {
+      out[name] = sub;
+      continue;
+    }
+    for (const impl of m.implementations ?? []) if (!(impl in spec)) out[impl] = sub;
+  }
+  return out;
+}
+
 /** Decode a projected map according to its {@link Shape}. */
 export function decodeRow(shape: Shape, row: unknown): AnyRecord | null {
   if (row === null || row === undefined) return null;
@@ -1187,7 +1229,9 @@ export function decodeRow(shape: Shape, row: unknown): AnyRecord | null {
     // Cyphra) is reported as the interface itself, with the interface's fields.
     const labels = (src[LABELS_KEY] ?? []) as unknown[];
     const variant = shape.variants.find((v) => labels.includes(v.label));
-    out.__typename = variant?.name ?? shape.model.name;
+    // Through a union's interface member, such a node is reported as that interface.
+    const member = shape.model.members?.find((m) => labels.includes(m));
+    out.__typename = variant?.name ?? member ?? shape.model.name;
     if (variant?.scalars) scalars = variant.scalars;
     if (variant?.on) on = decodeRow(variant.on, src[onKey(variant.name)]);
   }

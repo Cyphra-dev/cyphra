@@ -6,9 +6,11 @@ import type {
 } from "@cyphra/schema";
 import type {
   ApiError,
+  ConnectRequest,
   CypherRequest,
   CypherResponse,
   DeletePreview,
+  DisconnectRequest,
   EdgeFindRequest,
   EdgeFindResponse,
   EdgeUpdateRequest,
@@ -155,6 +157,41 @@ function edgeProps(fields: readonly ResolvedScalarField[], props: AnyRecord): An
     }
   }
   return out;
+}
+
+/** Keys of a union end in an edge row, before {@link endKey} narrows it. */
+const LABELS = "__labels";
+const PROPS = "__props";
+
+/** `b:Post OR b:User` for a union end (its members' labels), `null` for another model. */
+function unionTest(alias: string, n: ResolvedNodeModel): string | null {
+  if (!n.union) return null;
+  const members = n.members ?? n.implementations ?? [];
+  return members.length ? `(${members.map((m) => `${alias}:${q(m)}`).join(" OR ")})` : "false";
+}
+
+/**
+ * The key of an edge end as the UI shows it: the projected key, or for a union end the
+ * `__typename` of the node's member and that member's key fields.
+ */
+function endKey(
+  n: ResolvedNodeModel,
+  schemaNodes: ReadonlyMap<string, ResolvedNodeModel>,
+  raw: AnyRecord,
+): AnyRecord {
+  if (!n.union) return raw;
+  const labels = (raw[LABELS] ?? []) as unknown[];
+  const props = (raw[PROPS] ?? {}) as AnyRecord;
+  const member = (n.implementations ?? []).find((m) => labels.includes(m));
+  const model = member ? schemaNodes.get(member) : undefined;
+  if (!model) return { __typename: n.name, ...props };
+  const key = keyOf(model);
+  const fields = key
+    ? key.kind === "field"
+      ? [key.field]
+      : key.fields
+    : model.fields.filter((f) => f.kind === "scalar").map((f) => f.name);
+  return { __typename: member, ...Object.fromEntries(fields.map((f) => [f, props[f] ?? null])) };
 }
 
 /** Build the JSON API of the studio. Every route answers JSON-serializable data. */
@@ -348,19 +385,30 @@ export function createStudioApi(opts: {
     return r;
   };
 
-  /** `MATCH` of the edges of relationship model `name` (labels and type from the schema). */
+  /**
+   * `MATCH` of the edges of relationship model `name` (labels and type from the schema). A union
+   * end has no label: its nodes are matched by their members' labels.
+   */
   const edgePattern = (name: string) => {
     const r = relModel(name);
+    const [from, to] = [node(r.from), node(r.to)];
+    const end = (alias: string, n: ResolvedNodeModel) =>
+      n.union ? alias : `${alias}:${q(n.label)}`;
+    const preds = [unionTest("a", from), unionTest("b", to)].filter((x) => x !== null);
     return {
       r,
-      from: node(r.from),
-      to: node(r.to),
-      text: `MATCH (a:${q(node(r.from).label)})-[r:${q(r.relType)}]->(b:${q(node(r.to).label)})`,
+      from,
+      to,
+      text:
+        `MATCH (${end("a", from)})-[r:${q(r.relType)}]->(${end("b", to)})` +
+        (preds.length ? ` WHERE ${preds.join(" AND ")}` : ""),
     };
   };
 
   /** Map projection of the key fields of `n` (all scalar fields when it has no key). */
   const keyProjection = (n: ResolvedNodeModel, alias: string): string => {
+    // A union end: the node's labels and properties, narrowed to its member's key by `endKey`.
+    if (n.union) return `{${q(LABELS)}: labels(${alias}), ${q(PROPS)}: properties(${alias})}`;
     const key = keyOf(n);
     const fields = key
       ? key.kind === "field"
@@ -398,7 +446,11 @@ export function createStudioApi(opts: {
     return {
       rows: rows.map((row) => {
         const w = toWire(row) as { from: AnyRecord; to: AnyRecord; properties: AnyRecord };
-        return { ...w, properties: edgeProps(r.properties, w.properties ?? {}) };
+        return {
+          from: endKey(from, nodeByName, w.from),
+          to: endKey(to, nodeByName, w.to),
+          properties: edgeProps(r.properties, w.properties ?? {}),
+        };
       }),
       total: Number(toWire(totals[0]?.total) ?? 0),
     };
@@ -415,7 +467,7 @@ export function createStudioApi(opts: {
       );
     }
     const from = keyWhere(r.from, req.from);
-    const to = keyWhere(r.to, req.to);
+    const to = targetKey(node(r.to), req.toMember, req.to);
     assertStorable(
       meta.relationships.find((x) => x.name === name)?.properties ?? [],
       req.data,
@@ -425,6 +477,66 @@ export function createStudioApi(opts: {
     await db.delegate(r.from).update({
       where: from,
       data: { [via]: { connect: { ...to, $edge: data } } },
+    });
+    return { ok: true };
+  };
+
+  /** The relation `name` of `model`, which must be writable. */
+  const writableRelation = (model: string, name: unknown): ResolvedRelationField => {
+    const n = node(model);
+    writable(n);
+    const rel = relationsOf(n).find((r) => r.name === name);
+    if (!rel) throw new StudioRequestError(`${model} has no relation "${String(name)}".`);
+    return rel;
+  };
+
+  /**
+   * The unique `where` of a related record of `target`: its key, or for a union the member it
+   * names wrapped around the member's key (`{ Post: { id } }`).
+   */
+  const targetKey = (target: ResolvedNodeModel, member: unknown, key: unknown): AnyRecord => {
+    if (!target.union) return keyWhere(target.name, key);
+    const names = [...(target.members ?? []), ...(target.implementations ?? [])];
+    if (typeof member !== "string" || !names.includes(member)) {
+      throw new StudioRequestError(
+        `${target.name} is a union: name the member of the record to link (one of ${[...new Set(names)].join(", ")}).`,
+      );
+    }
+    return { [member]: keyWhere(member, key) };
+  };
+
+  const connect = async (model: string, req: ConnectRequest): Promise<unknown> => {
+    const rel = writableRelation(model, req.relation);
+    const item: AnyRecord = targetKey(node(rel.target), req.member, req.key);
+    if (req.edge !== undefined) {
+      if (!rel.edge) {
+        throw new StudioRequestError(`${model}.${rel.name} has no edge properties.`);
+      }
+      assertStorable(
+        meta.relationships.find((x) => x.name === rel.edge)?.properties ?? [],
+        req.edge,
+        rel.edge,
+      );
+      item.$edge = decodeEdgeData(schema, rel.edge, req.edge);
+    }
+    await db.delegate(model).update({
+      where: keyWhere(model, req.where),
+      data: { [rel.name]: { connect: item } },
+    });
+    return { ok: true };
+  };
+
+  const disconnect = async (model: string, req: DisconnectRequest): Promise<unknown> => {
+    const rel = writableRelation(model, req.relation);
+    if (!rel.many && !rel.optional) {
+      throw new StudioRequestError(
+        `${model}.${rel.name} is required: link another record instead of removing this one.`,
+      );
+    }
+    const op = rel.many ? targetKey(node(rel.target), req.member, req.key) : true;
+    await db.delegate(model).update({
+      where: keyWhere(model, req.where),
+      data: { [rel.name]: { disconnect: op } },
     });
     return { ok: true };
   };
@@ -509,6 +621,16 @@ export function createStudioApi(opts: {
         const rec = await db.delegate(m!).delete({ where: keyWhere(m!, b.where) });
         return { row: toWire(rec) };
       },
+    ],
+    [
+      "POST",
+      /^\/api\/models\/([^/]+)\/connect$/,
+      ([m], b) => connect(m!, b as unknown as ConnectRequest),
+    ],
+    [
+      "POST",
+      /^\/api\/models\/([^/]+)\/disconnect$/,
+      ([m], b) => disconnect(m!, b as unknown as DisconnectRequest),
     ],
     [
       "POST",

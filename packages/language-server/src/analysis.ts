@@ -146,7 +146,13 @@ export function locateValidationError(message: string, doc: SchemaDocument): Spa
   }
 
   if (decl.kind === "Union") {
-    // `member X is listed twice` (the second one), `member X, which is …`.
+    // `member X is listed twice` (the second one), `member X, which is …`, `X is a member twice
+    // (… and through Y)` (on Y, or on X when listed directly).
+    const twice = /^: (\w+) is a member twice \(.* (?:and through (\w+)|and directly)\)/.exec(rest);
+    if (twice) {
+      const at = decl.members.lastIndexOf(twice[2] ?? twice[1]!);
+      return span(decl.memberLocs?.[at]) ?? fallback;
+    }
     const member = /^: member (\w+)( is listed twice)?/.exec(rest);
     if (member) {
       const idx = decl.members.map((m, i) => (m === member[1] ? i : -1)).filter((i) => i >= 0);
@@ -168,10 +174,6 @@ export function locateValidationError(message: string, doc: SchemaDocument): Spa
   if (dupField) {
     const same = decl.fields.filter((f) => f.name === dupField[1]);
     return span((same[1] ?? same[0])?.nameLoc) ?? fallback;
-  }
-  const unionEnd = /^: (\w+) is a union; a relationship model/.exec(rest);
-  if (unionEnd && decl.kind === "Relationship") {
-    return span(decl.from === unionEnd[1] ? decl.fromLoc : decl.toLoc) ?? fallback;
   }
   const unknownEnd = /^: unknown node "([^"]+)"/.exec(rest);
   if (unknownEnd && decl.kind === "Relationship") {

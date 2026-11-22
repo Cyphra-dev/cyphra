@@ -22,6 +22,8 @@ node Writer {
   id     String @id @default(cuid())
   name   String @unique
   rating Int?
+  // The inverse of Shelf.picks: it shares the Pick edge model.
+  pickedBy Shelf[] @relationship(type: "PICKS", direction: IN)
 }
 
 node Remark {
@@ -33,10 +35,41 @@ node Shelf {
   id    String      @id @default(cuid())
   name  String
   items SearchHit[] @relationship(type: "SHOWS", direction: OUT, onDelete: Cascade)
+  picks SearchHit[] @relationship(type: "PICKS", direction: OUT)
 }
 
 node Marker {
   id      String     @id @default(cuid())
   label   String
   subject SearchHit? @relationship(type: "MARKS", direction: OUT)
+}
+
+// Typed edges on a relation to a union: one edge model for every member, read back as `$edge`.
+relationship Pick {
+  type "PICKS"
+  from Shelf
+  to   SearchHit
+  rank Int     @default(0) @min(0)
+  note String?
+}
+
+// A union with an interface member: every Contributor (Editor, Reviewer) and every Writer.
+union Party = Contributor | Writer
+
+node Reviewer implements Contributor {
+  level Int @default(1)
+}
+
+node Desk {
+  id     String  @id @default(cuid())
+  name   String
+  owner  Party?  @relationship(type: "OWNS", direction: OUT)
+  seated Party[] @relationship(type: "SEATS", direction: OUT)
+}
+
+relationship Seat {
+  type  "SEATS"
+  from  Desk
+  to    Party
+  since Int?
 }

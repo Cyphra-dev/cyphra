@@ -88,7 +88,7 @@ describe("unions: reads", () => {
     const { calls, e } = engine("Shelf", () => []);
     await e.findMany({
       where: { items: { some: { $on: { Writer: { rating: { gte: 4 } } } } } },
-      include: { items: { where: { __typename: "Story" } }, _count: true },
+      include: { items: { where: { __typename: "Story" } }, _count: { select: { items: true } } },
     });
     const text = calls[0]!.text;
     expect(text).toContain(
@@ -260,6 +260,63 @@ describe("unions: writes through relations", () => {
   it("cascades into a union with each member's own rules", () => {
     const shelf = schemaModel.nodes.find((n) => n.name === "Shelf")!;
     expect(hasDeleteRules(schemaModel, shelf)).toBe(true);
+  });
+});
+
+describe("unions: typed edges and interface members", () => {
+  it("sets $edge on the edge of each named member", async () => {
+    const { calls, e } = engine("Shelf", () => [{ row: { id: "b", name: "B" }, c2: 1 }]);
+    await e.create({
+      data: {
+        name: "B",
+        picks: {
+          create: { Story: { title: "a" }, $edge: { rank: 2 } },
+          connect: { Writer: { name: "w" }, $edge: { note: "n" } },
+        },
+      },
+    });
+    const { text, params } = calls[0]!;
+    expect(text).toContain(
+      "MERGE (n)-[r1:`PICKS`]->(b0) ON CREATE SET r1 += $p2 ON MATCH SET r1 += $p3",
+    );
+    // A new edge gets the defaults with the given values; an existing one the given values.
+    expect(String((params.p2 as { rank: unknown }).rank)).toBe("0");
+    expect(params.p3).toEqual({ note: "n" });
+    expect(text).toContain("CREATE (n)-[r5:`PICKS`]->(c4) SET r5 = x3.e");
+    expect(String((params.p4 as { e: { rank: unknown } }[])[0]!.e.rank)).toBe("2");
+    await expect(
+      e.create({
+        data: { name: "B", picks: { connect: { Writer: { name: "w" }, $edge: { rank: -1 } } } },
+      }),
+    ).rejects.toThrow(CyphraValidationError);
+  });
+
+  it("matches an interface member by its own label and filters through it with $on", async () => {
+    const { calls, e } = engine("Party", () => []);
+    await e.findMany({ where: { $on: { Contributor: { email: "e" }, Writer: {} } } });
+    expect(calls[0]!.text).toContain(
+      "MATCH (n) WHERE (n:`Contributor` OR n:`Writer`) AND (((n:`Contributor`) AND (n.`email` = $p0)) OR (n:`Writer`))",
+    );
+    await expect(e.findMany({ where: { $on: { Story: {} } } })).rejects.toThrow(
+      "not a member of Party (Contributor, Editor, Reviewer, Writer)",
+    );
+  });
+
+  it("connects through an interface member by its unique key", async () => {
+    const { calls, e } = engine("Desk", () => [{ row: { id: "d", name: "D" }, c4: 1 }]);
+    await e.create({
+      data: { name: "D", owner: { connect: { Contributor: { email: "e" } } } },
+    });
+    // The to-one edge to any node of the union is replaced.
+    expect(calls[0]!.text).toContain(
+      "MATCH (b0:`Contributor`) WHERE b0.`email` = $p1 WITH n, b0 LIMIT 1 SET n.`__cyphraLock` = true",
+    );
+    expect(calls[0]!.text).toContain(
+      "OPTIONAL MATCH (n)-[o3:`OWNS`]->(x2) WHERE (x2:`Contributor` OR x2:`Writer`) AND (x2 <> b0) DELETE o3",
+    );
+    await expect(
+      e.create({ data: { name: "D", owner: { connect: { Story: { id: "s" } } } } }),
+    ).rejects.toThrow("one of Contributor, Editor, Reviewer, Writer");
   });
 });
 

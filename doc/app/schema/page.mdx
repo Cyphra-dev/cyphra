@@ -525,11 +525,34 @@ node Pin {
 - **Querying.** [`db.searchHit`](/client#querying-unions) reads every member (`findMany`,
   `findFirst`, `count`), results discriminated by `__typename`. There is no unique key and no field
   to filter on, so filters and per-member loads go through `__typename` and `$on`.
-- **Members** are `node` models, listed once, with an optional leading `|` when the list spans
-  lines (`union SearchHit =` then `| Post` on the next lines). An interface, another union, an
-  enum or a relationship model is a validation error (for an interface, list its
-  implementations). A `relationship { … }` model cannot name a union in `from` / `to`, so a
-  relation to a union has no typed edge properties.
+- **Members** are `node` models or [interfaces](#interfaces), listed once, with an optional
+  leading `|` when the list spans lines (`union SearchHit =` then `| Post` on the next lines).
+  Another union, an enum or a relationship model is a validation error, and so is a node listed
+  twice (directly and through an interface it implements, or through two interfaces).
+- **Interface members.** `union Party = Person | Team`, with `interface Person`, stands for every
+  node implementing `Person` (today's and future ones): it is matched by the interface's label
+  (`WHERE n:Person OR n:Team`), results are the implementations (`__typename` is `"Employee"`,
+  `"Customer"` or `"Team"`, never `"Person"`), and writes and `$on` may name `Person` to address
+  every implementation at once (see [the client](/client#querying-unions)).
+- **Typed edges.** A `relationship { … }` model may name a union in `from` or `to`: one edge
+  model for every member, used by the relation to the union and by the members' inverse fields.
+  Relationship property constraints and indexes are per relationship type, so the DDL is the
+  same as for a node end.
+
+```cyphra
+node Board {
+  id    String      @id @default(cuid())
+  picks SearchHit[] @relationship(type: "PICKS", direction: OUT)
+}
+
+relationship Pick {
+  type "PICKS"
+  from Board
+  to   SearchHit
+  rank Int @default(0)
+}
+```
+
 - [`cyphra pull`](/cli#cyphra-pull) cannot infer unions (a union adds no label): it keeps one
   relation per target label; declare the union by hand. The
   [GraphQL importer](/graphql) reports `@neo4j/graphql` unions as not converted yet.
