@@ -1,7 +1,7 @@
 ---
-title: "Neo4j with NestJS: a typed module and provider"
+title: "Neo4j with NestJS: module, transactions, health"
 sidebarTitle: NestJS
-description: "Use Neo4j in NestJS with Cyphra: a global module that provides the typed client, ConfigService for credentials, injection into services, and clean shutdown."
+description: "Use Neo4j in NestJS with @cyphra/nestjs: CyphraModule and ConfigService, an injected typed client, @Transactional() services and a Terminus health check."
 ---
 
 import { Callout, Steps } from "nextra/components";
@@ -9,48 +9,55 @@ import { HowToJsonLd } from "../../../components/seo/page-jsonld";
 
 # Neo4j with NestJS
 
-To use Neo4j in NestJS, register the database client as a provider in a global module, build it in
-a `useFactory` from `ConfigService`, inject it into services with `@Inject`, and close it in
-`onApplicationShutdown`. With Cyphra, the provider is the generated typed client, so services get
-`this.db.user.findMany(…)` with full types.
+`@cyphra/nestjs` connects a NestJS app to Neo4j: `CyphraModule.forRootAsync` builds the generated
+Cyphra client from `ConfigService`, `@InjectCyphra()` injects it with its full types,
+`@Transactional()` runs a service method (and every service it calls) in one transaction, and
+`CyphraHealthIndicator` reports the database in a `@nestjs/terminus` health check. The driver is
+closed when the application shuts down.
 
 <Callout type="info">
-  Tested with NestJS 12.6 (a project created by `nest new`), `@nestjs/config` 12.1, Node.js 24 and
-  Neo4j 5.26: the app started, served `GET` and `POST` requests, and `app.close()` called
-  `$disconnect()`.
+  Tested with NestJS 12.4, `@nestjs/config` 12.1, `@nestjs/terminus` 12.1, Node.js 22 and Neo4j 5
+  (the [example app](https://github.com/Cyphra-dev/cyphra/tree/main/examples/nestjs) and its
+  end-to-end tests). The module and `@Transactional()` are also tested on NestJS 10 and 11.
 </Callout>
 
 <Callout type="warning">
   Cyphra is **ESM-only**. `nest new` in NestJS 12 creates an ES module project (`"type": "module"`,
-  `"module": "nodenext"`), which works as is. In an older CommonJS Nest project, `require("cyphra")`
-  fails with `ERR_PACKAGE_PATH_NOT_EXPORTED`: switch the project to ESM first.
+  `"module": "nodenext"`), which works as is. In a CommonJS Nest 10 or 11 project,
+  `require("cyphra")` fails with `ERR_PACKAGE_PATH_NOT_EXPORTED`: switch the project to ESM first.
 </Callout>
 
 ## Steps
 
 <Steps>
 
-### Install Cyphra and the config module
+### Install
 
 ```bash
-npm i cyphra @nestjs/config
+npm i cyphra @cyphra/nestjs @nestjs/config
 npm i -D @cyphra/cli
+npm i @nestjs/terminus   # optional: for the health check
 ```
+
+`@nestjs/common`, `@nestjs/core` (10, 11 or 12) and `reflect-metadata` are peer dependencies that a
+Nest project already has.
 
 ### Describe your graph and generate the client
 
 ```cyphra filename="schema.cyphra"
-node User {
-  id    String @id @default(uuid())
-  email String @unique
-  name  String?
-  posts Post[] @relationship(type: "AUTHORED", direction: OUT)
+node Account {
+  id       String     @id @default(uuid())
+  owner    String     @unique
+  balance  Int        @default(0)
+  sent     Transfer[] @relationship(type: "SENT", direction: OUT)
+  received Transfer[] @relationship(type: "RECEIVED", direction: OUT)
 }
 
-node Post {
-  id     String @id @default(uuid())
-  title  String
-  author User?  @relationship(type: "AUTHORED", direction: IN)
+node Transfer {
+  id     String  @id @default(uuid())
+  amount Int
+  from   Account @relationship(type: "SENT", direction: IN)
+  to     Account @relationship(type: "RECEIVED", direction: IN)
 }
 ```
 
@@ -60,192 +67,191 @@ Generate the client inside `src/` so the Nest build compiles it:
 {
   "schema": "./schema.cyphra",
   "migrations": "./migrations",
-  "generate": "./src/cyphra/cyphra.gen.ts"
+  "generate": "./src/cyphra.gen.ts"
 }
 ```
 
 ```bash
 npx cyphra dev                       # local Neo4j 5 in Docker, writes .env
 npx cyphra migrate dev --name init   # constraints for @id and @unique
-npx cyphra generate                  # writes src/cyphra/cyphra.gen.ts
+npx cyphra generate                  # writes src/cyphra.gen.ts
 ```
 
 For an existing database, put `NEO4J_URI`, `NEO4J_USERNAME` and `NEO4J_PASSWORD` in `.env`
 instead of running `cyphra dev`.
 
-### Create the Cyphra module
+### Register CyphraModule
 
-```ts filename="src/cyphra/cyphra.module.ts"
-import { Global, Inject, Module, type OnApplicationShutdown } from "@nestjs/common";
-import { ConfigService } from "@nestjs/config";
-import { createClient, type Db } from "./cyphra.gen.js";
+```ts filename="src/app.module.ts"
+import { CyphraModule } from "@cyphra/nestjs";
+import { Module } from "@nestjs/common";
+import { ConfigModule, ConfigService } from "@nestjs/config";
+import { AccountsModule } from "./accounts/accounts.module.js";
+import { createClient } from "./cyphra.gen.js";
 
-export const CYPHRA = Symbol("CYPHRA");
-
-@Global()
 @Module({
-  providers: [
-    {
-      provide: CYPHRA,
+  imports: [
+    ConfigModule.forRoot({ isGlobal: true }),
+    CyphraModule.forRootAsync({
       inject: [ConfigService],
-      useFactory: (config: ConfigService): Db =>
+      useFactory: (config: ConfigService) =>
         createClient({
           uri: config.getOrThrow("NEO4J_URI"),
           user: config.getOrThrow("NEO4J_USERNAME"),
           password: config.getOrThrow("NEO4J_PASSWORD"),
         }),
-    },
+    }),
+    AccountsModule,
   ],
-  exports: [CYPHRA],
-})
-export class CyphraModule implements OnApplicationShutdown {
-  constructor(@Inject(CYPHRA) private readonly db: Db) {}
-
-  async onApplicationShutdown() {
-    await this.db.$disconnect();
-  }
-}
-```
-
-- `Db` is the client type exported by the generated file.
-- The provider is a singleton: one client and one Neo4j connection pool for the whole app.
-- `@Global()` makes `CYPHRA` injectable everywhere without importing the module again.
-- `getOrThrow` stops startup with a clear error when a variable is missing.
-
-### Register it in the app module
-
-```ts filename="src/app.module.ts"
-import { Module } from "@nestjs/common";
-import { ConfigModule } from "@nestjs/config";
-import { CyphraModule } from "./cyphra/cyphra.module.js";
-import { UsersModule } from "./users/users.module.js";
-
-@Module({
-  imports: [ConfigModule.forRoot({ isGlobal: true }), CyphraModule, UsersModule],
 })
 export class AppModule {}
 ```
 
-`ConfigModule.forRoot()` loads `.env`, which is where `cyphra dev` writes the connection details.
+- The client is a singleton: one driver and one connection pool for the whole app.
+- The module is global by default, so feature modules inject the client without importing it.
+- `getOrThrow` stops startup with a clear error when a variable is missing.
+- Without `ConfigService`, `CyphraModule.forRoot({ client: () => createClient({ … }) })` does the
+  same.
 
 ### Inject the client into a service
 
-```ts filename="src/users/users.service.ts"
-import { Inject, Injectable } from "@nestjs/common";
-import { CYPHRA } from "../cyphra/cyphra.module.js";
-import type { Db } from "../cyphra/cyphra.gen.js";
+```ts filename="src/accounts/accounts.service.ts"
+import { InjectCyphra } from "@cyphra/nestjs";
+import { Injectable } from "@nestjs/common";
+import type { Db } from "../cyphra.gen.js";
 
 @Injectable()
-export class UsersService {
-  constructor(@Inject(CYPHRA) private readonly db: Db) {}
+export class AccountsService {
+  constructor(@InjectCyphra() private readonly db: Db) {}
+
+  open(owner: string, balance = 0) {
+    return this.db.account.create({ data: { owner, balance } });
+  }
 
   list() {
-    return this.db.user.findMany({ include: { posts: true }, take: 20 });
-  }
-
-  create(email: string, name?: string) {
-    return this.db.user.create({ data: { email, name } });
-  }
-
-  postCounts() {
-    return this.db.$cypher<{ email: string; posts: number }>`
-      MATCH (u:User)
-      RETURN u.email AS email, COUNT { (u)-[:AUTHORED]->(:Post) } AS posts
-    `;
+    return this.db.account.findMany({ orderBy: { owner: "asc" } });
   }
 }
 ```
 
-```ts filename="src/users/users.controller.ts"
-import { Body, Controller, Get, Post } from "@nestjs/common";
-import { UsersService } from "./users.service.js";
+`Db` is the client type exported by the generated file: `this.db.account.findMany(…)`, `$cypher`
+and the rest are fully typed. The injection token is `getCyphraToken()`, for `moduleRef.get` or the
+`inject` list of a factory provider.
 
-@Controller("users")
-export class UsersController {
-  constructor(private readonly users: UsersService) {}
+### Make a method transactional
+
+```ts filename="src/accounts/accounts.service.ts"
+import { InjectCyphra, Transactional } from "@cyphra/nestjs";
+import { BadRequestException, Injectable } from "@nestjs/common";
+import type { Db } from "../cyphra.gen.js";
+import { LedgerService } from "./ledger.service.js";
+
+@Injectable()
+export class AccountsService {
+  constructor(
+    @InjectCyphra() private readonly db: Db,
+    private readonly ledger: LedgerService,
+  ) {}
+
+  @Transactional()
+  async transfer(from: string, to: string, amount: number) {
+    const debited = await this.db.account.update({
+      where: { owner: from },
+      data: { balance: { decrement: amount } },
+    });
+    await this.db.account.update({
+      where: { owner: to },
+      data: { balance: { increment: amount } },
+    });
+    await this.ledger.record(from, to, amount); // same transaction
+    if (debited.balance < 0) throw new BadRequestException(`Insufficient funds on ${from}.`);
+  }
+}
+```
+
+While `transfer` runs, every query made through an injected client, here and in `LedgerService`,
+goes to the same write transaction. It commits when the method resolves; when it throws, nothing is
+written, including the ledger entry. See [How `@Transactional()` works](#how-transactional-works).
+
+### Add a health check
+
+```ts filename="src/health.controller.ts"
+import { CyphraHealthIndicator } from "@cyphra/nestjs";
+import { Controller, Get } from "@nestjs/common";
+import { HealthCheck, HealthCheckService } from "@nestjs/terminus";
+
+@Controller("health")
+export class HealthController {
+  constructor(
+    private readonly health: HealthCheckService,
+    private readonly cyphra: CyphraHealthIndicator,
+  ) {}
 
   @Get()
-  list() {
-    return this.users.list();
-  }
-
-  @Get("post-counts")
-  postCounts() {
-    return this.users.postCounts();
-  }
-
-  @Post()
-  create(@Body() body: { email: string; name?: string }) {
-    return this.users.create(body.email, body.name);
+  @HealthCheck()
+  check() {
+    return this.health.check([() => this.cyphra.isHealthy("neo4j")]);
   }
 }
 ```
 
-```ts filename="src/users/users.module.ts"
-import { Module } from "@nestjs/common";
-import { UsersController } from "./users.controller.js";
-import { UsersService } from "./users.service.js";
-
-@Module({
-  controllers: [UsersController],
-  providers: [UsersService],
-})
-export class UsersModule {}
-```
-
-In a real app, validate the body (for example with `class-validator` and a `ValidationPipe`). The
-client already rejects unknown fields and sends every value as a
-[parameter](/cypher/parameters).
+Import `TerminusModule` in the module that declares the controller. `isHealthy` runs `RETURN 1`:
+`GET /health` answers `200 {"status":"ok","info":{"neo4j":{"status":"up"}}, …}`, or `503` with
+`{"neo4j":{"status":"down","message":"…"}}` when Neo4j does not answer within 5 seconds
+(`isHealthy("neo4j", { timeout: 2000 })` to change it).
 
 ### Enable shutdown hooks
 
 ```ts filename="src/main.ts"
+import "reflect-metadata";
 import { NestFactory } from "@nestjs/core";
 import { AppModule } from "./app.module.js";
 
-async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
-  app.enableShutdownHooks();
-  await app.listen(process.env.PORT ?? 3000);
-}
-await bootstrap();
+const app = await NestFactory.create(AppModule);
+app.enableShutdownHooks();
+await app.listen(process.env.PORT ?? 3000);
 ```
 
-Nest calls `onApplicationShutdown` on `app.close()`, and, with `enableShutdownHooks()`, when the
-process receives `SIGTERM` or `SIGINT`. The module then closes the Neo4j driver, so open connections
-are released before the process exits.
+`CyphraModule` closes the client (`$disconnect()`, which closes the Neo4j driver) when the module is
+destroyed: on `app.close()` and, with `enableShutdownHooks()`, when the process receives `SIGTERM`
+or `SIGINT`. Pass `closeOnShutdown: false` to keep a client you close yourself.
 
 </Steps>
 
 <HowToJsonLd
   path="/guides/nestjs"
   name="Use Neo4j in NestJS with Cyphra"
-  description="Install Cyphra, generate a typed client, provide it from a global Nest module, inject it into services and close it on shutdown."
+  description="Install @cyphra/nestjs, generate a typed client, register CyphraModule with ConfigService, inject the client, make methods transactional, add a health check and close the driver on shutdown."
   steps={[
     {
-      name: "Install Cyphra and the config module",
-      anchor: "install-cyphra-and-the-config-module",
-      text: "Install cyphra and @nestjs/config, and @cyphra/cli as a dev dependency.",
+      name: "Install",
+      anchor: "install",
+      text: "Install cyphra, @cyphra/nestjs and @nestjs/config, @cyphra/cli as a dev dependency, and optionally @nestjs/terminus.",
     },
     {
       name: "Describe your graph and generate the client",
       anchor: "describe-your-graph-and-generate-the-client",
-      text: "Write schema.cyphra, generate the client into src/cyphra, and run the first migration.",
+      text: "Write schema.cyphra, generate the client into src/, and run the first migration.",
     },
     {
-      name: "Create the Cyphra module",
-      anchor: "create-the-cyphra-module",
-      text: "Provide the generated client under a token with useFactory and ConfigService, export it from a global module and disconnect in onApplicationShutdown.",
-    },
-    {
-      name: "Register it in the app module",
-      anchor: "register-it-in-the-app-module",
-      text: "Import ConfigModule.forRoot and the Cyphra module in AppModule.",
+      name: "Register CyphraModule",
+      anchor: "register-cyphramodule",
+      text: "Import CyphraModule.forRootAsync in AppModule, creating the client from ConfigService in useFactory.",
     },
     {
       name: "Inject the client into a service",
       anchor: "inject-the-client-into-a-service",
-      text: "Inject the token with @Inject and call typed methods such as findMany and create, or $cypher.",
+      text: "Inject the typed client with @InjectCyphra() and call findMany, create or $cypher.",
+    },
+    {
+      name: "Make a method transactional",
+      anchor: "make-a-method-transactional",
+      text: "Decorate a service method with @Transactional() so its queries, and those of the services it calls, commit together.",
+    },
+    {
+      name: "Add a health check",
+      anchor: "add-a-health-check",
+      text: "Call CyphraHealthIndicator.isHealthy in a @nestjs/terminus HealthCheckService check.",
     },
     {
       name: "Enable shutdown hooks",
@@ -259,42 +265,95 @@ are released before the process exits.
 
 ```bash
 npm run build && npm run start:prod
-curl -X POST localhost:3000/users -H 'content-type: application/json' \
-  -d '{"email":"alice@acme.io","name":"Alice"}'
-curl localhost:3000/users
-# [{"id":"…","email":"alice@acme.io","name":"Alice","posts":[]}]
+curl -X POST localhost:3000/accounts -H 'content-type: application/json' \
+  -d '{"owner":"alice","balance":100}'
+curl localhost:3000/accounts
+# [{"id":"…","owner":"alice","balance":100}]
+curl localhost:3000/health
+# {"status":"ok","info":{"neo4j":{"status":"up"}},"error":{},"details":{"neo4j":{"status":"up"}}}
 ```
 
-## Transactions in a service
+The [example app](https://github.com/Cyphra-dev/cyphra/tree/main/examples/nestjs) has the whole
+accounts API (transfers, history, error mapping) and its end-to-end tests.
 
-`$transaction` gives a client whose operations commit together:
+## How `@Transactional()` works
+
+- The method runs inside `db.$transaction(…)`, and the transaction client is stored in an
+  `AsyncLocalStorage` for the call. The client that `@InjectCyphra()` injects looks there first: its
+  model delegates (`db.account`, …) and `$cypher` use the active transaction, so services do not
+  pass `tx` around.
+- A `@Transactional()` method called from another one, or from a `db.$transaction` callback, joins
+  the outer transaction; so does `db.$transaction` itself. The outermost one commits or rolls back.
+- Concurrent requests get separate transactions: the storage follows each async call chain.
+- The driver may run the method again on transient errors (deadlocks, leader changes). Keep side
+  effects outside of the database, such as emails or HTTP calls, out of it, or run them after it.
+- Only the queries of the method's connection are covered. Client members added with
+  `$extends({ client })` and `db.$client` (sessions, the raw driver) are not routed to the
+  transaction.
+- `getTransaction<Db>()` returns the active transaction client (`undefined` outside of one), and
+  `isInTransaction()` tells whether there is one.
+- `@Transactional()` makes the method return a promise; decorate `async` methods.
+- FalkorDB has no multi-statement transactions, so `@Transactional()` rejects there as
+  `$transaction` does.
+
+## Options
+
+| Option                        | Default     | What it does                                                   |
+| ----------------------------- | ----------- | -------------------------------------------------------------- |
+| `client` (`forRoot`)          |             | The client, or a function that creates it                      |
+| `useFactory` (`forRootAsync`) |             | Creates the client from the providers in `inject`              |
+| `inject`, `imports`           | `[]`        | Dependencies of `useFactory` and the modules that provide them |
+| `connection`                  | `"default"` | Name of the client, for a second database                      |
+| `isGlobal`                    | `true`      | Make the client injectable in every module                     |
+| `closeOnShutdown`             | `true`      | Call `$disconnect()` when the module is destroyed              |
+
+## Several databases
+
+Register each client under its own `connection` name, and use the same name to inject it, open a
+transaction on it, or check it:
 
 ```ts
-async transfer(fromId: string, toId: string, postId: string) {
-  await this.db.$transaction(async (tx) => {
-    await tx.post.update({ where: { id: postId }, data: { author: { connect: { id: toId } } } });
-    await tx.user.update({ where: { id: fromId }, data: { name: "Former author" } });
-  });
-}
-```
+CyphraModule.forRootAsync({
+  connection: "analytics",
+  inject: [ConfigService],
+  useFactory: (config: ConfigService) =>
+    createAnalyticsClient({ uri: config.getOrThrow("ANALYTICS_NEO4J_URI"), … }),
+});
 
-The driver may retry the callback on transient errors, so keep it free of side effects such as
-sending email. More in [Typed client: transactions](/client#transactions).
+constructor(@InjectCyphra("analytics") private readonly analytics: AnalyticsDb) {}
+
+@Transactional({ connection: "analytics" })
+async rebuild() { … }
+
+this.cyphra.isHealthy("analytics", { connection: "analytics" });
+```
 
 ## Testing
 
-Override the provider in a testing module to swap in a client for a test database:
+The module reads its configuration from `ConfigService`, so an end-to-end test points the
+environment at a test database and boots the real `AppModule`:
 
 ```ts
-const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
-  .overrideProvider(CYPHRA)
-  .useValue(createClient({ uri: testUri, user: "neo4j", password: testPassword }))
-  .compile();
+process.env.NEO4J_URI = "bolt://localhost:7687";
+process.env.NEO4J_USERNAME = "neo4j";
+process.env.NEO4J_PASSWORD = "test";
+
+const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
+const app = moduleRef.createNestApplication();
+await app.init();
+const db = app.get<Db>(getCyphraToken()); // seed or clean up with the typed client
+// …
+await app.close(); // closes the driver
 ```
+
+Vitest compiles TypeScript with esbuild, which does not emit the constructor parameter types Nest
+injects by; the example app's `vitest.config.ts` compiles with `tsc` instead (a few lines, no extra
+dependency).
 
 ## Related
 
-- [Typed client](/client) and [Runtime](/runtime) (`db.$client` for sessions and the raw driver)
+- [Typed client](/client) and [transactions](/client#transactions), [Runtime](/runtime)
+  (`db.$client` for sessions and the raw driver)
 - [Migrations](/migrations): run `cyphra migrate deploy` before starting the app in production
 - [Cypher how-tos](/cypher), each with the Cyphra equivalent
-- [Next.js guide](/guides/nextjs) and [Bun guide](/guides/bun)
+- [Next.js guide](/guides/nextjs), [Bun guide](/guides/bun) and [tRPC guide](/guides/trpc)

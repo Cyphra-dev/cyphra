@@ -1,0 +1,32 @@
+{
+  "name": "cyphra-example-nestjs",
+  "private": true,
+  "type": "module",
+  "description": "NestJS 12 REST API on Neo4j with Cyphra and @cyphra/nestjs: injected typed client, @Transactional() transfers, Terminus health check",
+  "scripts": {
+    "generate": "cyphra generate",
+    "build": "cyphra generate && tsc -p tsconfig.build.json",
+    "start": "node dist/main.js",
+    "push": "cyphra push",
+    "test": "cyphra generate && vitest run",
+    "typecheck": "cyphra generate && tsc --noEmit"
+  },
+  "dependencies": {
+    "@cyphra/nestjs": "workspace:*",
+    "@nestjs/common": "12.4.0",
+    "@nestjs/config": "12.1.1",
+    "@nestjs/core": "12.4.0",
+    "@nestjs/platform-express": "12.4.0",
+    "@nestjs/terminus": "12.1.0",
+    "cyphra": "workspace:*",
+    "reflect-metadata": "0.2.2",
+    "rxjs": "7.8.2"
+  },
+  "devDependencies": {
+    "@cyphra/cli": "workspace:*",
+    "@nestjs/testing": "12.4.0",
+    "@types/node": "^22.20.5",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.12"
+  }
+}
