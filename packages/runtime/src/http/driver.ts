@@ -6,7 +6,9 @@
  * the ORM and the instrumentation run unchanged on top of it. Only `fetch`, `TextEncoder`, `btoa`
  * and `atob` are used: it runs on Vercel Edge, Cloudflare Workers, Deno, Bun, browsers and Node.js.
  *
- * - Auto-commit statements: `POST /db/{db}/query/v2`, one request each.
+ * - Auto-commit statements: `POST /db/{db}/query/v2`, one request each (`session.run()`, and
+ *   `session.runRetried()`, which retries transient failures: what single-statement ORM
+ *   operations use).
  * - `executeRead` / `executeWrite`: an explicit transaction (`POST …/tx`, `POST …/tx/{id}`,
  *   `POST …/tx/{id}/commit`, `DELETE …/tx/{id}`), opened with the first statement and retried on
  *   transient errors like the driver's managed transactions. The `neo4j-cluster-affinity` header
@@ -363,7 +365,8 @@ class QueryApi {
   }
 }
 
-type AccessMode = "READ" | "WRITE";
+/** Access mode of a transaction or auto-commit statement. */
+export type AccessMode = "READ" | "WRITE";
 
 /** A transaction of {@link HttpSession.executeRead} / {@link HttpSession.executeWrite}. */
 export class HttpTransaction {
@@ -479,6 +482,38 @@ export class HttpSession {
     const result = this.api.toResult(json, text, params, this.database);
     if (result.bookmarks.length) this.bookmarks = result.bookmarks;
     return result;
+  }
+
+  /**
+   * Run one statement in its own auto-commit transaction (one request), retrying transient
+   * failures like {@link executeRead} / {@link executeWrite} do. For work that is a single
+   * statement: it saves the requests that open and commit an explicit transaction.
+   */
+  async runRetried(
+    text: string,
+    parameters: Params | undefined,
+    mode: AccessMode = "WRITE",
+  ): Promise<HttpResult> {
+    const params = parameters ?? {};
+    const deadline = Date.now() + (this.api.config.maxRetryTimeMs ?? 30_000);
+    let delay = 200;
+    for (;;) {
+      try {
+        const body: Body = { statement: text, parameters: encodeParameters(params) };
+        if (this.bookmarks.length) body.bookmarks = this.bookmarks;
+        if (mode === "READ") body.accessMode = mode;
+        const { json } = await this.api.limiter.run(() =>
+          this.api.request("POST", this.api.url(this.database), body),
+        );
+        const result = this.api.toResult(json, text, params, this.database);
+        if (result.bookmarks.length) this.bookmarks = result.bookmarks;
+        return result;
+      } catch (e) {
+        if (!(e instanceof Neo4jHttpError && e.retriable) || Date.now() + delay > deadline) throw e;
+        await sleep(delay * (0.8 + Math.random() * 0.4));
+        delay *= 2;
+      }
+    }
   }
 
   executeRead<T>(work: (tx: HttpTransaction) => Promise<T> | T): Promise<T> {

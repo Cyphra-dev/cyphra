@@ -1,9 +1,14 @@
 /**
  * Executes ORM operations for one node model against a {@link Runner}.
  *
- * Reads are single statements. Writes with nested relation operations run as a sequence of
- * statements inside one write transaction, so a failing step (e.g. a missing `connect` target)
- * rolls the whole operation back.
+ * Most operations are one statement. `create` / `update` compile the write, every nested relation
+ * write (children batched per relation with `FOREACH`, each `connect` / `disconnect` / `set` a
+ * subquery) and the projection of the result into one statement (see {@link WritePlan}); `delete`
+ * locks, cascades, checks and deletes in one when its `onDelete` rules allow (see `onDelete.ts`).
+ * A statement whose checks run after it wrote (a missing `connect` target, a broken `$edge`
+ * `@min` / `@max`) throws inside its write transaction, which rolls the whole operation back.
+ * Statements that write nothing when they fail are flagged with {@link RunOptions.autoCommit}, so
+ * the HTTP transport can send them as one auto-commit request.
  *
  * @packageDocumentation
  */
@@ -35,7 +40,14 @@ import { DEFAULT_MAX_TRAVERSAL_DEPTH, compileTraverse } from "./traverse.js";
 import { compileShortestPath } from "./shortest.js";
 import { findSimilar } from "./vector.js";
 import { search } from "./fulltext.js";
-import { deleteWithRules, hasDeleteRules, lockNodes } from "./onDelete.js";
+import {
+  LOCK_FLAG,
+  compileRulesDelete,
+  deleteWithRules,
+  hasDeleteRules,
+  lockAndRematch,
+  throwRestrict,
+} from "./onDelete.js";
 import {
   CyphraError,
   CyphraValidationError,
@@ -50,11 +62,74 @@ type AnyRecord = Record<string, unknown>;
 /** Runs one Cypher statement and returns raw driver records as objects. */
 export type Executor = (text: string, params: AnyRecord) => Promise<AnyRecord[]>;
 
+/** How a {@link Runner} may run a unit of work. */
+export type RunOptions = {
+  /**
+   * The work runs exactly one statement, and that statement is safe to commit on its own (it
+   * writes nothing when the operation fails). Outside `$transaction`, the HTTP transport then sends
+   * it as one auto-commit request instead of opening, using and committing a transaction.
+   */
+  readonly autoCommit?: boolean;
+};
+
 /** Provides executors inside read or write transactions. */
 export type Runner = {
-  read<T>(fn: (exec: Executor) => Promise<T>): Promise<T>;
-  write<T>(fn: (exec: Executor) => Promise<T>): Promise<T>;
+  read<T>(fn: (exec: Executor) => Promise<T>, options?: RunOptions): Promise<T>;
+  write<T>(fn: (exec: Executor) => Promise<T>, options?: RunOptions): Promise<T>;
 };
+
+/** Exactly one statement, safe to commit on its own (see {@link RunOptions.autoCommit}). */
+const SINGLE: RunOptions = { autoCommit: true };
+
+/**
+ * A write statement being compiled: a root clause, then relation writes appended as clauses that
+ * keep exactly one row (`FOREACH`, `CREATE`, `CALL { … RETURN <aggregate> }`), so the whole nested
+ * write, and the projection of the written node, run as one statement.
+ */
+class WritePlan {
+  private readonly clauses: string[];
+  /** Variables in scope, carried by the `WITH` before every subquery. */
+  private readonly scope: string[];
+  /** Columns the checks read, returned next to the projection. */
+  readonly outputs: string[] = [];
+  /** Checks on the returned row, in statement order; each throws to fail the operation. */
+  readonly checks: ((row: AnyRecord) => void)[] = [];
+  /** Whether relation writes were added. */
+  relations = false;
+
+  constructor(
+    readonly ctx: QueryContext,
+    root: string,
+    scope: readonly string[],
+  ) {
+    this.clauses = [root];
+    this.scope = [...scope];
+  }
+
+  add(clause: string, bind: readonly string[] = []): void {
+    this.clauses.push(clause);
+    this.scope.push(...bind);
+  }
+
+  /** `WITH <scope> CALL { WITH <imports> <body> }`, where `body` returns one row of `returns`. */
+  call(imports: readonly string[], body: string, returns: readonly string[]): void {
+    this.add(`WITH ${this.scope.join(", ")} CALL { WITH ${imports.join(", ")} ${body} }`, returns);
+  }
+
+  /** Return `output` (a fresh variable bound by the statement) for a check. */
+  output(name: string): void {
+    this.outputs.push(name);
+  }
+
+  get text(): string {
+    return this.clauses.join(" ");
+  }
+
+  /** Run the checks on the statement's row. */
+  check(row: AnyRecord): void {
+    for (const c of this.checks) c(row);
+  }
+}
 
 function isPlainObject(v: unknown): v is AnyRecord {
   return typeof v === "object" && v !== null && !Array.isArray(v) && !(v instanceof Date);
@@ -79,9 +154,6 @@ const UPSERT_FLAG = "__cyphraUpsertCreated";
 
 /** Memgraph: how many times an upsert whose MERGE lost a race on its key is run again. */
 const MEMGRAPH_UPSERT_RETRIES = 5;
-
-/** Property set and removed at once to take a write lock on a node. */
-const LOCK_FLAG = "__cyphraLock";
 
 function sameValue(a: unknown, b: unknown): boolean {
   if (a instanceof Date && b instanceof Date) return a.getTime() === b.getTime();
@@ -138,17 +210,6 @@ export class ModelEngine {
     if (order) text += ` ORDER BY ${order}`;
     const rows = await exec(text, ctx.params);
     return rows.map((r) => decodeRow(shape, r.row)!);
-  }
-
-  private async readById(exec: Executor, id: string, args: AnyRecord): Promise<AnyRecord> {
-    const ctx = this.ctx();
-    const { expr, shape } = compileProjection(ctx, this.model, "n", args);
-    const rows = await exec(
-      `MATCH (n:${this.label}) WHERE elementId(n) = ${ctx.param(id)} RETURN ${expr} AS row`,
-      ctx.params,
-    );
-    if (!rows[0]) throw new NotFoundError(`${this.model.name} disappeared during the operation.`);
-    return decodeRow(shape, rows[0].row)!;
   }
 
   /**
@@ -214,19 +275,8 @@ export class ModelEngine {
     return this.uniqueWhere(where, op).where;
   }
 
-  private async findId(exec: Executor, unique: unknown, op: string): Promise<string | null> {
-    const where = this.assertUnique(unique, op);
-    const ctx = this.ctx();
-    const w = compileWhere(ctx, this.model, "n", where);
-    const rows = await exec(
-      `MATCH (n:${this.label})${w ? ` WHERE ${w}` : ""} RETURN elementId(n) AS id LIMIT 1`,
-      ctx.params,
-    );
-    return (rows[0]?.id as string | undefined) ?? null;
-  }
-
   findMany(args: AnyRecord = {}): Promise<AnyRecord[]> {
-    return this.runner.read((exec) => this.readMany(exec, args));
+    return this.runner.read((exec) => this.readMany(exec, args), SINGLE);
   }
 
   async findFirst(args: AnyRecord = {}): Promise<AnyRecord | null> {
@@ -262,7 +312,7 @@ export class ModelEngine {
         ctx.params,
       );
       return toCount(rows[0]?.c);
-    });
+    }, SINGLE);
   }
 
   /** One statement; see {@link compileAggregate}. */
@@ -272,7 +322,7 @@ export class ModelEngine {
         throw new CyphraValidationError("aggregate args must be an object.");
       const c = compileAggregate(this.ctx(), this.model, args);
       return c.decode(await exec(c.text, c.params));
-    });
+    }, SINGLE);
   }
 
   /** One statement; see {@link compileGroupBy}. */
@@ -281,7 +331,7 @@ export class ModelEngine {
       if (!isPlainObject(args)) throw new CyphraValidationError("groupBy args must be an object.");
       const c = compileGroupBy(this.ctx(), this.model, args);
       return c.decode(await exec(c.text, c.params));
-    });
+    }, SINGLE);
   }
 
   /** One statement; see {@link compileTraverse}. */
@@ -291,7 +341,7 @@ export class ModelEngine {
       const max = this.options.maxTraversalDepth ?? DEFAULT_MAX_TRAVERSAL_DEPTH;
       const c = compileTraverse(this.ctx(), this.model, args, max);
       return c.decode(await exec(c.text, c.params));
-    });
+    }, SINGLE);
   }
 
   /** One statement; see {@link compileShortestPath}. */
@@ -314,16 +364,20 @@ export class ModelEngine {
       const max = this.options.maxTraversalDepth ?? DEFAULT_MAX_TRAVERSAL_DEPTH;
       const c = compileShortestPath(this.ctx(), this.model, args, max, all);
       return c.decode(await exec(c.text, c.params));
-    });
+    }, SINGLE);
   }
 
   /** Nearest neighbours on a `@vectorIndex` field; see {@link findSimilar}. */
   findSimilar(args: AnyRecord): Promise<AnyRecord[]> {
-    return this.runner.read(async (exec) => {
-      if (!isPlainObject(args))
-        throw new CyphraValidationError("findSimilar args must be an object.");
-      return findSimilar(exec, () => this.ctx(), this.model, args);
-    });
+    return this.runner.read(
+      async (exec) => {
+        if (!isPlainObject(args))
+          throw new CyphraValidationError("findSimilar args must be an object.");
+        return findSimilar(exec, () => this.ctx(), this.model, args);
+        // A filtered approximate search may ask the index again for more candidates.
+      },
+      isPlainObject(args) && (args.exact === true || args.where === undefined) ? SINGLE : {},
+    );
   }
 
   /** Full-text search through a `@@fulltext` index; see {@link search}. */
@@ -331,7 +385,7 @@ export class ModelEngine {
     return this.runner.read(async (exec) => {
       if (!isPlainObject(args)) throw new CyphraValidationError("search args must be an object.");
       return search(exec, () => this.ctx(), this.model, args);
-    });
+    }, SINGLE);
   }
 
   // -------------------------------------------------------------------------
@@ -461,6 +515,7 @@ export class ModelEngine {
     rel: ResolvedRelationField,
     input: unknown,
     at: string,
+    r = "r",
   ): { plain: unknown; base: AnyRecord; sets: string[]; checks: NumericCheck[] } {
     const none = { plain: input, base: {}, sets: [], checks: [] };
     if (!rel.edge || !isPlainObject(input)) return none;
@@ -477,7 +532,7 @@ export class ModelEngine {
         plain[k] = v;
         continue;
       }
-      const ref = `r.${q(k)}`;
+      const ref = `${r}.${q(k)}`;
       const zero = ctx.param(encodeScalar(f, f.type === "BigInt" ? 0n : 0, edgeModel.name));
       let result = `coalesce(${ref}, ${zero})`;
       for (const [op, amount] of Object.entries(v)) {
@@ -499,49 +554,64 @@ export class ModelEngine {
     return { plain, base, sets, checks };
   }
 
-  private edgeText(
-    ctx: QueryContext,
+  /** `(a)-[r:T $props]->(b)` (or reversed) for `rel`; `r` and `props` may be left out. */
+  private static edgePattern(
     rel: ResolvedRelationField,
     a: string,
     b: string,
-    props: AnyRecord,
+    r = "",
+    props = "",
   ): string {
-    const p = Object.keys(props).length ? ` ${ctx.param(props)}` : "";
-    const edge = `[r:${q(rel.relType)}${p}]`;
+    const edge = `[${r}:${q(rel.relType)}${props ? ` ${props}` : ""}]`;
     return rel.direction === "OUT" ? `(${a})-${edge}->(${b})` : `(${a})<-${edge}-(${b})`;
   }
 
-  /** CREATE a node with nested relation writes; returns its elementId. */
-  async createNode(exec: Executor, data: unknown, path: IssuePath = ["data"]): Promise<string> {
-    assertCreatable(this.model, `${this.model.name}.create`);
-    const { scalars, relations } = this.splitData(data, "create");
+  /**
+   * Validate the data of a node to create: its encoded scalar properties (with defaults) and its
+   * nested relation writes.
+   */
+  private createData(data: unknown, op: string): { props: AnyRecord; relations: AnyRecord } {
+    assertCreatable(this.model, `${this.model.name}.${op}`);
+    const { scalars, relations } = this.splitData(data, op);
     const fields = this.model.fields.filter((f): f is ResolvedScalarField => f.kind === "scalar");
-    const props = ModelEngine.createProps(this.model.name, fields, scalars);
-    const ctx = this.ctx();
-    const rows = await exec(
-      `CREATE (n:${this.label} ${ctx.param(props)}) RETURN elementId(n) AS id`,
-      ctx.params,
-    );
-    const id = rows[0]!.id as string;
+    return { props: ModelEngine.createProps(this.model.name, fields, scalars), relations };
+  }
+
+  /** One statement creating a node (`n`) with every nested relation write of `data`. */
+  private planCreate(ctx: QueryContext, data: unknown): WritePlan {
+    const { props, relations } = this.createData(data, "create");
+    const plan = new WritePlan(ctx, `CREATE (n:${this.label} ${ctx.param(props)})`, ["n"]);
+    this.planRelations(plan, "n", relations, "create", ["data"]);
+    return plan;
+  }
+
+  /** Append the relation writes `relations` of the node bound to `own` to `plan`. */
+  private planRelations(
+    plan: WritePlan,
+    own: string,
+    relations: AnyRecord,
+    mode: "create" | "update",
+    path: IssuePath,
+  ): void {
     for (const [k, v] of Object.entries(relations)) {
-      await this.writeRelation(exec, id, relationField(this.model, k)!, v, "create", [...path, k]);
+      this.planRelation(plan, own, relationField(this.model, k)!, v, mode, [...path, k]);
     }
-    return id;
   }
 
   /**
-   * Link `id` to one existing node. Idempotent: the edge is `MERGE`d, so connecting the same pair
+   * Link `own` to one existing node. Idempotent: the edge is `MERGE`d, so connecting the same pair
    * again keeps a single edge. On a typed edge, a new edge gets the given `$edge` properties plus
    * schema defaults; an existing edge is updated with the given `$edge` properties only (its
-   * defaults, e.g. `@default(now())`, are kept).
+   * defaults, e.g. `@default(now())`, are kept). A subquery returning the number of edges linked
+   * (0: no such node) and the broken `@min` / `@max` checks of `$edge` number updates.
    */
-  private async connect(
-    exec: Executor,
-    id: string,
+  private planConnect(
+    plan: WritePlan,
+    own: string,
     rel: ResolvedRelationField,
     item: unknown,
     path: IssuePath,
-  ): Promise<void> {
+  ): void {
     if (!isPlainObject(item))
       throw new CyphraValidationError(`${rel.name}.connect expects unique where objects.`);
     const { $edge, ...unique } = item;
@@ -550,116 +620,151 @@ export class ModelEngine {
       unique,
       `${this.model.name}.${rel.name}.connect`,
     );
-    const ctx = this.ctx();
-    const updates = this.edgeUpdates(ctx, rel, $edge, `${this.model.name}.${rel.name}.$edge`);
+    const ctx = plan.ctx;
+    const [a, b, r] = [own, ctx.variable("b"), ctx.variable("r")];
+    const updates = this.edgeUpdates(ctx, rel, $edge, `${this.model.name}.${rel.name}.$edge`, r);
     const onCreate = this.edgeProps(
       rel,
       isPlainObject(updates.plain) ? { ...updates.plain, ...updates.base } : updates.plain,
     );
     const onMatch = this.explicitEdgeProps(rel, updates.plain);
-    const w = compileWhere(ctx, target, "b", where);
-    const link = (from: string, r: string) => {
-      const e = `[${r}:${q(rel.relType)}]`;
-      return rel.direction === "OUT" ? `(${from})-${e}->(b)` : `(${from})<-${e}-(b)`;
-    };
-    let text =
-      `MATCH (a) WHERE elementId(a) = ${ctx.param(id)} ` +
-      `MATCH (b:${labelExpr(target)})${w ? ` WHERE ${w}` : ""} WITH a, b LIMIT 1 `;
+    const w = compileWhere(ctx, target, b, where);
+    let text = `MATCH (${b}:${labelExpr(target)})${w ? ` WHERE ${w}` : ""} WITH ${a}, ${b} LIMIT 1 `;
     // A to-one side can hold only one such edge: lock that node (so concurrent connects
     // serialize), then drop its edge to any other node before linking `a` and `b`.
-    const replace = (node: "a" | "b", old: string) => {
+    const replace = (node: string, old: string, oldEdge: string) => {
       const lock = `${node}.${q(LOCK_FLAG)}`;
       text +=
-        `SET ${lock} = true REMOVE ${lock} WITH a, b ` +
-        `OPTIONAL MATCH ${old} DELETE old WITH DISTINCT a, b `;
+        `SET ${lock} = true REMOVE ${lock} WITH ${a}, ${b} ` +
+        `OPTIONAL MATCH ${old} DELETE ${oldEdge} WITH DISTINCT ${a}, ${b} `;
     };
     if (!rel.many) {
-      replace("a", `${relationPattern(ctx, "a", rel, "other", "old")} WHERE other <> b`);
+      const [other, old] = [ctx.variable("x"), ctx.variable("o")];
+      replace(a, `${relationPattern(ctx, a, rel, other, old)} WHERE ${other} <> ${b}`, old);
     } else if (this.options.dialect === "memgraph") {
       // Memgraph's MERGE takes no lock: concurrent connects of one pair would each create an
       // edge. A write to `a` makes them conflict instead (a transient error, retried by the
       // driver), and the retry's MERGE finds the committed edge.
-      const lock = `a.${q(LOCK_FLAG)}`;
-      text += `SET ${lock} = true REMOVE ${lock} WITH a, b `;
+      const lock = `${a}.${q(LOCK_FLAG)}`;
+      text += `SET ${lock} = true REMOVE ${lock} WITH ${a}, ${b} `;
     }
     const inverse = this.toOneInverse(rel);
     if (inverse) {
-      replace(
-        "b",
-        `${link(`other:${labelExpr(this.node(inverse.target))}`, "old")} WHERE other <> a`,
-      );
+      const [other, old] = [ctx.variable("x"), ctx.variable("o")];
+      const from = `${other}:${labelExpr(this.node(inverse.target))}`;
+      replace(b, `${ModelEngine.edgePattern(rel, from, b, old)} WHERE ${other} <> ${a}`, old);
     }
-    text += `MERGE ${link("a", "r")}`;
-    if (Object.keys(onCreate).length) text += ` ON CREATE SET r += ${ctx.param(onCreate)}`;
-    if (Object.keys(onMatch).length) text += ` ON MATCH SET r += ${ctx.param(onMatch)}`;
+    text += `MERGE ${ModelEngine.edgePattern(rel, a, b, r)}`;
+    if (Object.keys(onCreate).length) text += ` ON CREATE SET ${r} += ${ctx.param(onCreate)}`;
+    if (Object.keys(onMatch).length) text += ` ON MATCH SET ${r} += ${ctx.param(onMatch)}`;
     if (updates.sets.length) text += ` SET ${updates.sets.join(", ")}`;
     // The checks run on the values the updates produced: a broken one throws, which rolls the
     // write transaction back.
     const guard = numericGuard(updates.checks);
-    const rows = await exec(
-      `${text} RETURN count(r) AS c${guard ? `, collect(${guard})[0] AS bad` : ""}`,
-      ctx.params,
+    const count = ctx.variable("c");
+    const bad = guard ? ctx.variable("g") : undefined;
+    plan.call(
+      [a],
+      `${text} RETURN count(${r}) AS ${count}${bad ? `, collect(${guard})[0] AS ${bad}` : ""}`,
+      bad ? [count, bad] : [count],
     );
-    if (toCount(rows[0]?.c) === 0) {
-      throw new NotFoundError(`connect: no ${target.name} matches ${JSON.stringify(where)}.`);
-    }
-    if (guard) {
-      const edgeModel = this.schema.relationships.find((r) => r.name === rel.edge)!;
-      const owner = { ...this.model, name: edgeModel.name };
-      throwGuardIssues("update", owner, updates.checks, rows[0]?.bad, [...path, "$edge"]);
-    }
+    plan.relations = true;
+    plan.output(count);
+    if (bad) plan.output(bad);
+    plan.checks.push((row) => {
+      if (toCount(row[count]) === 0) {
+        throw new NotFoundError(`connect: no ${target.name} matches ${JSON.stringify(where)}.`);
+      }
+      if (bad) {
+        const edgeModel = this.schema.relationships.find((m) => m.name === rel.edge)!;
+        const owner = { ...this.model, name: edgeModel.name };
+        throwGuardIssues("update", owner, updates.checks, row[bad], [...path, "$edge"]);
+      }
+    });
   }
 
-  private async createRelated(
-    exec: Executor,
-    id: string,
+  /**
+   * Create the nodes of `items` linked to `own` through `rel`. Runs of items without nested
+   * relation writes are created by one `FOREACH` over their properties; an item with nested
+   * writes gets its own `CREATE`, followed by its relation writes. Items are created in order.
+   */
+  private planCreates(
+    plan: WritePlan,
+    own: string,
     rel: ResolvedRelationField,
-    item: unknown,
-    path: IssuePath,
-  ): Promise<void> {
-    if (!isPlainObject(item))
-      throw new CyphraValidationError(`${rel.name}.create expects objects.`);
-    const { $edge, ...data } = item;
-    if (this.edgeUpdates(this.ctx(), rel, $edge, "").sets.length) {
-      throw new CyphraValidationError(
-        `${this.model.name}.${rel.name}.create: $edge number updates ({ increment, … }) are for connect and set; create makes a new edge, so give the value itself.`,
+    items: readonly { item: unknown; path: IssuePath }[],
+  ): void {
+    const ctx = plan.ctx;
+    const target = this.node(rel.target);
+    const child = this.engineFor(target);
+    let batch: { p: AnyRecord; e: AnyRecord }[] = [];
+    const flush = () => {
+      if (!batch.length) return;
+      const [x, c, r] = [ctx.variable("x"), ctx.variable("c"), ctx.variable("r")];
+      const typed = batch.some((row) => Object.keys(row.e).length > 0);
+      const edge = ModelEngine.edgePattern(rel, own, c, typed ? r : "");
+      plan.add(
+        `FOREACH (${x} IN ${ctx.param(batch)} | CREATE (${c}:${labelExpr(target)}) SET ${c} = ${x}.p ` +
+          `CREATE ${edge}${typed ? ` SET ${r} = ${x}.e` : ""})`,
       );
+      batch = [];
+    };
+    for (const { item, path } of items) {
+      if (!isPlainObject(item))
+        throw new CyphraValidationError(`${rel.name}.create expects objects.`);
+      const { $edge, ...data } = item;
+      if (this.edgeUpdates(ctx, rel, $edge, "").sets.length) {
+        throw new CyphraValidationError(
+          `${this.model.name}.${rel.name}.create: $edge number updates ({ increment, … }) are for connect and set; create makes a new edge, so give the value itself.`,
+        );
+      }
+      const edge = this.edgeProps(rel, $edge);
+      const { props, relations } = child.createData(data, "create");
+      plan.relations = true;
+      if (Object.keys(relations).length === 0) {
+        batch.push({ p: props, e: edge });
+        continue;
+      }
+      flush();
+      const c = ctx.variable("c");
+      const e = Object.keys(edge).length ? ctx.param(edge) : "";
+      plan.add(
+        `CREATE (${c}:${labelExpr(target)} ${ctx.param(props)}) ` +
+          `CREATE ${ModelEngine.edgePattern(rel, own, c, "", e)}`,
+        [c],
+      );
+      child.planRelations(plan, c, relations, "create", path);
     }
-    const props = this.edgeProps(rel, $edge);
-    const childId = await this.engineFor(this.node(rel.target)).createNode(exec, data, path);
-    const ctx = this.ctx();
-    await exec(
-      `MATCH (a), (b) WHERE elementId(a) = ${ctx.param(id)} AND elementId(b) = ${ctx.param(childId)} ` +
-        `CREATE ${this.edgeText(ctx, rel, "a", "b", props)}`,
-      ctx.params,
-    );
+    flush();
   }
 
-  private async deleteEdges(
-    exec: Executor,
-    id: string,
+  /** Delete the `rel` edges of `own` (to the nodes matching `where`, when given). */
+  private planDeleteEdges(
+    plan: WritePlan,
+    own: string,
     rel: ResolvedRelationField,
     where?: AnyRecord,
-  ): Promise<number> {
+  ): void {
+    const ctx = plan.ctx;
     const target = this.node(rel.target);
-    const ctx = this.ctx();
-    const w = where ? compileWhere(ctx, target, "b", where) : null;
-    const rows = await exec(
-      `MATCH ${relationPattern(ctx, "a", rel, "b", "r")} WHERE elementId(a) = ${ctx.param(id)}` +
-        `${w ? ` AND ${w}` : ""} DELETE r RETURN count(*) AS c`,
-      ctx.params,
+    const [b, r, d] = [ctx.variable("b"), ctx.variable("r"), ctx.variable("d")];
+    const w = where ? compileWhere(ctx, target, b, where) : null;
+    plan.call(
+      [own],
+      `MATCH ${relationPattern(ctx, own, rel, b, r)}${w ? ` WHERE ${w}` : ""} DELETE ${r} RETURN count(*) AS ${d}`,
+      [d],
     );
-    return toCount(rows[0]?.c);
+    plan.relations = true;
   }
 
-  private async writeRelation(
-    exec: Executor,
-    id: string,
+  private planRelation(
+    plan: WritePlan,
+    own: string,
     rel: ResolvedRelationField,
     spec: unknown,
     mode: "create" | "update",
     path: IssuePath,
-  ): Promise<void> {
+  ): void {
     if (!isPlainObject(spec)) {
       throw new CyphraValidationError(
         `${this.model.name}.${rel.name}: relation writes take { create, connect, … }.`,
@@ -692,38 +797,35 @@ export class ModelEngine {
       }
     }
 
+    const engine = this.engineFor(this.node(rel.target));
     if (rel.many) {
       if (disconnect !== undefined) {
-        for (const item of asArray(disconnect)) {
+        const keys = asArray(disconnect).map((item) => {
           if (!isPlainObject(item))
             throw new CyphraValidationError(`${rel.name}.disconnect expects unique where objects.`);
-          const where = this.engineFor(this.node(rel.target)).assertUnique(
-            item,
-            `${this.model.name}.${rel.name}.disconnect`,
-          );
-          await this.deleteEdges(exec, id, rel, where);
-        }
+          return engine.assertUnique(item, `${this.model.name}.${rel.name}.disconnect`);
+        });
+        if (keys.length) this.planDeleteEdges(plan, own, rel, { OR: keys });
       }
       if (set !== undefined) {
         if (!Array.isArray(set))
           throw new CyphraValidationError(`${rel.name}.set expects an array.`);
         // Drop the edges to nodes not in the list; the others are kept and updated by connect
         // (so `$edge` number updates apply to the existing edge).
-        const engine = this.engineFor(this.node(rel.target));
         const keep = set.map((item: unknown) => {
           if (!isPlainObject(item))
             throw new CyphraValidationError(`${rel.name}.set expects unique where objects.`);
           const { $edge: _edge, ...unique } = item;
           return engine.assertUnique(unique, `${this.model.name}.${rel.name}.set`);
         });
-        await this.deleteEdges(exec, id, rel, { NOT: { OR: keep } });
+        this.planDeleteEdges(plan, own, rel, { NOT: { OR: keep } });
         for (const [i, item] of set.entries()) {
-          await this.connect(exec, id, rel, item, [...path, "set", i]);
+          this.planConnect(plan, own, rel, item, [...path, "set", i]);
         }
       }
     } else if (disconnect === true || (mode === "update" && create !== undefined)) {
-      // To-one: replace the existing edge (`connect` replaces it in its own statement).
-      await this.deleteEdges(exec, id, rel);
+      // To-one: replace the existing edge (`connect` replaces it in its own subquery).
+      this.planDeleteEdges(plan, own, rel);
     } else if (disconnect !== undefined && disconnect !== false) {
       throw new CyphraValidationError(
         `${rel.name}.disconnect on a to-one relation takes a boolean.`,
@@ -731,17 +833,49 @@ export class ModelEngine {
     }
 
     if (connect !== undefined) {
-      const items = asArray(connect);
-      for (const [i, item] of items.entries()) {
+      for (const [i, item] of asArray(connect).entries()) {
         const at = Array.isArray(connect) ? [...path, "connect", i] : [...path, "connect"];
-        await this.connect(exec, id, rel, item, at);
+        this.planConnect(plan, own, rel, item, at);
       }
     }
-    if (create !== undefined)
-      for (const [i, item] of asArray(create).entries()) {
-        const at = Array.isArray(create) ? [...path, "create", i] : [...path, "create"];
-        await this.createRelated(exec, id, rel, item, at);
-      }
+    if (create !== undefined) {
+      const items = asArray(create).map((item, i) => ({
+        item,
+        path: Array.isArray(create) ? [...path, "create", i] : [...path, "create"],
+      }));
+      this.planCreates(plan, own, rel, items);
+    }
+  }
+
+  /**
+   * Run `plan` (ending in `RETURN <projection of n> AS row`, plus `extra` columns): one statement,
+   * sent on its own (auto-commit over HTTP) when nothing it writes depends on a check. Returns the
+   * row, after `before` and the plan's checks ran on it.
+   */
+  private async runPlan(
+    plan: WritePlan,
+    args: AnyRecord,
+    options: {
+      extra?: readonly string[];
+      autoCommit: boolean;
+      missing?: () => Error;
+      before?: (row: AnyRecord) => void;
+    },
+  ): Promise<AnyRecord> {
+    const { expr, shape } = compileProjection(plan.ctx, this.model, "n", args);
+    const columns = [`${expr} AS row`, ...(options.extra ?? []), ...plan.outputs];
+    const text = `${plan.text} RETURN ${columns.join(", ")}`;
+    return this.runner.write(
+      async (exec) => {
+        const rows = await exec(text, plan.ctx.params);
+        const row = rows[0];
+        if (!row) throw options.missing?.() ?? new NotFoundError(`${this.model.name} not found.`);
+        options.before?.(row);
+        plan.check(row);
+        return decodeRow(shape, row.row)!;
+      },
+      options.autoCommit ? SINGLE : {},
+    );
   }
 
   /**
@@ -801,40 +935,20 @@ export class ModelEngine {
     );
   }
 
-  private async updateNode(
-    exec: Executor,
-    id: string,
-    data: unknown,
-    path: IssuePath = ["data"],
-  ): Promise<void> {
-    const { scalars, relations } = this.splitData(data, "update");
-    const ctx = this.ctx();
-    const { sets, checks } = this.setClauses(ctx, scalars);
-    if (sets.length) {
-      const guarded = checks.length > 0;
-      const rows = await exec(
-        `MATCH (n) WHERE elementId(n) = ${ctx.param(id)}${ModelEngine.guardedSet(sets, checks)}` +
-          (guarded ? " RETURN bad" : ""),
-        ctx.params,
-      );
-      if (guarded) throwGuardIssues("update", this.model, checks, rows[0]?.bad, ["data"]);
-    }
-    for (const [k, v] of Object.entries(relations)) {
-      await this.writeRelation(exec, id, relationField(this.model, k)!, v, "update", [...path, k]);
-    }
-  }
-
   // -------------------------------------------------------------------------
   // Writes
   // -------------------------------------------------------------------------
 
+  /**
+   * One statement: the `CREATE`, every nested write (children batched per relation) and the
+   * projection of the new node. Sent on its own (auto-commit over HTTP) unless a nested `connect`
+   * must be checked after it ran (a missing target rolls the whole create back).
+   */
   // `async` so that invalid data rejects the returned promise instead of throwing synchronously.
   async create(args: AnyRecord): Promise<AnyRecord> {
     validateWriteArgs(this.schema, this.model, "create", args);
-    return this.runner.write(async (exec) => {
-      const id = await this.createNode(exec, args.data);
-      return this.readById(exec, id, args);
-    });
+    const plan = this.planCreate(this.ctx(), args.data);
+    return this.runPlan(plan, args, { autoCommit: plan.checks.length === 0 });
   }
 
   // `async` so that invalid data rejects the returned promise instead of throwing synchronously.
@@ -859,19 +973,35 @@ export class ModelEngine {
         ctx.params,
       );
       return { count: toCount(res[0]?.c) };
-    });
+    }, SINGLE);
   }
 
+  /**
+   * One statement: find the node, `SET` the scalars (skipped when a number update would break
+   * `@min` / `@max`), run the relation writes and project the result. Sent on its own
+   * (auto-commit over HTTP) when there are no relation writes: then a failed check wrote nothing.
+   */
   async update(args: AnyRecord): Promise<AnyRecord> {
     validateWriteArgs(this.schema, this.model, "update", args);
-    return this.runner.write(async (exec) => {
-      const id = await this.findId(exec, args.where, "update");
-      if (!id)
-        throw new NotFoundError(
-          `update: no ${this.model.name} matches ${JSON.stringify(args.where)}.`,
-        );
-      await this.updateNode(exec, id, args.data);
-      return this.readById(exec, id, args);
+    const where = this.assertUnique(args.where, "update");
+    const { scalars, relations } = this.splitData(args.data, "update");
+    const ctx = this.ctx();
+    const w = compileWhere(ctx, this.model, "n", where);
+    const { sets, checks } = this.setClauses(ctx, scalars);
+    const guarded = numericGuard(checks) !== null;
+    const plan = new WritePlan(
+      ctx,
+      `MATCH (n:${this.label})${w ? ` WHERE ${w}` : ""} WITH n LIMIT 1` +
+        ModelEngine.guardedSet(sets, checks),
+      guarded ? ["n", "bad"] : ["n"],
+    );
+    this.planRelations(plan, "n", relations, "update", ["data"]);
+    return this.runPlan(plan, args, {
+      extra: guarded ? ["bad"] : [],
+      autoCommit: !plan.relations,
+      missing: () =>
+        new NotFoundError(`update: no ${this.model.name} matches ${JSON.stringify(args.where)}.`),
+      before: (row) => throwGuardIssues("update", this.model, checks, row.bad, ["data"]),
     });
   }
 
@@ -881,16 +1011,16 @@ export class ModelEngine {
    */
   async updateMany(args: AnyRecord): Promise<{ count: number }> {
     validateWriteArgs(this.schema, this.model, "updateMany", args);
+    const { scalars, relations } = this.splitData(args.data, "updateMany");
+    if (Object.keys(relations).length) {
+      throw new CyphraValidationError("updateMany does not support relation writes.");
+    }
+    const ctx = this.ctx();
+    const w = compileWhere(ctx, this.model, "n", args.where);
+    const { sets, checks } = this.setClauses(ctx, scalars);
+    const match = `MATCH (n:${this.label})${w ? ` WHERE ${w}` : ""}`;
+    const guard = numericGuard(checks);
     return this.runner.write(async (exec) => {
-      const { scalars, relations } = this.splitData(args.data, "updateMany");
-      if (Object.keys(relations).length) {
-        throw new CyphraValidationError("updateMany does not support relation writes.");
-      }
-      const ctx = this.ctx();
-      const w = compileWhere(ctx, this.model, "n", args.where);
-      const { sets, checks } = this.setClauses(ctx, scalars);
-      const match = `MATCH (n:${this.label})${w ? ` WHERE ${w}` : ""}`;
-      const guard = numericGuard(checks);
       if (guard) {
         const res = await exec(
           `${match} WITH collect(n) AS ns` +
@@ -907,7 +1037,7 @@ export class ModelEngine {
         ctx.params,
       );
       return { count: toCount(res[0]?.c) };
-    });
+    }, SINGLE);
   }
 
   /**
@@ -918,8 +1048,9 @@ export class ModelEngine {
    *
    * Extra `where` filters (beyond the MERGE key) are checked on an existing node before it is
    * updated; if it does not match them, nothing is written and a {@link CyphraError} is thrown
-   * (creating would duplicate the key). Nested relation writes run after the MERGE, in the same
-   * transaction.
+   * (creating would duplicate the key). Nested relation writes run in a second statement of the
+   * same transaction (they depend on whether the MERGE created the node), which also projects the
+   * result.
    */
   async upsert(args: AnyRecord): Promise<AnyRecord> {
     assertCreatable(this.model, `${this.model.name}.upsert`);
@@ -979,26 +1110,43 @@ export class ModelEngine {
     if (guard) text += `, bad`;
     if (projection) text += `, ${projection.expr} AS row`;
 
+    // The nested writes of each branch, compiled once (before anything runs).
+    const branch = (mode: "create" | "update") => {
+      const c = this.ctx();
+      const id = c.param("");
+      const plan = new WritePlan(c, `MATCH (n) WHERE elementId(n) = ${id}`, ["n"]);
+      const relations = mode === "create" ? create.relations : update.relations;
+      this.planRelations(plan, "n", relations, mode, [mode]);
+      const { expr, shape } = compileProjection(c, this.model, "n", args);
+      return {
+        plan,
+        shape,
+        text: `${plan.text} RETURN ${[`${expr} AS row`, ...plan.outputs].join(", ")}`,
+        id: id.slice(1),
+      };
+    };
+    const branches = nested ? { create: branch("create"), update: branch("update") } : null;
+
     const attempt = () =>
-      this.runner.write(async (exec) => {
-        const rows = await exec(text, ctx.params);
-        const row = rows[0];
-        if (!row) {
-          throw new CyphraError(
-            `${this.model.name}.upsert: a node with ${keyFields.map((k) => `${k} = ${JSON.stringify(where[k])}`).join(", ")} exists but does not match the rest of where; creating another would duplicate the key.`,
-          );
-        }
-        throwGuardIssues("upsert", this.model, checks, row.bad, ["update"]);
-        if (projection) return decodeRow(projection.shape, row.row)!;
-        const id = row.id as string;
-        const [relations, mode] = row.created
-          ? ([create.relations, "create"] as const)
-          : ([update.relations, "update"] as const);
-        for (const [k, v] of Object.entries(relations)) {
-          await this.writeRelation(exec, id, relationField(this.model, k)!, v, mode, [mode, k]);
-        }
-        return this.readById(exec, id, args);
-      });
+      this.runner.write(
+        async (exec) => {
+          const rows = await exec(text, ctx.params);
+          const row = rows[0];
+          if (!row) {
+            throw new CyphraError(
+              `${this.model.name}.upsert: a node with ${keyFields.map((k) => `${k} = ${JSON.stringify(where[k])}`).join(", ")} exists but does not match the rest of where; creating another would duplicate the key.`,
+            );
+          }
+          throwGuardIssues("upsert", this.model, checks, row.bad, ["update"]);
+          if (projection) return decodeRow(projection.shape, row.row)!;
+          const b = row.created ? branches!.create : branches!.update;
+          const [res] = await exec(b.text, { ...b.plan.ctx.params, [b.id]: row.id });
+          if (!res) throw new NotFoundError(`${this.model.name} disappeared during the operation.`);
+          b.plan.check(res);
+          return decodeRow(b.shape, res.row)!;
+        },
+        nested ? {} : SINGLE,
+      );
     if (this.options.dialect !== "memgraph") return attempt();
     // Memgraph checks uniqueness at commit and its MERGE takes no lock: of two concurrent upserts
     // creating one key, the second fails to commit. Run it again: its MERGE now finds the node.
@@ -1017,46 +1165,84 @@ export class ModelEngine {
   }
 
   /**
-   * Delete one node. With `onDelete` rules on the model (or on models its cascades reach), the
-   * node is locked, cascades are collected and `Restrict` rules checked before anything is
-   * deleted, all in this transaction (see `onDelete.ts`).
+   * Delete one node and return it as it was. Without `onDelete` rules: one statement (find,
+   * project, `DETACH DELETE`). With rules (on the model or on models its cascades reach), the node
+   * is locked, cascades are collected and `Restrict` rules checked before anything is deleted, all
+   * in this transaction (see `onDelete.ts`): one statement too when the cascades form a tree.
    */
-  delete(args: AnyRecord): Promise<AnyRecord> {
+  // `async` so that an invalid `where` rejects the returned promise instead of throwing.
+  async delete(args: AnyRecord): Promise<AnyRecord> {
+    const where = this.assertUnique(args.where, "delete");
+    const ctx = this.ctx();
+    const w = compileWhere(ctx, this.model, "n", where);
+    const match = `MATCH (n:${this.label})${w ? ` WHERE ${w}` : ""}`;
+    const { expr, shape } = compileProjection(ctx, this.model, "n", args);
+    const missing = () =>
+      new NotFoundError(`delete: no ${this.model.name} matches ${JSON.stringify(args.where)}.`);
+    const single = async (text: string, check?: (row: AnyRecord) => void) =>
+      this.runner.write(async (exec) => {
+        const [row] = await exec(text, ctx.params);
+        if (!row) throw missing();
+        check?.(row);
+        return decodeRow(shape, row.row)!;
+      }, SINGLE);
+
+    // Lock first, so that the row returned is the one deleted (and the rules see every edge); a
+    // node deleted by a concurrent operation meanwhile is not found.
+    if (!hasDeleteRules(this.schema, this.model)) {
+      return single(
+        `${match} WITH n LIMIT 1 ${lockAndRematch(ctx, "n")} WITH n, ${expr} AS row ` +
+          `DETACH DELETE n RETURN row`,
+      );
+    }
+    const compiled = compileRulesDelete(ctx, this.model, match, true, expr);
+    if (compiled) {
+      return single(compiled.text, (row) => {
+        throwRestrict(compiled.restricts, row);
+        if (toCount(row.c) === 0) throw missing();
+      });
+    }
+    const text =
+      `${match} WITH n LIMIT 1 ${lockAndRematch(ctx, "n")} ` +
+      `RETURN elementId(n) AS id, labels(n) AS labels, ${expr} AS row`;
     return this.runner.write(async (exec) => {
-      const id = await this.findId(exec, args.where, "delete");
-      const missing = () =>
-        new NotFoundError(`delete: no ${this.model.name} matches ${JSON.stringify(args.where)}.`);
-      if (!id) throw missing();
-      const rules = hasDeleteRules(this.schema, this.model);
-      // Lock first so that the row returned is the one deleted (and the rules see every edge).
-      if (rules && (await lockNodes(exec, this.schema, [id])).length === 0) throw missing();
-      const row = await this.readById(exec, id, args);
-      if (rules) {
-        await deleteWithRules(exec, this.schema, this.model, [id]);
-        return row;
-      }
-      const ctx = this.ctx();
-      await exec(`MATCH (n) WHERE elementId(n) = ${ctx.param(id)} DETACH DELETE n`, ctx.params);
-      return row;
+      const [row] = await exec(text, ctx.params);
+      if (!row) throw missing();
+      const node = { id: row.id as string, labels: (row.labels ?? []) as unknown[] };
+      if ((await deleteWithRules(exec, this.schema, this.model, [node])) === 0) throw missing();
+      return decodeRow(shape, row.row)!;
     });
   }
 
-  deleteMany(args: AnyRecord = {}): Promise<{ count: number }> {
+  // `async` so that an invalid `where` rejects the returned promise instead of throwing.
+  async deleteMany(args: AnyRecord = {}): Promise<{ count: number }> {
+    const ctx = this.ctx();
+    const w = compileWhere(ctx, this.model, "n", args.where);
+    const match = `MATCH (n:${this.label})${w ? ` WHERE ${w}` : ""}`;
+    if (!hasDeleteRules(this.schema, this.model)) {
+      return this.runner.write(async (exec) => {
+        const res = await exec(`${match} DETACH DELETE n RETURN count(*) AS c`, ctx.params);
+        return { count: toCount(res[0]?.c) };
+      }, SINGLE);
+    }
+    const compiled = compileRulesDelete(ctx, this.model, match, false);
+    if (compiled) {
+      return this.runner.write(async (exec) => {
+        const [row] = await exec(compiled.text, ctx.params);
+        throwRestrict(compiled.restricts, row ?? {});
+        return { count: toCount(row?.c) };
+      }, SINGLE);
+    }
     return this.runner.write(async (exec) => {
-      const ctx = this.ctx();
-      const w = compileWhere(ctx, this.model, "n", args.where);
-      const match = `MATCH (n:${this.label})${w ? ` WHERE ${w}` : ""}`;
-      if (hasDeleteRules(this.schema, this.model)) {
-        const flag = `n.${q(LOCK_FLAG)}`;
-        const rows = await exec(
-          `${match} SET ${flag} = true REMOVE ${flag} RETURN elementId(n) AS id`,
-          ctx.params,
-        );
-        const ids = rows.map((r) => r.id as string);
-        return { count: await deleteWithRules(exec, this.schema, this.model, ids) };
-      }
-      const res = await exec(`${match} DETACH DELETE n RETURN count(*) AS c`, ctx.params);
-      return { count: toCount(res[0]?.c) };
+      const rows = await exec(
+        `${match} ${lockAndRematch(ctx, "n")} RETURN elementId(n) AS id, labels(n) AS labels`,
+        ctx.params,
+      );
+      const roots = rows.map((r) => ({
+        id: r.id as string,
+        labels: (r.labels ?? []) as unknown[],
+      }));
+      return { count: await deleteWithRules(exec, this.schema, this.model, roots) };
     });
   }
 }

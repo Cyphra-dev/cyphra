@@ -96,7 +96,8 @@ describe("edge build", () => {
       },
     });
     expect(await db.user.findMany({ where: { email: "a@x.io" } })).toEqual([]);
-    expect(urls[0]).toBe("https://edge.example/db/neo4j/query/v2/tx");
+    // One statement: one auto-commit request.
+    expect(urls).toEqual(["https://edge.example/db/neo4j/query/v2"]);
     await db.$disconnect();
 
     // Bolt is not available in the edge build, with a pointer to the HTTP transport.

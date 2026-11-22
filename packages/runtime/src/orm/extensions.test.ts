@@ -48,7 +48,7 @@ const user = {
 /** Answers reads with `row` (a user, or a post with its author) and creates with an element id. */
 function blog(row: Row = user) {
   const fake = fakeDriver((text) => {
-    if (text.startsWith("CREATE")) return [{ id: "4:x:0" }];
+    if (text.startsWith("CREATE")) return [{ id: "4:x:0", row }];
     if (text.includes("count(n)")) return [{ c: 1 }];
     return [{ row }];
   });

@@ -2,6 +2,7 @@ import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createClient, type Db } from "./__fixtures__/ondelete.gen.js";
 import { NotFoundError, RestrictError } from "./errors.js";
 import { testDialect } from "./__fixtures__/testDialect.js";
+import type { QueryEvent } from "../observability.js";
 
 // Each test makes many round trips to Neo4j: the default 5 s is too tight on a busy CI runner.
 vi.setConfig({ testTimeout: 30_000, hookTimeout: 30_000 });
@@ -19,6 +20,10 @@ const LABELS = [
   "OdRing",
   "OdPlain",
   "OdTag",
+  "OdFolder",
+  "OdFile",
+  "OdVersion",
+  "OdHold",
 ];
 
 describe.skipIf(!hasNeo)("onDelete rules (Neo4j)", () => {
@@ -261,4 +266,130 @@ describe.skipIf(!hasNeo)("onDelete rules (Neo4j)", () => {
     }
     // Lock waits and deadlock retries (the driver backs off ~1 s) take time.
   }, 30_000);
+
+  /** Statements `fn` runs (query events). */
+  async function statements(fn: () => Promise<unknown>): Promise<string[]> {
+    const seen: string[] = [];
+    const off = db.$on("query", (e: QueryEvent) => seen.push(e.text));
+    try {
+      await fn().catch(() => undefined);
+    } finally {
+      off();
+    }
+    return seen;
+  }
+
+  /** A folder with 2 files, each with 2 versions. */
+  async function seedFolder(name: string) {
+    return db.odFolder.create({
+      data: {
+        name,
+        files: {
+          create: [
+            { name: `${name}/a`, versions: { create: [{ n: 1 }, { n: 2 }] } },
+            { name: `${name}/b`, versions: { create: [{ n: 1 }, { n: 2 }] } },
+          ],
+        },
+      },
+    });
+  }
+
+  async function folderCounts() {
+    const [folder, file, version, hold] = await Promise.all([
+      db.odFolder.count(),
+      db.odFile.count(),
+      db.odVersion.count(),
+      db.odHold.count(),
+    ]);
+    return { folder, file, version, hold };
+  }
+
+  it("an acyclic cascade (folder → files → versions) is one statement", async () => {
+    expect(await statements(() => seedFolder("x"))).toHaveLength(1);
+    await seedFolder("y");
+    expect(await folderCounts()).toEqual({ folder: 2, file: 4, version: 8, hold: 0 });
+    let deleted: { name: string; files: unknown[] } | undefined;
+    const texts = await statements(async () => {
+      deleted = await db.odFolder.delete({ where: { name: "x" }, include: { files: true } });
+    });
+    expect(texts).toHaveLength(1);
+    expect(deleted?.name).toBe("x");
+    expect(deleted?.files).toHaveLength(2);
+    expect(await folderCounts()).toEqual({ folder: 1, file: 2, version: 4, hold: 0 });
+
+    await seedFolder("z");
+    let count: { count: number } | undefined;
+    expect(
+      await statements(async () => {
+        count = await db.odFolder.deleteMany();
+      }),
+    ).toHaveLength(1);
+    expect(count).toEqual({ count: 2 });
+    expect(await folderCounts()).toEqual({ folder: 0, file: 0, version: 0, hold: 0 });
+    await expect(db.odFolder.delete({ where: { name: "x" } })).rejects.toBeInstanceOf(
+      NotFoundError,
+    );
+  });
+
+  it("an acyclic cascade checks Restrict in the same statement and deletes nothing", async () => {
+    await seedFolder("x");
+    await db.odHold.create({ data: { reason: "legal", file: { connect: { name: "x/b" } } } });
+    const err = await db.odFolder.delete({ where: { name: "x" } }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(RestrictError);
+    expect(err).toMatchObject({ model: "OdFile", relation: "holds", target: "OdHold", count: 1 });
+    await expect(db.odFolder.deleteMany()).rejects.toBeInstanceOf(RestrictError);
+    expect(await folderCounts()).toEqual({ folder: 1, file: 2, version: 4, hold: 1 });
+    // Deleting the file itself is restricted too; deleting the hold lifts it.
+    await expect(db.odFile.delete({ where: { name: "x/b" } })).rejects.toBeInstanceOf(
+      RestrictError,
+    );
+    await db.odHold.deleteMany();
+    expect(await db.odFolder.deleteMany()).toEqual({ count: 1 });
+    expect(await folderCounts()).toEqual({ folder: 0, file: 0, version: 0, hold: 0 });
+  });
+
+  it("an acyclic cascade: racing deletes delete once, a racing hold is never left dangling", async () => {
+    for (let round = 0; round < 5; round++) {
+      await seedFolder("x");
+      const results = await Promise.allSettled([
+        db.odFolder.delete({ where: { name: "x" } }),
+        db.odFolder.delete({ where: { name: "x" } }),
+        db.odFolder.deleteMany({ where: { name: "x" } }),
+      ]);
+      const ok = results.slice(0, 2).filter((r) => r.status === "fulfilled").length;
+      const many = results[2]!;
+      expect(many.status).toBe("fulfilled");
+      expect(ok + (many as PromiseFulfilledResult<{ count: number }>).value.count).toBe(1);
+      for (const r of results.slice(0, 2)) {
+        if (r.status === "rejected") expect(r.reason).toBeInstanceOf(NotFoundError);
+      }
+      expect(await folderCounts()).toEqual({ folder: 0, file: 0, version: 0, hold: 0 });
+
+      await seedFolder("x");
+      const [del, hold] = await Promise.allSettled([
+        db.odFolder.delete({ where: { name: "x" } }),
+        db.odHold.create({ data: { reason: "r", file: { connect: { name: "x/a" } } } }),
+      ]);
+      if (del.status === "fulfilled") {
+        expect(await db.odFile.count()).toBe(0);
+        expect(hold.status).toBe("rejected");
+      } else {
+        expect(del.reason).toBeInstanceOf(RestrictError);
+        expect(hold.status).toBe("fulfilled");
+        expect((await db.odHold.findFirst({ include: { file: true } }))?.file?.name).toBe("x/a");
+      }
+      await db.odHold.deleteMany();
+      await db.odFolder.deleteMany();
+    }
+    // Lock waits and deadlock retries (the driver backs off ~1 s) take time.
+  }, 60_000);
+
+  it("a cascade with a cycle locks level by level: one statement per level", async () => {
+    await seed("a@x.io");
+    // Find + lock + read, then the levels (sessions and posts, comments, replies, replies of
+    // replies, none left), then the Restrict checks with the delete.
+    const texts = await statements(() => db.odUser.delete({ where: { email: "a@x.io" } }));
+    expect(texts).toHaveLength(7);
+    expect(await counts()).toEqual({ user: 0, session: 0, post: 0, comment: 0, invoice: 0 });
+  });
 });

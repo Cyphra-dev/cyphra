@@ -725,6 +725,221 @@ describe.skipIf(!hasNeo)("ORM write correctness (Neo4j)", () => {
   });
 });
 
+// Every operation below is one statement (one `query` event): a regression that adds round trips
+// fails here. Over HTTP, those outside `$transaction` are one auto-commit request each.
+describe.skipIf(!hasNeo)("ORM statement counts (Neo4j)", () => {
+  let db: Db;
+
+  beforeAll(() => {
+    db = createClient({
+      uri: process.env.NEO4J_TEST_URI!,
+      user: process.env.NEO4J_TEST_USER!,
+      password: process.env.NEO4J_TEST_PASSWORD!,
+      dialect: testDialect,
+    });
+  });
+
+  beforeEach(async () => {
+    await db.$cypher`MATCH (n) WHERE n:User OR n:Post DETACH DELETE n`;
+  });
+
+  afterAll(async () => {
+    await db?.$disconnect();
+  });
+
+  /** The result of `fn` and the statements it ran. */
+  async function counted<T>(fn: () => Promise<T>): Promise<{ value: T; statements: number }> {
+    let statements = 0;
+    const off = db.$on("query", () => statements++);
+    try {
+      return { value: await fn(), statements };
+    } finally {
+      off();
+    }
+  }
+
+  async function failing(
+    fn: () => Promise<unknown>,
+  ): Promise<{ error: unknown; statements: number }> {
+    let statements = 0;
+    const off = db.$on("query", () => statements++);
+    const offError = db.$on("error", () => statements++);
+    try {
+      return {
+        error: await fn().then(
+          () => undefined,
+          (e: unknown) => e,
+        ),
+        statements,
+      };
+    } finally {
+      off();
+      offError();
+    }
+  }
+
+  it("create, nested create and connect, with the projection: one statement", async () => {
+    const bob = await counted(() => db.user.create({ data: { email: "bob@x.io", name: "Bob" } }));
+    expect(bob.statements).toBe(1);
+    expect(bob.value).toMatchObject({ email: "bob@x.io", name: "Bob" });
+
+    const alice = await counted(() =>
+      db.user.create({
+        data: {
+          email: "alice@x.io",
+          posts: {
+            create: [
+              { title: "p1", views: 1 },
+              { title: "p2", views: 2 },
+              { title: "p3", views: 3 },
+              { title: "p4", views: 4 },
+              { title: "p5", views: 5 },
+            ],
+          },
+          following: { connect: [{ email: "bob@x.io", $edge: { since: new Date(0) } }] },
+        },
+        select: {
+          email: true,
+          posts: { select: { title: true }, orderBy: { views: "asc" } },
+          following: { select: { email: true } },
+          _count: { select: { posts: true, followers: true } },
+        },
+      }),
+    );
+    expect(alice.statements).toBe(1);
+    expect(alice.value).toEqual({
+      email: "alice@x.io",
+      posts: ["p1", "p2", "p3", "p4", "p5"].map((title) => ({ title })),
+      following: [{ email: "bob@x.io", $edge: { since: new Date(0) } }],
+      _count: { posts: 5, followers: 0 },
+    });
+    // Children created in the order given (no orderBy: read back in creation order).
+    const posts = await db.post.findMany({ where: { author: { is: { email: "alice@x.io" } } } });
+    expect(posts.map((p) => p.title).sort()).toEqual(["p1", "p2", "p3", "p4", "p5"]);
+
+    // Deeper nesting stays one statement: a post, its new author, the author's own writes.
+    const deep = await counted(() =>
+      db.post.create({
+        data: {
+          title: "deep",
+          author: {
+            create: {
+              email: "carol@x.io",
+              following: { connect: { email: "alice@x.io" } },
+              posts: { create: [{ title: "sibling" }] },
+            },
+          },
+        },
+        include: { author: { include: { following: true, posts: { orderBy: { title: "asc" } } } } },
+      }),
+    );
+    expect(deep.statements).toBe(1);
+    expect(deep.value.author?.email).toBe("carol@x.io");
+    expect(deep.value.author?.following.map((f) => f.email)).toEqual(["alice@x.io"]);
+    expect(deep.value.author?.posts.map((p) => p.title)).toEqual(["deep", "sibling"]);
+
+    // A missing connect target fails the whole create (rolled back).
+    const missing = await failing(() =>
+      db.user.create({
+        data: { email: "dan@x.io", following: { connect: { email: "nobody@x.io" } } },
+      }),
+    );
+    expect(missing.error).toBeInstanceOf(NotFoundError);
+    expect(missing.statements).toBe(1);
+    expect(await db.user.findUnique({ where: { email: "dan@x.io" } })).toBeNull();
+  });
+
+  it("update (with relation writes), upsert and delete: one statement", async () => {
+    await db.user.create({ data: { email: "bob@x.io" } });
+    await db.user.create({ data: { email: "alice@x.io", posts: { create: { title: "old" } } } });
+
+    const updated = await counted(() =>
+      db.user.update({ where: { email: "alice@x.io" }, data: { name: "Alice", age: 30 } }),
+    );
+    expect(updated.statements).toBe(1);
+    expect(updated.value).toMatchObject({ name: "Alice", age: 30 });
+
+    const relations = await counted(() =>
+      db.user.update({
+        where: { email: "alice@x.io" },
+        data: {
+          age: { increment: 1 },
+          posts: { disconnect: [], create: [{ title: "new" }] },
+          following: { connect: { email: "bob@x.io" } },
+        },
+        include: { posts: { orderBy: { title: "asc" } }, following: true },
+      }),
+    );
+    expect(relations.statements).toBe(1);
+    expect(relations.value.age).toBe(31);
+    expect(relations.value.posts.map((p) => p.title)).toEqual(["new", "old"]);
+    expect(relations.value.following.map((f) => f.email)).toEqual(["bob@x.io"]);
+
+    const notFound = await failing(() =>
+      db.user.update({ where: { email: "nobody@x.io" }, data: { name: "x" } }),
+    );
+    expect(notFound.error).toBeInstanceOf(NotFoundError);
+    expect(notFound.statements).toBe(1);
+
+    const upserted = await counted(() =>
+      db.user.upsert({
+        where: { email: "eve@x.io" },
+        create: { email: "eve@x.io" },
+        update: { age: { increment: 1 } },
+      }),
+    );
+    expect(upserted.statements).toBe(1);
+    // Nested writes depend on the branch the MERGE took: a second statement.
+    const nested = await counted(() =>
+      db.user.upsert({
+        where: { email: "eve@x.io" },
+        create: { email: "eve@x.io" },
+        update: { posts: { create: { title: "eve's" } } },
+        include: { posts: true },
+      }),
+    );
+    expect(nested.statements).toBe(2);
+    expect(nested.value.posts.map((p) => p.title)).toEqual(["eve's"]);
+
+    const deleted = await counted(() =>
+      db.user.delete({ where: { email: "eve@x.io" }, include: { posts: true } }),
+    );
+    expect(deleted.statements).toBe(1);
+    expect(deleted.value.posts).toHaveLength(1);
+    expect(await db.user.findUnique({ where: { email: "eve@x.io" } })).toBeNull();
+    const gone = await failing(() => db.user.delete({ where: { email: "eve@x.io" } }));
+    expect(gone.error).toBeInstanceOf(NotFoundError);
+    expect(gone.statements).toBe(1);
+  });
+
+  it("reads and many-writes: one statement", async () => {
+    const ops: (() => Promise<unknown>)[] = [
+      () => db.user.createMany({ data: [{ email: "a@x.io" }, { email: "b@x.io" }] }),
+      () =>
+        db.user.findMany({ where: { email: { endsWith: "@x.io" } }, orderBy: { email: "asc" } }),
+      () => db.user.findFirst({ include: { posts: true } }),
+      () => db.user.findUnique({ where: { email: "a@x.io" } }),
+      () => db.user.count(),
+      () => db.user.aggregate({ _count: true }),
+      () => db.user.updateMany({ where: { email: "a@x.io" }, data: { age: 1 } }),
+      () => db.user.deleteMany({ where: { email: "b@x.io" } }),
+      () => db.$cypher`RETURN 1 AS one`,
+    ];
+    for (const op of ops) expect((await counted(op)).statements).toBe(1);
+  });
+
+  it("$transaction keeps the same statements in one transaction", async () => {
+    const { statements } = await counted(() =>
+      db.$transaction(async (tx) => {
+        await tx.user.create({ data: { email: "t@x.io", posts: { create: [{ title: "a" }] } } });
+        await tx.user.update({ where: { email: "t@x.io" }, data: { name: "T" } });
+      }),
+    );
+    expect(statements).toBe(2);
+    expect(await db.post.count()).toBe(1);
+  });
+});
+
 describe.skipIf(!hasNeo)("ORM aggregate / groupBy (Neo4j)", () => {
   let db: Db;
 

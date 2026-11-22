@@ -147,7 +147,7 @@ export function compileShortestPath(
 
   const n = ctx.variable("n");
   const { expr, shape } = compileProjection(ctx, model, n, args);
-  text += ` RETURN [${n} IN nodes(p) | ${expr}] AS nodes, ${compilePath(ctx, "p")} AS path`;
+  text += ` RETURN [${n} IN nodes(p) | ${expr}] AS nodes, ${compilePath(ctx, "p", { nodeProperties: false })} AS path`;
 
   return {
     text,
@@ -233,7 +233,7 @@ function memgraphShortestPath(
   const n = ctx.variable("n");
   const { expr, shape } = compileProjection(ctx, model, n, args);
   text += ` CALL { WITH p UNWIND nodes(p) AS ${n} RETURN collect(${expr}) AS nodes }`;
-  text += ` RETURN nodes, ${compilePath(ctx, "p")} AS path`;
+  text += ` RETURN nodes, ${compilePath(ctx, "p", { nodeProperties: false })} AS path`;
 
   return {
     text,

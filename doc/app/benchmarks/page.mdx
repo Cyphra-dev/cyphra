@@ -27,19 +27,20 @@ command against a Neo4j in Docker.
 
 What the published run shows (numbers below, from the run dated in [Environment](#environment)):
 
-- **Reads cost little.** On findUnique, nested reads, relation counts, aggregates, groupBy,
-  traversals and vector search, Cyphra is within about 10% of hand-written Cypher, sometimes
-  ahead (the same work, and differences of that size are noise on this machine). findMany is
-  about 25% slower and shortest path about 30% slower: Cyphra's statements there do a bit more
-  than the hand-written ones.
-- **Writes cost more, because Cyphra sends several statements.** A `create` is a `CREATE` then a
-  read of the new node (+37%); `update` finds the node, sets it and reads it back (+69%); a
-  cascading `delete` locks and collects each level before deleting (+110%); and a nested create of
-  a user with 5 posts sends 12 statements where the hand-written version sends one (about 4×
-  slower). All of it runs in one transaction, but each statement is a round trip. These are known
-  costs to reduce, not a floor.
-- **`@cyphra/graphql` is faster than `@neo4j/graphql`** on 8 of the 9 shared operations (by 12% to
-  37% on the median), and level on the aggregation.
+- **Most operations are one statement.** A `create` (nested creates and connects included),
+  `update`, `upsert`, a `delete` with `onDelete` cascades, and the reads compile to a single
+  Cypher statement that also returns the result, so on Bolt Cyphra is within about 20% of
+  hand-written Cypher on every scenario but one: update +2%, nested create of a user with 5 posts
+  +11% (it used to send 12 statements and cost 4× the baseline), create +16%, cascading delete
+  +17%. Reads stay within about 10%; differences of that size are noise on this machine.
+- **Shortest path is the exception** (about +45%): profiled, Cyphra's statement does about the
+  same work in Neo4j as the hand-written one, so what remains is on the client side (the typed
+  path, with its edges, that the hand-written version does not build).
+- **Over HTTP, an operation is one request.** A single statement that writes nothing when it fails
+  goes out as one auto-commit Query API request, like the `fetch` baseline, so Cyphra over HTTP is
+  within about 20% of it (it was 1.2× to 9× before).
+- **`@cyphra/graphql` is faster than `@neo4j/graphql`** on 8 of the 9 shared operations (by 18%
+  to 32% on the median, 2% on findMany), and level on the aggregation.
 - **neogma is often faster than the raw baseline** on simple operations, because it uses
   auto-commit transactions (see [Caveats](#caveats)), but it has no API for half of the scenarios.
 
@@ -63,11 +64,10 @@ against the Bolt baseline.
 
 <HttpTable results={results} />
 
-Over HTTP, Cyphra pays twice: managed transactions are explicit Query API transactions (one
-request to open the transaction with the first statement, one to commit), where the `fetch`
-baseline sends one auto-commit request; and each extra statement of a write is one more request.
-So a read costs about twice the `fetch` baseline, and the 12-statement nested create costs about
-9×. Single-statement operations could use one auto-commit request instead.
+An operation that compiles to one statement and writes nothing when it fails (every scenario here)
+is one auto-commit request, the same as the `fetch` baseline: the difference is the work on the
+client. Operations that need an explicit transaction (a nested `connect`, checked after the
+statement ran, or anything inside `$transaction`) add one request to commit.
 
 ## GraphQL
 

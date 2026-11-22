@@ -22,7 +22,8 @@ describe("compileShortestPath", () => {
         "MATCH p = SHORTEST 1 (s)((:`User`)-[e0:`FOLLOWS`]->(:`User`)){0,4}(t) " +
         "WITH p ORDER BY length(p) LIMIT 1 " +
         "RETURN [n1 IN nodes(p) | n1{.`id`, .`email`, .`name`, .`age`, .`tags`, .`createdAt`}] AS nodes, " +
-        "{nodes: [x2 IN nodes(p) | {labels: labels(x2), properties: properties(x2)}], " +
+        // The path's nodes carry only their labels (to type the edges): `nodes` has their fields.
+        "{nodes: [x2 IN nodes(p) | {labels: labels(x2)}], " +
         "edges: [i3 IN range(0, length(p) - 1) | {type: type(relationships(p)[i3]), " +
         "properties: properties(relationships(p)[i3]), out: startNode(relationships(p)[i3]) = nodes(p)[i3]}]} AS path",
     );

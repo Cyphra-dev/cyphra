@@ -163,9 +163,10 @@ type QueryEvent = {
 
 An `error` event has the same fields (without `rows`) plus `message`, `code` (the Neo4j status code,
 for example `Neo.ClientError.Statement.SyntaxError`), `gqlStatus` when the driver reports one, and
-`error` (the original error, which is still thrown to your code). One ORM operation can run several
-statements (a nested create, an upsert), so it can emit several `query` events, all with the same
-`model` and `operation`. The driver may retry a transaction on transient errors, and each attempt
+`error` (the original error, which is still thrown to your code). Most ORM operations are one
+statement, nested writes and the read-back included; an `upsert` with nested writes, or a `delete`
+whose `onDelete` cascades loop back on a model, runs several, and emits a `query` event for each,
+all with the same `model` and `operation`. The driver may retry a transaction on transient errors, and each attempt
 emits its own events.
 
 ### Parameter redaction
@@ -336,12 +337,15 @@ traversals and shortest paths, vector and full-text search, `$cypher` and `$tran
 the whole ORM integration suite over both transports. Logging, OpenTelemetry spans and missing-index
 warnings work the same (`server.address` is the HTTP host).
 
-- An auto-commit statement is one `POST /db/{database}/query/v2`.
-- Writes and `$transaction` use an explicit transaction: the first statement opens it
+- An operation that is one statement and writes nothing when it fails (reads, `create` and
+  `update` with their nested creates, `upsert`, `delete`, the `*Many` writes, `$cypher`) is one
+  auto-commit `POST /db/{database}/query/v2`, sent with `accessMode: "READ"` for reads.
+- Other operations (a nested `connect`, checked after the statement ran; an `upsert` with nested
+  writes) and `$transaction` use an explicit transaction: the first statement opens it
   (`POST …/tx`), the others follow (`POST …/tx/{id}`), then `…/commit`, or `DELETE` on error. The
   `neo4j-cluster-affinity` header Aura returns is sent back on every request of the transaction.
-- Transient errors (deadlocks, an unreachable server) retry the whole callback, like the driver's
-  managed transactions.
+- Transient errors (deadlocks, an unreachable server) retry the statement or the whole
+  transaction callback, like the driver's managed transactions.
 - Values use the Query API's typed JSON: a schema `Int` is sent as an `Integer`, a JS number as a
   `Float` (as with Bolt). Results decode into the same JS values as with Bolt.
 - Errors are `Neo4jHttpError`s with the Neo4j `code` (`Neo.ClientError.Schema.ConstraintValidationFailed`, …) and the HTTP `status`. The ORM client turns uniqueness violations into a
@@ -349,9 +353,9 @@ warnings work the same (`server.address` is the HTTP host).
 
 ### Limitations
 
-- **Latency.** Each statement is a round trip, and a transaction adds one for the commit. A nested
-  `create` that runs three statements costs four requests. Keep the database in the same region as
-  your functions.
+- **Latency.** Each request is a round trip: one for most operations, two (the statement, then
+  the commit) for one that needs an explicit transaction, and one more per statement inside
+  `$transaction`. Keep the database in the same region as your functions.
 - **No streaming.** The server sends the whole result in one response: bound large reads with
   `take`.
 - **Transactions.** Neo4j supports explicit Query API transactions on Aura and single-instance

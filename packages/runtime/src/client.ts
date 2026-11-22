@@ -454,6 +454,43 @@ export class CyphraClient {
   }
 
   /**
+   * Run `fn`, which runs exactly one statement on the transaction it is given, as an auto-commit
+   * statement where that saves round trips: over HTTP, one Query API request instead of opening,
+   * using and committing an explicit transaction (transient failures are still retried). Over Bolt,
+   * a managed transaction ({@link withReadTransaction} / {@link withWriteTransaction}).
+   *
+   * Only for a statement that is safe to commit on its own: `fn` must not throw after it ran to
+   * undo what it wrote. A second statement is refused (it would commit separately).
+   */
+  async withSingleStatement<T>(
+    mode: "READ" | "WRITE",
+    fn: (tx: TransactionLike) => Promise<T>,
+  ): Promise<T> {
+    const session = this.session() as unknown as {
+      runRetried?: (text: string, params: Params | undefined, mode: "READ" | "WRITE") => unknown;
+    };
+    if (this.transport !== "http" || typeof session.runRetried !== "function") {
+      return mode === "READ"
+        ? this.withReadTransaction(fn as (tx: ManagedTransaction) => Promise<T>)
+        : this.withWriteTransaction(fn as (tx: ManagedTransaction) => Promise<T>);
+    }
+    let ran = false;
+    return fn({
+      run: (text, params) => {
+        if (ran) {
+          return Promise.reject(
+            new Error(
+              "withSingleStatement: the work ran a second statement (each would commit on its own).",
+            ),
+          );
+        }
+        ran = true;
+        return session.runRetried!(text, params, mode) as PromiseLike<unknown>;
+      },
+    });
+  }
+
+  /**
    * Execute work inside a read transaction.
    */
   async withReadTransaction<T>(fn: (tx: ManagedTransaction) => Promise<T>): Promise<T> {
