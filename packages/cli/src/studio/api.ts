@@ -15,10 +15,13 @@ import type {
   FindRequest,
   FindResponse,
   RelatedRequest,
+  StudioField,
   StudioMeta,
+  StudioScalarField,
 } from "./protocol.js";
 import {
   StudioRequestError,
+  StudioUnsupportedError,
   decodeData,
   decodeEdgeData,
   decodeWhere,
@@ -78,14 +81,32 @@ function q(name: string): string {
 
 /**
  * Map an error to an API answer: validation issues (400), not found (404), uniqueness and
- * `onDelete: Restrict` (409), bad requests (400). Anything else is a 500 with its message.
+ * `onDelete: Restrict` (409), bad requests and features the dialect lacks (400). Anything else is
+ * a 500 with its message.
  */
 export function errorResult(e: unknown): ApiResult {
   const name = (e as { name?: string })?.name;
   const message = e instanceof Error ? e.message : String(e);
   const body: ApiError = { error: message };
+  if (e instanceof StudioUnsupportedError) {
+    return {
+      status: 400,
+      body: {
+        ...body,
+        unsupported: { feature: e.feature, dialect: e.dialect },
+        ...(e.issues.length ? { issues: e.issues } : {}),
+      },
+    };
+  }
   if (e instanceof StudioRequestError) return { status: 400, body };
   switch (name) {
+    case "UnsupportedFeatureError": {
+      const { feature, dialect } = e as { feature?: unknown; dialect?: unknown };
+      return {
+        status: 400,
+        body: { ...body, unsupported: { feature: String(feature), dialect: String(dialect) } },
+      };
+    }
     case "CyphraValidationError": {
       const issues = ((e as { issues?: { field: string; message: string }[] }).issues ?? []).map(
         (i) => ({ field: i.field, message: i.message }),
@@ -102,9 +123,12 @@ export function errorResult(e: unknown): ApiResult {
     case "RestrictError":
       return { status: 409, body };
     default: {
-      // Neo4j rejected the statement (syntax, a write in a read transaction, …): a bad request.
+      // The database rejected the statement (syntax, a write in a read transaction, …): a bad
+      // request.
       const code = (e as { code?: unknown })?.code;
-      const client = typeof code === "string" && code.startsWith("Neo.ClientError.");
+      const client =
+        typeof code === "string" &&
+        (code.startsWith("Neo.ClientError.") || code.startsWith("Memgraph.ClientError."));
       return { status: client ? 400 : 500, body };
     }
   }
@@ -194,6 +218,30 @@ export function createStudioApi(opts: {
     }
     return decodeWhere(schema, model, where);
   };
+
+  /**
+   * Refuse to write fields whose values the dialect cannot store (a `Time` on Memgraph), with a
+   * message naming them, before anything runs.
+   */
+  const assertStorable = (fields: readonly StudioField[], data: unknown, owner: string) => {
+    if (!isRecord(data)) return;
+    const bad = fields.filter(
+      (f): f is StudioScalarField & { unsupported: string } =>
+        f.kind === "scalar" &&
+        f.unsupported !== undefined &&
+        data[f.name] !== undefined &&
+        data[f.name] !== null,
+    );
+    if (bad.length === 0) return;
+    const server = meta.dialect === "memgraph" ? "Memgraph" : "Neo4j";
+    throw new StudioUnsupportedError(
+      `${bad.map((f) => `${owner}.${f.name}`).join(", ")} cannot be written on ${server}: ${bad[0]!.unsupported}`,
+      `${bad[0]!.type} values`,
+      meta.dialect,
+      bad.map((f) => ({ field: f.name, message: f.unsupported })),
+    );
+  };
+  const nodeFields = (name: string) => meta.nodes.find((x) => x.name === name)?.fields ?? [];
 
   const writable = (n: ResolvedNodeModel) => {
     if (readOnly) throw new StudioRequestError("The studio runs in read-only mode.");
@@ -365,6 +413,11 @@ export function createStudioApi(opts: {
     }
     const from = keyWhere(r.from, req.from);
     const to = keyWhere(r.to, req.to);
+    assertStorable(
+      meta.relationships.find((x) => x.name === name)?.properties ?? [],
+      req.data,
+      name,
+    );
     const data = decodeEdgeData(schema, name, req.data);
     await db.delegate(r.from).update({
       where: from,
@@ -424,6 +477,7 @@ export function createStudioApi(opts: {
       async ([m], b) => {
         const n = node(m!);
         writable(n);
+        assertStorable(nodeFields(m!), b.data, m!);
         const rec = await db.delegate(m!).create({ data: decodeData(schema, m!, b.data) });
         return { row: toWire(rec) };
       },
@@ -434,6 +488,7 @@ export function createStudioApi(opts: {
       async ([m], b) => {
         const n = node(m!);
         writable(n);
+        assertStorable(nodeFields(m!), b.data, m!);
         const rec = await db.delegate(m!).update({
           where: keyWhere(m!, b.where),
           data: decodeData(schema, m!, b.data),

@@ -3,6 +3,9 @@
  * bundle compiles this file with the DOM lib only.
  */
 
+/** The database's Cypher flavour (`dialect` in `cyphra.json`, else detected from the server). */
+export type StudioDialect = "neo4j" | "memgraph";
+
 /** A scalar field as the UI sees it (a subset of `ResolvedScalarField`). */
 export type StudioScalarField = {
   readonly kind: "scalar";
@@ -19,6 +22,11 @@ export type StudioScalarField = {
   /** Validation rules, printed (`@length(min: 3)`). */
   readonly rules?: readonly string[];
   readonly inheritedFrom?: string;
+  /**
+   * Why the database cannot store values of this field (a `Time` on Memgraph): the UI disables
+   * it, and the API refuses to write it.
+   */
+  readonly unsupported?: string;
 };
 
 export type StudioRelationField = {
@@ -72,6 +80,8 @@ export type StudioMeta = {
   readonly connection: string;
   readonly database?: string;
   readonly version: string;
+  /** The database's dialect: the UI hides what it cannot run. */
+  readonly dialect: StudioDialect;
 };
 
 /** Body of a list request on a node model. */
@@ -157,6 +167,8 @@ export type ApiError = {
   readonly issues?: readonly { readonly field: string; readonly message: string }[];
   /** Fields of a broken uniqueness constraint. */
   readonly fields?: readonly string[];
+  /** Set when the database's dialect cannot run the operation (`UnsupportedFeatureError`). */
+  readonly unsupported?: { readonly feature: string; readonly dialect: string };
 };
 
 /** Header every API request carries (forces a CORS preflight for cross-site requests). */

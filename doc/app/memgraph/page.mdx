@@ -45,7 +45,8 @@ And set it in `cyphra.json`, so that `cyphra migrate dev`, `cyphra migrate diff`
 The client does not detect the dialect on its own: ORM statements are compiled without a round
 trip to the server, and Neo4j stays the default. If a Neo4j-dialect client talks to Memgraph, the
 first Cypher Memgraph cannot parse fails with a `CyphraError` that points at the `dialect` option.
-The CLI commands that connect (`push`, `pull`, `migrate deploy`, `migrate status`, `migrate reset`)
+The CLI commands that connect (`push`, `pull`, `migrate deploy`, `migrate status`, `migrate reset`,
+`studio`)
 read the dialect from `cyphra.json` and, when it sets none, from the server's Bolt agent string
 (`detectDialect(client)` does the same in code).
 
@@ -80,6 +81,7 @@ Verified against Memgraph 3.14.0. "Supported" means the shared integration suite
 | `cyphra push`, `migrate dev`, `migrate deploy`, `migrate diff` | Supported, Memgraph DDL                                                                  |
 | `cyphra migrate status` (drift), `migrate reset`               | Supported                                                                                |
 | `cyphra pull`                                                  | Supported                                                                                |
+| `cyphra studio`                                                | Supported; `Time` fields are read-only                                                   |
 | `@unique` on relationship properties                           | Not available: Memgraph has no relationship constraints                                  |
 | Missing-index warnings (`warnMissingIndexes`)                  | Not available (off on Memgraph)                                                          |
 | HTTP transport (Query API, edge runtimes)                      | Not available: Memgraph has no HTTP query endpoint                                       |

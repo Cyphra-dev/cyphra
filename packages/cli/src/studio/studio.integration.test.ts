@@ -10,7 +10,10 @@ import { buildMeta } from "./values.js";
  * `Sd` / `SD_` and only those nodes are deleted, so the suite can share the test database.
  */
 const enabled = Boolean(
-  process.env.NEO4J_TEST_URI && process.env.NEO4J_TEST_USER && process.env.NEO4J_TEST_PASSWORD,
+  process.env.NEO4J_TEST_URI &&
+  process.env.NEO4J_TEST_USER &&
+  process.env.NEO4J_TEST_PASSWORD &&
+  process.env.CYPHRA_TEST_DIALECT !== "memgraph",
 );
 
 const schema = resolveSchema(
