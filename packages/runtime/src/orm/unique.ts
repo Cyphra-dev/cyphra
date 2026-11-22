@@ -33,6 +33,11 @@ const PROPERTY = new RegExp(`(?:^|, )${QUOTED} = `, "g");
  * constraints.
  */
 const MEMGRAPH_HEAD = /unique constraint violation on :([^(]+)\((.*)\)\s*$/;
+/** FalkorDB's message names the label (or relationship type), not the properties. */
+const FALKORDB_HEAD =
+  /unique constraint violation,? on (node of type|edge of relationship-type) (.+?)\s*$/;
+/** The code the FalkorDB transport gives a constraint violation (`FalkorDBError.code`). */
+const FALKORDB_CONSTRAINT_CODE = "FalkorDB.ConstraintViolation";
 
 function unquote(s: string): string {
   return s.replace(/``/g, "`");
@@ -46,6 +51,14 @@ function unquote(s: string): string {
  * ``Unable to commit due to unique constraint violation on :User(email)``.
  */
 export function parseUniqueViolation(message: string): ParsedUniqueViolation | undefined {
+  const fk = FALKORDB_HEAD.exec(message);
+  if (fk) {
+    return {
+      entity: fk[1]!.startsWith("edge") ? "relationship" : "node",
+      label: fk[2]!,
+      properties: [],
+    };
+  }
   const mg = MEMGRAPH_HEAD.exec(message);
   if (mg) {
     return {
@@ -100,7 +113,8 @@ function uniqueViolation(err: unknown): ErrorLike | undefined {
       (typeof e.code === "string" &&
         MEMGRAPH_ERROR_CODE.test(e.code) &&
         MEMGRAPH_HEAD.test(message)) ||
-      (typeof e.gqlStatus === "string" && UNIQUE_GQL_STATUSES.has(e.gqlStatus))
+      (typeof e.gqlStatus === "string" && UNIQUE_GQL_STATUSES.has(e.gqlStatus)) ||
+      (e.code === FALKORDB_CONSTRAINT_CODE && FALKORDB_HEAD.test(message))
     ) {
       return e;
     }
@@ -114,10 +128,10 @@ function constraintName(name: string): string {
   return name.replace(/[^A-Za-z0-9_]/g, "_");
 }
 
-type Candidate = { model: string; fields: readonly string[]; constraint: string };
+export type Candidate = { model: string; fields: readonly string[]; constraint: string };
 
 /** Uniqueness constraints the schema declares on `label` (node) or `type` (relationship). */
-function candidates(schema: SchemaModel, parsed: ParsedUniqueViolation): Candidate[] {
+export function candidates(schema: SchemaModel, parsed: ParsedUniqueViolation): Candidate[] {
   const out: Candidate[] = [];
   if (parsed.entity === "node") {
     const node = schema.nodes.find((n) => n.label === parsed.label);
@@ -166,6 +180,8 @@ function modelOf(schema: SchemaModel, parsed: ParsedUniqueViolation): string | u
 export function uniqueConstraintError(
   schema: SchemaModel,
   err: unknown,
+  /** The properties the caller found out (FalkorDB's message names none). */
+  properties?: readonly string[],
 ): UniqueConstraintError | undefined {
   if (err instanceof UniqueConstraintError) return err;
   const violation = uniqueViolation(err);
@@ -174,7 +190,8 @@ export function uniqueConstraintError(
   const gqlStatus = typeof violation.gqlStatus === "string" ? violation.gqlStatus : undefined;
   // A GQL status alone identifies the violation: the server may send no message at all.
   const message = typeof violation.message === "string" ? violation.message.trim() : "";
-  const parsed = parseUniqueViolation(message);
+  const read = parseUniqueViolation(message);
+  const parsed = read && properties ? { ...read, properties } : read;
   if (!parsed) {
     return new UniqueConstraintError(
       message

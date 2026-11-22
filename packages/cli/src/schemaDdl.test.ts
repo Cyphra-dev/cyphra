@@ -87,6 +87,45 @@ describe("runSchemaDdl", () => {
     ]);
   });
 
+  it('prints FalkorDB DDL with "dialect": "falkordb"', async () => {
+    const dir = await mkdtemp(join(tmpdir(), "cyphra-ddl-fk-"));
+    await writeFile(
+      join(dir, "schema.cyphra"),
+      `node U {
+  id   String @id
+  slug String @index
+  bio  String?
+  embedding Vector(3)? @vectorIndex(similarity: euclidean)
+
+  @@fulltext([slug, bio], name: "uSearch")
+}
+`,
+      "utf8",
+    );
+    await writeFile(
+      join(dir, "cyphra.json"),
+      JSON.stringify({
+        schema: "./schema.cyphra",
+        migrations: "./migrations",
+        dialect: "falkordb",
+      }),
+      "utf8",
+    );
+    const config = await loadConfig(dir);
+    expect(config.dialect).toBe("falkordb");
+    const lines: string[] = [];
+    vi.spyOn(console, "log").mockImplementation((msg: unknown) => {
+      lines.push(String(msg));
+    });
+    await runSchemaDdl(config);
+    expect(lines).toEqual([
+      "GRAPH.CONSTRAINT CREATE UNIQUE NODE `U` PROPERTIES 1 `id`",
+      "CREATE INDEX FOR (n:`U`) ON (n.`slug`)",
+      "CREATE VECTOR INDEX FOR (n:`U`) ON (n.`embedding`) OPTIONS {dimension: 3, similarityFunction: 'euclidean'}",
+      "CREATE FULLTEXT INDEX FOR (n:`U`) ON (n.`slug`, n.`bio`)",
+    ]);
+  });
+
   it("rejects an unknown dialect in cyphra.json", async () => {
     const dir = await mkdtemp(join(tmpdir(), "cyphra-ddl-bad-"));
     await writeFile(
@@ -95,7 +134,7 @@ describe("runSchemaDdl", () => {
       "utf8",
     );
     await expect(loadConfig(dir)).rejects.toThrow(
-      'cyphra.json "dialect" must be "neo4j" or "memgraph"',
+      'cyphra.json "dialect" must be "neo4j", "memgraph" or "falkordb"',
     );
   });
 });

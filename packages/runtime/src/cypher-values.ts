@@ -388,3 +388,21 @@ export const isPoint = (v: unknown): boolean => hasMarker(v, "__isPoint__");
 export const isNode = (v: unknown): boolean => hasMarker(v, "__isNode__");
 export const isRelationship = (v: unknown): boolean => hasMarker(v, "__isRelationship__");
 export const isPath = (v: unknown): boolean => hasMarker(v, "__isPath__");
+
+/**
+ * Marks an array as a `Vector` field value (a non-enumerable symbol, invisible to the drivers and
+ * the HTTP codec). The FalkorDB transport sends marked arrays as `vecf32(…)`, the type FalkorDB's
+ * vector indexes read.
+ */
+export const VECTOR_MARK: unique symbol = Symbol.for("cyphra.vector");
+
+/** `values`, marked as a vector value (see {@link VECTOR_MARK}). */
+export function markVector<T extends unknown[]>(values: T): T {
+  Object.defineProperty(values, VECTOR_MARK, { value: true, enumerable: false });
+  return values;
+}
+
+/** Whether `v` is an array marked by {@link markVector}. */
+export function isVectorValue(v: unknown): v is unknown[] {
+  return Array.isArray(v) && (v as unknown as Record<symbol, unknown>)[VECTOR_MARK] === true;
+}

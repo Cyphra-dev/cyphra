@@ -60,12 +60,12 @@ export class UnsupportedFeatureError extends CyphraError {
     /** What is unsupported, phrased to read "<feature> is not supported on …", e.g. `"User.opensAt (a Time field)"`. */
     readonly feature: string,
     /** The dialect it is unavailable on. */
-    readonly dialect: "neo4j" | "memgraph",
+    readonly dialect: "neo4j" | "memgraph" | "falkordb",
     /** What to do instead (appended to the message). */
     hint?: string,
   ) {
     super(
-      `${feature} is not supported on ${dialect === "memgraph" ? "Memgraph" : "Neo4j"}${hint ? `: ${hint}` : "."}`,
+      `${feature} is not supported on ${dialect === "memgraph" ? "Memgraph" : dialect === "falkordb" ? "FalkorDB" : "Neo4j"}${hint ? `: ${hint}` : "."}`,
     );
   }
 }

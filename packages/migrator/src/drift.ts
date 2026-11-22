@@ -22,6 +22,11 @@ import type { LoadedMigration } from "./runner.js";
 import type { MigrationDb } from "./migrationDb.js";
 import { CYPHRA_MIGRATION_LABEL } from "./tracker.js";
 import { memgraphSchemaObjects, parseMemgraphDdl } from "./memgraph.js";
+import {
+  normalizeFalkorDBObjects,
+  parseFalkorDBDdl,
+  readFalkorDBSchemaObjects,
+} from "./falkordb.js";
 
 /** Value of a compared option (vector dimensions, analyzer, …). */
 export type SchemaOptionValue = string | number | boolean;
@@ -159,6 +164,13 @@ function optionsFromLiteral(type: string, literal: string): Record<string, Schem
  */
 export function parseDdlStatement(statement: string): ParsedDdl | null {
   const text = stripComments(statement);
+  // FalkorDB's syntax (`GRAPH.CONSTRAINT …`, `DROP INDEX FOR … ON (…)`, `FULLTEXT` / `VECTOR` …
+  // `FOR … ON (…)`): unnamed, dropped by definition.
+  const fk = parseFalkorDBDdl(text);
+  if (fk) {
+    if (fk.op === "create") return { op: "create", ifNotExists: true, object: fk.object };
+    return { op: "dropDefinition", object: fk.object };
+  }
   // Memgraph's syntax (`… ON (n:L) ASSERT …`, `… ON :L(p)`, `TEXT INDEX`): its CREATE is
   // idempotent, like IF NOT EXISTS.
   const mg = parseMemgraphDdl(text);
@@ -353,8 +365,22 @@ export function expectedSchemaFromModel(
   model: SchemaModel,
   dialect: CyphraDialect = "neo4j",
 ): SchemaObject[] {
-  return expectedSchemaFromStatements(ddlObjectsFromModel(model, { dialect }).map((o) => o.create))
-    .objects;
+  const objects = expectedSchemaFromStatements(
+    ddlObjectsFromModel(model, { dialect }).map((o) => o.create),
+  ).objects;
+  return dialect === "falkordb" ? normalizeFalkorDBObjects(objects) : objects;
+}
+
+/**
+ * Expected objects (replayed from migrations) as `dialect` stores them: unchanged, except on
+ * FalkorDB (see {@link normalizeFalkorDBObjects}), where they are compared with what
+ * {@link readSchemaObjects} reads.
+ */
+export function expectedSchemaForDialect(
+  objects: readonly SchemaObject[],
+  dialect: CyphraDialect | undefined,
+): SchemaObject[] {
+  return dialect === "falkordb" ? normalizeFalkorDBObjects(objects) : [...objects];
 }
 
 // ---------------------------------------------------------------------------
@@ -431,9 +457,16 @@ export function schemaObjectsFromShow(
 
 /**
  * Read the database's constraints and indexes (read-only, no data sampling). On Memgraph
- * (`client.dialect`): `SHOW CONSTRAINT INFO`, `SHOW INDEX INFO` and `SHOW VECTOR INDEX INFO`.
+ * (`client.dialect`): `SHOW CONSTRAINT INFO`, `SHOW INDEX INFO` and `SHOW VECTOR INDEX INFO`. On
+ * FalkorDB: `CALL db.constraints()` and `CALL db.indexes()`, normalized (see
+ * {@link normalizeFalkorDBObjects}).
  */
 export async function readSchemaObjects(client: CyphraClient): Promise<SchemaObject[]> {
+  if ((client as { dialect?: CyphraDialect }).dialect === "falkordb") {
+    return normalizeFalkorDBObjects(await readFalkorDBSchemaObjects(client)).filter(
+      (o) => !isInternal(o),
+    );
+  }
   return client.withSession(async (session) => {
     const rows = async (text: string) =>
       (await session.run(text)).records.map((r) => toNative(r.toObject()) as ShowRow);
@@ -543,5 +576,9 @@ export async function detectDrift(
   applied: readonly LoadedMigration[],
 ): Promise<{ report: DriftReport; warnings: string[] }> {
   const { objects, warnings } = await replayMigrations(applied);
-  return { report: compareSchemaObjects(objects, await readSchemaObjects(client)), warnings };
+  const expected = expectedSchemaForDialect(
+    objects,
+    (client as { dialect?: CyphraDialect }).dialect,
+  );
+  return { report: compareSchemaObjects(expected, await readSchemaObjects(client)), warnings };
 }

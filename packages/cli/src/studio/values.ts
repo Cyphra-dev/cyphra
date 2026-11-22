@@ -40,6 +40,9 @@ export function unsupportedType(type: string, dialect: StudioDialect): string | 
   if (dialect === "memgraph" && type === "Time") {
     return "Memgraph has no zoned time type (Time): use LocalTime or DateTime.";
   }
+  if (dialect === "falkordb" && (type === "Point" || type === "CartesianPoint")) {
+    return "FalkorDB points cannot be passed as parameters (see doc/app/falkordb/page.mdx).";
+  }
   return undefined;
 }
 

@@ -2,11 +2,12 @@ import { createInterface } from "node:readline/promises";
 import type { CyphraClient } from "@cyphra/runtime";
 import {
   CYPHRA_MIGRATION_LABEL,
+  dropAllFalkorDBSchema,
   memgraphDropStatement,
   readSchemaObjects,
   runPendingMigrations,
 } from "@cyphra/migrator";
-import { clientForConfig } from "../clientFromEnv.js";
+import { clientForConfig, falkordbGraphFromEnv, falkordbUrlFromEnv } from "../clientFromEnv.js";
 import type { CyphraConfig } from "../config.js";
 import { loadMigrationsFromDir } from "../loadMigrations.js";
 import { runDbSeed } from "./seed.js";
@@ -46,7 +47,7 @@ export function assessUri(uri: string): UriAssessment {
   }
   const host = url.hostname.replace(/^\[|\]$/g, "").toLowerCase();
   const scheme = url.protocol.replace(/:$/, "").toLowerCase();
-  if (/\+(s|ssc)$/.test(scheme)) {
+  if (/\+(s|ssc)$/.test(scheme) || scheme === "rediss") {
     return { local: false, host, reason: `it uses an encrypted ${scheme}:// connection` };
   }
   if (host.endsWith(".databases.neo4j.io")) {
@@ -148,6 +149,7 @@ export type ResetCounts = {
  */
 export async function resetDatabase(client: CyphraClient): Promise<ResetCounts> {
   if (client.dialect === "memgraph") return resetMemgraph(client);
+  if (client.dialect === "falkordb") return resetFalkorDB(client);
   return client.withSession(async (session) => {
     // Constraints first: an index that backs a constraint cannot be dropped on its own.
     const constraints = (await session.run("SHOW CONSTRAINTS YIELD name")).records.map(
@@ -200,6 +202,21 @@ async function resetMemgraph(client: CyphraClient): Promise<ResetCounts> {
   });
 }
 
+/**
+ * {@link resetDatabase} on FalkorDB: every constraint and index of the graph is dropped by its
+ * definition (constraints first), then every node of the graph is deleted in one statement
+ * (FalkorDB has no batched commits). Other graphs of the server are left alone.
+ */
+async function resetFalkorDB(client: CyphraClient): Promise<ResetCounts> {
+  const { constraints, indexes } = await dropAllFalkorDBSchema(client);
+  return client.withSession(async (session) => {
+    const [row] = (await session.run("MATCH (n) DETACH DELETE n RETURN count(n) AS c")).records;
+    const c = row?.get("c") as { toNumber?: () => number } | number | undefined;
+    const nodes = typeof c === "object" && c?.toNumber ? c.toNumber() : Number(c ?? 0);
+    return { constraints, indexes, nodes };
+  });
+}
+
 export type ResetDeps = {
   readonly interactive?: boolean;
   readonly confirm?: (question: string) => Promise<boolean>;
@@ -222,7 +239,8 @@ export async function runMigrateReset(
   opts: ResetOptions,
   deps: ResetDeps = {},
 ): Promise<number> {
-  const uri = process.env.NEO4J_URI;
+  const falkordb = config.dialect === "falkordb";
+  const uri = falkordb ? falkordbUrlFromEnv() : process.env.NEO4J_URI;
   if (!uri) throw new Error("Set NEO4J_URI, NEO4J_USERNAME and NEO4J_PASSWORD in the environment");
   const interactive = deps.interactive ?? Boolean(process.stdin.isTTY && process.stdout.isTTY);
   const decision = decideReset(uri, opts, interactive);
@@ -230,7 +248,9 @@ export async function runMigrateReset(
     console.error(decision.message);
     return 1;
   }
-  const database = process.env.NEO4J_DATABASE || "the default database";
+  const database = falkordb
+    ? `graph ${falkordbGraphFromEnv()}`
+    : process.env.NEO4J_DATABASE || "the default database";
   const host = assessUri(uri).host || uri;
   if (decision.action === "prompt") {
     const ask = deps.confirm ?? ((q: string) => confirm(q));

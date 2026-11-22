@@ -29,6 +29,7 @@ import {
 } from "./compile.js";
 import { CyphraValidationError } from "./errors.js";
 import { compilePath, decodePath } from "./path.js";
+import { falkordbShortestPath } from "./falkordbPaths.js";
 import {
   compileHop,
   edgeWhereModel,
@@ -106,6 +107,9 @@ export function compileShortestPath(
   const to = compileWhere(ctx, model, "t", args.to);
   if (ctx.dialect === "memgraph") {
     return memgraphShortestPath(ctx, model, args, max, all, { label, from, to, rels, op });
+  }
+  if (ctx.dialect === "falkordb") {
+    return falkordbShortestPath(ctx, model, args, max, all, { label, from, to, rels, op });
   }
   // `where` reads the group variable of the hop's end nodes (every node but the start).
   const y = args.where === undefined ? undefined : ctx.variable("y");

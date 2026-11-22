@@ -27,6 +27,8 @@ import neo4j from "neo4j-driver";
 import { toNative, type CyphraClient } from "@cyphra/runtime";
 import { CYPHRA_MIGRATION_LABEL } from "./tracker.js";
 import { memgraphSchemaObjects } from "./memgraph.js";
+import { falkordbSchemaObjects, normalizeFalkorDBObjects } from "./falkordb.js";
+import type { SchemaObject } from "./drift.js";
 
 export type IntrospectedProperty = {
   readonly propertyName: string;
@@ -102,6 +104,7 @@ function stripRelType(raw: string): string {
  * edges per relationship type.
  */
 export async function introspectDatabase(client: CyphraClient): Promise<IntrospectionResult> {
+  if ((client as { dialect?: string }).dialect === "falkordb") return introspectFalkorDB(client);
   const memgraph = (client as { dialect?: string }).dialect === "memgraph";
   return client.withSession(async (session) => {
     const rows = async (text: string, params: Record<string, unknown> = {}) =>
@@ -251,6 +254,185 @@ export async function introspectDatabase(client: CyphraClient): Promise<Introspe
 
     return { nodeTypes: [...byCombo.values()], relTypes, constraints, indexes };
   });
+}
+
+/** FalkorDB's `typeOf()` names, as the property type names of {@link TYPE_MAP}. */
+const FALKORDB_TYPES: Record<string, string> = {
+  String: "String",
+  Integer: "Int",
+  Float: "Float",
+  Boolean: "Boolean",
+  // FalkorDB's own temporal types have no time zone. (The ORM stores temporal values as text,
+  // which reads back as String: change the field type by hand.)
+  Datetime: "LocalDateTime",
+  Date: "Date",
+  Time: "LocalTime",
+  Duration: "Duration",
+  Point: "Point",
+};
+
+/**
+ * {@link introspectDatabase} on FalkorDB, which has no schema procedures: up to
+ * {@link ENDPOINT_SAMPLE_SIZE} nodes of each label combination (and edges of each relationship
+ * type) are sampled for their properties and `typeOf()` types; a property is mandatory when every
+ * sampled node has it.
+ */
+async function introspectFalkorDB(client: CyphraClient): Promise<IntrospectionResult> {
+  return client.withSession(async (session) => {
+    const rows = async (text: string, params: Record<string, unknown> = {}) =>
+      (await session.run(text, params)).records.map(
+        (r) => toNative(r.toObject()) as Record<string, unknown>,
+      );
+    const limit = neo4jInt(ENDPOINT_SAMPLE_SIZE);
+    const quote = (id: string) => "`" + id.replace(/`/g, "``") + "`";
+    const typesOf = (raw: string[], elements: string[]) =>
+      raw.flatMap((t) => {
+        if (t === "List") {
+          const e = elements.map((x) => FALKORDB_TYPES[x] ?? x);
+          return e.length ? e.map((x) => `List<${x}>`) : ["List<String>"];
+        }
+        return [FALKORDB_TYPES[t] ?? t];
+      });
+    // Properties of the sampled entities `n` of `match` (`WITH n LIMIT $limit` sampled first).
+    const properties = async (match: string): Promise<IntrospectedProperty[]> => {
+      const found = await rows(
+        `${match} WITH n LIMIT $limit WITH collect(n) AS ns, count(n) AS total ` +
+          `UNWIND ns AS n UNWIND keys(n) AS k ` +
+          `WITH total, k, collect(DISTINCT typeOf(n[k])) AS types, count(*) AS seen ` +
+          `RETURN k, types, seen = total AS mandatory ORDER BY k`,
+        { limit },
+      );
+      const out: IntrospectedProperty[] = [];
+      for (const r of found) {
+        const k = String(r.k);
+        const raw = (r.types as string[]).filter((t) => t !== "Null");
+        let elements: string[] = [];
+        if (raw.includes("List")) {
+          elements = (
+            await rows(
+              `${match} WITH n LIMIT $limit WITH n.${quote(k)} AS v WHERE typeOf(v) = 'List' ` +
+                `UNWIND v AS x RETURN DISTINCT typeOf(x) AS t`,
+              { limit },
+            )
+          ).map((x) => String(x.t));
+        }
+        const propertyTypes = typesOf(raw, elements);
+        out.push({
+          propertyName: k,
+          propertyTypes,
+          mandatory: Boolean(r.mandatory),
+          ...(raw.includes("Point") ? { pointCrs: ["wgs-84"] } : {}),
+        });
+      }
+      return out;
+    };
+
+    const nodeTypes: IntrospectionResult["nodeTypes"][number][] = [];
+    const combos = await rows("MATCH (n) RETURN DISTINCT labels(n) AS labels");
+    for (const c of combos) {
+      const labels = [...(c.labels as string[])].sort();
+      if (!labels.length || labels.includes(CYPHRA_MIGRATION_LABEL)) continue;
+      const match = `MATCH (n:${labels.map(quote).join(":")}) WHERE size(labels(n)) = ${labels.length}`;
+      nodeTypes.push({ labels, properties: await properties(match) });
+    }
+
+    const relTypes: IntrospectionResult["relTypes"][number][] = [];
+    const types = await rows(
+      "CALL db.relationshipTypes() YIELD relationshipType RETURN relationshipType",
+    );
+    for (const t of types) {
+      const type = String(t.relationshipType);
+      const match = `MATCH ()-[n:${quote(type)}]->()`;
+      const props = await properties(match);
+      const ends = await rows(
+        `${match} WITH n LIMIT $limit RETURN DISTINCT labels(startNode(n)) AS from, labels(endNode(n)) AS to`,
+        { limit },
+      );
+      relTypes.push({
+        type,
+        properties: props,
+        endpoints: ends.map((e) => ({ from: e.from as string[], to: e.to as string[] })),
+      });
+    }
+
+    const objects = normalizeFalkorDBObjects(
+      falkordbSchemaObjects(
+        await rows(
+          "CALL db.constraints() YIELD type, label, properties, entitytype RETURN type, label, properties, entitytype",
+        ),
+        await rows(
+          "CALL db.indexes() YIELD label, properties, types, options, entitytype RETURN label, properties, types, options, entitytype",
+        ),
+      ),
+    );
+    return { nodeTypes, relTypes, ...falkordbConstraintsAndIndexes(objects) };
+  });
+}
+
+/**
+ * FalkorDB's constraints and indexes in the shape of Neo4j's `SHOW CONSTRAINTS` / `SHOW INDEXES`
+ * rows, named as Cyphra would name them (like Memgraph's, they have no name).
+ */
+function falkordbConstraintsAndIndexes(
+  objects: readonly SchemaObject[],
+): Pick<IntrospectionResult, "constraints" | "indexes"> {
+  const name = (label: string, props: readonly string[], suffix: string) =>
+    `${label}_${props.join("_")}_${suffix}`.replace(/[^A-Za-z0-9_]/g, "_");
+  const constraints: IntrospectionResult["constraints"][number][] = [];
+  const indexes: IntrospectionResult["indexes"][number][] = [];
+  for (const o of objects) {
+    const [label] = o.labelsOrTypes;
+    if (!label || label === CYPHRA_MIGRATION_LABEL) continue;
+    if (o.kind === "constraint") {
+      if (o.type !== "UNIQUE") continue;
+      const rel = o.entityType === "RELATIONSHIP";
+      constraints.push({
+        name: name(
+          label,
+          o.properties,
+          rel
+            ? "rel_unique"
+            : o.properties.length === 1 && o.properties[0] === "id"
+              ? "id"
+              : "unique",
+        ),
+        type: rel ? "RELATIONSHIP_UNIQUENESS" : "UNIQUENESS",
+        entityType: o.entityType,
+        labelsOrTypes: [label],
+        properties: o.properties,
+      });
+      continue;
+    }
+    const options =
+      o.type === "VECTOR"
+        ? {
+            indexConfig: {
+              "vector.dimensions": o.options.dimensions,
+              "vector.similarity_function": o.options.similarity,
+            },
+          }
+        : null;
+    indexes.push({
+      name: name(
+        label,
+        o.properties,
+        o.type === "FULLTEXT"
+          ? "fulltext"
+          : o.type === "VECTOR"
+            ? "vector"
+            : o.entityType === "RELATIONSHIP"
+              ? "rel_idx"
+              : "idx",
+      ),
+      type: o.type,
+      entityType: o.entityType,
+      labelsOrTypes: [label],
+      properties: o.properties,
+      owningConstraint: null,
+      options,
+    });
+  }
+  return { constraints, indexes };
 }
 
 function neo4jInt(n: number): unknown {

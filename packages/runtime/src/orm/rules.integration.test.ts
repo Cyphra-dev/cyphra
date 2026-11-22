@@ -1,14 +1,12 @@
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createClient, type Db } from "./__fixtures__/rules.gen.js";
 import { CyphraValidationError } from "./errors.js";
-import { testDialect } from "./__fixtures__/testDialect.js";
+import { hasTestDb, onFalkorDB, testConnection } from "./__fixtures__/testDialect.js";
 
 // Each test makes many round trips to Neo4j: the default 5 s is too tight on a busy CI runner.
 vi.setConfig({ testTimeout: 30_000, hookTimeout: 30_000 });
 
-const hasNeo = Boolean(
-  process.env.NEO4J_TEST_URI && process.env.NEO4J_TEST_USER && process.env.NEO4J_TEST_PASSWORD,
-);
+const hasNeo = hasTestDb;
 
 const LABELS = ["VrUser", "VrPost"];
 
@@ -28,10 +26,7 @@ describe.skipIf(!hasNeo)("validation rules (Neo4j)", () => {
 
   beforeEach(async () => {
     db ??= createClient({
-      uri: process.env.NEO4J_TEST_URI!,
-      user: process.env.NEO4J_TEST_USER!,
-      password: process.env.NEO4J_TEST_PASSWORD!,
-      dialect: testDialect,
+      ...testConnection(),
     });
     await db.$cypher`MATCH (n) WHERE any(l IN labels(n) WHERE l IN ${LABELS}) DETACH DELETE n`;
   });
@@ -156,7 +151,8 @@ describe.skipIf(!hasNeo)("validation rules (Neo4j)", () => {
     });
   });
 
-  it("runs nothing inside a transaction either", async () => {
+  // FalkorDB has no multi-statement transactions.
+  it.skipIf(onFalkorDB)("runs nothing inside a transaction either", async () => {
     await expect(
       db.$transaction(async (tx) => {
         await tx.vrUser.create({ data: { email: "ok@example.org", name: "Ok" } });

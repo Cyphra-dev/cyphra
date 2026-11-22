@@ -3,6 +3,7 @@ import { createMigrationDb } from "./migrationDb.js";
 import type { MigrationDefinition } from "./defineMigration.js";
 import * as tracker from "./tracker.js";
 import { ddlForDialect } from "./memgraph.js";
+import { runFalkorDBDdl } from "./falkordb.js";
 
 /** The client's dialect (a client from an older @cyphra/runtime has none: Neo4j). */
 export function dialectOf(client: CyphraClient): CyphraDialect {
@@ -36,7 +37,7 @@ export async function runPendingMigrations(
       }
       const db = createMigrationDb(client, session);
       await m.definition.up({ db });
-      await tracker.recordMigration(session, m.name, m.checksum);
+      await tracker.recordMigration(session, m.name, m.checksum, dialectOf(client));
       applied.push(m.name);
     }
   });
@@ -56,7 +57,13 @@ export async function applyConstraintStatements(
   await client.withSession(async (session) => {
     // Cyphra's DDL is written in Neo4j's syntax: translated for Memgraph (statements already in
     // Memgraph's syntax, or not DDL, run as they are).
-    for (const statement of ddlForDialect(statements, dialectOf(client))) {
+    const dialect = dialectOf(client);
+    for (const statement of ddlForDialect(statements, dialect)) {
+      // FalkorDB has no IF NOT EXISTS: see runFalkorDBDdl.
+      if (dialect === "falkordb") {
+        await runFalkorDBDdl((text) => session.run(text), statement);
+        continue;
+      }
       const r = await session.run(statement);
       await r;
     }

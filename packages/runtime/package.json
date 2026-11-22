@@ -1,7 +1,7 @@
 {
   "name": "@cyphra/runtime",
   "version": "0.14.0",
-  "description": "Cyphra runtime: typed Neo4j ORM client, sessions, transactions and the cypher tag, over Bolt or HTTP (edge runtimes)",
+  "description": "Cyphra runtime: typed Neo4j ORM client, sessions, transactions and the cypher tag, over Bolt or HTTP (edge runtimes), with Memgraph and FalkorDB dialects",
   "type": "module",
   "sideEffects": false,
   "publishConfig": {
@@ -37,10 +37,14 @@
   },
   "peerDependencies": {
     "@opentelemetry/api": "^1.4.0",
-    "neo4j-driver": "^5.28.3 || ^6.0.0"
+    "neo4j-driver": "^5.28.3 || ^6.0.0",
+    "falkordb": "^7.0.0"
   },
   "peerDependenciesMeta": {
     "@opentelemetry/api": {
+      "optional": true
+    },
+    "falkordb": {
       "optional": true
     }
   },
@@ -50,6 +54,7 @@
     "@opentelemetry/sdk-trace-base": "^2.12.0",
     "@types/node": "^22.20.5",
     "esbuild": "^0.27.7",
+    "falkordb": "^7.0.1",
     "neo4j-driver": "^5.28.3",
     "neo4j-driver-5": "npm:neo4j-driver@^5.28.3",
     "neo4j-driver-6": "npm:neo4j-driver@^6.3.2",
@@ -84,6 +89,9 @@
     "edge",
     "cloudflare-workers",
     "vercel-edge",
-    "neo4j-query-api"
+    "neo4j-query-api",
+    "falkordb",
+    "memgraph",
+    "graphrag"
   ]
 }

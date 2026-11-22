@@ -4,6 +4,8 @@ import { createBoltDriver } from "./bolt.js";
 import { basicAuth, HttpDriver, type FetchLike } from "./http/driver.js";
 import { toPlainRecord, toPlainRecords } from "./records.js";
 import { parseDialect, unsupportedOnMemgraph, type CyphraDialect } from "./dialect.js";
+import { FalkorDBDriver, type FalkorDBConnectionOptions } from "./falkordb/driver.js";
+import { CyphraValidationError } from "./orm/errors.js";
 import {
   Instrumentation,
   serverFromUri,
@@ -45,8 +47,9 @@ type CommonClientOptions = ObservabilityOptions & {
   /** Optional database name (Neo4j 4+). */
   database?: string;
   /**
-   * The database's Cypher flavour: `"neo4j"` (default) or `"memgraph"` (Memgraph 3.x, Bolt
-   * only). Not detected automatically: set it when connecting to Memgraph (see `detectDialect`).
+   * The database's Cypher flavour: `"neo4j"` (default), `"memgraph"` (Memgraph 3.x, Bolt only) or
+   * `"falkordb"` (FalkorDB 4.x, implied by the `falkordb` option). Not detected automatically:
+   * set it when connecting to Memgraph (see `detectDialect`).
    */
   dialect?: CyphraDialect;
 };
@@ -67,6 +70,7 @@ export type CyphraConnectionOptions = CommonClientOptions & {
   driver?: never;
   token?: never;
   fetch?: never;
+  falkordb?: never;
 };
 
 /**
@@ -113,6 +117,7 @@ export type CyphraHttpOptions = CommonClientOptions & {
   acquisitionTimeoutMs?: number;
   driverConfig?: never;
   driver?: never;
+  falkordb?: never;
 };
 
 /**
@@ -127,16 +132,45 @@ export type CyphraDriverOptions = CommonClientOptions & {
   password?: never;
   driverConfig?: never;
   transport?: never;
+  falkordb?: never;
 };
 
-export type CyphraClientOptions = CyphraConnectionOptions | CyphraHttpOptions | CyphraDriverOptions;
+/**
+ * Connect to FalkorDB (`dialect: "falkordb"`, implied) over the Redis protocol, with the
+ * `falkordb` package (an optional peer dependency: `npm install falkordb`). Every statement runs
+ * on one graph. FalkorDB has no multi-statement transactions: see the FalkorDB page of the docs
+ * for what that means for the ORM.
+ *
+ * @example
+ * ```ts
+ * const client = new CyphraClient({
+ *   falkordb: { url: process.env.FALKORDB_URL!, graph: "app" }, // redis://localhost:6379
+ * });
+ * ```
+ */
+export type CyphraFalkorDBOptions = ObservabilityOptions & {
+  falkordb: FalkorDBConnectionOptions;
+  /** Always `"falkordb"` (the default with the `falkordb` option). */
+  dialect?: "falkordb";
+  database?: never;
+  uri?: never;
+  user?: never;
+  password?: never;
+  driver?: never;
+  driverConfig?: never;
+  transport?: "falkordb";
+};
 
-/** How a client talks to Neo4j. */
-export type CyphraTransport = "bolt" | "http";
+export type CyphraClientOptions =
+  CyphraConnectionOptions | CyphraHttpOptions | CyphraDriverOptions | CyphraFalkorDBOptions;
+
+/** How a client talks to the database. */
+export type CyphraTransport = "bolt" | "http" | "falkordb";
 
 function isHttpOptions(
   opts: CyphraConnectionOptions | CyphraHttpOptions,
 ): opts is CyphraHttpOptions {
+  if (typeof opts.uri !== "string") return false;
   if (opts.transport === "http") return true;
   if (opts.transport === "bolt") return false;
   return /^https?:\/\//i.test(opts.uri);
@@ -197,7 +231,10 @@ export class CyphraClient {
    */
   readonly instrumentation: Instrumentation;
 
-  /** `"bolt"` (`neo4j-driver`) or `"http"` (Neo4j Query API over `fetch`). */
+  /**
+   * `"bolt"` (`neo4j-driver`), `"http"` (Neo4j Query API over `fetch`) or `"falkordb"` (the Redis
+   * protocol, with the `falkordb` package).
+   */
   readonly transport: CyphraTransport;
 
   /** The Cypher flavour statements are compiled to (`dialect` option, default `"neo4j"`). */
@@ -205,53 +242,89 @@ export class CyphraClient {
 
   constructor(opts: CyphraClientOptions) {
     let server: { address: string; port?: number } | undefined;
-    this.dialect = parseDialect(opts.dialect);
-    if (this.dialect === "memgraph" && !opts.driver && isHttpOptions(opts)) {
+    const falkordb = (opts as { falkordb?: FalkorDBConnectionOptions }).falkordb;
+    this.dialect = parseDialect(opts.dialect ?? (falkordb ? "falkordb" : undefined));
+    if (falkordb && this.dialect !== "falkordb") {
+      throw new CyphraValidationError(
+        `The falkordb option connects to FalkorDB: its dialect is "falkordb" (got ${JSON.stringify(this.dialect)}).`,
+      );
+    }
+    if (this.dialect === "falkordb" && !falkordb && !opts.driver) {
+      throw new CyphraValidationError(
+        'dialect "falkordb": FalkorDB speaks the Redis protocol, not Bolt or HTTP. Connect with falkordb: { url: "redis://host:6379", graph: "<name>" }.',
+      );
+    }
+    if (falkordb) {
+      const driver = new FalkorDBDriver(falkordb);
+      this.driver = driver as unknown as Driver;
+      this.ownsDriver = true;
+      this.transport = "falkordb";
+      this.database = undefined;
+      const [address, port] = driver.address.split(":");
+      server = { address: address ?? "localhost", port: port ? Number(port) : 6379 };
+      this.instrumentation = new Instrumentation({
+        log: opts.log,
+        logParams: opts.logParams,
+        tracer: opts.tracer,
+        traceQueryText: opts.traceQueryText,
+        // Missing-index checks read Neo4j's EXPLAIN plans.
+        warnMissingIndexes: false,
+        debug: opts.debug,
+        database: falkordb.graph,
+        server,
+        openSession: () => this.driver.session(),
+      });
+      return;
+    }
+    const neoOpts = opts as CyphraConnectionOptions | CyphraHttpOptions | CyphraDriverOptions;
+    if (this.dialect === "memgraph" && !neoOpts.driver && isHttpOptions(neoOpts)) {
       throw unsupportedOnMemgraph(
         "The HTTP transport",
         "Memgraph has no Query API; connect over Bolt (bolt://host:7687).",
       );
     }
-    if (opts.driver) {
+    if (neoOpts.driver) {
       // A driver from another copy (or major) of `neo4j-driver` is not assignable to this copy's
       // `Driver` class type, but it is the same API at runtime: values are recognised by the
       // driver's structural markers (`isInt`, `isDateTime`, ...), not by `instanceof`.
-      this.driver = opts.driver as unknown as Driver;
+      this.driver = neoOpts.driver as unknown as Driver;
       this.ownsDriver = false;
       this.transport = "bolt";
-    } else if (isHttpOptions(opts)) {
-      const url = httpBaseUrl(opts.uri);
-      const authorization = opts.token
-        ? `Bearer ${opts.token}`
-        : opts.user !== undefined
-          ? basicAuth(opts.user, opts.password ?? "")
+    } else if (isHttpOptions(neoOpts)) {
+      const http = neoOpts;
+      const url = httpBaseUrl(http.uri);
+      const authorization = http.token
+        ? `Bearer ${http.token}`
+        : http.user !== undefined
+          ? basicAuth(http.user, http.password ?? "")
           : undefined;
       // The HTTP driver has the `Driver` / `Session` / `ManagedTransaction` subset Cyphra uses.
       this.driver = new HttpDriver({
         url,
         authorization,
-        database: opts.database,
-        fetch: opts.fetch,
-        headers: opts.headers,
-        maxRetryTimeMs: opts.maxRetryTimeMs,
-        maxConcurrency: opts.maxConcurrency,
-        acquisitionTimeoutMs: opts.acquisitionTimeoutMs,
+        database: http.database,
+        fetch: http.fetch,
+        headers: http.headers,
+        maxRetryTimeMs: http.maxRetryTimeMs,
+        maxConcurrency: http.maxConcurrency,
+        acquisitionTimeoutMs: http.acquisitionTimeoutMs,
       }) as unknown as Driver;
       this.ownsDriver = true;
       this.transport = "http";
       server = httpServer(url);
     } else {
+      const bolt = neoOpts as CyphraConnectionOptions;
       this.driver = createBoltDriver(
-        opts.uri,
-        opts.user,
-        opts.password,
-        opts.driverConfig,
+        bolt.uri,
+        bolt.user,
+        bolt.password,
+        bolt.driverConfig,
       ) as unknown as Driver;
       this.ownsDriver = true;
       this.transport = "bolt";
-      server = serverFromUri(opts.uri);
+      server = serverFromUri(bolt.uri);
     }
-    this.database = opts.database;
+    this.database = neoOpts.database;
     this.instrumentation = new Instrumentation({
       log: opts.log,
       logParams: opts.logParams,
@@ -260,7 +333,7 @@ export class CyphraClient {
       // Missing-index checks read Neo4j's EXPLAIN plans, which Memgraph returns as rows.
       warnMissingIndexes: this.dialect === "memgraph" ? false : opts.warnMissingIndexes,
       debug: opts.debug,
-      database: opts.database,
+      database: neoOpts.database,
       server,
       openSession: () => this.driver.session({ database: this.database }),
     });

@@ -5,14 +5,18 @@ import {
   type Db as NestedDb,
 } from "./__fixtures__/nested.gen.js";
 import { CyphraValidationError } from "./errors.js";
-import { onMemgraph, testDdl, testDialect } from "./__fixtures__/testDialect.js";
+import {
+  onFalkorDB,
+  onMemgraph,
+  testDdl,
+  hasTestDb,
+  testConnection,
+} from "./__fixtures__/testDialect.js";
 
 // Each test makes many round trips to Neo4j: the default 5 s is too tight on a busy CI runner.
 vi.setConfig({ testTimeout: 30_000, hookTimeout: 30_000 });
 
-const hasNeo = Boolean(
-  process.env.NEO4J_TEST_URI && process.env.NEO4J_TEST_USER && process.env.NEO4J_TEST_PASSWORD,
-);
+const hasNeo = hasTestDb;
 
 const LABELS = ["Person", "Archivable", "Employee", "Customer", "Team", "Note", "Badge"];
 
@@ -21,10 +25,7 @@ describe.skipIf(!hasNeo)("interfaces and multiple labels (Neo4j)", () => {
 
   beforeEach(async () => {
     db ??= createClient({
-      uri: process.env.NEO4J_TEST_URI!,
-      user: process.env.NEO4J_TEST_USER!,
-      password: process.env.NEO4J_TEST_PASSWORD!,
-      dialect: testDialect,
+      ...testConnection(),
     });
     await db.$cypher`MATCH (n) WHERE any(l IN labels(n) WHERE l IN ${LABELS}) DETACH DELETE n`;
   });
@@ -32,7 +33,11 @@ describe.skipIf(!hasNeo)("interfaces and multiple labels (Neo4j)", () => {
   afterAll(async () => {
     if (!db) return;
     await db.$cypher`MATCH (n) WHERE any(l IN labels(n) WHERE l IN ${LABELS}) DETACH DELETE n`;
-    if (!onMemgraph) await db.$cypher`DROP INDEX personSearch IF EXISTS`;
+    if (!onMemgraph && !onFalkorDB) await db.$cypher`DROP INDEX personSearch IF EXISTS`;
+    if (onFalkorDB) {
+      await db.$cypher`DROP FULLTEXT INDEX FOR (n:Person) ON (n.name)`.catch(() => undefined);
+      await db.$cypher`DROP FULLTEXT INDEX FOR (n:Person) ON (n.bio)`.catch(() => undefined);
+    }
     await db.$disconnect();
   });
 
@@ -204,8 +209,23 @@ describe.skipIf(!hasNeo)("interfaces and multiple labels (Neo4j)", () => {
   it.skipIf(onMemgraph)(
     "searches an interface full-text index, through the interface and an implementation",
     async () => {
-      await db.$cypher`CREATE FULLTEXT INDEX personSearch IF NOT EXISTS FOR (n:Person) ON EACH [n.name, n.bio]`;
-      await db.$cypher`CALL db.awaitIndexes(60)`;
+      // FalkorDB: one statement per property (a multi-property one is all-or-nothing), each
+      // possibly indexed by an earlier run.
+      const ddl = onFalkorDB
+        ? ["name", "bio"].map((p) => `CREATE FULLTEXT INDEX FOR (n:Person) ON (n.${p})`)
+        : [
+            testDdl(
+              "CREATE FULLTEXT INDEX personSearch IF NOT EXISTS FOR (n:Person) ON EACH [n.name, n.bio]",
+            )!,
+          ];
+      await db.$client.withSession(async (s) => {
+        for (const statement of ddl) {
+          await s.run(statement).catch((e: unknown) => {
+            if (!(onFalkorDB && /already indexed/i.test(String(e)))) throw e;
+          });
+        }
+      });
+      if (!onFalkorDB) await db.$cypher`CALL db.awaitIndexes(60)`;
       await seed();
       await db.customer.create({ data: { email: "c2@x.io", name: "Bob Buyer" } });
       // Full-text indexes are eventually visible: retry briefly.
@@ -226,10 +246,7 @@ describe.skipIf(!hasNeo)("interfaces: __typename filters and $on (Neo4j)", () =>
 
   beforeEach(async () => {
     db ??= createClient({
-      uri: process.env.NEO4J_TEST_URI!,
-      user: process.env.NEO4J_TEST_USER!,
-      password: process.env.NEO4J_TEST_PASSWORD!,
-      dialect: testDialect,
+      ...testConnection(),
     });
     await db.$cypher`MATCH (n) WHERE any(l IN labels(n) WHERE l IN ${LABELS}) DETACH DELETE n`;
     const team = await db.team.create({ data: { name: "core" } });
@@ -334,10 +351,7 @@ describe.skipIf(!hasNeo)("interfaces extending interfaces (Neo4j)", () => {
 
   beforeEach(async () => {
     db ??= createNestedClient({
-      uri: process.env.NEO4J_TEST_URI!,
-      user: process.env.NEO4J_TEST_USER!,
-      password: process.env.NEO4J_TEST_PASSWORD!,
-      dialect: testDialect,
+      ...testConnection(),
     });
     await db.$cypher`MATCH (n) WHERE any(l IN labels(n) WHERE l IN ${NESTED_LABELS}) DETACH DELETE n`;
   });

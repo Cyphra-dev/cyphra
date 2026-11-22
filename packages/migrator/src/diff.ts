@@ -22,9 +22,20 @@ import type {
   ResolvedScalarField,
   SchemaModel,
 } from "@cyphra/schema";
-import { formatRule } from "@cyphra/schema";
+import {
+  formatDuration,
+  formatLocalDateTime,
+  formatLocalTime,
+  formatRule,
+  formatTime,
+  parseDuration,
+  parseLocalDateTime,
+  parseLocalTime,
+  parseTime,
+} from "@cyphra/schema";
 import type { CyphraDialect } from "@cyphra/runtime";
 import { memgraphDdl } from "./memgraph.js";
+import { falkordbDdl } from "./falkordb.js";
 
 function q(id: string): string {
   return "`" + id.replace(/`/g, "``") + "`";
@@ -130,6 +141,12 @@ export type DdlOptions = {
  */
 export function ddlObjectsFromModel(model: SchemaModel, options: DdlOptions = {}): DdlObject[] {
   const objects = neo4jDdlObjects(model);
+  if (options.dialect === "falkordb") {
+    return objects.map((o) => {
+      const fk = falkordbDdl(o.create)!;
+      return { ...o, create: fk.create, drop: fk.drop };
+    });
+  }
   if (options.dialect !== "memgraph") return objects;
   return objects.map((o) => {
     const mg = memgraphDdl(o.create)!;
@@ -300,12 +317,66 @@ const TEMPORAL_FUNCTIONS: Partial<Record<string, string>> = {
   Duration: "duration",
 };
 
+/**
+ * FalkorDB: Cypher expressions of "now" as the ISO 8601 text the ORM stores temporal values as
+ * there (`localdatetime()` is UTC; FalkorDB times have a precision of one second).
+ */
+const FALKORDB_NOW: Partial<Record<string, string>> = {
+  DateTime: "toString(localdatetime()) + '.000Z'",
+  Date: "toString(date())",
+  LocalDateTime: "toString(localdatetime())",
+  LocalTime: "toString(localtime())",
+  Time: "toString(localtime()) + 'Z'",
+};
+
+/** FalkorDB: a temporal literal default as the ISO 8601 text the ORM writes for it. */
+function falkordbTemporalText(type: string, value: string): string {
+  const keep = (x: string | null) => x ?? value;
+  switch (type) {
+    case "DateTime": {
+      const d = new Date(value);
+      return Number.isNaN(d.getTime()) ? value : d.toISOString();
+    }
+    case "Date": {
+      const d = new Date(value);
+      return Number.isNaN(d.getTime()) ? value : d.toISOString().slice(0, 10);
+    }
+    case "LocalDateTime": {
+      const p = parseLocalDateTime(value);
+      return keep(p && formatLocalDateTime(p));
+    }
+    case "LocalTime": {
+      const p = parseLocalTime(value);
+      return keep(p && formatLocalTime(p));
+    }
+    case "Time": {
+      const p = parseTime(value);
+      return keep(p && formatTime(p));
+    }
+    case "Duration": {
+      const p = parseDuration(value);
+      return keep(p && formatDuration(p));
+    }
+    default:
+      return value;
+  }
+}
+
 /** Cypher expression that produces the default of `f`, plus params, or `null` if not expressible. */
 function defaultExpression(
   f: ResolvedScalarField,
+  dialect: CyphraDialect = "neo4j",
 ): { expr: string; params?: Record<string, unknown>; note?: string } | null {
   const d = f.default;
   if (!d) return null;
+  // FalkorDB: the ORM stores temporal values as ISO 8601 text (FalkorDB has no zoned datetime).
+  if (dialect === "falkordb" && TEMPORAL_FUNCTIONS[f.type]) {
+    if (d.kind === "literal") {
+      return { expr: "$value", params: { value: falkordbTemporalText(f.type, String(d.value)) } };
+    }
+    const now = d.fn === "now" ? FALKORDB_NOW[f.type] : undefined;
+    if (now) return { expr: now };
+  }
   if (d.kind === "literal") {
     // A BigInt default is its decimal digits: toInteger() keeps all 64 bits.
     if (f.type === "Int" || f.type === "BigInt") {
@@ -332,6 +403,7 @@ function nodeDataSteps(
   after: ResolvedScalarField,
   steps: MigrationStep[],
   warnings: string[],
+  dialect: CyphraDialect = "neo4j",
 ): void {
   const ref = `n.${q(name)}`;
   const match = `MATCH (n:${q(label)}) WHERE ${ref} IS NULL`;
@@ -358,7 +430,7 @@ function nodeDataSteps(
     enumValueWarnings(`${model}.${name}`, `MATCH (n:${q(label)})`, ref, before, after, warnings);
   }
 
-  const def = defaultExpression(after);
+  const def = defaultExpression(after, dialect);
   if (def && (!before || (nowRequired && !wasRequired))) {
     steps.push({
       kind: "statement",
@@ -464,7 +536,7 @@ export function diffSchemaModels(
     for (const [name, f] of ns) {
       if (n.abstract && f.inheritedFrom) continue;
       if (viaInterface(f) && (!ps.has(name) || viaInterface(ps.get(name)))) continue;
-      nodeDataSteps(n.label, n.name, name, ps.get(name), f, steps, warnings);
+      nodeDataSteps(n.label, n.name, name, ps.get(name), f, steps, warnings, options.dialect);
     }
     for (const name of removed) {
       steps.push({
@@ -485,7 +557,7 @@ export function diffSchemaModels(
   for (const r of next.relationships) {
     const p = prevRels.get(r.name);
     if (!p) continue;
-    relationshipDataSteps(p, r, steps, warnings);
+    relationshipDataSteps(p, r, steps, warnings, options.dialect);
   }
 
   const notes = [...onDeleteNotes(prev, next), ...ruleNotes(prev, next)];
@@ -562,6 +634,7 @@ function relationshipDataSteps(
   next: ResolvedRelationshipModel,
   steps: MigrationStep[],
   warnings: string[],
+  dialect: CyphraDialect = "neo4j",
 ): void {
   if (prev.relType !== next.relType) {
     warnings.push(
@@ -583,7 +656,7 @@ function relationshipDataSteps(
         warnings,
       );
     }
-    const def = defaultExpression(f);
+    const def = defaultExpression(f, dialect);
     const nowRequired = !f.optional && !f.list;
     const wasRequired = p ? !p.optional && !p.list : false;
     if (def && (!p || (nowRequired && !wasRequired))) {

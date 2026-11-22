@@ -38,24 +38,26 @@ import neo4j5 from "neo4j-driver-5";
 import neo4j6 from "neo4j-driver-6";
 import type { DriverLike } from "../client.js";
 import type { CyphraEvent, ErrorEvent, QueryEvent, WarnEvent } from "../observability.js";
-import { onMemgraph, storedType, testDdl, testDialect } from "./__fixtures__/testDialect.js";
+import {
+  onFalkorDB,
+  onMemgraph,
+  storedType,
+  testDdl,
+  hasTestDb,
+  testConnection,
+} from "./__fixtures__/testDialect.js";
 
 // Each test makes many round trips to Neo4j: the default 5 s is too tight on a busy CI runner.
 vi.setConfig({ testTimeout: 30_000, hookTimeout: 30_000 });
 
-const hasNeo = Boolean(
-  process.env.NEO4J_TEST_URI && process.env.NEO4J_TEST_USER && process.env.NEO4J_TEST_PASSWORD,
-);
+const hasNeo = hasTestDb;
 
 describe.skipIf(!hasNeo)("ORM client (Neo4j)", () => {
   let db: Db;
 
   beforeEach(async () => {
     db ??= createClient({
-      uri: process.env.NEO4J_TEST_URI!,
-      user: process.env.NEO4J_TEST_USER!,
-      password: process.env.NEO4J_TEST_PASSWORD!,
-      dialect: testDialect,
+      ...testConnection(),
     });
     await db.$cypher`MATCH (n) WHERE n:User OR n:Post DETACH DELETE n`;
   });
@@ -322,7 +324,8 @@ describe.skipIf(!hasNeo)("ORM client (Neo4j)", () => {
     ]);
   });
 
-  it("rolls back nested writes and $transaction on failure", async () => {
+  // FalkorDB has no multi-statement transactions (no rollback, no $transaction).
+  it.skipIf(onFalkorDB)("rolls back nested writes and $transaction on failure", async () => {
     await expect(
       db.user.create({
         data: {
@@ -382,15 +385,17 @@ type SchemaRunner = {
 };
 
 async function schemaCommand(db: SchemaRunner, text: string): Promise<void> {
-  if (onMemgraph && /^CALL db\.awaitIndexes/.test(text)) return;
+  if ((onMemgraph || onFalkorDB) && /^CALL db\.awaitIndexes/.test(text)) return;
   const statement = testDdl(text);
   if (!statement) return;
   await db.$client.withSession(async (s) => {
     try {
       await s.run(statement);
     } catch (e) {
-      // Memgraph's text and vector index DDL has no IF [NOT] EXISTS.
-      if (!onMemgraph || !/already exists|does ?n[o']t exist/i.test((e as Error).message)) throw e;
+      // Memgraph's text and vector index DDL has no IF [NOT] EXISTS, nor FalkorDB's.
+      const idempotent =
+        /already exists|already indexed|does ?n[o']t exist|not indexed|unable to drop/i;
+      if (!(onMemgraph || onFalkorDB) || !idempotent.test((e as Error).message)) throw e;
     }
   });
 }
@@ -406,10 +411,7 @@ describe.skipIf(!hasNeo)("ORM write correctness (Neo4j)", () => {
 
   beforeAll(async () => {
     db = createClient({
-      uri: process.env.NEO4J_TEST_URI!,
-      user: process.env.NEO4J_TEST_USER!,
-      password: process.env.NEO4J_TEST_PASSWORD!,
-      dialect: testDialect,
+      ...testConnection(),
     });
     await db.$cypher`MATCH (n) WHERE n:User OR n:Post DETACH DELETE n`;
     for (const [name, body] of Object.entries(constraints)) {
@@ -523,7 +525,8 @@ describe.skipIf(!hasNeo)("ORM write correctness (Neo4j)", () => {
     await db.user.update({ where: { id: b.id }, data: { following: { connect: { id: a.id } } } });
     const [kept] = await db.$cypher<{ since: Date }>`
       MATCH (:User {email: "b@x.io"})-[r:FOLLOWS]->() RETURN r.since AS since`;
-    expect(kept!.since.getTime()).toBe(before!.since.getTime());
+    // Raw rows on FalkorDB carry a DateTime as its ISO 8601 text.
+    expect(new Date(kept!.since).getTime()).toBe(new Date(before!.since).getTime());
     const since = new Date("2020-05-06T07:08:09Z");
     const reloaded = await db.user.update({
       where: { id: b.id },
@@ -644,7 +647,13 @@ describe.skipIf(!hasNeo)("ORM write correctness (Neo4j)", () => {
         const d = await db.user.create({ data: { email: "d@x.io" } }); // @default(now())
         expect(u.createdAt.getTime()).toBe(at.getTime());
 
-        if (onMemgraph) {
+        if (onFalkorDB) {
+          // FalkorDB has no zoned datetime: stored as ISO 8601 text in UTC.
+          const stored = await db.$cypher<{ s: string }>`
+            MATCH (u:User) RETURN u.createdAt AS s ORDER BY u.email`;
+          expect(stored.map((r) => r.s.endsWith("Z"))).toEqual([true, true]);
+          expect(stored[1]!.s).toBe("2024-03-10T07:30:15.123Z");
+        } else if (onMemgraph) {
           // Memgraph has no `.offset`; its text keeps microseconds and the numeric offset.
           const stored = await db.$cypher<{ s: string }>`
             MATCH (u:User) RETURN toString(u.createdAt) AS s ORDER BY u.email`;
@@ -663,6 +672,7 @@ describe.skipIf(!hasNeo)("ORM write correctness (Neo4j)", () => {
         expect(await db.user.count({ where: { createdAt: { gte: at, lte: at } } })).toBe(1);
         expect(await db.user.count({ where: { createdAt: { in: [at] } } })).toBe(1);
         expect(await db.user.count({ where: { createdAt: d.createdAt } })).toBe(1);
+        if (onFalkorDB) return;
         const [{ same }] = (await db.$cypher<{ same: boolean }>`
           MATCH (u:User {email: "t@x.io"})
           RETURN u.createdAt = datetime(${
@@ -732,10 +742,7 @@ describe.skipIf(!hasNeo)("ORM statement counts (Neo4j)", () => {
 
   beforeAll(() => {
     db = createClient({
-      uri: process.env.NEO4J_TEST_URI!,
-      user: process.env.NEO4J_TEST_USER!,
-      password: process.env.NEO4J_TEST_PASSWORD!,
-      dialect: testDialect,
+      ...testConnection(),
     });
   });
 
@@ -846,7 +853,10 @@ describe.skipIf(!hasNeo)("ORM statement counts (Neo4j)", () => {
     );
     expect(missing.error).toBeInstanceOf(NotFoundError);
     expect(missing.statements).toBe(1);
-    expect(await db.user.findUnique({ where: { email: "dan@x.io" } })).toBeNull();
+    // FalkorDB cannot roll back after the statement: the check runs on its result.
+    if (onFalkorDB)
+      expect(await db.user.findUnique({ where: { email: "dan@x.io" } })).not.toBeNull();
+    else expect(await db.user.findUnique({ where: { email: "dan@x.io" } })).toBeNull();
   });
 
   it("update (with relation writes), upsert and delete: one statement", async () => {
@@ -928,7 +938,8 @@ describe.skipIf(!hasNeo)("ORM statement counts (Neo4j)", () => {
     for (const op of ops) expect((await counted(op)).statements).toBe(1);
   });
 
-  it("$transaction keeps the same statements in one transaction", async () => {
+  // FalkorDB has no multi-statement transactions.
+  it.skipIf(onFalkorDB)("$transaction keeps the same statements in one transaction", async () => {
     const { statements } = await counted(() =>
       db.$transaction(async (tx) => {
         await tx.user.create({ data: { email: "t@x.io", posts: { create: [{ title: "a" }] } } });
@@ -945,10 +956,7 @@ describe.skipIf(!hasNeo)("ORM aggregate / groupBy (Neo4j)", () => {
 
   beforeEach(async () => {
     db ??= createClient({
-      uri: process.env.NEO4J_TEST_URI!,
-      user: process.env.NEO4J_TEST_USER!,
-      password: process.env.NEO4J_TEST_PASSWORD!,
-      dialect: testDialect,
+      ...testConnection(),
     });
     await db.$cypher`MATCH (n) WHERE n:User OR n:Post DETACH DELETE n`;
   });
@@ -1142,7 +1150,8 @@ describe.skipIf(!hasNeo)("ORM aggregate / groupBy (Neo4j)", () => {
     ).toEqual([]);
   });
 
-  it("works inside $transaction and sees uncommitted writes", async () => {
+  // FalkorDB has no multi-statement transactions (no rollback, no $transaction).
+  it.skipIf(onFalkorDB)("works inside $transaction and sees uncommitted writes", async () => {
     const out = await db.$transaction(async (tx) => {
       await tx.post.createMany({
         data: [
@@ -1187,10 +1196,7 @@ describe.skipIf(!hasNeo)("ORM relation counts (Neo4j)", () => {
 
   beforeEach(async () => {
     db ??= createClient({
-      uri: process.env.NEO4J_TEST_URI!,
-      user: process.env.NEO4J_TEST_USER!,
-      password: process.env.NEO4J_TEST_PASSWORD!,
-      dialect: testDialect,
+      ...testConnection(),
     });
     await db.$cypher`MATCH (n) WHERE n:User OR n:Post DETACH DELETE n`;
   });
@@ -1289,7 +1295,8 @@ describe.skipIf(!hasNeo)("ORM relation counts (Neo4j)", () => {
     ]);
   });
 
-  it("counts in write results and inside $transaction", async () => {
+  // FalkorDB has no multi-statement transactions (no rollback, no $transaction).
+  it.skipIf(onFalkorDB)("counts in write results and inside $transaction", async () => {
     await seed();
     const created = await db.user.create({
       data: { email: "dan@x.io", posts: { create: [{ title: "d1" }, { title: "d2" }] } },
@@ -1369,10 +1376,7 @@ describe.skipIf(!hasNeo)("ORM traversals and paths (Neo4j)", () => {
 
   beforeEach(async () => {
     db ??= createClient({
-      uri: process.env.NEO4J_TEST_URI!,
-      user: process.env.NEO4J_TEST_USER!,
-      password: process.env.NEO4J_TEST_PASSWORD!,
-      dialect: testDialect,
+      ...testConnection(),
     });
     await db.$cypher`MATCH (n) WHERE n:User OR n:Post DETACH DELETE n`;
   });
@@ -1590,7 +1594,8 @@ describe.skipIf(!hasNeo)("ORM traversals and paths (Neo4j)", () => {
     expect(zero[0]!.path.edges).toEqual([]);
   });
 
-  it("runs inside $transaction and sees its own writes", async () => {
+  // FalkorDB has no multi-statement transactions (no rollback, no $transaction).
+  it.skipIf(onFalkorDB)("runs inside $transaction and sees its own writes", async () => {
     await seed();
     const reached = await db.$transaction(async (tx) => {
       await tx.user.create({
@@ -1622,10 +1627,7 @@ describe.skipIf(!hasNeo)("ORM traversals and paths (Neo4j)", () => {
     ).rejects.toBeInstanceOf(CyphraValidationError);
 
     const capped = createClient({
-      uri: process.env.NEO4J_TEST_URI!,
-      user: process.env.NEO4J_TEST_USER!,
-      password: process.env.NEO4J_TEST_PASSWORD!,
-      dialect: testDialect,
+      ...testConnection(),
       maxTraversalDepth: 2,
     });
     try {
@@ -1645,10 +1647,7 @@ describe.skipIf(!hasNeo)("ORM shortest paths (Neo4j)", () => {
 
   beforeEach(async () => {
     db ??= createClient({
-      uri: process.env.NEO4J_TEST_URI!,
-      user: process.env.NEO4J_TEST_USER!,
-      password: process.env.NEO4J_TEST_PASSWORD!,
-      dialect: testDialect,
+      ...testConnection(),
     });
     await db.$cypher`MATCH (n) WHERE n:User OR n:Post DETACH DELETE n`;
   });
@@ -1891,8 +1890,9 @@ describe.skipIf(!hasNeo)("ORM shortest paths (Neo4j)", () => {
       maxDepth: 4,
       where: { following: { some: { name: "dave" } }, NOT: { name: "bob" } },
     };
-    if (onMemgraph) {
-      // Memgraph cannot run a subquery inside the search's filter lambda.
+    if (onMemgraph || onFalkorDB) {
+      // Memgraph cannot run a subquery inside the search's filter lambda, nor FalkorDB for every
+      // node of a path.
       await expect(db.user.shortestPath(viaRelationArgs)).rejects.toBeInstanceOf(
         UnsupportedFeatureError,
       );
@@ -1952,10 +1952,7 @@ describe.skipIf(!hasNeo)("ORM shortest paths (Neo4j)", () => {
     ).rejects.toBeInstanceOf(CyphraValidationError);
 
     const capped = createClient({
-      uri: process.env.NEO4J_TEST_URI!,
-      user: process.env.NEO4J_TEST_USER!,
-      password: process.env.NEO4J_TEST_PASSWORD!,
-      dialect: testDialect,
+      ...testConnection(),
       maxTraversalDepth: 2,
     });
     try {
@@ -1968,7 +1965,8 @@ describe.skipIf(!hasNeo)("ORM shortest paths (Neo4j)", () => {
     }
   });
 
-  it("runs inside $transaction and sees its own writes", async () => {
+  // FalkorDB has no multi-statement transactions (no rollback, no $transaction).
+  it.skipIf(onFalkorDB)("runs inside $transaction and sees its own writes", async () => {
     await seed();
     const path = await db.$transaction(async (tx) => {
       await tx.user.update({
@@ -2008,10 +2006,7 @@ describe.skipIf(!hasNeo)("ORM vector search (Neo4j)", () => {
 
   beforeAll(async () => {
     db = createVectorClient({
-      uri: process.env.NEO4J_TEST_URI!,
-      user: process.env.NEO4J_TEST_USER!,
-      password: process.env.NEO4J_TEST_PASSWORD!,
-      dialect: testDialect,
+      ...testConnection(),
     });
     for (const stmt of ddl) await schemaCommand(db, stmt);
     await schemaCommand(db, "CALL db.awaitIndexes(120)");
@@ -2046,8 +2041,8 @@ describe.skipIf(!hasNeo)("ORM vector search (Neo4j)", () => {
 
   const ids = (rows: readonly { id: string }[]) => rows.map((r) => r.id);
 
-  // SHOW VECTOR INDEXES and LIST<FLOAT> value types are Neo4j's.
-  it.skipIf(onMemgraph)(
+  // SHOW VECTOR INDEXES and LIST<FLOAT> value types are Neo4j's (FalkorDB: falkordb suite).
+  it.skipIf(onMemgraph || onFalkorDB)(
     "creates ONLINE vector indexes and stores vectors as LIST<FLOAT>",
     async () => {
       const indexes = await db.$cypher<{ name: string; state: string; options: unknown }>`
@@ -2224,7 +2219,8 @@ describe.skipIf(!hasNeo)("ORM vector search (Neo4j)", () => {
     expect(ids(hits)).toEqual(["c6"]);
   });
 
-  it("runs inside $transaction", async () => {
+  // FalkorDB has no multi-statement transactions.
+  it.skipIf(onFalkorDB)("runs inside $transaction", async () => {
     const hits = await db.$transaction(async (tx) => {
       await tx.vecChunk.update({ where: { id: "c3" }, data: { text: "updated" } });
       return tx.vecChunk.findSimilar({
@@ -2254,10 +2250,11 @@ describe.skipIf(!hasNeo)("ORM vector search (Neo4j)", () => {
   });
 });
 
+// FalkorDB (RediSearch, one index per label) has its own tests in falkordb.integration.test.ts.
 // Memgraph's text search (Tantivy) has no analyzers, no field-qualified queries through
 // search_all and no uncommitted reads, and commits its index on every write (about a second per
 // index in Docker): it has its own, smaller suite below.
-describe.skipIf(!hasNeo || onMemgraph)("ORM full-text search (Neo4j)", () => {
+describe.skipIf(!hasNeo || onMemgraph || onFalkorDB)("ORM full-text search (Neo4j)", () => {
   let db: SearchDb;
 
   // Same statements as `cyphra push` / migrations generate for __fixtures__/search.cyphra.
@@ -2305,10 +2302,7 @@ describe.skipIf(!hasNeo || onMemgraph)("ORM full-text search (Neo4j)", () => {
 
   beforeAll(async () => {
     db = createSearchClient({
-      uri: process.env.NEO4J_TEST_URI!,
-      user: process.env.NEO4J_TEST_USER!,
-      password: process.env.NEO4J_TEST_PASSWORD!,
-      dialect: testDialect,
+      ...testConnection(),
     });
     for (const stmt of ddl) await schemaCommand(db, stmt);
     await schemaCommand(db, "CALL db.awaitIndexes(120)");
@@ -2446,28 +2440,34 @@ describe.skipIf(!hasNeo || onMemgraph)("ORM full-text search (Neo4j)", () => {
     expect(await db.ftPost.search({ index: "ftPostTitleEnglish", query: "a" })).toEqual([]);
   });
 
-  it("runs inside $transaction and sees the transaction's own writes", async () => {
-    const hits = await db.$transaction(async (tx) => {
-      await tx.ftPost.create({
-        data: { id: "new", title: "Fresh graph news", tags: [], published: true },
-      });
-      await tx.ftPost.update({ where: { id: "p4" }, data: { body: "Recipes only" } });
-      return tx.ftPost.search({ index: "ftPostSearch", query: "graph", select: { id: true } });
-    });
-    // Full-text indexes that are not eventually consistent include uncommitted changes.
-    expect(ids(hits)).toContain("new");
-    expect(ids(hits)).not.toContain("p4");
-
-    await expect(
-      db.$transaction(async (tx) => {
+  // FalkorDB has no multi-statement transactions.
+  it.skipIf(onFalkorDB)(
+    "runs inside $transaction and sees the transaction's own writes",
+    async () => {
+      const hits = await db.$transaction(async (tx) => {
         await tx.ftPost.create({
-          data: { id: "gone", title: "Ephemeral graph", tags: [], published: true },
+          data: { id: "new", title: "Fresh graph news", tags: [], published: true },
         });
-        throw new Error("rollback");
-      }),
-    ).rejects.toThrow("rollback");
-    expect(ids(await db.ftPost.search({ index: "ftPostSearch", query: "ephemeral" }))).toEqual([]);
-  });
+        await tx.ftPost.update({ where: { id: "p4" }, data: { body: "Recipes only" } });
+        return tx.ftPost.search({ index: "ftPostSearch", query: "graph", select: { id: true } });
+      });
+      // Full-text indexes that are not eventually consistent include uncommitted changes.
+      expect(ids(hits)).toContain("new");
+      expect(ids(hits)).not.toContain("p4");
+
+      await expect(
+        db.$transaction(async (tx) => {
+          await tx.ftPost.create({
+            data: { id: "gone", title: "Ephemeral graph", tags: [], published: true },
+          });
+          throw new Error("rollback");
+        }),
+      ).rejects.toThrow("rollback");
+      expect(ids(await db.ftPost.search({ index: "ftPostSearch", query: "ephemeral" }))).toEqual(
+        [],
+      );
+    },
+  );
 
   it("validates arguments before querying", async () => {
     await expect(
@@ -2483,10 +2483,7 @@ describe.skipIf(!hasNeo)("ORM enum / Json / BigInt (Neo4j)", () => {
 
   beforeAll(() => {
     db = createTypesClient({
-      uri: process.env.NEO4J_TEST_URI!,
-      user: process.env.NEO4J_TEST_USER!,
-      password: process.env.NEO4J_TEST_PASSWORD!,
-      dialect: testDialect,
+      ...testConnection(),
     });
   });
 
@@ -2535,7 +2532,8 @@ describe.skipIf(!hasNeo)("ORM enum / Json / BigInt (Neo4j)", () => {
     });
   });
 
-  it("round-trips the full 64-bit range, filters and sorts BigInt", async () => {
+  // FalkorDB compares integers near ±2^63 wrongly (by subtraction, which overflows).
+  it.skipIf(onFalkorDB)("round-trips the full 64-bit range, filters and sorts BigInt", async () => {
     const values = [MIN, -1n, 0n, 2n ** 53n + 1n, MAX];
     for (const [i, v] of values.entries()) {
       await db.tyAccount.create({ data: { id: `b${i}`, balance: v, external: v } });
@@ -2573,44 +2571,50 @@ describe.skipIf(!hasNeo)("ORM enum / Json / BigInt (Neo4j)", () => {
     );
   });
 
-  it("aggregates BigInt: _sum as bigint, _avg as number, _min / _max exact", async () => {
-    const big = 2n ** 61n;
-    await db.tyAccount.createMany({
-      data: [
-        { id: "a", role: "ADMIN", balance: big, score: 1 },
-        { id: "b", role: "ADMIN", balance: big - 1n, score: 2 },
-        { id: "c", role: "EDITOR", balance: 3n },
-      ],
-    });
-    const agg = await db.tyAccount.aggregate({
-      _sum: { balance: true, score: true },
-      _avg: { balance: true },
-      _min: { balance: true },
-      _max: { balance: true, external: true },
-    });
-    const avg = Number(2n * big + 2n) / 3;
-    expect(Math.abs(agg._avg.balance! - avg) / avg).toBeLessThan(1e-12);
-    expect(agg).toEqual({
-      _sum: { balance: 2n * big + 2n, score: 3 },
-      _avg: { balance: agg._avg.balance },
-      _min: { balance: 3n },
-      _max: { balance: big, external: null },
-    });
-    const groups = await db.tyAccount.groupBy({
-      by: "role",
-      _sum: { balance: true },
-      having: { balance: { _sum: { gt: 10n } } },
-      orderBy: { role: "asc" },
-    });
-    expect(groups).toEqual([{ role: "ADMIN", _sum: { balance: 2n * big - 1n } }]);
+  // FalkorDB's sum() is always a float (exact up to 2^53 only).
+  it.skipIf(onFalkorDB)(
+    "aggregates BigInt: _sum as bigint, _avg as number, _min / _max exact",
+    async () => {
+      const big = 2n ** 61n;
+      await db.tyAccount.createMany({
+        data: [
+          { id: "a", role: "ADMIN", balance: big, score: 1 },
+          { id: "b", role: "ADMIN", balance: big - 1n, score: 2 },
+          { id: "c", role: "EDITOR", balance: 3n },
+        ],
+      });
+      const agg = await db.tyAccount.aggregate({
+        _sum: { balance: true, score: true },
+        _avg: { balance: true },
+        _min: { balance: true },
+        _max: { balance: true, external: true },
+      });
+      const avg = Number(2n * big + 2n) / 3;
+      expect(Math.abs(agg._avg.balance! - avg) / avg).toBeLessThan(1e-12);
+      expect(agg).toEqual({
+        _sum: { balance: 2n * big + 2n, score: 3 },
+        _avg: { balance: agg._avg.balance },
+        _min: { balance: 3n },
+        _max: { balance: big, external: null },
+      });
+      const groups = await db.tyAccount.groupBy({
+        by: "role",
+        _sum: { balance: true },
+        having: { balance: { _sum: { gt: 10n } } },
+        orderBy: { role: "asc" },
+      });
+      expect(groups).toEqual([{ role: "ADMIN", _sum: { balance: 2n * big - 1n } }]);
 
-    // Past 2^63 - 1, Neo4j's sum() turns into a (rounded) float: reject it rather than round.
-    await db.tyAccount.create({ data: { id: "d", balance: MAX } });
-    // Memgraph's integer sum wraps around instead of failing.
-    if (!onMemgraph) {
-      await expect(db.tyAccount.aggregate({ _sum: { balance: true } })).rejects.toThrow(RangeError);
-    }
-  });
+      // Past 2^63 - 1, Neo4j's sum() turns into a (rounded) float: reject it rather than round.
+      await db.tyAccount.create({ data: { id: "d", balance: MAX } });
+      // Memgraph's integer sum wraps around instead of failing.
+      if (!onMemgraph) {
+        await expect(db.tyAccount.aggregate({ _sum: { balance: true } })).rejects.toThrow(
+          RangeError,
+        );
+      }
+    },
+  );
 
   it("validates enum values on every write (nested, createMany, upsert, update, edges)", async () => {
     const bad = "OWNER" as TyRole;
@@ -2729,7 +2733,8 @@ describe.skipIf(!hasNeo)("ORM enum / Json / BigInt (Neo4j)", () => {
   });
 });
 
-describe.skipIf(!hasNeo)("ORM points and temporal types (Neo4j)", () => {
+// FalkorDB has no point parameters (temporal values: falkordb.integration.test.ts).
+describe.skipIf(!hasNeo || onFalkorDB)("ORM points and temporal types (Neo4j)", () => {
   let db: GeoDb;
   const PARIS = { longitude: 2.3522, latitude: 48.8566 };
   const LOUVRE = { longitude: 2.3376, latitude: 48.8606 }; // ~1.2 km from PARIS
@@ -2739,10 +2744,7 @@ describe.skipIf(!hasNeo)("ORM points and temporal types (Neo4j)", () => {
 
   beforeAll(() => {
     db = createGeoClient({
-      uri: process.env.NEO4J_TEST_URI!,
-      user: process.env.NEO4J_TEST_USER!,
-      password: process.env.NEO4J_TEST_PASSWORD!,
-      dialect: testDialect,
+      ...testConnection(),
     });
   });
 
@@ -3044,7 +3046,8 @@ describe.skipIf(!hasNeo)("ORM points and temporal types (Neo4j)", () => {
   });
 });
 
-describe.skipIf(!hasNeo)("ORM logging and missing-index warnings (Neo4j)", () => {
+// Bolt drivers, EXPLAIN plans and Neo4j error codes: not run on FalkorDB.
+describe.skipIf(!hasNeo || onFalkorDB)("ORM logging and missing-index warnings (Neo4j)", () => {
   type DriverModule = {
     driver(uri: string, auth: unknown): DriverLike;
     auth: { basic(user: string, password: string): unknown };
@@ -3053,12 +3056,8 @@ describe.skipIf(!hasNeo)("ORM logging and missing-index warnings (Neo4j)", () =>
     ["5", neo4j5 as unknown as DriverModule],
     ["6", neo4j6 as unknown as DriverModule],
   ];
-  const conn = () => ({
-    uri: process.env.NEO4J_TEST_URI!,
-    user: process.env.NEO4J_TEST_USER!,
-    password: process.env.NEO4J_TEST_PASSWORD!,
-    dialect: testDialect,
-  });
+  const conn = () =>
+    testConnection() as { uri: string; user: string; password: string; dialect: "neo4j" };
   let admin: Db;
 
   beforeAll(async () => {
@@ -3191,10 +3190,7 @@ describe.skipIf(!hasNeo)("ORM composite unique keys (Neo4j)", () => {
 
   beforeAll(async () => {
     db = createCompoundClient({
-      uri: process.env.NEO4J_TEST_URI!,
-      user: process.env.NEO4J_TEST_USER!,
-      password: process.env.NEO4J_TEST_PASSWORD!,
-      dialect: testDialect,
+      ...testConnection(),
     });
     for (const stmt of ddl) await schemaCommand(db, stmt);
     await schemaCommand(db, "CALL db.awaitIndexes(120)");
@@ -3220,7 +3216,9 @@ describe.skipIf(!hasNeo)("ORM composite unique keys (Neo4j)", () => {
     ).rejects.toMatchObject({
       code: onMemgraph
         ? "Memgraph.ClientError.MemgraphError.MemgraphError"
-        : "Neo.ClientError.Schema.ConstraintValidationFailed",
+        : onFalkorDB
+          ? "FalkorDB.ConstraintViolation"
+          : "Neo.ClientError.Schema.ConstraintValidationFailed",
     });
     expect(await db.member.count()).toBe(3);
   });
@@ -3307,10 +3305,7 @@ describe.skipIf(!hasNeo)("ORM client extensions (Neo4j)", () => {
 
   beforeEach(async () => {
     db ??= createClient({
-      uri: process.env.NEO4J_TEST_URI!,
-      user: process.env.NEO4J_TEST_USER!,
-      password: process.env.NEO4J_TEST_PASSWORD!,
-      dialect: testDialect,
+      ...testConnection(),
     });
     await db.$cypher`MATCH (n) WHERE n:User OR n:Post DETACH DELETE n`;
   });
@@ -3456,31 +3451,35 @@ describe.skipIf(!hasNeo)("ORM client extensions (Neo4j)", () => {
     ]);
   });
 
-  it("applies hooks, computed fields and model methods inside $transaction (and rolls back)", async () => {
-    const xdb = extend(db);
-    const out = await xdb.$transaction(async (tx) => {
-      const u = await tx.user.create({ data: { email: "TX@example.com", name: "Tx" } });
-      const again = await tx.user.findByEmail("tx@example.com");
-      return { email: u.email, label: again?.label };
-    });
-    expect(out).toEqual({ email: "tx@example.com", label: "Tx <tx@example.com>" });
+  // FalkorDB has no multi-statement transactions (no rollback, no $transaction).
+  it.skipIf(onFalkorDB)(
+    "applies hooks, computed fields and model methods inside $transaction (and rolls back)",
+    async () => {
+      const xdb = extend(db);
+      const out = await xdb.$transaction(async (tx) => {
+        const u = await tx.user.create({ data: { email: "TX@example.com", name: "Tx" } });
+        const again = await tx.user.findByEmail("tx@example.com");
+        return { email: u.email, label: again?.label };
+      });
+      expect(out).toEqual({ email: "tx@example.com", label: "Tx <tx@example.com>" });
 
-    const post = await xdb.post.create({ data: { title: "Soft", published: true } });
-    await xdb.$transaction(async (tx) => {
-      const gone = await tx.post.delete({ where: { id: post.id } });
-      expect(gone).toMatchObject({ published: false, slug: "soft" });
-      expect(await tx.post.findMany()).toEqual([]);
-    });
-    expect(await db.post.count()).toBe(1);
+      const post = await xdb.post.create({ data: { title: "Soft", published: true } });
+      await xdb.$transaction(async (tx) => {
+        const gone = await tx.post.delete({ where: { id: post.id } });
+        expect(gone).toMatchObject({ published: false, slug: "soft" });
+        expect(await tx.post.findMany()).toEqual([]);
+      });
+      expect(await db.post.count()).toBe(1);
 
-    await expect(
-      xdb.$transaction(async (tx) => {
-        await tx.user.create({ data: { email: "Gone@example.com" } });
-        throw new Error("rollback");
-      }),
-    ).rejects.toThrow("rollback");
-    expect(await xdb.user.findByEmail("gone@example.com")).toBeNull();
-  });
+      await expect(
+        xdb.$transaction(async (tx) => {
+          await tx.user.create({ data: { email: "Gone@example.com" } });
+          throw new Error("rollback");
+        }),
+      ).rejects.toThrow("rollback");
+      expect(await xdb.user.findByEmail("gone@example.com")).toBeNull();
+    },
+  );
 
   it("reports the original operation in query events", async () => {
     const events: CyphraEvent[] = [];
@@ -3504,10 +3503,7 @@ describe.skipIf(!hasNeo)("ORM client extensions on vector search (Neo4j)", () =>
 
   beforeAll(async () => {
     db = createVectorClient({
-      uri: process.env.NEO4J_TEST_URI!,
-      user: process.env.NEO4J_TEST_USER!,
-      password: process.env.NEO4J_TEST_PASSWORD!,
-      dialect: testDialect,
+      ...testConnection(),
     });
     await db.$cypher`MATCH (n) WHERE n:VecDoc OR n:VecChunk DETACH DELETE n`;
   });
@@ -3592,10 +3588,12 @@ describe.skipIf(!hasNeo)("ORM unique constraint errors (Neo4j)", () => {
     $disconnect(): Promise<void>;
   };
   let db: UntypedDb;
-  // Memgraph reports every error with one code.
+  // Memgraph reports every error with one code; FalkorDB has none (the transport's own).
   const code = onMemgraph
     ? "Memgraph.ClientError.MemgraphError.MemgraphError"
-    : "Neo.ClientError.Schema.ConstraintValidationFailed";
+    : onFalkorDB
+      ? "FalkorDB.ConstraintViolation"
+      : "Neo.ClientError.Schema.ConstraintValidationFailed";
   const wipe = () => db.$cypher`MATCH (n) WHERE n:UqAccount OR n:UqSeat DETACH DELETE n`;
   const account = (n: number, extra: Record<string, unknown> = {}) => ({
     email: `user${n}@example.com`,
@@ -3619,10 +3617,7 @@ describe.skipIf(!hasNeo)("ORM unique constraint errors (Neo4j)", () => {
 
   beforeAll(async () => {
     db = createOrm(schema, {
-      uri: process.env.NEO4J_TEST_URI!,
-      user: process.env.NEO4J_TEST_USER!,
-      password: process.env.NEO4J_TEST_PASSWORD!,
-      dialect: testDialect,
+      ...testConnection(),
     }) as unknown as UntypedDb;
     for (const stmt of ddl) await schemaCommand(db, stmt);
     await schemaCommand(db, "CALL db.awaitIndexes(120)");
@@ -3767,7 +3762,8 @@ describe.skipIf(!hasNeo)("ORM unique constraint errors (Neo4j)", () => {
     });
   });
 
-  it("$cypher and $transaction", async () => {
+  // FalkorDB has no multi-statement transactions.
+  it.skipIf(onFalkorDB)("$cypher and $transaction", async () => {
     expect(
       await reject(db.$cypher`CREATE (:UqAccount {email: ${"user1@example.com"}})`),
     ).toMatchObject(emailError);
@@ -3802,10 +3798,7 @@ describe.skipIf(!hasNeo)(
 
     beforeEach(async () => {
       db ??= createGraphClient({
-        uri: process.env.NEO4J_TEST_URI!,
-        user: process.env.NEO4J_TEST_USER!,
-        password: process.env.NEO4J_TEST_PASSWORD!,
-        dialect: testDialect,
+        ...testConnection(),
       });
       await db.$cypher`MATCH (n) WHERE n:GrDoc OR n:GrChunk OR n:GrEntity DETACH DELETE n`;
     });
@@ -3915,8 +3908,9 @@ describe.skipIf(!hasNeo)(
       expect(ids(await via({ edgeWhere: { weight: { gte: 2 } } }))).toEqual(["c2", "c4"]);
       // Every node a hop steps to must match its where (zero hops: none to check).
       expect(ids(await via({ where: { kind: "person" } }))).toEqual(["c2", "c4"]);
-      if (onMemgraph) {
-        // Memgraph cannot run a subquery inside an expansion's filter lambda.
+      if (onMemgraph || onFalkorDB) {
+        // Memgraph cannot run a subquery inside an expansion's filter lambda, nor FalkorDB for
+        // every node of a path.
         await expect(via({ where: { chunks: { some: { id: "c3" } } } })).rejects.toBeInstanceOf(
           UnsupportedFeatureError,
         );
@@ -4067,6 +4061,7 @@ describe.skipIf(!hasNeo)(
       expect(edge).toMatchObject([{ id: "ada", $edge: { weight: 2, score: 0.5, note: null } }]);
 
       // @min(0), in a transaction: the whole transaction rolls back.
+      if (onFalkorDB) return; // no $transaction
       const failed = await db
         .$transaction(async (tx) => {
           await tx.grEntity.update({ where: { id: "hollerith" }, data: { name: "H" } });

@@ -30,6 +30,7 @@ import {
 import { CyphraValidationError } from "./errors.js";
 import { compilePath, decodePath } from "./path.js";
 import { unsupportedOnMemgraph } from "../dialect.js";
+import { falkordbTraverse } from "./falkordbPaths.js";
 
 type AnyRecord = Record<string, unknown>;
 
@@ -457,6 +458,9 @@ export function compileTraverse(
   }
 
   const from = compileWhere(ctx, model, "s", args.from);
+  if (ctx.dialect === "falkordb") {
+    return falkordbTraverse(ctx, model, args, maxDepth, from, distinct, returnPaths);
+  }
   let segments: string;
   let end: ResolvedNodeModel;
   let min: number;

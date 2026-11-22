@@ -45,6 +45,7 @@ export {
   compareSchemaObjects,
   describeSchemaObject,
   detectDrift,
+  expectedSchemaForDialect,
   expectedSchemaFromModel,
   expectedSchemaFromStatements,
   isDriftFree,
@@ -73,7 +74,23 @@ export {
   type ParsedMemgraphDdl,
 } from "./memgraph.js";
 export {
+  dropAllFalkorDBSchema,
+  falkordbDdl,
+  falkordbDdlStatements,
+  falkordbExecutable,
+  falkordbSchemaObjects,
+  falkordbStatements,
+  falkordbVectorSimilarity,
+  isFalkorDBDdl,
+  normalizeFalkorDBObjects,
+  parseFalkorDBDdl,
+  readFalkorDBSchemaObjects,
+  runFalkorDBDdl,
+  type ParsedFalkorDBDdl,
+} from "./falkordb.js";
+export {
   CYPHRA_MIGRATION_LABEL,
+  FALKORDB_MIGRATION_CONSTRAINT,
   ensureMigrationInfrastructure,
   isMigrationApplied,
   recordMigration,

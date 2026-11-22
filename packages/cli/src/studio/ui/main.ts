@@ -425,14 +425,14 @@ function renderTop(): void {
         )
       : null,
     h("div", { class: "spacer" }),
-    m?.dialect === "memgraph"
+    m?.dialect === "memgraph" || m?.dialect === "falkordb"
       ? h(
           "span",
           {
             class: "badge",
-            title: "Memgraph dialect: features Memgraph lacks are disabled",
+            title: `${m.dialect === "memgraph" ? "Memgraph" : "FalkorDB"} dialect: features ${m.dialect === "memgraph" ? "Memgraph" : "FalkorDB"} lacks are disabled`,
           },
-          "Memgraph",
+          m.dialect === "memgraph" ? "Memgraph" : "FalkorDB",
         )
       : null,
     m?.readOnly

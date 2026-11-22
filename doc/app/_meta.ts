@@ -54,6 +54,7 @@ const meta: MetaRecord = {
   graphql: "GraphQL",
   "--databases": { type: "separator", title: "Databases" },
   memgraph: "Memgraph",
+  falkordb: "FalkorDB",
   "--lower": { type: "separator", title: "Lower-level APIs" },
   queries: "Query builder",
   runtime: "Runtime",

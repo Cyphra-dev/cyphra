@@ -4,7 +4,7 @@
  */
 
 /** The database's Cypher flavour (`dialect` in `cyphra.json`, else detected from the server). */
-export type StudioDialect = "neo4j" | "memgraph";
+export type StudioDialect = "neo4j" | "memgraph" | "falkordb";
 
 /** A scalar field as the UI sees it (a subset of `ResolvedScalarField`). */
 export type StudioScalarField = {

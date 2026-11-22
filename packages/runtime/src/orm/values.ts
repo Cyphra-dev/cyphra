@@ -15,6 +15,7 @@ import {
   isLocalTime,
   isPoint,
   isTime,
+  markVector,
   type IntegerLike as Integer,
 } from "../cypher-values.js";
 import {
@@ -309,7 +310,8 @@ export function encodeVector(value: unknown, dimensions: number, where: string):
       throw new CyphraValidationError(`${where}[${i}]: expected a finite number.`);
     }
   }
-  return arr as number[];
+  // Marked: the FalkorDB transport stores it as a vector (`vecf32`), not as a list.
+  return markVector(arr as number[]);
 }
 
 function describe(v: unknown): string {
@@ -459,8 +461,16 @@ function decodeTemporal(type: IsoTemporalType, value: unknown): unknown {
   return toNative(value);
 }
 
+/** A `DateTime` / `Date` stored as ISO 8601 text (FalkorDB, which has no zoned datetime type). */
+const ISO_DATETIME = /^[+-]?\d{4,6}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/;
+const ISO_DATE = /^[+-]?\d{4,6}-\d{2}-\d{2}$/;
+
 function decodeOne(type: ScalarTypeName, value: unknown): unknown {
   if (value === null || value === undefined) return null;
+  if (typeof value === "string") {
+    if (type === "DateTime" && ISO_DATETIME.test(value)) return new Date(value);
+    if (type === "Date" && ISO_DATE.test(value)) return new Date(`${value}T00:00:00.000Z`);
+  }
   if (type === "BigInt") return decodeBigInt(value);
   if (type === "Json") return decodeJson(value);
   if (type === "LocalDateTime" || type === "LocalTime" || type === "Time" || type === "Duration") {

@@ -55,9 +55,11 @@ App code depends on **`cyphra`** separately (see [Getting started](/getting-star
 `runtimeImport` is the module that generated files (the client and migrations) import from. Set it to
 `@cyphra/runtime` if you depend on the scoped packages instead of `cyphra`. `seed` is optional: see
 [cyphra db seed](#cyphra-db-seed). `generators` is optional: see [zod schemas](#zod-schemas).
-`dialect` is `"neo4j"` (default) or `"memgraph"`: it decides the DDL that `migrate dev`,
-`migrate diff` and `schema ddl` write. Commands that connect use it too; when it is not set, they
-detect Memgraph from the server (see [Memgraph](/memgraph)).
+`dialect` is `"neo4j"` (default), `"memgraph"` or `"falkordb"`: it decides the DDL that
+`migrate dev`, `migrate diff` and `schema ddl` write. Commands that connect use it too; when it is
+not set, they detect Memgraph from the server (see [Memgraph](/memgraph)). With `"falkordb"`, they
+connect to `FALKORDB_URL` (default `redis://localhost:6379`) and the graph `FALKORDB_GRAPH`
+instead of the `NEO4J_*` variables (see [FalkorDB](/falkordb)).
 
 ## Zod schemas
 
