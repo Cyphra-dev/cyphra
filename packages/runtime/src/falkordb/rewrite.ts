@@ -624,6 +624,31 @@ function rewriteVectors(tokens: Token[], params: Record<string, unknown>): Token
 }
 
 /**
+ * The relationship types `text` names in relationship patterns (`[r:A|B]`, `[:\`T\`*1..3]`), for
+ * statements that may create relationships (`CREATE` / `MERGE`); `[]` for others.
+ */
+export function createdRelationshipTypes(text: string): string[] {
+  if (!/\b(?:CREATE|MERGE)\b/i.test(text)) return [];
+  const tokens = tokenize(text);
+  const types = new Set<string>();
+  for (let i = 0; i < tokens.length; i++) {
+    if (tokens[i]!.kind !== "punct" || tokens[i]!.text !== "[") continue;
+    let j = next(tokens, i + 1);
+    if (tokens[j]?.kind === "word") j = next(tokens, j + 1); // the variable
+    if (tokens[j]?.text !== ":") continue;
+    for (;;) {
+      const t = tokens[next(tokens, j + 1)];
+      if (t?.kind === "word") types.add(t.text);
+      else if (t?.kind === "quoted") types.add(t.text.slice(1, -1).replace(/``/g, "`"));
+      else break;
+      j = next(tokens, next(tokens, j + 1) + 1);
+      if (tokens[j]?.text !== "|") break;
+    }
+  }
+  return [...types];
+}
+
+/**
  * `text` in FalkorDB's Cypher (see the module comment), for `params` (property-map parameters of
  * patterns are expanded by key). Returns `text` itself when nothing needs rewriting.
  */

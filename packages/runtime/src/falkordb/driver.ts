@@ -26,7 +26,7 @@
 import { CyphraError } from "../orm/errors.js";
 import { HttpRecord } from "../http/driver.js";
 import { decodeValue, paramsHeader } from "./codec.js";
-import { rewriteForFalkorDB, tokenize } from "./rewrite.js";
+import { createdRelationshipTypes, rewriteForFalkorDB, tokenize } from "./rewrite.js";
 import { loadFalkorDB } from "./load.js";
 
 type Params = Record<string, unknown>;
@@ -180,6 +180,8 @@ class Connection {
   private client: FalkorDBClientLike | undefined;
   private readonly owns: boolean;
   private writeChain: Promise<unknown> = Promise.resolve();
+  /** Relationship types the graph is known to have (see `primeRelationshipTypes`). */
+  private relationshipTypes: Set<string> | undefined;
   readonly address: string;
 
   constructor(readonly config: FalkorDBConnectionOptions) {
@@ -252,6 +254,7 @@ class Connection {
     } catch (e) {
       throw e instanceof CyphraError ? e : asFalkorDBError(e);
     }
+    if (!readOnly) await this.primeRelationshipTypes(graph, createdRelationshipTypes(text));
     const options = this.config.timeoutMs ? { TIMEOUT: this.config.timeoutMs } : undefined;
     let reply: FalkorDBReply;
     try {
@@ -260,6 +263,34 @@ class Connection {
       throw asFalkorDBError(e);
     }
     return this.result(text, params, reply);
+  }
+
+  /**
+   * Make sure the graph knows `types`. FalkorDB resolves relationship types when it plans a
+   * statement: a relationship of a type the graph has never had, created by the statement, is not
+   * matched by a later clause of that statement (a nested `connect` read back by the same
+   * statement). Creating and deleting one relationship of each new type first registers it.
+   */
+  private async primeRelationshipTypes(graph: FalkorDBGraphLike, types: string[]): Promise<void> {
+    if (types.length === 0) return;
+    const known = async () => {
+      const reply = await graph.roQuery("CALL db.relationshipTypes()");
+      this.relationshipTypes = new Set((reply.data ?? []).map((r) => String(r.relationshipType)));
+      return this.relationshipTypes;
+    };
+    let have = this.relationshipTypes ?? (await known());
+    if (types.every((t) => have.has(t))) return;
+    have = await known();
+    for (const t of types) {
+      if (have.has(t)) continue;
+      if (t.includes("`")) continue;
+      try {
+        await graph.query(`CREATE (a)-[r:\`${t}\`]->(b) DELETE r, a, b`);
+      } catch (e) {
+        throw asFalkorDBError(e);
+      }
+      have.add(t);
+    }
   }
 
   private result(text: string, params: Params, reply: FalkorDBReply): FalkorDBResult {
@@ -334,6 +365,7 @@ class Connection {
   async close(): Promise<void> {
     const client = this.client;
     this.graphPromise = undefined;
+    this.relationshipTypes = undefined;
     this.client = undefined;
     if (this.owns && client) await client.close();
   }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { rewriteForFalkorDB as rewrite, tokenize } from "./rewrite.js";
+import { createdRelationshipTypes, rewriteForFalkorDB as rewrite, tokenize } from "./rewrite.js";
 import { markVector } from "../cypher-values.js";
 
 describe("rewriteForFalkorDB", () => {
@@ -84,5 +84,14 @@ describe("rewriteForFalkorDB", () => {
     expect(() =>
       rewrite("MATCH (a) OPTIONAL MATCH (a)-->(b) WHERE EXISTS { MATCH (b)-->() } RETURN b"),
     ).toThrow(/OPTIONAL MATCH/);
+  });
+
+  it("lists the relationship types a writing statement names", () => {
+    expect(
+      createdRelationshipTypes(
+        "MATCH (a)-[:`A`|B*1..2]->(b) MERGE (a)-[r:`T x`]->(b) RETURN [(a)-[:C]-() | 1]",
+      ),
+    ).toEqual(["A", "B", "T x", "C"]);
+    expect(createdRelationshipTypes("MATCH (a)-[:A]->(b) RETURN b")).toEqual([]);
   });
 });
