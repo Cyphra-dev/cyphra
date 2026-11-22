@@ -166,13 +166,7 @@ describe("validation rules on writes", () => {
   });
 
   it("guards numeric operators on @min / @max fields in the update statement", async () => {
-    const { calls, e } = engine("VrUser", (t) =>
-      t.startsWith("MATCH (n:`VrUser`) WHERE") && t.includes("RETURN elementId")
-        ? [{ id: "4:u" }]
-        : t.includes("RETURN bad")
-          ? [{ bad: ["score:max"] }]
-          : [],
-    );
+    const { calls, e } = engine("VrUser", () => [{ row: {}, bad: ["score:max"] }]);
     const err = (await e
       .update({ where: { id: "u" }, data: { score: { increment: 10, multiply: 2 } } })
       .catch((x: unknown) => x)) as CyphraValidationError;
@@ -186,16 +180,19 @@ describe("validation rules on writes", () => {
         message: "must be at most 100 (the update would make it larger).",
       },
     ]);
-    const update = calls.find((c) => c.text.includes("RETURN bad"))!;
-    expect(update.text).toBe(
-      "MATCH (n) WHERE elementId(n) = $p4" +
-        ' WITH n, [x IN [CASE WHEN ((n.`score` + $p0) * $p1) < $p2 THEN "score:min" END,' +
-        ' CASE WHEN ((n.`score` + $p0) * $p1) > $p3 THEN "score:max" END] WHERE x IS NOT NULL] AS bad' +
-        " FOREACH (x IN CASE WHEN size(bad) = 0 THEN [1] ELSE [] END" +
-        " | SET n.`score` = n.`score` + $p0, n.`score` = n.`score` * $p1) RETURN bad",
-    );
-    expect(update.params.p2).toBe(0);
-    expect(update.params.p3).toBe(100);
+    // One statement: find, check, update (skipped when a check fails), project.
+    expect(calls).toHaveLength(1);
+    const update = calls[0]!;
+    const head =
+      "MATCH (n:`VrUser`) WHERE n.`id` = $p0 WITH n LIMIT 1" +
+      ' WITH n, [x IN [CASE WHEN ((n.`score` + $p1) * $p2) < $p3 THEN "score:min" END,' +
+      ' CASE WHEN ((n.`score` + $p1) * $p2) > $p4 THEN "score:max" END] WHERE x IS NOT NULL] AS bad' +
+      " FOREACH (x IN CASE WHEN size(bad) = 0 THEN [1] ELSE [] END" +
+      " | SET n.`score` = n.`score` + $p1, n.`score` = n.`score` * $p2) RETURN n{";
+    expect(update.text.slice(0, head.length)).toBe(head);
+    expect(update.text).toMatch(/ AS row, bad$/);
+    expect(update.params.p3).toBe(0);
+    expect(update.params.p4).toBe(100);
   });
 
   it("leaves operators on fields without @min / @max unguarded", async () => {

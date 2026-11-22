@@ -18,13 +18,20 @@ type AnyRecord = Record<string, unknown>;
 /**
  * Cypher expression for path variable `path` as
  * `{nodes: [{labels, properties}], edges: [{type, properties, out}]}`, where `out` is `true` when
- * `edges[i]` points from `nodes[i]` to `nodes[i + 1]`. Decode it with {@link decodePath}.
+ * `edges[i]` points from `nodes[i]` to `nodes[i + 1]`. Decode it with {@link decodePath}. With
+ * `nodeProperties: false` the nodes carry only their labels (enough to type the edges), for a
+ * caller that projects the nodes itself.
  */
-export function compilePath(ctx: QueryContext, path: string): string {
+export function compilePath(
+  ctx: QueryContext,
+  path: string,
+  { nodeProperties = true }: { nodeProperties?: boolean } = {},
+): string {
   const x = ctx.variable("x");
   const i = ctx.variable("i");
   const rel = `relationships(${path})[${i}]`;
-  const nodes = `[${x} IN nodes(${path}) | {labels: labels(${x}), properties: properties(${x})}]`;
+  const props = nodeProperties ? `, properties: properties(${x})` : "";
+  const nodes = `[${x} IN nodes(${path}) | {labels: labels(${x})${props}}]`;
   const edges =
     `[${i} IN range(0, length(${path}) - 1) | ` +
     `{type: type(${rel}), properties: properties(${rel}), out: startNode(${rel}) = nodes(${path})[${i}]}]`;

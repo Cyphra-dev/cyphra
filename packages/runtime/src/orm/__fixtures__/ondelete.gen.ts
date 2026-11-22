@@ -14,6 +14,10 @@ export const NodeLabel = {
   OdRing: "OdRing",
   OdPlain: "OdPlain",
   OdTag: "OdTag",
+  OdFolder: "OdFolder",
+  OdFile: "OdFile",
+  OdVersion: "OdVersion",
+  OdHold: "OdHold",
 } as const;
 
 export type NodeLabelName = keyof typeof NodeLabel;
@@ -28,14 +32,17 @@ export type RelationshipModelName = keyof typeof RelationshipSpec;
 export const RelType = {
   OD_AUTHORED: "OD_AUTHORED",
   OD_BILLED: "OD_BILLED",
+  OD_CONTAINS: "OD_CONTAINS",
   OD_FOR: "OD_FOR",
   OD_HAS_SESSION: "OD_HAS_SESSION",
+  OD_HOLDS: "OD_HOLDS",
   OD_MANAGES: "OD_MANAGES",
   OD_NEXT: "OD_NEXT",
   OD_ON: "OD_ON",
   OD_REPLY: "OD_REPLY",
   OD_REVIEWED: "OD_REVIEWED",
   OD_TAGGED: "OD_TAGGED",
+  OD_VERSION_OF: "OD_VERSION_OF",
 } as const;
 
 export type RelTypeKey = keyof typeof RelType;
@@ -84,6 +91,30 @@ export type OdPlain = {
 /** `OdTag` node properties. */
 export type OdTag = {
   id: string;
+};
+
+/** `OdFolder` node properties. */
+export type OdFolder = {
+  id: string;
+  name: string;
+};
+
+/** `OdFile` node properties. */
+export type OdFile = {
+  id: string;
+  name: string;
+};
+
+/** `OdVersion` node properties. */
+export type OdVersion = {
+  id: string;
+  n: number;
+};
+
+/** `OdHold` node properties. */
+export type OdHold = {
+  id: string;
+  reason: string;
 };
 
 /** Type-level description of the schema, consumed by the ORM client. */
@@ -159,6 +190,40 @@ export type CyphraTypeMap = {
     createRequired: never;
     unique: "id";
     relations: Record<never, never>;
+  };
+  OdFolder: {
+    scalars: OdFolder;
+    createRequired: "name";
+    unique: "id" | "name";
+    relations: {
+      files: { target: "OdFile"; many: true; optional: false; edge: null };
+    };
+  };
+  OdFile: {
+    scalars: OdFile;
+    createRequired: "name";
+    unique: "id" | "name";
+    relations: {
+      folder: { target: "OdFolder"; many: false; optional: true; edge: null };
+      versions: { target: "OdVersion"; many: true; optional: false; edge: null };
+      holds: { target: "OdHold"; many: true; optional: false; edge: null };
+    };
+  };
+  OdVersion: {
+    scalars: OdVersion;
+    createRequired: "n";
+    unique: "id";
+    relations: {
+      file: { target: "OdFile"; many: false; optional: true; edge: null };
+    };
+  };
+  OdHold: {
+    scalars: OdHold;
+    createRequired: "reason";
+    unique: "id";
+    relations: {
+      file: { target: "OdFile"; many: false; optional: true; edge: null };
+    };
   };
 };
 
@@ -579,6 +644,201 @@ export const schemaModel: SchemaModel = {
             "kind": "fn",
             "fn": "cuid"
           }
+        }
+      ]
+    },
+    {
+      "name": "OdFolder",
+      "label": "OdFolder",
+      "idField": "id",
+      "uniqueFields": [
+        "id",
+        "name"
+      ],
+      "fields": [
+        {
+          "kind": "scalar",
+          "name": "id",
+          "type": "String",
+          "optional": false,
+          "list": false,
+          "id": true,
+          "unique": false,
+          "index": false,
+          "default": {
+            "kind": "fn",
+            "fn": "cuid"
+          }
+        },
+        {
+          "kind": "scalar",
+          "name": "name",
+          "type": "String",
+          "optional": false,
+          "list": false,
+          "id": false,
+          "unique": true,
+          "index": false
+        },
+        {
+          "kind": "relation",
+          "name": "files",
+          "target": "OdFile",
+          "relType": "OD_CONTAINS",
+          "direction": "OUT",
+          "many": true,
+          "optional": false,
+          "onDelete": "Cascade"
+        }
+      ]
+    },
+    {
+      "name": "OdFile",
+      "label": "OdFile",
+      "idField": "id",
+      "uniqueFields": [
+        "id",
+        "name"
+      ],
+      "fields": [
+        {
+          "kind": "scalar",
+          "name": "id",
+          "type": "String",
+          "optional": false,
+          "list": false,
+          "id": true,
+          "unique": false,
+          "index": false,
+          "default": {
+            "kind": "fn",
+            "fn": "cuid"
+          }
+        },
+        {
+          "kind": "scalar",
+          "name": "name",
+          "type": "String",
+          "optional": false,
+          "list": false,
+          "id": false,
+          "unique": true,
+          "index": false
+        },
+        {
+          "kind": "relation",
+          "name": "folder",
+          "target": "OdFolder",
+          "relType": "OD_CONTAINS",
+          "direction": "IN",
+          "many": false,
+          "optional": true
+        },
+        {
+          "kind": "relation",
+          "name": "versions",
+          "target": "OdVersion",
+          "relType": "OD_VERSION_OF",
+          "direction": "IN",
+          "many": true,
+          "optional": false,
+          "onDelete": "Cascade"
+        },
+        {
+          "kind": "relation",
+          "name": "holds",
+          "target": "OdHold",
+          "relType": "OD_HOLDS",
+          "direction": "IN",
+          "many": true,
+          "optional": false,
+          "onDelete": "Restrict"
+        }
+      ]
+    },
+    {
+      "name": "OdVersion",
+      "label": "OdVersion",
+      "idField": "id",
+      "uniqueFields": [
+        "id"
+      ],
+      "fields": [
+        {
+          "kind": "scalar",
+          "name": "id",
+          "type": "String",
+          "optional": false,
+          "list": false,
+          "id": true,
+          "unique": false,
+          "index": false,
+          "default": {
+            "kind": "fn",
+            "fn": "cuid"
+          }
+        },
+        {
+          "kind": "scalar",
+          "name": "n",
+          "type": "Int",
+          "optional": false,
+          "list": false,
+          "id": false,
+          "unique": false,
+          "index": false
+        },
+        {
+          "kind": "relation",
+          "name": "file",
+          "target": "OdFile",
+          "relType": "OD_VERSION_OF",
+          "direction": "OUT",
+          "many": false,
+          "optional": true
+        }
+      ]
+    },
+    {
+      "name": "OdHold",
+      "label": "OdHold",
+      "idField": "id",
+      "uniqueFields": [
+        "id"
+      ],
+      "fields": [
+        {
+          "kind": "scalar",
+          "name": "id",
+          "type": "String",
+          "optional": false,
+          "list": false,
+          "id": true,
+          "unique": false,
+          "index": false,
+          "default": {
+            "kind": "fn",
+            "fn": "cuid"
+          }
+        },
+        {
+          "kind": "scalar",
+          "name": "reason",
+          "type": "String",
+          "optional": false,
+          "list": false,
+          "id": false,
+          "unique": false,
+          "index": false
+        },
+        {
+          "kind": "relation",
+          "name": "file",
+          "target": "OdFile",
+          "relType": "OD_HOLDS",
+          "direction": "OUT",
+          "many": false,
+          "optional": true
         }
       ]
     }

@@ -983,11 +983,15 @@ try {
 
 Everything happens in the delete's transaction (or your `$transaction`). The nodes are
 write-locked before their edges are read: a concurrent write that links a new node to one of them
-waits for the delete, so a cascade or a `Restrict` check never misses it. A model with no rule (on
-itself or on the models its cascades reach) is deleted in a single statement, as before.
+waits for the delete, so a cascade or a `Restrict` check never misses it. The whole delete is one
+statement (lock, every cascade level, the `Restrict` checks, then the delete only if they pass)
+unless a cascade path comes back to a model already on it or goes through an interface: then each
+cascade level is one statement. A model with no rule (on itself or on the models its cascades
+reach) is deleted in a single statement too.
 
-A nested write runs in **one write transaction**: if any step fails (for example a `connect` target
-does not exist) nothing is written.
+A nested write runs in **one statement** (children created in batches, one per relation, and the
+result read back in the same statement) and **one write transaction**: if any step fails (for
+example a `connect` target does not exist) nothing is written.
 
 Defaults from the schema are applied on create: `cuid()`, `uuid()`, `now()` and literals
 (`@default("draft")`, `@default(0)`, `@default(true)`, an enum value, JSON text on a `Json` field,

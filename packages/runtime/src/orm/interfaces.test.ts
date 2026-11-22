@@ -25,16 +25,13 @@ const node = (name: string) => schemaModel.nodes.find((n) => n.name === name)!;
 
 describe("interfaces: labels", () => {
   it("writes and matches every label of an implementation", async () => {
-    const { calls, e } = engine("Employee", (text) =>
-      text.startsWith("CREATE") ? [{ id: "e1" }] : [{ row: { id: "x" } }],
-    );
+    const { calls, e } = engine("Employee", () => [{ row: { id: "x" } }]);
     await e.create({ data: { email: "a@x", name: "A" } });
     expect(calls[0]!.text).toBe(
-      "CREATE (n:`Employee`:`Person`:`Archivable` $p0) RETURN elementId(n) AS id",
+      "CREATE (n:`Employee`:`Person`:`Archivable` $p0) RETURN n{.`id`, .`email`, .`name`, .`bio`, .`salary`} AS row",
     );
-    expect(calls[1]!.text).toMatch(/^MATCH \(n:`Employee`:`Person`:`Archivable`\) WHERE/);
     await e.count({ where: { salary: { gt: 1 } } });
-    expect(calls[2]!.text).toBe(
+    expect(calls[1]!.text).toBe(
       "MATCH (n:`Employee`:`Person`:`Archivable`) WHERE n.`salary` > $p0 RETURN count(n) AS c",
     );
   });
@@ -201,13 +198,13 @@ describe("interfaces: writes", () => {
   });
 
   it("rejects a nested create into an interface target, connects to one", async () => {
-    const { calls, e } = engine("Employee", (text) =>
-      text.startsWith("CREATE")
-        ? [{ id: "e1" }]
-        : text.includes("MERGE")
-          ? [{ c: 1 }]
-          : [{ row: {} }],
-    );
+    // Every nested connect (`count(r) AS c<n>`) finds its target.
+    const { calls, e } = engine("Employee", (text) => [
+      {
+        row: {},
+        ...Object.fromEntries([...text.matchAll(/count\(\w+\) AS (c\d+)/g)].map((m) => [m[1], 1])),
+      },
+    ]);
     await expect(
       e.create({
         data: { email: "a@x", name: "A", manager: { create: { email: "b@x", name: "B" } } },
@@ -215,23 +212,20 @@ describe("interfaces: writes", () => {
     ).rejects.toThrow(/Person is an interface and cannot be created/);
     calls.length = 0;
     await e.create({ data: { email: "a@x", name: "A", manager: { connect: { email: "b@x" } } } });
-    const connect = calls.find((c) => c.text.includes("MERGE"))!.text;
-    expect(connect).toContain("MATCH (b:`Person`) WHERE b.`email` = $p0");
-    // The inverse (`reports`) is to-many, so only `a`'s previous manager edge is replaced.
-    expect(connect).toContain("(a)<-[old:`MANAGES`]-(other:`Person`)");
+    expect(calls).toHaveLength(1);
+    const connect = calls[0]!.text;
+    expect(connect).toContain("MATCH (b0:`Person`) WHERE b0.`email` = $p1");
+    // The inverse (`reports`) is to-many, so only `n`'s previous manager edge is replaced.
+    expect(connect).toContain("(n)<-[o3:`MANAGES`]-(x2:`Person`)");
   });
 
   it("updates through an interface", async () => {
-    const { calls, e } = engine("Person", (text) =>
-      text.includes("RETURN elementId(n) AS id")
-        ? [{ id: "p1" }]
-        : [{ row: { __labels: ["Employee"] } }],
-    );
+    const { calls, e } = engine("Person", () => [{ row: { __labels: ["Employee"] } }]);
     await e.update({ where: { email: "a@x" }, data: { name: "B" } });
-    expect(calls[0]!.text).toBe(
-      "MATCH (n:`Person`) WHERE n.`email` = $p0 RETURN elementId(n) AS id LIMIT 1",
-    );
-    expect(calls[1]!.text).toBe("MATCH (n) WHERE elementId(n) = $p1 SET n.`name` = $p0");
+    expect(calls.map((c) => c.text)).toEqual([
+      "MATCH (n:`Person`) WHERE n.`email` = $p0 WITH n LIMIT 1 SET n.`name` = $p1" +
+        " RETURN n{.`id`, .`email`, .`name`, .`bio`, .`salary`, .`tier`, .`level`, `__labels`: labels(n)} AS row",
+    ]);
   });
 });
 
@@ -244,21 +238,27 @@ describe("interfaces: onDelete", () => {
   });
 
   it("applies the implementation's rules when deleting through the interface", async () => {
+    // The roots come with their labels: no extra statement to tell which implementation each is.
+    const reached: Record<string, { id: string; labels: string[] }[]> = {
+      WROTE: [{ id: "n1", labels: ["Note"] }],
+      HAS_BADGE: [{ id: "b1", labels: ["Badge"] }],
+    };
     const { calls, e } = engine("Person", (text) => {
-      if (text.startsWith("MATCH (n:`Person`)")) return [{ id: "e1" }];
-      if (text.includes("labels(n) AS labels"))
+      if (text.startsWith("MATCH (n:`Person`)"))
         return [{ id: "e1", labels: ["Person", "Employee"] }];
-      if (text.includes("HAS_BADGE")) return [{ id: "b1" }];
-      if (text.includes("WROTE")) return [{ id: "n1" }];
       if (text.includes("DETACH DELETE")) return [{ c: 1 }];
-      return [];
+      // One cascade level: a column of reached nodes per cascade field.
+      const level = [...text.matchAll(/\[:`(\w+)`\].*? AS (k\d+) }/g)];
+      return [Object.fromEntries(level.map((m) => [m[2], reached[m[1]!] ?? []]))];
     });
     expect(await e.deleteMany({ where: { name: "E" } })).toEqual({ count: 1 });
     const texts = calls.map((c) => c.text);
-    expect(texts.some((t) => t.includes("[:`WROTE`]->(b:`Note`)"))).toBe(true);
-    expect(texts.some((t) => t.includes("[:`HAS_BADGE`]->(b:`Badge`)"))).toBe(true);
+    // Lock the roots, one cascade level (notes and badges cascade no further), check and delete.
+    expect(texts).toHaveLength(3);
+    expect(texts[1]).toContain("[:`WROTE`]->(b:`Note`)");
+    expect(texts[1]).toContain("[:`HAS_BADGE`]->(b:`Badge`)");
     const del = calls.find((c) => c.text.includes("DETACH DELETE"))!;
-    expect(new Set(del.params.p1 as string[])).toEqual(new Set(["e1", "b1", "n1"]));
+    expect(new Set(del.params.p0 as string[])).toEqual(new Set(["e1", "b1", "n1"]));
   });
 });
 

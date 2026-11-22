@@ -389,7 +389,7 @@ describe("CyphraClient over HTTP", () => {
     expect(calls[0]!.headers.Authorization).toBe("Bearer tok");
   });
 
-  it("runs the ORM: nested writes in one transaction, events and spans for every statement", async () => {
+  it("runs the ORM: one request per single-statement operation, transactions for the others", async () => {
     const events: CyphraEvent[] = [];
     const spans: { name: string; attributes: Record<string, unknown> }[] = [];
     const tracer = {
@@ -419,18 +419,22 @@ describe("CyphraClient over HTTP", () => {
           },
         };
       }
-      const t = { transaction: { id: "tx9" } };
-      if (statement.startsWith("CREATE")) {
-        return { body: rows(["id"], [[{ $type: "String", _value: "4:x:0" }]], t) };
-      }
-      // The read-back of create: one user row.
+      const t = c.url.endsWith("/tx") ? { transaction: { id: "tx9" } } : {};
+      // One user row, plus the count of each nested connect (`count(r) AS c<n>`).
       const user = {
         id: { $type: "String", _value: "u1" },
         email: { $type: "String", _value: "a@x.io" },
         age: int(30),
         createdAt: { $type: "OffsetDateTime", _value: "2024-01-02T03:04:05Z" },
       };
-      return { body: rows(["row"], [[{ $type: "Map", _value: user }]], t) };
+      const counts = [...statement.matchAll(/count\(\w+\) AS (c\d+)/g)].map((m) => m[1]!);
+      return {
+        body: rows(
+          ["row", ...counts],
+          [[{ $type: "Map", _value: user }, ...counts.map(() => int(1))]],
+          t,
+        ),
+      };
     });
     const db = createClient({
       uri: "https://h",
@@ -441,28 +445,36 @@ describe("CyphraClient over HTTP", () => {
       tracer: tracer as never,
     });
     expect(db.$client.transport).toBe("http");
+    const path = () => calls.map((c) => c.url.replace("https://h/db/neo4j/query/v2", ""));
+
+    // A create is one statement that writes nothing when it fails: one auto-commit request.
     const u = await db.user.create({ data: { email: "a@x.io", age: 30 } });
     expect(u).toMatchObject({ email: "a@x.io", age: 30 });
     expect((u as { createdAt: Date }).createdAt.toISOString()).toBe("2024-01-02T03:04:05.000Z");
-
+    expect(path()).toEqual([""]);
     // The ORM's Int is sent as a typed Integer, the DateTime default as an OffsetDateTime.
-    const first = calls[0]!;
-    expect(first.url).toBe("https://h/db/neo4j/query/v2/tx");
-    const sent = JSON.stringify(first.body);
+    const sent = JSON.stringify(calls[0]!.body);
     expect(sent).toContain('{"$type":"Integer","_value":"30"}');
     expect(sent).toContain('"$type":"OffsetDateTime"');
-    expect(calls.at(-1)!.url).toBe("https://h/db/neo4j/query/v2/tx/tx9/commit");
+    expect(calls[0]!.body).not.toHaveProperty("accessMode");
+
+    // A read: one auto-commit request in READ mode.
+    await db.user.findMany();
+    expect(path()).toEqual(["", ""]);
+    expect(calls[1]!.body).toMatchObject({ accessMode: "READ" });
+
+    // A nested connect is checked after the statement ran (a missing target rolls it back): still
+    // one statement, in an explicit transaction.
+    await db.user.create({
+      data: { email: "b@x.io", following: { connect: { email: "a@x.io" } } },
+    });
+    expect(path()).toEqual(["", "", "/tx", "/tx/tx9/commit"]);
 
     const q = events.filter((e): e is QueryEvent => e.type === "query");
-    expect(q.length).toBeGreaterThan(0);
     expect(q.map((e) => [e.model, e.operation, e.rows, e.transaction])).toEqual([
       ["User", "create", 1, false],
+      ["User", "findMany", 1, false],
       ["User", "create", 1, false],
-    ]);
-    expect(calls.map((c) => c.url.replace("https://h/db/neo4j/query/v2", ""))).toEqual([
-      "/tx",
-      "/tx/tx9",
-      "/tx/tx9/commit",
     ]);
     expect(
       spans.some(

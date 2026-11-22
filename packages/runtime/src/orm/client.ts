@@ -353,8 +353,9 @@ function rawFor(instr: Instrumentation, runnerFor: RunnerFor) {
   return (strings: TemplateStringsArray, ...values: unknown[]) =>
     instr.operation(meta, async () => {
       const { text, params } = compileCypher(strings, values);
-      const rows = await runnerFor(meta).write((exec) =>
-        exec(text, params as Record<string, unknown>),
+      const rows = await runnerFor(meta).write(
+        (exec) => exec(text, params as Record<string, unknown>),
+        { autoCommit: true },
       );
       return rows.map((r) => toNative(r));
     });
@@ -398,17 +399,30 @@ export function createOrm<TM extends TypeMap>(
     instr.on("query", (e) => console.debug(`[cyphra] cypher: ${e.text}`, e.params));
   }
 
+  // Over HTTP, an operation that is one statement goes out as one auto-commit request.
+  const single =
+    client.transport === "http" && typeof client.withSingleStatement === "function"
+      ? client.withSingleStatement.bind(client)
+      : undefined;
   const runnerFor: RunnerFor = (meta) => {
     const m = { ...meta, transaction: false };
+    const run = <T>(
+      mode: "READ" | "WRITE",
+      fn: (exec: Executor) => Promise<T>,
+      autoCommit: boolean | undefined,
+    ) => {
+      const work = (tx: TransactionLike) => fn(txExecutor(instr, schema, tx, m, dialect));
+      return mapped(schema, () =>
+        autoCommit && single
+          ? single(mode, work)
+          : mode === "READ"
+            ? client.withReadTransaction(work)
+            : client.withWriteTransaction(work),
+      );
+    };
     return {
-      read: (fn) =>
-        mapped(schema, () =>
-          client.withReadTransaction((tx) => fn(txExecutor(instr, schema, tx, m, dialect))),
-        ),
-      write: (fn) =>
-        mapped(schema, () =>
-          client.withWriteTransaction((tx) => fn(txExecutor(instr, schema, tx, m, dialect))),
-        ),
+      read: (fn, o) => run("READ", fn, o?.autoCommit),
+      write: (fn, o) => run("WRITE", fn, o?.autoCommit),
     };
   };
 

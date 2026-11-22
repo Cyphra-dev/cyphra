@@ -56,3 +56,31 @@ node OdPlain {
 node OdTag {
   id String @id @default(cuid())
 }
+
+// An acyclic cascade (the whole delete is one statement): folder → files → versions, where a
+// hold on a file restricts it.
+node OdFolder {
+  id    String   @id @default(cuid())
+  name  String   @unique
+  files OdFile[] @relationship(type: "OD_CONTAINS", direction: OUT, onDelete: Cascade)
+}
+
+node OdFile {
+  id       String      @id @default(cuid())
+  name     String      @unique
+  folder   OdFolder?   @relationship(type: "OD_CONTAINS", direction: IN)
+  versions OdVersion[] @relationship(type: "OD_VERSION_OF", direction: IN, onDelete: Cascade)
+  holds    OdHold[]    @relationship(type: "OD_HOLDS", direction: IN, onDelete: Restrict)
+}
+
+node OdVersion {
+  id   String  @id @default(cuid())
+  n    Int
+  file OdFile? @relationship(type: "OD_VERSION_OF", direction: OUT)
+}
+
+node OdHold {
+  id     String  @id @default(cuid())
+  reason String
+  file   OdFile? @relationship(type: "OD_HOLDS", direction: OUT)
+}
