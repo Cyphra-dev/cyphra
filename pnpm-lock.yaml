@@ -41,6 +41,49 @@ importers:
         specifier: ^4.1.12
         version: 4.1.12(@opentelemetry/api@1.10.0)(@types/node@22.20.5)(@vitest/coverage-v8@4.1.12)(vite@7.3.8(@types/node@22.20.5)(tsx@4.23.15)(yaml@2.9.1))
 
+  bench:
+    dependencies:
+      '@cyphra/graphql':
+        specifier: workspace:*
+        version: link:../packages/graphql
+      '@cyphra/migrator':
+        specifier: workspace:*
+        version: link:../packages/migrator
+      '@cyphra/schema':
+        specifier: workspace:*
+        version: link:../packages/schema
+      '@neo4j/graphql':
+        specifier: 7.6.8
+        version: 7.6.8(graphql@16.15.0)(neo4j-driver@6.3.2)
+      cyphra:
+        specifier: workspace:*
+        version: link:../packages/cyphra
+      graphql:
+        specifier: 16.15.0
+        version: 16.15.0
+      neo4j-driver:
+        specifier: 6.3.2
+        version: 6.3.2
+      neogma:
+        specifier: 2.0.5
+        version: 2.0.5
+      tinybench:
+        specifier: 6.2.4
+        version: 6.2.4
+    devDependencies:
+      '@cyphra/cli':
+        specifier: workspace:*
+        version: link:../packages/cli
+      '@types/node':
+        specifier: ^22.20.5
+        version: 22.20.5
+      esbuild:
+        specifier: ^0.27.7
+        version: 0.27.7
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
   compat/graphql:
     devDependencies:
       '@cyphra/graphql':
@@ -5277,6 +5320,10 @@ packages:
   tinybench@2.9.0:
     resolution: {integrity: sha512-0+DUvqWMValLmha6lr4kD8iAMK1HzV0/aKnCtWb9v9641TnP/MFb7Pc2bxoxQjTXAErryXVgUOfv2YqNllqGeg==}
 
+  tinybench@6.2.4:
+    resolution: {integrity: sha512-SQ52jEncXxbMCzJuY2A/jGIbbAu6NYsBWW7grz2pNE+EnzQdoGaoBfpk4qC/opE7qiUcGmGgaGIz5EoHdS1O9w==}
+    engines: {node: '>=20.0.0'}
+
   tinyexec@0.3.2:
     resolution: {integrity: sha512-KQQR9yN7R5+OSwaK0XQoj22pwHoTlgYqmUscPYoknOoWCWfj/5/ABTMRi69FrKU5ffPVh5QcFikpWJI/P1ocHA==}
 
@@ -6653,6 +6700,30 @@ snapshots:
       graphql-relay: 0.11.0(graphql@16.15.0)
       jose: 5.10.0
       neo4j-driver: 5.28.3
+      pluralize: 8.0.0
+      semver: 7.8.6
+      typescript-memoize: 1.1.1
+    transitivePeerDependencies:
+      - supports-color
+
+  '@neo4j/graphql@7.6.8(graphql@16.15.0)(neo4j-driver@6.3.2)':
+    dependencies:
+      '@apollo/subgraph': 2.17.0(graphql@16.15.0)
+      '@graphql-tools/merge': 9.2.8(graphql@16.15.0)
+      '@graphql-tools/resolvers-composition': 7.0.41(graphql@16.15.0)
+      '@graphql-tools/schema': 10.1.5(graphql@16.15.0)
+      '@graphql-tools/utils': 12.1.0(graphql@16.15.0)
+      '@neo4j/cypher-builder': 3.3.0
+      camelcase: 6.3.0
+      debug: 4.4.3
+      dot-prop: 6.0.1
+      graphql: 16.15.0
+      graphql-compose: 9.3.0(graphql@16.15.0)
+      graphql-parse-resolve-info: 4.14.1(graphql@16.15.0)
+      graphql-query-complexity: 1.1.1(graphql@16.15.0)
+      graphql-relay: 0.11.0(graphql@16.15.0)
+      jose: 5.10.0
+      neo4j-driver: 6.3.2
       pluralize: 8.0.0
       semver: 7.8.6
       typescript-memoize: 1.1.1
@@ -11044,6 +11115,8 @@ snapshots:
       any-promise: 1.3.0
 
   tinybench@2.9.0: {}
+
+  tinybench@6.2.4: {}
 
   tinyexec@0.3.2: {}
 

@@ -52,6 +52,7 @@ const COLUMNS: { title: string; links: [string, string][] }[] = [
       ["vs @neo4j/graphql", "/compare/neo4j-graphql-library"],
       ["vs neogma and neode", "/compare/neogma-neode"],
       ["vs neo4j-driver", "/compare/neo4j-driver"],
+      ["Benchmarks", "/benchmarks"],
       ["All comparisons", "/compare"],
     ],
   },

@@ -25,6 +25,7 @@
     "cyphra-example-graphrag",
     "cyphra-example-trpc-nextjs",
     "compat-graphql",
+    "cyphra-bench",
     "cyphra-vscode"
   ]
 }

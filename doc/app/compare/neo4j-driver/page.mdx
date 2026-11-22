@@ -105,6 +105,9 @@ Cyphra is not free, and it is fair to list what you take on:
 - **Generated Cypher.** The client writes the queries for its operations. When a query needs a
   specific shape for performance, write it yourself with `db.$cypher` or the driver.
 - **A younger project.** `cyphra` is at 0.2.1; the driver is maintained by Neo4j, Inc.
+- **Some latency.** Building the query and mapping the results takes time on every call. The
+  [benchmarks](/benchmarks) measure it against hand-written Cypher on the same driver, per
+  operation.
 
 ## When to choose the raw driver
 
@@ -133,6 +136,7 @@ Cyphra is not free, and it is fair to list what you take on:
 <Cards>
   <Cards.Card title="Cyphra vs @neo4j/graphql" href="/compare/neo4j-graphql-library" />
   <Cards.Card title="Cyphra vs neogma and neode" href="/compare/neogma-neode" />
+  <Cards.Card title="Benchmarks" href="/benchmarks" />
   <Cards.Card title="All comparisons" href="/compare" />
 </Cards>
 

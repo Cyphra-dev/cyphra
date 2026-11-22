@@ -18,6 +18,7 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "audit": "pnpm audit --audit-level=high",
+    "bench": "pnpm --filter cyphra-bench run bench",
     "doc:dev": "pnpm --filter cyphra-doc dev",
     "doc:build": "pnpm --filter cyphra-doc build",
     "doc:lint-content": "pnpm --filter cyphra-doc lint:content",

@@ -31,7 +31,8 @@ function docLines(pages: DocPage[]): string[] {
 
 export function llmsTxt(): string {
   const pages = getDocPages();
-  const isComparison = (p: DocPage) => p.route === "/neo4j-orm" || p.route.startsWith("/compare");
+  const isComparison = (p: DocPage) =>
+    p.route === "/neo4j-orm" || p.route === "/benchmarks" || p.route.startsWith("/compare");
   const under = (prefix: string) => (p: DocPage) =>
     p.route === prefix || p.route.startsWith(`${prefix}/`);
   const guides = pages.filter(under("/guides"));
