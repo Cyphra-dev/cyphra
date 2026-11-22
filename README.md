@@ -42,6 +42,7 @@ cyphra pull                         # or start from an existing database: write 
 
 - **Install (app code)**: `pnpm add cyphra` — re-exports `@cyphra/schema`, `@cyphra/query`, `@cyphra/runtime`, `@cyphra/migrator`
 - **CLI**: `pnpm add -D @cyphra/cli`
+- **NestJS**: `pnpm add @cyphra/nestjs` — module, injected client, `@Transactional()`, health check ([guide](https://cyphra.dev/guides/nestjs), [`examples/nestjs/`](./examples/nestjs))
 - **Testing**: `pnpm add -D @cyphra/testing testcontainers` — database in Docker, migrations, isolation, typed factories ([docs](https://cyphra.dev/testing))
 - **Docs site**: [`doc/`](./doc) (Next.js + Nextra) — `pnpm doc:dev` / `pnpm doc:build`
 - **Example apps**: [`examples/blog/`](./examples/blog) (typed client, needs Neo4j: `pnpm example:blog`) and [`examples/basic/`](./examples/basic) (low-level APIs: `pnpm example:basic`)

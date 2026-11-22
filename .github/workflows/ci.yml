@@ -76,6 +76,10 @@ jobs:
           pnpm --filter cyphra-example-trpc-nextjs --fail-if-no-match test
           pnpm --filter cyphra-example-trpc-nextjs --fail-if-no-match build
 
+      # examples/nestjs: production build with tsc (its e2e tests run in neo4j-integration).
+      - name: Example NestJS (build)
+        run: pnpm --filter cyphra-example-nestjs --fail-if-no-match build
+
       - name: Lint docs content (blog, glossary)
         run: pnpm --filter cyphra-doc lint:content
 
@@ -163,6 +167,8 @@ jobs:
           # adversarial authorization tests (tokens, nested reads, aggregates, rolled-back writes)
           # and @cypher / @fulltext (aggregating statements, injection attempts through arguments).
           pnpm --filter @cyphra/graphql --fail-if-no-match exec vitest run test/mutations.integration.test.ts test/auth.integration.test.ts test/cypher.integration.test.ts
+          # @cyphra/nestjs: @Transactional() commit/rollback across services, health check, shutdown.
+          pnpm --filter @cyphra/nestjs --fail-if-no-match exec vitest run test/nestjs.integration.test.ts
           # @cyphra/testing: schema, migrations, wipe, rollback and factories (only Tst* nodes).
           pnpm --filter @cyphra/testing --fail-if-no-match exec vitest run test/database.integration.test.ts
           # `cyphra studio` API through the ORM (own Sd* labels: safe alongside the other suites).
@@ -214,6 +220,17 @@ jobs:
           NEO4J_TEST_PASSWORD: cyphra_ci_test
         run: pnpm --filter cyphra-example-trpc-nextjs --fail-if-no-match test
 
+      # examples/nestjs: the HTTP API end to end (transfers in @Transactional(), rollback, health).
+      - name: Example NestJS (Neo4j)
+        if: matrix.neo4j-driver == '5'
+        env:
+          NEO4J_TEST_URI: bolt://127.0.0.1:7687
+          NEO4J_TEST_USER: neo4j
+          NEO4J_TEST_PASSWORD: cyphra_ci_test
+        run: |
+          pnpm install --frozen-lockfile --offline
+          pnpm --filter cyphra-example-nestjs --fail-if-no-match test
+
       # @neo4j/graphql v7 compatibility suite: goldens must still match (compat/graphql). It does
       # not exercise Cyphra's driver handling, so it runs once.
       - name: GraphQL compatibility suite
@@ -237,6 +254,44 @@ jobs:
         run: |
           pnpm install --frozen-lockfile --offline
           pnpm bench --quick
+
+  # @cyphra/nestjs is developed against NestJS 12; its peer range also covers 10 and 11. Unit tests
+  # (module, @Transactional(), Terminus health check) and a typecheck against each older major.
+  nestjs-compat:
+    name: nestjs-compat (NestJS ${{ matrix.nest }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        nest: ["10", "11"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Use NestJS ${{ matrix.nest }}
+        run: |
+          for p in common core testing platform-express terminus; do
+            npm pkg set "pnpm.overrides.@nestjs/$p=^${{ matrix.nest }}.0.0"
+          done
+          pnpm install --no-frozen-lockfile
+          git checkout -- package.json pnpm-lock.yaml
+
+      - name: Show resolved NestJS
+        run: pnpm --filter @cyphra/nestjs exec node -p "'@nestjs/core ' + require('@nestjs/core/package.json').version + ', @nestjs/terminus ' + require('@nestjs/terminus/package.json').version"
+
+      - name: Build dependencies
+        run: pnpm --filter '@cyphra/nestjs^...' run build
+
+      - name: Typecheck and unit tests
+        run: |
+          pnpm --filter @cyphra/nestjs --fail-if-no-match run typecheck
+          pnpm --filter @cyphra/nestjs --fail-if-no-match exec vitest run test/module.test.ts test/health-terminus10.test.ts test/types.test.ts
 
   # The ORM, migrator and CLI suites on Memgraph (dialect "memgraph"): the shared ORM suites skip or
   # adapt what Memgraph does not support (see doc/app/memgraph/page.mdx), plus Memgraph-only tests.

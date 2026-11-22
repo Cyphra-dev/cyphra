@@ -1,0 +1,74 @@
+{
+  "name": "@cyphra/nestjs",
+  "version": "0.17.0",
+  "description": "NestJS module for Cyphra, the TypeScript ORM for Neo4j: injectable typed client, @Transactional() and a Terminus health indicator",
+  "type": "module",
+  "sideEffects": false,
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "peerDependencies": {
+    "@nestjs/common": "^10.0.0 || ^11.0.0 || ^12.0.0",
+    "@nestjs/core": "^10.0.0 || ^11.0.0 || ^12.0.0",
+    "@nestjs/terminus": "^10.0.0 || ^11.0.0 || ^12.0.0",
+    "cyphra": ">=0.17.0",
+    "reflect-metadata": "^0.1.13 || ^0.2.0"
+  },
+  "peerDependenciesMeta": {
+    "@nestjs/terminus": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@nestjs/common": "12.4.0",
+    "@nestjs/core": "12.4.0",
+    "@nestjs/terminus": "12.1.0",
+    "@nestjs/testing": "12.4.0",
+    "@types/node": "^22.20.5",
+    "cyphra": "workspace:*",
+    "neo4j-driver": "^5.28.3",
+    "reflect-metadata": "0.2.2",
+    "rxjs": "7.8.2",
+    "tsup": "^8.5.1",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.12"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Cyphra-dev/cyphra.git",
+    "directory": "packages/nestjs"
+  },
+  "homepage": "https://www.cyphra.dev/guides/nestjs",
+  "bugs": {
+    "url": "https://github.com/Cyphra-dev/cyphra/issues"
+  },
+  "keywords": [
+    "nestjs",
+    "nest",
+    "neo4j",
+    "orm",
+    "typescript",
+    "transactions",
+    "terminus",
+    "cyphra",
+    "graph-database"
+  ]
+}

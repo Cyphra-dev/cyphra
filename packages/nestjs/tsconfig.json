@@ -1,0 +1,13 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "dist",
+    "noEmit": true,
+    "types": ["node"],
+    // Nest decorators (legacy TypeScript decorators). Constructor parameters use @Inject()
+    // explicitly, so neither the build (esbuild) nor the tests need emitDecoratorMetadata.
+    "experimentalDecorators": true
+  },
+  "include": ["src/**/*.ts", "test/**/*.ts", "vitest.config.ts"]
+}

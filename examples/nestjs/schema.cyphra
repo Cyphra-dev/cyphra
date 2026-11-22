@@ -1,0 +1,19 @@
+// Accounts and the transfers between them. A transfer moves money between two accounts and records
+// itself, in one transaction (src/accounts/accounts.service.ts).
+
+node Account {
+  id        String     @id @default(uuid())
+  owner     String     @unique @length(2, 40)
+  balance   Int        @default(0)
+  createdAt DateTime   @default(now())
+  sent      Transfer[] @relationship(type: "SENT", direction: OUT)
+  received  Transfer[] @relationship(type: "RECEIVED", direction: OUT)
+}
+
+node Transfer {
+  id        String   @id @default(uuid())
+  amount    Int
+  createdAt DateTime @default(now()) @index
+  from      Account  @relationship(type: "SENT", direction: IN)
+  to        Account  @relationship(type: "RECEIVED", direction: IN)
+}

@@ -1,0 +1,15 @@
+// Test schema of @cyphra/nestjs: accounts and the transfers between them. Labels are prefixed (Nx)
+// so the integration tests only touch their own nodes.
+
+node NxAccount {
+  id        String  @id @default(uuid())
+  owner     String  @unique
+  balance   Int     @default(0)
+  transfers NxTransfer[] @relationship(type: "NX_SENT", direction: OUT)
+}
+
+node NxTransfer {
+  id     String    @id @default(uuid())
+  amount Int
+  from   NxAccount @relationship(type: "NX_SENT", direction: IN)
+}

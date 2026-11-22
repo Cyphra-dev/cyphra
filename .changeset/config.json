@@ -13,6 +13,7 @@
       "@cyphra/better-auth",
       "@cyphra/graphql",
       "@cyphra/language-server",
+      "@cyphra/nestjs",
       "@cyphra/testing"
     ]
   ],
@@ -20,11 +21,15 @@
   "access": "public",
   "baseBranch": "main",
   "updateInternalDependencies": "patch",
+  "___experimentalUnsafeOptions_WILL_CHANGE_IN_PATCH": {
+    "onlyUpdatePeerDependentsWhenOutOfRange": true
+  },
   "ignore": [
     "cyphra-doc",
     "cyphra-example-basic",
     "cyphra-example-graphrag",
     "cyphra-example-trpc-nextjs",
+    "cyphra-example-nestjs",
     "compat-graphql",
     "cyphra-bench",
     "cyphra-vscode"
