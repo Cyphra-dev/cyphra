@@ -1,5 +1,14 @@
 # @cyphra/graphql
 
+## 0.15.0
+
+### Patch Changes
+
+- Updated dependencies [86ed59e]
+- Updated dependencies [ca885f5]
+  - @cyphra/runtime@0.15.0
+  - @cyphra/schema@0.15.0
+
 ## 0.14.0
 
 ### Patch Changes

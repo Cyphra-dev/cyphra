@@ -1,5 +1,35 @@
 # @cyphra/runtime
 
+## 0.15.0
+
+### Minor Changes
+
+- 86ed59e: FalkorDB support (FalkorDB 4.x over the Redis protocol), as a third dialect:
+
+  - `new CyphraClient({ falkordb: { url, graph } })` (also `createOrm` and generated `createClient`) connects with the official `falkordb` client, an optional peer dependency loaded on first use (Neo4j and Memgraph apps never need it). It implies `dialect: "falkordb"` and `client.transport === "falkordb"`; a `client` option shares a connection your app already has.
+  - The transport rewrites the ORM's Cypher for FalkorDB (`rewriteForFalkorDB`): `EXISTS {}` / `COUNT {}` / `COLLECT {}` become `CALL {}` subqueries, `elementId()` becomes `id()` (with id seeks), map parameters of patterns are expanded, and parameters go in the `CYPHER …` header as literals (integers stay integers, numbers are floats). Neo4j and Memgraph output is unchanged.
+  - Temporal fields are stored as ISO 8601 text (`DateTime` in UTC with milliseconds, which sorts in time order); vector fields as FalkorDB vectors (`vecf32`). `findSimilar` uses `db.idx.vector.queryNodes` (scores on Neo4j's scale), `search` uses `db.idx.fulltext.queryNodes` (RediSearch syntax), traversals use variable-length paths with checks on the path, and shortest paths use `shortestPath()` / `allShortestPaths()`. Uniqueness violations become `UniqueConstraintError`s with their fields.
+  - FalkorDB has no multi-statement transactions: each operation is one statement, which FalkorDB runs atomically (checks on its result, such as a missing `connect` target, come after it), write work of one client is serialized, and `$transaction` throws `UnsupportedFeatureError`. Points throw `UnsupportedFeatureError` too.
+  - The migrator writes FalkorDB DDL (`GRAPH.CONSTRAINT CREATE UNIQUE …`, which the transport runs as the Redis command, `CREATE INDEX FOR (n:L) ON (n.p)`, full-text and vector indexes) for `push`, `migrate dev` / `diff` / `deploy`, reads `db.constraints()` / `db.indexes()` for `migrate status` drift, samples data for `pull`, and resets one graph. The CLI connects with `"dialect": "falkordb"` in `cyphra.json` and `FALKORDB_URL` / `FALKORDB_GRAPH`; the studio works on FalkorDB.
+
+  See https://cyphra.dev/falkordb for the feature matrix.
+
+- ca885f5: Fewer round trips for writes, and one request per operation over HTTP:
+
+  - `create` and `update` are one statement: the write, every nested relation write and the projection of the result (`select` / `include` / `_count`, computed-field `needs`). Nested `create`s are batched per relation (`FOREACH` over the children, in the order given); `connect`, `disconnect` and `set` are subqueries of the same statement, with the same locks and `MERGE`s as before. A nested create of a user with 5 posts goes from 12 statements to 1, `create` from 2 to 1, `update` from 3 to 1.
+  - `upsert` with nested writes runs them and reads the result back in one second statement (was one per nested write, plus a read).
+  - `delete` without `onDelete` rules is one statement: lock, read the row, `DETACH DELETE` (was 3). With `onDelete` rules whose cascades form a tree (no cycle, no interface), the lock, every cascade level, the `Restrict` checks and the delete (skipped when a check fails) are one statement too (a user → posts → comments cascade goes from 6 to 1); otherwise each cascade level is one statement and the checks share the delete's. A node deleted by a concurrent operation while the delete waited for its lock is now reported as not found.
+  - HTTP transport: an operation that is one statement and writes nothing when it fails (reads, `create` without a nested `connect`, `update` without relation writes, `upsert` without nested writes, `delete`, `createMany` / `updateMany` / `deleteMany`, `$cypher`) is sent as one auto-commit Query API request (reads with `accessMode: "READ"`), retried on transient errors, instead of opening and committing an explicit transaction. Others, and everything inside `$transaction`, still use explicit transactions. New `CyphraClient.withSingleStatement()` and `HttpSession.runRetried()`.
+  - `shortestPath` / `allShortestPaths` no longer read every path node's properties twice.
+  - Each statement still emits a `query` event and a span, so operations now emit fewer of them. The `Runner` used by `ModelEngine` takes an optional `{ autoCommit }`.
+
+  Benchmarks re-run: see https://cyphra.dev/benchmarks.
+
+### Patch Changes
+
+- @cyphra/query@0.15.0
+- @cyphra/schema@0.15.0
+
 ## 0.14.0
 
 ### Minor Changes
