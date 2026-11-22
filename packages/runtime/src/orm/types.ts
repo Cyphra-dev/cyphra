@@ -781,10 +781,7 @@ type UnionUniqueInput<TM extends TypeMap, D extends RelationTypeDef> = MemberInp
 /** Writes to a relation whose target is a union: each item names the member. */
 type UnionRelationCreate<TM extends TypeMap, D extends RelationTypeDef> = {
   /** Create related node(s) of the named member and link them: `{ Post: { title } }`. */
-  create?: OneOrMany<
-    D,
-    MemberInput<MemberCreates<TM, D["target"] & keyof TM>> & EdgeInput<D>
-  >;
+  create?: OneOrMany<D, MemberInput<MemberCreates<TM, D["target"] & keyof TM>> & EdgeInput<D>>;
   /** Link existing node(s) of the named member: `{ Post: { id } }`; throws if one does not exist. */
   connect?: OneOrMany<D, UnionUniqueInput<TM, D> & EdgeUpdateInput<D>>;
 };

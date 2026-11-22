@@ -67,7 +67,7 @@ describe("migrations: unions", () => {
       edge("SearchHit"),
       edge("SearchHit", "\n          weight Int @default(1)"),
     );
-    expect(plan.steps.map((s) => s.cypher ?? "")).toContain(
+    expect(plan.steps.map((s) => ("cypher" in s ? s.cypher : ""))).toContain(
       "MATCH ()-[r:`TAGS`]->() WHERE r.`weight` IS NULL SET r.`weight` = toInteger($value)",
     );
   });
