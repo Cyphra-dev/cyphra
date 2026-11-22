@@ -26,6 +26,9 @@ import {
   q,
   relationField,
   labelExpr,
+  labelTest,
+  nodePattern,
+  unionPredicate,
 } from "./compile.js";
 import { CyphraValidationError } from "./errors.js";
 import { compilePath, decodePath } from "./path.js";
@@ -185,12 +188,15 @@ function hopPattern(
   const e = ctx.variable("e");
   const types = [...byType.keys()].map(q).join("|");
   const fromLabel = `:${labelExpr(from)}`;
-  const toLabel = `:${labelExpr(to)}`;
+  // A union has no label: the node stepped to is checked by its label predicate.
+  const toLabel = to.union ? "" : `:${labelExpr(to)}`;
   const preds: string[] = [];
   let pattern: string;
   // The node each hop steps to gets a name when something refers to it.
-  const t = target ?? (nodePredicate ? ctx.variable("t") : undefined);
+  const t = target ?? (nodePredicate || to.union ? ctx.variable("t") : undefined);
   const nodeWhere = (v: string) => {
+    const u = unionPredicate(v, to);
+    if (u) preds.push(u);
     const w = nodePredicate?.(v);
     if (w) preds.push(w);
   };
@@ -265,7 +271,7 @@ export function memgraphExpansion(
   const r = ctx.variable("r");
   const m = ctx.variable("m");
   const types = [...byType.keys()].map(q).join("|");
-  const preds: string[] = [`${m}:${labelExpr(to)}`];
+  const preds: string[] = [labelTest(m, to)];
   const kind = kinds.size === 1 ? [...kinds][0]! : "BOTH";
   if (kinds.size > 1) {
     // Undirected expansion; each type keeps its own direction: an OUT edge ends at the node it
@@ -553,12 +559,14 @@ export function compileTraverse(
     end = model;
     min = depth.min;
   }
-  const reached = [min > 0 ? "n <> s" : null, compileWhere(ctx, end, "n", args.where)].filter(
-    (x): x is string => Boolean(x),
-  );
+  const reached = [
+    min > 0 ? "n <> s" : null,
+    unionPredicate("n", end),
+    compileWhere(ctx, end, "n", args.where),
+  ].filter((x): x is string => Boolean(x));
 
   let text = `MATCH (s:${labelExpr(model)})${from ? ` WHERE ${from}` : ""} `;
-  text += `MATCH ${returnPaths ? "p = " : ""}(s)${segments}(n:${labelExpr(end)})`;
+  text += `MATCH ${returnPaths ? "p = " : ""}(s)${segments}${nodePattern("n", end)}`;
   if (reached.length) text += ` WHERE ${reached.map((x) => `(${x})`).join(" AND ")}`;
 
   const paging = compilePaging(ctx, end, "n", args);

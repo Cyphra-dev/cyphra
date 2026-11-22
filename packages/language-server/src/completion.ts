@@ -15,6 +15,7 @@ export type CompletionKind =
   | "type"
   | "node"
   | "interface"
+  | "union"
   | "relationship"
   | "enum"
   | "enumMember"
@@ -53,9 +54,9 @@ function names(a: Analysis, kind: ScannedDeclaration["kind"]): string[] {
   return [...new Set(a.scanned.filter((d) => d.kind === kind).map((d) => d.name))];
 }
 
-/** Names of node models a relation can target: nodes and interfaces. */
+/** Names of node models a relation can target: nodes, interfaces and unions. */
 function modelNames(a: Analysis): string[] {
-  return [...new Set([...names(a, "node"), ...names(a, "interface")])];
+  return [...new Set([...names(a, "node"), ...names(a, "interface"), ...names(a, "union")])];
 }
 
 /**
@@ -146,8 +147,44 @@ function typeCompletions(ctx: Ctx, inNode: boolean): Completion[] {
         sortText: `3${n}`,
       });
     }
+    for (const n of names(a, "union")) {
+      if (names(a, "node").includes(n) || names(a, "interface").includes(n)) continue;
+      const members = a.scanned.find((d) => d.kind === "union" && d.name === n)!.members;
+      out.push({
+        label: n,
+        kind: "union",
+        detail: `union (relation to ${members.map((m) => m.text).join(" | ") || "its members"})`,
+        replace,
+        sortText: `3${n}`,
+      });
+    }
   }
   return out;
+}
+
+/**
+ * In a `union X = A | …` declaration, after `=` or `|`: the node names not listed yet
+ * (`undefined` when not in a union's member list).
+ */
+function unionMemberCompletions(ctx: Ctx, before: readonly Token[]): Completion[] | undefined {
+  const toks = before.filter(significant);
+  const last = toks[toks.length - 1];
+  if (!last || (last.text !== "=" && last.text !== "|")) return undefined;
+  // Walk back over `A |` pairs to the `=`, then `union Name`.
+  let k = toks.length - 1;
+  const listed = new Set<string>();
+  while (k >= 0 && toks[k]!.text !== "=") {
+    const t = toks[k]!;
+    if (t.text === "|") k--;
+    else if (t.kind === "ident") {
+      listed.add(t.text);
+      k--;
+    } else return undefined;
+  }
+  if (k < 2 || toks[k - 1]!.kind !== "ident" || toks[k - 2]!.text !== "union") return undefined;
+  return names(ctx.a, "node")
+    .filter((n) => !listed.has(n))
+    .map((n) => ({ label: n, kind: "node" as const, detail: "node", replace: ctx.replace }));
 }
 
 type FieldKind = "scalar" | "relation" | "vector" | "unknown";
@@ -448,6 +485,8 @@ export function completionsAt(a: Analysis, offset: number): Completion[] {
 }
 
 function topLevelCompletions(ctx: Ctx, before: readonly Token[]): Completion[] {
+  const members = unionMemberCompletions(ctx, before);
+  if (members) return members;
   const header = headerCompletions(ctx, before);
   if (header) return header;
   // Only at the start of a line (not while naming a declaration).
@@ -459,6 +498,7 @@ function topLevelCompletions(ctx: Ctx, before: readonly Token[]): Completion[] {
     relationship:
       'relationship ${1:Name} {\n\ttype "${2:TYPE}"\n\tfrom ${3:Node}\n\tto ${4:Node}\n\t$0\n}',
     enum: "enum ${1:Name} {\n\t${2:VALUE}\n}",
+    union: "union ${1:Name} = ${2:A} | ${3:B}",
   };
   return Object.entries(snippets).map(([k, snippet]) => ({
     label: k,

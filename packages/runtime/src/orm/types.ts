@@ -41,7 +41,13 @@ export type ModelTypeDef = {
    * discriminated by `__typename`, and it has no `create` / `createMany` / `upsert`.
    */
   readonly abstract?: true;
-  /** Names of the models implementing this interface (only on an interface). */
+  /**
+   * `true` for a `union` (with `abstract: true`): a type grouping unrelated nodes. It has no
+   * fields, is read with `findMany` / `findFirst` / `count` only, and relation writes to it name
+   * the member (`connect: { Post: { id } }`).
+   */
+  readonly union?: true;
+  /** Names of the models implementing this interface, or the members of a union. */
   readonly implementations?: string;
   /**
    * Dynamic labels the model declares with `@@labels([...])` (absent when none): what
@@ -92,6 +98,9 @@ type NodeFields<TM extends TypeMap, M extends keyof TM> = Overwrite<
 type IsAbstract<TM extends TypeMap, M extends keyof TM> = TM[M] extends { abstract: true }
   ? true
   : false;
+
+/** `true` when model `M` is a `union`. */
+type IsUnion<TM extends TypeMap, M extends keyof TM> = TM[M] extends { union: true } ? true : false;
 
 /** Models implementing the interface `M` (`never` for a node). */
 export type Implementations<TM extends TypeMap, M extends keyof TM> = TM[M] extends {
@@ -396,6 +405,13 @@ export type WhereInput<TM extends TypeMap, M extends keyof TM> = {
     : TypenameFilter<Implementations<TM, M> & string>;
   /** Filter on the dynamic labels (`@@labels`) of the node. `never` when the model has none. */
   $labels?: [DynamicLabels<TM, M>] extends [never] ? never : LabelsFilter<DynamicLabels<TM, M>>;
+  /**
+   * On an interface or a union: keep the nodes of the listed implementations that match their
+   * filter (`{ Post: { title: { contains: "x" } }, User: {} }`); the others are left out.
+   */
+  $on?: [Implementations<TM, M>] extends [never]
+    ? never
+    : { [T in Implementations<TM, M>]?: WhereInput<TM, T> };
 } & {
   [R in keyof Relations<TM, M>]?: RelationFilter<TM, Rel<TM, M, R>>;
 } & {
@@ -710,9 +726,56 @@ type ScalarCreate<TM extends TypeMap, M extends keyof TM> = {
 };
 
 type RelationCreate<TM extends TypeMap, D extends RelationTypeDef> =
-  IsAbstract<TM, D["target"] & keyof TM> extends true
-    ? Omit<RelationCreateAny<TM, D>, "create">
-    : RelationCreateAny<TM, D>;
+  IsUnion<TM, D["target"] & keyof TM> extends true
+    ? UnionRelationCreate<TM, D>
+    : IsAbstract<TM, D["target"] & keyof TM> extends true
+      ? Omit<RelationCreateAny<TM, D>, "create">
+      : RelationCreateAny<TM, D>;
+
+/**
+ * One member of the union `U` named as a key, with its value: `{ Post: X<"Post"> }` or
+ * `{ User: X<"User"> }` (exactly one key).
+ */
+type MemberInput<TM extends TypeMap, U extends keyof TM, X extends Record<string, unknown>> = {
+  [T in Implementations<TM, U>]: { [K in T]: X[K & keyof X] } & {
+    [K in Exclude<Implementations<TM, U>, T>]?: never;
+  };
+}[Implementations<TM, U>];
+
+/** Unique `where` of each member of the union `U`, by member name. */
+type MemberUniques<TM extends TypeMap, U extends keyof TM> = {
+  [T in Implementations<TM, U>]: WhereUniqueInput<TM, T>;
+};
+
+/** Create input of each member of the union `U`, by member name. */
+type MemberCreates<TM extends TypeMap, U extends keyof TM> = {
+  [T in Implementations<TM, U>]: CreateInput<TM, T>;
+};
+
+/** A related node of a union-typed relation, by its member and unique key: `{ Post: { id } }`. */
+type UnionUniqueInput<TM extends TypeMap, D extends RelationTypeDef> = MemberInput<
+  TM,
+  D["target"] & keyof TM,
+  MemberUniques<TM, D["target"] & keyof TM>
+>;
+
+/** Writes to a relation whose target is a union: each item names the member. */
+type UnionRelationCreate<TM extends TypeMap, D extends RelationTypeDef> = {
+  /** Create related node(s) of the named member and link them: `{ Post: { title } }`. */
+  create?: OneOrMany<
+    D,
+    MemberInput<TM, D["target"] & keyof TM, MemberCreates<TM, D["target"] & keyof TM>> &
+      EdgeInput<D>
+  >;
+  /** Link existing node(s) of the named member: `{ Post: { id } }`; throws if one does not exist. */
+  connect?: OneOrMany<D, UnionUniqueInput<TM, D> & EdgeUpdateInput<D>>;
+};
+
+/** The unique `where` of a related node: `{ id }`, or `{ Post: { id } }` for a union target. */
+type RelatedUnique<TM extends TypeMap, D extends RelationTypeDef> =
+  IsUnion<TM, D["target"] & keyof TM> extends true
+    ? UnionUniqueInput<TM, D>
+    : WhereUniqueInput<TM, D["target"] & keyof TM>;
 
 type RelationCreateAny<TM extends TypeMap, D extends RelationTypeDef> = {
   /** Create related node(s) and link them. */
@@ -760,12 +823,12 @@ type RelationUpdate<TM extends TypeMap, D extends RelationTypeDef> = RelationCre
   (D["many"] extends true
     ? {
         /** Remove the edge(s) to these nodes (the nodes are kept). */
-        disconnect?: OneOrMany<D, WhereUniqueInput<TM, D["target"] & keyof TM>>;
+        disconnect?: OneOrMany<D, RelatedUnique<TM, D>>;
         /**
          * Make these nodes the only ones linked by this relation: edges to other nodes are
          * removed, edges to these nodes are kept (and get the `$edge` values) or created.
          */
-        set?: readonly (WhereUniqueInput<TM, D["target"] & keyof TM> & EdgeUpdateInput<D>)[];
+        set?: readonly (RelatedUnique<TM, D> & EdgeUpdateInput<D>)[];
       }
     : {
         /** Remove the edge (the related node is kept). */
@@ -1376,11 +1439,17 @@ type Inc<TM extends TypeMap, M extends keyof TM> = IncludeInput<TM, M> | undefin
 type Out<TM extends TypeMap, M extends keyof TM, S, I> = Payload<TM, M, { select: S; include: I }>;
 
 /** Operations available on `db.<model>`. */
-export type ModelDelegate<TM extends TypeMap, M extends keyof TM> = (IsAbstract<TM, M> extends true
-  ? Omit<BaseModelDelegate<TM, M>, CreateOperations>
-  : BaseModelDelegate<TM, M>) &
-  VectorDelegate<TM, M> &
-  FulltextDelegate<TM, M>;
+export type ModelDelegate<TM extends TypeMap, M extends keyof TM> =
+  IsUnion<TM, M> extends true
+    ? Pick<BaseModelDelegate<TM, M>, UnionOperations>
+    : (IsAbstract<TM, M> extends true
+        ? Omit<BaseModelDelegate<TM, M>, CreateOperations>
+        : BaseModelDelegate<TM, M>) &
+        VectorDelegate<TM, M> &
+        FulltextDelegate<TM, M>;
+
+/** Operations of a union: it has no unique key and no fields, and is written through its members. */
+type UnionOperations = "findMany" | "findFirst" | "count";
 
 /** Operations an interface has not: create one of its implementations instead. */
 type CreateOperations = "create" | "createMany" | "upsert";

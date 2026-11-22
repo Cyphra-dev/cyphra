@@ -22,6 +22,11 @@
     "description": "An interface inheriting the fields and label of another one",
     "body": ["interface ${1:Staff} extends ${2:Person} {", "\t$0", "}"]
   },
+  "Union": {
+    "prefix": "union",
+    "description": "A union of unrelated node models (a relation target, read through db.<name>)",
+    "body": ["union ${1:SearchHit} = ${2:Post} | ${3:User}"]
+  },
   "Relationship": {
     "prefix": "relationship",
     "description": "A relationship model (typed edge properties)",

@@ -9,6 +9,7 @@ import type {
   ScalarNodeField,
   ScalarTypeName,
   SchemaDocument,
+  UnionDeclaration,
 } from "./ast.js";
 import { SchemaValidationError } from "./errors.js";
 
@@ -441,6 +442,35 @@ export function validateEnum(decl: EnumDeclaration): void {
   }
 }
 
+/**
+ * `union X = A | B`: not a built-in type name, every member a declared `node` (not an interface,
+ * a union, an enum or a relationship model), each once.
+ */
+export function validateUnion(doc: SchemaDocument, decl: UnionDeclaration): void {
+  const where = `Union "${decl.name}"`;
+  if (BUILTIN_TYPES.includes(decl.name)) {
+    throw new SchemaValidationError(`${where}: ${decl.name} is a built-in type name.`);
+  }
+  const seen = new Set<string>();
+  for (const m of decl.members) {
+    if (seen.has(m)) throw new SchemaValidationError(`${where}: member ${m} is listed twice.`);
+    seen.add(m);
+    const d = doc.declarations.find((x) => x.name === m);
+    if (d?.kind === "Node" && !d.abstract) continue;
+    let what = "which is not declared";
+    if (d?.kind === "Node") {
+      const impls = doc.declarations
+        .filter((x): x is NodeDeclaration => x.kind === "Node" && !x.abstract)
+        .filter((x) => ancestorInterfaces(doc, x).includes(m))
+        .map((x) => x.name);
+      what = `which is an interface (list its implementations instead${impls.length ? `: ${impls.join(" | ")}` : ""})`;
+    } else if (d?.kind === "Union") what = "which is a union (list its members instead)";
+    else if (d?.kind === "Enum") what = "which is an enum";
+    else if (d) what = "which is a relationship model";
+    throw new SchemaValidationError(`${where}: member ${m}, ${what}; union members are nodes.`);
+  }
+}
+
 /** `Node "X"` or `Interface "X"`: how errors name a node declaration. */
 export function nodeOwner(decl: NodeDeclaration): string {
   return `${decl.abstract ? "Interface" : "Node"} "${decl.name}"`;
@@ -610,6 +640,10 @@ export function validateSchema(doc: SchemaDocument): void {
   for (const decl of doc.declarations) {
     if (decl.kind === "Enum") {
       validateEnum(decl);
+      continue;
+    }
+    if (decl.kind === "Union") {
+      validateUnion(doc, decl);
       continue;
     }
     if (decl.kind === "Node") {

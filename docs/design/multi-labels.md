@@ -1,7 +1,7 @@
 # Design note: interfaces and multiple labels (#100)
 
 Status: implemented in #166; follow-ups in #167 (see [Follow-ups](#follow-ups-167)), dynamic
-labels in #184 and multi-interface pull in #185.
+labels in #184, multi-interface pull in #185 and unions in #183.
 
 ## Problem
 
@@ -230,15 +230,75 @@ where only the interface's version of the field is known, so every write through
 would need a per-implementation check of the matched nodes. Declaring the field on each
 implementation gives the same model without the hole.
 
-### Unions of unrelated models (#183)
+### Unions of unrelated models (#183, implemented)
 
-`union SearchHit = Post | User`: a type, not a label (nothing written or migrated). Relations may
-target it (the target pattern becomes `(m) WHERE m:Post OR m:User`), and results are decoded like
-interface results (`labels(n)` → `__typename`). There are no shared fields, so `where`, `select` and
-`include` take `__typename` and `$on` only, there is no unique key (no `findUnique`, and `connect`
-names the member: `connect: { Post: { id } }`), and no constraint. Open: whether a union has a
-delegate at all or only appears as a relation target. `@neo4j/graphql` v7 unions are exactly this,
-so `@cyphra/graphql` could map them once it exists.
+A GraphQL-style union groups models that share nothing: the hits of a search box, or the target
+of a polymorphic relation.
+
+```cyphra
+union SearchHit = Post | User | Comment
+
+node Tag {
+  id      String      @id
+  targets SearchHit[] @relationship(type: "TAGS", direction: OUT)
+}
+```
+
+- **Schema.** `union X = A | B` (at least one member, each once, each a `node`: interfaces,
+  unions, enums and relationship models are rejected, an interface with a hint to list its
+  implementations). A union is a type, not a label: nothing is written, constrained or migrated.
+  Relation fields may target it (`targets SearchHit[]`, `subject SearchHit?`); `relationship { … }`
+  models may not name it (an edge model types one pair of labels).
+- **Resolved model.** A union is a `ResolvedNodeModel` in `SchemaModel.nodes` with
+  `abstract: true`, `union: true`, `implementations` (its members, in declaration order), no
+  fields and no unique keys (`label` is its name, but no node carries it). Being an abstract
+  model, everything interfaces already do applies unchanged: `__typename` decoding from
+  `labels(n)`, `$on`, per-member `onDelete` rules. Consumers that emit DDL or data steps skip it
+  (no fields; `abstract`), so `SCHEMA_MODEL_VERSION` stays 1 and schemas without unions resolve
+  to the same model.
+- **Matching.** A union is matched by a label predicate, never by a label in the pattern:
+  `MATCH (n) WHERE (n:Post OR n:User OR n:Comment)`, `EXISTS { MATCH (a)-[:TAGS]->(m) WHERE
+(m:Post OR m:User) AND … }`. Neo4j's `(m:Post|User)` would be shorter, but Neo4j rejects a
+  clause that mixes `|` with the `:A:B` conjunction implementations are matched with (a union
+  filter inside the `WHERE` of an `(n:Employee:Person)` match), and FalkorDB has no label
+  disjunction; the predicate runs everywhere (Neo4j plans it as a union of label scans).
+- **Client.** `db.searchHit` is a read-only delegate: `findMany`, `findFirst` and `count`
+  (no unique key, so no `findUnique`; no fields, so no `aggregate` / `groupBy` / `search`;
+  writes go through the members). Results are `{ __typename: "Post", …Post } | …`, with every
+  scalar of the node's member. `where` takes `__typename` and `$on`, `select` / `include` take
+  `$on` only (and `select` always returns `__typename`), `orderBy` takes `__typename`.
+- **`where.$on`.** `where: { $on: { Post: { title: { contains: "graph" } }, User: {} } }` keeps the
+  nodes of the listed members that match their filter: `(n:Post AND n.title CONTAINS $p) OR
+(n:User)`. Members not listed are dropped (an empty `$on` matches nothing, like `OR: []`),
+  which is what a search over a union wants; combine with `AND` / `OR` / `__typename` as usual.
+  It works on interfaces too (`$on` over implementations).
+- **Writes through a relation to a union** name the member, since the members share no key:
+  `connect: { Post: { id } }`, `create: { Post: { title } }`, `disconnect` / `set` take
+  `{ Post: { id } }` items, each with its `$edge` next to the member key
+  (`connect: { Post: { id }, $edge: { weight: 2 } }`). Exactly one member key per item. A to-one
+  relation to a union replaces the edge to any member, and its inverse to-one fields (`Post.tag`)
+  are kept consistent as for other targets.
+- **`onDelete`.** `Cascade` / `Restrict` / `SetNull` on a union-typed field apply to every
+  member: a cascade into it deletes each node with the rules of the member it is (as for an
+  interface).
+- **Full-text and vector search over a union** (search each member's index and merge by score)
+  is not done: scores of different indexes are not comparable, so the merge would need a
+  normalisation policy. Search each member and merge in the application (follow-up issue).
+- **Codegen.** The type map entry has `abstract: true; union: true; implementations: …`, no
+  scalars, relations or unique keys; the exported `SearchHit` type is the discriminated union of
+  the members' property types. Zod: no create / update schemas (as for interfaces); the read
+  schema is `z.discriminatedUnion("__typename", …)` of the members' read schemas.
+- **Migrations.** No DDL and no data step: adding or removing a union changes nothing in the
+  database.
+- **`cyphra pull`** cannot infer unions (a union adds no label; the edges of a relation to a union
+  look like several relations with the same type), so pulled schemas keep one relation per target
+  and the hints say so; declare the union by hand.
+- **GraphQL importer.** `@neo4j/graphql` v7 unions are exactly this, so `cyphra import graphql`
+  maps `union U = A | B` to a Cyphra union (relations to it included).
+- **Language server.** `union` keyword, completion of node names after `=` and `|`, hover,
+  document symbols, go-to-definition on members and diagnostics.
+- **Dialects.** Neo4j and Memgraph run the same statements. FalkorDB too (label predicates are
+  plain openCypher).
 
 ### Dynamic labels (#184, implemented)
 

@@ -18,7 +18,7 @@ import {
   nonNegativeInt,
   q,
   relationField,
-  relationPattern,
+  relationMatch,
   scalarField,
   labelExpr,
 } from "./compile.js";
@@ -321,7 +321,7 @@ function compileGroupKeys(
       relVars.set(relName, g);
       const m = ctx.variable();
       related.push(
-        `head(COLLECT { MATCH ${relationPattern(ctx, "n", relation, m)} RETURN ${m} }) AS ${g}`,
+        `head(COLLECT { MATCH ${relationMatch(ctx, "n", relation, m)} RETURN ${m} }) AS ${g}`,
       );
     }
     keys.push({ path, column, field, relation });

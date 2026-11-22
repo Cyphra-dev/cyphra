@@ -227,8 +227,8 @@ describe("diagnostics", () => {
 
 describe("completion", () => {
   it("offers declaration keywords at the top level", () => {
-    expect(labels("|")).toEqual(["node", "interface", "relationship", "enum"]);
-    expect(labels(BASE + "\nno|")).toEqual(["node", "interface", "relationship", "enum"]);
+    expect(labels("|")).toEqual(["node", "interface", "relationship", "enum", "union"]);
+    expect(labels(BASE + "\nno|")).toEqual(["node", "interface", "relationship", "enum", "union"]);
     expect(labels("node |")).toEqual([]);
   });
 
@@ -794,5 +794,100 @@ describe("interfaces extending interfaces", () => {
     const p = problem(text)!;
     expect(p.message).toBe(cliError(text));
     expect(p.underlined).toBe(underlined);
+  });
+});
+
+describe("unions", () => {
+  const UNION = `union SearchHit = Post | Author
+
+node Post {
+  id String @id
+}
+
+node Author {
+  id String @id
+}
+
+interface Thing {
+  id String @id
+}
+
+node Tag {
+  id      String      @id
+  targets SearchHit[] @relationship(type: "TAGS", direction: OUT)
+}
+`;
+  /** Like `at`, with `‸` as the cursor (`|` is union syntax). */
+  const caret = (marked: string) => {
+    const offset = marked.indexOf("‸");
+    return { text: marked.replace("‸", ""), offset };
+  };
+  const complete = (marked: string) => {
+    const { text, offset } = caret(marked);
+    return completionsAt(analyze(text), offset).map((c) => c.label);
+  };
+
+  it("analyzes, scans and outlines unions", () => {
+    const a = analyze(UNION);
+    expect(a.problem).toBeUndefined();
+    const u = a.scanned.find((d) => d.name === "SearchHit")!;
+    expect(u.kind).toBe("union");
+    expect(u.members.map((t) => t.text)).toEqual(["Post", "Author"]);
+    expect(a.scanned.map((d) => d.name)).toEqual(["SearchHit", "Post", "Author", "Thing", "Tag"]);
+    expect(outline(a)[0]).toMatchObject({
+      name: "SearchHit",
+      kind: "union",
+      detail: "Post | Author",
+    });
+    // While the text does not parse.
+    const broken = analyze(UNION.replace("id      String", "id      @"));
+    expect(broken.scanned.find((d) => d.name === "SearchHit")!.members).toHaveLength(2);
+    expect(outline(broken).map((s) => `${s.kind} ${s.name}`)[0]).toBe("union SearchHit");
+  });
+
+  it("offers node names (not interfaces) after = and |", () => {
+    expect(complete("union U = ‸\n" + UNION)).toEqual(["Post", "Author", "Tag"]);
+    expect(complete("union U = Post | ‸\n" + UNION)).toEqual(["Author", "Tag"]);
+    expect(complete("union U = Post | Au‸\n" + UNION)).toEqual(["Author", "Tag"]);
+    expect(complete(UNION + "\n‸")).toContain("union");
+  });
+
+  it("offers unions as relation targets", () => {
+    expect(complete(UNION.replace("  targets", "  pinned ‸\n  targets"))).toEqual(
+      expect.arrayContaining(["SearchHit", "Post", "Thing"]),
+    );
+  });
+
+  it("hovers, goes to and renames union members and union references", () => {
+    const { text, offset } = caret(UNION.replace("= Post", "= Po‸st"));
+    const a = analyze(text);
+    expect(definitionAt(a, offset)!.start).toBe(text.indexOf("node Post") + "node ".length);
+    const ref = caret(UNION.replace("targets SearchHit", "targets Search‸Hit"));
+    const b = analyze(ref.text);
+    expect(definitionAt(b, ref.offset)!.start).toBe("union ".length);
+    expect(hoverAt(b, ref.offset)?.markdown).toContain("union SearchHit = Post | Author");
+    const edits = renameEdits(b, ref.offset, "Hit", BUILTIN_TYPES)!;
+    expect(edits).toHaveLength(2);
+    expect(hoverAt(b, 1)?.markdown).toContain("a type grouping unrelated nodes");
+  });
+
+  it("reports union errors on the member", () => {
+    expect(problem(UNION.replace("= Post | Author", "= Post | Thing"))).toEqual({
+      message:
+        'Union "SearchHit": member Thing, which is an interface (list its implementations instead); union members are nodes.',
+      underlined: "Thing",
+    });
+    expect(problem(UNION.replace("= Post | Author", "= Post | Author | Post"))?.underlined).toBe(
+      "Post",
+    );
+    const twice = UNION.replace("= Post | Author", "= Post | Author | Post");
+    const p = analyze(twice).problem!;
+    expect(p.span.start).toBe(twice.lastIndexOf("Post", twice.indexOf("\n")));
+    expect(problem(UNION.replace("= Post | Author", "= Post | Nope"))).toMatchObject({
+      underlined: "Nope",
+    });
+    expect(cliError(UNION.replace("= Post | Author", "= Post | Nope"))).toBe(
+      problem(UNION.replace("= Post | Author", "= Post | Nope"))?.message,
+    );
   });
 });

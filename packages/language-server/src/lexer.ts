@@ -73,9 +73,12 @@ export function tokenize(text: string): Token[] {
   return tokens;
 }
 
-/** A `node` / `interface` / `relationship` / `enum` block found by {@link scanDeclarations}. */
+/**
+ * A `node` / `interface` / `relationship` / `enum` block, or a `union X = A | B` line, found by
+ * {@link scanDeclarations}.
+ */
 export type ScannedDeclaration = {
-  readonly kind: "node" | "interface" | "relationship" | "enum";
+  readonly kind: "node" | "interface" | "relationship" | "enum" | "union";
   readonly name: string;
   readonly keyword: Token;
   readonly nameToken: Token;
@@ -83,7 +86,11 @@ export type ScannedDeclaration = {
   readonly implements: readonly Token[];
   /** Interface names after `extends` (`interface X extends A, B { … }`), possibly empty. */
   readonly extends: readonly Token[];
-  /** Index of the `{` token (or -1 when not typed yet). */
+  /** Member names of a union (`union X = A | B`), possibly empty. */
+  readonly members: readonly Token[];
+  /** Index of the `=` of a union (-1 otherwise, or when not typed yet). */
+  readonly equals: number;
+  /** Index of the `{` token (or -1 when not typed yet; always -1 for a union). */
   readonly open: number;
   /** Index of the matching `}` token (or -1 when not closed). */
   readonly close: number;
@@ -100,7 +107,38 @@ export type ScannedField = {
   readonly list: boolean;
 };
 
-const DECL_KEYWORDS = new Set(["node", "interface", "relationship", "enum"]);
+const DECL_KEYWORDS = new Set(["node", "interface", "relationship", "enum", "union"]);
+
+/**
+ * The `= A | B` of a union starting at `from` (the token after its name): the `=` index (-1 when
+ * not typed yet), the member name tokens and the index of the first token after them.
+ */
+function scanUnionMembers(
+  tokens: readonly Token[],
+  from: number,
+): { equals: number; members: Token[]; next: number } {
+  const members: Token[] = [];
+  const eq = nextSignificant(tokens, from);
+  if (!eq || eq.token.text !== "=") return { equals: -1, members, next: from };
+  let i = eq.index + 1;
+  let bar = true; // a leading `|` is allowed
+  for (;;) {
+    const t = nextSignificant(tokens, i);
+    if (!t) break;
+    if (t.token.text === "|") {
+      bar = true;
+      i = t.index + 1;
+      continue;
+    }
+    // A name only after `=` or `|`; a keyword at the start of a line is the next declaration.
+    if (!bar || t.token.kind !== "ident") break;
+    if (DECL_KEYWORDS.has(t.token.text) && tokens[t.index - 1]?.kind === "newline") break;
+    members.push(t.token);
+    bar = false;
+    i = t.index + 1;
+  }
+  return { equals: eq.index, members, next: i };
+}
 
 /**
  * Skip an `implements A, B` (or `extends A, B`) clause starting at `from` (the token after a
@@ -146,6 +184,26 @@ export function scanDeclarations(tokens: readonly Token[]): ScannedDeclaration[]
     if (t.kind !== "ident" || !DECL_KEYWORDS.has(t.text) || (depth > 0 && !atLineStart)) continue;
     const nameToken = tokens[i + 1];
     if (!nameToken || nameToken.kind !== "ident") continue;
+    if (t.text === "union") {
+      if (depth > 0) continue;
+      const u = scanUnionMembers(tokens, i + 2);
+      const last = u.members[u.members.length - 1];
+      out.push({
+        kind: "union",
+        name: nameToken.text,
+        keyword: t,
+        nameToken,
+        implements: [],
+        extends: [],
+        members: u.members,
+        equals: u.equals,
+        open: -1,
+        close: -1,
+        end: (last ?? (u.equals >= 0 ? tokens[u.equals] : nameToken))!.end,
+      });
+      i = Math.max(i, u.next - 1);
+      continue;
+    }
     const header = scanImplements(tokens, i + 2);
     if (depth > 0) {
       // Only when followed by `{` on the same line (`node X {`), so a field named `node` is safe.
@@ -194,6 +252,8 @@ export function scanDeclarations(tokens: readonly Token[]): ScannedDeclaration[]
       nameToken,
       implements: header.keyword === "implements" ? header.names : [],
       extends: header.keyword === "extends" ? header.names : [],
+      members: [],
+      equals: -1,
       open,
       close,
       end,

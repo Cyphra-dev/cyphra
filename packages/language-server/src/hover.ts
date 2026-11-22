@@ -43,7 +43,8 @@ function fieldType(f: NodeField): string {
 
 function fieldMarkdown(a: Analysis, owner: Declaration, f: NodeField): string {
   const head = "```cyphra\n" + `${f.name} ${fieldType(f)}` + "\n```";
-  const what = owner.kind === "Node" ? (owner.abstract ? "interface" : "node") : "relationship";
+  const what =
+    owner.kind === "Node" ? (owner.abstract ? "interface" : "node") : owner.kind.toLowerCase();
   const parts = [head, `Field of ${what} **${owner.name}**.`];
   if (f.kind === "Relational") {
     const rel = f.decorators.find((d) => d.name === "relationship");
@@ -122,7 +123,7 @@ export function hoverAt(a: Analysis, offset: number): HoverResult | undefined {
     const keyword = d.kind === "Node" && d.abstract ? "interface" : d.kind.toLowerCase();
     const kw = keywordSpan(d.loc, keyword);
     if (within(offset, kw)) return { markdown: KEYWORD_DOCS[keyword] ?? keyword, span: kw };
-    if (d.kind === "Enum") return undefined;
+    if (d.kind === "Enum" || d.kind === "Union") return undefined;
     // The `implements` / `extends` keyword, between the name and the first interface name.
     const name = span(d.nameLoc);
     for (const word of ["implements", "extends"] as const) {

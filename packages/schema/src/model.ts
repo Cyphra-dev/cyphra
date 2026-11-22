@@ -26,6 +26,7 @@ import {
   validateEnum,
   validateImplements,
   validateModelAttributes,
+  validateUnion,
   validateVectorField,
   withInheritedFields,
 } from "./validate.js";
@@ -238,8 +239,14 @@ export type ResolvedNodeModel = {
    */
   readonly abstract?: true;
   /**
+   * `true` for a `union` (always with `abstract: true`): a type grouping unrelated nodes, its
+   * {@link ResolvedNodeModel.implementations}. It adds no label (no node carries `label`), has no
+   * fields and is matched by a label predicate over its members. Absent otherwise.
+   */
+  readonly union?: true;
+  /**
    * Nodes implementing this interface, directly or through an interface extending it, in
-   * declaration order (only on an interface).
+   * declaration order (only on an interface), or the members of a union, in `union` order.
    */
   readonly implementations?: readonly string[];
   /**
@@ -528,7 +535,7 @@ function resolveFulltext(decl: NodeDeclaration, attr: ModelAttribute): ResolvedF
 function impliedDdlNames(doc: SchemaDocument): Map<string, string> {
   const out = new Map<string, string>();
   for (const d of doc.declarations) {
-    if (d.kind === "Enum") continue;
+    if (d.kind === "Enum" || d.kind === "Union") continue;
     for (const f of d.fields) {
       if (f.kind !== "Scalar") continue;
       const has = (n: string) => f.decorators.some((x) => x.name === n);
@@ -568,9 +575,16 @@ export function resolveSchema(doc: SchemaDocument): SchemaModel {
   const nodeNames = new Set<string>();
   const relNames = new Set<string>();
   const enums = new Map<string, ResolvedEnum>();
+  const unionNames = new Set<string>();
   for (const d of doc.declarations) {
     if (nodeNames.has(d.name) || relNames.has(d.name) || enums.has(d.name)) {
       throw new SchemaValidationError(`Duplicate declaration "${d.name}".`);
+    }
+    if (d.kind === "Union") {
+      // A relation field may target it, like a node.
+      nodeNames.add(d.name);
+      unionNames.add(d.name);
+      continue;
     }
     if (d.kind === "Enum") {
       validateEnum(d);
@@ -593,6 +607,11 @@ export function resolveSchema(doc: SchemaDocument): SchemaModel {
     }
     const owner = `Relationship "${d.name}"`;
     for (const end of [d.from, d.to]) {
+      if (unionNames.has(end)) {
+        throw new SchemaValidationError(
+          `${owner}: ${end} is a union; a relationship model's ends are nodes or interfaces (declare one per member).`,
+        );
+      }
       if (!nodeNames.has(end)) {
         throw new SchemaValidationError(`${owner}: unknown node "${end}".`);
       }
@@ -643,7 +662,7 @@ export function resolveSchema(doc: SchemaDocument): SchemaModel {
       assertNamedArgs(where, f.decorators);
       if (!nodeNames.has(f.target)) {
         throw new SchemaValidationError(
-          `${where}: unknown node "${f.target}" (not a node model or an enum).`,
+          `${where}: unknown node "${f.target}" (not a node model, a union or an enum).`,
         );
       }
       const rel = findDecorator(f.decorators, "relationship");
@@ -788,9 +807,11 @@ export function resolveSchema(doc: SchemaDocument): SchemaModel {
     });
   }
 
+  // Unions are checked once every node is known (their members must be nodes).
+  for (const d of doc.declarations) if (d.kind === "Union") validateUnion(doc, d);
   return {
     version: SCHEMA_MODEL_VERSION,
-    nodes: linkInterfaces(nodes, doc),
+    nodes: withUnions(linkInterfaces(nodes, doc), doc),
     relationships,
     ...(enums.size ? { enums: [...enums.values()] } : {}),
   };
@@ -911,6 +932,31 @@ function linkInterfaces(
     const { name, label, ...rest } = n;
     return { name, label, abstract: true, implementations, ...rest };
   });
+}
+
+/**
+ * `nodes` with the `union` declarations added as abstract models (no fields, no label of their
+ * own, their members as `implementations`), every model in declaration order.
+ */
+function withUnions(nodes: readonly ResolvedNodeModel[], doc: SchemaDocument): ResolvedNodeModel[] {
+  if (!doc.declarations.some((d) => d.kind === "Union")) return [...nodes];
+  const byName = new Map(nodes.map((n) => [n.name, n]));
+  const out: ResolvedNodeModel[] = [];
+  for (const d of doc.declarations) {
+    if (d.kind === "Node") out.push(byName.get(d.name)!);
+    else if (d.kind === "Union") {
+      out.push({
+        name: d.name,
+        label: d.name,
+        abstract: true,
+        union: true,
+        implementations: [...d.members],
+        uniqueFields: [],
+        fields: [],
+      });
+    }
+  }
+  return out;
 }
 
 /**

@@ -512,6 +512,7 @@ export function renderZodFromModel(model: SchemaModel, options: RenderZodOptions
     );
   }
   for (const n of model.nodes) {
+    if (n.union) continue;
     const scalars = n.fields.filter((f): f is ResolvedScalarField => f.kind === "scalar");
     body.push(
       ...renderModel(
@@ -522,6 +523,21 @@ export function renderZodFromModel(model: SchemaModel, options: RenderZodOptions
         omitGenerated,
         n.abstract === true,
       ),
+    );
+  }
+  // A union has no fields and cannot be written: only a read schema, the members' read schemas
+  // discriminated by `__typename` (after them, which it refers to).
+  for (const n of model.nodes) {
+    if (!n.union) continue;
+    const members = n.implementations ?? [];
+    body.push(
+      `/** \`${n.name}\` union results (${members.map((m) => `\`${m}\``).join(" | ")}), as the client returns them. */`,
+      `export const ${n.name}Schema = z.discriminatedUnion("__typename", [`,
+      ...members.map(
+        (m) => `  ${m}Schema.extend({ __typename: z.literal(${JSON.stringify(m)}) }),`,
+      ),
+      "]);",
+      "",
     );
   }
   for (const r of model.relationships) {

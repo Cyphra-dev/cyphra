@@ -114,7 +114,14 @@ class Collector {
       };
       items("create", (item, at) => {
         const { $edge, ...rest } = item;
-        if (target) this.node(target, rest, at, "create");
+        if (target?.union) {
+          // `{ Post: { … } }`: the data of the member it names (the engine rejects other shapes).
+          const [member, data] = Object.entries(rest).find(([, v]) => v !== undefined) ?? [];
+          const m = this.schema.nodes.find((n) => n.name === member);
+          if (m && (target.implementations ?? []).includes(m.name)) {
+            this.node(m, data, [...at, m.name], "create");
+          }
+        } else if (target) this.node(target, rest, at, "create");
         edgeProps($edge, at, "create");
       });
       // An existing edge only gets the `$edge` values given.

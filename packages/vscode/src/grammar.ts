@@ -67,6 +67,7 @@ export function buildGrammar(scalarTypes: readonly string[]): Rule {
       { include: "#node" },
       { include: "#interface" },
       { include: "#relationship" },
+      { include: "#union" },
     ],
     repository: {
       comment: {
@@ -95,6 +96,22 @@ export function buildGrammar(scalarTypes: readonly string[]): Rule {
       },
       node: nodeLike("node"),
       interface: nodeLike("interface"),
+      // `union SearchHit = Post | User` (members may continue on the next lines after a `|`).
+      union: {
+        begin: `\\b(union)\\b\\s*(${IDENT})?\\s*(=)?`,
+        beginCaptures: {
+          1: { name: "keyword.declaration.union.cyphra" },
+          2: { name: "entity.name.type.union.cyphra" },
+          3: { name: "keyword.operator.assignment.cyphra" },
+        },
+        // Ends before the next line that does not continue the member list with `|`.
+        end: "(?=^\\s*[^\\s|/])",
+        patterns: [
+          { include: "#comment" },
+          { match: "\\|", name: "keyword.operator.union.cyphra" },
+          { match: IDENT, name: "entity.name.type.cyphra" },
+        ],
+      },
       relationship: {
         begin: `\\b(relationship)\\b\\s*(${IDENT})?`,
         beginCaptures: {
