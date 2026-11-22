@@ -313,6 +313,9 @@ their endpoints. Review the result:
   implementation) could be either way round. Tell `pull` which labels are interfaces there:
   `cyphra pull --interface Person` (repeat the label, or give a comma-separated list, for several).
 
+- [Unions](/schema#unions) are never inferred (a union adds no label): edges of one type from a
+  label to several others become one relation per target (`tagsPost Post[]`, `tagsUser User[]`).
+  Declare the union and its relation field by hand if that is the model.
 - Unsupported or mixed types (e.g. a property that is a string on some nodes and an integer on
   others) and names that are not identifiers are skipped with a warning.
 - Integers are pulled as `Int` and strings as `String`: the database cannot tell a `BigInt`, an enum
@@ -366,7 +369,7 @@ Converted with differences (3):
   Person.name  @unique: @unique was removed in @neo4j/graphql v7; Cyphra keeps it and creates the uniqueness constraint
 ```
 
-Not converted today: custom scalars, interfaces and unions (`@neo4j/graphql` interfaces are not labels, so they do not map to [Cyphra interfaces](/schema#interfaces-and-multiple-labels); declare one and backfill its label if you want that layout), extra labels, `@cypher` and
+Not converted today: custom scalars, interfaces and unions (`@neo4j/graphql` interfaces are not labels, so they do not map to [Cyphra interfaces](/schema#interfaces-and-multiple-labels); declare one and backfill its label if you want that layout; `@neo4j/graphql` unions are [Cyphra unions](/schema#unions), declare them by hand for now), extra labels, `@cypher` and
 `@customResolver` fields, `@authentication` and `@authorization` rules, `@vector` indexes (the type
 definitions carry neither the dimensions nor the similarity: declare a
 [`Vector(N)` field with `@vectorIndex`](/schema#vector-fields) by hand), and update timestamps. API-only settings such as `@plural`, `@selectable` or `@filterable`

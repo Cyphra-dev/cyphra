@@ -96,6 +96,7 @@ export function buildMeta(
     name: n.name,
     label: n.label,
     abstract: n.abstract === true,
+    ...(n.union ? { union: true } : {}),
     ...(n.implementations ? { implementations: n.implementations } : {}),
     ...(n.interfaces ? { interfaces: n.interfaces } : {}),
     key: keyOf(n),

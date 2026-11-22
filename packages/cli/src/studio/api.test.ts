@@ -530,3 +530,42 @@ relationship Ships {
     ).toMatchObject({ status: 500 });
   });
 });
+
+describe("studio: unions", () => {
+  const unions = resolveSchema(
+    parseSchema(`
+union Hit = Post | Author
+node Post { id String @id  title String }
+node Author { id String @id  name String }
+`),
+  );
+  const unionApi = (db: StudioDb) =>
+    createStudioApi({
+      schema: unions,
+      db,
+      meta: buildMeta(unions, { readOnly: false, connection: "bolt://x", version: "0.0.0" }),
+      readOnly: false,
+    });
+
+  it("lists a union through its delegate and refuses writes", async () => {
+    const meta = buildMeta(unions, { readOnly: false, connection: "bolt://x", version: "0.0.0" });
+    expect(meta.nodes.find((n) => n.name === "Hit")).toMatchObject({
+      abstract: true,
+      union: true,
+      implementations: ["Post", "Author"],
+      key: null,
+    });
+    const { db, calls } = fakeDb({
+      "Hit.findMany": () => [{ __typename: "Post", id: "p", title: "T" }],
+      "Hit.count": () => 1,
+    });
+    const res = await unionApi(db).handle("POST", "/api/models/Hit/find", {});
+    expect(res.status).toBe(200);
+    expect(calls.map((c) => `${c.model}.${c.op}`)).toEqual(["Hit.findMany", "Hit.count"]);
+    const write = await unionApi(db).handle("POST", "/api/models/Hit/create", { data: {} });
+    expect(write.status).toBe(400);
+    expect(JSON.stringify(write.body)).toContain(
+      "Hit is a union: write through one of its members.",
+    );
+  });
+});

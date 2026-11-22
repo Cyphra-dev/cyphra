@@ -846,6 +846,18 @@ const grouped = await db.person.findMany({ orderBy: [{ __typename: "asc" }, { na
 The result type stays the union of every implementation (narrow it with `p.__typename`), and on a
 node model `__typename` is rejected.
 
+`where: { $on }` filters per implementation: it keeps the nodes of the implementations it lists
+that match their own `where` (fields the interface does not have included), and leaves the others
+out. `{}` keeps every node of an implementation, and an empty `$on` matches nothing (like
+`OR: []`):
+
+```ts
+// Employees earning more than 100, and every customer.
+const people = await db.person.findMany({
+  where: { $on: { Employee: { salary: { gt: 100 } }, Customer: {} } },
+});
+```
+
 ### Per-implementation fields (`$on`)
 
 `$on` in the `select` or `include` of an interface query loads, for each implementation it names,
@@ -888,6 +900,69 @@ rejected: create an implementation instead. `connect` works by the interface's u
 `deleteMany` work through the interface on its fields. Deleting through an interface applies the
 [`onDelete` rules](#deleting) of each node's implementation, so `db.person.delete(…)` on an
 employee still cascades along the employee's own `Cascade` relations.
+
+## Querying unions
+
+A [union](/schema#unions) has a read-only delegate (`db.searchHit` for
+`union SearchHit = Post | User | Comment`) with `findMany`, `findFirst` and `count`. It matches the
+nodes of every member, and results are discriminated by `__typename`, each with every scalar field
+of its member:
+
+```ts
+const hits = await db.searchHit.findMany({
+  where: {
+    $on: {
+      Post: { title: { contains: "graph", mode: "insensitive" } },
+      User: { name: { startsWith: "Gra" } },
+    },
+  },
+  orderBy: { __typename: "asc" },
+  take: 20,
+});
+for (const h of hits) {
+  if (h.__typename === "Post") console.log(h.title);
+  else if (h.__typename === "User") console.log(h.name);
+}
+```
+
+- A union has no fields of its own, so `where` takes [`__typename`](#filtering-by-implementation-__typename)
+  and [`$on`](#filtering-by-implementation-__typename) (each listed member with its own filter;
+  members not listed are left out), plus `AND` / `OR` / `NOT`. `orderBy` takes `__typename`.
+- `select` and `include` take [`$on`](#per-implementation-fields-on) only:
+  `select: { $on: { Post: { title: true, author: true } } }` returns
+  `{ __typename: "Post", title, author } | { __typename: "User" } | …`.
+- There is no unique key, so no `findUnique`, and no fields to aggregate or search: `aggregate`,
+  `groupBy`, `search`, `findSimilar` and the traversals are not on a union delegate (they are not
+  in its type and throw a `CyphraValidationError`). Neither are writes: write through the members.
+- Relations whose target is a union load, filter and count like any relation
+  (`include: { items: { where: { __typename: "Post" } } }`,
+  `where: { items: { some: { $on: { User: { name: "Ada" } } } } }`, `_count`), and
+  [traversals](#multi-hop-traversals) can end on one (`via: [{ rel: "items" }]`).
+
+Writes through a relation to a union name the member of each item, since the members share no
+key:
+
+```ts
+await db.board.update({
+  where: { id: boardId },
+  data: {
+    items: {
+      create: [{ Post: { title: "Release notes" } }, { Comment: { text: "First" } }],
+      connect: { User: { email: "ada@example.com" } },
+      disconnect: { Post: { id: oldPostId } },
+    },
+  },
+});
+await db.pin.update({ where: { id }, data: { subject: { connect: { Post: { id: postId } } } } });
+```
+
+- Each `create`, `connect`, `disconnect` and `set` item has exactly one member key; anything else
+  is a `CyphraValidationError` (and a type error). The member's value is its own create data or
+  unique key, with its [validation rules](#validation-rules) checked.
+- `connect` on a to-one relation to a union replaces the edge to any member, and keeps the
+  member's own to-one inverse field (`Post.pin`) to a single edge, as for other relations.
+- [`onDelete` rules](#deleting) on a relation to a union apply to every member: `Cascade` deletes
+  each related node with the rules of the model it is.
 
 ## Dynamic labels
 

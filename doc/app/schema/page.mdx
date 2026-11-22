@@ -495,8 +495,46 @@ labels as interfaces extending interfaces.
   implementing `Production` is stored as `(:Movie)`), so they have no exact Cyphra equivalent; the
   importer reports them as unsupported.
 
-Unions of unrelated models are tracked as a separate follow-up (see the
-[design note](https://github.com/Cyphra-dev/cyphra/blob/main/docs/design/multi-labels.md)).
+Models that share nothing (the hits of a search box, the target of a polymorphic relation) are a
+[union](#unions) rather than an interface.
+
+## Unions
+
+A union groups node models that share no field and no label:
+
+```cyphra
+union SearchHit = Post | User | Comment
+
+node Board {
+  id    String      @id @default(cuid())
+  items SearchHit[] @relationship(type: "SHOWS", direction: OUT, onDelete: Cascade)
+}
+
+node Pin {
+  id      String     @id @default(cuid())
+  subject SearchHit? @relationship(type: "PINS", direction: OUT)
+}
+```
+
+- **A type, not a label.** Nothing is written for a union: a `Post` stays `(:Post)`. A union is
+  matched by a label predicate over its members (`WHERE n:Post OR n:User OR n:Comment`), so adding
+  or removing one needs no migration and creates no constraint or index.
+- **Relation targets.** Relation fields can target a union (`items SearchHit[]`,
+  `subject SearchHit?`), with `onDelete` rules like any relation: `Cascade` deletes each related
+  node with the rules of the model it is.
+- **Querying.** [`db.searchHit`](/client#querying-unions) reads every member (`findMany`,
+  `findFirst`, `count`), results discriminated by `__typename`. There is no unique key and no field
+  to filter on, so filters and per-member loads go through `__typename` and `$on`.
+- **Members** are `node` models, listed once, with an optional leading `|` when the list spans
+  lines (`union SearchHit =` then `| Post` on the next lines). An interface, another union, an
+  enum or a relationship model is a validation error (for an interface, list its
+  implementations). A `relationship { … }` model cannot name a union in `from` / `to`, so a
+  relation to a union has no typed edge properties.
+- [`cyphra pull`](/cli#cyphra-pull) cannot infer unions (a union adds no label): it keeps one
+  relation per target label; declare the union by hand. The
+  [GraphQL importer](/graphql) reports `@neo4j/graphql` unions as not converted yet.
+- It works the same on [Memgraph](/memgraph) and [FalkorDB](/falkordb): label predicates are
+  plain openCypher.
 
 ## Dynamic labels
 

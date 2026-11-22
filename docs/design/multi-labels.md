@@ -274,10 +274,13 @@ node Tag {
   It works on interfaces too (`$on` over implementations).
 - **Writes through a relation to a union** name the member, since the members share no key:
   `connect: { Post: { id } }`, `create: { Post: { title } }`, `disconnect` / `set` take
-  `{ Post: { id } }` items, each with its `$edge` next to the member key
-  (`connect: { Post: { id }, $edge: { weight: 2 } }`). Exactly one member key per item. A to-one
-  relation to a union replaces the edge to any member, and its inverse to-one fields (`Post.tag`)
-  are kept consistent as for other targets.
+  `{ Post: { id } }` items (compiled to `where: { $on: { Post: { id } } }` on the union). Exactly
+  one member key per item. The member's create data is checked with its own validation rules. A
+  to-one relation to a union replaces the edge to any member, and the members' to-one inverse
+  fields (`Post.pin`) are kept to one edge as for other targets.
+- **Typed edges.** A `relationship { … }` model cannot name a union (its `from` / `to` are labels
+  in the generated `RelationshipSpec`), so relations to a union have no `$edge` properties for
+  now (follow-up: one edge model for every member pair, `$edge` next to the member key).
 - **`onDelete`.** `Cascade` / `Restrict` / `SetNull` on a union-typed field apply to every
   member: a cascade into it deletes each node with the rules of the member it is (as for an
   interface).
@@ -294,11 +297,15 @@ node Tag {
   look like several relations with the same type), so pulled schemas keep one relation per target
   and the hints say so; declare the union by hand.
 - **GraphQL importer.** `@neo4j/graphql` v7 unions are exactly this, so `cyphra import graphql`
-  maps `union U = A | B` to a Cyphra union (relations to it included).
+  could map `union U = A | B` to a Cyphra union (relations to it included); it still reports them
+  as not converted, with a hint to declare the union (follow-up).
+- **Studio.** `cyphra studio` lists a union with the interfaces and browses it through its
+  delegate; editing a relation to a union (which needs the member) is a follow-up.
 - **Language server.** `union` keyword, completion of node names after `=` and `|`, hover,
   document symbols, go-to-definition on members and diagnostics.
-- **Dialects.** Neo4j and Memgraph run the same statements. FalkorDB too (label predicates are
-  plain openCypher).
+- **Dialects.** Neo4j, Memgraph and FalkorDB run the same statements (label predicates are plain
+  openCypher; traversals into a union use each dialect's own expansion with the predicate on the
+  node stepped to).
 
 ### Dynamic labels (#184, implemented)
 
