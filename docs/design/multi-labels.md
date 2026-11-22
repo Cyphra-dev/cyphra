@@ -244,11 +244,12 @@ node Tag {
 }
 ```
 
-- **Schema.** `union X = A | B` (at least one member, each once, each a `node`: interfaces,
-  unions, enums and relationship models are rejected, an interface with a hint to list its
-  implementations). A union is a type, not a label: nothing is written, constrained or migrated.
-  Relation fields may target it (`targets SearchHit[]`, `subject SearchHit?`); `relationship { … }`
-  models may not name it (an edge model types one pair of labels).
+- **Schema.** `union X = A | B` (at least one member, each once, each a `node` or an `interface`:
+  unions, enums and relationship models are rejected, and so is a node that would be a member
+  twice, directly and through an interface or through two interfaces). A union is a type, not a
+  label: nothing is written, constrained or migrated. Relation fields may target it
+  (`targets SearchHit[]`, `subject SearchHit?`), and so may `relationship { … }` models (#196,
+  see Typed edges).
 - **Resolved model.** A union is a `ResolvedNodeModel` in `SchemaModel.nodes` with
   `abstract: true`, `union: true`, `implementations` (its members, in declaration order), no
   fields and no unique keys (`label` is its name, but no node carries it). Being an abstract
@@ -278,9 +279,15 @@ node Tag {
   one member key per item. The member's create data is checked with its own validation rules. A
   to-one relation to a union replaces the edge to any member, and the members' to-one inverse
   fields (`Post.pin`) are kept to one edge as for other targets.
-- **Typed edges.** A `relationship { … }` model cannot name a union (its `from` / `to` are labels
-  in the generated `RelationshipSpec`), so relations to a union have no `$edge` properties for
-  now (follow-up: one edge model for every member pair, `$edge` next to the member key).
+- **Typed edges (#196, implemented).** A `relationship { … }` model may name a union in `from` /
+  `to`: one edge model for every member. A relation field picks it up as for an interface end
+  (its own end, then its interfaces, then the unions it is a member of), so the members' inverse
+  fields (`Post.taggedBy Tag[]` for `relationship { from Tag to SearchHit }`) share it. `$edge`
+  goes next to the member key on writes (`connect: { Post: { id }, $edge: { rank: 2 } }`, the same
+  in `create` and `set` items) and comes back on every loaded member; traversals filter on it
+  with `edgeWhere`. Path decoding matches a union end too. Relationship property constraints,
+  indexes and backfills are per relationship type, so the migrator emits the same DDL as for a
+  node end. `RelationshipSpec.toLabel` is the union's name there (not a label).
 - **`onDelete`.** `Cascade` / `Restrict` / `SetNull` on a union-typed field apply to every
   member: a cascade into it deletes each node with the rules of the member it is (as for an
   interface).
@@ -298,10 +305,26 @@ node Tag {
   and the hints say so; declare the union by hand.
 - **GraphQL importer.** `@neo4j/graphql` v7 unions are exactly this, so `cyphra import graphql`
   maps `union U = A | B` of `@node` types to a Cyphra union, relations to it included (#197).
-  Properties on those relationships wait for typed edges on relations to a union (#196); serving
+  The importer does not convert properties on those relationships yet (typed edges on relations to a union exist since #196); serving
   v7 unions from `@cyphra/graphql` is #201.
-- **Studio.** `cyphra studio` lists a union with the interfaces and browses it through its
-  delegate; editing a relation to a union (which needs the member) is a follow-up.
+- **Interface members (#198, implemented).** `union Party = Person | Team` (`Person` an
+  interface): the resolved union keeps `members: ["Person", "Team"]` (declared) and expands
+  `implementations` to the nodes (`Employee`, `Customer`, `Team`), so typing, `__typename`
+  decoding, `onDelete` and member creates work on nodes as before. It is matched by the members'
+  labels (`n:Person OR n:Team`), so a future implementation of `Person` is included without
+  touching the union. Writes and `$on` (in `where`, `select`, `include`) may name the interface:
+  `connect: { Person: { email } }` uses the interface's unique keys, `where.$on.Person` compiles
+  against the interface, `select.$on.Person` applies to each implementation not listed itself; a
+  nested `create` must name an implementation. The type map gets `members: "Person"` (interface
+  members only, so unions of nodes generate the same code). Chosen over rejecting interfaces
+  (the previous rule) because the interface already is "every implementation", and over
+  expanding them in the schema text because that would freeze the list.
+- **Studio.** `cyphra studio` lists unions in their own section and browses them through their
+  delegate (with each row's member key). Related views can link (`connect`, with a member picker
+  for a union target and the edge properties of a relationship model) and unlink
+  (`disconnect`) records, through `/api/models/<M>/connect` and `/disconnect`; edge properties
+  are saved through the followed relation in either direction. The edges of a relationship model
+  to a union list each end as `{ __typename, …member key }`.
 - **Language server.** `union` keyword, completion of node names after `=` and `|`, hover,
   document symbols, go-to-definition on members and diagnostics.
 - **Dialects.** Neo4j, Memgraph and FalkorDB run the same statements (label predicates are plain
