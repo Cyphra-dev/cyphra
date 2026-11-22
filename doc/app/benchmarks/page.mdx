@@ -30,12 +30,14 @@ What the published run shows (numbers below, from the run dated in [Environment]
 - **Most operations are one statement.** A `create` (nested creates and connects included),
   `update`, `upsert`, a `delete` with `onDelete` cascades, and the reads compile to a single
   Cypher statement that also returns the result, so on Bolt Cyphra is within about 20% of
-  hand-written Cypher on every scenario but one: update +2%, nested create of a user with 5 posts
+  hand-written Cypher on every scenario: update +2%, nested create of a user with 5 posts
   +11% (it used to send 12 statements and cost 4× the baseline), create +16%, cascading delete
   +17%. Reads stay within about 10%; differences of that size are noise on this machine.
-- **Shortest path is the exception** (about +45%): profiled, Cyphra's statement does about the
-  same work in Neo4j as the hand-written one, so what remains is on the client side (the typed
-  path, with its edges, that the hand-written version does not build).
+- **Shortest path is +13%** (re-run on its own after the rest of the suite, same machine and
+  method). Cyphra's statement does about the same work in Neo4j as the hand-written one; on the
+  client, decoding the typed path no longer re-reads the schema for every node or builds nodes it
+  throws away, and `DateTime` values are converted without `neo4j-driver`'s text round trip. The
+  +47% of the first run was mostly noise on this machine.
 - **Over HTTP, an operation is one request.** A single statement that writes nothing when it fails
   goes out as one auto-commit Query API request, like the `fetch` baseline, so Cyphra over HTTP is
   within about 20% of it (it was 1.2× to 9× before).

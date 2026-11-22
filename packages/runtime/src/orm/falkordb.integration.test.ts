@@ -108,6 +108,23 @@ describe.skipIf(!hasFalkorDB)("FalkorDB transport", () => {
     expect(row.n).toBeNull();
   });
 
+  it("round-trips hostile strings and rejects NUL with a CyphraValidationError", async () => {
+    const hostile = ['" RETURN 1 //', '\\"', "`x`", "a\u0001\u001f\u007f", "é\u2028😀", "${x}"];
+    const row = await one("RETURN $l AS l, $m.k AS mk", { l: hostile, m: { k: hostile[0] } });
+    expect(row.l).toEqual(hostile);
+    expect(row.mk).toBe(hostile[0]);
+    for (const params of [
+      { s: "a\u0000b" },
+      { l: ["ok", "\u0000"] },
+      { m: { nested: { k: "x\u0000" } } },
+      { m: { ["k\u0000"]: 1 } },
+    ]) {
+      const err = await one("RETURN 1 AS x", params).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(CyphraValidationError);
+      expect((err as Error).message).toMatch(/NUL character/);
+    }
+  });
+
   it("decodes nodes, relationships and paths", async () => {
     await one("CREATE (:FkT {name: 'a'})-[:FK_T {w: 1}]->(:FkT {name: 'b'})");
     const row = await one("MATCH p = (a:FkT)-[r:FK_T]->(b:FkT) RETURN a, r, p");

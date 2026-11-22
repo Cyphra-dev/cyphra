@@ -204,6 +204,28 @@ describe("temporal values", () => {
     expect(decodeScalar(field("windows"), null)).toEqual([]);
   });
 
+  it("decodes driver DateTimes to the same instant as toStandardDate, offsets and years included", () => {
+    const at = { kind: "scalar", name: "at", type: "DateTime", list: false } as Parameters<
+      typeof decodeScalar
+    >[0];
+    for (const [, neo4j] of drivers) {
+      const { DateTime } = neo4j.types;
+      const int = neo4j.int;
+      const values = [
+        new DateTime(2024, 1, 2, 3, 4, 5, 6_789_000, 0),
+        new DateTime(2024, 2, 29, 23, 59, 59, 999_999_999, -5 * 3600),
+        new DateTime(1999, 12, 31, 23, 30, 0, 0, 3600 + 1800),
+        new DateTime(45, 6, 7, 8, 9, 10, 0, 0),
+        new DateTime(int(2024), int(1), int(1), int(0), int(0), int(0), int(1_000_000), int(-60)),
+      ];
+      for (const v of values) {
+        const d = decodeScalar(at, v) as Date;
+        expect(d).toBeInstanceOf(Date);
+        expect(d.toISOString()).toBe(v.toStandardDate().toISOString());
+      }
+    }
+  });
+
   it("round-trips through encode → decode", () => {
     const cases: [string, string, string][] = [
       ["starts", "2024-05-01T10:30", "2024-05-01T10:30:00"],

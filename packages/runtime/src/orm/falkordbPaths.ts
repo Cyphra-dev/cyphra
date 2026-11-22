@@ -33,7 +33,7 @@ import {
   q,
 } from "./compile.js";
 import { CyphraValidationError } from "./errors.js";
-import { decodePath } from "./path.js";
+import { decodePath, decodePathEdges } from "./path.js";
 import { edgeWhereModel, parseDepth, resolveHops, viaRelations } from "./traverse.js";
 import { unsupportedOnFalkorDB } from "../dialect.js";
 
@@ -121,12 +121,13 @@ function segment(
  * The path value `compilePath` builds, from a list of nodes and the list of relationships between
  * them.
  */
-function listPath(ctx: QueryContext, nodes: string, rels: string): string {
+function listPath(ctx: QueryContext, nodes: string, rels: string, nodeProperties = true): string {
   const x = ctx.variable("x");
   const i = ctx.variable("i");
   const rel = `${rels}[${i}]`;
+  const props = nodeProperties ? `, properties: properties(${x})` : "";
   return (
-    `{nodes: [${x} IN ${nodes} | {labels: labels(${x}), properties: properties(${x})}], ` +
+    `{nodes: [${x} IN ${nodes} | {labels: labels(${x})${props}}], ` +
     `edges: [${i} IN range(0, size(${rels}) - 1) | ` +
     `{type: type(${rel}), properties: properties(${rel}), out: startNode(${rel}) = ${nodes}[${i}]}]}`
   );
@@ -327,14 +328,15 @@ export function falkordbShortestPath(
   const n = ctx.variable("n");
   const { expr, shape } = compileProjection(ctx, model, n, args);
   text += ` CALL { WITH pn UNWIND pn AS ${n} RETURN collect(${expr}) AS nodes }`;
-  text += ` RETURN nodes, ${listPath(ctx, "pn", "pr")} AS path`;
+  // The nodes are projected above: the path only types the edges.
+  text += ` RETURN nodes, ${listPath(ctx, "pn", "pr", false)} AS path`;
   return {
     text,
     params: ctx.params,
     decode: (rows) =>
       rows.map((r) => ({
         nodes: ((r.nodes ?? []) as unknown[]).map((node) => decodeRow(shape, node)!),
-        edges: decodePath(ctx.schema, r.path).edges,
+        edges: decodePathEdges(ctx.schema, r.path),
       })),
   };
 }

@@ -28,7 +28,7 @@ Median latency (p95 in parentheses) of one call, one call in flight. Overhead is
 | aggregate | 6.91 ms (p95 8.11 ms) | 6.90 ms (p95 7.86 ms) | −0% | n/a | n/a |
 | groupBy | 8.68 ms (p95 9.78 ms) | 8.69 ms (p95 9.27 ms) | +0% | n/a | n/a |
 | 3-hop traversal | 4.55 ms (p95 6.38 ms) | 4.83 ms (p95 6.42 ms) | +6% | n/a | n/a |
-| Shortest path | 1.09 ms (p95 2.00 ms) | 1.60 ms (p95 3.40 ms) | +47% | n/a | n/a |
+| Shortest path | 1.11 ms (p95 1.75 ms) | 1.25 ms (p95 2.24 ms) | +13% | n/a | n/a |
 | Vector findSimilar (k = 10) | 1.53 ms (p95 3.14 ms) | 1.69 ms (p95 3.66 ms) | +10% | n/a | n/a |
 
 ## HTTP transport
@@ -49,7 +49,7 @@ Cyphra over the Neo4j Query API against the same Cypher sent with `fetch`.
 | aggregate | 7.35 ms (p95 9.20 ms) | 7.48 ms (p95 8.20 ms) | +2% | +8% |
 | groupBy | 9.12 ms (p95 10.3 ms) | 9.29 ms (p95 10.3 ms) | +2% | +7% |
 | 3-hop traversal | 4.10 ms (p95 11.8 ms) | 4.58 ms (p95 11.5 ms) | +12% | +1% |
-| Shortest path | 1.92 ms (p95 6.79 ms) | 2.07 ms (p95 4.28 ms) | +8% | +90% |
+| Shortest path | 2.78 ms (p95 4.61 ms) | 3.19 ms (p95 5.74 ms) | +15% | +188% |
 | Vector findSimilar (k = 10) | 3.99 ms (p95 12.8 ms) | 4.79 ms (p95 18.2 ms) | +20% | +213% |
 
 ## GraphQL
@@ -160,10 +160,10 @@ The same operation on the same type definitions; documents are parsed and valida
 | 3-hop traversal | Cyphra | 4.83 ms | 6.42 ms | 5.00 ms | ±0.9% | 200 | 601 |
 | 3-hop traversal | Query API (fetch) | 4.10 ms | 11.8 ms | 5.28 ms | ±4.3% | 190 | 571 |
 | 3-hop traversal | Cyphra HTTP | 4.58 ms | 11.5 ms | 5.51 ms | ±4.0% | 182 | 547 |
-| Shortest path | neo4j-driver | 1.09 ms | 2.00 ms | 1.20 ms | ±1.3% | 832 | 2498 |
-| Shortest path | Cyphra | 1.60 ms | 3.40 ms | 1.82 ms | ±2.0% | 551 | 1653 |
-| Shortest path | Query API (fetch) | 1.92 ms | 6.79 ms | 3.07 ms | ±4.1% | 326 | 978 |
-| Shortest path | Cyphra HTTP | 2.07 ms | 4.28 ms | 2.41 ms | ±2.4% | 415 | 1247 |
+| Shortest path | neo4j-driver | 1.11 ms | 1.75 ms | 1.20 ms | ±1.4% | 836 | 2510 |
+| Shortest path | Cyphra | 1.25 ms | 2.24 ms | 1.36 ms | ±1.7% | 733 | 2199 |
+| Shortest path | Query API (fetch) | 2.78 ms | 4.61 ms | 3.07 ms | ±2.5% | 326 | 979 |
+| Shortest path | Cyphra HTTP | 3.19 ms | 5.74 ms | 3.45 ms | ±2.3% | 290 | 870 |
 | Vector findSimilar (k = 10) | neo4j-driver | 1.53 ms | 3.14 ms | 1.85 ms | ±5.0% | 540 | 1621 |
 | Vector findSimilar (k = 10) | Cyphra | 1.69 ms | 3.66 ms | 1.95 ms | ±2.3% | 512 | 1538 |
 | Vector findSimilar (k = 10) | Query API (fetch) | 3.99 ms | 12.8 ms | 5.83 ms | ±5.1% | 171 | 515 |

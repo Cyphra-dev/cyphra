@@ -465,6 +465,40 @@ function decodeTemporal(type: IsoTemporalType, value: unknown): unknown {
 const ISO_DATETIME = /^[+-]?\d{4,6}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/;
 const ISO_DATE = /^[+-]?\d{4,6}-\d{2}-\d{2}$/;
 
+/** A temporal component (a JS number, or a driver Integer when integers are lossless). */
+function part(x: unknown): number {
+  if (typeof x === "number") return x;
+  return isInt(x) ? (x as Integer).toNumber() : NaN;
+}
+
+/**
+ * A driver `DateTime` as a JS `Date`, computed from its fields: `neo4j-driver`'s
+ * `toStandardDate()` formats the value as ISO text and parses it back, which costs several
+ * microseconds per value (most of the time spent decoding a row of datetimes). Falls back to
+ * `toStandardDate()` for anything this does not handle (no UTC offset: a zone id only).
+ */
+function dateTimeToDate(v: object): Date {
+  const t = v as Record<string, unknown>;
+  const offset = part(t.timeZoneOffsetSeconds);
+  const year = part(t.year);
+  const ms = Date.UTC(
+    2000,
+    part(t.month) - 1,
+    part(t.day),
+    part(t.hour),
+    part(t.minute),
+    part(t.second),
+    Math.floor(part(t.nanosecond) / 1_000_000),
+  );
+  if (Number.isNaN(ms) || Number.isNaN(offset) || Number.isNaN(year)) {
+    return (v as { toStandardDate(): Date }).toStandardDate();
+  }
+  const d = new Date(ms);
+  d.setUTCFullYear(year);
+  d.setTime(d.getTime() - offset * 1000);
+  return d;
+}
+
 function decodeOne(type: ScalarTypeName, value: unknown): unknown {
   if (value === null || value === undefined) return null;
   if (typeof value === "string") {
@@ -484,7 +518,8 @@ function decodeOne(type: ScalarTypeName, value: unknown): unknown {
     const d = value as { year: unknown; month: unknown; day: unknown };
     return new Date(Date.UTC(Number(d.year), Number(d.month) - 1, Number(d.day)));
   }
-  if (isDateTime(value as object) || isLocalDateTime(value as object)) {
+  if (isDateTime(value as object)) return dateTimeToDate(value as object);
+  if (isLocalDateTime(value as object)) {
     return (value as { toStandardDate(): Date }).toStandardDate();
   }
   return value;

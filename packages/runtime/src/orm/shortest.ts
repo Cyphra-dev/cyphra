@@ -28,7 +28,7 @@ import {
   q,
 } from "./compile.js";
 import { CyphraValidationError } from "./errors.js";
-import { compilePath, decodePath } from "./path.js";
+import { compilePath, decodePathEdges, edgesNeedNodeLabels } from "./path.js";
 import { falkordbShortestPath } from "./falkordbPaths.js";
 import {
   compileHop,
@@ -151,17 +151,36 @@ export function compileShortestPath(
 
   const n = ctx.variable("n");
   const { expr, shape } = compileProjection(ctx, model, n, args);
-  text += ` RETURN [${n} IN nodes(p) | ${expr}] AS nodes, ${compilePath(ctx, "p", { nodeProperties: false })} AS path`;
+  text += ` RETURN [${n} IN nodes(p) | ${expr}] AS nodes, ${shortestPathEdges(ctx, rels)} AS path`;
 
-  return {
-    text,
-    params: ctx.params,
-    decode: (rows) =>
-      rows.map((r) => ({
-        nodes: ((r.nodes ?? []) as unknown[]).map((node) => decodeRow(shape, node)!),
-        edges: decodePath(ctx.schema, r.path).edges,
-      })),
-  };
+  return { text, params: ctx.params, decode: decodeShortest(ctx, shape) };
+}
+
+/**
+ * The path's edges for {@link decodeShortest}: the nodes are projected separately, so the path
+ * carries their labels only when an edge type needs its endpoints to be typed.
+ */
+function shortestPathEdges(ctx: QueryContext, rels: ReturnType<typeof viaRelations>): string {
+  const nodes = edgesNeedNodeLabels(
+    ctx.schema,
+    rels.map((r) => r.relType),
+  );
+  return compilePath(ctx, "p", { nodeProperties: false, nodes });
+}
+
+/** Rows of `nodes` (projected with `shape`) and `path` (edges) as `{ nodes, edges }`. */
+function decodeShortest(
+  ctx: QueryContext,
+  shape: ReturnType<typeof compileProjection>["shape"],
+): CompiledShortestPath["decode"] {
+  const { schema } = ctx;
+  return (rows) =>
+    rows.map((r) => {
+      const raw = (r.nodes ?? []) as unknown[];
+      const nodes = new Array<AnyRecord>(raw.length);
+      for (let i = 0; i < raw.length; i++) nodes[i] = decodeRow(shape, raw[i])!;
+      return { nodes, edges: decodePathEdges(schema, r.path) };
+    });
 }
 
 /**
@@ -237,15 +256,7 @@ function memgraphShortestPath(
   const n = ctx.variable("n");
   const { expr, shape } = compileProjection(ctx, model, n, args);
   text += ` CALL { WITH p UNWIND nodes(p) AS ${n} RETURN collect(${expr}) AS nodes }`;
-  text += ` RETURN nodes, ${compilePath(ctx, "p", { nodeProperties: false })} AS path`;
+  text += ` RETURN nodes, ${shortestPathEdges(ctx, rels)} AS path`;
 
-  return {
-    text,
-    params: ctx.params,
-    decode: (rows) =>
-      rows.map((r) => ({
-        nodes: ((r.nodes ?? []) as unknown[]).map((node) => decodeRow(shape, node)!),
-        edges: decodePath(ctx.schema, r.path).edges,
-      })),
-  };
+  return { text, params: ctx.params, decode: decodeShortest(ctx, shape) };
 }
