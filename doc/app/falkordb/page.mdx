@@ -77,23 +77,20 @@ one it is given. The CLI does not detect FalkorDB on its own (it never speaks Bo
 FalkorDB runs every statement atomically, one writer at a time per graph, but it has no
 multi-statement transactions and no rollback. Cyphra keeps what it can promise:
 
-- **One statement, one atomic write.** `create` without nested writes, `createMany`, `update`,
-  `updateMany`, `delete` without `onDelete` rules, `deleteMany` and every read compile to one
-  statement. A failure (a duplicate key, a broken `@min` rule) writes nothing.
-- **Nested writes are not atomic.** An operation that needs several statements (nested `create`,
-  `connect`, `set`, `upsert` with relations, `onDelete` cascades) runs them in order. If one fails,
-  the ones before it stay. Nested data is validated as each statement is built, so an invalid
-  nested value can leave the nodes written before it. Number rules on `$edge` updates are checked
+- **One operation, one statement.** Every ORM operation, nested writes included (`create` with
+  `connect`, `update` with `set`, `upsert`), compiles to one statement. FalkorDB undoes the whole
+  statement when it fails, so a duplicate key or an invalid nested value writes nothing.
+- **Checks on the result come after it.** A `connect` whose target does not exist is detected from
+  the statement's result: the `NotFoundError` is thrown once the statement ran, and its other
+  writes stay. Number rules (`@min`, `@max`) on `$edge` updates are checked inside the statement,
   before the update.
-- **Writes of one client are serialized.** The multi-statement operations of one process run one
-  at a time, so they do not interleave with each other (other processes can still write between
-  two statements).
-- **`$transaction` throws** `UnsupportedFeatureError`: Cyphra does not pretend to roll back.
-  Write the work as one `$cypher` statement when it must be all or nothing.
+- **Writes of one client are serialized.** Write work of one process runs one operation at a time.
+- **`$transaction` throws** `UnsupportedFeatureError`: Cyphra does not pretend to roll back several
+  operations. Write the work as one `$cypher` statement when it must be all or nothing.
 
 <Callout type="warning">
-  If an operation must be all or nothing, keep it to one statement: a `createMany`, an `updateMany`,
-  or a `$cypher` query. A nested `create` that fails halfway leaves the parent node behind.
+  Connect to nodes that exist: on FalkorDB, a `create` with a `connect` to a missing node throws
+  `NotFoundError` but keeps the created node.
 </Callout>
 
 ## Feature matrix
@@ -104,7 +101,7 @@ suite passes on FalkorDB.
 | Feature                                                              | FalkorDB                                                                                     |
 | -------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
 | CRUD (`create`, `findMany`, `update`, `delete`, `…Many`)             | Supported                                                                                    |
-| Nested writes (`create`, `connect`, `connectOrCreate`, `set`)        | Supported, not atomic (see [transactions](#transactions))                                    |
+| Nested writes (`create`, `connect`, `connectOrCreate`, `set`)        | Supported, one statement (see [transactions](#transactions))                                 |
 | `upsert`                                                             | Supported                                                                                    |
 | `UniqueConstraintError`                                              | Supported, with the model and fields                                                         |
 | Relation filters, `_count`, ordering by relation counts              | Supported                                                                                    |
@@ -112,7 +109,7 @@ suite passes on FalkorDB.
 | `aggregate`, `groupBy`                                               | Supported (`_sum` is a float: a `BigInt` sum is exact up to 2^53)                            |
 | `traverse` (one model, or hops across models)                        | Supported, except relation filters in a hop's `where`                                        |
 | `shortestPath`, `allShortestPaths`                                   | Supported, except relation filters in `where`                                                |
-| `onDelete` rules                                                     | Supported, not atomic                                                                        |
+| `onDelete` rules                                                     | Supported                                                                                    |
 | Interfaces and multiple labels                                       | Supported                                                                                    |
 | Validation rules, client extensions                                  | Supported                                                                                    |
 | `$transaction`                                                       | Not available: FalkorDB has no multi-statement transactions                                  |

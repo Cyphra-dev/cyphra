@@ -742,10 +742,7 @@ describe.skipIf(!hasNeo)("ORM statement counts (Neo4j)", () => {
 
   beforeAll(() => {
     db = createClient({
-      uri: process.env.NEO4J_TEST_URI!,
-      user: process.env.NEO4J_TEST_USER!,
-      password: process.env.NEO4J_TEST_PASSWORD!,
-      dialect: testDialect,
+      ...testConnection(),
     });
   });
 
@@ -856,7 +853,10 @@ describe.skipIf(!hasNeo)("ORM statement counts (Neo4j)", () => {
     );
     expect(missing.error).toBeInstanceOf(NotFoundError);
     expect(missing.statements).toBe(1);
-    expect(await db.user.findUnique({ where: { email: "dan@x.io" } })).toBeNull();
+    // FalkorDB cannot roll back after the statement: the check runs on its result.
+    if (onFalkorDB)
+      expect(await db.user.findUnique({ where: { email: "dan@x.io" } })).not.toBeNull();
+    else expect(await db.user.findUnique({ where: { email: "dan@x.io" } })).toBeNull();
   });
 
   it("update (with relation writes), upsert and delete: one statement", async () => {
@@ -938,7 +938,8 @@ describe.skipIf(!hasNeo)("ORM statement counts (Neo4j)", () => {
     for (const op of ops) expect((await counted(op)).statements).toBe(1);
   });
 
-  it("$transaction keeps the same statements in one transaction", async () => {
+  // FalkorDB has no multi-statement transactions.
+  it.skipIf(onFalkorDB)("$transaction keeps the same statements in one transaction", async () => {
     const { statements } = await counted(() =>
       db.$transaction(async (tx) => {
         await tx.user.create({ data: { email: "t@x.io", posts: { create: [{ title: "a" }] } } });
@@ -2615,52 +2616,48 @@ describe.skipIf(!hasNeo)("ORM enum / Json / BigInt (Neo4j)", () => {
     },
   );
 
-  // FalkorDB has no multi-statement transactions (no rollback, no $transaction).
-  it.skipIf(onFalkorDB)(
-    "validates enum values on every write (nested, createMany, upsert, update, edges)",
-    async () => {
-      const bad = "OWNER" as TyRole;
-      await expect(db.tyAccount.create({ data: { id: "x", role: bad } })).rejects.toThrow(
-        /TyAccount\.role: expected one of "ADMIN", "EDITOR", "VIEWER"/,
-      );
-      await expect(
-        db.tyAccount.create({ data: { id: "x", roles: ["ADMIN", bad] } }),
-      ).rejects.toThrow(CyphraValidationError);
-      await expect(
-        db.tyAccount.createMany({ data: [{ id: "x" }, { id: "y", role: bad }] }),
-      ).rejects.toThrow(CyphraValidationError);
-      await expect(
-        db.tyAccount.create({
-          data: { id: "x", friends: { create: { id: "y", role: bad } } },
-        }),
-      ).rejects.toThrow(CyphraValidationError);
-      await expect(
-        db.tyAccount.create({
-          data: {
-            id: "x",
-            friends: { create: { id: "y", $edge: { level: "MEDIUM" as "LOW" } } },
-          },
-        }),
-      ).rejects.toThrow(/TyKnows\.level/);
-      await expect(
-        db.tyAccount.upsert({ where: { id: "x" }, create: { id: "x", role: bad }, update: {} }),
-      ).rejects.toThrow(CyphraValidationError);
-      // Nothing was written by the rejected statements.
-      expect(await db.tyAccount.count()).toBe(0);
+  it("validates enum values on every write (nested, createMany, upsert, update, edges)", async () => {
+    const bad = "OWNER" as TyRole;
+    await expect(db.tyAccount.create({ data: { id: "x", role: bad } })).rejects.toThrow(
+      /TyAccount\.role: expected one of "ADMIN", "EDITOR", "VIEWER"/,
+    );
+    await expect(db.tyAccount.create({ data: { id: "x", roles: ["ADMIN", bad] } })).rejects.toThrow(
+      CyphraValidationError,
+    );
+    await expect(
+      db.tyAccount.createMany({ data: [{ id: "x" }, { id: "y", role: bad }] }),
+    ).rejects.toThrow(CyphraValidationError);
+    await expect(
+      db.tyAccount.create({
+        data: { id: "x", friends: { create: { id: "y", role: bad } } },
+      }),
+    ).rejects.toThrow(CyphraValidationError);
+    await expect(
+      db.tyAccount.create({
+        data: {
+          id: "x",
+          friends: { create: { id: "y", $edge: { level: "MEDIUM" as "LOW" } } },
+        },
+      }),
+    ).rejects.toThrow(/TyKnows\.level/);
+    await expect(
+      db.tyAccount.upsert({ where: { id: "x" }, create: { id: "x", role: bad }, update: {} }),
+    ).rejects.toThrow(CyphraValidationError);
+    // Nothing was written by the rejected statements.
+    expect(await db.tyAccount.count()).toBe(0);
 
-      await db.tyAccount.create({ data: { id: "x", role: "ADMIN" } });
-      await expect(
-        db.tyAccount.update({ where: { id: "x" }, data: { role: bad } }),
-      ).rejects.toThrow(CyphraValidationError);
-      await expect(db.tyAccount.updateMany({ data: { role: bad } })).rejects.toThrow(
-        CyphraValidationError,
-      );
-      await expect(
-        db.tyAccount.upsert({ where: { id: "x" }, create: { id: "x" }, update: { role: bad } }),
-      ).rejects.toThrow(CyphraValidationError);
-      expect((await db.tyAccount.findUniqueOrThrow({ where: { id: "x" } })).role).toBe("ADMIN");
-    },
-  );
+    await db.tyAccount.create({ data: { id: "x", role: "ADMIN" } });
+    await expect(db.tyAccount.update({ where: { id: "x" }, data: { role: bad } })).rejects.toThrow(
+      CyphraValidationError,
+    );
+    await expect(db.tyAccount.updateMany({ data: { role: bad } })).rejects.toThrow(
+      CyphraValidationError,
+    );
+    await expect(
+      db.tyAccount.upsert({ where: { id: "x" }, create: { id: "x" }, update: { role: bad } }),
+    ).rejects.toThrow(CyphraValidationError);
+    expect((await db.tyAccount.findUniqueOrThrow({ where: { id: "x" } })).role).toBe("ADMIN");
+  });
 
   it("filters enums and enum lists", async () => {
     await db.tyAccount.create({
@@ -3739,9 +3736,8 @@ describe.skipIf(!hasNeo)("ORM unique constraint errors (Neo4j)", () => {
         }),
       ),
     ).toMatchObject(seatError);
-    // FalkorDB cannot roll the operation back: the account (and the seat 2/2) stay.
-    expect(await db.uqAccount.count()).toBe(onFalkorDB ? 2 : 1);
-    expect(await db.uqSeat.count()).toBe(onFalkorDB ? 2 : 1);
+    expect(await db.uqAccount.count()).toBe(1);
+    expect(await db.uqSeat.count()).toBe(1);
   });
 
   // Memgraph has no relationship constraints.
