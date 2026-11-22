@@ -33,6 +33,7 @@ const COLUMNS: { title: string; links: [string, string][] }[] = [
       ["GitHub", LINKS.github],
       ["Blog", "/blog"],
       ["Changelog", LINKS.changelog],
+      ["Stability policy", "/stability"],
       ["Issues", LINKS.issues],
       ["Security", LINKS.security],
     ],

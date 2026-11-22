@@ -54,6 +54,8 @@ pnpm changeset
 
 Publishable packages are **fixed** in [`.changeset/config.json`](./.changeset/config.json): `cyphra` and every `@cyphra/*` release share the **same version**, so the meta-package stays aligned with its dependencies on npm.
 
+Choose the bump (`major`, `minor`, `patch`) with the [stability policy](./STABILITY.md) (draft for 1.0): it lists what is public API, what counts as a breaking change, and how to deprecate.
+
 ## Branches and pull requests
 
 Day-to-day work targets **`dev`**; **`main`** is where versions are bumped and packages are published.

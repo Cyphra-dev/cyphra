@@ -1,0 +1,593 @@
+---
+title: "Stability policy: semver and supported versions"
+sidebarTitle: Stability policy
+description: "What Cyphra 1.0 promises: public API per package, breaking changes, deprecations, supported Neo4j, Node.js and driver versions, and security fixes."
+---
+
+import { Callout } from "nextra/components";
+
+# Stability policy
+
+<Callout type="warning">
+  **Draft for Cyphra 1.0, not in force yet.** This page proposes the policy that will apply from
+  `1.0.0`. Every choice the maintainers still have to make is marked **Decision needed**, with the
+  options and a recommendation. Until 1.0, the [0.x rules](#before-10) apply.
+</Callout>
+
+This page says what you can rely on when you upgrade Cyphra: which parts of each package are public
+API, what a major, minor or patch release may change, how features are deprecated and removed, and
+which databases, drivers and runtimes are supported.
+
+## Versioning
+
+Cyphra follows [Semantic Versioning 2.0.0](https://semver.org) from `1.0.0`:
+
+- **Major** (`2.0.0`): may contain breaking changes to the [public API](#public-api). Each one is
+  listed in the changelog with what to change in your app.
+- **Minor** (`1.4.0`): new features and deprecations. Code, schemas and migrations that worked on
+  `1.3.x` keep working.
+- **Patch** (`1.4.1`): bug fixes, security fixes, performance work and documentation.
+
+### One version for every package
+
+All published packages are released together with the same version number (a
+[fixed group](https://github.com/changesets/changesets/blob/main/docs/fixed-packages.md) in
+[`.changeset/config.json`](https://github.com/Cyphra-dev/cyphra/blob/main/.changeset/config.json)):
+`cyphra`, `@cyphra/cli`, `@cyphra/runtime`, `@cyphra/schema`, `@cyphra/migrator`, `@cyphra/query`,
+`@cyphra/better-auth`, `@cyphra/graphql`, `@cyphra/language-server`, `@cyphra/nestjs` and
+`@cyphra/testing`. The VS Code extension (`cyphra-vscode`) is versioned on its own.
+
+What this means for semver:
+
+- A version number describes the **release**, not one package. `@cyphra/query@1.6.0` can be
+  identical to `1.5.0` when only `@cyphra/graphql` changed; its changelog then only lists updated
+  dependencies.
+- **Use the same version of every Cyphra package** in an app: `cyphra` and `@cyphra/cli` at
+  `1.6.2`, not `1.6.2` and `1.4.0`. Mixing versions within the same major is expected to work (see
+  [Generated code](#generated-code-and-the-runtime)), but only matching versions are tested
+  together.
+- **A breaking change in any package makes the next release a major for all of them.** Breaking
+  changes are therefore batched into planned majors, and packages that still need room to change are
+  marked [experimental](#experimental-features) instead of forcing majors on everyone.
+
+<Callout type="warning">
+**Decision needed: keep the fixed version group after 1.0?**
+
+- **A. Keep one version for everything** (today's setup). Simple to explain and to install; the
+  CLI, the generated client and the runtime always match. Cost: a break in a peripheral package
+  (GraphQL, Better Auth, NestJS) forces a major on the core.
+- **B. Fix the core, version integrations independently.** `cyphra`, `@cyphra/cli`, `runtime`,
+  `schema`, `migrator`, `query` and `testing` stay fixed; `graphql`, `better-auth`, `nestjs` and
+  `language-server` get their own versions with a peer range on `cyphra`. Fewer forced majors, but
+  users must read a compatibility table.
+- **C. Version every package independently.** Most flexible, hardest to use; the generated client
+  makes core packages interdependent anyway.
+
+**Recommendation: A**, combined with the [experimental](#experimental-features) flag for the parts
+that still move fast. Revisit at 2.0 if forced majors become a real cost.
+
+</Callout>
+
+### Before 1.0
+
+Today (`0.x`), every release with user-facing changes is a minor (`0.16.0` → `0.17.0`) and may
+contain breaking changes; patches (`0.17.1`) only fix bugs. This is the usual `0.x` reading of
+semver, and the rest of this page does not apply until `1.0.0`.
+
+## Public API
+
+A change is breaking only if it breaks something in this section. Anything not listed here can
+change in any release.
+
+<Callout type="warning">
+**Decision needed: where does the public TypeScript API stop?**
+
+Every package's entry point re-exports a lot (`cyphra` does `export *` from `@cyphra/schema`,
+`@cyphra/query`, `@cyphra/runtime` and `@cyphra/migrator`), and not all of it is documented.
+
+- **A. Exported and documented.** Only what this site or a TSDoc comment documents is public; other
+  exports can change. Easy for maintainers, but users cannot tell from their editor what is safe.
+- **B. Exported unless marked `@internal`.** Everything reachable from a package entry point
+  (`cyphra`, `@cyphra/runtime`, `@cyphra/runtime/edge`, …) is public, except declarations tagged
+  `@internal` in TSDoc.
+- **C. B, enforced by an API report.** Like B, plus an API report (for example
+  [API Extractor](https://api-extractor.com)) checked in CI, so every change to the public surface
+  shows up in review.
+
+**Recommendation: B for 1.0, C as a follow-up.** Before 1.0, audit the entry points and tag or
+remove what should not be public.
+
+</Callout>
+
+In every package, these are **never** public API: deep imports into `dist/` or `src/`, declarations
+tagged `@internal`, the exact text of error and log messages, the human-readable output of the CLI,
+the Cypher text Cyphra sends to the database (see [Generated Cypher](#generated-cypher)), and the
+private `cyphra-vscode` package.
+
+### Per package
+
+| Package                   | Public API                                                                                                                                                                                                                                                                                                      |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `cyphra`                  | Its re-exports of `@cyphra/schema`, `@cyphra/query`, `@cyphra/runtime` and `@cyphra/migrator`, and its export conditions (the edge build leaves out `@cyphra/migrator`).                                                                                                                                        |
+| `@cyphra/schema`          | The [`.cyphra` language](/schema) (syntax, types, decorators and their arguments, what each means), the parse, validate, format and print functions, and the code generators' options.                                                                                                                          |
+| `@cyphra/runtime`         | `CyphraClient` and its options, the generated client's behavior (below), transactions, the `cypher` tag, the [HTTP transport](/runtime) and the `@cyphra/runtime/edge` entry point, the Memgraph and FalkorDB dialects, log events and OpenTelemetry span names and attributes, error classes and their fields. |
+| `@cyphra/query`           | The tagged template and the builder: their functions, parameters and the parameter binding guarantee (interpolated values are always sent as parameters).                                                                                                                                                       |
+| `@cyphra/migrator`        | `defineMigration`, the `db` handle given to migrations, the [migration file format](#migrations), the `__CyphraMigration` history and drift detection results.                                                                                                                                                  |
+| `@cyphra/cli`             | [Commands, flags, exit codes and machine output](#cli).                                                                                                                                                                                                                                                         |
+| `@cyphra/graphql`         | The [GraphQL compatibility contract](#graphql), `CDCSubscriptionsEngine`, `UnsupportedTypeDefsError`, and the `@neo4j/graphql` import functions.                                                                                                                                                                |
+| `@cyphra/better-auth`     | The adapter's options and the labels, relationship types and properties it stores in the database.                                                                                                                                                                                                              |
+| `@cyphra/nestjs`          | `CyphraModule`, `@InjectCyphra()`, `@Transactional()` and its transaction propagation rules, `CyphraHealthIndicator`.                                                                                                                                                                                           |
+| `@cyphra/testing`         | `createTestDatabase()`, `startDatabase()`, the isolation strategies, factories, and the default container images' database **majors** (the exact image tags are not API).                                                                                                                                       |
+| `@cyphra/language-server` | The `cyphra-language-server` binary and its command-line options. Which diagnostics, completions and hovers it offers is not API: they improve in any release.                                                                                                                                                  |
+
+### Generated code and the runtime
+
+`cyphra generate` writes `cyphra.gen.ts` (and, if configured, the Zod schemas). In generated code,
+the **exported names and their types** are public API: `createClient`, the model delegates
+(`db.user`, `db.blogPost`), the operations and their arguments and results, and exported helper
+types. The rest of the file (its layout, private helpers, comments) is not, and can be rewritten in
+any minor.
+
+For the generated client, public API includes **runtime behavior**: which records an operation
+returns, in which order when `orderBy` is set, how `null` and missing values are returned, how
+values are converted (integers, temporal types, points, vectors), what is written by nested writes,
+how `onDelete` rules apply, what runs in a transaction, and which error is thrown when.
+
+<Callout type="warning">
+**Decision needed: which combinations of CLI and runtime versions are supported?**
+
+- **A. Exact match only.** Generated code is only supported with the runtime of the same version.
+- **B. Same major, runtime at least as new.** Code generated by `@cyphra/cli` `1.x.y` runs on
+  `cyphra` `1.z` for any `z ≥ x`. An older runtime may not support newer generated code.
+- **C. Any version within the major, both ways.**
+
+**Recommendation: B.** It lets apps upgrade the runtime without regenerating (useful for a security
+patch) while keeping generated code free to use new runtime features. The generated file should
+check the runtime version at startup and fail with a clear message on a mismatch.
+
+</Callout>
+
+### The schema language
+
+A schema that is valid in `1.x` stays valid in every later `1.x` and **means the same thing**:
+same labels, relationship types, property names and types, same constraints and indexes, same
+generated types. In a minor, Cyphra may:
+
+- add syntax, types, decorators and decorator arguments;
+- add **warnings** (for example a deprecation);
+- make `cyphra format` / `cyphra schema print` output differ (formatting is not API).
+
+It may **not**, outside a major: reject a schema it accepted, change a default (for example the
+`@vectorIndex` default `similarity: cosine` or the default index name `<Label>_<field>_vector`), or
+change the generated type of a field. A schema that was accepted but produced a broken client or
+broken DDL may be rejected in a patch: that is a bug fix, and the changelog says so.
+
+### CLI
+
+- **Stable:** command names, flag names and their meaning, [`cyphra.json`](/cli#cyphrajson) keys,
+  environment variables (`NEO4J_URI`, `NEO4J_USERNAME`, `NEO4J_PASSWORD`, `NEO4J_DATABASE`,
+  `FALKORDB_URL`, `FALKORDB_GRAPH`, …), **exit codes**, and the shape of `--json` output.
+- **Exit codes** keep their meaning: `0` success, `1` the command ran and found something that
+  needs attention (for example [`cyphra migrate status`](/migrations#exit-codes-and-json) with
+  pending migrations or drift, `cyphra format --check` with an unformatted schema), `2` the check
+  could not run. A new exit code is a breaking change.
+- **`--json` output** can gain fields in a minor. Removing or renaming a field, or changing its type
+  or the values of an enum field (such as a migration `state`), is breaking.
+- **Not stable:** human-readable output, colors, progress text, prompt wording and the order of
+  warnings. Scripts should use exit codes and `--json`.
+
+### Migrations
+
+Migrations are files you commit and run against production months later, so they get the strongest
+promise:
+
+- **Migration files.** A migration written or generated with `1.x` (an `.mjs` file exporting
+  `defineMigration({ name, up })`, using the `db` handle: `` db.run`…` ``, `db.execute`,
+  `db.runInTransactionBatches`, `db.migrate.*`) runs unchanged with every later `1.x`.
+- **History.** Applied migrations are recorded as `(:__CyphraMigration { name, appliedAt, checksum
+})`, the checksum being the SHA-256 of the file. Within a major, the label, its properties and the
+  checksum algorithm do not change in a way that makes applied migrations look pending or modified.
+  A major that changes them ships an automatic upgrade of the history.
+- **Snapshot.** `migrations/schema.snapshot.json` can be read by every later `1.x`; a newer CLI may
+  rewrite it in a newer format the next time it generates a migration. An older CLI is not required
+  to read a snapshot written by a newer one.
+- **Generated DDL.** For the same schema change, a later minor may generate different migration
+  code only if it creates the **same database schema** (same constraint and index names, types and
+  options), so that drift detection does not report databases migrated by older versions. Already
+  generated migrations are never regenerated.
+
+### GraphQL
+
+`@cyphra/graphql` has one API today: `compat.v7`, which serves the API that `@neo4j/graphql` 7
+generates from the same type definitions. Its contract is **behaving like `@neo4j/graphql` 7**, as
+measured by the [compatibility suite](https://github.com/Cyphra-dev/cyphra/blob/main/compat/graphql/REPORT.md)
+(expected results recorded from `@neo4j/graphql` 7.6.8):
+
+- The printed SDL for supported type definitions stays identical to v7's.
+- An undocumented difference from v7 is a **bug**, fixed in a patch even if the fix changes
+  results.
+- The [documented differences](/graphql#differences-from-v7), where Cyphra is stricter than v7
+  (authorization, filters on falsy values, `@cypher` edge cases), are part of the contract. Changing
+  them is breaking, and loosening an authorization rule is never done in a minor or patch.
+- Supporting a type definition that `makeSchema` rejects today with `UnsupportedTypeDefsError`
+  (interfaces, `@vector`, …) is a minor.
+- Following a later `@neo4j/graphql` 7.x release is a minor. A `@neo4j/graphql` 8 would get a new
+  `compat.v8` (a minor); removing `compat.v7` would be a major.
+
+A native GraphQL API (one that does not imitate `@neo4j/graphql`), if one is added, follows the
+ordinary rules of this page.
+
+<Callout type="warning">
+**Decision needed: is `@cyphra/graphql` stable at 1.0?**
+
+Its docs still call it an early release, and some v7 features are not supported yet.
+
+- **A. Stable**, under the compatibility contract above. Unsupported features fail loudly
+  (`UnsupportedTypeDefsError`), so adding them is additive.
+- **B. Experimental** as a whole until v7 coverage is complete (interfaces, scalars), so it can
+  break in minors.
+- **C. Stable, with subscriptions experimental.**
+
+**Recommendation: C.** The contract (match v7) already constrains the API tightly, and failing on
+unsupported features keeps additions safe; subscriptions are new and need Neo4j Enterprise, which
+only one CI job covers.
+
+</Callout>
+
+### Generated Cypher
+
+The Cypher text the client, the GraphQL layer and the migrator send is **not** public API: it
+changes in any release to fix bugs or make queries faster. What is public is its **effect**: the
+results, the writes, and the database versions it needs. So:
+
+- a new query shape that returns the same results is a patch or a minor;
+- a new query shape that needs a newer database than the [supported range](#supported-versions) is
+  a breaking change (it drops a version);
+- a new query shape that needs a newer database **within** the supported range for a feature that
+  worked before is breaking too; for a new feature it is fine (document the requirement).
+
+If your tests compare Cypher text (for example snapshots of `traceQueryText` spans or `query` log
+events), expect them to change in minors.
+
+### Errors
+
+- **Stable:** the exported error classes (`CyphraError` and its subclasses such as
+  `CyphraValidationError`, `NotFoundError`, `UniqueConstraintError`, `RestrictError`,
+  `UnsupportedFeatureError`; and others such as `@cyphra/graphql`'s `UnsupportedTypeDefsError`),
+  their `name`, their documented fields (for
+  example the validation `issues` and each issue's `path`, `model`, `field` and `rule`), and **which
+  class is thrown in which situation**. Database error codes passed through from the server (such as
+  `Neo.ClientError.Schema.ConstraintValidationFailed`) keep being passed through.
+- **Minor:** a new, more specific subclass of the class thrown before (code that catches the parent
+  still works), a new documented field.
+- **Breaking:** throwing a different class for the same situation, throwing where a value was
+  returned (or the reverse), removing or renaming a field.
+- **Not stable:** messages and stack traces.
+
+<Callout type="warning">
+**Decision needed: add stable string error codes before 1.0?**
+
+Today Cyphra's own errors are identified by class only. `instanceof` fails when an app ends up with
+two copies of `@cyphra/runtime` (two versions in `node_modules`, or bundled twice), and classes do
+not survive serialization (tRPC, logs, workers).
+
+- **A. Classes only** (today).
+- **B. Add a `code` property** to `CyphraError` (for example `"CYPHRA_UNIQUE_CONSTRAINT"`), listed
+  on a reference page; codes are public API, never reused, and new codes are minors.
+
+**Recommendation: B**, added in a 0.x minor before 1.0 so the codes are part of the 1.0 surface.
+
+</Callout>
+
+## What is breaking
+
+A change is **breaking** (major only) if code, a schema, a migration or a script that used the
+public API as documented stops working, gives different results, or stops compiling. In detail:
+
+| Change                                                                                                                                          | Release                          |
+| ----------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------- |
+| Removing or renaming an export, option, field, command, flag, decorator, `cyphra.json` key or environment variable                              | Major                            |
+| Changing a default value (an option, a decorator argument, a generated name)                                                                    | Major                            |
+| Changing documented runtime behavior (results, ordering, `null` handling, value conversion, transaction scope)                                  | Major                            |
+| Rejecting input that was accepted (schemas, arguments, CLI flags), except input that already produced broken results                            | Major                            |
+| Type change that makes code that compiled stop compiling ([types](#type-level-changes))                                                         | Major                            |
+| Dropping a supported database version, dialect, `neo4j-driver` major, peer dependency major or Node.js line ([exceptions](#supported-versions)) | Major                            |
+| New exit code, or a `--json` field removed or retyped                                                                                           | Major                            |
+| Changing the migration file format, the `__CyphraMigration` history or the DDL generated for the same schema                                    | Major                            |
+| New export, option, field, command, flag, decorator, dialect or supported version                                                               | Minor                            |
+| Deprecation (with a warning)                                                                                                                    | Minor                            |
+| New optional field in `--json` output, new error subclass, new warning                                                                          | Minor                            |
+| Different Cypher with the same results; performance; human-readable output                                                                      | Patch or minor                   |
+| Bug fix, including a fix that changes a wrong result or rejects input that produced broken output                                               | Patch                            |
+| Security fix                                                                                                                                    | Patch (even if behavior changes) |
+| Any change to an [experimental](#experimental-features) feature                                                                                 | Minor                            |
+
+When a bug fix would change results that many apps are likely to depend on, it ships in a minor
+with a prominent changelog entry, or behind an option until the next major.
+
+A **security fix** can change behavior or a default in a patch when there is no compatible way to
+fix the issue. The changelog and the advisory say what changed.
+
+### Type-level changes
+
+TypeScript types are part of the API, but almost any type change can break some code. Cyphra
+treats as **breaking**: removing or renaming an exported type; making a parameter type narrower or
+an argument required; making a result type wider (`string` → `string | null`); changing a
+generated model type for an unchanged schema; raising the minimum TypeScript version outside the
+support window. Treated as **non-breaking**: widening a parameter type, adding optional properties
+to argument types, adding properties to result types, and making a wrong result type correct (a
+bug fix, called out in the changelog).
+
+<Callout type="warning">
+**Decision needed: how strict is the type-level policy?**
+
+- **A. Ad hoc**: the list above, applied case by case.
+- **B. Adopt [Semantic Versioning for TypeScript Types](https://www.semver-ts.org)**, a written spec
+  used by other libraries, with its "rolling support window" for TypeScript versions.
+
+**Recommendation: B.** It answers the edge cases (inference changes, `strict` flags, new compiler
+errors) once, and gives the TypeScript version policy below.
+
+</Callout>
+
+## Deprecations
+
+A feature is removed only in a major, and only after it has been **deprecated** in a minor:
+
+1. **Mark it.** TSDoc `@deprecated` with the replacement (editors strike it through); a runtime
+   warning once per process for options and methods (on the client's `warn` log level; the
+   deprecated `debug` option does not warn yet); a warning from `cyphra validate` and `cyphra generate` for schema syntax; a
+   warning on stderr for CLI flags and commands.
+2. **Document it.** The changelog entry and the docs page name the replacement and show the change.
+3. **Wait.** It keeps working, unchanged, for the deprecation period.
+4. **Remove it** in the next major after that period, listed in that major's upgrade guide. Where it
+   is practical, the CLI offers an automatic fix (for example a schema rewrite in `cyphra format`).
+
+<Callout type="warning">
+**Decision needed: minimum deprecation period.**
+
+- **A. Until the next major**, however soon it comes.
+- **B. At least 6 months and at least one minor release** before the major that removes it.
+- **C. At least 12 months.**
+
+**Recommendation: B.** It gives every app a release cycle to see the warning, without blocking a
+major for a year. A security issue can shorten it; the advisory says why.
+
+</Callout>
+
+## Experimental features
+
+Some features ship before their API is settled. They are marked **experimental**:
+
+- in the docs, with a callout at the top of the section or page;
+- in TSDoc, with `@experimental`;
+- in the changelog, each time they change.
+
+Experimental features may change or be removed **in a minor** (never in a patch), with a changelog
+entry. They become stable in a minor, at which point the rest of this policy applies. They are
+still covered by [security fixes](#security-fixes-and-support).
+
+<Callout type="warning">
+**Decision needed: how to flag experimental features, and which ones are experimental at 1.0.**
+
+Mechanism:
+
+- **A. Documentation and TSDoc only** (above).
+- **B. A, plus an explicit opt-in** for experimental schema or client features (for example
+  `previewFeatures` in `cyphra.json`, as Prisma does), so nobody depends on one by accident.
+- **C. A separate entry point** (`cyphra/experimental`).
+
+**Recommendation: A at 1.0, B for future schema-level features.** Candidates to mark experimental at
+1.0, with the reason:
+
+| Feature                                              | Why                                                                    |
+| ---------------------------------------------------- | ---------------------------------------------------------------------- |
+| GraphQL subscriptions (`CDCSubscriptionsEngine`)     | New; needs Neo4j Enterprise CDC; one CI job                            |
+| `cyphra studio`                                      | A development tool whose HTTP API and UI will keep changing            |
+| `cyphra import graphql` / `prisma` / `neogma` output | Conversions are heuristic; their output should improve without a major |
+| `cyphra push`                                        | Meant for prototyping; migrations are the supported path               |
+| `@cyphra/nestjs`, `@cyphra/testing`                  | Only if they have not shipped for at least one minor before 1.0        |
+
+The commands themselves and their flags stay stable; only the content they produce is exempt.
+
+</Callout>
+
+## Supported versions
+
+Cyphra supports a version of a database, driver or runtime when CI tests it. Versions outside this
+section may work, but are not tested and can stop working in a minor.
+
+### What CI tests today
+
+From [`.github/workflows/ci.yml`](https://github.com/Cyphra-dev/cyphra/blob/main/.github/workflows/ci.yml):
+
+| Dimension                    | Tested in CI                                                                                               | Declared range                                                      |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| Neo4j                        | `neo4j:5-community` (latest 5.x) with APOC, over Bolt and the HTTP Query API; `neo4j:5-enterprise` for CDC | Typed client 5.6+, some features later ([below](#neo4j))            |
+| Neo4j calendar versions      | Not tested (2025.x and later)                                                                              | Not declared                                                        |
+| Memgraph                     | `memgraph/memgraph:3.14.0` (pinned)                                                                        | Not declared                                                        |
+| FalkorDB                     | `falkordb/falkordb:v4.22.3` (pinned), `falkordb` client 7.0.1                                              | `falkordb` peer `^7.0.0`                                            |
+| `neo4j-driver`               | 5.28.3 and 6.3.2, both in the full Neo4j suite, plus cross-major tests                                     | `^5.28.3 \|\| ^6.0.0`                                               |
+| Node.js                      | 22 only, on Linux                                                                                          | `engines: >=20` on the workspace and `@cyphra/language-server` only |
+| TypeScript                   | 5.9.3                                                                                                      | `@cyphra/schema` peer `>=5.0.0`; `@cyphra/cli` depends on `^5.9.3`  |
+| NestJS                       | 12 (integration tests); 10 and 11 (unit tests and typecheck)                                               | `^10 \|\| ^11 \|\| ^12`                                             |
+| `@neo4j/graphql` (reference) | 7.6.8 (compatibility suite), `graphql` 16                                                                  | `graphql` peer `^16.0.0`                                            |
+| Better Auth                  | 1.7.27 (Better Auth's adapter conformance suites)                                                          | `^1.7.27`                                                           |
+| Testcontainers               | 12                                                                                                         | `^11.0.0 \|\| ^12.0.0`                                              |
+| Bun, Deno, edge runtimes     | Not tested (the HTTP transport is tested from Node.js)                                                     | Bun guide and edge build documented                                 |
+
+### Neo4j
+
+The typed client needs **Neo4j 5.6** or later. Some features need later 5.x releases: relationship
+property uniqueness 5.7, `traverse` 5.9, vector indexes and `findSimilar` 5.15, `exact` vector
+search 5.18, the HTTP transport 5.19, shortest paths 5.21, `@vectorIndex(quantization)` and
+`@cyphra/graphql` 5.23. GraphQL subscriptions need Neo4j Enterprise or Aura with Change Data
+Capture. Neo4j 4.x is not supported.
+
+<Callout type="warning">
+**Decision needed: supported Neo4j versions at 1.0.**
+
+Neo4j 5.26 is Neo4j's long-term support release of the 5 series; releases after it use calendar
+versions (2025.x, 2026.x), which is also what Aura runs. CI runs the latest 5.x only.
+
+- **A. 5.26 LTS and the latest calendar release**, each with a CI job (Community, plus Enterprise
+  for CDC). 5.6 to 5.25 "work but are not tested"; raising the minimum within them is a minor.
+  Dropping 5.26 is a major.
+- **B. Everything from 5.6**, with a CI job on the oldest version (5.6) and the newest.
+- **C. 5.26 and later only**, raising the minimum to 5.26 in 1.0. Removes the feature-by-version
+  notes, but drops users on older 5.x.
+
+**Recommendation: A.** It matches what Neo4j itself supports and what Aura runs, and needs one more
+CI job (a calendar-version image) before 1.0. A new calendar release is supported once the job
+passes on it; a calendar release Neo4j no longer supports can be dropped in a minor.
+
+</Callout>
+
+### Memgraph and FalkorDB
+
+The [Memgraph](/memgraph) and [FalkorDB](/falkordb) dialects are tested against one pinned version
+each, and their pages list what each database does not support.
+
+<Callout type="warning">
+**Decision needed: support level for Memgraph and FalkorDB.**
+
+- **A. Same as Neo4j**, over a version range with CI jobs at both ends.
+- **B. The tested version and later releases of the same major.** CI moves the pinned version
+  forward regularly; the feature matrix is verified against it; a new major is supported once CI
+  passes. Dropping a dialect is a major.
+- **C. Experimental**, outside the semver promise.
+
+**Recommendation: B**, with the supported range written on each dialect page (Memgraph 3.x from
+3.14, FalkorDB 4.x from 4.22).
+
+</Callout>
+
+### neo4j-driver and other peer dependencies
+
+`neo4j-driver` 5 (from 5.28.3) and 6 are supported; CI runs the whole Neo4j suite on both. For
+every peer dependency (`neo4j-driver`, `graphql`, `better-auth`, `@nestjs/*`, `testcontainers`,
+`@opentelemetry/api`, `falkordb`, `typescript`), adding a major to the peer range is a minor, and
+removing one is a major. Each major in a peer range gets a CI job; ranges are not widened without
+one.
+
+<Callout type="warning">
+**Decision needed: when can a `neo4j-driver` major be dropped?**
+
+- **A. Only in a Cyphra major.**
+- **B. In a minor, once Neo4j stops supporting that driver series.**
+
+**Recommendation: A.** Apps pin the driver for their own reasons, and supporting both majors is
+already tested.
+
+</Callout>
+
+### Node.js
+
+<Callout type="warning">
+**Decision needed: Node.js versions.**
+
+Today only Node.js 22 is tested, and only two `package.json` files declare `engines` (`>=20`).
+Node.js 20 reached end of life in April 2026.
+
+- **A. Every Node.js LTS line that is still maintained upstream**, each tested in CI. A line is
+  dropped in a **minor** after its upstream end of life, announced one minor in advance.
+- **B. As A, but dropping a line only in a major.** Strict, but forces a major at every Node.js end
+  of life, which the fixed group makes expensive.
+
+**Recommendation: A.** At 1.0: Node.js 22 and 24 (and the current even-numbered release once it
+becomes LTS), a CI matrix over them, and `engines.node` set in every published package.
+
+</Callout>
+
+<Callout type="warning">
+**Decision needed: Bun, Deno and edge runtimes.**
+
+The docs have a [Bun guide](/guides/bun), and the edge build (`workerd`, `edge-light` and `worker`
+conditions) targets Cloudflare Workers and Vercel Edge. None of them runs in CI.
+
+- **A. Supported**, with a CI job each (Bun on the Bolt suite, the edge build in workerd or
+  Miniflare against Neo4j over HTTP).
+- **B. Best effort**: bugs are fixed, but a minor may break them.
+
+**Recommendation: B at 1.0, A for the edge build as soon as it has a CI job**, since its export
+conditions are public API.
+
+</Callout>
+
+### TypeScript
+
+Generated code and type definitions are tested with the TypeScript version in the lockfile
+(5.9.3).
+
+<Callout type="warning">
+**Decision needed: minimum TypeScript version.**
+
+- **A. A rolling window**: TypeScript versions released in the last two years (the
+  [semver-ts](https://www.semver-ts.org) window); dropping a version that left the window is a
+  minor.
+- **B. A fixed minimum per major** (for example 5.9 for all of 1.x).
+
+**Recommendation: A, starting at 5.9 for 1.0** (what CI tests), with the `@cyphra/schema` peer
+range changed from `>=5.0.0` to match and a CI job on the minimum. New TypeScript releases are
+supported once CI passes on them.
+
+</Callout>
+
+## Security fixes and support
+
+Security issues are reported privately, as described in
+[`SECURITY.md`](https://github.com/Cyphra-dev/cyphra/blob/main/SECURITY.md). A fix is released as a
+patch of the latest minor, with a GitHub Security Advisory (and a CVE when it applies).
+
+Releases are published from CI with [npm provenance](https://docs.npmjs.com/generating-provenance-statements)
+and npm trusted publishing (no long-lived npm tokens), so you can check that a package was built
+from this repository (`npm audit signatures`).
+
+<Callout type="warning">
+**Decision needed: which release lines get fixes (LTS).**
+
+- **A. No LTS.** Only the latest minor of the latest major gets fixes; upgrading within a major is
+  always compatible, so that is the supported path.
+- **B. Security fixes for the previous major for 6 months** after the next major ships (high and
+  critical severity), as patches of its last minor. Bug fixes only on the current major.
+- **C. Designated LTS majors** with 12 to 18 months of security and critical bug fixes.
+
+**Recommendation: B.** It gives teams time to plan a major upgrade at the cost of one backport
+branch at a time. Older minors of the current major never get backports.
+
+</Callout>
+
+## Release cadence
+
+Releases are cut from `main` by the [Release workflow](https://github.com/Cyphra-dev/cyphra/blob/main/.github/workflows/release.yml):
+changesets merged to `main` open a "chore: version packages" pull request, and merging it publishes
+every package. Today this runs whenever changes land, which has meant several minors a day during
+0.x.
+
+<Callout type="warning">
+**Decision needed: release cadence after 1.0.**
+
+- **A. Release when ready** (today): every merged version PR publishes.
+- **B. Patches when ready; minors batched** (for example every two to four weeks); majors at most
+  once a year, each preceded by prereleases on a `next` dist-tag (changesets pre mode) for at least
+  four weeks.
+- **C. Fixed calendar** for minors and majors.
+
+**Recommendation: B.** Fewer minors make the changelog and the deprecation periods readable, and a
+prerelease period lets apps try a major before it is `latest`.
+
+</Callout>
+
+## Before 1.0: follow-ups
+
+Changes this policy implies, to make before tagging `1.0.0`:
+
+- Set `engines.node` in every published package and run CI on each supported Node.js line.
+- Add a CI job on a Neo4j calendar version (and on the minimum supported versions, depending on the
+  decisions above).
+- Change `@cyphra/nestjs`'s peer range on `cyphra` from `>=0.17.0` to `^1.0.0`, so a future
+  `cyphra` 2 is not accepted silently.
+- Align the `@cyphra/schema` `typescript` peer range with the TypeScript decision.
+- Audit entry points: tag internals `@internal`, mark experimental features.
+- Update `SECURITY.md`'s supported versions with the support decision.
+- Decide on error codes before 1.0, since adding them later is fine but renaming classes is not.
