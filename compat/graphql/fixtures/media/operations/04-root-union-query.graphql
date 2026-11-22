@@ -1,0 +1,25 @@
+# features: union, union.root
+query {
+  all: contents {
+    __typename
+    ... on Movie {
+      title
+    }
+    ... on Book {
+      title
+    }
+  }
+  filtered: contents(where: { Book: { pages: { gt: 350 } } }) {
+    __typename
+    ... on Book {
+      title
+      pages
+    }
+  }
+  movies: contents(where: { Movie: { year: { lt: 2000 } } }, limit: 5) {
+    ... on Movie {
+      title
+      year
+    }
+  }
+}

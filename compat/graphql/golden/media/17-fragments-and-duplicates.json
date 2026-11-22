@@ -1,0 +1,57 @@
+{
+  "data": {
+    "users": [
+      {
+        "name": "ana",
+        "watchlist": [
+          {
+            "kind": "Movie",
+            "title": "Up"
+          }
+        ],
+        "watchlistConnection": {
+          "totalCount": 1,
+          "edges": [
+            {
+              "node": {
+                "__typename": "Movie"
+              }
+            }
+          ]
+        },
+        "favs": [
+          {
+            "isbn": "b-dune"
+          },
+          {
+            "name": "Arrival"
+          }
+        ]
+      },
+      {
+        "name": "dee",
+        "watchlist": [
+          {
+            "kind": "Movie",
+            "title": "Arrival"
+          }
+        ],
+        "watchlistConnection": {
+          "totalCount": 1,
+          "edges": [
+            {
+              "node": {
+                "__typename": "Movie"
+              }
+            }
+          ]
+        },
+        "favs": [
+          {
+            "name": "Up"
+          }
+        ]
+      }
+    ]
+  }
+}

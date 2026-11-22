@@ -223,3 +223,48 @@ describe("authorization", () => {
     expect(statements[0]!.params).toMatchObject({ p0: true, p1: "alice" });
   });
 });
+
+describe("unions", () => {
+  const unionTypeDefs = /* GraphQL */ `
+    union Content = Movie | Book
+    type User @node {
+      name: String!
+      favorites: [Content!]! @relationship(type: "FAVORITED", direction: OUT, properties: "Fav")
+    }
+    type Movie @node {
+      title: String!
+    }
+    type Book @node {
+      isbn: ID!
+    }
+    type Fav @relationshipProperties {
+      rating: Int!
+    }
+  `;
+
+  it("nested writes are keyed by member and target the member's label", async () => {
+    const { driver, statements } = fakeDriver(() => [{ info: {}, data: {} }]);
+    const schema = makeSchema({ typeDefs: unionTypeDefs, driver });
+    const result = await execute({
+      schema,
+      document: parse(`mutation {
+        updateUsers(
+          where: { name: { eq: "ana" } }
+          update: {
+            favorites: {
+              Movie: [{ create: [{ edge: { rating: 5 }, node: { title: "New" } }] }]
+              Book: [{ disconnect: [{ where: { node: { isbn: { eq: "b-1" } } } }] }]
+            }
+          }
+        ) { info { relationshipsCreated } }
+      }`),
+    });
+    expect(result.errors).toBeUndefined();
+    const cypher = statements[0]!.cypher;
+    expect(cypher).toContain("CREATE (this1:`Movie`)");
+    expect(cypher).toMatch(/CREATE \(this0\)-\[edge\d+:`FAVORITED`\]->\(this1\)/);
+    expect(cypher).toMatch(
+      /MATCH \(this0\)-\[edge\d+:`FAVORITED`\]->\(this\d+:`Book`\) WHERE this\d+\.`isbn` = \$p\d+/,
+    );
+  });
+});

@@ -1,0 +1,67 @@
+{
+  "data": {
+    "createUsers": {
+      "info": {
+        "nodesCreated": 3,
+        "relationshipsCreated": 6
+      },
+      "users": [
+        {
+          "name": "eve",
+          "favoritesConnection": {
+            "edges": [
+              {
+                "properties": {
+                  "rating": 2,
+                  "note": null
+                },
+                "node": {
+                  "__typename": "Book",
+                  "title": "New Book"
+                }
+              },
+              {
+                "properties": {
+                  "rating": 3,
+                  "note": null
+                },
+                "node": {
+                  "__typename": "Movie",
+                  "title": "Up"
+                }
+              },
+              {
+                "properties": {
+                  "rating": 4,
+                  "note": "new"
+                },
+                "node": {
+                  "__typename": "Movie",
+                  "title": "Nope"
+                }
+              },
+              {
+                "properties": {
+                  "rating": 5,
+                  "note": null
+                },
+                "node": {
+                  "__typename": "Book",
+                  "title": "Dune"
+                }
+              }
+            ]
+          },
+          "watchlist": [
+            {
+              "title": "Heat"
+            },
+            {
+              "title": "Up"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

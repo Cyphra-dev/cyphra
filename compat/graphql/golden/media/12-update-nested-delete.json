@@ -1,0 +1,21 @@
+{
+  "data": {
+    "updateUsers": {
+      "info": {
+        "nodesDeleted": 1,
+        "relationshipsDeleted": 2
+      },
+      "users": [
+        {
+          "name": "bo",
+          "favorites": [
+            {
+              "__typename": "Book",
+              "title": "Heat"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

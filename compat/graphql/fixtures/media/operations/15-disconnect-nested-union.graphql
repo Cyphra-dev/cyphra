@@ -1,0 +1,34 @@
+# features: union, union.mutation, mutation.disconnect, mutation.nested
+# Known divergence: v7 7.6.8 ignores the `where` of a disconnect through a union field nested in
+# another disconnect (it deletes the relationships to every member); @cyphra/graphql only
+# disconnects the matching nodes.
+mutation {
+  updateMovies(
+    where: { title: { eq: "Arrival" } }
+    update: {
+      fans: [
+        {
+          disconnect: [
+            {
+              where: { node: { name: { eq: "ana" } } }
+              disconnect: { favorites: { Book: [{ where: { node: { isbn: { eq: "b-dune" } } } }] } }
+            }
+          ]
+        }
+      ]
+    }
+  ) {
+    info {
+      relationshipsDeleted
+    }
+    movies {
+      title
+      fans {
+        name
+        favorites {
+          __typename
+        }
+      }
+    }
+  }
+}

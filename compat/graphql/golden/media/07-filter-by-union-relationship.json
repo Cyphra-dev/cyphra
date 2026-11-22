@@ -1,0 +1,51 @@
+{
+  "data": {
+    "someHeatMovie": [
+      {
+        "name": "bo"
+      }
+    ],
+    "allRecentMovies": [
+      {
+        "name": "ana"
+      },
+      {
+        "name": "dee"
+      }
+    ],
+    "noBooks": [
+      {
+        "name": "cy"
+      },
+      {
+        "name": "dee"
+      }
+    ],
+    "singleBook": [
+      {
+        "name": "cy"
+      }
+    ],
+    "connectionEdge": [
+      {
+        "name": "bo"
+      }
+    ],
+    "connectionNone": [
+      {
+        "name": "ana"
+      },
+      {
+        "name": "cy"
+      },
+      {
+        "name": "dee"
+      }
+    ],
+    "deprecatedSome": [
+      {
+        "name": "ana"
+      }
+    ]
+  }
+}

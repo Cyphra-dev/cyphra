@@ -33,8 +33,16 @@ type AnyRecord = Record<string, unknown>;
 /** Comment written before every user statement, so the text of a subquery tells it contains one. */
 export const STATEMENT_MARK = "/* @cypher */";
 
+/**
+ * Comment written before other clauses that aggregate (the `CALL` of a union selection): like a
+ * statement, a subquery expression containing one is hoisted into a `CALL` clause.
+ */
+export const AGGREGATE_MARK = "/* aggregate */";
+
 export function hasStatement(...texts: readonly (string | undefined)[]): boolean {
-  return texts.some((t) => t !== undefined && t.includes(STATEMENT_MARK));
+  return texts.some(
+    (t) => t !== undefined && (t.includes(STATEMENT_MARK) || t.includes(AGGREGATE_MARK)),
+  );
 }
 
 /** An argument value as a parameter: `Int` values become driver integers (as v7 sends them). */

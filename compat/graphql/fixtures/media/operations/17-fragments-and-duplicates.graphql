@@ -1,0 +1,41 @@
+# features: union, union.fragments
+query ($withYear: Boolean!) {
+  users(where: { name: { in: ["ana", "dee"] } }) {
+    name
+    watchlist {
+      ...ContentType
+      ...MovieFields
+    }
+    watchlistConnection {
+      totalCount
+      edges {
+        node {
+          ... on Content {
+            __typename
+          }
+        }
+      }
+    }
+    favs: favorites {
+      ... on Movie {
+        name: title
+        year @include(if: $withYear)
+      }
+      ... on Book @skip(if: true) {
+        title
+      }
+      ... on Book {
+        isbn
+      }
+    }
+  }
+}
+
+fragment ContentType on Content {
+  kind: __typename
+}
+
+fragment MovieFields on Movie {
+  title
+  year @include(if: $withYear)
+}

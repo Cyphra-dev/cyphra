@@ -1,0 +1,31 @@
+# features: union, union.mutation, auth.filter
+mutation {
+  createUsers(
+    input: [
+      {
+        name: "fay"
+        favorites: {
+          Book: {
+            create: [
+              { edge: { rating: 1 }, node: { isbn: "b-hidden", title: "Hidden", restricted: true } }
+            ]
+          }
+        }
+      }
+    ]
+  ) {
+    info {
+      nodesCreated
+      relationshipsCreated
+    }
+    users {
+      name
+      favorites {
+        __typename
+      }
+      favoritesConnection {
+        totalCount
+      }
+    }
+  }
+}

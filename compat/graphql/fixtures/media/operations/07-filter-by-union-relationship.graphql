@@ -1,0 +1,28 @@
+# features: union, union.where, filter.relationship
+query {
+  someHeatMovie: users(where: { favorites: { some: { Movie: { title: { eq: "Heat" } } } } }) {
+    name
+  }
+  allRecentMovies: users(where: { favorites: { all: { Movie: { year: { gt: 2000 } } } } }) {
+    name
+  }
+  noBooks: users(where: { favorites: { none: { Book: {} } } }) {
+    name
+  }
+  singleBook: users(where: { watchlist: { single: { Book: { title: { eq: "Dune" } } } } }) {
+    name
+  }
+  connectionEdge: users(
+    where: { favoritesConnection: { some: { Book: { edge: { rating: { eq: 5 } } } } } }
+  ) {
+    name
+  }
+  connectionNone: users(
+    where: { favoritesConnection: { none: { Movie: { node: { year: { lt: 2000 } } } } } }
+  ) {
+    name
+  }
+  deprecatedSome: users(where: { favorites_SOME: { Book: { pages: { gt: 400 } } } }) {
+    name
+  }
+}

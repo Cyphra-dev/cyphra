@@ -1,0 +1,72 @@
+{
+  "data": {
+    "users": [
+      {
+        "name": "ana",
+        "favorites": [
+          {
+            "__typename": "Book",
+            "title": "Dune"
+          },
+          {
+            "__typename": "Book",
+            "title": "Secret Files"
+          },
+          {
+            "__typename": "Movie"
+          }
+        ],
+        "watchlistConnection": {
+          "totalCount": 1,
+          "edges": [
+            {
+              "node": {
+                "__typename": "Movie"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "name": "cy",
+        "favorites": [],
+        "watchlistConnection": {
+          "totalCount": 3,
+          "edges": [
+            {
+              "node": {
+                "__typename": "Book"
+              }
+            },
+            {
+              "node": {
+                "__typename": "Book"
+              }
+            },
+            {
+              "node": {
+                "__typename": "Movie"
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "contents": [
+      {
+        "isbn": "b-dune"
+      },
+      {
+        "isbn": "b-heat"
+      },
+      {
+        "isbn": "b-secret"
+      }
+    ],
+    "users2": [
+      {
+        "name": "ana"
+      }
+    ]
+  }
+}

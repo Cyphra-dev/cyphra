@@ -1,0 +1,27 @@
+{
+  "data": {
+    "users": [
+      {
+        "favoritesConnection": {
+          "totalCount": 2,
+          "pageInfo": {
+            "hasNextPage": false,
+            "hasPreviousPage": true,
+            "endCursor": "YXJyYXljb25uZWN0aW9uOjE="
+          },
+          "edges": [
+            {
+              "cursor": "YXJyYXljb25uZWN0aW9uOjE=",
+              "properties": {
+                "rating": 5
+              },
+              "node": {
+                "__typename": "Movie"
+              }
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

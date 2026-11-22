@@ -1,0 +1,15 @@
+# features: union, union.pagination
+query {
+  users(where: { name: { eq: "cy" } }) {
+    name
+    one: watchlist(where: { Book: { title: { eq: "Dune" } } }, limit: 1) {
+      __typename
+    }
+    none: watchlist(limit: 0) {
+      __typename
+    }
+    skipAll: watchlist(offset: 5) {
+      __typename
+    }
+  }
+}

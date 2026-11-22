@@ -1,0 +1,23 @@
+# features: union, union.connection, connection.pagination
+# ordered
+query ($after: String) {
+  users(where: { name: { eq: "ana" } }) {
+    favoritesConnection(first: 1, after: $after, sort: [{ edge: { rating: ASC } }]) {
+      totalCount
+      pageInfo {
+        hasNextPage
+        hasPreviousPage
+        endCursor
+      }
+      edges {
+        cursor
+        properties {
+          rating
+        }
+        node {
+          __typename
+        }
+      }
+    }
+  }
+}

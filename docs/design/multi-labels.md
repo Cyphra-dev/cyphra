@@ -306,7 +306,8 @@ node Tag {
 - **GraphQL importer.** `@neo4j/graphql` v7 unions are exactly this, so `cyphra import graphql`
   maps `union U = A | B` of `@node` types to a Cyphra union, relations to it included (#197).
   The importer does not convert properties on those relationships yet (typed edges on
-  relations to a union exist since #196); serving v7 unions from `@cyphra/graphql` is #201.
+  relations to a union exist since #196); serving v7 unions from `@cyphra/graphql` is done
+  (#201): the compat server compiles its own Cypher, one `UNION` branch per member.
 - **Interface members (#198, implemented).** `union Party = Person | Team` (`Person` an
   interface): the resolved union keeps `members: ["Person", "Team"]` (declared) and expands
   `implementations` to the nodes (`Employee`, `Customer`, `Team`), so typing, `__typename`

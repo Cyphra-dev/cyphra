@@ -1,0 +1,73 @@
+{
+  "data": {
+    "users": [
+      {
+        "name": "ana",
+        "favoritesConnection": {
+          "totalCount": 2,
+          "pageInfo": {
+            "hasNextPage": false,
+            "hasPreviousPage": false,
+            "startCursor": "YXJyYXljb25uZWN0aW9uOjA=",
+            "endCursor": "YXJyYXljb25uZWN0aW9uOjE="
+          },
+          "edges": [
+            {
+              "cursor": "YXJyYXljb25uZWN0aW9uOjA=",
+              "properties": {
+                "rating": 5,
+                "note": "a classic"
+              },
+              "node": {
+                "__typename": "Movie",
+                "title": "Arrival"
+              }
+            },
+            {
+              "cursor": "YXJyYXljb25uZWN0aW9uOjE=",
+              "properties": {
+                "rating": 4,
+                "note": null
+              },
+              "node": {
+                "__typename": "Book",
+                "isbn": "b-dune"
+              }
+            }
+          ]
+        },
+        "filtered": {
+          "totalCount": 2,
+          "edges": [
+            {
+              "properties": {
+                "rating": 5
+              },
+              "node": {
+                "__typename": "Movie"
+              }
+            },
+            {
+              "properties": {
+                "rating": 4
+              },
+              "node": {
+                "__typename": "Book"
+              }
+            }
+          ]
+        },
+        "watchlistConnection": {
+          "totalCount": 1,
+          "edges": [
+            {
+              "node": {
+                "title": "Up"
+              }
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

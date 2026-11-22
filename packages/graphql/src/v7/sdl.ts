@@ -22,6 +22,7 @@ import {
   GraphQLObjectType,
   GraphQLSchema,
   GraphQLString,
+  GraphQLUnionType,
   valueFromAST,
   type GraphQLFieldConfig,
   type GraphQLFieldConfigArgumentMap,
@@ -34,15 +35,18 @@ import {
   type GraphQLScalarType,
   type GraphQLType,
 } from "graphql";
-import type {
-  Attribute,
-  CypherRootField,
-  FieldArgument,
-  NodeType,
-  PropertiesType,
-  Relationship,
-  TypeRef,
-  V7Model,
+import {
+  isUnionRelationship,
+  unionMembers,
+  type Attribute,
+  type CypherRootField,
+  type FieldArgument,
+  type NodeType,
+  type PropertiesType,
+  type Relationship,
+  type TypeRef,
+  type UnionType,
+  type V7Model,
 } from "./model.js";
 import { pluralize, upperFirst } from "./naming.js";
 import { GraphQLBigInt, GraphQLDate, GraphQLDateTime } from "./scalars.js";
@@ -664,6 +668,31 @@ class TypeRegistry {
           };
         }
         for (const r of n.relationships) {
+          if (isUnionRelationship(this.model, r)) {
+            const u = this.model.unions.get(r.target)!;
+            const p = this.props(r);
+            fields[r.name] = {
+              type: relationshipType(this, r),
+              description: r.description,
+              deprecationReason: r.deprecated,
+              args: {
+                limit: { type: GraphQLInt },
+                offset: { type: GraphQLInt },
+                where: { type: this.unionWhere(u) },
+              },
+            };
+            fields[`${r.name}Connection`] = {
+              type: nn(this.relConnection(r)),
+              deprecationReason: r.deprecated,
+              args: {
+                after: { type: GraphQLString },
+                first: { type: GraphQLInt },
+                ...(p ? { sort: { type: list(nn(this.relConnectionSort(r))) } } : {}),
+                where: { type: this.relConnectionWhere(r) },
+              },
+            };
+            continue;
+          }
           const target = this.model.node(r.target);
           fields[r.name] = {
             type: relationshipType(this, r),
@@ -729,15 +758,25 @@ class TypeRegistry {
       }
       const sourcePlural = pluralize(n.name);
       for (const r of n.relationships) {
-        const target = this.model.node(r.target);
-        const targetWhere = this.nodeWhere(target);
+        const union = isUnionRelationship(this.model, r)
+          ? this.model.unions.get(r.target)!
+          : undefined;
+        const target = union ?? this.model.node(r.target);
+        const targetWhere = union ? this.unionWhere(union) : this.nodeWhere(target as NodeType);
         const connWhere = this.relConnectionWhere(r);
         const connPlural = pluralize(relConnectionName(r));
-        out[r.name] = { type: this.relationshipFilters(target) };
-        out[`${r.name}Aggregate`] = {
-          type: this.relAggregateInput(r),
-          deprecationReason: `Aggregate filters are moved inside the ${r.name}Connection filter, please use { ${r.name}Connection: { aggregate: {...} } } instead`,
+        out[r.name] = {
+          type: union
+            ? this.unionRelationshipFilters(union)
+            : this.relationshipFilters(target as NodeType),
         };
+        // v7: no aggregation filters on unions.
+        if (!union) {
+          out[`${r.name}Aggregate`] = {
+            type: this.relAggregateInput(r),
+            deprecationReason: `Aggregate filters are moved inside the ${r.name}Connection filter, please use { ${r.name}Connection: { aggregate: {...} } } instead`,
+          };
+        }
         out[`${r.name}Connection`] = { type: this.relConnectionFilters(r) };
         for (const q of QUANTIFIERS) {
           out[`${r.name}Connection_${q.toUpperCase()}`] = {
@@ -758,18 +797,50 @@ class TypeRegistry {
   }
 
   relationshipFilters(target: NodeType): GraphQLInputObjectType {
-    return this.input(`${target.name}RelationshipFilters`, () => {
-      const where = this.nodeWhere(target);
+    return this.quantifierFilters(target.name, () => this.nodeWhere(target));
+  }
+
+  unionRelationshipFilters(u: UnionType): GraphQLInputObjectType {
+    return this.quantifierFilters(u.name, () => this.unionWhere(u));
+  }
+
+  /** `MovieRelationshipFilters` / `ContentRelationshipFilters`: `all` / `none` / `single` / `some`. */
+  private quantifierFilters(
+    target: string,
+    whereType: () => GraphQLInputObjectType,
+  ): GraphQLInputObjectType {
+    return this.input(`${target}RelationshipFilters`, () => {
+      const where = whereType();
       return Object.fromEntries(
         QUANTIFIERS.map((q) => [
           q,
           {
             type: where,
-            description: `Filter type where ${QUANTIFIER_WORD[q]} of the related ${pluralize(target.name)} match this filter`,
+            description: `Filter type where ${QUANTIFIER_WORD[q]} of the related ${pluralize(target)} match this filter`,
           },
         ]),
       );
     });
+  }
+
+  /** `union Content = Book | Movie`; `__resolveType` reads the `__typename` of the decoded value. */
+  union(u: UnionType): GraphQLUnionType {
+    return this.get(
+      u.name,
+      () =>
+        new GraphQLUnionType({
+          name: u.name,
+          description: u.description,
+          types: () => u.members.map((m) => this.node(this.model.node(m))),
+        }),
+    );
+  }
+
+  /** `ContentWhere`: one optional `${Member}Where` per member. */
+  unionWhere(u: UnionType): GraphQLInputObjectType {
+    return this.input(`${u.name}Where`, () =>
+      Object.fromEntries(u.members.map((m) => [m, { type: this.nodeWhere(this.model.node(m)) }])),
+    );
   }
 
   /** `Movie`, `[Movie!]!`, … for a field returning nodes. */
@@ -874,7 +945,13 @@ class TypeRegistry {
   nodeCreate(n: NodeType): GraphQLInputObjectType {
     return this.input(`${n.name}CreateInput`, () => {
       const out = this.attributeCreateFields(n.attributes);
-      for (const r of n.relationships) out[r.name] = { type: this.relFieldInput(r) };
+      for (const r of n.relationships) {
+        out[r.name] = {
+          type: isUnionRelationship(this.model, r)
+            ? this.unionInput(r, "CreateInput", (m) => this.relFieldInput(m), false)
+            : this.relFieldInput(r),
+        };
+      }
       return out;
     });
   }
@@ -882,8 +959,13 @@ class TypeRegistry {
   nodeUpdate(n: NodeType): GraphQLInputObjectType {
     return this.input(`${n.name}UpdateInput`, () => {
       const out = this.attributeUpdateFields(n.attributes);
-      for (const r of n.relationships)
-        out[r.name] = { type: list(nn(this.relUpdateFieldInput(r))) };
+      for (const r of n.relationships) {
+        out[r.name] = {
+          type: isUnionRelationship(this.model, r)
+            ? this.unionInput(r, "UpdateInput", (m) => this.relUpdateFieldInput(m))
+            : list(nn(this.relUpdateFieldInput(r))),
+        };
+      }
       return out;
     });
   }
@@ -896,7 +978,14 @@ class TypeRegistry {
     if (!n.relationships.length) return undefined;
     return this.input(`${n.name}ConnectInput`, () =>
       Object.fromEntries(
-        n.relationships.map((r) => [r.name, { type: list(nn(this.relConnectFieldInput(r))) }]),
+        n.relationships.map((r) => [
+          r.name,
+          {
+            type: isUnionRelationship(this.model, r)
+              ? this.unionInput(r, "ConnectInput", (m) => this.relConnectFieldInput(m))
+              : list(nn(this.relConnectFieldInput(r))),
+          },
+        ]),
       ),
     );
   }
@@ -905,7 +994,14 @@ class TypeRegistry {
     if (!n.relationships.length) return undefined;
     return this.input(`${n.name}DisconnectInput`, () =>
       Object.fromEntries(
-        n.relationships.map((r) => [r.name, { type: list(nn(this.relDisconnectFieldInput(r))) }]),
+        n.relationships.map((r) => [
+          r.name,
+          {
+            type: isUnionRelationship(this.model, r)
+              ? this.unionInput(r, "DisconnectInput", (m) => this.relDisconnectFieldInput(m))
+              : list(nn(this.relDisconnectFieldInput(r))),
+          },
+        ]),
       ),
     );
   }
@@ -914,7 +1010,14 @@ class TypeRegistry {
     if (!n.relationships.length) return undefined;
     return this.input(`${n.name}DeleteInput`, () =>
       Object.fromEntries(
-        n.relationships.map((r) => [r.name, { type: list(nn(this.relDeleteFieldInput(r))) }]),
+        n.relationships.map((r) => [
+          r.name,
+          {
+            type: isUnionRelationship(this.model, r)
+              ? this.unionInput(r, "DeleteInput", (m) => this.relDeleteFieldInput(m))
+              : list(nn(this.relDeleteFieldInput(r))),
+          },
+        ]),
       ),
     );
   }
@@ -934,9 +1037,31 @@ class TypeRegistry {
     return r.properties ? this.model.properties.get(r.properties) : undefined;
   }
 
+  /**
+   * `UserFavoritesCreateInput { Book: UserFavoritesBookFieldInput, … }` and the other member-keyed
+   * inputs of a relationship to a union (lists of the member input unless `asList` is false).
+   */
+  unionInput(
+    r: Relationship,
+    suffix: string,
+    member: (m: Relationship) => GraphQLInputObjectType,
+    asList = true,
+  ): GraphQLInputObjectType {
+    return this.input(`${prefix(r)}${suffix}`, () =>
+      Object.fromEntries(
+        unionMembers(this.model, r).map((m) => [
+          m.target,
+          { type: asList ? list(nn(member(m))) : member(m) },
+        ]),
+      ),
+    );
+  }
+
   relConnection(r: Relationship): GraphQLObjectType {
+    const union = isUnionRelationship(this.model, r);
     return this.object(relConnectionName(r), () => ({
-      aggregate: { type: nn(this.relAggregateSelection(r)) },
+      // v7: no aggregate on relationships to unions.
+      ...(union ? {} : { aggregate: { type: nn(this.relAggregateSelection(r)) } }),
       edges: { type: nn(list(nn(this.relRelationship(r)))) },
       pageInfo: { type: nn(this.pageInfo()) },
       totalCount: { type: nn(GraphQLInt) },
@@ -947,7 +1072,13 @@ class TypeRegistry {
     return this.object(`${prefix(r)}Relationship`, () => {
       const fields: GraphQLFieldConfigMap<unknown, unknown> = {
         cursor: { type: nn(GraphQLString) },
-        node: { type: nn(this.node(this.model.node(r.target))) },
+        node: {
+          type: nn(
+            isUnionRelationship(this.model, r)
+              ? this.union(this.model.unions.get(r.target)!)
+              : this.node(this.model.node(r.target)),
+          ),
+        },
       };
       const p = this.props(r);
       if (p) fields.properties = { type: nn(this.propertiesObject(p)) };
@@ -986,13 +1117,21 @@ class TypeRegistry {
       const out: GraphQLInputFieldConfigMap = {};
       const p = this.props(r);
       if (p) out.edge = { type: this.propertiesSort(p) };
-      out.node = { type: this.nodeSort(this.model.node(r.target)) };
+      // v7: relationships to unions sort on edge properties only.
+      if (!isUnionRelationship(this.model, r))
+        out.node = { type: this.nodeSort(this.model.node(r.target)) };
       return out;
     });
   }
 
   relConnectionWhere(r: Relationship): GraphQLInputObjectType {
     return this.input(`${relConnectionName(r)}Where`, () => {
+      if (isUnionRelationship(this.model, r)) {
+        // `UserFavoritesConnectionWhere { Book: UserFavoritesBookConnectionWhere, … }`.
+        return Object.fromEntries(
+          unionMembers(this.model, r).map((m) => [m.target, { type: this.relConnectionWhere(m) }]),
+        );
+      }
       const self = this.relConnectionWhere(r);
       const out: GraphQLInputFieldConfigMap = {
         AND: { type: list(nn(self)) },
@@ -1011,12 +1150,14 @@ class TypeRegistry {
       const where = this.relConnectionWhere(r);
       const sourcePlural = pluralize(r.source);
       const connPlural = pluralize(relConnectionName(r));
-      const out: GraphQLInputFieldConfigMap = {
-        aggregate: {
-          type: this.relConnectionAggregateInput(r),
-          description: `Filter ${sourcePlural} by aggregating results on related ${connPlural}`,
-        },
-      };
+      const out: GraphQLInputFieldConfigMap = isUnionRelationship(this.model, r)
+        ? {}
+        : {
+            aggregate: {
+              type: this.relConnectionAggregateInput(r),
+              description: `Filter ${sourcePlural} by aggregating results on related ${connPlural}`,
+            },
+          };
       for (const q of QUANTIFIERS) {
         out[q] = {
           type: where,
@@ -1153,9 +1294,12 @@ function scalarRef(name: string): TypeRef {
   return { name, list: false, required: false, elementRequired: false };
 }
 
-/** `MovieActors`: prefix of every type generated for the `Movie.actors` relationship. */
+/**
+ * `MovieActors`: prefix of every type generated for the `Movie.actors` relationship;
+ * `UserFavoritesMovie` for the `Movie` view of `User.favorites` (to a union).
+ */
 export function prefix(r: Relationship): string {
-  return `${r.source}${upperFirst(r.name)}`;
+  return `${r.source}${upperFirst(r.name)}${r.union !== undefined ? r.target : ""}`;
 }
 
 /** `MovieActorsConnection`. */
@@ -1164,7 +1308,9 @@ export function relConnectionName(r: Relationship): string {
 }
 
 function relationshipType(reg: TypeRegistry, r: Relationship): GraphQLOutputType {
-  const target = reg.node(reg.model.node(r.target));
+  const target = isUnionRelationship(reg.model, r)
+    ? reg.union(reg.model.unions.get(r.target)!)
+    : reg.node(reg.model.node(r.target));
   if (r.list) {
     const inner = list(r.elementRequired ? nn(target) : target);
     return r.required ? nn(inner) : inner;
@@ -1261,6 +1407,17 @@ export function buildV7Schema(model: V7Model): GraphQLSchema {
           },
         };
         for (const ft of n.fulltext) fields[ft.queryName] = reg.fulltextField(n);
+      }
+      // v7: `contents(where, limit, offset): [Content!]!` (no sort, no connection).
+      for (const u of model.unions.values()) {
+        fields[u.plural] = {
+          type: nn(list(nn(reg.union(u)))),
+          args: {
+            limit: { type: GraphQLInt },
+            offset: { type: GraphQLInt },
+            where: { type: reg.unionWhere(u) },
+          },
+        };
       }
       for (const f of model.query.fields) fields[f.name] = rootField(reg, f);
       return fields;

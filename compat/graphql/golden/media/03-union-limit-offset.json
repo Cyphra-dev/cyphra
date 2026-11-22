@@ -1,0 +1,23 @@
+{
+  "data": {
+    "users": [
+      {
+        "name": "cy",
+        "one": [
+          {
+            "__typename": "Book"
+          }
+        ],
+        "none": [
+          {
+            "__typename": "Book"
+          },
+          {
+            "__typename": "Movie"
+          }
+        ],
+        "skipAll": []
+      }
+    ]
+  }
+}

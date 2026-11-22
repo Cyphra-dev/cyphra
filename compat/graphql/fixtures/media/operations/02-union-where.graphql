@@ -1,0 +1,38 @@
+# features: union, union.where
+query {
+  users(where: { name: { in: ["ana", "bo"] } }) {
+    name
+    onlyMovieKey: favorites(where: { Movie: { year: { gt: 2000 } } }) {
+      __typename
+      ... on Movie {
+        title
+      }
+      ... on Book {
+        title
+      }
+    }
+    bothKeys: favorites(where: { Movie: { title: { eq: "Heat" } }, Book: { pages: { lt: 350 } } }) {
+      __typename
+      ... on Movie {
+        title
+      }
+      ... on Book {
+        title
+      }
+    }
+    emptyMember: favorites(where: { Book: {} }) {
+      __typename
+      ... on Book {
+        title
+      }
+    }
+    emptyWhere: favorites(where: {}) {
+      __typename
+    }
+    nested: favorites(where: { Movie: { genres: { some: { name: { eq: "Sci-Fi" } } } } }) {
+      ... on Movie {
+        title
+      }
+    }
+  }
+}

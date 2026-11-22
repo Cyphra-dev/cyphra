@@ -1,0 +1,19 @@
+{
+  "data": {
+    "createUsers": {
+      "info": {
+        "nodesCreated": 2,
+        "relationshipsCreated": 1
+      },
+      "users": [
+        {
+          "name": "fay",
+          "favorites": [],
+          "favoritesConnection": {
+            "totalCount": 0
+          }
+        }
+      ]
+    }
+  }
+}

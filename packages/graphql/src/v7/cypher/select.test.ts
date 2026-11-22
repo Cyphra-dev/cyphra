@@ -249,3 +249,86 @@ describe("connection aggregate selections", () => {
     });
   });
 });
+
+describe("unions", () => {
+  const unionTypeDefs = /* GraphQL */ `
+    union Content = Movie | Book
+    type User @node {
+      name: String!
+      favorites: [Content!]! @relationship(type: "FAVORITED", direction: OUT)
+    }
+    type Movie @node {
+      title: String!
+    }
+    type Book @node {
+      isbn: ID!
+    }
+  `;
+
+  it("one UNION branch per member selected by where, rows typed by member", async () => {
+    const { driver, statements } = fakeDriver(() => [
+      {
+        name: "ana",
+        favorites: [{ "cyphra:type": "Movie", "cyphra:id": "4:x:1", t: "Arrival" }],
+      },
+    ]);
+    const schema = makeSchema({ typeDefs: unionTypeDefs, driver });
+    const result = await execute({
+      schema,
+      document: parse(`{
+        users {
+          name
+          favorites(where: { Movie: { title: { eq: "Arrival" } } }, limit: 2) {
+            __typename
+            ... on Movie { t: title }
+            ... on Book { isbn }
+          }
+        }
+      }`),
+    });
+    expect(result.errors).toBeUndefined();
+    const cypher = statements[0]!.cypher;
+    expect(cypher).toContain("MATCH (this0)-[:`FAVORITED`]->(this2:`Movie`)");
+    expect(cypher).not.toContain("`Book`");
+    expect(cypher).toMatch(/ELSE rows\d+\[0\.\.\$p\d+\] END AS union\d+/);
+    expect(result.data).toEqual({
+      users: [{ name: "ana", favorites: [{ __typename: "Movie", t: "Arrival" }] }],
+    });
+  });
+
+  it("a where without any member key matches nothing", async () => {
+    const { driver, statements } = fakeDriver(() => [{ name: "ana" }]);
+    const schema = makeSchema({ typeDefs: unionTypeDefs, driver });
+    const result = await execute({
+      schema,
+      document: parse(`{ users { name favorites(where: { Movie: null }) { __typename } } }`),
+    });
+    expect(result.errors).toBeUndefined();
+    expect(statements[0]!.cypher).not.toContain("UNION");
+    expect(result.data).toEqual({ users: [{ name: "ana", favorites: [] }] });
+  });
+
+  it("root union query and relationship filters per member", async () => {
+    const { driver, statements } = fakeDriver(() => [[{ "cyphra:type": "Book", isbn: "b-1" }]]);
+    const schema = makeSchema({ typeDefs: unionTypeDefs, driver });
+    const result = await execute({
+      schema,
+      document: parse(`{ contents { ... on Book { isbn } } }`),
+    });
+    expect(result.errors).toBeUndefined();
+    expect(statements[0]!.cypher).toContain("\nUNION\n");
+    expect(result.data).toEqual({ contents: [{ isbn: "b-1" }] });
+
+    await execute({
+      schema,
+      document: parse(`{
+        users(where: { favorites: { single: { Movie: { title: { eq: "Up" } }, Book: {} } } }) { name }
+      }`),
+    });
+    // `single` on a member without conditions filters nothing (v7).
+    expect(statements[1]!.cypher).toContain(
+      "WHERE COUNT { MATCH (this0)-[:`FAVORITED`]->(n1:`Movie`) WHERE n1.`title` = $p0 } = 1",
+    );
+    expect(statements[1]!.cypher).not.toContain("`Book`");
+  });
+});

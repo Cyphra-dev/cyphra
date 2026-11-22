@@ -1,0 +1,15 @@
+# features: union, union.mutation, mutation.delete
+mutation {
+  deleteUsers(
+    where: { name: { eq: "ana" } }
+    delete: {
+      favorites: {
+        Book: [{ where: { edge: { rating: { gte: 4 } } } }]
+        Movie: [{ where: { node: { year: { gt: 2010 } } } }]
+      }
+    }
+  ) {
+    nodesDeleted
+    relationshipsDeleted
+  }
+}

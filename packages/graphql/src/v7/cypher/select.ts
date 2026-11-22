@@ -33,12 +33,16 @@ import {
   type GraphQLField,
   type GraphQLObjectType,
   type GraphQLSchema,
+  type SelectionNode,
   type SelectionSetNode,
 } from "graphql";
 import neo4j, { isInt } from "neo4j-driver";
 import { checkAuthentication, type AuthContext } from "../auth/context.js";
 import { AuthRules } from "../auth/rules.js";
 import {
+  isUnionRelationship,
+  selectedMembers,
+  unionMembers,
   type Attribute,
   type CypherAnnotation,
   type CypherNodeField,
@@ -47,6 +51,7 @@ import {
   type NodeType,
   type PropertiesType,
   type Relationship,
+  type UnionType,
   type V7Model,
 } from "../model.js";
 import {
@@ -58,7 +63,7 @@ import {
   type ListAggregate,
 } from "./context.js";
 import { WhereCompiler, relationshipPattern } from "./where.js";
-import { column, hasStatement, scalarClause, statementCall } from "./custom.js";
+import { AGGREGATE_MARK, column, hasStatement, scalarClause, statementCall } from "./custom.js";
 
 type AnyRecord = Record<string, unknown>;
 export type Decoder = (raw: unknown) => unknown;
@@ -188,6 +193,98 @@ export function collectFields(
 
 export function subSelections(nodes: readonly FieldNode[]): (SelectionSetNode | undefined)[] {
   return nodes.map((n) => n.selectionSet);
+}
+
+/**
+ * The selections of a union-typed selection set that apply to the member `type`: fields, and the
+ * fragments on the member or on the union (fragment spreads become inline fragments, keeping their
+ * `@skip` / `@include`). Nested field selections are left as they are.
+ */
+function narrowSelectionSet(
+  info: SelectionInfo,
+  set: SelectionSetNode,
+  type: string,
+  union: string,
+): SelectionSetNode {
+  const applies = (t: string | undefined) => t === undefined || t === type || t === union;
+  const selections: SelectionNode[] = [];
+  for (const sel of set.selections) {
+    if (sel.kind === Kind.FIELD) {
+      selections.push(sel);
+    } else if (sel.kind === Kind.INLINE_FRAGMENT) {
+      if (!applies(sel.typeCondition?.name.value)) continue;
+      selections.push({
+        ...sel,
+        typeCondition: undefined,
+        selectionSet: narrowSelectionSet(info, sel.selectionSet, type, union),
+      });
+    } else {
+      const frag = info.fragments[sel.name.value];
+      if (!frag || !applies(frag.typeCondition.name.value)) continue;
+      selections.push({
+        kind: Kind.INLINE_FRAGMENT,
+        directives: sel.directives,
+        selectionSet: narrowSelectionSet(info, frag.selectionSet, type, union),
+      });
+    }
+  }
+  return { kind: Kind.SELECTION_SET, selections };
+}
+
+/** The field nodes of a union-typed field, with only the selections that apply to `type`. */
+export function narrowFieldNodes(
+  info: SelectionInfo,
+  nodes: readonly FieldNode[],
+  type: string,
+  union: string,
+): FieldNode[] {
+  return nodes.map((n) =>
+    n.selectionSet
+      ? { ...n, selectionSet: narrowSelectionSet(info, n.selectionSet, type, union) }
+      : n,
+  );
+}
+
+/** Hidden keys of union rows (not GraphQL names, like {@link FORBIDDEN_KEY}). */
+const TYPE_KEY = "cyphra:type";
+const ID_KEY = "cyphra:id";
+const SORT_KEY = "cyphra:sort";
+
+/** `[offset..offset + limit]` / `[offset..]`: v7 ignores `0` (and missing) values. */
+function slice(ctx: CypherContext, offset: unknown, limit: unknown): string {
+  const o =
+    typeof offset === "number" && offset > 0 ? ctx.param(neo4j.int(Math.trunc(offset))) : "0";
+  if (typeof limit !== "number" || Math.trunc(limit) === 0) return `[${o}..]`;
+  const l = ctx.param(neo4j.int(Math.max(0, Math.trunc(limit))));
+  return `[${o}..${o === "0" ? l : `${o} + ${l}`}]`;
+}
+
+/** `pageInfo` of a connection page. */
+function pageInfoValue(
+  info: SelectionInfo,
+  nodes: readonly FieldNode[],
+  offset: number,
+  count: number,
+  total: number,
+): AnyRecord {
+  const out: AnyRecord = {};
+  for (const [pk, pn] of collectFields(info, subSelections(nodes))) {
+    switch (pn[0]!.name.value) {
+      case "hasNextPage":
+        out[pk] = offset + count < total;
+        break;
+      case "hasPreviousPage":
+        out[pk] = offset > 0;
+        break;
+      case "startCursor":
+        out[pk] = count ? offsetToCursor(offset) : null;
+        break;
+      case "endCursor":
+        out[pk] = count ? offsetToCursor(offset + count - 1) : null;
+        break;
+    }
+  }
+  return out;
 }
 
 function objectType(info: SelectionInfo, name: string): GraphQLObjectType {
@@ -484,6 +581,8 @@ export class SelectionCompiler {
     fieldNodes: readonly FieldNode[],
     scope: Scope,
     pre?: SortScope,
+    /** Entries added to the projected map (the hidden keys of union rows). */
+    extra: readonly string[] = [],
   ): { expr: string; decode: Decoder } {
     const fields = [...collectFields(this.info, subSelections(fieldNodes)).values()].map(
       (n) => n[0]!.name.value,
@@ -491,7 +590,7 @@ export class SelectionCompiler {
     this.authenticate(node, "READ", fields);
     const type = objectType(this.info, node.name);
     const gqlFields = type.getFields();
-    const entries: string[] = [];
+    const entries: string[] = [...extra];
     const decoders: [string, Decoder][] = [];
     for (const [key, nodes] of collectFields(this.info, subSelections(fieldNodes))) {
       const name = nodes[0]!.name.value;
@@ -517,7 +616,9 @@ export class SelectionCompiler {
       }
       const rel = node.relationships.find((r) => r.name === name);
       if (rel) {
-        const p = this.relationshipList(scope, variable, rel, args, nodes);
+        const p = isUnionRelationship(this.model, rel)
+          ? this.unionList(scope, variable, rel, args, nodes)
+          : this.relationshipList(scope, variable, rel, args, nodes);
         entries.push(`${q(key)}: ${p.expr}`);
         decoders.push([key, p.decode]);
         continue;
@@ -526,7 +627,9 @@ export class SelectionCompiler {
         ? node.relationships.find((r) => `${r.name}Connection` === name)
         : undefined;
       if (connRel) {
-        const p = this.relationshipConnection(scope, variable, connRel, args, nodes);
+        const p = isUnionRelationship(this.model, connRel)
+          ? this.unionConnection(scope, variable, connRel, args, nodes)
+          : this.relationshipConnection(scope, variable, connRel, args, nodes);
         entries.push(`${q(key)}: ${p.expr}`);
         decoders.push([key, p.decode]);
         continue;
@@ -996,6 +1099,301 @@ export class SelectionCompiler {
       fieldNodes,
       owner: `${rel.source}.${rel.name}Connection`,
     });
+  }
+
+  // -------------------------------------------------------------------------------------------
+  // Unions
+  // -------------------------------------------------------------------------------------------
+
+  /**
+   * One `UNION` branch per member of a union selection: `MATCH <pattern(member)> WHERE <where of the
+   * member> AND <READ filter> … RETURN <row> AS x`. Like v7, `UNION` (not `UNION ALL`) removes
+   * identical rows, so rows carry the node's `elementId`: a node reached twice is returned once.
+   */
+  private unionBranch(opts: {
+    member: NodeType;
+    union: string;
+    match: string;
+    nodeVar: string;
+    predicate: string | undefined;
+    /** Node selections (narrowed to the member) whose READ rules apply. */
+    ruleNodes: readonly FieldNode[];
+    /** The row, from the scope its subqueries go to. */
+    row: (scope: Scope, pre: SortScope) => string;
+    out: string;
+  }): string {
+    const auth = this.readRules(opts.nodeVar, opts.member, opts.ruleNodes);
+    const pred = and([opts.predicate, auth.filter]);
+    const inner: Scope = [];
+    const pre = sortScope();
+    const row = this.rowGate(inner, auth.failure, opts.row(inner, pre), this.forbiddenMap());
+    return [
+      `MATCH ${opts.match}`,
+      pred ? `WHERE ${pred}` : "",
+      ...pre.clauses,
+      ...inner,
+      `RETURN ${row} AS ${opts.out}`,
+    ]
+      .filter(Boolean)
+      .join("\n");
+  }
+
+  /** `CALL (imports) { <branches joined by UNION> }`, or `undefined` without branches. */
+  private unionCall(imports: string, branches: readonly string[]): string | undefined {
+    if (!branches.length) return undefined;
+    return [`CALL (${imports}) {`, branches.join("\nUNION\n"), "}"].join("\n");
+  }
+
+  /** `any(x IN list WHERE x is the forbidden marker)`. */
+  private anyForbidden(list: string): string {
+    const x = this.ctx.variable("row");
+    return `any(${x} IN ${list} WHERE ${x}.${q(FORBIDDEN_KEY)} IS NOT NULL)`;
+  }
+
+  /** The hidden `cyphra:type` / `cyphra:id` entries of a member row. */
+  private memberKeys(member: NodeType, nodeVar: string): string[] {
+    return [
+      `${q(TYPE_KEY)}: ${this.ctx.param(member.name)}`,
+      `${q(ID_KEY)}: elementId(${nodeVar})`,
+    ];
+  }
+
+  /** Decodes a member row with its member's decoder, adding `__typename` for `__resolveType`. */
+  private unionDecoder(decoders: ReadonlyMap<string, Decoder>): Decoder {
+    return (raw) => {
+      const r = (raw ?? {}) as AnyRecord;
+      const type = r[TYPE_KEY] as string;
+      const dec = decoders.get(type);
+      if (!dec) throw new Error(`Unknown union member ${String(type)}`);
+      return { ...(dec(r) as AnyRecord), __typename: type };
+    };
+  }
+
+  /**
+   * A list of union members (`favorites(where, limit, offset)` or the root `contents(…)`), v7 7.6:
+   * one branch per member selected by `where` (see `selectedMembers`), with the member's READ rules;
+   * `offset` / `limit` apply to the rows of every branch (no order: unspecified, like v7). A row
+   * failing READ `validate` rules makes the field `Forbidden`.
+   */
+  private unionRows(
+    imports: string,
+    members: readonly { rel?: Relationship; node: NodeType; where: unknown }[],
+    union: string,
+    fromVar: string | undefined,
+    fieldNodes: readonly FieldNode[],
+  ): { call?: string; out: string; decoders: Map<string, Decoder> } {
+    const x = this.ctx.variable("member");
+    const decoders = new Map<string, Decoder>();
+    const branches = members.map(({ rel, node, where }) => {
+      const t = this.ctx.variable("this");
+      const nodes = narrowFieldNodes(this.info, fieldNodes, node.name, union);
+      return this.unionBranch({
+        member: node,
+        union,
+        match:
+          rel && fromVar !== undefined
+            ? relationshipPattern(this.model, fromVar, rel, t)
+            : `(${t}${labels(node.labels)})`,
+        nodeVar: t,
+        predicate: this.where.node(t, node, where),
+        ruleNodes: nodes,
+        row: (inner) => {
+          const p = this.projectNode(t, node, nodes, inner, undefined, this.memberKeys(node, t));
+          decoders.set(node.name, p.decode);
+          return p.expr;
+        },
+        out: x,
+      });
+    });
+    return { call: this.unionCall(imports, branches), out: x, decoders };
+  }
+
+  private unionList(
+    scope: Scope,
+    variable: string,
+    rel: Relationship,
+    args: AnyRecord,
+    fieldNodes: readonly FieldNode[],
+  ): { expr: string; decode: Decoder } {
+    const members = selectedMembers(unionMembers(this.model, rel), args.where).map((m) => ({
+      rel: m.rel,
+      node: this.model.node(m.rel.target),
+      where: m.where,
+    }));
+    const rows = this.unionRows(variable, members, rel.target, variable, fieldNodes);
+    const decode = this.unionDecoder(rows.decoders);
+    if (!rows.call) return { expr: "[]", decode: () => [] };
+    const all = this.ctx.variable("rows");
+    const v = this.ctx.variable("union");
+    scope.push(
+      [
+        AGGREGATE_MARK,
+        `CALL (${variable}) {`,
+        rows.call,
+        `WITH collect(${rows.out}) AS ${all}`,
+        `RETURN CASE WHEN ${this.anyForbidden(all)} THEN ${this.forbiddenList()} ELSE ${all}${slice(this.ctx, args.offset, args.limit)} END AS ${v}`,
+        "}",
+      ].join("\n"),
+    );
+    return { expr: v, decode: (raw) => (Array.isArray(raw) ? raw.map(decode) : []) };
+  }
+
+  /** `contents(where, limit, offset)`: the root query of a union. */
+  rootUnion(union: UnionType, args: AnyRecord, fieldNodes: readonly FieldNode[]): CompiledQuery {
+    const members = union.members.map((m) => this.model.node(m));
+    const where = (args.where ?? undefined) as AnyRecord | undefined;
+    const keyed =
+      where && Object.keys(where).length
+        ? members.filter((m) => where[m.name]).map((m) => ({ node: m, where: where[m.name] }))
+        : members.map((m) => ({ node: m, where: undefined }));
+    const rows = this.unionRows("", keyed, union.name, undefined, fieldNodes);
+    const decode = this.unionDecoder(rows.decoders);
+    if (!rows.call)
+      return { cypher: "RETURN [] AS this", params: this.ctx.params, decode: () => [] };
+    const all = this.ctx.variable("rows");
+    return {
+      cypher: [
+        rows.call,
+        `WITH collect(${rows.out}) AS ${all}`,
+        `RETURN CASE WHEN ${this.anyForbidden(all)} THEN ${this.forbiddenList()} ELSE ${all}${slice(this.ctx, args.offset, args.limit)} END AS this`,
+      ].join("\n"),
+      params: this.ctx.params,
+      decode: (rs) => (Array.isArray(rs[0]) ? rs[0].map(decode) : []),
+    };
+  }
+
+  /**
+   * A connection to a union (`favoritesConnection(where, sort, first, after)`), v7 7.6: the edges of
+   * every member selected by `where` (`{ Movie: { node, edge }, … }`), with the member's READ rules,
+   * deduplicated like v7's `UNION` (same node, same selected properties: one edge); `totalCount`
+   * counts them; `sort` orders on edge properties; cursors are offsets.
+   */
+  private unionConnection(
+    scope: Scope,
+    variable: string,
+    rel: Relationship,
+    args: AnyRecord,
+    fieldNodes: readonly FieldNode[],
+  ): { expr: string; decode: Decoder } {
+    const afterOffset = cursorToOffset(args.after);
+    const offset = afterOffset === undefined ? 0 : afterOffset + 1;
+    const conn = collectFields(this.info, subSelections(fieldNodes));
+    const edgeFieldNodes = [...conn]
+      .filter(([, n]) => n[0]!.name.value === "edges")
+      .flatMap(([, n]) => n);
+    const edgeFields = collectFields(this.info, subSelections(edgeFieldNodes));
+    const props = this.props(rel);
+    const sortKeys: { attr: Attribute; dir: string }[] = [];
+    for (const s of Array.isArray(args.sort) ? args.sort : []) {
+      if (s === null || typeof s !== "object") continue;
+      const edge = (s as AnyRecord).edge;
+      if (!props || edge === null || typeof edge !== "object") continue;
+      for (const [field, dir] of Object.entries(edge as AnyRecord)) {
+        if (dir !== "ASC" && dir !== "DESC") continue;
+        const attr = props.attributes.find((a) => a.name === field);
+        if (!attr) throw new Error(`Unknown sort field ${props.name}.${field}`);
+        sortKeys.push({ attr, dir });
+      }
+    }
+    const e = this.ctx.variable("edge");
+    const nodeDecoders = new Map<string, Map<string, Decoder>>();
+    const propDecoders = new Map<string, Decoder>();
+    const members = selectedMembers(unionMembers(this.model, rel), args.where);
+    const branches = members.map(({ rel: m, where }) => {
+      const node = this.model.node(m.target);
+      this.authenticate(node, "READ");
+      const t = this.ctx.variable("this");
+      const r = this.ctx.variable("edge");
+      const nodeFields = [...edgeFields]
+        .filter(([, n]) => n[0]!.name.value === "node")
+        .flatMap(([, n]) => narrowFieldNodes(this.info, n, node.name, rel.target));
+      return this.unionBranch({
+        member: node,
+        union: rel.target,
+        match: relationshipPattern(this.model, variable, m, t, r),
+        nodeVar: t,
+        predicate: this.where.connection(r, t, m, where),
+        ruleNodes: nodeFields,
+        row: (inner, pre) => {
+          const entries = this.memberKeys(node, t);
+          sortKeys.forEach(({ attr }, i) => {
+            const value = attr.cypher ? this.sortValue(r, attr, pre) : `${r}.${q(attr.property)}`;
+            entries.push(`${q(`${SORT_KEY}${i}`)}: ${value}`);
+          });
+          for (const [key, nodes] of edgeFields) {
+            const name = nodes[0]!.name.value;
+            if (name === "node") {
+              const narrowed = narrowFieldNodes(this.info, nodes, node.name, rel.target);
+              const p = this.projectNode(t, node, narrowed, inner, pre);
+              entries.push(`${q(key)}: ${p.expr}`);
+              const byType = nodeDecoders.get(key) ?? new Map<string, Decoder>();
+              byType.set(node.name, p.decode);
+              nodeDecoders.set(key, byType);
+            } else if (name === "properties" && props) {
+              const p = this.projectProperties(r, props, nodes, inner, pre);
+              entries.push(`${q(key)}: ${p.expr}`);
+              propDecoders.set(key, p.decode);
+            }
+          }
+          return `{ ${entries.join(", ")} }`;
+        },
+        out: e,
+      });
+    });
+    const call = this.unionCall(variable, branches);
+    const v = this.ctx.variable("union");
+    if (call) {
+      const all = this.ctx.variable("edges");
+      const order = sortKeys.length
+        ? `WITH ${e} ORDER BY ${sortKeys.map(({ dir }, i) => `${e}.${q(`${SORT_KEY}${i}`)} ${dir}`).join(", ")}`
+        : "";
+      const page = slice(this.ctx, offset, args.first);
+      scope.push(
+        [
+          AGGREGATE_MARK,
+          `CALL (${variable}) {`,
+          call,
+          order,
+          `WITH collect(${e}) AS ${all}`,
+          `RETURN CASE WHEN ${this.anyForbidden(all)} THEN ${this.forbiddenMap()} ELSE { total: size(${all}), edges: ${all}${page} } END AS ${v}`,
+          "}",
+        ]
+          .filter(Boolean)
+          .join("\n"),
+      );
+    }
+    const decodeEdge = (raw: AnyRecord, i: number): AnyRecord => {
+      const type = raw[TYPE_KEY] as string;
+      const out: AnyRecord = {};
+      for (const [key, nodes] of edgeFields) {
+        const name = nodes[0]!.name.value;
+        if (name === "cursor") out[key] = offsetToCursor(offset + i);
+        else if (name === "node") {
+          const dec = nodeDecoders.get(key)?.get(type);
+          out[key] = dec ? { ...(dec(raw[key]) as AnyRecord), __typename: type } : null;
+        } else if (name === "properties") out[key] = propDecoders.get(key)?.(raw[key]) ?? null;
+      }
+      return out;
+    };
+    return {
+      expr: call ? v : "{ total: 0, edges: [] }",
+      decode: (raw) => {
+        const r = (raw ?? {}) as AnyRecord;
+        const total = toNumber(r.total ?? 0);
+        const edges = ((Array.isArray(r.edges) ? r.edges : []) as AnyRecord[]).map((x, i) =>
+          decodeEdge(x ?? {}, i),
+        );
+        const out: AnyRecord = {};
+        for (const [key, nodes] of conn) {
+          const name = nodes[0]!.name.value;
+          if (name === "totalCount") out[key] = total;
+          else if (name === "edges") out[key] = edges;
+          else if (name === "pageInfo")
+            out[key] = pageInfoValue(this.info, nodes, offset, edges.length, total);
+        }
+        return out;
+      },
+    };
   }
 
   /** `movies(where, sort, limit, offset)`. */

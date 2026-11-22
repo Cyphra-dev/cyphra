@@ -16,6 +16,9 @@
  *   `@id` / `@timestamp` edge properties (v7 only does on nested `create`);
  * - `disconnect` deletes the matching relationships; `delete` deletes the matching nodes and,
  *   through nested `delete`, nodes related to them (all matched before anything is deleted);
+ * - relationships to unions take member-keyed inputs (`favorites: { Movie: { create, connect },
+ *   Book: … }`, `delete: { favorites: { Movie: [{ where }] } }`, …): each member key runs the nested
+ *   operations of a relationship to that member;
  * - `info` counters are computed in the statement: nodes and relationships created by `CREATE`,
  *   relationships removed by `disconnect`, and the distinct nodes deleted with every relationship
  *   attached to them.
@@ -40,13 +43,15 @@ import { GraphQLError, type FieldNode } from "graphql";
 import { isInt } from "neo4j-driver";
 import { checkAuthentication, type AuthContext } from "../auth/context.js";
 import type { AuthRules } from "../auth/rules.js";
-import type {
-  Attribute,
-  AuthOperation,
-  NodeType,
-  PropertiesType,
-  Relationship,
-  V7Model,
+import {
+  isUnionRelationship,
+  unionMembers,
+  type Attribute,
+  type AuthOperation,
+  type NodeType,
+  type PropertiesType,
+  type Relationship,
+  type V7Model,
 } from "../model.js";
 import { labels, q, type CypherContext } from "./context.js";
 import { collectFields, subSelections, SelectionCompiler, type SelectionInfo } from "./select.js";
@@ -251,6 +256,19 @@ export class MutationCompiler {
     return rel;
   }
 
+  /**
+   * The elements of a relationship input with the relationship they apply to: the elements of
+   * `value` (a list or one element), or for a relationship to a union, the elements of each member
+   * key (`{ Movie: […], Book: […] }`) with the member's view of the relationship.
+   */
+  private elements(rel: Relationship, value: unknown): [Relationship, unknown][] {
+    if (!isUnionRelationship(this.model, rel)) return asList(value).map((e) => [rel, e]);
+    if (!isPlainObject(value)) return [];
+    return unionMembers(this.model, rel).flatMap((m) =>
+      asList(value[m.target]).map((e): [Relationship, unknown] => [m, e]),
+    );
+  }
+
   /** Runs `inner` once per row of `outer` (`CALL (imports) { … }`) and adds its counts. */
   private call(outer: Block, imports: readonly string[], inner: Block): void {
     if (outer.clauses.length) outer.add("WITH *");
@@ -419,10 +437,11 @@ export class MutationCompiler {
     afterCreate?.();
     if (isPlainObject(input)) {
       for (const rel of node.relationships) {
-        const field = input[rel.name];
-        if (!isPlainObject(field)) continue;
-        for (const el of asList(field.create)) this.nestedCreate(block, v, rel, el);
-        for (const el of asList(field.connect)) this.connect(block, v, rel, el);
+        for (const [r, field] of this.elements(rel, input[rel.name])) {
+          if (!isPlainObject(field)) continue;
+          for (const el of asList(field.create)) this.nestedCreate(block, v, r, el);
+          for (const el of asList(field.connect)) this.connect(block, v, r, el);
+        }
       }
     }
     // CREATE rules are AFTER rules (v7), checked once the nested writes are done.
@@ -474,8 +493,8 @@ export class MutationCompiler {
     for (const nested of asList(el.connect)) {
       if (!isPlainObject(nested)) continue;
       for (const [name, els] of Object.entries(nested)) {
-        const rel2 = this.relationship(target, name);
-        for (const e of asList(els)) this.connect(inner, t, rel2, e);
+        for (const [rel2, e] of this.elements(this.relationship(target, name), els))
+          this.connect(inner, t, rel2, e);
       }
     }
     const r = this.ctx.variable("edge");
@@ -502,9 +521,9 @@ export class MutationCompiler {
   private updateRelationships(block: Block, v: string, node: NodeType, input: unknown): void {
     if (!isPlainObject(input)) return;
     for (const [key, value] of Object.entries(input)) {
-      const rel = node.relationships.find((r) => r.name === key);
-      if (!rel || value === null || value === undefined) continue;
-      for (const el of asList(value)) {
+      const relationship = node.relationships.find((r) => r.name === key);
+      if (!relationship || value === null || value === undefined) continue;
+      for (const [rel, el] of this.elements(relationship, value)) {
         if (!isPlainObject(el)) continue;
         for (const op of ELEMENT_OPERATIONS) {
           const arg = el[op];
@@ -582,8 +601,8 @@ export class MutationCompiler {
   private hasNestedUpdate(node: NodeType, input: unknown): boolean {
     if (!isPlainObject(input)) return false;
     return node.relationships.some((rel) =>
-      asList(input[rel.name]).some(
-        (el) => isPlainObject(el) && el.update !== undefined && el.update !== null,
+      this.elements(rel, input[rel.name]).some(
+        ([, el]) => isPlainObject(el) && el.update !== undefined && el.update !== null,
       ),
     );
   }
@@ -647,8 +666,8 @@ export class MutationCompiler {
     );
     if (isPlainObject(el.disconnect)) {
       for (const [name, els] of Object.entries(el.disconnect)) {
-        const rel2 = this.relationship(target, name);
-        for (const e of asList(els)) this.disconnect(inner, t, rel2, e);
+        for (const [rel2, e] of this.elements(this.relationship(target, name), els))
+          this.disconnect(inner, t, rel2, e);
       }
     }
     if (inner.clauses.length > 1) inner.add("WITH *");
@@ -694,10 +713,9 @@ export class MutationCompiler {
     const lists = [`COLLECT { ${match} RETURN DISTINCT ${t} }`];
     if (!isPlainObject(del)) return lists;
     for (const [name, els] of Object.entries(del)) {
-      const rel = this.relationship(node, name);
-      const target = this.model.node(rel.target);
-      for (const el of asList(els)) {
+      for (const [rel, el] of this.elements(this.relationship(node, name), els)) {
         if (!isPlainObject(el)) continue;
+        const target = this.model.node(rel.target);
         const { chain, u } = this.nestedDeleteMatch(match, t, rel, target, el, failures);
         lists.push(...this.deleteLists(chain, u, target, el.delete, failures));
       }
@@ -998,10 +1016,9 @@ export class MutationCompiler {
     const rootFailure = this.rules.check(this.rules.fails(v, node, "DELETE", "BEFORE"));
     if (isPlainObject(args.delete)) {
       for (const [name, els] of Object.entries(args.delete)) {
-        const rel = this.relationship(node, name);
-        const target = this.model.node(rel.target);
-        for (const el of asList(els)) {
+        for (const [rel, el] of this.elements(this.relationship(node, name), els)) {
           if (!isPlainObject(el)) continue;
+          const target = this.model.node(rel.target);
           const { chain, u } = this.nestedDeleteMatch("", v, rel, target, el, failures);
           nested.push(...this.deleteLists(chain, u, target, el.delete, failures));
         }
