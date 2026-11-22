@@ -1,18 +1,13 @@
 import type { BetterAuthOptions } from "better-auth/types";
 import { CyphraClient } from "@cyphra/runtime";
-import { constraintStatementsFromSchema, indexStatementsFromSchema } from "@cyphra/migrator";
+import { applySchema, connectionFromEnv, hasTestDatabase, wipeDatabase } from "@cyphra/testing";
 import { authSchema, type AuthSchemaOptions } from "../src/index.js";
 
-export const hasNeo4j = Boolean(
-  process.env.NEO4J_TEST_URI && process.env.NEO4J_TEST_USER && process.env.NEO4J_TEST_PASSWORD,
-);
+/** `true` when NEO4J_TEST_URI / NEO4J_TEST_USER / NEO4J_TEST_PASSWORD name a test database. */
+export const hasNeo4j = hasTestDatabase();
 
 export function testClient(): CyphraClient {
-  return new CyphraClient({
-    uri: process.env.NEO4J_TEST_URI!,
-    user: process.env.NEO4J_TEST_USER!,
-    password: process.env.NEO4J_TEST_PASSWORD!,
-  });
+  return new CyphraClient(connectionFromEnv()!);
 }
 
 export async function run(
@@ -25,7 +20,7 @@ export async function run(
 
 /** Remove every node (constraints are kept). */
 export async function resetDatabase(client: CyphraClient): Promise<void> {
-  await run(client, "MATCH (n) DETACH DELETE n");
+  await wipeDatabase(client, { keepMigrations: false });
 }
 
 /** What `cyphra migrate` would create for the auth nodes: constraints and indexes. */
@@ -34,11 +29,5 @@ export async function migrate(
   options: BetterAuthOptions = {},
   schemaOptions: AuthSchemaOptions = {},
 ): Promise<void> {
-  const { document } = authSchema(options, schemaOptions);
-  for (const statement of [
-    ...constraintStatementsFromSchema(document),
-    ...indexStatementsFromSchema(document),
-  ]) {
-    await client.withSession((session) => session.run(statement));
-  }
+  await applySchema(client, { schema: authSchema(options, schemaOptions).document });
 }

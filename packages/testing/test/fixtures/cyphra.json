@@ -1,0 +1,6 @@
+{
+  "schema": "./shop.cyphra",
+  "migrations": "./migrations",
+  "generate": "./shop.gen.ts",
+  "runtimeImport": "@cyphra/runtime"
+}

@@ -1,0 +1,23 @@
+// Fixture of @cyphra/testing's tests. Labels start with `Tst` so the suites can share a database
+// with other packages' tests (they only touch these labels).
+
+node TstUser {
+  id    String    @id @default(cuid())
+  email String    @unique
+  name  String
+  role  String    @default("member")
+  posts TstPost[] @relationship(type: "TST_WROTE", direction: OUT)
+}
+
+node TstPost {
+  id        String   @id @default(uuid())
+  title     String
+  published Boolean  @default(false)
+  author    TstUser? @relationship(type: "TST_WROTE", direction: IN)
+  tags      TstTag[] @relationship(type: "TST_TAGGED", direction: OUT)
+}
+
+node TstTag {
+  name  String    @id
+  posts TstPost[] @relationship(type: "TST_TAGGED", direction: IN)
+}

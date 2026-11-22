@@ -12,6 +12,7 @@ export default defineConfig({
       "packages/better-auth",
       "packages/graphql",
       "packages/nestjs",
+      "packages/testing",
       "packages/language-server",
       "packages/vscode",
       "compat/graphql",

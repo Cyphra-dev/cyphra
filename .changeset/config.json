@@ -13,7 +13,8 @@
       "@cyphra/better-auth",
       "@cyphra/graphql",
       "@cyphra/language-server",
-      "@cyphra/nestjs"
+      "@cyphra/nestjs",
+      "@cyphra/testing"
     ]
   ],
   "linked": [],
