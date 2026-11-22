@@ -44,6 +44,7 @@ import { DEFAULT_MAX_TRAVERSAL_DEPTH, compileTraverse } from "./traverse.js";
 import { compileShortestPath } from "./shortest.js";
 import { findSimilar } from "./vector.js";
 import { search } from "./fulltext.js";
+import { unionFindSimilar, unionSearch } from "./unionSearch.js";
 import {
   LOCK_FLAG,
   compileRulesDelete,
@@ -281,14 +282,15 @@ export class ModelEngine {
   }
 
   /**
-   * A union is read through `findMany`, `findFirst` and `count` only: it has no unique key, no
-   * fields to aggregate or search, and is written through its members.
+   * A union is read through `findMany`, `findFirst`, `count`, and `search` / `findSimilar` over its
+   * members' indexes only: it has no unique key, no fields to aggregate, and is written through
+   * its members.
    */
   private assertNotUnion(op: string): void {
     if (!this.model.union) return;
     const members = this.model.implementations ?? [];
     throw new CyphraValidationError(
-      `${this.model.name}.${op}: ${this.model.name} is a union; it supports findMany, findFirst and count (${op} goes through one of its members: ${members.join(", ")}).`,
+      `${this.model.name}.${op}: ${this.model.name} is a union; it supports findMany, findFirst, count, search and findSimilar (${op} goes through one of its members: ${members.join(", ")}).`,
     );
   }
 
@@ -393,7 +395,14 @@ export class ModelEngine {
 
   /** Nearest neighbours on a `@vectorIndex` field; see {@link findSimilar}. */
   findSimilar(args: AnyRecord): Promise<AnyRecord[]> {
-    this.assertNotUnion("findSimilar");
+    if (this.model.union) {
+      // Over a union: one statement, each member's index ranked and fused (see unionSearch.ts).
+      return this.runner.read(async (exec) => {
+        if (!isPlainObject(args))
+          throw new CyphraValidationError("findSimilar args must be an object.");
+        return unionFindSimilar(exec, this.ctx(), this.model, args);
+      }, SINGLE);
+    }
     return this.runner.read(
       async (exec) => {
         if (!isPlainObject(args))
@@ -407,9 +416,10 @@ export class ModelEngine {
 
   /** Full-text search through a `@@fulltext` index; see {@link search}. */
   search(args: AnyRecord): Promise<AnyRecord[]> {
-    this.assertNotUnion("search");
     return this.runner.read(async (exec) => {
       if (!isPlainObject(args)) throw new CyphraValidationError("search args must be an object.");
+      // Over a union: each member's index ranked and fused (see unionSearch.ts).
+      if (this.model.union) return unionSearch(exec, this.ctx(), this.model, args);
       return search(exec, () => this.ctx(), this.model, args);
     }, SINGLE);
   }

@@ -159,6 +159,10 @@ field-qualified terms (`title:graph`) do not. Memgraph has no analyzers, so the 
 each write transaction, which costs about a second per index in Docker: batch writes to
 text-indexed nodes in one `$transaction` or `createMany`.
 
+[Search over a union](/client#searching-a-union) (`search` and `findSimilar` on a union delegate)
+runs the same single statement as on Neo4j, with `text_search.search_all` and
+`vector_search.search` in each member's subquery, and `id(n)` breaking ties.
+
 ## Migrations on Memgraph
 
 With `"dialect": "memgraph"`, `cyphra migrate dev` writes Memgraph DDL. Memgraph's constraints and

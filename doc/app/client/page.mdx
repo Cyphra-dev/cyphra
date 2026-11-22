@@ -931,9 +931,11 @@ for (const h of hits) {
 - `select` and `include` take [`$on`](#per-implementation-fields-on) only:
   `select: { $on: { Post: { title: true, author: true } } }` returns
   `{ __typename: "Post", title, author } | { __typename: "User" } | …`.
-- There is no unique key, so no `findUnique`, and no fields to aggregate or search: `aggregate`,
-  `groupBy`, `search`, `findSimilar` and the traversals are not on a union delegate (they are not
-  in its type and throw a `CyphraValidationError`). Neither are writes: write through the members.
+- There is no unique key, so no `findUnique`, and no fields to aggregate: `aggregate`, `groupBy`
+  and the traversals are not on a union delegate (they are not in its type and throw a
+  `CyphraValidationError`). Neither are writes: write through the members.
+- [`search` and `findSimilar`](#searching-a-union) query the members' own indexes and merge the
+  hits by rank.
 - Relations whose target is a union load, filter and count like any relation
   (`include: { items: { where: { __typename: "Post" } } }`,
   `where: { items: { some: { $on: { User: { name: "Ada" } } } } }`, `_count`), and
@@ -992,6 +994,98 @@ fields, `where: { $on: { Person: { email: { endsWith: "@acme.io" } } } }` keeps 
 matching it, and `select: { $on: { Person: { email: true } } }` applies to each implementation
 not listed itself. A nested `create` names an implementation (`create: { Employee: { … } }`): an
 interface cannot be created.
+
+### Searching a union
+
+`search` and `findSimilar` on a union query one index per member (`@@fulltext` indexes for
+`search`, `@vectorIndex` fields for `findSimilar`) and merge the hits into one ranked list: the
+results box of a site search over posts, users and comments. They are on the delegate when at
+least one member has such an index.
+
+```ts
+const hits = await db.searchHit.search({
+  query: input,
+  mode: "terms",
+  indexes: { Post: "postSearch", User: "userName" }, // one index per member searched
+  where: { $on: { Post: { published: true }, User: {} } },
+  select: { $on: { Post: { title: true, author: true }, User: { name: true } } },
+  take: 20,
+  scores: true,
+});
+for (const h of hits) {
+  if (h.__typename === "Post") console.log(h.title, h.$score);
+  h.$scores; // { postSearch: { score: 4.2, normalized: 1, rank: 1 } }
+}
+
+const similar = await db.searchHit.findSimilar({
+  vector: await embed(input),
+  fields: { Post: "embedding", Comment: "embedding" },
+  take: 10,
+});
+```
+
+**Ranking.** Scores of different indexes are not comparable: Lucene's depend on each index's
+statistics, and two vector indexes may use different similarity functions. So each member's index
+is queried and ranked on its own, and the lists are merged with
+reciprocal rank fusion (RRF):
+
+- A hit's `$score` is `Σ 1 / (k + rank)` over the lists it appears in, its `rank` in each list
+  counting from 1 (`k` is `rrfK`, 60 by default). The best hit of each list scores `1 / 61`.
+- Each list is also **min-max normalised**: `normalized = (score - min) / (max - min)` over the hits
+  that index contributed to the fusion (after `where` and `minScore`, and within its `skip + take`
+  best), `1` when they all score the same. It is reported in `$scores` and breaks ties.
+- The order is total and stable: `$score` (descending), then the best normalised score
+  (descending), then the member's position (the order of `indexes` / `fields`, else the union's
+  declaration order), then the node's id. Within one list, hits with the same raw score are ranked
+  by node id.
+
+With `scores: true` each result also has `$scores`, keyed by index name, with the index's raw
+`score`, its `normalized` score and its `rank`.
+
+| Argument            | Meaning                                                                                                                                                     |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `query`, `mode`     | `search`: the text and how to read it, sent to every index (as for [`search`](#full-text-search)).                                                          |
+| `indexes`           | `search`: `{ <member>: <index> }`, the members to search. Default: every member with exactly one `@@fulltext` index (a member with several must be listed). |
+| `vector`            | `findSimilar`: the query embedding; its length must match every searched field.                                                                             |
+| `fields`            | `findSimilar`: `{ <member>: <field> }`. Default: every member with exactly one `@vectorIndex` field.                                                        |
+| `candidates`        | `findSimilar`: neighbours asked from each index (default `skip + take`, or `max(10 × (skip + take), 100)` with `where`).                                    |
+| `where`             | The union's filter (`__typename`, `$on` per member, `AND` / `OR` / `NOT`), applied in every list before ranking.                                            |
+| `minScore`          | Drop hits whose raw score in their own index is below this, before ranking.                                                                                 |
+| `skip`, `take`      | Page through the fused list. `take` is required for `findSimilar`; each list contributes its `skip + take` best hits.                                       |
+| `rrfK`              | The `k` of RRF (default 60). Lower values weigh the top ranks more.                                                                                         |
+| `scores`            | `true`: add `$scores` to each result.                                                                                                                       |
+| `select`, `include` | Per member with `$on`, as in [`findMany`](#querying-unions); related nodes are loaded for the returned page only.                                           |
+
+- An index a member inherits from an interface (`@@fulltext` on `interface Person`) keeps that
+  member's nodes only; an interface member of the union (`union Party = Person | Team`) is
+  searched through the interface's own index and covers every implementation.
+- A union `findSimilar` asks each index once: with a selective `where` it can return fewer than
+  `take` hits (raise `candidates`), where a model's [`findSimilar`](#vector-search) widens the
+  search. It has no `k` (page with `take` / `skip`) and no `exact`.
+
+It is one read-only statement: a `CALL { … }` subquery per index collects that index's hits
+(filtered, ranked, cut to `skip + take`), then the lists are fused, paged and projected. Chained
+subqueries rather than a `UNION` inside one `CALL` keep one list per index, which ranking needs,
+and run unchanged on Neo4j, [Memgraph](/memgraph) and [FalkorDB](/falkordb):
+
+```cypher
+CALL { CALL db.index.fulltext.queryNodes($p0, $p1) YIELD node, score WITH node AS n, score
+       WHERE (((n:`Post`) AND (n.`published` = $p2)) OR (n:`User`))
+       WITH n, score ORDER BY score DESC, elementId(n) ASC LIMIT $p5
+       RETURN collect({n: n, s: score}) AS hits0 }
+CALL { CALL db.index.fulltext.queryNodes($p3, $p4) YIELD node, score … AS hits1 }
+WITH [hits0, hits1] AS lists
+UNWIND range(0, size(lists) - 1) AS li WITH li, lists[li] AS hits
+UNWIND range(0, size(hits) - 1) AS pos
+WITH li, hits[pos].n AS n, hits[pos].s AS score, pos + 1 AS rank,
+     hits[0].s AS hi, hits[size(hits) - 1].s AS lo
+WITH n, li, score, rank, CASE WHEN hi = lo THEN 1.0 ELSE (score - lo) / (hi - lo) END AS norm
+WITH n, sum(1.0 / ($p6 + rank)) AS fused, max(norm) AS best, min(li) AS first, collect(…) AS parts
+ORDER BY fused DESC, best DESC, first ASC, elementId(n) ASC LIMIT $p7
+RETURN n{…} AS row, fused, parts …
+```
+
+The `UnionSearchArgs`, `UnionFindSimilarArgs`, `FusedResult` and `IndexScore` types are exported.
 
 ## Dynamic labels
 

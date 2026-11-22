@@ -72,6 +72,61 @@ function luceneQuery(query: string, mode: (typeof MODES)[number]): string {
   return query;
 }
 
+/** How `search` reads its query. */
+export type SearchModeName = (typeof MODES)[number];
+
+/** `true` when `mode` is a search mode. */
+export function isSearchMode(mode: unknown): mode is SearchModeName {
+  return (MODES as readonly unknown[]).includes(mode);
+}
+
+/** The search modes, for messages. */
+export const SEARCH_MODES: readonly string[] = MODES;
+
+/**
+ * The procedure call yielding `node, score` for the full-text `query` (read in `mode`) on the
+ * Neo4j / Memgraph index `index`; `top` caps the hits Lucene collects (Neo4j only).
+ */
+export function fulltextCall(
+  ctx: QueryContext,
+  index: string,
+  query: string,
+  mode: SearchModeName,
+  top?: number,
+): string {
+  const name = ctx.param(index);
+  const text = ctx.param(luceneQuery(query, mode));
+  if (ctx.dialect === "memgraph") {
+    // Memgraph's text index (Tantivy) searches every indexed property and collects the top hits
+    // only (1000 by default, hence an explicit, high limit). It can also return nodes deleted since
+    // its last garbage collection: each hit is matched again by id.
+    const limit = ctx.param(intParam(MEMGRAPH_TEXT_SEARCH_LIMIT));
+    return (
+      `CALL text_search.search_all(${name}, ${text}, {limit: ${limit}}) YIELD node AS hit, score ` +
+      `MATCH (node) WHERE id(node) = id(hit)`
+    );
+  }
+  const options = top === undefined ? "" : `, {limit: ${ctx.param(intParam(top))}}`;
+  return `CALL db.index.fulltext.queryNodes(${name}, ${text}${options}) YIELD node, score`;
+}
+
+/**
+ * FalkorDB: the procedure call yielding `node, score` for `input` on the full-text index of
+ * `label`, or `null` when the query has nothing to search (see {@link search}).
+ */
+export function falkordbFulltextCall(
+  ctx: QueryContext,
+  label: string,
+  input: string,
+  mode: SearchModeName,
+): string | null {
+  const words = input.split(/[^\p{L}\p{N}_]+/u).filter(Boolean);
+  const text =
+    mode === "terms" ? words.join(" | ") : mode === "phrase" ? `"${words.join(" ")}"` : input;
+  if (!text || (mode !== "lucene" && words.length === 0)) return null;
+  return `CALL db.idx.fulltext.queryNodes(${ctx.param(label)}, ${ctx.param(text)}) YIELD node, score`;
+}
+
 /**
  * Run a `search` on `model` through `exec` (a read transaction, or the current `$transaction`).
  * Rows come back best first, each with its `$score`.
@@ -102,7 +157,7 @@ export async function search(
     throw new CyphraValidationError(`${op}: query must be a string.`);
   }
   const mode = args.mode ?? "lucene";
-  if (!(MODES as readonly unknown[]).includes(mode)) {
+  if (!isSearchMode(mode)) {
     throw new CyphraValidationError(`${op}: mode must be ${MODES.join(", ")}.`);
   }
   const minScore = args.minScore;
@@ -132,27 +187,13 @@ export async function search(
       shape,
     });
   }
-  const name = ctx.param(args.index);
-  const query = ctx.param(luceneQuery(args.query, mode as (typeof MODES)[number]));
   const filters = [
     ...(minScore === undefined ? [] : [`score >= ${ctx.param(minScore)}`]),
     ...(where ? [`(${where})`] : []),
   ];
   // Unfiltered and paged: let Lucene collect only the top `skip + take` hits.
   const top = filters.length === 0 && take !== undefined ? (skip ?? 0) + take : undefined;
-  let text: string;
-  if (ctx.dialect === "memgraph") {
-    // Memgraph's text index (Tantivy) searches every indexed property and collects the top hits
-    // only (1000 by default, hence an explicit, high limit). It can also return nodes deleted since
-    // its last garbage collection: each hit is matched again by id.
-    const limit = ctx.param(intParam(MEMGRAPH_TEXT_SEARCH_LIMIT));
-    text =
-      `CALL text_search.search_all(${name}, ${query}, {limit: ${limit}}) YIELD node AS hit, score ` +
-      `MATCH (node) WHERE id(node) = id(hit)`;
-  } else {
-    const options = top === undefined ? "" : `, {limit: ${ctx.param(intParam(top))}}`;
-    text = `CALL db.index.fulltext.queryNodes(${name}, ${query}${options}) YIELD node, score`;
-  }
+  let text = fulltextCall(ctx, args.index, args.query, mode, top);
   text += " WITH node AS n, score";
   if (filters.length) text += ` WHERE ${filters.join(" AND ")}`;
   text += " WITH n, score ORDER BY score DESC";
@@ -178,7 +219,7 @@ async function falkordbSearch(
   model: ResolvedNodeModel,
   inheritedFrom: string | undefined,
   input: string,
-  mode: unknown,
+  mode: SearchModeName,
   parts: {
     where: string | null;
     minScore: unknown;
@@ -188,13 +229,15 @@ async function falkordbSearch(
     shape: ReturnType<typeof compileProjection>["shape"];
   },
 ): Promise<AnyRecord[]> {
-  const words = input.split(/[^\p{L}\p{N}_]+/u).filter(Boolean);
-  const text =
-    mode === "terms" ? words.join(" | ") : mode === "phrase" ? `"${words.join(" ")}"` : input;
-  if (!text || (mode !== "lucene" && words.length === 0)) return [];
   const { where, minScore, skip, take, expr, shape } = parts;
-  const label = ctx.param(inheritedFrom ? ctx.node(inheritedFrom).label : model.label);
-  let cypher = `CALL db.idx.fulltext.queryNodes(${label}, ${ctx.param(text)}) YIELD node, score`;
+  const call = falkordbFulltextCall(
+    ctx,
+    inheritedFrom ? ctx.node(inheritedFrom).label : model.label,
+    input,
+    mode,
+  );
+  if (call === null) return [];
+  let cypher = call;
   cypher += " WITH node AS n, score";
   const filters = [
     ...(minScore === undefined ? [] : [`score >= ${ctx.param(minScore)}`]),

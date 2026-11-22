@@ -1,0 +1,49 @@
+// Fixture for full-text and vector search over a union (distinct labels so the suite can run
+// alongside the other integration tests against the same database).
+union UsHit = UsArticle | UsAuthor | UsEditor
+
+// A union with an interface member: every UsPerson (UsEditor, UsReviewer) and every UsAuthor.
+union UsParty = UsPerson | UsAuthor
+
+interface UsPerson {
+  id    String  @id
+  email String  @unique
+  about String?
+
+  @@fulltext([about], name: "usPersonAbout", eventuallyConsistent: false)
+}
+
+node UsEditor implements UsPerson {
+  desk      String?
+  embedding Vector(3)? @vectorIndex(similarity: cosine, name: "usEditorEmbedding")
+}
+
+node UsReviewer implements UsPerson {
+  level Int @default(1)
+}
+
+node UsArticle {
+  id        String     @id
+  title     String
+  body      String?
+  published Boolean    @default(true)
+  embedding Vector(3)? @vectorIndex(similarity: cosine, name: "usArticleEmbedding")
+  tags      UsTag[]    @relationship(type: "US_TAGGED", direction: OUT)
+
+  @@fulltext([title, body], name: "usArticleText", eventuallyConsistent: false)
+}
+
+node UsAuthor {
+  id        String     @id
+  name      String
+  bio       String?
+  embedding Vector(3)? @vectorIndex(similarity: euclidean, name: "usAuthorEmbedding")
+
+  @@fulltext([name], name: "usAuthorName", eventuallyConsistent: false)
+  @@fulltext([bio], name: "usAuthorBio", eventuallyConsistent: false)
+}
+
+node UsTag {
+  id   String @id
+  name String
+}
