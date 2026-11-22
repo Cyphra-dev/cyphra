@@ -1,0 +1,13 @@
+{
+  "events": [
+    {
+      "data": {
+        "reportCreated": {
+          "createdReport": {
+            "title": "Q2"
+          }
+        }
+      }
+    }
+  ]
+}

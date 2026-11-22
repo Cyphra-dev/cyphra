@@ -1,0 +1,9 @@
+# features: subscription.delete, subscription.events
+# ordered
+subscription {
+  authorDeleted {
+    deletedAuthor {
+      name
+    }
+  }
+}

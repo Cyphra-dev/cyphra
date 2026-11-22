@@ -11,7 +11,15 @@ import * as v7 from "./v7/index.js";
 
 export const compat = { v7 } as const;
 
-export type { AuthorizationFeature, Features, JwtKey, MakeSchemaOptions } from "./v7/index.js";
+export type {
+  AuthorizationFeature,
+  CDCEngineOptions,
+  Features,
+  JwtKey,
+  MakeSchemaOptions,
+  SubscriptionsFeature,
+} from "./v7/index.js";
+export { CDCSubscriptionsEngine } from "./v7/index.js";
 export { UnsupportedTypeDefsError } from "./v7/model.js";
 
 export {

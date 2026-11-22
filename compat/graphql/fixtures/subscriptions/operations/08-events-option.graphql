@@ -1,0 +1,10 @@
+# features: subscription.events
+# ordered
+subscription {
+  actorDeleted {
+    event
+    deletedActor {
+      name
+    }
+  }
+}

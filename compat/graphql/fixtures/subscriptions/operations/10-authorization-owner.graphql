@@ -1,0 +1,10 @@
+# features: subscription.authorization, auth.token
+# ordered
+subscription {
+  reviewCreated {
+    createdReview {
+      author
+      body
+    }
+  }
+}

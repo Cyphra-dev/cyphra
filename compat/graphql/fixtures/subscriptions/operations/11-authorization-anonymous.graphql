@@ -1,0 +1,8 @@
+# features: subscription.authorization
+subscription {
+  reviewCreated {
+    createdReview {
+      author
+    }
+  }
+}

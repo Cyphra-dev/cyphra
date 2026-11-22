@@ -14,9 +14,9 @@ frontend queries, and the API runs on the Cyphra runtime.
 
 <Callout type="warning">
   This is an early release. The full v7 schema is generated, and queries (aggregations included),
-  mutations, `@authentication` / `@authorization` rules, `@cypher` fields, `@fulltext` queries and
-  unions work. Interfaces, subscriptions and some scalars are not supported yet. See [what works
-  today](#what-works-today).
+  mutations, `@authentication` / `@authorization` rules, `@cypher` fields, `@fulltext` queries,
+  unions and [subscriptions](#subscriptions) work. Interfaces and some scalars are not supported
+  yet. See [what works today](#what-works-today).
 </Callout>
 
 ## Install
@@ -451,12 +451,169 @@ every relationship of the field. `@cyphra/graphql` applies `where` and `edge` th
 the two checks of the compatibility suite that differ on purpose. `@cypher` fields returning a
 union are not supported yet.
 
+## Subscriptions
+
+`@subscription` types get the v7 `Subscription` fields: `movieCreated`, `movieUpdated` and
+`movieDeleted`, with a `where` argument on the node's properties. Events come from Neo4j
+[Change Data Capture](https://neo4j.com/docs/cdc/current/) (CDC), as with v7's
+`Neo4jGraphQLSubscriptionsCDCEngine`: they include writes made outside the GraphQL API.
+
+```graphql
+type Movie @node @subscription {
+  title: String!
+  released: Int
+}
+
+type Review
+  @node
+  @subscription(events: [CREATED, DELETED])
+  @subscriptionsAuthorization(filter: [{ where: { node: { author: { eq: "$jwt.sub" } } } }]) {
+  author: String!
+  body: String
+}
+```
+
+```graphql
+subscription {
+  movieUpdated(where: { released: { gte: 2000 } }) {
+    event
+    timestamp
+    previousState {
+      title
+    }
+    updatedMovie {
+      title
+    }
+  }
+}
+```
+
+### Enable them
+
+CDC needs **Neo4j Enterprise Edition or Aura**, with the database in CDC mode:
+
+```cypher
+ALTER DATABASE neo4j SET OPTION txLogEnrichment 'FULL'
+```
+
+Then turn on `features.subscriptions`:
+
+```ts filename="lib/graphql.ts"
+import { CDCSubscriptionsEngine, compat } from "@cyphra/graphql";
+
+// `pollTime`: milliseconds between two reads of the change log (default 1000).
+export const engine = new CDCSubscriptionsEngine({ driver, pollTime: 500 });
+
+export const schema = compat.v7.makeSchema({
+  typeDefs,
+  driver,
+  features: { authorization: { key: process.env.JWT_SECRET! }, subscriptions: engine },
+});
+
+// On shutdown: stops polling and ends the open subscriptions.
+process.on("SIGTERM", () => engine.close());
+```
+
+`subscriptions: true` creates the engine from `driver` (or `client`) with the defaults, and
+`subscriptions: { pollTime, onlyGraphQLEvents }` sets its options. With `driver`, the v7 name works
+too: `new compat.v7.Neo4jGraphQLSubscriptionsCDCEngine({ driver, pollTime })`.
+`onlyGraphQLEvents: true` keeps only the changes made by `@cyphra/graphql` mutations (it needs
+`driver`: they are recognized by their transaction metadata).
+
+The engine reads the change log only while at least one subscription is open, and starts from the
+current position when the first one opens. On Neo4j Community, Memgraph, FalkorDB or a database
+without CDC, subscribing fails with an error that says so (`GraphQL subscriptions need Neo4j Change
+Data Capture (CDC) …`); with a `client` whose dialect is not `neo4j`, `makeSchema` throws.
+
+### Transports
+
+The schema works with any server that supports GraphQL subscriptions.
+
+**graphql-ws** (WebSocket), what v7 documents:
+
+```ts filename="server.ts"
+import { createServer } from "node:http";
+import { WebSocketServer } from "ws";
+import { useServer } from "graphql-ws/use/ws";
+import { createYoga } from "graphql-yoga";
+import { schema } from "./lib/graphql";
+
+const yoga = createYoga({ schema });
+const server = createServer(yoga);
+const wsServer = new WebSocketServer({ server, path: yoga.graphqlEndpoint });
+
+useServer(
+  {
+    schema,
+    // The client connects with connectionParams: { token: "Bearer <jwt>" }.
+    context: (ctx) => ({ connectionParams: ctx.connectionParams }),
+  },
+  wsServer,
+);
+
+server.listen(4000);
+```
+
+**Server-sent events** with GraphQL Yoga: Yoga serves subscriptions over SSE without extra setup
+(`Accept: text/event-stream`). Pass the `Authorization` header as `token`:
+
+```ts
+const yoga = createYoga({
+  schema,
+  context: ({ request }) => ({ token: request.headers.get("authorization") ?? undefined }),
+});
+```
+
+A subscription reads its JWT from `context.jwt` (trusted, as for queries), then
+`context.connectionParams.token` (what v7 reads), then `context.token`.
+
+### Hosting
+
+A subscription is a long-lived connection, and the engine polls the database in the background.
+Run the server as a long-running process: a Node.js server, a container, a VM, or a platform with
+WebSocket or streaming support. **Serverless functions (Vercel functions, AWS Lambda behind API
+Gateway, …) are not a fit**: they stop after the response or a time limit, close the connection
+and the polling with it. Keep queries and mutations on Vercel if you like, and serve the
+`Subscription` endpoint from a separate long-running service on the same database.
+
+Each process runs its own engine: with several replicas, each one reads the change log. Changes
+are kept by Neo4j for the transaction log retention period, and a subscriber that reconnects gets
+the events from the moment it reconnects, not the ones it missed.
+
+### As in v7
+
+- Only node changes are published. Relationship changes are not (v7 7.x has no relationship
+  events), and a node is published only when its labels are exactly the labels of a `@node` type.
+- `@subscription(events: [...])` on a type, or `extend schema @subscription(...)` for every type,
+  chooses the fields. Without either, there is no `Subscription` type.
+- `where` filters created events on the new properties, updated and deleted events on the previous
+  ones. It has no relationship or `@cypher` filters. `@cypher` fields are in the payload and are
+  `null`.
+- `@subscriptionsAuthorization(filter)` decides which events a subscriber receives: an event is
+  delivered when no rule applies to its kind, or one of the rules that apply holds. Rules require an
+  authenticated subscriber unless `requireAuthentication: false`. **`@authorization` does not filter
+  events** (v7 prints a warning; so does Cyphra). On a field, `@subscriptionsAuthorization` has no
+  effect.
+- `@authentication(operations: [SUBSCRIBE])` checks the subscriber when it subscribes, and
+  selecting the payload checks `READ` `@authentication` of the type and of the selected fields.
+- Updates that change nothing are not published.
+
+### Differences from v7
+
+- A filter on a property whose value is `0`, `false` or `""` matches: v7 skips falsy values, so
+  `available: { eq: false }` never matches there. A missing property still never matches.
+- List equality (`tags: { eq: ["a", "b"] }`) compares the elements; v7 compares references and
+  never matches. `BigInt`, `Date` and `DateTime` compare by value.
+- `@alias` fields are read from their property; v7 reads the field name.
+- A subscription can also authenticate with `context.token` (useful over SSE); `close()` ends the
+  open subscriptions, and the engine only polls while one is open.
+
 ## What works today
 
-Compatibility is checked by a suite of 8 apps and 113 operations. Its expected results come from
-the real `@neo4j/graphql` 7.6.8. Today 119 of its 121 checks pass: the printed schema of the 8 apps
-and 111 operations (queries, aggregations, mutations, authorization, `@cypher` fields, full-text
-queries and unions). The two others are the nested union `connect` / `disconnect` where v7 ignores
+Compatibility is checked by a suite of 10 apps and 134 operations. Its expected results come from
+the real `@neo4j/graphql` 7.6.8. Today 142 of its 144 checks pass: the printed schema of the 10
+apps and 132 operations (queries, aggregations, mutations, authorization, `@cypher` fields,
+full-text queries, unions, and subscription events on Neo4j Enterprise with CDC). The two others are the nested union `connect` / `disconnect` where v7 ignores
 `where` ([unions](#unions)). The full report is [`compat/graphql/REPORT.md`](https://github.com/Cyphra-dev/cyphra/blob/main/compat/graphql/REPORT.md).
 
 | Feature                                                                                                                                                                        | Status                                                  |
@@ -476,8 +633,9 @@ queries and unions). The two others are the nested union `connect` / `disconnect
 | `@cypher` fields: scalars and nodes, arguments, `$jwt`, `where` and `sort`, relationship properties, `Query` and `Mutation` fields                                             | Works ([details](#custom-cypher-fields))                |
 | `@fulltext` queries: `score`, `where`, `sort`, `first` / `after`                                                                                                               | Works ([details](#full-text-search))                    |
 | Unions: root query, relationships to unions with edge properties, member-keyed `where` and nested writes. `cyphra import graphql` maps them to [Cyphra unions](/schema#unions) | Works ([details](#unions))                              |
-| Interfaces, subscriptions, `@vector`, `Point`, `Duration`, custom scalars and custom resolvers                                                                                 | Not yet: `makeSchema` throws `UnsupportedTypeDefsError` |
-| `@populatedBy`, `@relayId`, `@query`, `@mutation`, `@subscription`, `@selectable`, `@settable`, `@filterable`, `@sortable`, `@limit`                                           | Not yet: `makeSchema` throws `UnsupportedTypeDefsError` |
+| Subscriptions on CDC: `@subscription`, `@subscriptionsAuthorization`, `where`, `@authentication(SUBSCRIBE)` (Neo4j Enterprise / Aura)                                          | Works ([details](#subscriptions))                       |
+| Interfaces, `@vector`, `Point`, `Duration`, custom scalars and custom resolvers                                                                                                | Not yet: `makeSchema` throws `UnsupportedTypeDefsError` |
+| `@populatedBy`, `@relayId`, `@query`, `@mutation`, `@selectable`, `@settable`, `@filterable`, `@sortable`, `@limit`                                                            | Not yet: `makeSchema` throws `UnsupportedTypeDefsError` |
 
 ### v7 behaviour you get as well
 

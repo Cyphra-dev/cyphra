@@ -31,6 +31,8 @@ import {
   type AuthContext,
 } from "./auth/context.js";
 import { JwtDecoder, type Features } from "./auth/jwt.js";
+import { CDCSubscriptionsEngine } from "./subscriptions/engine.js";
+import { attachSubscriptionResolvers } from "./subscriptions/resolvers.js";
 import { AuthRules } from "./auth/rules.js";
 import { CypherContext } from "./cypher/context.js";
 import { containsForbidden } from "./cypher/select.js";
@@ -234,7 +236,12 @@ function attachResolvers(schema: GraphQLSchema, auth: Auth, executors: Executors
   const execute = executors.read;
   for (const type of Object.values(schema.getTypeMap())) {
     if (!isObjectType(type) || type.name.startsWith("__")) continue;
-    if (type === schema.getQueryType() || type === schema.getMutationType()) continue;
+    if (
+      type === schema.getQueryType() ||
+      type === schema.getMutationType() ||
+      type === schema.getSubscriptionType()
+    )
+      continue;
     for (const field of Object.values(type.getFields())) field.resolve = byResponseKey;
   }
   const query = schema.getQueryType()!.getFields();
@@ -283,7 +290,9 @@ function attachResolvers(schema: GraphQLSchema, auth: Auth, executors: Executors
  * `@authorization` (compiled into each statement; JWTs verified with `features.authorization`),
  * `@cypher` fields (on node types, relationship properties, `Query` and `Mutation`; sortable and
  * filterable like v7), `@fulltext` queries (on indexes the application creates) and unions
- * (relationships to a union, with member-keyed filters and nested writes, and the root union query).
+ * (relationships to a union, with member-keyed filters and nested writes, and the root union query),
+ * and subscriptions (`@subscription`, `@subscriptionsAuthorization`) on Neo4j Change Data Capture
+ * with `features.subscriptions`.
  *
  * @example
  * ```ts
@@ -297,8 +306,46 @@ export function makeSchema(options: MakeSchemaOptions): GraphQLSchema {
   const schema = buildV7Schema(model);
   const feature = options.features?.authorization;
   const decoder = feature ? new JwtDecoder(feature) : undefined;
+  const engine = subscriptionsEngine(options);
   attachResolvers(schema, { model, decoder }, createExecutors(options));
+  if (engine) {
+    engine.attach(model);
+    warnUnfilteredAuthorization(model);
+  }
+  attachSubscriptionResolvers(schema, model, decoder, engine);
   return schema;
+}
+
+/** The CDC engine of `features.subscriptions`, created from `driver` / `client` unless given. */
+function subscriptionsEngine(options: MakeSchemaOptions): CDCSubscriptionsEngine | undefined {
+  const feature = options.features?.subscriptions;
+  if (!feature) return undefined;
+  if (options.client && options.client.dialect !== "neo4j") {
+    throw new TypeError(
+      `features.subscriptions: GraphQL subscriptions use Neo4j Change Data Capture, which dialect "${options.client.dialect}" does not have.`,
+    );
+  }
+  if (feature instanceof CDCSubscriptionsEngine) return feature;
+  return new CDCSubscriptionsEngine({
+    driver: options.driver,
+    client: options.client,
+    database: options.database,
+    ...(feature === true ? {} : feature),
+  });
+}
+
+/** v7 warns that `@authorization` does not apply to events (`@subscriptionsAuthorization` does). */
+function warnUnfilteredAuthorization(model: V7Model): void {
+  const unfiltered = model.nodes.some(
+    (n) =>
+      (n.auth.authorization || n.attributes.some((a) => a.auth?.authorization)) &&
+      !n.subscriptionsAuthorization,
+  );
+  if (unfiltered) {
+    console.warn(
+      "'@subscriptionsAuthorization' not found on a type/field which has '@authorization' - subscriptions events are not subject to the authorization rules specified in '@authorization' directives.",
+    );
+  }
 }
 
 /**
@@ -330,6 +377,12 @@ export function cyphraSchema(typeDefs: string): {
 }
 
 export { readTypeDefs, UnsupportedTypeDefsError, type V7Model } from "./model.js";
-export type { AuthorizationFeature, Features, JwtKey } from "./auth/jwt.js";
+export type { AuthorizationFeature, Features, JwtKey, SubscriptionsFeature } from "./auth/jwt.js";
+export {
+  CDCSubscriptionsEngine,
+  /** The v7 class name: `new Neo4jGraphQLSubscriptionsCDCEngine({ driver, pollTime })`. */
+  CDCSubscriptionsEngine as Neo4jGraphQLSubscriptionsCDCEngine,
+  type CDCEngineOptions,
+} from "./subscriptions/engine.js";
 export { buildV7Schema } from "./sdl.js";
 export { cursorToOffset, offsetToCursor } from "./cypher/select.js";

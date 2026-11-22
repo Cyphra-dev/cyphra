@@ -40,8 +40,11 @@ Status (early release):
   edge properties included), member-keyed `where` (`{ Movie: {…}, Book: {…} }`) and nested writes.
   One deliberate difference: a union `connect` / `disconnect` nested in another one applies its
   `where` (v7 7.6.8 ignores it and connects or disconnects every member node).
+- Subscriptions (`@subscription`, `@subscriptionsAuthorization`, `where` on events) on Neo4j
+  Change Data Capture, with `features.subscriptions` (Neo4j Enterprise or Aura with CDC enabled;
+  run the server as a long-lived process, not a serverless function).
 - One Cypher statement per root field, in its own transaction. Needs Neo4j 5.23+.
-- Not yet: interfaces, `@cypher` fields returning unions, subscriptions, `@vector`, `Point` /
+- Not yet: interfaces, `@cypher` fields returning unions, `@vector`, `Point` /
   `Duration` and custom scalars (`makeSchema` throws `UnsupportedTypeDefsError`).
 
 JWTs are verified like v7, with `features.authorization` and the request's `Authorization` header

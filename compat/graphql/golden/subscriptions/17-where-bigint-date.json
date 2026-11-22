@@ -1,0 +1,15 @@
+{
+  "events": [
+    {
+      "data": {
+        "movieUpdated": {
+          "updatedMovie": {
+            "title": "Matrix",
+            "boxOffice": "463517383",
+            "premiere": "1999-03-31"
+          }
+        }
+      }
+    }
+  ]
+}

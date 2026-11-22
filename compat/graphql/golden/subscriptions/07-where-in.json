@@ -1,0 +1,13 @@
+{
+  "events": [
+    {
+      "data": {
+        "movieDeleted": {
+          "deletedMovie": {
+            "title": "Amelie"
+          }
+        }
+      }
+    }
+  ]
+}

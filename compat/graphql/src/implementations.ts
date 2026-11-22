@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { compat } from "@cyphra/graphql";
-import { Neo4jGraphQL } from "@neo4j/graphql";
+import { Neo4jGraphQL, Neo4jGraphQLSubscriptionsCDCEngine } from "@neo4j/graphql";
 import type { GraphQLSchema } from "graphql";
 import { SignJWT } from "jose";
 import type { Driver } from "neo4j-driver";
@@ -12,6 +12,14 @@ export type BuildOptions = {
   jwt: { key: string };
 };
 
+export type SubscriptionBuildOptions = BuildOptions & {
+  /** CDC polling interval in milliseconds. */
+  pollTime: number;
+};
+
+/** A schema with subscriptions enabled (CDC engine), and how to stop the engine. */
+export type SubscriptionSchema = { schema: GraphQLSchema; close(): void | Promise<void> };
+
 /**
  * A GraphQL-over-Neo4j implementation under test. The reference is `@neo4j/graphql`;
  * any other implementation must produce the same SDL and the same results.
@@ -21,6 +29,11 @@ export type GraphQLImplementation = {
   /** Returns a reason when the implementation cannot run (e.g. package not available yet). */
   skipReason?: () => Promise<string | undefined>;
   buildSchema(typeDefs: string, options: BuildOptions): Promise<GraphQLSchema>;
+  /** The schema with `features.subscriptions` on a CDC engine, for `subscription` operations. */
+  buildSubscriptionSchema(
+    typeDefs: string,
+    options: SubscriptionBuildOptions,
+  ): Promise<SubscriptionSchema>;
   /** The `contextValue` passed to `execute` for one operation. */
   contextFor(op: Operation): Record<string, unknown> | Promise<Record<string, unknown>>;
 };
@@ -55,6 +68,16 @@ export const neo4jGraphQL: GraphQLImplementation = {
     });
     return neoSchema.getSchema();
   },
+  async buildSubscriptionSchema(typeDefs, { driver, jwt, pollTime }) {
+    const engine = new Neo4jGraphQLSubscriptionsCDCEngine({ driver, pollTime });
+    const neoSchema = new Neo4jGraphQL({
+      typeDefs,
+      driver,
+      features: { authorization: { key: jwt.key }, subscriptions: engine },
+    });
+    // getSchema() initializes the engine: it reads the current CDC position and starts polling.
+    return { schema: await neoSchema.getSchema(), close: () => engine.close() };
+  },
   // A decoded payload in `jwt` is used as-is (no token verification), which keeps
   // fixtures readable: `operations/<name>.jwt.json` holds the claims. Tokens (`<name>.token.json`)
   // are verified with the suite key.
@@ -70,6 +93,15 @@ export const cyphraGraphQL: GraphQLImplementation = {
       driver,
       features: { authorization: { key: jwt.key } },
     });
+  },
+  async buildSubscriptionSchema(typeDefs, { driver, jwt, pollTime }) {
+    const engine = new compat.v7.Neo4jGraphQLSubscriptionsCDCEngine({ driver, pollTime });
+    const schema = compat.v7.makeSchema({
+      typeDefs,
+      driver,
+      features: { authorization: { key: jwt.key }, subscriptions: engine },
+    });
+    return { schema, close: () => engine.close() };
   },
   contextFor: operationContext,
 };

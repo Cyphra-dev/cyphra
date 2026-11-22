@@ -1,0 +1,62 @@
+type JWT @jwt {
+  roles: [String!]!
+}
+
+enum Genre {
+  ACTION
+  DRAMA
+  COMEDY
+}
+
+type Movie @node @subscription {
+  id: ID! @id
+  title: String!
+  released: Int
+  rating: Float
+  tags: [String!]
+  genre: Genre
+  premiere: Date
+  lastScreening: DateTime
+  boxOffice: BigInt
+  available: Boolean
+  score: Int @cypher(statement: "RETURN 1 AS s", columnName: "s")
+  actors: [Actor!]! @relationship(type: "ACTED_IN", direction: IN, properties: "ActedIn")
+}
+
+type ActedIn @relationshipProperties {
+  role: String
+}
+
+type Actor @node @subscription(events: [CREATED, DELETED]) {
+  name: String!
+  movies: [Movie!]! @relationship(type: "ACTED_IN", direction: OUT, properties: "ActedIn")
+}
+
+type Review
+  @node
+  @subscription
+  @subscriptionsAuthorization(
+    filter: [
+      { where: { node: { author: { eq: "$jwt.sub" } } } }
+      { requireAuthentication: false, events: [DELETED], where: { node: { public: { eq: true } } } }
+    ]
+  ) {
+  author: String!
+  body: String
+  public: Boolean
+}
+
+type Report
+  @node
+  @subscription(events: [CREATED, UPDATED])
+  @subscriptionsAuthorization(filter: [{ where: { jwt: { roles: { includes: "admin" } } } }]) {
+  title: String!
+}
+
+type Secret @node @subscription @authentication(operations: [SUBSCRIBE]) {
+  code: String!
+}
+
+type Studio @node {
+  name: String!
+}

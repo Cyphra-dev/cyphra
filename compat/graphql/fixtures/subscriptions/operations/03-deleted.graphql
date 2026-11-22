@@ -1,0 +1,13 @@
+# features: subscription.delete
+# ordered
+subscription {
+  movieDeleted {
+    event
+    timestamp
+    deletedMovie {
+      id
+      title
+      genre
+    }
+  }
+}

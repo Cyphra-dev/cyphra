@@ -1,0 +1,31 @@
+{
+  "events": [
+    {
+      "data": {
+        "movieCreated": {
+          "createdMovie": {
+            "title": "Primer",
+            "genre": "ACTION",
+            "tags": [
+              "indie",
+              "sci-fi"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "data": {
+        "movieCreated": {
+          "createdMovie": {
+            "title": "Whiplash",
+            "genre": "DRAMA",
+            "tags": [
+              "music"
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

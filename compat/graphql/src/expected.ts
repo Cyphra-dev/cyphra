@@ -43,7 +43,8 @@ export function expectationMismatches(reports: ImplementationReport[]): Expectat
     for (const f of r.fixtures) {
       for (const c of f.checks) {
         const id = checkId(f.fixture, c.check);
-        if (listed.has(id) && c.status !== "pass")
+        // Skipped checks (e.g. subscriptions without CDC) say nothing about the implementation.
+        if (listed.has(id) && c.status === "fail")
           out.push({ implementation: r.implementation, id, kind: "regression" });
         if (!listed.has(id) && c.status === "pass")
           out.push({ implementation: r.implementation, id, kind: "unlisted-pass" });
@@ -58,8 +59,16 @@ export function writeExpected(reports: ImplementationReport[]): void {
   const file = readExpected();
   for (const r of reports) {
     if (r.implementation === reference.name || r.skipReason) continue;
+    // A skipped check keeps its entry: it was not run (e.g. subscriptions without CDC).
+    const listed = new Set(file.implementations[r.implementation] ?? []);
     file.implementations[r.implementation] = r.fixtures.flatMap((f) =>
-      f.checks.filter((c) => c.status === "pass").map((c) => checkId(f.fixture, c.check)),
+      f.checks
+        .filter(
+          (c) =>
+            c.status === "pass" ||
+            (c.status === "skipped" && listed.has(checkId(f.fixture, c.check))),
+        )
+        .map((c) => checkId(f.fixture, c.check)),
     );
   }
   writeFileSync(EXPECTED_PATH, `${JSON.stringify(file, null, 2)}\n`);

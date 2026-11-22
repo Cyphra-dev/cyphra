@@ -1,0 +1,30 @@
+{
+  "events": [
+    {
+      "data": {
+        "movieDeleted": {
+          "event": "DELETE",
+          "timestamp": "<generated-timestamp>",
+          "deletedMovie": {
+            "id": "m2",
+            "title": "Amelie",
+            "genre": "COMEDY"
+          }
+        }
+      }
+    },
+    {
+      "data": {
+        "movieDeleted": {
+          "event": "DELETE",
+          "timestamp": "<generated-timestamp>",
+          "deletedMovie": {
+            "id": "m1",
+            "title": "The Matrix",
+            "genre": "ACTION"
+          }
+        }
+      }
+    }
+  ]
+}

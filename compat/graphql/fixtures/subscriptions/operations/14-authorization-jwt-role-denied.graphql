@@ -1,0 +1,8 @@
+# features: subscription.authorization, auth.jwt
+subscription {
+  reportUpdated {
+    updatedReport {
+      title
+    }
+  }
+}

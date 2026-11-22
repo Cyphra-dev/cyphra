@@ -1,0 +1,6 @@
+# features: subscription.events
+query {
+  books {
+    title
+  }
+}

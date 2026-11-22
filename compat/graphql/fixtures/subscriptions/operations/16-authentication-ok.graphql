@@ -1,0 +1,8 @@
+# features: subscription.authentication, auth.jwt
+subscription {
+  secretCreated {
+    createdSecret {
+      code
+    }
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "events": [
+    {
+      "data": {
+        "reviewDeleted": {
+          "deletedReview": {
+            "author": "bob",
+            "public": true
+          }
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,10 @@
+# features: subscription.update
+# ordered
+subscription {
+  movieUpdated {
+    updatedMovie {
+      title
+      rating
+    }
+  }
+}

@@ -19,6 +19,8 @@ import {
 type AnyRecord = Record<string, unknown>;
 
 /** A symmetric secret (HS256 / HS384 / HS512), or the URL of a JWKS endpoint. */
+import type { CDCEngineOptions, CDCSubscriptionsEngine } from "../subscriptions/engine.js";
+
 export type JwtKey = string | { url: string; options?: RemoteJWKSetOptions };
 
 /** `features.authorization` of `Neo4jGraphQL`: how tokens are verified. */
@@ -34,8 +36,19 @@ export type AuthorizationFeature = {
   verifyOptions?: JWTVerifyOptions;
 };
 
+/**
+ * `features.subscriptions`: `true` creates a CDC engine from `driver` / `client` (polling every
+ * second), an object sets its options, or pass an engine you created (and close on shutdown).
+ */
+export type SubscriptionsFeature =
+  | boolean
+  | CDCSubscriptionsEngine
+  | Pick<CDCEngineOptions, "pollTime" | "pollInterval" | "onlyGraphQLEvents">;
+
 export type Features = {
   authorization?: AuthorizationFeature;
+  /** GraphQL subscriptions on Neo4j Change Data Capture (Enterprise / Aura, CDC enabled). */
+  subscriptions?: SubscriptionsFeature;
 };
 
 const MAX_REMOTE_SETS = 64;

@@ -1,0 +1,12 @@
+# features: subscription.update, subscription.where, filter.deprecated
+# ordered
+subscription {
+  movieUpdated(where: { title_CONTAINS: "Matrix" }) {
+    previousState {
+      title
+    }
+    updatedMovie {
+      title
+    }
+  }
+}

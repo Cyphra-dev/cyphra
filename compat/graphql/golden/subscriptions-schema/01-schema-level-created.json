@@ -1,0 +1,15 @@
+{
+  "events": [
+    {
+      "data": {
+        "bookCreated": {
+          "event": "CREATE",
+          "createdBook": {
+            "title": "Emma",
+            "pages": 474
+          }
+        }
+      }
+    }
+  ]
+}

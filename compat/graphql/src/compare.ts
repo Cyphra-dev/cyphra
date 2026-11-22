@@ -3,7 +3,14 @@ import path from "node:path";
 import type { Driver } from "neo4j-driver";
 import { goldenResultPath, goldenSchemaPath, type Fixture } from "./fixtures.js";
 import type { GraphQLImplementation } from "./implementations.js";
-import { buildFixtureSchema, printSortedSchema, runOperation } from "./runner.js";
+import {
+  buildFixtureSchema,
+  CDC_SKIP_REASON,
+  cdcAvailable,
+  printSortedSchema,
+  runOperation,
+  runSubscription,
+} from "./runner.js";
 
 export type Status = "pass" | "fail" | "skipped";
 
@@ -91,6 +98,7 @@ export async function compareImplementation(
     };
   }
 
+  const cdc = await cdcAvailable(driver);
   const reports: FixtureReport[] = [];
   for (const fixture of fixtures) {
     const checks: CheckResult[] = [];
@@ -114,12 +122,24 @@ export async function compareImplementation(
       });
     }
     for (const op of fixture.operations) {
+      if (op.kind === "subscription" && !cdc) {
+        checks.push({
+          check: op.name,
+          features: op.features,
+          status: "skipped",
+          detail: CDC_SKIP_REASON,
+        });
+        continue;
+      }
       if (!schema) {
         checks.push({ check: op.name, features: op.features, status: "fail", detail: "no schema" });
         continue;
       }
       try {
-        const actual = await runOperation(impl, schema, fixture, op, driver);
+        const actual =
+          op.kind === "subscription"
+            ? await runSubscription(impl, fixture, op, driver)
+            : await runOperation(impl, schema, fixture, op, driver);
         checks.push(
           compareText(
             op.name,
@@ -148,12 +168,24 @@ export async function writeGoldens(
   fixtures: Fixture[],
   driver: Driver,
 ): Promise<void> {
+  const cdc = await cdcAvailable(driver);
   for (const fixture of fixtures) {
     const schema = await buildFixtureSchema(impl, fixture, driver);
     const schemaFile = goldenSchemaPath(fixture.name);
     mkdirSync(path.dirname(schemaFile), { recursive: true });
     writeFileSync(schemaFile, printSortedSchema(schema));
     for (const op of fixture.operations) {
+      if (op.kind === "subscription") {
+        if (!cdc) {
+          console.warn(`  kept golden of ${fixture.name}/${op.name}: ${CDC_SKIP_REASON}`);
+          continue;
+        }
+        writeFileSync(
+          goldenResultPath(fixture.name, op.name),
+          await runSubscription(impl, fixture, op, driver),
+        );
+        continue;
+      }
       writeFileSync(
         goldenResultPath(fixture.name, op.name),
         await runOperation(impl, schema, fixture, op, driver),

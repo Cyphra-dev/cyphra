@@ -1,0 +1,11 @@
+# features: subscription.update, subscription.where
+# ordered
+subscription {
+  movieUpdated(where: { boxOffice: { gt: "1000" }, premiere: { lt: "2000-01-01" } }) {
+    updatedMovie {
+      title
+      boxOffice
+      premiere
+    }
+  }
+}

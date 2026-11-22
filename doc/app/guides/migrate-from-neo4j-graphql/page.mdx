@@ -19,11 +19,10 @@ This guide is a checklist. Each step was run on a small app with `@id`, `@relati
 `@cyphra/graphql` 0.7.
 
 <Callout type="info">
-  Before you start, check that your type definitions are covered: interfaces, subscriptions,
-  `@vector`, some scalars, custom resolvers and the schema configuration directives (`@query`,
-  `@selectable`, `@filterable`, …) are not supported yet ([full list](#what-is-not-supported-yet)).
-  `makeSchema` throws an `UnsupportedTypeDefsError` that names the type or field, so the first run
-  tells you.
+  Before you start, check that your type definitions are covered: interfaces, `@vector`, some
+  scalars, custom resolvers and the schema configuration directives (`@query`, `@selectable`,
+  `@filterable`, …) are not supported yet ([full list](#what-is-not-supported-yet)). `makeSchema`
+  throws an `UnsupportedTypeDefsError` that names the type or field, so the first run tells you.
 </Callout>
 
 ## Steps
@@ -413,7 +412,6 @@ Some v7 behaviour is kept on purpose, because changing it would change your resu
 
 ## What is not supported yet
 
-- **Subscriptions** ([#76](https://github.com/Cyphra-dev/cyphra/issues/76)).
 - Interfaces, and `@cypher` fields returning a union (unions themselves
   [work](/graphql#unions)).
 - `@vector` queries.
@@ -422,7 +420,7 @@ Some v7 behaviour is kept on purpose, because changing it would change your resu
   work.
 - Custom resolvers: `@customResolver` and the `resolvers` option.
 - `@populatedBy` and `@relayId`.
-- The schema configuration directives `@query`, `@mutation`, `@subscription`, `@selectable`,
+- The schema configuration directives `@query`, `@mutation`, `@selectable`,
   `@settable`, `@filterable`, `@sortable` and `@limit`.
 
 `makeSchema` throws an `UnsupportedTypeDefsError` for them instead of serving a different API.

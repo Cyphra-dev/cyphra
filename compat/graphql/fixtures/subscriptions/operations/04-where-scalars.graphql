@@ -1,0 +1,12 @@
+# features: subscription.create, subscription.where
+subscription {
+  movieCreated(
+    where: { title: { startsWith: "The" }, released: { gte: 2000 }, rating: { gt: 7.5 } }
+  ) {
+    createdMovie {
+      title
+      released
+      rating
+    }
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "events": [
+    {
+      "data": {
+        "actorDeleted": {
+          "event": "DELETE",
+          "deletedActor": {
+            "name": "Keanu"
+          }
+        }
+      }
+    }
+  ]
+}

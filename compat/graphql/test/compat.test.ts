@@ -13,14 +13,28 @@ import { checkId, mustPass, unlistedPassHint } from "../src/expected.js";
 import { implementations } from "../src/implementations.js";
 import {
   buildFixtureSchema,
+  CDC_SKIP_REASON,
+  cdcAvailable,
   connect,
   neo4jEnv,
   printSortedSchema,
   runOperation,
+  runSubscription,
 } from "../src/runner.js";
 
 const env = neo4jEnv();
 const fixtures = loadFixtures();
+// `subscription` operations need Change Data Capture (Neo4j Enterprise): skipped without it.
+const cdc = env
+  ? await (async () => {
+      const driver = connect(env);
+      try {
+        return await cdcAvailable(driver);
+      } finally {
+        await driver.close();
+      }
+    })()
+  : false;
 
 function golden(file: string): string {
   if (!existsSync(file))
@@ -37,7 +51,7 @@ describe.skipIf(!env)("GraphQL compatibility (goldens from @neo4j/graphql)", () 
     await driver?.close();
   });
 
-  it("has at least 5 fixtures", () => {
+  it.skipIf(!!process.env.COMPAT_FIXTURES)("has at least 5 fixtures", () => {
     expect(fixtures.length).toBeGreaterThanOrEqual(5);
   });
 
@@ -90,6 +104,16 @@ describe.skipIf(!env)("GraphQL compatibility (goldens from @neo4j/graphql)", () 
           });
 
           for (const op of fixture.operations) {
+            if (op.kind === "subscription") {
+              it.skipIf(!cdc)(`${op.name}${cdc ? "" : ` (${CDC_SKIP_REASON})`}`, async () => {
+                await check(
+                  op.name,
+                  () => runSubscription(impl, fixture, op, driver),
+                  golden(goldenResultPath(fixture.name, op.name)),
+                );
+              });
+              continue;
+            }
             it(op.name, async () => {
               await check(
                 op.name,

@@ -1,0 +1,22 @@
+{
+  "events": [
+    {
+      "data": {
+        "authorDeleted": {
+          "deletedAuthor": {
+            "name": "Jane Austen"
+          }
+        }
+      }
+    },
+    {
+      "data": {
+        "authorDeleted": {
+          "deletedAuthor": {
+            "name": "Frank Herbert"
+          }
+        }
+      }
+    }
+  ]
+}

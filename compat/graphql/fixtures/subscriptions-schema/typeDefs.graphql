@@ -1,0 +1,14 @@
+extend schema @subscription(events: [CREATED])
+
+type Book @node {
+  title: String!
+  pages: Int
+}
+
+type Author @node @subscription(events: [DELETED]) {
+  name: String!
+}
+
+type Draft @node @subscription(events: []) {
+  text: String
+}

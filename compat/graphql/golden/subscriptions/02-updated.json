@@ -1,0 +1,70 @@
+{
+  "events": [
+    {
+      "data": {
+        "movieUpdated": {
+          "event": "UPDATE",
+          "timestamp": "<generated-timestamp>",
+          "previousState": {
+            "title": "The Matrix",
+            "released": 1999,
+            "tags": [
+              "sci-fi",
+              "action"
+            ]
+          },
+          "updatedMovie": {
+            "title": "The Matrix Reloaded",
+            "released": 2003,
+            "tags": [
+              "sci-fi",
+              "action"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "data": {
+        "movieUpdated": {
+          "event": "UPDATE",
+          "timestamp": "<generated-timestamp>",
+          "previousState": {
+            "title": "Amelie",
+            "released": 2001,
+            "tags": null
+          },
+          "updatedMovie": {
+            "title": "Amelie",
+            "released": 2001,
+            "tags": [
+              "romance"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "data": {
+        "movieUpdated": {
+          "event": "UPDATE",
+          "timestamp": "<generated-timestamp>",
+          "previousState": {
+            "title": "Amelie",
+            "released": 2001,
+            "tags": [
+              "romance"
+            ]
+          },
+          "updatedMovie": {
+            "title": "Amelie",
+            "released": null,
+            "tags": [
+              "romance"
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

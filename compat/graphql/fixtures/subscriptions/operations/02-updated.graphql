@@ -1,0 +1,18 @@
+# features: subscription.update
+# ordered
+subscription {
+  movieUpdated {
+    event
+    timestamp
+    previousState {
+      title
+      released
+      tags
+    }
+    updatedMovie {
+      title
+      released
+      tags
+    }
+  }
+}

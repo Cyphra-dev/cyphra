@@ -39,3 +39,33 @@ export function entityPlural(name: string, pluralOverride?: string): string {
     return `${leadingUnderscores(pluralOverride)}${camelCase(pluralOverride)}`;
   return `${leadingUnderscores(name)}${pluralizeLib(camelCase(name))}`;
 }
+
+/** v7 `singular`: `Movie` → `movie` (subscription root fields `movieCreated`, …). */
+export function entitySingular(name: string): string {
+  return `${leadingUnderscores(name)}${camelCase(name)}`;
+}
+
+/** Names v7 generates for the subscriptions of a node type. */
+export function subscriptionNames(name: string) {
+  const singular = entitySingular(name);
+  const pascal = upperFirst(singular);
+  return {
+    payload: `${name}EventPayload`,
+    where: `${name}SubscriptionWhere`,
+    CREATED: {
+      field: `${singular}Created`,
+      type: `${pascal}CreatedEvent`,
+      payload: `created${pascal}`,
+    },
+    UPDATED: {
+      field: `${singular}Updated`,
+      type: `${pascal}UpdatedEvent`,
+      payload: `updated${pascal}`,
+    },
+    DELETED: {
+      field: `${singular}Deleted`,
+      type: `${pascal}DeletedEvent`,
+      payload: `deleted${pascal}`,
+    },
+  } as const;
+}

@@ -120,7 +120,30 @@
       "social/05-follow-unfollow",
       "social/06-aggregations",
       "social/07-create-status-like",
-      "social/08-delete-account-with-posts"
+      "social/08-delete-account-with-posts",
+      "subscriptions/schema",
+      "subscriptions/01-created",
+      "subscriptions/02-updated",
+      "subscriptions/03-deleted",
+      "subscriptions/04-where-scalars",
+      "subscriptions/05-where-logical",
+      "subscriptions/06-where-update-uses-previous-state",
+      "subscriptions/07-where-in",
+      "subscriptions/08-events-option",
+      "subscriptions/09-aliases-and-variables",
+      "subscriptions/10-authorization-owner",
+      "subscriptions/11-authorization-anonymous",
+      "subscriptions/12-authorization-anonymous-public-deletes",
+      "subscriptions/13-authorization-jwt-role",
+      "subscriptions/14-authorization-jwt-role-denied",
+      "subscriptions/15-authentication-unauthenticated",
+      "subscriptions/16-authentication-ok",
+      "subscriptions/17-where-bigint-date",
+      "subscriptions/18-updated-not-null-payload",
+      "subscriptions-schema/schema",
+      "subscriptions-schema/01-schema-level-created",
+      "subscriptions-schema/02-type-level-overrides",
+      "subscriptions-schema/03-query-still-works"
     ]
   }
 }
