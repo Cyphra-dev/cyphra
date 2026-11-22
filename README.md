@@ -42,6 +42,7 @@ cyphra pull                         # or start from an existing database: write 
 
 - **Install (app code)**: `pnpm add cyphra` — re-exports `@cyphra/schema`, `@cyphra/query`, `@cyphra/runtime`, `@cyphra/migrator`
 - **CLI**: `pnpm add -D @cyphra/cli`
+- **Testing**: `pnpm add -D @cyphra/testing testcontainers` — database in Docker, migrations, isolation, typed factories ([docs](https://cyphra.dev/testing))
 - **Docs site**: [`doc/`](./doc) (Next.js + Nextra) — `pnpm doc:dev` / `pnpm doc:build`
 - **Example apps**: [`examples/blog/`](./examples/blog) (typed client, needs Neo4j: `pnpm example:blog`) and [`examples/basic/`](./examples/basic) (low-level APIs: `pnpm example:basic`)
 - **Requires** Neo4j 5.6+ for the typed client, Memgraph 3.x with `dialect: "memgraph"` ([feature matrix](https://cyphra.dev/memgraph)), or FalkorDB 4.x with the `falkordb` option ([feature matrix](https://cyphra.dev/falkordb))

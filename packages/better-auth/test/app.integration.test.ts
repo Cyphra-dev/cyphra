@@ -2,11 +2,9 @@
  * One graph for auth and business data: Better Auth writes through the adapter, the app reads and
  * writes the same nodes through its generated, typed Cyphra client (`fixtures/app.gen.ts`).
  */
-import { readFile } from "node:fs/promises";
 import { afterAll, beforeAll, describe, expect, expectTypeOf, it } from "vitest";
 import { betterAuth } from "better-auth";
-import { parseSchema } from "@cyphra/schema";
-import { constraintStatementsFromSchema, indexStatementsFromSchema } from "@cyphra/migrator";
+import { applySchema, connectionFromEnv, wipeDatabase } from "@cyphra/testing";
 import { cyphraAdapter } from "../src/index.js";
 import { createClient, type Db } from "./fixtures/app.gen.js";
 import { hasNeo4j } from "./helpers.js";
@@ -15,22 +13,10 @@ describe.skipIf(!hasNeo4j)("Better Auth + generated Cyphra client", () => {
   let db: Db;
 
   beforeAll(async () => {
-    db = createClient({
-      uri: process.env.NEO4J_TEST_URI!,
-      user: process.env.NEO4J_TEST_USER!,
-      password: process.env.NEO4J_TEST_PASSWORD!,
-    });
-    await db.$cypher`MATCH (n) DETACH DELETE n`;
-    // `cyphra migrate` on the merged schema: one set of constraints for auth and app models.
-    const doc = parseSchema(
-      await readFile(new URL("./fixtures/app.cyphra", import.meta.url), "utf8"),
-    );
-    for (const statement of [
-      ...constraintStatementsFromSchema(doc),
-      ...indexStatementsFromSchema(doc),
-    ]) {
-      await db.$client.withSession((s) => s.run(statement));
-    }
+    db = createClient(connectionFromEnv()!);
+    await wipeDatabase(db, { keepMigrations: false });
+    // `cyphra push` on the merged schema: one set of constraints for auth and app models.
+    await applySchema(db, { schema: new URL("./fixtures/app.cyphra", import.meta.url) });
   });
 
   afterAll(async () => {

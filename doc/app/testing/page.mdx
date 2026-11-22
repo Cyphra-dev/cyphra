@@ -1,0 +1,293 @@
+---
+title: "Testing Neo4j apps: containers and factories"
+sidebarTitle: Testing
+description: "Integration tests for Cyphra apps with @cyphra/testing: Neo4j, Memgraph or FalkorDB in Testcontainers, migrations, rollback or wipe isolation, typed factories."
+---
+
+import { Callout, Steps } from "nextra/components";
+
+# Testing
+
+**`@cyphra/testing`** sets up integration tests for an app built on Cyphra: it starts a database,
+brings it to your schema, keeps tests from seeing each other's data, and builds records with typed
+factories. It does not depend on a test framework: it gives you functions to call from your
+runner's hooks, so it works with Vitest, Jest, `node:test` or Mocha.
+
+## Install
+
+```bash
+npm i -D @cyphra/testing testcontainers
+```
+
+[Testcontainers](https://testcontainers.com) (and Docker) are only needed to start databases in
+containers. Leave it out when your tests always run against a database you provide, such as a CI
+service container.
+
+## Set up a test file
+
+`createTestDatabase()` bundles the helpers behind three hooks. Pass your schema, your migrations and
+the generated `createClient`:
+
+```ts filename="users.test.ts"
+import { afterAll, beforeAll, beforeEach, expect, it } from "vitest";
+import { createTestDatabase } from "@cyphra/testing";
+import { createClient } from "../cyphra.gen";
+
+const testDb = createTestDatabase({
+  schema: new URL("../schema.cyphra", import.meta.url),
+  migrations: new URL("../migrations", import.meta.url),
+  createClient,
+});
+
+beforeAll(() => testDb.setup());
+beforeEach(() => testDb.reset());
+afterAll(() => testDb.teardown());
+
+it("rejects a duplicate email", async () => {
+  await testDb.db.user.create({ data: { email: "ada@example.com" } });
+  await expect(testDb.db.user.create({ data: { email: "ada@example.com" } })).rejects.toThrow();
+});
+```
+
+- **`setup()`** connects to the database named by the environment (below), or starts a container
+  when there is none. It then runs the pending migrations, like `cyphra migrate deploy`, and creates
+  the schema's constraints and indexes, like `cyphra push`.
+- **`reset()`** deletes every node except Cyphra's migration records. Constraints and indexes stay.
+- **`teardown()`** closes the client and stops the container `setup()` started.
+- **`testDb.db`** is your typed client. `testDb.client` is the low-level `CyphraClient`.
+
+| Option         | What it does                                                                                      |
+| -------------- | ------------------------------------------------------------------------------------------------- |
+| `schema`       | Path or `file:` URL of `schema.cyphra`, its source, or a parsed document                          |
+| `migrations`   | Directory of compiled migrations (`.js` / `.mjs`, as `cyphra migrate` loads them), or loaded ones |
+| `createClient` | The generated `createClient`: `testDb.db` is then typed                                           |
+| `connection`   | Use this database instead of the environment                                                      |
+| `container`    | Options of the container to start ([below](#containers)), or `false` to fail when none is set     |
+| `fresh`        | Drop every node, constraint and index before applying the schema (only for a database you own)    |
+| `wipe`         | What `reset()` deletes: `{ labels: [...] }` limits it to some labels                              |
+
+### Which database
+
+`setup()` reads these environment variables, the same ones Cyphra's own test suites use:
+
+| Variable                                                   | Meaning                                            |
+| ---------------------------------------------------------- | -------------------------------------------------- |
+| `NEO4J_TEST_URI`, `NEO4J_TEST_USER`, `NEO4J_TEST_PASSWORD` | Neo4j or Memgraph to test against                  |
+| `NEO4J_TEST_DATABASE`                                      | Database name (Neo4j Enterprise), optional         |
+| `CYPHRA_TEST_DIALECT`                                      | `neo4j` (default), `memgraph` or `falkordb`        |
+| `FALKORDB_TEST_URL`, `FALKORDB_TEST_GRAPH`                 | FalkorDB to test against (`redis://…`, graph name) |
+
+When none is set, `setup()` starts a container. `connectionFromEnv()` returns the connection the
+variables describe, and `hasTestDatabase()` tells whether there is one, for example to skip a suite:
+`describe.skipIf(!hasTestDatabase())`.
+
+<Callout type="warning">
+  `reset()` deletes data and `fresh: true` drops the schema. Point the test variables at a database
+  that only holds test data, never at the one in `NEO4J_URI`.
+</Callout>
+
+## Containers
+
+`startDatabase()` starts a database in Docker and waits until it answers queries:
+
+```ts
+import { startDatabase } from "@cyphra/testing";
+
+const database = await startDatabase({ plugins: ["apoc"] });
+const db = createClient(database.connection);
+// …
+await db.$disconnect();
+await database.stop();
+```
+
+| Option             | Default                | Notes                                                      |
+| ------------------ | ---------------------- | ---------------------------------------------------------- |
+| `dialect`          | `"neo4j"`              | `"memgraph"` or `"falkordb"`                               |
+| `image`            | `neo4j:5-community`    | `memgraph/memgraph:3.14.0`, `falkordb/falkordb:v4.22.3`    |
+| `password`         | `cyphra-test-password` | Neo4j only, at least 8 characters                          |
+| `plugins`          | none                   | Neo4j only (`NEO4J_PLUGINS`), e.g. `["apoc"]`              |
+| `graph`            | `cyphra_test`          | FalkorDB only                                              |
+| `env`, `name`      | none                   | Extra container variables, container name                  |
+| `reuse`            | `false`                | Keep the container for the next run (Testcontainers reuse) |
+| `startupTimeoutMs` | `180000`               | Plugins are downloaded at startup                          |
+
+The result has `connection` (for `CyphraClient` or `createClient`), `env` (the `NEO4J_TEST_*`
+variables for this database) and `stop()`.
+
+### One container for the whole run (Vitest)
+
+Starting a database takes seconds (Memgraph, FalkorDB) to a minute (Neo4j with plugins). Start it
+once in a [global setup](https://vitest.dev/config/#globalsetup) and pass it to the test files
+through the environment, which the workers inherit:
+
+```ts filename="test/global-setup.ts"
+import { startDatabase } from "@cyphra/testing";
+
+export default async function setup() {
+  // A database configured in the environment (CI) wins over a container.
+  if (process.env.NEO4J_TEST_URI) return;
+  const database = await startDatabase();
+  Object.assign(process.env, database.env);
+  return () => database.stop();
+}
+```
+
+```ts filename="vitest.config.ts"
+import { defineConfig } from "vitest/config";
+
+export default defineConfig({
+  test: {
+    globalSetup: ["./test/global-setup.ts"],
+    // The test files share one database: run them one at a time.
+    fileParallelism: false,
+  },
+});
+```
+
+The test files then call `createTestDatabase()` as above: `setup()` finds the variables and does not
+start another container.
+
+### Jest
+
+Jest's `globalSetup` and `globalTeardown` work the same way. `@cyphra/testing`, like the rest of
+Cyphra, is an ES module, so run Jest with
+[ES module support](https://jestjs.io/docs/ecmascript-modules)
+(`NODE_OPTIONS=--experimental-vm-modules`):
+
+```js filename="test/global-setup.mjs"
+import { startDatabase } from "@cyphra/testing";
+
+export default async function globalSetup() {
+  const database = await startDatabase();
+  Object.assign(process.env, database.env);
+  globalThis.__cyphraDatabase = database;
+}
+```
+
+```js filename="test/global-teardown.mjs"
+export default async function globalTeardown() {
+  await globalThis.__cyphraDatabase?.stop();
+}
+```
+
+Add `--runInBand` (or `maxWorkers: 1`) so test files do not wipe each other's data.
+
+## Isolate tests
+
+Neo4j Community has a single user database, so a database per test is not an option. There are two
+ways to keep tests apart:
+
+### Roll back each test
+
+`withRollback(db, fn)` runs `fn` in a transaction that is always rolled back, and returns what `fn`
+returned. Everything written through `tx` is visible inside `fn` and gone afterwards: there is
+nothing to clean up, and tests are fast.
+
+```ts
+import { withRollback } from "@cyphra/testing";
+
+it("publishes a post", () =>
+  withRollback(testDb.db, async (tx) => {
+    const post = await createDraft(tx, { title: "Hello" });
+    await publish(tx, post.id);
+    expect(await tx.post.count({ where: { published: true } })).toBe(1);
+  }));
+```
+
+`tx` has the same model delegates as `db`, typed the same way. On a `CyphraClient`, `fn` receives the
+driver's transaction (`tx.run(...)`).
+
+<Callout>
+  Only what goes through `tx` is rolled back, so the code under test must take its client as a
+  parameter. Code that calls `db.$transaction` itself, or opens its own sessions, commits: test it
+  with the wipe below. FalkorDB has no multi-statement transactions, so `withRollback` does not work
+  there.
+</Callout>
+
+### Wipe between tests
+
+`wipeDatabase(db)` deletes nodes and their relationships and keeps constraints and indexes. It is
+what `testDb.reset()` calls, and it works on every database:
+
+```ts
+import { wipeDatabase } from "@cyphra/testing";
+
+beforeEach(() => wipeDatabase(db));
+```
+
+| Option           | Default | What it does                                                         |
+| ---------------- | ------- | -------------------------------------------------------------------- |
+| `labels`         | all     | Only delete nodes with one of these labels (suites sharing a server) |
+| `keepMigrations` | `true`  | Keep the `__CyphraMigration` records, so migrations do not run again |
+
+`dropSchema(db)` also drops every constraint and index, and `applySchema(db, { schema, migrations })`
+applies them again: these are the steps `setup()` uses.
+
+## Factories
+
+A factory builds the create input of one model from defaults. Bind `factoriesFor` to the type map
+of your generated client once, then define a factory per model. The defaults must contain every
+required field: TypeScript checks them against your schema.
+
+```ts filename="test/factories.ts"
+import { factoriesFor } from "@cyphra/testing";
+import type { CyphraTypeMap } from "../cyphra.gen";
+
+const { defineFactory } = factoriesFor<CyphraTypeMap>();
+
+export const users = defineFactory("User", ({ sequence }) => ({
+  email: `user${sequence}@example.com`,
+  name: `User ${sequence}`,
+}));
+
+export const admins = users.extend({ role: "admin" });
+
+export const tags = defineFactory("Tag", ({ sequence }) => ({ name: `tag-${sequence}` }));
+
+export const posts = defineFactory("Post", ({ sequence }) => ({
+  title: `Post ${sequence}`,
+  // A function: only called when the test does not give an author.
+  author: () => users.nested(),
+}));
+```
+
+```ts
+const ada = await users.create(db, { name: "Ada" });
+await posts.create(db, { author: users.connect({ id: ada.id }), tags: tags.nestedList(2) });
+await posts.createList(db, 3); // three posts, each with a new author
+const input = posts.build(); // the create input, nothing written
+```
+
+| Member                                            | What it does                                                                     |
+| ------------------------------------------------- | -------------------------------------------------------------------------------- |
+| `create(db, overrides?)`                          | `db.<model>.create({ data })`; returns the created record, typed                 |
+| `createList(db, n, overrides?)`                   | `n` records, one after the other                                                 |
+| `build(overrides?)`, `buildList(n, overrides?)`   | Create inputs only                                                               |
+| `nested(overrides?)`, `nestedList(n, overrides?)` | A relation write creating related records in the same statement: `{ create: … }` |
+| `connect(where)`                                  | A relation write linking an existing record: `{ connect: where }`                |
+| `extend(defaults)`                                | A variant with more defaults, sharing the sequence                               |
+| `resetSequence()`                                 | Start the sequence over at 1; `resetSequences()` resets every factory            |
+
+`db` can be the client, a transaction client (`withRollback`, `$transaction`) or an extended client.
+`overrides` is an object or a function of the sequence. The sequence starts at 1 and increases with
+every record a factory builds. Call `resetSequences()` in `beforeEach` for the same values in every
+test. Without `factoriesFor`, name the type map and the model on each call:
+`defineFactory<CyphraTypeMap, "User">("User", …)`.
+
+## Memgraph and FalkorDB
+
+Every helper takes the dialect from the client. Migrations and schema DDL are translated the way
+`cyphra migrate` and `cyphra push` translate them:
+
+```ts
+const testDb = createTestDatabase({
+  schema: new URL("../schema.cyphra", import.meta.url),
+  createClient,
+  container: { dialect: "memgraph" },
+});
+```
+
+Or set `CYPHRA_TEST_DIALECT=memgraph` with `NEO4J_TEST_URI`, or `CYPHRA_TEST_DIALECT=falkordb`
+with `FALKORDB_TEST_URL`. On FalkorDB, use `wipeDatabase` to isolate tests: it has no
+multi-statement transactions to roll back. FalkorDB also needs the
+[`falkordb` package](/falkordb).

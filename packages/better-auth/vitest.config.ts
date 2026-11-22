@@ -11,6 +11,7 @@ export default defineConfig({
       "@cyphra/schema": path.join(monorepoRoot, "packages/schema/src/index.ts"),
       "@cyphra/runtime": path.join(monorepoRoot, "packages/runtime/src/index.ts"),
       "@cyphra/migrator": path.join(monorepoRoot, "packages/migrator/src/index.ts"),
+      "@cyphra/testing": path.join(monorepoRoot, "packages/testing/src/index.ts"),
     },
   },
   test: {
