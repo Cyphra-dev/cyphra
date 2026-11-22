@@ -1,6 +1,6 @@
 {
   "name": "@cyphra/cli",
-  "version": "0.13.0",
+  "version": "0.14.0",
   "description": "Cyphra CLI for the TypeScript Neo4j ORM: init, generate, migrate, push, pull and a local data browser (studio)",
   "type": "module",
   "publishConfig": {

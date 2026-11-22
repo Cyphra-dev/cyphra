@@ -1,6 +1,6 @@
 {
   "name": "@cyphra/better-auth",
-  "version": "0.13.0",
+  "version": "0.14.0",
   "description": "Better Auth database adapter for Neo4j, built on the Cyphra ORM: auth and business data in one typed graph",
   "type": "module",
   "sideEffects": false,
