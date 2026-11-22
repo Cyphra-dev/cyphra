@@ -11,7 +11,8 @@ import type { CyphraConfig } from "../config.js";
 
 /**
  * Print `CREATE CONSTRAINT` / `CREATE RANGE INDEX` / `CREATE VECTOR INDEX` / `CREATE FULLTEXT INDEX` lines for the schema (same order as `cyphra push`).
- * Does not connect to the database; written in Memgraph's syntax with `"dialect": "memgraph"`.
+ * Does not connect to the database; written in Memgraph's syntax with `"dialect": "memgraph"`, in
+ * FalkorDB's with `"dialect": "falkordb"`.
  *
  * @param config - Config with absolute schema path.
  */
@@ -24,7 +25,7 @@ export async function runSchemaDdl(config: CyphraConfig): Promise<void> {
     ...vectorIndexStatementsFromSchema(doc),
     ...fulltextIndexStatementsFromSchema(doc),
   ];
-  // Memgraph's syntax when cyphra.json sets "dialect": "memgraph".
+  // Memgraph's (FalkorDB's) syntax when cyphra.json sets "dialect": "memgraph" ("falkordb").
   for (const stmt of ddlForDialect(statements, config.dialect ?? "neo4j")) {
     console.log(stmt);
   }

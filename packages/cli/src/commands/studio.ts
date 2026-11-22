@@ -71,8 +71,15 @@ export async function runStudio(
   const readOnly = opts.readOnly === true;
   const meta = buildMeta(schema, {
     readOnly,
-    connection: redactUri(process.env.NEO4J_URI),
-    ...(process.env.NEO4J_DATABASE ? { database: process.env.NEO4J_DATABASE } : {}),
+    ...(client.dialect === "falkordb"
+      ? {
+          connection: redactUri(process.env.FALKORDB_URL || "redis://localhost:6379"),
+          ...(process.env.FALKORDB_GRAPH ? { database: process.env.FALKORDB_GRAPH } : {}),
+        }
+      : {
+          connection: redactUri(process.env.NEO4J_URI),
+          ...(process.env.NEO4J_DATABASE ? { database: process.env.NEO4J_DATABASE } : {}),
+        }),
     version,
     dialect: client.dialect,
   });

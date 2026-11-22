@@ -3,6 +3,7 @@ import { toNative, type CyphraClient } from "@cyphra/runtime";
 import { wrapInTransactions } from "./batch.js";
 import { compileRenameLabel, compileRenameProperty } from "./rename.js";
 import { memgraphDdl } from "./memgraph.js";
+import { falkordbDdl, isFalkorDBDdl, runFalkorDBDdl } from "./falkordb.js";
 
 /**
  * Database handle passed to `up()` in {@link defineMigration}.
@@ -48,11 +49,25 @@ export type MigrationMigrateHelpers = {
  * @param session - Neo4j session (caller manages lifecycle).
  */
 export function createMigrationDb(client: CyphraClient, session: Session): MigrationDb {
-  const memgraph = (client as { dialect?: string }).dialect === "memgraph";
-  // On Memgraph, Cyphra's DDL in Neo4j syntax (a migration generated before `"dialect":
-  // "memgraph"` was set) is translated; everything else runs as written.
-  const ddl = (text: string) => (memgraph ? (memgraphDdl(text)?.create ?? text) : text);
+  const dialect = (client as { dialect?: string }).dialect;
+  const memgraph = dialect === "memgraph";
+  const falkordb = dialect === "falkordb";
+  // On Memgraph and FalkorDB, Cyphra's DDL in Neo4j syntax (a migration generated before
+  // `"dialect"` was set) is translated; everything else runs as written.
+  const ddl = (text: string) =>
+    memgraph
+      ? (memgraphDdl(text)?.create ?? text)
+      : falkordb
+        ? (falkordbDdl(text)?.create ?? text)
+        : text;
+  // FalkorDB DDL has no IF [NOT] EXISTS: run it with those semantics (see runFalkorDBDdl).
+  const runDdl = async (text: string): Promise<boolean> => {
+    if (!falkordb || !isFalkorDBDdl(text)) return false;
+    await runFalkorDBDdl((t) => session.run(t), text);
+    return true;
+  };
   const run = async (strings: TemplateStringsArray, ...values: unknown[]): Promise<void> => {
+    if (falkordb && values.length === 0 && (await runDdl(ddl(strings.join(""))))) return;
     if (memgraph && values.length === 0) {
       const text = strings.join("");
       const translated = ddl(text);
@@ -70,7 +85,11 @@ export function createMigrationDb(client: CyphraClient, session: Session): Migra
     batchSize: number;
     params?: Record<string, unknown>;
   }): Promise<void> => {
-    const text = wrapInTransactions(opts.inner, opts.batchSize, memgraph ? "memgraph" : "neo4j");
+    const text = wrapInTransactions(
+      opts.inner,
+      opts.batchSize,
+      memgraph ? "memgraph" : falkordb ? "falkordb" : "neo4j",
+    );
     const result = await session.run(text, opts.params ?? {});
     await result;
   };
@@ -90,7 +109,9 @@ export function createMigrationDb(client: CyphraClient, session: Session): Migra
     text: string,
     params: Record<string, unknown> = {},
   ): Promise<Record<string, unknown>[]> => {
-    const result = await session.run(ddl(text), params);
+    const statement = ddl(text);
+    if (Object.keys(params).length === 0 && (await runDdl(statement))) return [];
+    const result = await session.run(statement, params);
     return result.records.map((r) => toNative(r.toObject()) as Record<string, unknown>);
   };
 

@@ -2,6 +2,7 @@ import path from "node:path";
 import {
   compareSchemaObjects,
   describeSchemaObject,
+  expectedSchemaForDialect,
   expectedSchemaFromModel,
   isDriftFree,
   isEmptyPlan,
@@ -113,7 +114,10 @@ export async function migrateStatusReport(
     warnings.push(...replay.warnings);
     expected = replay.objects;
   }
-  const drift = compareSchemaObjects(expected, await readSchemaObjects(client));
+  const drift = compareSchemaObjects(
+    expectedSchemaForDialect(expected, client.dialect),
+    await readSchemaObjects(client),
+  );
 
   const uncapturedChanges = plan.steps.length;
   const inSync =
@@ -213,7 +217,7 @@ export async function runMigrateStatus(
  * or reachable.
  */
 export async function warnOnDrift(cwd: string, config: CyphraConfig): Promise<void> {
-  if (!process.env.NEO4J_URI) return;
+  if (config.dialect === "falkordb" ? !process.env.FALKORDB_GRAPH : !process.env.NEO4J_URI) return;
   let client: CyphraClient;
   try {
     client = await clientForConfig(config);
@@ -225,7 +229,10 @@ export async function warnOnDrift(cwd: string, config: CyphraConfig): Promise<vo
     const applied = await client.withSession((s) => listAppliedMigrations(s));
     const { ordered } = appliedFiles(applied, files);
     const { objects } = await replayMigrations(ordered);
-    const drift = compareSchemaObjects(objects, await readSchemaObjects(client));
+    const drift = compareSchemaObjects(
+      expectedSchemaForDialect(objects, client.dialect),
+      await readSchemaObjects(client),
+    );
     const count = driftCount(drift);
     if (count === 0) return;
     console.warn(

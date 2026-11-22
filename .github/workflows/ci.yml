@@ -276,3 +276,48 @@ jobs:
           pnpm --filter @cyphra/cli --fail-if-no-match exec vitest run src/studio/studio.memgraph.integration.test.ts
           # `cyphra migrate reset` empties the whole database, so it runs on its own (opt-in flag).
           CYPHRA_TEST_RESET_DB=1 pnpm --filter @cyphra/cli --fail-if-no-match exec vitest run src/commands/migrateReset.memgraph.integration.test.ts
+
+  # The ORM, migrator and CLI suites on FalkorDB (dialect "falkordb", the Redis-protocol transport):
+  # the shared ORM suites skip or adapt what FalkorDB does not support (see
+  # doc/app/falkordb/page.mdx), plus FalkorDB-only tests. Each suite uses its own graph.
+  falkordb-integration:
+    runs-on: ubuntu-latest
+    services:
+      falkordb:
+        # Pinned: the feature matrix in the docs is verified against this version.
+        image: falkordb/falkordb:v4.22.3
+        ports:
+          - 6379:6379
+    env:
+      CYPHRA_TEST_DIALECT: falkordb
+      FALKORDB_TEST_URL: redis://127.0.0.1:6379
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Build packages
+        run: pnpm -r --filter './packages/*' run build
+
+      - name: Wait for FalkorDB
+        run: |
+          for i in $(seq 1 60); do
+            (exec 3<>/dev/tcp/127.0.0.1/6379) 2>/dev/null && exit 0
+            sleep 1
+          done
+          echo "FalkorDB did not start" >&2
+          exit 1
+
+      - name: FalkorDB integration tests
+        run: |
+          pnpm --filter @cyphra/runtime --fail-if-no-match exec vitest run src/client.integration.test.ts src/orm/orm.integration.test.ts src/orm/onDelete.integration.test.ts src/orm/rules.integration.test.ts src/orm/interfaces.integration.test.ts src/orm/falkordb.integration.test.ts
+          pnpm --filter @cyphra/migrator --fail-if-no-match exec vitest run src/falkordb.integration.test.ts
+          pnpm --filter @cyphra/cli --fail-if-no-match exec vitest run src/commands/migrateReset.falkordb.integration.test.ts src/studio/studio.falkordb.integration.test.ts

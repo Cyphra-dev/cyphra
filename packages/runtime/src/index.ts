@@ -1,7 +1,8 @@
 /**
  * @packageDocumentation
  * Execute Cyphra queries against Neo4j with `neo4j-driver` (Bolt) or the Neo4j Query API (HTTP,
- * for edge runtimes).
+ * for edge runtimes), against Memgraph (Bolt), or against FalkorDB (the Redis protocol, with the
+ * optional `falkordb` package).
  */
 
 export {
@@ -9,6 +10,7 @@ export {
   type CyphraClientOptions,
   type CyphraConnectionOptions,
   type CyphraDriverOptions,
+  type CyphraFalkorDBOptions,
   type CyphraHttpOptions,
   type CyphraTransport,
   type DriverLike,
@@ -21,7 +23,9 @@ export {
   DIALECTS,
   detectDialect,
   dialectFromServerAgent,
+  dialectName,
   parseDialect,
+  unsupportedOnFalkorDB,
   type CyphraDialect,
 } from "./dialect.js";
 export {
@@ -37,6 +41,20 @@ export {
   type HttpResult,
 } from "./http/driver.js";
 export { decodeTyped, encodeParameters, encodeTyped, type TypedValue } from "./http/codec.js";
+export {
+  FalkorDBDriver,
+  FalkorDBError,
+  FalkorDBSession,
+  FalkorDBTransaction,
+  parseConstraintCommand,
+  type FalkorDBClientLike,
+  type FalkorDBConnectionOptions,
+  type FalkorDBGraphLike,
+  type FalkorDBReply,
+  type FalkorDBResult,
+} from "./falkordb/driver.js";
+export { rewriteForFalkorDB } from "./falkordb/rewrite.js";
+export { paramsHeader as falkordbParamsHeader } from "./falkordb/codec.js";
 export {
   CypherDate,
   CypherDateTime,

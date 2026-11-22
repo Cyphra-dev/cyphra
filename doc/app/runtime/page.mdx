@@ -29,9 +29,13 @@ await client.withSession(async (session) => {
 await client.close();
 ```
 
-Optional **`dialect`** is `"neo4j"` (default) or `"memgraph"`: the Cypher flavour the ORM
-compiles to and the DDL the migrator writes (`client.dialect`). See [Memgraph](/memgraph) for what
-changes and what is not available there; `detectDialect(client)` reads it from the server.
+Optional **`dialect`** is `"neo4j"` (default), `"memgraph"` or `"falkordb"`: the Cypher flavour
+the ORM compiles to and the DDL the migrator writes (`client.dialect`). See [Memgraph](/memgraph)
+for what changes and what is not available there; `detectDialect(client)` reads it from the server.
+
+To connect to [FalkorDB](/falkordb), pass `falkordb: { url, graph }` instead of `uri`, `user` and
+`password` (it implies `dialect: "falkordb"` and needs the optional `falkordb` package). FalkorDB
+has no multi-statement transactions: see [Transactions](/falkordb#transactions).
 
 Optional **`driverConfig`** is passed through as the third argument to `neo4j.driver` (pool size, `connectionAcquisitionTimeout`, `logging`, etc.). Types: import **`Config`** from `@cyphra/runtime` or `neo4j-driver`.
 

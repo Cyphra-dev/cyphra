@@ -1,0 +1,238 @@
+---
+title: "FalkorDB support: the Cyphra feature matrix"
+sidebarTitle: FalkorDB
+description: "Run the Cyphra ORM and migrations on FalkorDB over the Redis protocol: the falkordb option, transactions, rewrites and the feature matrix tested in CI."
+---
+
+import { Callout } from "nextra/components";
+
+# FalkorDB
+
+Cyphra runs on [FalkorDB](https://www.falkordb.com) 4.x, the graph database many GraphRAG stacks
+use. FalkorDB speaks the Redis protocol (`GRAPH.QUERY`), not Bolt, so Cyphra connects through the
+official [`falkordb`](https://www.npmjs.com/package/falkordb) client. The schema and the typed
+client stay the same. Where FalkorDB's Cypher differs, Cyphra rewrites the statements. Where
+FalkorDB has no equivalent, Cyphra throws an `UnsupportedFeatureError` before anything runs.
+
+CI runs the ORM, migration and CLI integration suites against `falkordb/falkordb:v4.22.3` on every
+push. The matrix below lists what those suites cover.
+
+## Connect
+
+Install the client next to Cyphra. It is an optional peer dependency, so Neo4j and Memgraph apps
+never load it:
+
+```bash
+npm install falkordb
+```
+
+Pass a `falkordb` option to the client (generated `createClient`, `createOrm` or `CyphraClient`).
+It implies `dialect: "falkordb"`:
+
+```ts filename="db.ts"
+import { createClient } from "./cyphra.gen";
+
+export const db = createClient({
+  falkordb: {
+    url: process.env.FALKORDB_URL!, // redis://localhost:6379, or redis://user:password@host:6379
+    graph: "app", // the graph (Redis key) every statement runs on
+  },
+});
+```
+
+| Option                        | Description                                                                            |
+| ----------------------------- | -------------------------------------------------------------------------------------- |
+| `graph`                       | Required. The graph every statement runs on.                                           |
+| `url`                         | `redis://` or `rediss://` (TLS) URL. Default: `host` and `port`.                       |
+| `host`, `port`                | Default `localhost`, `6379`.                                                           |
+| `username`, `password`, `tls` | Credentials and TLS, when not in the URL.                                              |
+| `client`                      | A client your app already connected (`await FalkorDB.connect(…)`), shared, not closed. |
+| `connectOptions`              | Extra options for `FalkorDB.connect` (socket timeouts, reconnect strategy).            |
+| `timeoutMs`                   | Server-side timeout of each statement (FalkorDB's `TIMEOUT`).                          |
+
+`client.transport` is `"falkordb"` and `client.dialect` is `"falkordb"`. Logging, tracing and
+client extensions work as on Neo4j; missing-index warnings are off (they read Neo4j's plans).
+FalkorDB needs TCP sockets, so the edge build of `@cyphra/runtime` cannot connect to it.
+
+For the CLI, set the dialect in `cyphra.json` and the connection in the environment:
+
+```json filename="cyphra.json"
+{
+  "schema": "./schema.cyphra",
+  "migrations": "./migrations",
+  "dialect": "falkordb"
+}
+```
+
+```bash
+export FALKORDB_URL=redis://localhost:6379 FALKORDB_GRAPH=app
+npx cyphra push
+```
+
+`FALKORDB_GRAPH` is required: one server holds many graphs, and `cyphra migrate reset` empties the
+one it is given. The CLI does not detect FalkorDB on its own (it never speaks Bolt).
+
+## Transactions
+
+FalkorDB runs every statement atomically, one writer at a time per graph, but it has no
+multi-statement transactions and no rollback. Cyphra keeps what it can promise:
+
+- **One statement, one atomic write.** `create` without nested writes, `createMany`, `update`,
+  `updateMany`, `delete` without `onDelete` rules, `deleteMany` and every read compile to one
+  statement. A failure (a duplicate key, a broken `@min` rule) writes nothing.
+- **Nested writes are not atomic.** An operation that needs several statements (nested `create`,
+  `connect`, `set`, `upsert` with relations, `onDelete` cascades) runs them in order. If one fails,
+  the ones before it stay. Nested data is validated as each statement is built, so an invalid
+  nested value can leave the nodes written before it. Number rules on `$edge` updates are checked
+  before the update.
+- **Writes of one client are serialized.** The multi-statement operations of one process run one
+  at a time, so they do not interleave with each other (other processes can still write between
+  two statements).
+- **`$transaction` throws** `UnsupportedFeatureError`: Cyphra does not pretend to roll back.
+  Write the work as one `$cypher` statement when it must be all or nothing.
+
+<Callout type="warning">
+  If an operation must be all or nothing, keep it to one statement: a `createMany`, an `updateMany`,
+  or a `$cypher` query. A nested `create` that fails halfway leaves the parent node behind.
+</Callout>
+
+## Feature matrix
+
+Verified against FalkorDB v4.22.3 with `falkordb` 7.0. "Supported" means the shared integration
+suite passes on FalkorDB.
+
+| Feature                                                              | FalkorDB                                                                                     |
+| -------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| CRUD (`create`, `findMany`, `update`, `delete`, `…Many`)             | Supported                                                                                    |
+| Nested writes (`create`, `connect`, `connectOrCreate`, `set`)        | Supported, not atomic (see [transactions](#transactions))                                    |
+| `upsert`                                                             | Supported                                                                                    |
+| `UniqueConstraintError`                                              | Supported, with the model and fields                                                         |
+| Relation filters, `_count`, ordering by relation counts              | Supported                                                                                    |
+| `include` / `select` with `where`, `orderBy`, `skip`, `take`         | Supported                                                                                    |
+| `aggregate`, `groupBy`                                               | Supported (`_sum` is a float: a `BigInt` sum is exact up to 2^53)                            |
+| `traverse` (one model, or hops across models)                        | Supported, except relation filters in a hop's `where`                                        |
+| `shortestPath`, `allShortestPaths`                                   | Supported, except relation filters in `where`                                                |
+| `onDelete` rules                                                     | Supported, not atomic                                                                        |
+| Interfaces and multiple labels                                       | Supported                                                                                    |
+| Validation rules, client extensions                                  | Supported                                                                                    |
+| `$transaction`                                                       | Not available: FalkorDB has no multi-statement transactions                                  |
+| Vector search (`findSimilar`)                                        | Supported, through `db.idx.vector.queryNodes`                                                |
+| Full-text search (`search`)                                          | Supported, through `db.idx.fulltext.queryNodes` (see [search](#vector-and-full-text-search)) |
+| `DateTime`, `Date`, `LocalDateTime`, `LocalTime`, `Time`, `Duration` | Supported, stored as ISO 8601 text (see [temporal values](#temporal-values))                 |
+| `BigInt`                                                             | Supported; comparisons and sorting near ±2^63 are wrong on FalkorDB                          |
+| `Point`, `CartesianPoint`                                            | Not available: FalkorDB points cannot be parameters                                          |
+| `cyphra push`, `migrate dev`, `migrate deploy`, `migrate diff`       | Supported, FalkorDB DDL                                                                      |
+| `cyphra migrate status` (drift), `migrate reset`                     | Supported                                                                                    |
+| `cyphra pull`                                                        | Supported, by sampling (temporal fields come back as `String`)                               |
+| `cyphra studio`                                                      | Supported; `Point` fields are read-only                                                      |
+| Point indexes, property type constraints                             | Not available                                                                                |
+| Missing-index warnings (`warnMissingIndexes`)                        | Not available (off on FalkorDB)                                                              |
+| HTTP transport, edge runtimes                                        | Not available: FalkorDB needs TCP sockets                                                    |
+| `@cyphra/graphql`, `@cyphra/better-auth`                             | Not tested on FalkorDB                                                                       |
+
+Every "not available" row, and the exceptions above, throw `UnsupportedFeatureError` (a
+`CyphraError` with `feature` and `dialect: "falkordb"`) with a message like
+`$transaction (an interactive transaction) is not supported on FalkorDB: …`.
+
+## What compiles differently
+
+The ORM compiles the same statements as for Neo4j; the FalkorDB transport rewrites them on the way
+out (`rewriteForFalkorDB`, exported for your own tooling). Neo4j and Memgraph output is unchanged.
+
+| Neo4j                                                        | FalkorDB                                                                                      |
+| ------------------------------------------------------------ | --------------------------------------------------------------------------------------------- |
+| `EXISTS { MATCH … }`, `COUNT { MATCH … }`, `COLLECT { … }`   | `CALL { WITH * MATCH … RETURN count(*) > 0 / count(*) / collect(…) AS … }` before the clause  |
+| `elementId(n) = $id`, `elementId(n)`                         | `id(n) = toInteger($id)` (an id seek), `toString(id(n))`                                      |
+| `CREATE (n:L $props)`                                        | `CREATE (n:L {a: $props.a, …})`                                                               |
+| Parameters (Bolt values)                                     | A `CYPHER p0=… p1=…` header of literals                                                       |
+| Quantified path pattern `(s)((:U)-[e:F]->(:U)){1,3}(n)`      | `p = (s)-[:F*1..3]->(n)` with `all(…)` checks on `nodes(p)` and `relationships(p)`            |
+| `SHORTEST 1` / `ALL SHORTEST`                                | `shortestPath()` / `allShortestPaths()`, or enumerated paths when filtered                    |
+| `db.index.vector.queryNodes`, `vector.similarity.*`          | `db.idx.vector.queryNodes`, `vec.cosineDistance` / `vec.euclideanDistance`                    |
+| `db.index.fulltext.queryNodes`                               | `db.idx.fulltext.queryNodes`                                                                  |
+| `CREATE CONSTRAINT n FOR (n:L) REQUIRE (n.a, n.b) IS UNIQUE` | `GRAPH.CONSTRAINT CREATE UNIQUE NODE L PROPERTIES 2 a b` (with its range indexes)             |
+| `CREATE RANGE INDEX n FOR (n:L) ON (n.a)`                    | `CREATE INDEX FOR (n:L) ON (n.a)`                                                             |
+| `CREATE VECTOR INDEX n … OPTIONS {indexConfig: …}`           | `CREATE VECTOR INDEX FOR (n:L) ON (n.p) OPTIONS {dimension: 3, similarityFunction: 'cosine'}` |
+| `CREATE FULLTEXT INDEX n … ON EACH [n.a, n.b]`               | `CREATE FULLTEXT INDEX FOR (n:L) ON (n.a)`, one per property                                  |
+| `SHOW CONSTRAINTS` / `SHOW INDEXES`                          | `CALL db.constraints()` / `CALL db.indexes()`                                                 |
+
+`GRAPH.CONSTRAINT` is a Redis command, not Cypher: the transport recognizes the statement and runs
+the command, creating the range indexes a unique constraint needs and waiting until FalkorDB
+enforces it. FalkorDB indexes and constraints have no names, so migrations drop them by
+definition.
+
+## Temporal values
+
+FalkorDB's own temporal types have no time zone and a precision of one second, and parameters
+cannot carry them. Cyphra stores temporal fields as ISO 8601 text instead:
+
+- `DateTime` as UTC with milliseconds, `2024-03-10T07:30:15.123Z` (fixed width, so `<`, `>` and
+  `orderBy` follow time order), read back as a `Date`.
+- `Date` as `2024-03-10`, `LocalDateTime`, `LocalTime`, `Time` and `Duration` as the same text the
+  ORM returns for them on Neo4j.
+
+Filters, sorting, `_min` / `_max` and `groupBy` work on every type but `Duration` (equality only).
+A raw `$cypher` query returns the text, not a `Date`. Data written by other clients with
+FalkorDB's `localdatetime()` reads back as a `LocalDateTime`.
+
+## Vector and full-text search
+
+`findSimilar` calls `db.idx.vector.queryNodes(label, property, k, vecf32($vector))`. Vector fields
+are written as FalkorDB vectors (`vecf32`), the type its vector indexes read. FalkorDB returns a
+distance; Cyphra rescales it to Neo4j's `[0, 1]` score (`1 - d / 2` for cosine, `1 / (1 + d²)`
+for euclidean), so `minScore` thresholds carry over. `where`, `exact: true` and the candidate
+widening behave as on Neo4j.
+
+`search` calls `db.idx.fulltext.queryNodes(label, query)`. FalkorDB keeps one full-text index per
+label ([RediSearch](https://redis.io/docs/latest/develop/interact/search-and-query/)), so the
+`@@fulltext` indexes of one model are one index: a search covers all their properties.
+
+| `mode`               | FalkorDB query                                                       |
+| -------------------- | -------------------------------------------------------------------- |
+| `"terms"`            | Any of the words: `graph \| database`                                |
+| `"phrase"`           | The exact phrase: `"graph database"`                                 |
+| `"lucene"` (default) | Passed through, in RediSearch's syntax: `grap*`, `-draft`, `%grpah%` |
+
+FalkorDB 4.22 reports a score of 0 for full-text hits, so `minScore` filters nothing useful and
+results come back in the index's order. The `analyzer` and `eventuallyConsistent` options of
+`@@fulltext` are ignored.
+
+## Traversals and shortest paths
+
+FalkorDB has no quantified path patterns. A hop compiles to a variable-length relationship in a
+named path, and its checks (labels, relationship types and directions, `edgeWhere`, a hop's
+`where`) run on the path's nodes and relationships: the same paths qualify. A list of hops is one
+`MATCH` of several named paths, whose relationships are distinct as in a single path.
+
+A relation filter in a hop's `where` (`where: { chunks: { some: { … } } }`) or in a shortest path's
+`where` cannot run for every node of a path: it throws `UnsupportedFeatureError`. Relation filters
+on the reached nodes (`traverse({ where })`) work.
+
+Shortest paths without filters use FalkorDB's breadth-first `shortestPath()` and
+`allShortestPaths()`. With `where`, `edgeWhere` or relation types of mixed directions, Cyphra
+enumerates the paths up to `maxDepth` hops and keeps the shortest: keep `maxDepth` small.
+
+## Migrations on FalkorDB
+
+With `"dialect": "falkordb"`, `cyphra migrate dev` writes FalkorDB DDL. A migration generated in
+Neo4j syntax still applies: its statements are translated when it runs. FalkorDB's DDL has no
+`IF [NOT] EXISTS`, so an index or constraint that already exists counts as created. Batched data
+migrations run as one statement (FalkorDB has no batched commits).
+
+`cyphra pull` has no schema procedures to read on FalkorDB: it samples up to 10,000 nodes per
+label (and edges per relationship type) with `typeOf()`.
+
+## Try it locally
+
+```bash
+docker run -d --name falkordb -p 6379:6379 falkordb/falkordb:v4.22.3
+npm install falkordb
+export FALKORDB_URL=redis://localhost:6379 FALKORDB_GRAPH=app
+npx cyphra push
+```
+
+## See also
+
+- [Typed client](/client): every operation in the matrix
+- [Migrations](/migrations): `migrate dev`, `deploy` and drift
+- [Memgraph](/memgraph): the other non-Neo4j dialect
+- [Runtime](/runtime): `CyphraClient` options

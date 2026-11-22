@@ -21,9 +21,10 @@ export type CyphraConfig = {
    */
   readonly zod?: ZodGeneratorConfig;
   /**
-   * The database's Cypher flavour (`"neo4j"` or `"memgraph"`). Decides the DDL `migrate dev`,
-   * `migrate diff` and `schema ddl` write. Unset: Neo4j offline; commands that connect detect it
-   * from the server.
+   * The database's Cypher flavour (`"neo4j"`, `"memgraph"` or `"falkordb"`). Decides the DDL
+   * `migrate dev`, `migrate diff` and `schema ddl` write, and for `"falkordb"` how commands connect
+   * (`FALKORDB_URL` / `FALKORDB_GRAPH`). Unset: Neo4j offline; commands that connect detect Neo4j
+   * or Memgraph from the server.
    */
   readonly dialect?: CyphraDialect;
 };
@@ -118,8 +119,13 @@ export async function loadConfig(cwd: string): Promise<CyphraConfig> {
   }
   const zod = zodConfig(cwd, (generators as Record<string, unknown> | undefined)?.zod);
   const dialect = (data as Record<string, unknown>).dialect;
-  if (dialect !== undefined && dialect !== "neo4j" && dialect !== "memgraph") {
-    throw new Error('cyphra.json "dialect" must be "neo4j" or "memgraph"');
+  if (
+    dialect !== undefined &&
+    dialect !== "neo4j" &&
+    dialect !== "memgraph" &&
+    dialect !== "falkordb"
+  ) {
+    throw new Error('cyphra.json "dialect" must be "neo4j", "memgraph" or "falkordb"');
   }
   return {
     schema: resolveUnderRoot(cwd, schema),

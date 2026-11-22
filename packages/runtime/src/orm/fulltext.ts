@@ -122,6 +122,16 @@ export async function search(
   // Lucene rejects an empty query: a blank search box simply matches nothing.
   if (args.query.trim() === "" || take === 0) return [];
 
+  if (ctx.dialect === "falkordb") {
+    return falkordbSearch(exec, ctx, model, inherited, args.query, mode, {
+      where,
+      minScore,
+      skip,
+      take,
+      expr,
+      shape,
+    });
+  }
   const name = ctx.param(args.index);
   const query = ctx.param(luceneQuery(args.query, mode as (typeof MODES)[number]));
   const filters = [
@@ -150,6 +160,52 @@ export async function search(
   if (take !== undefined) text += ` LIMIT ${ctx.param(intParam(take))}`;
   text += ` RETURN ${expr} AS row, score ORDER BY score DESC`;
   const rows = (await exec(text, ctx.params)) as { row: unknown; score: unknown }[];
+  return rows.map((r) => ({
+    ...decodeRow(shape, r.row)!,
+    $score: typeof r.score === "number" ? r.score : Number(r.score),
+  }));
+}
+
+/**
+ * FalkorDB: `db.idx.fulltext.queryNodes(label, query)`. FalkorDB has one full-text index per label
+ * (RediSearch), covering every property indexed for full-text on it; queries use RediSearch's
+ * syntax: `terms` searches any of the words (`w1 | w2`), `phrase` the exact phrase, `lucene` passes
+ * the query through as RediSearch syntax (`graph*`, `-draft`, `%grpah%`, `@title:graph`).
+ */
+async function falkordbSearch(
+  exec: Executor,
+  ctx: QueryContext,
+  model: ResolvedNodeModel,
+  inheritedFrom: string | undefined,
+  input: string,
+  mode: unknown,
+  parts: {
+    where: string | null;
+    minScore: unknown;
+    skip: number | undefined;
+    take: number | undefined;
+    expr: string;
+    shape: ReturnType<typeof compileProjection>["shape"];
+  },
+): Promise<AnyRecord[]> {
+  const words = input.split(/[^\p{L}\p{N}_]+/u).filter(Boolean);
+  const text =
+    mode === "terms" ? words.join(" | ") : mode === "phrase" ? `"${words.join(" ")}"` : input;
+  if (!text || (mode !== "lucene" && words.length === 0)) return [];
+  const { where, minScore, skip, take, expr, shape } = parts;
+  const label = ctx.param(inheritedFrom ? ctx.node(inheritedFrom).label : model.label);
+  let cypher = `CALL db.idx.fulltext.queryNodes(${label}, ${ctx.param(text)}) YIELD node, score`;
+  cypher += " WITH node AS n, score";
+  const filters = [
+    ...(minScore === undefined ? [] : [`score >= ${ctx.param(minScore)}`]),
+    ...(where ? [`(${where})`] : []),
+  ];
+  if (filters.length) cypher += ` WHERE ${filters.join(" AND ")}`;
+  cypher += " WITH n, score ORDER BY score DESC";
+  if (skip !== undefined) cypher += ` SKIP ${ctx.param(intParam(skip))}`;
+  if (take !== undefined) cypher += ` LIMIT ${ctx.param(intParam(take))}`;
+  cypher += ` RETURN ${expr} AS row, score ORDER BY score DESC`;
+  const rows = (await exec(cypher, ctx.params)) as { row: unknown; score: unknown }[];
   return rows.map((r) => ({
     ...decodeRow(shape, r.row)!,
     $score: typeof r.score === "number" ? r.score : Number(r.score),

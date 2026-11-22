@@ -5,7 +5,9 @@ import type { CyphraDialect } from "@cyphra/runtime";
  *
  * @param innerCypher - Subquery body (without `CALL {` / `}` wrapper).
  * @param batchSize - Rows per transaction.
- * @param dialect - `"memgraph"`: `USING PERIODIC COMMIT n <inner>` instead.
+ * @param dialect - `"memgraph"`: `USING PERIODIC COMMIT n <inner>` instead. `"falkordb"`: `inner`
+ *   alone, as one statement (FalkorDB has no batched commits: every statement is atomic on its own,
+ *   and `batchSize` only has to be valid).
  * @returns Full Cypher string to pass to `session.run`.
  *
  * @example
@@ -27,5 +29,6 @@ export function wrapInTransactions(
   // Memgraph cannot DELETE inside CALL { } IN TRANSACTIONS: its own batching directive commits
   // every `batchSize` rows of the whole statement.
   if (dialect === "memgraph") return `USING PERIODIC COMMIT ${batchSize}\n${innerCypher.trim()}`;
+  if (dialect === "falkordb") return innerCypher.trim();
   return `CALL {\n${innerCypher.trim()}\n} IN TRANSACTIONS OF ${batchSize} ROWS`;
 }

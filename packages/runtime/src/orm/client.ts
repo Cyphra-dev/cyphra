@@ -27,6 +27,7 @@ import type {
 } from "./extensionTypes.js";
 import type { DelegateKey, ModelDelegate, TypeMap } from "./types.js";
 import { mapUniqueError } from "./unique.js";
+import { falkordbTransactionError, falkordbUniqueError } from "./falkordb.js";
 import { toNative } from "./values.js";
 
 /**
@@ -168,6 +169,7 @@ function txExecutor(
     try {
       res = (await instr.run(text, params, meta, () => tx.run(text, params))) as RowsResult;
     } catch (e) {
+      if (dialect === "falkordb") throw await falkordbUniqueError(schema, e, text, params, tx);
       throw dialect === "neo4j"
         ? withDialectHint(mapUniqueError(schema, e))
         : memgraphError(schema, e);
@@ -429,30 +431,38 @@ export function createOrm<TM extends TypeMap>(
   const build = (state: ExtensionState): Record<string, unknown> => {
     const self: Record<string, unknown> = {};
     const transaction = <T>(fn: (tx: unknown) => Promise<T>): Promise<T> =>
-      instr.operation({ operation: "$transaction" }, () =>
-        mapped(schema, () =>
-          client.withWriteTransaction((tx) => {
-            const inTx: RunnerFor = (meta) => {
-              const exec = txExecutor(instr, schema, tx, { ...meta, transaction: true }, dialect);
-              return { read: (f) => f(exec), write: (f) => f(exec) };
-            };
-            const txClient: Record<string, unknown> = {};
-            Object.assign(
-              txClient,
-              buildDelegates({
-                instr,
-                schema,
-                runnerFor: inTx,
-                options: engineOptions,
-                state,
-                parent: () => txClient,
+      dialect === "falkordb"
+        ? Promise.reject(falkordbTransactionError())
+        : instr.operation({ operation: "$transaction" }, () =>
+            mapped(schema, () =>
+              client.withWriteTransaction((tx) => {
+                const inTx: RunnerFor = (meta) => {
+                  const exec = txExecutor(
+                    instr,
+                    schema,
+                    tx,
+                    { ...meta, transaction: true },
+                    dialect,
+                  );
+                  return { read: (f) => f(exec), write: (f) => f(exec) };
+                };
+                const txClient: Record<string, unknown> = {};
+                Object.assign(
+                  txClient,
+                  buildDelegates({
+                    instr,
+                    schema,
+                    runnerFor: inTx,
+                    options: engineOptions,
+                    state,
+                    parent: () => txClient,
+                  }),
+                  { $cypher: rawFor(instr, inTx) },
+                );
+                return fn(txClient);
               }),
-              { $cypher: rawFor(instr, inTx) },
-            );
-            return fn(txClient);
-          }),
-        ),
-      );
+            ),
+          );
     Object.assign(
       self,
       buildDelegates({

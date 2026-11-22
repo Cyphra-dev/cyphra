@@ -1,15 +1,13 @@
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createClient, type Db } from "./__fixtures__/ondelete.gen.js";
 import { NotFoundError, RestrictError } from "./errors.js";
-import { testDialect } from "./__fixtures__/testDialect.js";
+import { hasTestDb, onFalkorDB, testConnection } from "./__fixtures__/testDialect.js";
 import type { QueryEvent } from "../observability.js";
 
 // Each test makes many round trips to Neo4j: the default 5 s is too tight on a busy CI runner.
 vi.setConfig({ testTimeout: 30_000, hookTimeout: 30_000 });
 
-const hasNeo = Boolean(
-  process.env.NEO4J_TEST_URI && process.env.NEO4J_TEST_USER && process.env.NEO4J_TEST_PASSWORD,
-);
+const hasNeo = hasTestDb;
 
 const LABELS = [
   "OdUser",
@@ -31,10 +29,7 @@ describe.skipIf(!hasNeo)("onDelete rules (Neo4j)", () => {
 
   beforeEach(async () => {
     db ??= createClient({
-      uri: process.env.NEO4J_TEST_URI!,
-      user: process.env.NEO4J_TEST_USER!,
-      password: process.env.NEO4J_TEST_PASSWORD!,
-      dialect: testDialect,
+      ...testConnection(),
     });
     await db.$cypher`MATCH (n) WHERE any(l IN labels(n) WHERE l IN ${LABELS}) DETACH DELETE n`;
   });
@@ -208,7 +203,8 @@ describe.skipIf(!hasNeo)("onDelete rules (Neo4j)", () => {
     expect(await counts()).toEqual(before);
   });
 
-  it("rolls back with the surrounding $transaction", async () => {
+  // FalkorDB has no multi-statement transactions.
+  it.skipIf(onFalkorDB)("rolls back with the surrounding $transaction", async () => {
     await seed("a@x.io");
     await expect(
       db.$transaction(async (tx) => {

@@ -233,7 +233,8 @@ export function createStudioApi(opts: {
         data[f.name] !== null,
     );
     if (bad.length === 0) return;
-    const server = meta.dialect === "memgraph" ? "Memgraph" : "Neo4j";
+    const server =
+      meta.dialect === "memgraph" ? "Memgraph" : meta.dialect === "falkordb" ? "FalkorDB" : "Neo4j";
     throw new StudioUnsupportedError(
       `${bad.map((f) => `${owner}.${f.name}`).join(", ")} cannot be written on ${server}: ${bad[0]!.unsupported}`,
       `${bad[0]!.type} values`,

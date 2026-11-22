@@ -43,7 +43,7 @@ describe("dialect option", () => {
   it("parses, detects and defaults to Neo4j", async () => {
     expect(parseDialect(undefined)).toBe("neo4j");
     expect(parseDialect("memgraph")).toBe("memgraph");
-    expect(() => parseDialect("kuzu")).toThrow(/dialect must be "neo4j" or "memgraph"/);
+    expect(() => parseDialect("kuzu")).toThrow(/dialect must be "neo4j", "memgraph" or "falkordb"/);
     expect(
       dialectFromServerAgent("Neo4j/v5.11.0 compatible graph database server - Memgraph"),
     ).toBe("memgraph");

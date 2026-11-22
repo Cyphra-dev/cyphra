@@ -56,6 +56,7 @@ import {
 } from "./errors.js";
 import { defaultLiteralValue, encodeScalar, integerToNumber, nowValue } from "./values.js";
 import { numericGuard, throwGuardIssues, validateWriteArgs, type NumericCheck } from "./rules.js";
+import { falkordbGuardedEdgeSet } from "./falkordb.js";
 
 type AnyRecord = Record<string, unknown>;
 
@@ -657,15 +658,19 @@ export class ModelEngine {
     text += `MERGE ${ModelEngine.edgePattern(rel, a, b, r)}`;
     if (Object.keys(onCreate).length) text += ` ON CREATE SET ${r} += ${ctx.param(onCreate)}`;
     if (Object.keys(onMatch).length) text += ` ON MATCH SET ${r} += ${ctx.param(onMatch)}`;
-    if (updates.sets.length) text += ` SET ${updates.sets.join(", ")}`;
     // The checks run on the values the updates produced: a broken one throws, which rolls the
-    // write transaction back.
+    // write transaction back. FalkorDB cannot roll back: the checks run first, and the updates
+    // only when they pass.
     const guard = numericGuard(updates.checks);
+    const checkFirst = guard !== null && this.options.dialect === "falkordb";
+    const broken = checkFirst ? ctx.variable("w") : undefined;
+    if (broken) text += falkordbGuardedEdgeSet(updates.sets, updates.checks, [a, b, r], broken);
+    else if (updates.sets.length) text += ` SET ${updates.sets.join(", ")}`;
     const count = ctx.variable("c");
     const bad = guard ? ctx.variable("g") : undefined;
     plan.call(
       [a],
-      `${text} RETURN count(${r}) AS ${count}${bad ? `, collect(${guard})[0] AS ${bad}` : ""}`,
+      `${text} RETURN count(${r}) AS ${count}${bad ? `, collect(${broken ?? guard})[0] AS ${bad}` : ""}`,
       bad ? [count, bad] : [count],
     );
     plan.relations = true;

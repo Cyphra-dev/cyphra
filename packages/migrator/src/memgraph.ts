@@ -25,6 +25,7 @@
 
 import { UnsupportedFeatureError, type CyphraDialect } from "@cyphra/runtime";
 import { parseDdlStatement, type SchemaObject } from "./drift.js";
+import { falkordbDdlStatements } from "./falkordb.js";
 
 /** Starting capacity of a Memgraph vector index (it grows as vectors are added). */
 export const MEMGRAPH_VECTOR_CAPACITY = 1000;
@@ -165,9 +166,11 @@ export function isMemgraphDdl(statement: string): boolean {
 
 /**
  * `statements` (Cyphra's DDL in Neo4j syntax) for `dialect`: unchanged for Neo4j, translated
- * with {@link memgraphDdl} for Memgraph (other statements kept as they are).
+ * with {@link memgraphDdl} for Memgraph and `falkordbDdl` for FalkorDB (other statements kept as
+ * they are).
  */
 export function ddlForDialect(statements: readonly string[], dialect: CyphraDialect): string[] {
+  if (dialect === "falkordb") return falkordbDdlStatements(statements);
   if (dialect !== "memgraph") return [...statements];
   return statements.map((s) => memgraphDdl(s)?.create ?? s);
 }
