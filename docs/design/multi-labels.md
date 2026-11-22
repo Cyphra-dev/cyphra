@@ -297,8 +297,9 @@ node Tag {
   look like several relations with the same type), so pulled schemas keep one relation per target
   and the hints say so; declare the union by hand.
 - **GraphQL importer.** `@neo4j/graphql` v7 unions are exactly this, so `cyphra import graphql`
-  could map `union U = A | B` to a Cyphra union (relations to it included); it still reports them
-  as not converted, with a hint to declare the union (follow-up).
+  maps `union U = A | B` of `@node` types to a Cyphra union, relations to it included (#197).
+  Properties on those relationships wait for typed edges on relations to a union (#196); serving
+  v7 unions from `@cyphra/graphql` is #201.
 - **Studio.** `cyphra studio` lists a union with the interfaces and browses it through its
   delegate; editing a relation to a union (which needs the member) is a follow-up.
 - **Language server.** `union` keyword, completion of node names after `=` and `|`, hover,

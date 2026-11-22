@@ -1,0 +1,36 @@
+// Imported from @neo4j/graphql type definitions with `cyphra import graphql`.
+// Review before use (run the import again to see the full report):
+// - TitleCount: object type without @node is not a node in v7 (e.g. a @cypher result type): not converted
+// - GenreCount: object type without @node is not a node in v7 (e.g. a @cypher result type): not converted
+// - Query: custom Query fields (@cypher, resolvers) are not converted (compat.v7 still serves @cypher fields); with the typed client, write them as queries
+// - Series: a Cyphra node's name is its label: renamed to "Show"
+// - Stat: a union of types without @node (e.g. @cypher result types) is not a node union: not converted
+// - User.id: became @id @default(uuid()); Cyphra also adds a uniqueness constraint, which v7 @id does not
+// - User.watched: relationship properties on a relationship to a union are not supported by Cyphra yet: the relation field is converted without them
+
+union Search = Movie | Genre
+
+union Media = Movie | Show
+
+node Movie {
+  title String
+  released Int?
+  genres Genre[] @relationship(type: "IN_GENRE", direction: OUT)
+}
+
+node Genre {
+  name String
+}
+
+node Show {
+  title String
+  seasons Int
+}
+
+node User {
+  id String @id @default(uuid())
+  name String
+  searches Search[] @relationship(type: "SAVED", direction: OUT)
+  favorite Media? @relationship(type: "FAVORITE", direction: OUT)
+  watched Media[] @relationship(type: "WATCHED", direction: OUT)
+}
