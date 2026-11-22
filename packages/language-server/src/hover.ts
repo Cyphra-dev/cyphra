@@ -123,16 +123,16 @@ export function hoverAt(a: Analysis, offset: number): HoverResult | undefined {
     const kw = keywordSpan(d.loc, keyword);
     if (within(offset, kw)) return { markdown: KEYWORD_DOCS[keyword] ?? keyword, span: kw };
     if (d.kind === "Enum") return undefined;
-    // The `implements` keyword, between the name and the first interface name.
+    // The `implements` / `extends` keyword, between the name and the first interface name.
     const name = span(d.nameLoc);
-    const first = span(d.kind === "Node" ? d.implementsLocs?.[0] : undefined);
-    if (name && first) {
+    for (const word of ["implements", "extends"] as const) {
+      const locs = d.kind === "Node" ? d[`${word}Locs`] : undefined;
+      const first = span(locs?.[0]);
+      if (!name || !first) continue;
       const between = a.text.slice(name.end, first.start);
-      const at = between.indexOf("implements");
-      const s = { start: name.end + at, end: name.end + at + "implements".length };
-      if (at >= 0 && within(offset, s)) {
-        return { markdown: KEYWORD_DOCS.implements!, span: s };
-      }
+      const at = between.indexOf(word);
+      const s = { start: name.end + at, end: name.end + at + word.length };
+      if (at >= 0 && within(offset, s)) return { markdown: KEYWORD_DOCS[word]!, span: s };
     }
     for (const f of d.fields) {
       if (!within(offset, span(f.loc))) continue;

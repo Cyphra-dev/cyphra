@@ -59,15 +59,19 @@ function modelNames(a: Analysis): string[] {
 }
 
 /**
- * Field lines of a block, after the fields it inherits from the interfaces it implements (so
- * `@@unique([…])` on an implementation can name inherited fields).
+ * Field lines of a block, after the fields it inherits from the interfaces it implements or
+ * extends, directly or not (so `@@unique([…])` on an implementation can name inherited fields).
  */
 function fieldsWithInherited(a: Analysis, decl: ScannedDeclaration) {
-  const inherited = decl.implements.flatMap((n) => {
-    const i = a.scanned.find((d) => d.kind === "interface" && d.name === n.text);
-    return i ? scanFields(a.tokens, i) : [];
-  });
-  return [...inherited, ...scanFields(a.tokens, decl)];
+  const seen = new Set([decl.name]);
+  const inherited = (d: ScannedDeclaration): ReturnType<typeof scanFields> =>
+    [...d.implements, ...d.extends].flatMap((n) => {
+      if (seen.has(n.text)) return [];
+      seen.add(n.text);
+      const i = a.scanned.find((x) => x.kind === "interface" && x.name === n.text);
+      return i ? [...inherited(i), ...scanFields(a.tokens, i)] : [];
+    });
+  return [...inherited(decl), ...scanFields(a.tokens, decl)];
 }
 
 function enumValues(a: Analysis, name: string): string[] {
@@ -445,33 +449,58 @@ function topLevelCompletions(ctx: Ctx, before: readonly Token[]): Completion[] {
   }));
 }
 
+/** `node` declares with `implements`, `interface` with `extends`. */
+const HEADER_KEYWORD: Readonly<Record<string, "implements" | "extends">> = {
+  node: "implements",
+  interface: "extends",
+};
+
 /**
- * In a declaration header: `implements` after `node Name`, interface names after `implements`
- * or after a `,` in its list (`undefined` when not in a header).
+ * In a declaration header: `implements` after `node Name` (`extends` after `interface Name`),
+ * interface names after that keyword or after a `,` in its list (`undefined` when not in a
+ * header).
  */
 function headerCompletions(ctx: Ctx, before: readonly Token[]): Completion[] | undefined {
   const toks = before.filter(significant);
   const n = toks.length;
-  if (n >= 2 && toks[n - 2]!.text === "node" && toks[n - 1]!.kind === "ident") {
+  const keywordAfter = n >= 2 ? HEADER_KEYWORD[toks[n - 2]!.text] : undefined;
+  if (keywordAfter && toks[n - 1]!.kind === "ident") {
     return [
       {
-        label: "implements",
+        label: keywordAfter,
         kind: "keyword",
-        documentation: KEYWORD_DOCS.implements,
+        documentation: KEYWORD_DOCS[keywordAfter],
         replace: ctx.replace,
       },
     ];
   }
   let k = n - 1;
-  while (k >= 0 && !(toks[k]!.kind === "ident" && toks[k]!.text === "implements")) k--;
-  if (k < 2 || toks[k - 2]!.text !== "node" || toks[k - 1]!.kind !== "ident") return undefined;
-  // After `implements`: `A , B ,` and the cursor where the next name goes.
+  while (k >= 0 && !(toks[k]!.kind === "ident" && /^(implements|extends)$/.test(toks[k]!.text))) {
+    k--;
+  }
+  if (
+    k < 2 ||
+    HEADER_KEYWORD[toks[k - 2]!.text] !== toks[k]!.text ||
+    toks[k - 1]!.kind !== "ident"
+  ) {
+    return undefined;
+  }
+  // After the keyword: `A , B ,` and the cursor where the next name goes.
   const list = toks.slice(k + 1);
   const wellFormed = list.every((t, i) => (i % 2 === 0 ? t.kind === "ident" : t.text === ","));
   if (!wellFormed || list.length % 2 === 1) return undefined;
   const listed = list.filter((t) => t.kind === "ident").map((t) => t.text);
+  const self = toks[k - 1]!.text;
+  // An interface cannot extend itself, nor one that extends it (directly or not).
+  const extendsSelf = (name: string, seen = new Set<string>()): boolean => {
+    if (name === self) return true;
+    if (seen.has(name)) return false;
+    seen.add(name);
+    const d = ctx.a.scanned.find((x) => x.kind === "interface" && x.name === name);
+    return (d?.extends ?? []).some((t) => extendsSelf(t.text, seen));
+  };
   return names(ctx.a, "interface")
-    .filter((x) => !listed.includes(x))
+    .filter((x) => !listed.includes(x) && !(toks[k]!.text === "extends" && extendsSelf(x)))
     .map((x) => ({ label: x, kind: "interface", detail: "interface", replace: ctx.replace }));
 }
 

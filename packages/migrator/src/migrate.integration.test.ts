@@ -104,6 +104,26 @@ describe.skipIf(!hasNeo)("schema migrations and pull (Neo4j)", () => {
     }
   });
 
+  it("pulls a chain of shared labels as interfaces extending each other", async () => {
+    const clean = "MATCH (n:PullNPerson) DETACH DELETE n";
+    await run(clean);
+    try {
+      await run(
+        "CREATE (:PullNEmp:PullNStaff:PullNPerson {pid: 'e', team: 'a', salary: 1}), (:PullNCon:PullNStaff:PullNPerson {pid: 'k', team: 'b', agency: 'x'}), (:PullNCust:PullNPerson {pid: 'c', tier: 'gold'})",
+      );
+      const src = printSchemaDocument(
+        schemaFromIntrospection(await introspectDatabase(client)).doc,
+      );
+      expect(src).toContain("interface PullNPerson {\n  pid String\n}");
+      expect(src).toContain("interface PullNStaff extends PullNPerson {\n  team String\n}");
+      expect(src).toContain("node PullNEmp implements PullNStaff {\n  salary Int\n}");
+      expect(src).toContain("node PullNCust implements PullNPerson {\n  tier String\n}");
+      expect(() => resolveSchema(parseSchema(src))).not.toThrow();
+    } finally {
+      await run(clean);
+    }
+  });
+
   it("creates vector indexes, recreates them on change, and pulls them back", async () => {
     const v1 = `node MigVector {
   id String @id
@@ -420,6 +440,52 @@ describe.skipIf(!hasNeo)("schema migrations and pull (Neo4j)", () => {
         Number((await run(`MATCH (n:${label}) RETURN count(n) AS c`))[0]!.get("c"));
       expect(await count("MigPerson")).toBe(0);
       expect(await count("MigEmp")).toBe(1);
+    } finally {
+      await clean();
+    }
+  });
+
+  it("backfills an intermediate interface label when interfaces start extending others", async () => {
+    const constraints = ["MigNPerson_id_id", "MigNStaff_badge_unique"];
+    const clean = async () => {
+      await run("MATCH (n) WHERE n:MigNEmp OR n:MigNCust OR n:MigNPerson DETACH DELETE n");
+      for (const name of constraints) await run(`DROP CONSTRAINT ${name} IF EXISTS`);
+    };
+    await clean();
+    try {
+      const v1 = resolveSchema(
+        parseSchema(`
+          interface MigNPerson { id String @id }
+          node MigNEmp implements MigNPerson { badge String }
+          node MigNCust implements MigNPerson {}
+        `),
+      );
+      await applyPlan(client, diffSchemaModels(EMPTY_SCHEMA_MODEL, v1));
+      await run(
+        "CREATE (:MigNEmp:MigNPerson {id: 'e1', badge: 'b1'}), (:MigNCust:MigNPerson {id: 'c1'})",
+      );
+
+      const v2 = resolveSchema(
+        parseSchema(`
+          interface MigNPerson { id String @id }
+          interface MigNStaff extends MigNPerson { badge String @unique }
+          node MigNEmp implements MigNStaff {}
+          node MigNCust implements MigNPerson {}
+        `),
+      );
+      await applyPlan(client, diffSchemaModels(v1, v2));
+      const rows = await run("MATCH (n:MigNStaff:MigNPerson) RETURN n.id AS id");
+      expect(rows.map((r) => r.get("id"))).toEqual(["e1"]);
+      // The badge constraint sits on the intermediate label.
+      await expect(
+        run("CREATE (:MigNEmp:MigNStaff:MigNPerson {id: 'e2', badge: 'b1'})"),
+      ).rejects.toThrow();
+
+      await applyPlan(client, diffSchemaModels(v2, v1));
+      const count = async (label: string) =>
+        Number((await run(`MATCH (n:${label}) RETURN count(n) AS c`))[0]!.get("c"));
+      expect(await count("MigNStaff")).toBe(0);
+      expect(await count("MigNPerson")).toBe(2);
     } finally {
       await clean();
     }

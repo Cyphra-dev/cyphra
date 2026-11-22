@@ -37,6 +37,14 @@ interface Person {
   name String
 }
 
+interface Staff extends Person, Archivable {
+  team String
+}
+
+node Contractor implements Staff {
+  agency String
+}
+
 node Employee implements Person, Archivable {
   salary Int
 }

@@ -136,3 +136,149 @@ describe("migrations with interfaces", () => {
     );
   });
 });
+
+describe("migrations with interfaces extending interfaces", () => {
+  const flat = model(`
+    interface Person {
+      id    String @id @default(cuid())
+      email String @unique
+    }
+    node Employee implements Person {
+      team String
+    }
+    node Contractor implements Person {
+      team String
+    }
+    node Customer implements Person {}
+  `);
+  const nested = model(`
+    interface Person {
+      id    String @id @default(cuid())
+      email String @unique
+    }
+    interface Staff extends Person {
+      team String @index
+    }
+    node Employee implements Staff {}
+    node Contractor implements Staff {}
+    node Customer implements Person {}
+  `);
+  const cypherOf = (plan: ReturnType<typeof diffSchemaModels>) =>
+    plan.steps.map((s) => ("cypher" in s ? s.cypher : s.countCypher));
+
+  it("keeps inherited DDL on the declaring label", () => {
+    expect(
+      ddlObjectsFromModel(nested)
+        .map((o) => o.name)
+        .sort(),
+    ).toEqual(["Person_email_unique", "Person_id_id", "Staff_team_idx"]);
+  });
+
+  it("backfills the new intermediate label before creating its DDL", () => {
+    const cypher = cypherOf(diffSchemaModels(flat, nested));
+    const employee = cypher.indexOf("MATCH (n:`Employee`) WHERE NOT n:`Staff` SET n:`Staff`");
+    const contractor = cypher.indexOf("MATCH (n:`Contractor`) WHERE NOT n:`Staff` SET n:`Staff`");
+    const create = cypher.findIndex((c) => c.startsWith("CREATE") && c.includes("Staff_team_idx"));
+    expect(employee).toBeGreaterThan(-1);
+    expect(contractor).toBeGreaterThan(-1);
+    expect(create).toBeGreaterThan(Math.max(employee, contractor));
+    // Person was implemented already: no second backfill, no step on the interface's own label.
+    expect(cypher.filter((c) => c.includes("SET n:`Person`"))).toEqual([]);
+    expect(cypher.some((c) => c.startsWith("MATCH (n:`Staff`)"))).toBe(false);
+    // Nothing touches Customer, and Person's constraints stay.
+    expect(cypher.some((c) => c.includes("Customer"))).toBe(false);
+    expect(cypher.some((c) => c.includes("DROP") && c.includes("Person_"))).toBe(false);
+  });
+
+  it("removes the intermediate label when the nesting goes away", () => {
+    const cypher = cypherOf(diffSchemaModels(nested, flat));
+    expect(cypher).toContain("MATCH (n:`Employee`) WHERE n:`Staff` REMOVE n:`Staff`");
+    expect(cypher).toContain("MATCH (n:`Contractor`) WHERE n:`Staff` REMOVE n:`Staff`");
+    expect(cypher.some((c) => c.includes("REMOVE n:`Person`"))).toBe(false);
+    expect(cypher.some((c) => c.includes("DETACH DELETE"))).toBe(false);
+  });
+
+  it("backfills every ancestor label when a node starts implementing a nested interface", () => {
+    const plain = model(`
+      interface Person {
+        id    String @id @default(cuid())
+        email String @unique
+      }
+      interface Staff extends Person {
+        team String @index
+      }
+      node Employee {
+        id    String @id @default(cuid())
+        email String
+        team  String
+      }
+      node Contractor implements Staff {}
+    `);
+    const implementing = model(`
+      interface Person {
+        id    String @id @default(cuid())
+        email String @unique
+      }
+      interface Staff extends Person {
+        team String @index
+      }
+      node Employee implements Staff {}
+      node Contractor implements Staff {}
+    `);
+    const plan = diffSchemaModels(plain, implementing);
+    const cypher = cypherOf(plan);
+    expect(cypher).toEqual([
+      "DROP CONSTRAINT Employee_id_id IF EXISTS",
+      "MATCH (n:`Employee`) WHERE NOT n:`Staff` SET n:`Staff`",
+      "MATCH (n:`Employee`) WHERE NOT n:`Person` SET n:`Person`",
+    ]);
+    expect(cypherOf(diffSchemaModels(implementing, plain))).toEqual([
+      "MATCH (n:`Employee`) WHERE n:`Staff` REMOVE n:`Staff`",
+      "MATCH (n:`Employee`) WHERE n:`Person` REMOVE n:`Person`",
+      "CREATE CONSTRAINT Employee_id_id IF NOT EXISTS FOR (n:`Employee`) REQUIRE n.`id` IS UNIQUE",
+    ]);
+  });
+
+  it("migrates a new field of an ancestor once, on its label", () => {
+    const v2 = model(`
+      interface Person {
+        id    String @id @default(cuid())
+        email String @unique
+        role  String @default("member")
+      }
+      interface Staff extends Person {
+        team String @index
+      }
+      node Employee implements Staff {}
+      node Contractor implements Staff {}
+      node Customer implements Person {}
+    `);
+    expect(diffSchemaModels(nested, v2).steps.map((s) => s.comment)).toEqual([
+      "Backfill Person.role with its default on existing nodes.",
+    ]);
+  });
+
+  it("does not move data when a field moves up to an ancestor", () => {
+    const moved = model(`
+      interface Person {
+        id    String @id @default(cuid())
+        email String @unique
+        team  String?
+      }
+      interface Staff extends Person {}
+      node Employee implements Staff {}
+      node Contractor implements Staff {}
+      node Customer implements Person {}
+    `);
+    const plan = diffSchemaModels(nested, moved);
+    expect(plan.steps.some((s) => s.kind === "destructive")).toBe(false);
+    expect(cypherOf(plan)).toEqual(["DROP INDEX Staff_team_idx IF EXISTS"]);
+  });
+
+  it("plans a first migration with nested interfaces", () => {
+    const plan = diffSchemaModels(EMPTY_SCHEMA_MODEL, nested);
+    expect(plan.steps.every((s) => s.kind === "statement" && s.cypher.startsWith("CREATE"))).toBe(
+      true,
+    );
+  });
+});
