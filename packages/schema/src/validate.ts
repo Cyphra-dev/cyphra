@@ -3,6 +3,7 @@ import type {
   DecoratorArg,
   EnumDeclaration,
   ModelAttribute,
+  NodeField,
   NodeDeclaration,
   RelationshipDeclaration,
   ScalarNodeField,
@@ -386,48 +387,133 @@ export function nodeOwner(decl: NodeDeclaration): string {
   return `${decl.abstract ? "Interface" : "Node"} "${decl.name}"`;
 }
 
+/** Interfaces a declaration names directly: `implements` of a node, `extends` of an interface. */
+export function parentInterfaces(decl: NodeDeclaration): readonly string[] {
+  return decl.abstract ? (decl.extends ?? []) : (decl.implements ?? []);
+}
+
+function interfaceDecl(doc: SchemaDocument, name: string): NodeDeclaration | undefined {
+  const d = doc.declarations.find((x) => x.name === name);
+  return d?.kind === "Node" && d.abstract ? d : undefined;
+}
+
 /**
- * `node X implements A, B`: every name is a declared `interface` (named once), interfaces do not
- * implement others, no field is declared twice (by the node and an interface, or by two
- * interfaces), and at most one `@id` across them.
+ * Every interface `decl` inherits from, directly or through the interfaces it extends: each
+ * parent, then that parent's own ancestors (depth first, each once). Undeclared names and cycles
+ * are skipped (validation reports them).
+ */
+export function ancestorInterfaces(doc: SchemaDocument, decl: NodeDeclaration): string[] {
+  const out: string[] = [];
+  const visit = (d: NodeDeclaration) => {
+    for (const n of parentInterfaces(d)) {
+      if (out.includes(n) || n === decl.name) continue;
+      const target = interfaceDecl(doc, n);
+      if (!target) continue;
+      out.push(n);
+      visit(target);
+    }
+  };
+  visit(decl);
+  return out;
+}
+
+/**
+ * The fields `decl` inherits, each with the interface declaring it, in inheritance order (each
+ * parent's inherited fields, then its own). A field reached twice through a diamond (`A` extended
+ * by `B` and `C`, both implemented by `X`) is listed once.
+ */
+export function inheritedFieldsOf(
+  doc: SchemaDocument,
+  decl: NodeDeclaration,
+): { readonly field: NodeField; readonly from: string }[] {
+  const out: { field: NodeField; from: string }[] = [];
+  const seen = new Set<string>();
+  const visit = (d: NodeDeclaration, path: readonly string[]) => {
+    for (const n of parentInterfaces(d)) {
+      const target = interfaceDecl(doc, n);
+      if (!target || path.includes(n)) continue;
+      visit(target, [...path, n]);
+      for (const field of target.fields) {
+        const key = `${n}.${field.name}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        out.push({ field, from: n });
+      }
+    }
+  };
+  visit(decl, [decl.name]);
+  return out;
+}
+
+/**
+ * `node X implements A, B` / `interface B extends A`: every name is a declared `interface` (named
+ * once), a node only `implements` and an interface only `extends`, no interface extends itself
+ * (directly or through others), no field is declared twice (by the declaration and an interface,
+ * or by two interfaces), and at most one `@id` across them.
  */
 export function validateImplements(doc: SchemaDocument, decl: NodeDeclaration): void {
-  const names = decl.implements ?? [];
-  if (names.length === 0) return;
   const owner = nodeOwner(decl);
-  if (decl.abstract) {
+  if (decl.abstract && decl.implements?.length) {
     throw new SchemaValidationError(
-      `${owner}: an interface cannot implement other interfaces (implements ${names.join(", ")}).`,
+      `${owner}: an interface extends other interfaces (write \`interface ${decl.name} extends ${decl.implements.join(", ")}\`).`,
     );
   }
+  if (!decl.abstract && decl.extends?.length) {
+    throw new SchemaValidationError(
+      `${owner}: a node implements interfaces (write \`node ${decl.name} implements ${decl.extends.join(", ")}\`).`,
+    );
+  }
+  const names = parentInterfaces(decl);
+  if (names.length === 0) return;
+  const verb = decl.abstract ? "extends" : "implements";
   const seen = new Set<string>();
-  const fieldFrom = new Map<string, string>();
-  let idFrom: string | undefined;
   for (const n of names) {
-    if (seen.has(n)) throw new SchemaValidationError(`${owner}: implements ${n} twice.`);
+    if (seen.has(n)) throw new SchemaValidationError(`${owner}: ${verb} ${n} twice.`);
     seen.add(n);
     const target = doc.declarations.find((d) => d.name === n);
     if (!target || target.kind !== "Node" || !target.abstract) {
       throw new SchemaValidationError(
-        `${owner}: implements ${n}, which is not an interface${target ? "" : " (not declared)"}.`,
+        `${owner}: ${verb} ${n}, which is not an interface${target ? "" : " (not declared)"}.`,
       );
     }
-    for (const f of target.fields) {
-      const other = fieldFrom.get(f.name);
-      if (other) {
+  }
+  if (decl.abstract) {
+    // A cycle: walk the `extends` graph from each parent looking for `decl`.
+    const cycle = (from: string, path: readonly string[]): string[] | null => {
+      if (from === decl.name) return [...path, from];
+      if (path.includes(from)) return null;
+      for (const n of interfaceDecl(doc, from)?.extends ?? []) {
+        const c = cycle(n, [...path, from]);
+        if (c) return c;
+      }
+      return null;
+    };
+    for (const n of names) {
+      const c = cycle(n, [decl.name]);
+      if (c) {
         throw new SchemaValidationError(
-          `${owner}: field "${f.name}" is declared by both ${other} and ${n}.`,
+          `${owner}: interfaces cannot extend themselves (${c.join(" extends ")}).`,
         );
       }
-      fieldFrom.set(f.name, n);
-      if (f.kind === "Scalar" && hasDecoratorNamed(f.decorators, "id")) {
-        if (idFrom) {
-          throw new SchemaValidationError(
-            `${owner}: ${idFrom} and ${n} both declare an @id field (a node has at most one).`,
-          );
-        }
-        idFrom = n;
+    }
+  }
+  const fieldFrom = new Map<string, string>();
+  let idFrom: string | undefined;
+  for (const { field: f, from } of inheritedFieldsOf(doc, decl)) {
+    const other = fieldFrom.get(f.name);
+    if (other) {
+      throw new SchemaValidationError(
+        `${owner}: field "${f.name}" is declared by both ${other} and ${from}.`,
+      );
+    }
+    fieldFrom.set(f.name, from);
+    if (f.kind === "Scalar" && hasDecoratorNamed(f.decorators, "id")) {
+      if (idFrom) {
+        throw new SchemaValidationError(
+          `${owner}: ${idFrom} and ${from} both declare an @id field (a node has at most one).`,
+        );
       }
+      idFrom = from;
     }
   }
   for (const f of decl.fields) {
@@ -446,15 +532,12 @@ export function validateImplements(doc: SchemaDocument, decl: NodeDeclaration): 
 }
 
 /**
- * `decl` with the fields it inherits from the interfaces it implements (first, in `implements`
- * order), as model attributes see them: `@@unique([email, tenant])` may name inherited fields.
+ * `decl` with the fields it inherits from its interfaces (first, in inheritance order), as model
+ * attributes see them: `@@unique([email, tenant])` may name inherited fields.
  */
 export function withInheritedFields(doc: SchemaDocument, decl: NodeDeclaration): NodeDeclaration {
-  if (!decl.implements?.length) return decl;
-  const inherited = decl.implements.flatMap((n) => {
-    const d = doc.declarations.find((x) => x.name === n);
-    return d?.kind === "Node" ? d.fields : [];
-  });
+  if (parentInterfaces(decl).length === 0) return decl;
+  const inherited = inheritedFieldsOf(doc, decl).map((x) => x.field);
   return { ...decl, fields: [...inherited, ...decl.fields] };
 }
 

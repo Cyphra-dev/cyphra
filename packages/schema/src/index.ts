@@ -67,6 +67,9 @@ export {
   MAX_VECTOR_DIMENSIONS,
   SCALAR_TYPE_NAMES,
   VECTOR_SIMILARITIES,
+  ancestorInterfaces,
+  inheritedFieldsOf,
+  parentInterfaces,
   validateSchema,
 } from "./validate.js";
 export type {

@@ -3,7 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createOrm } from "@cyphra/runtime";
 import { parseSchemaFile, resolveSchema } from "@cyphra/schema";
-import { clientFromEnv } from "../clientFromEnv.js";
+import { clientForConfig } from "../clientFromEnv.js";
 import type { CyphraConfig } from "../config.js";
 import { createStudioApi } from "../studio/api.js";
 import { createStudioDb } from "../studio/db.js";
@@ -65,7 +65,8 @@ export async function runStudio(
   }
   const schema = resolveSchema(await parseSchemaFile(config.schema));
   const files = await loadStaticDir(staticDir());
-  const client = clientFromEnv();
+  // The dialect of cyphra.json, else the one the server announces (Memgraph or Neo4j).
+  const client = await clientForConfig(config);
   const orm = createOrm(schema, { client }) as unknown as Record<string, unknown>;
   const readOnly = opts.readOnly === true;
   const meta = buildMeta(schema, {
@@ -73,6 +74,7 @@ export async function runStudio(
     connection: redactUri(process.env.NEO4J_URI),
     ...(process.env.NEO4J_DATABASE ? { database: process.env.NEO4J_DATABASE } : {}),
     version,
+    dialect: client.dialect,
   });
   const api = createStudioApi({ schema, db: createStudioDb(orm, client), meta, readOnly });
   const token = createToken();
@@ -89,7 +91,9 @@ export async function runStudio(
   const realPort = addr && typeof addr === "object" ? addr.port : port;
   const shownHost = host.includes(":") ? `[${host}]` : host === "0.0.0.0" ? "127.0.0.1" : host;
   const url = `http://${shownHost}:${realPort}/?token=${token}`;
-  console.log(`Cyphra Studio${readOnly ? " (read-only)" : ""} on ${url}`);
+  console.log(
+    `Cyphra Studio${readOnly ? " (read-only)" : ""}${client.dialect === "memgraph" ? " (Memgraph)" : ""} on ${url}`,
+  );
   console.log("The token in the URL is required: keep it private. Stop with Ctrl+C.");
   if (opts.open !== false) openBrowser(url);
   const close = async () => {

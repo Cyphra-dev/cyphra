@@ -1,7 +1,11 @@
 import { parseSchema, resolveSchema } from "@cyphra/schema";
-import { CyphraValidationError, UniqueConstraintError } from "@cyphra/runtime";
+import {
+  CyphraValidationError,
+  UniqueConstraintError,
+  UnsupportedFeatureError,
+} from "@cyphra/runtime";
 import { describe, expect, it } from "vitest";
-import { createStudioApi, type StudioDb, type StudioDelegate } from "./api.js";
+import { createStudioApi, errorResult, type StudioDb, type StudioDelegate } from "./api.js";
 import { buildMeta, toWire } from "./values.js";
 
 const schema = resolveSchema(
@@ -415,5 +419,114 @@ describe("toWire", () => {
       x: 1,
     });
     expect(toWire([1n, null, NaN])).toEqual(["1", null, "NaN"]);
+  });
+});
+
+describe("studio on Memgraph", () => {
+  const timed = resolveSchema(
+    parseSchema(`
+node Shop {
+  id      String  @id
+  name    String
+  opensAt Time?
+  open    LocalTime?
+  ships   Shop[]  @relationship(type: "SHIPS", direction: OUT)
+}
+
+relationship Ships {
+  type "SHIPS"
+  from Shop
+  to Shop
+  at Time?
+  note String?
+}
+`),
+  );
+  const info = { readOnly: false, connection: "bolt://x", version: "0.0.0" };
+  const mgApi = (db: StudioDb) =>
+    createStudioApi({
+      schema: timed,
+      db,
+      meta: buildMeta(timed, { ...info, dialect: "memgraph" }),
+      readOnly: false,
+    });
+
+  it("exposes the dialect and marks the fields Memgraph cannot store", () => {
+    expect(buildMeta(timed, info).dialect).toBe("neo4j");
+    const neo = buildMeta(timed, { ...info, dialect: "neo4j" });
+    expect(JSON.stringify(neo)).not.toContain("unsupported");
+    const mg = buildMeta(timed, { ...info, dialect: "memgraph" });
+    expect(mg.dialect).toBe("memgraph");
+    const fields = mg.nodes[0]!.fields;
+    expect(fields.find((f) => f.name === "opensAt")).toMatchObject({
+      unsupported: expect.stringMatching(/Memgraph has no zoned time type/),
+    });
+    expect(fields.find((f) => f.name === "open")).not.toHaveProperty("unsupported");
+    expect(mg.relationships[0]!.properties.find((p) => p.name === "at")).toHaveProperty(
+      "unsupported",
+    );
+  });
+
+  it("refuses to write unsupported fields before the ORM runs", async () => {
+    const { db, calls } = fakeDb();
+    const a = mgApi(db);
+    for (const path of ["/api/models/Shop/create", "/api/models/Shop/update"]) {
+      const res = await a.handle("POST", path, {
+        where: { id: "s1" },
+        data: { id: "s1", name: "Corner", opensAt: "09:00:00+02:00" },
+      });
+      expect(res.status).toBe(400);
+      expect(res.body).toMatchObject({
+        error: expect.stringMatching(/^Shop\.opensAt cannot be written on Memgraph/),
+        unsupported: { feature: "Time values", dialect: "memgraph" },
+        issues: [{ field: "opensAt", message: expect.stringMatching(/zoned time/) }],
+      });
+    }
+    const edge = await a.handle("POST", "/api/relationships/Ships/update", {
+      from: { id: "s1" },
+      to: { id: "s2" },
+      data: { at: "10:00:00Z" },
+    });
+    expect(edge.status).toBe(400);
+    expect((edge.body as { error: string }).error).toMatch(/^Ships\.at cannot be written/);
+    expect(calls.filter((c) => c.op !== "findUnique")).toEqual([]);
+
+    // null clears the field, which Memgraph can do; other fields go through.
+    await a.handle("POST", "/api/models/Shop/update", {
+      where: { id: "s1" },
+      data: { name: "Corner", opensAt: null },
+    });
+    expect(calls.at(-1)).toMatchObject({ op: "update", args: { data: { opensAt: null } } });
+  });
+
+  it("answers UnsupportedFeatureError and Memgraph client errors with 400", async () => {
+    const { db } = fakeDb({
+      findMany: () => {
+        throw new UnsupportedFeatureError(
+          "A Duration with months or years",
+          "memgraph",
+          "Use days instead of months.",
+        );
+      },
+      cypher: () => {
+        throw Object.assign(new Error("There is no procedure named 'db.index.fulltext.x'."), {
+          code: "Memgraph.ClientError.MemgraphError.MemgraphError",
+        });
+      },
+    });
+    const a = mgApi(db);
+    expect(await a.handle("POST", "/api/models/Shop/find", {})).toEqual({
+      status: 400,
+      body: {
+        error:
+          "A Duration with months or years is not supported on Memgraph: Use days instead of months.",
+        unsupported: { feature: "A Duration with months or years", dialect: "memgraph" },
+      },
+    });
+    const raw = await a.handle("POST", "/api/cypher", { query: "CALL db.index.fulltext.x()" });
+    expect(raw.status).toBe(400);
+    expect(
+      errorResult(Object.assign(new Error("boom"), { code: "Memgraph.DatabaseError.X" })),
+    ).toMatchObject({ status: 500 });
   });
 });

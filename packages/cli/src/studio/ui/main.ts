@@ -425,6 +425,16 @@ function renderTop(): void {
         )
       : null,
     h("div", { class: "spacer" }),
+    m?.dialect === "memgraph"
+      ? h(
+          "span",
+          {
+            class: "badge",
+            title: "Memgraph dialect: features Memgraph lacks are disabled",
+          },
+          "Memgraph",
+        )
+      : null,
     m?.readOnly
       ? h("span", { class: "badge signal", title: "Started with --read-only" }, "read-only")
       : null,
@@ -642,7 +652,8 @@ function conditionWhere(model: StudioNodeModel, c: Condition): AnyRecord | null 
 
 function renderFilters(v: TableView): Node {
   const model = nodeModel(v.model);
-  const filterable = model.fields;
+  // Fields the database cannot store (a Time on Memgraph) hold no values to filter on.
+  const filterable = model.fields.filter((x) => x.kind !== "scalar" || !x.unsupported);
   const rows = v.conditions.map((c, i) => {
     const f = filterable.find((x) => x.name === c.field)!;
     const fieldSel = h(
@@ -704,19 +715,21 @@ function renderFilters(v: TableView): Node {
     h(
       "div",
       { class: "filter-row" },
-      h(
-        "button",
-        {
-          class: "btn small",
-          onclick: () => {
-            const f = filterable[0]!;
-            const op = operatorsFor(f)[0]![0];
-            v.conditions.push({ field: f.name, op, editor: conditionEditor(f, op) });
-            render();
-          },
-        },
-        "+ Condition",
-      ),
+      filterable.length === 0
+        ? null
+        : h(
+            "button",
+            {
+              class: "btn small",
+              onclick: () => {
+                const f = filterable[0]!;
+                const op = operatorsFor(f)[0]![0];
+                v.conditions.push({ field: f.name, op, editor: conditionEditor(f, op) });
+                render();
+              },
+            },
+            "+ Condition",
+          ),
       v.conditions.length
         ? h("button", { class: "btn small primary", onclick: () => applyFilters(v) }, "Apply")
         : null,
@@ -1241,7 +1254,7 @@ function formField(
   const form: FormField = { field: f, editor, error, dirty: false };
   editor.el.addEventListener("input", () => (form.dirty = true));
   editor.el.addEventListener("change", () => (form.dirty = true));
-  if (readOnly) {
+  if (readOnly || f.unsupported) {
     for (const el of editor.el.querySelectorAll("input, select, textarea, button")) {
       (el as HTMLInputElement).disabled = true;
     }
@@ -1263,6 +1276,10 @@ function formField(
     editor.el,
     f.rules?.length ? h("div", { class: "hint mono" }, f.rules.join(" ")) : null,
     f.type === "DateTime" ? h("div", { class: "hint" }, "UTC") : null,
+    f.unsupported ? h("div", { class: "hint" }, f.unsupported) : null,
+    f.type === "Duration" && meta().dialect === "memgraph"
+      ? h("div", { class: "hint" }, "Memgraph: days, hours, minutes and seconds only")
+      : null,
     error,
   );
   return { el, form };
@@ -1772,7 +1789,14 @@ async function boot(): Promise<void> {
     state.meta = await api<StudioMeta>("/api/meta");
   } catch (e) {
     state.fatal = errorOf(e).error;
-    state.meta = { nodes: [], relationships: [], readOnly: true, connection: "", version: "" };
+    state.meta = {
+      nodes: [],
+      relationships: [],
+      readOnly: true,
+      connection: "",
+      version: "",
+      dialect: "neo4j",
+    };
     render();
     return;
   }

@@ -27,14 +27,19 @@ export function buildGrammar(scalarTypes: readonly string[]): Rule {
       8: { name: "keyword.operator.type.modifier.cyphra" },
     },
   };
-  // `node X implements A, B { … }` / `interface A { … }`: same body, with an optional
-  // `implements` list in the header.
+  // `node X implements A, B { … }` / `interface B extends A { … }`: same body, with an optional
+  // `implements` / `extends` list in the header.
   const nodeLike = (keyword: "node" | "interface") => ({
-    begin: `\\b(${keyword})\\b\\s*(${IDENT})?(?:\\s+(implements)\\b\\s*((?:${IDENT})(?:\\s*,\\s*${IDENT})*)?)?`,
+    begin: `\\b(${keyword})\\b\\s*(${IDENT})?(?:\\s+(implements|extends)\\b\\s*((?:${IDENT})(?:\\s*,\\s*${IDENT})*)?)?`,
     beginCaptures: {
       1: { name: `keyword.declaration.${keyword}.cyphra` },
       2: { name: `entity.name.type.${keyword}.cyphra` },
-      3: { name: "keyword.other.implements.cyphra" },
+      3: {
+        patterns: [
+          { match: "implements", name: "keyword.other.implements.cyphra" },
+          { match: "extends", name: "keyword.other.extends.cyphra" },
+        ],
+      },
       4: {
         patterns: [
           { match: IDENT, name: "entity.name.type.interface.cyphra" },

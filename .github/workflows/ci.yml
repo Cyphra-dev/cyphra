@@ -273,5 +273,6 @@ jobs:
         run: |
           pnpm --filter @cyphra/runtime --fail-if-no-match exec vitest run src/client.integration.test.ts src/orm/orm.integration.test.ts src/orm/onDelete.integration.test.ts src/orm/rules.integration.test.ts src/orm/interfaces.integration.test.ts src/orm/memgraph.integration.test.ts
           pnpm --filter @cyphra/migrator --fail-if-no-match exec vitest run src/memgraph.integration.test.ts
+          pnpm --filter @cyphra/cli --fail-if-no-match exec vitest run src/studio/studio.memgraph.integration.test.ts
           # `cyphra migrate reset` empties the whole database, so it runs on its own (opt-in flag).
           CYPHRA_TEST_RESET_DB=1 pnpm --filter @cyphra/cli --fail-if-no-match exec vitest run src/commands/migrateReset.memgraph.integration.test.ts

@@ -442,17 +442,61 @@ node Customer implements Person {
   }
   ```
 
-These are validation errors: implementing something that is not an interface (or the same one
-twice), redeclaring an inherited field, two interfaces of one node declaring the same field, more
-than one `@id` across a node and its interfaces, and an interface implementing another.
+### Interfaces extending interfaces
 
-[Migrations](/migrations#interfaces-and-labels) add the interface label to existing nodes when a
-node starts implementing it, and [`cyphra pull`](/cli#cyphra-pull) recognizes shared labels as
-interfaces.
+An interface can extend other interfaces: it inherits their fields, and its implementations carry
+every label up the chain.
 
-Not supported yet: interfaces that extend other interfaces, narrowing an inherited field on an
-implementation, filtering an interface query by implementation (query the implementation
-instead), labels added or removed at runtime, and unions of unrelated models.
+```cyphra
+interface Staff extends Person {
+  badge String @unique
+  team  Team?  @relationship(type: "MEMBER_OF", direction: OUT)
+}
+
+interface Contact extends Person {
+  phone String?
+}
+
+node Engineer implements Staff, Contact {
+  level Int @default(1)
+}
+```
+
+- An `Engineer` is written as `(:Engineer:Staff:Person:Contact)`. `db.staff` returns engineers
+  (and any other `Staff` implementation), `db.person` returns everything below `Person`.
+- Fields come first from the interfaces, in order (`Staff` inherits `Person`'s fields before its
+  own). A field reached twice through two interfaces extending the same one (`Person.email` via
+  `Staff` and `Contact`, a "diamond") is inherited once.
+- Constraints and indexes stay on the label that declares them: `Person_email_unique` covers every
+  `Staff` and `Contact` node; `Staff_badge_unique` is on `:Staff`.
+- A node `implements` interfaces and an interface `extends` them: `interface X implements Y` and
+  `node X extends Y` are errors.
+
+### Validation
+
+These are validation errors: implementing or extending something that is not an interface (or the
+same one twice), an interface extending itself (directly or through others), redeclaring an
+inherited field, two interfaces declaring the same field (unless one inherits it from the other),
+and more than one `@id` across a node and its interfaces.
+
+[Migrations](/migrations#interfaces-and-labels) add the interface labels to existing nodes when a
+node starts implementing an interface (or one of its interfaces starts extending another), and
+[`cyphra pull`](/cli#cyphra-pull) recognizes shared labels as interfaces, including chains of
+labels as interfaces extending interfaces.
+
+### Not planned
+
+- **Narrowing an inherited field** on an implementation (an optional `Person.bio` required on
+  `Employee`, or an enum field restricted to some values). An update through the interface
+  (`db.person.updateMany({ data: { bio: null } })`) would have to check every node against its
+  implementation's version of the field, so the schema could not guarantee it. Declare the field on
+  each implementation instead of on the interface.
+- **Interfaces in `@cyphra/graphql`.** `@neo4j/graphql` v7 interfaces add no label (a `Movie`
+  implementing `Production` is stored as `(:Movie)`), so they have no exact Cyphra equivalent; the
+  importer reports them as unsupported.
+
+Unions of unrelated models and labels added or removed at runtime are tracked as separate
+follow-ups (see the [design note](https://github.com/Cyphra-dev/cyphra/blob/main/docs/design/multi-labels.md)).
 
 ## Decorators
 

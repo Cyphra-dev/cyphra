@@ -591,44 +591,104 @@ export function schemaFromIntrospection(input: IntrospectionResult): {
   }
 
   // --- interfaces ------------------------------------------------------------------
-  // A label P that never appears alone, whose nodes each carry exactly one other label X, every X
-  // node carrying P, becomes `interface P` implemented by each X (`node X implements P`).
+  // Label combinations become an interface hierarchy when, in each group of labels seen together,
+  // every combination of several labels has one label of its own (the node's model, found in no
+  // other combination) and its other labels form a chain where each one's nodes all carry the
+  // next (`node Employee implements Staff`, `interface Staff extends Person`), and no interface
+  // label appears alone. Anything else (e.g. a node carrying two unrelated interfaces, or two
+  // labels always seen together) becomes one model per label.
   const combos = input.nodeTypes
     .map((nt) => nt.labels.filter((l) => !skipLabel(l)))
     .filter((c) => c.length > 0);
   const combosWith = (l: string) => combos.filter((c) => c.includes(l));
-  const implementationsIf = (p: string): string[] | null => {
-    const cs = combosWith(p);
-    if (cs.length === 0 || cs.some((c) => c.length !== 2)) return null;
-    const xs = [...new Set(cs.map((c) => c.find((l) => l !== p)!))];
-    return xs.every((x) => combosWith(x).length === 1) ? xs.sort() : null;
+  /** The parent of each label of `group`'s combinations, or `null` when they are no hierarchy. */
+  const hierarchyOf = (group: readonly (readonly string[])[]): Map<string, string> | null => {
+    const parents = new Map<string, string>();
+    const shared = new Set(group.filter((c) => c.length > 1).flat());
+    const count = (l: string) => combosWith(l).length;
+    for (const c of group) {
+      if (c.length === 1) {
+        if (shared.has(c[0]!)) return null; // an interface (or a node's own label) seen alone
+        continue;
+      }
+      const chain = [...c].sort((a, b) => count(a) - count(b));
+      if (count(chain[0]!) !== 1) return null;
+      for (let i = 0; i + 1 < chain.length; i++) {
+        const [a, b] = [chain[i]!, chain[i + 1]!];
+        if (count(a) >= count(b) || !combosWith(a).every((x) => x.includes(b))) return null;
+        if ((parents.get(a) ?? b) !== b) return null;
+        parents.set(a, b);
+      }
+    }
+    return parents;
   };
-  const implsOf = new Map<string, string[]>();
-  for (const p of labels.keys()) {
-    const xs = implementationsIf(p);
-    if (xs && !xs.some((x) => implementationsIf(x))) implsOf.set(p, xs);
-  }
-  /** Interface of each implementation label. */
-  const ifaceOf = new Map<string, string>();
-  for (const [p, xs] of implsOf) for (const x of xs) ifaceOf.set(x, p);
+  /** The interface each label implements (a node) or extends (an interface), if any. */
+  const parentOf = new Map<string, string>();
+  const grouped = new Set<string>();
   for (const c of combos) {
-    if (c.length < 2) continue;
-    if (c.length === 2 && (ifaceOf.get(c[0]!) === c[1] || ifaceOf.get(c[1]!) === c[0])) continue;
-    warnings.push(
-      `Nodes labelled ${c.map((l) => `:${l}`).join("")} became one model per label (${c.join(", ")}): an interface needs a label that never appears alone, on nodes with exactly one other label each.`,
-    );
+    if (c.length < 2 || grouped.has(c[0]!)) continue;
+    // The labels seen together with c's, directly or not, and their combinations.
+    const group = new Set(c);
+    for (let grew = true; grew;) {
+      grew = false;
+      for (const x of combos) {
+        if (x.some((l) => group.has(l)) && x.some((l) => !group.has(l))) {
+          x.forEach((l) => group.add(l));
+          grew = true;
+        }
+      }
+    }
+    group.forEach((l) => grouped.add(l));
+    const groupCombos = combos.filter((x) => x.some((l) => group.has(l)));
+    const parents = hierarchyOf(groupCombos);
+    if (parents) {
+      for (const [l, p] of parents) parentOf.set(l, p);
+      continue;
+    }
+    for (const x of groupCombos) {
+      if (x.length < 2) continue;
+      warnings.push(
+        `Nodes labelled ${x.map((l) => `:${l}`).join("")} became one model per label (${x.join(", ")}): an interface needs a label that never appears alone, on nodes with exactly one label of their own, their other labels forming a chain (each one's nodes all carrying the next).`,
+      );
+    }
   }
+  const interfaces = new Set(parentOf.values());
+  /** Interfaces above `label`, nearest first. */
+  const ancestorsOf = (label: string): string[] => {
+    const out: string[] = [];
+    for (let p = parentOf.get(label); p; p = parentOf.get(p)) out.push(p);
+    return out;
+  };
+  /** Labels below the interface `label` (interfaces and nodes), in label order. */
+  const descendantsOf = (label: string) =>
+    [...parentOf.keys()].filter((l) => ancestorsOf(l).includes(label)).sort();
+  /** Labels directly below the interface `label`, sorted. */
+  const childrenOf = (label: string) =>
+    [...parentOf]
+      .filter(([, p]) => p === label)
+      .map(([l]) => l)
+      .sort();
+  /** Interfaces in label order, the ones nearer the root first. */
+  const interfacesTopDown = [...labels.keys()]
+    .filter((l) => interfaces.has(l))
+    .sort((a, b) => ancestorsOf(a).length - ancestorsOf(b).length);
   /** Whether `label` declares a constraint or an index on `prop` (kept on that label). */
   const declaresOn = (label: string, prop: string) =>
     (uniqueOn.get(label) ?? []).some((u) => u.prop === prop) ||
     indexOn.has(`NODE:${label}.${prop}`) ||
     vectorOn.has(`${label}.${prop}`);
-  /** Properties of each interface: on every one of its nodes, or constrained / indexed on it. */
+  /**
+   * Properties of each interface: on every one of its nodes, or constrained / indexed on it, and
+   * not already a field of an interface it extends.
+   */
   const interfaceProps = new Map<string, Set<string>>();
-  for (const [p, xs] of implsOf) {
+  for (const p of interfacesTopDown) {
     const e = labels.get(p)!;
+    const above = ancestorsOf(p);
+    const below = descendantsOf(p);
     const props = new Set<string>();
     for (const [prop, acc] of e.props) {
+      if (above.some((a) => interfaceProps.get(a)!.has(prop))) continue;
       const own = declaresOn(p, prop);
       if (!own && acc.presentIn !== e.combos) continue;
       if (
@@ -638,7 +698,7 @@ export function schemaFromIntrospection(input: IntrospectionResult): {
       ) {
         continue;
       }
-      const onImpl = xs.filter((x) => declaresOn(x, prop));
+      const onImpl = below.filter((x) => declaresOn(x, prop));
       if (onImpl.length && !own) continue;
       for (const x of onImpl) {
         warnings.push(
@@ -653,8 +713,7 @@ export function schemaFromIntrospection(input: IntrospectionResult): {
   const ownsProp = (label: string, prop: string) => {
     const iface = interfaceProps.get(label);
     if (iface) return iface.has(prop);
-    const parent = ifaceOf.get(label);
-    return !parent || !interfaceProps.get(parent)!.has(prop);
+    return !ancestorsOf(label).some((a) => interfaceProps.get(a)!.has(prop));
   };
 
   // --- node declarations ---------------------------------------------------------
@@ -662,8 +721,7 @@ export function schemaFromIntrospection(input: IntrospectionResult): {
   const taken = new Map<string, Set<string>>();
   /** Claim a field name on `label`, unused by it and by the models it shares fields with. */
   const claim = (label: string, base: string) => {
-    const parent = ifaceOf.get(label);
-    const related = parent ? [parent] : (implsOf.get(label) ?? []);
+    const related = [...ancestorsOf(label), ...(interfaces.has(label) ? descendantsOf(label) : [])];
     const sets = [taken.get(label)!, ...related.map((r) => taken.get(r)!)];
     let name = base;
     let i = 2;
@@ -736,10 +794,12 @@ export function schemaFromIntrospection(input: IntrospectionResult): {
   const declNames = new Set(labels.keys());
   for (const rt of [...input.relTypes].sort((a, b) => a.type.localeCompare(b.type))) {
     let pairs: { from: string; to: string }[] = [];
-    // A node of an implementation is that implementation (not also its interface)...
+    // A node of an implementation is that implementation (not also its interfaces)...
     const modelLabels = (ls: readonly string[]) => {
       const valid = ls.filter((l) => !skipLabel(l));
-      return valid.filter((l) => !(implsOf.has(l) && valid.some((x) => ifaceOf.get(x) === l)));
+      return valid.filter(
+        (l) => !(interfaces.has(l) && valid.some((x) => ancestorsOf(x).includes(l))),
+      );
     };
     for (const ep of rt.endpoints) {
       for (const from of modelLabels(ep.from)) {
@@ -748,10 +808,13 @@ export function schemaFromIntrospection(input: IntrospectionResult): {
         }
       }
     }
-    // ...and edges seen on every implementation of an interface become a relation of the interface.
+    // ...and edges seen on every implementation of an interface become a relation of the
+    // interface (deepest interfaces first, so that they lift further up a hierarchy).
+    const bottomUp = [...interfacesTopDown].reverse();
     for (const side of ["from", "to"] as const) {
       const other = side === "from" ? "to" : "from";
-      for (const [p, xs] of implsOf) {
+      for (const p of bottomUp) {
+        const xs = childrenOf(p);
         for (const v of [...new Set(pairs.map((x) => x[other]))]) {
           const covered = xs.every((x) => pairs.some((q) => q[side] === x && q[other] === v));
           if (!covered) continue;
@@ -840,8 +903,8 @@ export function schemaFromIntrospection(input: IntrospectionResult): {
   /** Fields of the model of `label`, with the ones it inherits (`undefined` for no model). */
   const fieldsOf = (label: string) => {
     const own = nodeFields.get(label);
-    const parent = ifaceOf.get(label);
-    return own && parent ? [...nodeFields.get(parent)!, ...own] : own;
+    const above = ancestorsOf(label).reverse();
+    return own && above.length ? [...above.flatMap((a) => nodeFields.get(a)!), ...own] : own;
   };
   const attributesOf = new Map<string, ModelAttribute[]>();
   for (const ft of fulltext) {
@@ -917,12 +980,13 @@ export function schemaFromIntrospection(input: IntrospectionResult): {
 
   const nodes: NodeDeclaration[] = [...nodeFields].map(([name, fields]) => {
     const attributes = attributesOf.get(name);
-    const parent = ifaceOf.get(name);
+    const parent = parentOf.get(name);
+    const abstract = interfaces.has(name);
     return {
       kind: "Node",
       name,
-      ...(implsOf.has(name) ? { abstract: true as const } : {}),
-      ...(parent ? { implements: [parent] } : {}),
+      ...(abstract ? { abstract: true as const } : {}),
+      ...(parent ? { [abstract ? "extends" : "implements"]: [parent] } : {}),
       fields,
       ...(attributes ? { attributes } : {}),
     };

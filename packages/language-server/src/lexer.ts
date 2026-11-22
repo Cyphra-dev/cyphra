@@ -81,6 +81,8 @@ export type ScannedDeclaration = {
   readonly nameToken: Token;
   /** Interface names after `implements` (`node X implements A, B { … }`), possibly empty. */
   readonly implements: readonly Token[];
+  /** Interface names after `extends` (`interface X extends A, B { … }`), possibly empty. */
+  readonly extends: readonly Token[];
   /** Index of the `{` token (or -1 when not typed yet). */
   readonly open: number;
   /** Index of the matching `}` token (or -1 when not closed). */
@@ -101,26 +103,32 @@ export type ScannedField = {
 const DECL_KEYWORDS = new Set(["node", "interface", "relationship", "enum"]);
 
 /**
- * Skip an `implements A, B` clause starting at `from` (the token after a declaration's name):
- * returns the interface name tokens and the index of the first token after the clause.
+ * Skip an `implements A, B` (or `extends A, B`) clause starting at `from` (the token after a
+ * declaration's name): returns its keyword (`undefined` when there is no clause), the interface
+ * name tokens and the index of the first token after the clause.
  */
 export function scanImplements(
   tokens: readonly Token[],
   from: number,
-): { names: Token[]; next: number } {
+): { keyword?: "implements" | "extends"; names: Token[]; next: number } {
   const names: Token[] = [];
   const kw = nextSignificant(tokens, from);
-  if (!kw || kw.token.kind !== "ident" || kw.token.text !== "implements") {
+  if (
+    !kw ||
+    kw.token.kind !== "ident" ||
+    (kw.token.text !== "implements" && kw.token.text !== "extends")
+  ) {
     return { names, next: from };
   }
+  const keyword = kw.token.text;
   let i = kw.index + 1;
   for (;;) {
     const n = nextSignificant(tokens, i);
-    if (!n || n.token.kind !== "ident") return { names, next: i };
+    if (!n || n.token.kind !== "ident") return { keyword, names, next: i };
     names.push(n.token);
     i = n.index + 1;
     const comma = nextSignificant(tokens, i);
-    if (!comma || comma.token.text !== ",") return { names, next: i };
+    if (!comma || comma.token.text !== ",") return { keyword, names, next: i };
     i = comma.index + 1;
   }
 }
@@ -184,7 +192,8 @@ export function scanDeclarations(tokens: readonly Token[]): ScannedDeclaration[]
       name: nameToken.text,
       keyword: t,
       nameToken,
-      implements: header.names,
+      implements: header.keyword === "implements" ? header.names : [],
+      extends: header.keyword === "extends" ? header.names : [],
       open,
       close,
       end,

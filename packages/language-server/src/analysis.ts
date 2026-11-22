@@ -1,4 +1,6 @@
 import {
+  ancestorInterfaces,
+  parentInterfaces,
   parseSchemaSyntax,
   resolveSchema,
   SchemaValidationError,
@@ -139,7 +141,7 @@ export function locateValidationError(message: string, doc: SchemaDocument): Spa
   const rest = message.slice(owner[0].length);
   const fallback = span(decl.nameLoc);
   if (decl.kind === "Node") {
-    const s = locateImplementsError(rest, decl);
+    const s = locateImplementsError(rest, decl, doc);
     if (s) return s;
   }
 
@@ -180,22 +182,46 @@ export function locateValidationError(message: string, doc: SchemaDocument): Spa
   return fallback;
 }
 
-/** `implements` errors: the interface name in the list the message is about. */
-function locateImplementsError(rest: string, decl: NodeDeclaration): Span | undefined {
-  const names = decl.implements ?? [];
-  const at = (name: string | undefined, nth = 0) => {
+/**
+ * `implements` / `extends` errors: the interface name in the list the message is about (for a
+ * field or an `@id` inherited from further up, the name it is inherited through).
+ */
+function locateImplementsError(
+  rest: string,
+  decl: NodeDeclaration,
+  doc: SchemaDocument,
+): Span | undefined {
+  const implemented = decl.implements ?? [];
+  const extended = decl.extends ?? [];
+  const at = (word: "implements" | "extends", name: string | undefined, nth = 0) => {
+    const names = word === "implements" ? implemented : extended;
+    const locs = word === "implements" ? decl.implementsLocs : decl.extendsLocs;
     const idx = names.map((n, i) => (n === name ? i : -1)).filter((i) => i >= 0);
-    return span(decl.implementsLocs?.[idx[nth] ?? idx[0] ?? -1]);
+    return span(locs?.[idx[nth] ?? idx[0] ?? -1]);
   };
-  const notInterface = /^: implements (\w+), which is not an interface/.exec(rest);
-  if (notInterface) return at(notInterface[1]);
-  const twice = /^: implements (\w+) twice/.exec(rest);
-  if (twice) return at(twice[1], 1);
-  if (/^: an interface cannot implement/.test(rest)) return at(names[0]);
+  const parents = parentInterfaces(decl);
+  const word = decl.abstract ? "extends" : "implements";
+  /** The parent `name` is, or that inherits from it. */
+  const through = (name: string) =>
+    parents.find((p) => {
+      if (p === name) return true;
+      const d = doc.declarations.find((x) => x.name === p);
+      return d?.kind === "Node" && ancestorInterfaces(doc, d).includes(name);
+    });
+  const notInterface = /^: (implements|extends) (\w+), which is not an interface/.exec(rest);
+  if (notInterface) return at(notInterface[1] as typeof word, notInterface[2]);
+  const twice = /^: (implements|extends) (\w+) twice/.exec(rest);
+  if (twice) return at(twice[1] as typeof word, twice[2], 1);
+  if (/^: an interface (?:cannot implement|extends other interfaces)/.test(rest)) {
+    return at("implements", implemented[0]);
+  }
+  if (/^: a node implements interfaces/.test(rest)) return at("extends", extended[0]);
+  const cycle = /^: interfaces cannot extend themselves \(\w+ extends (\w+)/.exec(rest);
+  if (cycle) return at("extends", cycle[1]);
   const both = /^: field "[^"]+" is declared by both \w+ and (\w+)/.exec(rest);
-  if (both) return at(both[1]);
+  if (both) return at(word, through(both[1]!));
   const ids = /^: \w+ and (\w+) both declare an @id/.exec(rest);
-  if (ids) return at(ids[1]);
+  if (ids) return at(word, through(ids[1]!));
   return undefined;
 }
 

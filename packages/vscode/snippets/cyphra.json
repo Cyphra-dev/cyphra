@@ -17,6 +17,11 @@
       "}"
     ]
   },
+  "Interface extending another": {
+    "prefix": "interface extends",
+    "description": "An interface inheriting the fields and label of another one",
+    "body": ["interface ${1:Staff} extends ${2:Person} {", "\t$0", "}"]
+  },
   "Relationship": {
     "prefix": "relationship",
     "description": "A relationship model (typed edge properties)",

@@ -287,3 +287,184 @@ describe("interfaces: vector search", () => {
     expect(calls[1]).not.toContain("WHERE n:");
   });
 });
+
+describe("interfaces: __typename filters and sorting", () => {
+  it("filters an interface query by implementation label", async () => {
+    const { calls, e } = engine("Person", () => [{ c: 1 }]);
+    await e.count({ where: { __typename: "Employee" } });
+    expect(calls[0]!.text).toBe("MATCH (n:`Person`) WHERE n:`Employee` RETURN count(n) AS c");
+    await e.count({ where: { __typename: { in: ["Employee", "Customer"] }, name: "A" } });
+    expect(calls[1]!.text).toBe(
+      "MATCH (n:`Person`) WHERE ((n:`Employee`) OR (n:`Customer`)) AND (n.`name` = $p0) RETURN count(n) AS c",
+    );
+    await e.count({ where: { __typename: { notIn: ["Employee"] } } });
+    expect(calls[2]!.text).toContain("WHERE NOT (n:`Employee`)");
+    await e.count({ where: { __typename: { in: [] } } });
+    expect(calls[3]!.text).toContain("WHERE false");
+    await e.count({ where: { OR: [{ __typename: { not: "Customer" } }, { bio: null }] } });
+    expect(calls[4]!.text).toContain("WHERE (NOT (n:`Customer`)) OR (n.`bio` IS NULL)");
+  });
+
+  it("filters relations whose target is an interface by implementation", async () => {
+    const { calls, e } = engine("Team", () => []);
+    await e.findMany({ where: { owner: { is: { __typename: "Customer" } } } });
+    expect(calls[0]!.text).toContain(
+      "EXISTS { MATCH (n)<-[:`OWNS`]-(m0:`Person`) WHERE m0:`Customer` }",
+    );
+  });
+
+  it("rejects __typename on a node and unknown implementations", async () => {
+    const { e } = engine("Person");
+    await expect(e.findMany({ where: { __typename: "Team" } })).rejects.toThrow(
+      /where.__typename on Person: expected "Employee" \| "Customer", got "Team"/,
+    );
+    await expect(e.findMany({ where: { __typename: { startsWith: "E" } } })).rejects.toThrow(
+      /Unknown filter "startsWith" on Person.__typename/,
+    );
+    await expect(e.findMany({ where: { __typename: null } })).rejects.toThrow(/cannot be null/);
+    const { e: emp } = engine("Employee");
+    await expect(emp.findMany({ where: { __typename: "Employee" } })).rejects.toThrow(
+      /Employee is not an interface/,
+    );
+    await expect(emp.findMany({ orderBy: { __typename: "asc" } })).rejects.toThrow(
+      /Employee is not an interface/,
+    );
+  });
+
+  it("sorts an interface query by implementation name", async () => {
+    const { calls, params, e } = (() => {
+      const r = engine("Person", () => []);
+      return { ...r, params: () => r.calls[0]!.params };
+    })();
+    await e.findMany({ orderBy: [{ __typename: "desc" }, { email: "asc" }], select: { id: true } });
+    expect(calls[0]!.text).toContain(
+      "ORDER BY CASE WHEN n:`Employee` THEN $p0 WHEN n:`Customer` THEN $p1 ELSE $p2 END DESC, n.`email` ASC",
+    );
+    expect(params()).toMatchObject({ p0: "Employee", p1: "Customer", p2: "Person" });
+  });
+});
+
+describe("interfaces: $on (per-implementation select / include)", () => {
+  it("loads an implementation's own relations on its results only", async () => {
+    const { calls, e } = engine("Person", () => [
+      {
+        row: {
+          id: "1",
+          email: "e@x",
+          name: "E",
+          bio: null,
+          salary: 1,
+          tier: null,
+          level: null,
+          __labels: ["Employee", "Person", "Archivable"],
+          manager: null,
+          __on_Employee: { team: { id: "t", name: "core" }, _count: { badges: 2 } },
+          __on_Customer: null,
+        },
+      },
+      {
+        row: {
+          id: "2",
+          email: "c@x",
+          name: "C",
+          bio: null,
+          salary: null,
+          tier: "gold",
+          level: 1,
+          __labels: ["Customer", "Person"],
+          manager: null,
+          __on_Employee: null,
+          __on_Customer: {},
+        },
+      },
+    ]);
+    const rows = await e.findMany({
+      include: {
+        manager: true,
+        $on: { Employee: { team: true, _count: { select: { badges: true } } }, Customer: {} },
+      },
+    });
+    expect(calls[0]!.text).toContain(
+      "`__on_Employee`: CASE WHEN n:`Employee` THEN n{`team`: head(COLLECT { MATCH (n)-[r",
+    );
+    expect(calls[0]!.text).toContain("`_count`: {`badges`: COUNT { MATCH (n)-[:`HAS_BADGE`]->");
+    expect(calls[0]!.text).toContain("`__on_Customer`: CASE WHEN n:`Customer` THEN n{} END");
+    expect(rows).toEqual([
+      {
+        __typename: "Employee",
+        id: "1",
+        email: "e@x",
+        name: "E",
+        bio: null,
+        salary: 1,
+        manager: null,
+        team: { id: "t", name: "core" },
+        _count: { badges: 2 },
+      },
+      {
+        __typename: "Customer",
+        id: "2",
+        email: "c@x",
+        name: "C",
+        bio: null,
+        tier: "gold",
+        level: 1,
+        manager: null,
+      },
+    ]);
+  });
+
+  it("selects implementation fields and merges _count with the interface's", async () => {
+    const { calls, e } = engine("Person", () => [
+      {
+        row: {
+          name: "E",
+          __labels: ["Employee", "Person"],
+          _count: { notes: 3 },
+          __on_Employee: { salary: 5, _count: { badges: 1 } },
+        },
+      },
+    ]);
+    const rows = await e.findMany({
+      select: {
+        name: true,
+        _count: { select: { notes: true } },
+        $on: { Employee: { salary: true, _count: { select: { badges: true } } } },
+      },
+    });
+    expect(calls[0]!.text).toContain(
+      "`__on_Employee`: CASE WHEN n:`Employee` THEN n{.`salary`, `_count`:",
+    );
+    expect(rows).toEqual([
+      { __typename: "Employee", name: "E", salary: 5, _count: { notes: 3, badges: 1 } },
+    ]);
+  });
+
+  it("works on relations whose target is an interface", async () => {
+    const { calls, e } = engine("Team", () => []);
+    await e.findMany({ include: { owner: { include: { $on: { Employee: { team: true } } } } } });
+    expect(calls[0]!.text).toMatch(
+      /`owner`: head\(COLLECT \{ MATCH \(n\)<-\[r\d+:`OWNS`\]-\(m(\d+):`Person`\) RETURN m\1\{.*`__on_Employee`: CASE WHEN m\1:`Employee` THEN m\1\{`team`:/,
+    );
+  });
+
+  it("rejects $on on a node, unknown implementations and scalars in include", async () => {
+    const { e } = engine("Person");
+    await expect(e.findMany({ include: { $on: { Team: {} } } })).rejects.toThrow(
+      /include.\$on.Team: not an implementation of Person \(Employee, Customer\)/,
+    );
+    await expect(e.findMany({ include: { $on: { Employee: { salary: true } } } })).rejects.toThrow(
+      /include only takes relations \("salary" is a scalar; use select.\$on.Employee/,
+    );
+    await expect(e.findMany({ select: { $on: { Employee: { nope: true } } } })).rejects.toThrow(
+      /Unknown field "Employee.nope"/,
+    );
+    await expect(e.findMany({ include: { $on: true } })).rejects.toThrow(
+      /takes \{ <implementation>/,
+    );
+    const { e: team } = engine("Team");
+    await expect(team.findMany({ include: { $on: {} } })).rejects.toThrow(
+      /Team is not an interface/,
+    );
+  });
+});

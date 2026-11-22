@@ -455,9 +455,14 @@ export function diffSchemaModels(
         (p.interfaces ?? []).includes(f.inheritedFrom) &&
         (n.interfaces ?? []).includes(f.inheritedFrom),
       );
-    const removed = [...ps.keys()].filter((k) => !ns.has(k) && !viaInterface(ps.get(k)));
-    const added = [...ns.keys()].filter((k) => !ps.has(k) && !viaInterface(ns.get(k)));
+    // An interface's nodes are its implementations': what it inherits from the interfaces it
+    // extends is migrated on each implementation (gained ancestors) or on the declaring label.
+    const skip = (f: ResolvedScalarField | undefined) =>
+      n.abstract ? Boolean(f?.inheritedFrom) : viaInterface(f);
+    const removed = [...ps.keys()].filter((k) => !ns.has(k) && !skip(ps.get(k)));
+    const added = [...ns.keys()].filter((k) => !ps.has(k) && !skip(ns.get(k)));
     for (const [name, f] of ns) {
+      if (n.abstract && f.inheritedFrom) continue;
       if (viaInterface(f) && (!ps.has(name) || viaInterface(ps.get(name)))) continue;
       nodeDataSteps(n.label, n.name, name, ps.get(name), f, steps, warnings);
     }
@@ -597,9 +602,10 @@ function relationshipDataSteps(
 }
 
 /**
- * A node that starts implementing an interface gets its label on existing nodes (before the
- * interface's constraints are created, so they validate every implementation); one that stops
- * implementing it loses the label. Labels come from each side's own model (`label`).
+ * A node that starts implementing an interface (directly, or through an interface extending it)
+ * gets its label on existing nodes (before the interface's constraints are created, so they
+ * validate every implementation); one that stops implementing it loses the label. Labels come
+ * from each side's own model (`label`).
  */
 function labelSteps(
   prev: ResolvedNodeModel,
@@ -608,6 +614,9 @@ function labelSteps(
   nextNodes: ReadonlyMap<string, ResolvedNodeModel>,
   steps: MigrationStep[],
 ): void {
+  // An interface's `interfaces` are the ones it extends, but its nodes are its implementations',
+  // whose own (transitive) `interfaces` already list every label they gain or lose.
+  if (prev.abstract || next.abstract) return;
   const labelOf = (nodes: ReadonlyMap<string, ResolvedNodeModel>, name: string) =>
     nodes.get(name)?.label ?? name;
   const before = new Set((prev.interfaces ?? []).map((i) => labelOf(prevNodes, i)));

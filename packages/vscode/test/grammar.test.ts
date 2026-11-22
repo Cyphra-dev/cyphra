@@ -77,6 +77,15 @@ describe("TextMate grammar", () => {
     expect(tokens).toContain('"y" variable.other.property.cyphra');
   });
 
+  it("highlights extends lists", async () => {
+    const tokens = await tokenize("interface S extends P, Q {\n  x Int\n}");
+    expect(tokens).toContain('"S" entity.name.type.interface.cyphra');
+    expect(tokens).toContain('"extends" keyword.other.extends.cyphra');
+    expect(tokens).toContain('"P" entity.name.type.interface.cyphra');
+    expect(tokens).toContain('"Q" entity.name.type.interface.cyphra');
+    expect(tokens).toContain('"x" variable.other.property.cyphra');
+  });
+
   it("does not end a block on a brace inside a string or a comment", async () => {
     const tokens = await tokenize('node A {\n  x String @default("}") // }\n  y Int\n}');
     expect(tokens).toContain('"y" variable.other.property.cyphra');

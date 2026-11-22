@@ -459,3 +459,134 @@ node Team {
     expect(warnings.join("\n")).toMatch(/:Note:Tagged became one model per label/);
   });
 });
+
+describe("schemaFromIntrospection: interfaces extending interfaces", () => {
+  const str = (name: string, mandatory = true) => ({
+    propertyName: name,
+    propertyTypes: ["String"],
+    mandatory,
+  });
+  const input: IntrospectionResult = {
+    nodeTypes: [
+      {
+        labels: ["Employee", "Staff", "Person"],
+        properties: [str("id"), str("name"), str("team"), str("salary")],
+      },
+      {
+        labels: ["Contractor", "Staff", "Person"],
+        properties: [str("id"), str("name"), str("team"), str("agency")],
+      },
+      { labels: ["Customer", "Person"], properties: [str("id"), str("name", false), str("tier")] },
+      { labels: ["Site"], properties: [str("code")] },
+    ],
+    relTypes: [
+      {
+        type: "WORKS_AT",
+        properties: [],
+        endpoints: [
+          { from: ["Employee", "Staff", "Person"], to: ["Site"] },
+          { from: ["Contractor", "Staff", "Person"], to: ["Site"] },
+        ],
+      },
+      {
+        type: "VISITS",
+        properties: [],
+        endpoints: [
+          { from: ["Employee", "Staff", "Person"], to: ["Site"] },
+          { from: ["Contractor", "Staff", "Person"], to: ["Site"] },
+          { from: ["Customer", "Person"], to: ["Site"] },
+        ],
+      },
+    ],
+    constraints: [
+      {
+        name: "Person_id_id",
+        type: "UNIQUENESS",
+        entityType: "NODE",
+        labelsOrTypes: ["Person"],
+        properties: ["id"],
+      },
+    ],
+    indexes: [
+      {
+        name: "Staff_team_idx",
+        type: "RANGE",
+        entityType: "NODE",
+        labelsOrTypes: ["Staff"],
+        properties: ["team"],
+        owningConstraint: null,
+      },
+    ],
+  };
+  const { doc, warnings } = schemaFromIntrospection(input);
+  const printed = printSchemaDocument(doc);
+
+  it("detects a chain of labels as interfaces extending each other", () => {
+    expect(printed).toBe(`node Contractor implements Staff {
+  agency String
+}
+
+node Customer implements Person {
+  tier String
+}
+
+node Employee implements Staff {
+  salary String
+}
+
+interface Person {
+  id String @id
+  name String?
+  visits Site[] @relationship(type: "VISITS", direction: OUT)
+}
+
+node Site {
+  code String
+  visitsBy Person[] @relationship(type: "VISITS", direction: IN)
+  worksAtBy Staff[] @relationship(type: "WORKS_AT", direction: IN)
+}
+
+interface Staff extends Person {
+  team String @index
+  worksAt Site[] @relationship(type: "WORKS_AT", direction: OUT)
+}
+`);
+    expect(warnings).toEqual([]);
+  });
+
+  it("produces a schema that parses and resolves", () => {
+    const model = resolveSchema(parseSchema(printed));
+    expect(model.nodes.find((n) => n.name === "Employee")?.labels).toEqual([
+      "Employee",
+      "Staff",
+      "Person",
+    ]);
+    expect(model.nodes.find((n) => n.name === "Person")?.implementations).toEqual([
+      "Contractor",
+      "Customer",
+      "Employee",
+    ]);
+  });
+
+  it("falls back to one model per label when the labels form no chain", () => {
+    const { doc, warnings } = schemaFromIntrospection({
+      ...input,
+      nodeTypes: [
+        // Person and Archivable: two unrelated interfaces on one node.
+        { labels: ["Employee", "Person", "Archivable"], properties: [str("id")] },
+        { labels: ["Customer", "Person"], properties: [str("id")] },
+        { labels: ["Doc", "Archivable"], properties: [str("id")] },
+        // Staff is always seen with Intern: which one is the node's own label is ambiguous.
+        { labels: ["Intern", "Staff", "Worker"], properties: [str("id")] },
+        { labels: ["Boss", "Worker"], properties: [str("id")] },
+      ],
+      relTypes: [],
+      constraints: [],
+      indexes: [],
+    });
+    expect(doc.declarations.some((d) => d.kind === "Node" && (d.abstract || d.implements))).toBe(
+      false,
+    );
+    expect(warnings.filter((w) => w.includes("became one model per label"))).toHaveLength(5);
+  });
+});

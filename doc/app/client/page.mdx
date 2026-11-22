@@ -820,12 +820,66 @@ for (const p of people) {
   relations whose target is an interface, such as `include: { manager: true }`); results of
   `db.employee` keep their shape, inherited fields included.
 - Without `select`, each result has every scalar field of its implementation. `include` loads the
-  interface's relations; an implementation's own relations (`Employee.team`) are loaded through
-  `db.employee`.
-- `select` picks interface fields and relations only; `__typename` is always returned.
-- `where`, `orderBy` and `_count` take the interface's fields and relations.
+  interface's relations, and [`$on`](#per-implementation-fields-on) an implementation's own.
+- `select` picks interface fields and relations (plus, under `$on`, an implementation's own);
+  `__typename` is always returned.
+- `where`, `orderBy` and `_count` take the interface's fields and relations, and
+  [`__typename`](#filtering-by-implementation-__typename).
 - A node that has the interface label but no implementation label (written outside Cyphra) comes
   back with `__typename` set to the interface name and only the interface's fields.
+- An [interface extending another](/schema#interfaces-extending-interfaces) has its own delegate
+  (`db.staff`), whose results are the implementations below it.
+
+### Filtering by implementation (`__typename`)
+
+`where: { __typename }` keeps the results of some implementations, by their labels. It takes an
+implementation name or `{ equals, not, in, notIn }`, works wherever the model is an interface
+(including relation filters such as `manager: { is: { __typename: "Customer" } }`), and is typed
+with the implementation names. `orderBy: { __typename: "asc" }` sorts by implementation name.
+
+```ts
+const employees = await db.person.findMany({ where: { __typename: "Employee" } });
+const notCustomers = await db.person.count({ where: { __typename: { notIn: ["Customer"] } } });
+const grouped = await db.person.findMany({ orderBy: [{ __typename: "asc" }, { name: "asc" }] });
+```
+
+The result type stays the union of every implementation (narrow it with `p.__typename`), and on a
+node model `__typename` is rejected.
+
+### Per-implementation fields (`$on`)
+
+`$on` in the `select` or `include` of an interface query loads, for each implementation it names,
+that implementation's own `select` / `include`: fields and relations the interface does not have.
+They are added to that implementation's results only, and the result type follows:
+
+```ts
+const people = await db.person.findMany({
+  include: {
+    manager: true,
+    $on: {
+      Employee: { team: true, badges: { take: 3 } },
+      Customer: { _count: { select: { orders: true } } },
+    },
+  },
+});
+for (const p of people) {
+  if (p.__typename === "Employee")
+    p.team; // { id, name } | null
+  else p._count.orders; // number
+}
+
+const names = await db.person.findMany({
+  select: { name: true, $on: { Employee: { salary: true } } },
+}); // ({ __typename: "Employee"; name: string; salary: number } | { __typename: "Customer"; name: string })[]
+```
+
+- Under `include`, `$on.<Implementation>` takes relations and `_count` (its scalars are already
+  there); under `select`, its scalars and relations too.
+- Keys are implementation names; anything else is a `CyphraValidationError`, and so is `$on` on a
+  node model. It works on nested loads whose target is an interface
+  (`include: { owner: { include: { $on: { Employee: { team: true } } } } }`).
+- Cyphra evaluates each part only on the nodes of that implementation (`CASE WHEN n:Employee`),
+  and computed fields of [`$extends`](#computed-fields) apply inside it.
 
 Writes: an interface has no `create`, `createMany` or `upsert` (they are not in its type and throw
 a `CyphraValidationError`), and a nested `create` into a relation that targets an interface is

@@ -337,10 +337,25 @@ type RelationFilter<TM extends TypeMap, D extends RelationTypeDef> = D["many"] e
 /** Vector fields only filter on presence (search them with `findSimilar`). */
 export type VectorFilter = null | { equals?: null; not?: null };
 
+/**
+ * `__typename` in the `where` of an interface: an implementation name, or
+ * `{ equals, not, in, notIn }` over them (matched on the implementations' labels).
+ */
+export type TypenameFilter<T extends string> =
+  T | { equals?: T; not?: T; in?: readonly T[]; notIn?: readonly T[] };
+
 export type WhereInput<TM extends TypeMap, M extends keyof TM> = {
   [K in keyof Scalars<TM, M>]?: K extends VectorKeys<TM, M>
     ? VectorFilter
     : ScalarFilter<Scalars<TM, M>[K]>;
+} & {
+  /**
+   * On an interface: keep the results of these implementations (by label). `never` on a node,
+   * which has no implementations.
+   */
+  __typename?: [Implementations<TM, M>] extends [never]
+    ? never
+    : TypenameFilter<Implementations<TM, M> & string>;
 } & {
   [R in keyof Relations<TM, M>]?: RelationFilter<TM, Rel<TM, M, R>>;
 } & {
@@ -413,7 +428,12 @@ export type DistanceOrder<P> = { distanceFrom: P; sort?: SortOrder };
  * optionally filtered: `{ posts: { _count: "desc", where: { published: true } } }`), or a to-one
  * relation by a scalar of the related node (`{ author: { name: "asc" } }`).
  */
-type OrderByItem<TM extends TypeMap, M extends keyof TM> = {
+type OrderByItem<TM extends TypeMap, M extends keyof TM> = (IsAbstract<TM, M> extends true
+  ? {
+      /** Sort an interface's results by implementation name. */
+      __typename?: SortOrder;
+    }
+  : unknown) & {
   [K in Exclude<keyof Scalars<TM, M>, VectorKeys<TM, M> | UnsortableKeys<TM, M>>]?: SortOrder;
 } & {
   [K in PointKeys<TM, M>]?: DistanceOrder<NonNullable<Scalars<TM, M>[K]>>;
@@ -473,14 +493,47 @@ export type SelectInput<TM extends TypeMap, M extends keyof TM> = {
 } & {
   /** Number of related nodes per to-many relation. */
   _count?: RelationCountInput<TM, M>;
-};
+} & OnInput<TM, M, "select">;
 
 export type IncludeInput<TM extends TypeMap, M extends keyof TM> = {
   [R in keyof Relations<TM, M>]?: boolean | RelationLoadArgs<TM, Target<TM, M, R>>;
 } & {
   /** Number of related nodes per to-many relation. */
   _count?: RelationCountInput<TM, M>;
-};
+} & OnInput<TM, M, "include">;
+
+/**
+ * `$on` in the `select` / `include` of an interface: per implementation, its own `select` /
+ * `include` (its fields and relations), applied to the results of that implementation only.
+ */
+type OnInput<TM extends TypeMap, M extends keyof TM, K extends "select" | "include"> =
+  IsAbstract<TM, M> extends true
+    ? {
+        $on?: {
+          [T in Implementations<TM, M>]?: K extends "select"
+            ? SelectInput<TM, T>
+            : IncludeInput<TM, T>;
+        };
+      }
+    : unknown;
+
+/** What `$on.<T>` adds to the result member `T` of an interface query (`unknown`: nothing). */
+type OnPayload<
+  TM extends TypeMap,
+  T extends keyof TM,
+  P,
+  K extends "select" | "include",
+> = P extends {
+  $on?: infer O;
+}
+  ? T extends keyof NonNullable<O>
+    ? IsObject<NonNullable<NonNullable<O>[T]>> extends true
+      ? K extends "select"
+        ? SelectPayload<TM, T, NonNullable<NonNullable<O>[T]>>
+        : IncludedRelations<TM, T, NonNullable<NonNullable<O>[T]>>
+      : unknown
+    : unknown
+  : unknown;
 
 type EdgePart<D extends RelationTypeDef> =
   D["edge"] extends Record<string, unknown> ? { $edge: D["edge"] } : unknown;
@@ -535,15 +588,17 @@ type IncludedRelations<TM extends TypeMap, M extends keyof TM, I> = {
  * Result of a query on the interface `M`: a union over its implementations, discriminated by
  * `__typename`. Without `select`, each member has its implementation's scalar fields, the
  * computed fields of the interface and of the implementation (and the interface relations
- * `include` loads); with `select`, the selected interface fields.
+ * `include` loads); with `select`, the selected interface fields. `$on: { T: … }` adds what it
+ * loads to member `T` only.
  */
 type InterfacePayload<TM extends TypeMap, M extends keyof TM, A> = {
   [T in Implementations<TM, M>]: Simplify<
     { __typename: T } & (IsObject<ArgOf<A, "select">> extends true
-      ? SelectPayload<TM, M, ArgOf<A, "select">>
+      ? SelectPayload<TM, M, ArgOf<A, "select">> & OnPayload<TM, T, ArgOf<A, "select">, "select">
       : Overwrite<Overwrite<Scalars<TM, T>, ComputedFields<TM, M>>, ComputedFields<TM, T>> &
           (IsObject<ArgOf<A, "include">> extends true
-            ? IncludedRelations<TM, M, ArgOf<A, "include">>
+            ? IncludedRelations<TM, M, ArgOf<A, "include">> &
+                OnPayload<TM, T, ArgOf<A, "include">, "include">
             : unknown))
   >;
 }[Implementations<TM, M>];

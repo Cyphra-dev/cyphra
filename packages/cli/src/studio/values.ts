@@ -5,6 +5,7 @@ import {
   type SchemaModel,
 } from "@cyphra/schema";
 import type {
+  StudioDialect,
   StudioField,
   StudioKey,
   StudioMeta,
@@ -16,13 +17,40 @@ import type {
 /** Thrown for malformed requests (answered with 400). */
 export class StudioRequestError extends Error {}
 
+/**
+ * Thrown for an operation the database's dialect cannot run (a `Time` value on Memgraph):
+ * answered with 400, the feature and dialect, and an issue per field when fields are to blame.
+ */
+export class StudioUnsupportedError extends StudioRequestError {
+  constructor(
+    message: string,
+    readonly feature: string,
+    readonly dialect: StudioDialect,
+    readonly issues: readonly { field: string; message: string }[] = [],
+  ) {
+    super(message);
+  }
+}
+
+/**
+ * Why values of a scalar type cannot be stored on `dialect`, or `undefined` when they can
+ * (see doc/app/memgraph/page.mdx).
+ */
+export function unsupportedType(type: string, dialect: StudioDialect): string | undefined {
+  if (dialect === "memgraph" && type === "Time") {
+    return "Memgraph has no zoned time type (Time): use LocalTime or DateTime.";
+  }
+  return undefined;
+}
+
 type AnyRecord = Record<string, unknown>;
 
 function isRecord(v: unknown): v is AnyRecord {
   return typeof v === "object" && v !== null && !Array.isArray(v);
 }
 
-function scalarMeta(f: ResolvedScalarField): StudioScalarField {
+function scalarMeta(f: ResolvedScalarField, dialect: StudioDialect): StudioScalarField {
+  const unsupported = unsupportedType(f.type, dialect);
   return {
     kind: "scalar",
     name: f.name,
@@ -36,6 +64,7 @@ function scalarMeta(f: ResolvedScalarField): StudioScalarField {
     ...(f.dimensions !== undefined ? { dimensions: f.dimensions } : {}),
     ...(f.rules?.length ? { rules: f.rules.map((r) => formatRule(r)) } : {}),
     ...(f.inheritedFrom ? { inheritedFrom: f.inheritedFrom } : {}),
+    ...(unsupported ? { unsupported } : {}),
   };
 }
 
@@ -50,8 +79,16 @@ export function keyOf(node: ResolvedNodeModel): StudioKey | null {
 /** The schema as the UI needs it (no credentials, nothing but the model). */
 export function buildMeta(
   schema: SchemaModel,
-  info: { readOnly: boolean; connection: string; database?: string; version: string },
+  info: {
+    readOnly: boolean;
+    connection: string;
+    database?: string;
+    version: string;
+    /** The database's dialect (default `"neo4j"`). */
+    dialect?: StudioDialect;
+  },
 ): StudioMeta {
+  const dialect = info.dialect ?? "neo4j";
   const nodes: StudioNodeModel[] = schema.nodes.map((n) => ({
     name: n.name,
     label: n.label,
@@ -61,7 +98,7 @@ export function buildMeta(
     key: keyOf(n),
     fields: n.fields.map((f): StudioField =>
       f.kind === "scalar"
-        ? scalarMeta(f)
+        ? scalarMeta(f, dialect)
         : {
             kind: "relation",
             name: f.name,
@@ -85,11 +122,11 @@ export function buildMeta(
       relType: r.relType,
       from: r.from,
       to: r.to,
-      properties: r.properties.map(scalarMeta),
+      properties: r.properties.map((p) => scalarMeta(p, dialect)),
       ...(via ? { via: via.name } : {}),
     };
   });
-  return { nodes, relationships, ...info };
+  return { nodes, relationships, ...info, dialect };
 }
 
 /** One scalar value from the UI's JSON as the ORM takes it (`BigInt` text → `bigint`). */

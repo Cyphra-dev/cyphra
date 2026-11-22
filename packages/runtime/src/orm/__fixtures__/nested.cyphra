@@ -1,0 +1,40 @@
+// Interfaces extending interfaces: every Engineer is also a :Staffer, a :Reachable and a :Party.
+interface Party {
+  id      String @id @default(cuid())
+  email   String @unique
+  name    String
+  manager Party? @relationship(type: "LEADS", direction: IN)
+}
+
+interface Staffer extends Party {
+  badge String?
+  unit  Unit?   @relationship(type: "IN_UNIT", direction: OUT)
+}
+
+interface Reachable extends Party {
+  phone String?
+}
+
+node Engineer implements Staffer, Reachable {
+  level Int    @default(1)
+  tasks Task[] @relationship(type: "ASSIGNED", direction: OUT, onDelete: Cascade)
+}
+
+node Temp implements Staffer {
+  agency String
+}
+
+node Buyer implements Reachable {
+  tier String @default("free")
+}
+
+node Unit {
+  id    String    @id @default(cuid())
+  name  String    @unique
+  staff Staffer[] @relationship(type: "IN_UNIT", direction: IN)
+}
+
+node Task {
+  id    String @id @default(cuid())
+  title String
+}

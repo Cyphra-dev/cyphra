@@ -651,3 +651,123 @@ describe("interfaces", () => {
     expect(p.span.start).toBe(text.indexOf("Person, Person") + "Person, ".length);
   });
 });
+
+const NESTED = `interface Person {
+  id    String @id @default(cuid())
+  email String @unique
+}
+
+interface Contact {
+  phone String?
+}
+
+interface Staff extends Person, Contact {
+  team String
+}
+
+node Employee implements Staff {
+  salary Int
+
+  @@index([email, salary])
+}
+`;
+
+describe("interfaces extending interfaces", () => {
+  const hover = (marked: string) => {
+    const { text, offset } = at(marked);
+    return hoverAt(analyze(text), offset)?.markdown;
+  };
+
+  it("analyzes nested interfaces without problems", () => {
+    expect(analyze(NESTED).problem).toBeUndefined();
+  });
+
+  it("scans the extends clause, also while the text does not parse", () => {
+    const a = analyze(NESTED.replace("salary Int", "salary @"));
+    const s = a.scanned.find((d) => d.name === "Staff")!;
+    expect(s.kind).toBe("interface");
+    expect(s.open).toBeGreaterThan(0);
+    expect(s.extends.map((t) => t.text)).toEqual(["Person", "Contact"]);
+    expect(s.implements).toEqual([]);
+    expect(a.scanned.map((d) => d.name)).toEqual(["Person", "Contact", "Staff", "Employee"]);
+  });
+
+  it("offers extends after an interface name, then other interfaces", () => {
+    expect(labels(NESTED + "\ninterface Manager |")).toEqual(["extends"]);
+    expect(labels(NESTED + "\ninterface Manager extends |")).toEqual([
+      "Person",
+      "Contact",
+      "Staff",
+    ]);
+    expect(labels(NESTED + "\ninterface Manager extends Staff, |")).toEqual(["Person", "Contact"]);
+    expect(labels(NESTED + "\ninterface Manager extends Staff |")).toEqual([]);
+    // Not itself, nor an interface extending it.
+    expect(labels(NESTED.replace("interface Person {", "interface Person extends | {"))).toEqual([
+      "Contact",
+    ]);
+    // `extends` is not offered on a node (nor `implements` on an interface).
+    expect(labels(NESTED + "\nnode Customer |")).toEqual(["implements"]);
+  });
+
+  it("offers fields inherited through extends in @@index([…])", () => {
+    expect(labels(NESTED.replace("@@index([email, salary])", "@@index([|])"))).toEqual([
+      "id",
+      "email",
+      "phone",
+      "team",
+      "salary",
+    ]);
+  });
+
+  it("goes to, finds and renames interfaces named by extends", () => {
+    const { text, offset } = at(NESTED.replace("extends Person", "extends Per|son"));
+    const a = analyze(text);
+    const def = definitionAt(a, offset)!;
+    expect(def.start).toBe(text.indexOf("interface Person") + "interface ".length);
+    expect(referencesAt(a, offset, false)).toHaveLength(1);
+    expect(referencesAt(a, offset, true)).toHaveLength(2);
+    const edits = renameEdits(a, offset, "Human", BUILTIN_TYPES)!;
+    const out = [...edits]
+      .sort((x, y) => y.start - x.start)
+      .reduce((t, s) => t.slice(0, s.start) + "Human" + t.slice(s.end), text);
+    expect(out).toContain("interface Staff extends Human, Contact {");
+    expect(analyze(out).problem).toBeUndefined();
+  });
+
+  it("documents the extends keyword and shows it in the outline", () => {
+    expect(hover(NESTED.replace("extends Person", "ext|ends Person"))).toContain(
+      "inherits the fields of interfaces",
+    );
+    const symbols = outline(analyze(NESTED));
+    expect(symbols.map((s) => s.detail)).toEqual([
+      undefined,
+      undefined,
+      "extends Person, Contact",
+      "implements Staff",
+    ]);
+  });
+
+  it.each([
+    [NESTED.replace("Person, Contact", "Person, Employee"), "Employee"],
+    [NESTED.replace("Person, Contact", "Person, Person"), "Person"],
+    [NESTED.replace("interface Contact {", "interface Contact extends Staff {"), "Staff"],
+    [NESTED.replace("interface Staff extends", "interface Staff implements"), "Person"],
+    [NESTED.replace("node Employee implements", "node Employee extends"), "Staff"],
+    // Redeclaring a field inherited from Person (through Staff) points at Staff.
+    [
+      NESTED.replace("interface Contact {\n  phone String?", "interface Contact {\n  email String"),
+      "Contact",
+    ],
+    [NESTED.replace("  salary Int", "  email String"), "email"],
+    // A clash with a field of Person reached through Staff points at Staff.
+    [
+      NESTED.replace("implements Staff", "implements Mail, Staff") +
+        "\ninterface Mail {\n  email String\n}\n",
+      "Staff",
+    ],
+  ])("points extends errors at the name they are about (%#)", (text, underlined) => {
+    const p = problem(text)!;
+    expect(p.message).toBe(cliError(text));
+    expect(p.underlined).toBe(underlined);
+  });
+});

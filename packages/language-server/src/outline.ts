@@ -72,7 +72,9 @@ export function outline(a: Analysis): OutlineSymbol[] {
         ? `${d.from} -[${d.relType}]-> ${d.to}`
         : d.kind === "Node" && d.implements?.length
           ? `implements ${d.implements.join(", ")}`
-          : undefined;
+          : d.kind === "Node" && d.extends?.length
+            ? `extends ${d.extends.join(", ")}`
+            : undefined;
     out.push({
       name: d.name,
       kind:
