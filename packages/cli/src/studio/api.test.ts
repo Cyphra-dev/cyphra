@@ -569,3 +569,139 @@ node Author { id String @id  name String }
     );
   });
 });
+
+describe("studio: relations to a union", () => {
+  const s = resolveSchema(
+    parseSchema(`
+union Hit = Post | Person
+interface Person { id String @id  email String @unique }
+node Writer implements Person { name String }
+node Post { id String @id  title String }
+node Board {
+  id    String @id
+  hits  Hit[]  @relationship(type: "PINS", direction: OUT)
+  first Hit?   @relationship(type: "TOPS", direction: OUT)
+}
+relationship Pin {
+  type "PINS"
+  from Board
+  to   Hit
+  rank Int @default(0)
+}
+`),
+  );
+  const unionApi = (db: StudioDb, readOnly = false) =>
+    createStudioApi({
+      schema: s,
+      db,
+      meta: buildMeta(s, { readOnly, connection: "bolt://x", version: "0.0.0" }),
+      readOnly,
+    });
+
+  it("describes the declared members of a union", () => {
+    const meta = buildMeta(s, { readOnly: false, connection: "bolt://x", version: "0.0.0" });
+    expect(meta.nodes.find((n) => n.name === "Hit")).toMatchObject({
+      union: true,
+      implementations: ["Post", "Writer"],
+      members: ["Post", "Person"],
+    });
+    expect(meta.relationships[0]).toMatchObject({ from: "Board", to: "Hit", via: "hits" });
+  });
+
+  it("connects and disconnects by member and key, with edge properties", async () => {
+    const { db, calls } = fakeDb();
+    const a = unionApi(db);
+    const link = await a.handle("POST", "/api/models/Board/connect", {
+      where: { id: "b" },
+      relation: "hits",
+      member: "Person",
+      key: { email: "e@x" },
+      edge: { rank: 3 },
+    });
+    expect(link.status).toBe(200);
+    expect(calls.at(-1)).toEqual({
+      model: "Board",
+      op: "update",
+      args: {
+        where: { id: "b" },
+        data: { hits: { connect: { Person: { email: "e@x" }, $edge: { rank: 3 } } } },
+      },
+    });
+    await a.handle("POST", "/api/models/Board/disconnect", {
+      where: { id: "b" },
+      relation: "hits",
+      member: "Post",
+      key: { id: "p" },
+    });
+    expect(calls.at(-1)!.args).toEqual({
+      where: { id: "b" },
+      data: { hits: { disconnect: { Post: { id: "p" } } } },
+    });
+    await a.handle("POST", "/api/models/Board/disconnect", {
+      where: { id: "b" },
+      relation: "first",
+    });
+    expect(calls.at(-1)!.args.data).toEqual({ first: { disconnect: true } });
+    const missing = await a.handle("POST", "/api/models/Board/connect", {
+      where: { id: "b" },
+      relation: "hits",
+      key: { id: "p" },
+    });
+    expect(missing.status).toBe(400);
+    expect(JSON.stringify(missing.body)).toContain("name the member of the record to link");
+    expect(
+      (
+        await a.handle("POST", "/api/models/Board/connect", {
+          where: { id: "b" },
+          relation: "first",
+          member: "Post",
+          key: { id: "p" },
+          edge: { rank: 1 },
+        })
+      ).status,
+    ).toBe(400);
+    expect(
+      (
+        await unionApi(db, true).handle("POST", "/api/models/Board/connect", {
+          where: { id: "b" },
+          relation: "hits",
+          member: "Post",
+          key: { id: "p" },
+        })
+      ).status,
+    ).toBe(400);
+  });
+
+  it("lists the edges of a relationship model to a union with each end's member key", async () => {
+    const { db, cypher, calls } = fakeDb({
+      cypher: ({ query }) =>
+        String(query).includes("count(r)")
+          ? [{ total: 1 }]
+          : [
+              {
+                from: { id: "b" },
+                to: { __labels: ["Writer", "Person"], __props: { id: "w", email: "e", name: "N" } },
+                properties: { rank: 2 },
+              },
+            ],
+    });
+    const a = unionApi(db);
+    const res = await a.handle("POST", "/api/relationships/Pin/find", {});
+    expect(res.body).toEqual({
+      rows: [{ from: { id: "b" }, to: { __typename: "Writer", id: "w" }, properties: { rank: 2 } }],
+      total: 1,
+    });
+    expect(cypher[0]!.query).toBe(
+      "MATCH (a:`Board`)-[r:`PINS`]->(b) WHERE (b:`Post` OR b:`Person`) RETURN a {.`id`} AS from, {`__labels`: labels(b), `__props`: properties(b)} AS to, properties(r) AS properties SKIP 0 LIMIT 50",
+    );
+    await a.handle("POST", "/api/relationships/Pin/update", {
+      from: { id: "b" },
+      to: { id: "w" },
+      toMember: "Writer",
+      data: { rank: 5 },
+    });
+    expect(calls.at(-1)!.args.data).toEqual({
+      hits: { connect: { Writer: { id: "w" }, $edge: { rank: 5 } } },
+    });
+  });
+});

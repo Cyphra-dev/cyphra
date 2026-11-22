@@ -55,6 +55,11 @@ export type StudioNodeModel = {
   /** `true` for a union (always abstract): a type over unrelated nodes, with no fields. */
   readonly union?: boolean;
   readonly implementations?: readonly string[];
+  /**
+   * The members of a union as declared, when one is an interface (`["Person", "Team"]`, whose
+   * `implementations` are the nodes: `["Employee", "Customer", "Team"]`).
+   */
+  readonly members?: readonly string[];
   readonly interfaces?: readonly string[];
   readonly fields: readonly StudioField[];
   /** `null` when the model has no `@id` / `@unique` / `@@unique`: its records cannot be edited. */
@@ -145,7 +150,38 @@ export type EdgeUpdateRequest = {
   readonly from: Record<string, unknown>;
   /** Key of the `to` node. */
   readonly to: Record<string, unknown>;
+  /** When `to` is a union: the member the `to` key belongs to (`"Post"`). */
+  readonly toMember?: string;
   readonly data: Record<string, unknown>;
+};
+
+/**
+ * Link a record to another one through a relation (`connect`), or update the edge properties of
+ * an existing link (`edge`).
+ */
+export type ConnectRequest = {
+  /** Key of the record whose relation is written. */
+  readonly where: Record<string, unknown>;
+  readonly relation: string;
+  /**
+   * When the relation targets a union: the member the key belongs to (a node, or an interface
+   * member of the union).
+   */
+  readonly member?: string;
+  /** Key of the record to link (`{ id: "…" }`). */
+  readonly key: Record<string, unknown>;
+  /** Edge properties (`$edge`), when the relation has a `relationship { … }` model. */
+  readonly edge?: Record<string, unknown>;
+};
+
+/** Remove the link to one record (a to-many relation), or the link of a to-one relation. */
+export type DisconnectRequest = {
+  readonly where: Record<string, unknown>;
+  readonly relation: string;
+  /** When the relation targets a union: the member the key belongs to. */
+  readonly member?: string;
+  /** Key of the linked record (required on a to-many relation). */
+  readonly key?: Record<string, unknown>;
 };
 
 export type CypherRequest = {

@@ -98,6 +98,7 @@ export function buildMeta(
     abstract: n.abstract === true,
     ...(n.union ? { union: true } : {}),
     ...(n.implementations ? { implementations: n.implementations } : {}),
+    ...(n.members ? { members: n.members } : {}),
     ...(n.interfaces ? { interfaces: n.interfaces } : {}),
     key: keyOf(n),
     fields: n.fields.map((f): StudioField =>
