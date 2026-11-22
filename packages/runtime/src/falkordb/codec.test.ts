@@ -50,6 +50,19 @@ describe("FalkorDB parameters", () => {
     expect(() => literal(new CypherPoint(4326, 2.35, 48.85))).toThrow(UnsupportedFeatureError);
   });
 
+  it("rejects strings containing NUL with a clear validation error", () => {
+    const nul = "a\u0000b";
+    expect(() => literal(nul)).toThrow(CyphraValidationError);
+    expect(() => literal(nul)).toThrow(/NUL character/);
+    expect(() => literal(["ok", nul])).toThrow(CyphraValidationError);
+    expect(() => literal({ k: { deep: [nul] } })).toThrow(CyphraValidationError);
+    expect(() => literal({ [nul]: 1 })).toThrow(/map key name contains a NUL/);
+    expect(() => paramsHeader({ [nul]: 1 })).toThrow(/parameter name contains a NUL/);
+    expect(() => paramsHeader({ s: nul })).toThrow(CyphraValidationError);
+    // Other control characters and hostile text are still accepted.
+    expect(literal('x"\\\n\u0001')).toBe('"x\\"\\\\\n\u0001"');
+  });
+
   it("builds the CYPHER header", () => {
     expect(paramsHeader({})).toBe("");
     expect(paramsHeader({ p0: "x", "odd name": new CypherInteger(1), skip: undefined })).toBe(

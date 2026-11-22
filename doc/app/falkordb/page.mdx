@@ -119,6 +119,7 @@ suite passes on FalkorDB.
 | `DateTime`, `Date`, `LocalDateTime`, `LocalTime`, `Time`, `Duration` | Supported, stored as ISO 8601 text (see [temporal values](#temporal-values))                 |
 | `BigInt`                                                             | Supported; comparisons and sorting near ±2^63 are wrong on FalkorDB                          |
 | `Point`, `CartesianPoint`                                            | Not available: FalkorDB points cannot be parameters                                          |
+| Strings containing a NUL character (`\u0000`)                        | Rejected with a `CyphraValidationError` before the query is sent                             |
 | `cyphra push`, `migrate dev`, `migrate deploy`, `migrate diff`       | Supported, FalkorDB DDL                                                                      |
 | `cyphra migrate status` (drift), `migrate reset`                     | Supported                                                                                    |
 | `cyphra pull`                                                        | Supported, by sampling (temporal fields come back as `String`)                               |
@@ -152,6 +153,12 @@ out (`rewriteForFalkorDB`, exported for your own tooling). Neo4j and Memgraph ou
 | `CREATE VECTOR INDEX n … OPTIONS {indexConfig: …}`           | `CREATE VECTOR INDEX FOR (n:L) ON (n.p) OPTIONS {dimension: 3, similarityFunction: 'cosine'}` |
 | `CREATE FULLTEXT INDEX n … ON EACH [n.a, n.b]`               | `CREATE FULLTEXT INDEX FOR (n:L) ON (n.a)`, one per property                                  |
 | `SHOW CONSTRAINTS` / `SHOW INDEXES`                          | `CALL db.constraints()` / `CALL db.indexes()`                                                 |
+
+Parameters travel as Cypher literals in the `CYPHER` header, with `"` and `\` escaped, so any
+string reaches FalkorDB unchanged, except one containing a NUL character (`\u0000`), which FalkorDB
+cannot parse. Cyphra rejects such a value, in a field, a nested list or map, a map key or a
+parameter name, with a `CyphraValidationError` before anything is sent: strip or replace the
+character first.
 
 `GRAPH.CONSTRAINT` is a Redis command, not Cypher: the transport recognizes the statement and runs
 the command, creating the range indexes a unique constraint needs and waiting until FalkorDB

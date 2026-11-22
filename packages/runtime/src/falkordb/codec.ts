@@ -48,8 +48,21 @@ import { unsupportedOnFalkorDB } from "../dialect.js";
 
 type AnyRecord = Record<string, unknown>;
 
+/**
+ * FalkorDB cannot parse a parameter whose text contains a NUL character (`\u0000`): the query
+ * fails with "Failed to parse query parameter". Reject it up front with a clear error.
+ */
+function rejectNul(s: string, what: string): void {
+  if (s.includes("\u0000")) {
+    throw new CyphraValidationError(
+      `FalkorDB ${what} contains a NUL character (\\u0000), which FalkorDB cannot accept in a query parameter. Strip or replace it before sending.`,
+    );
+  }
+}
+
 /** A name (parameter or map key) as FalkorDB parses it: backtick-quoted, no backtick inside. */
 function name(key: string, what: string): string {
+  rejectNul(key, `${what} name`);
   if (key === "" || key.includes("`")) {
     throw new CyphraValidationError(
       `FalkorDB ${what} ${JSON.stringify(key)}: names cannot be empty or contain a backtick.`,
@@ -71,6 +84,7 @@ function floatLiteral(x: number): string {
 
 /** A string as a double-quoted Cypher literal. */
 function stringLiteral(s: string): string {
+  rejectNul(s, "string parameter");
   return `"${s.replace(/["\\]/g, "\\$&")}"`;
 }
 

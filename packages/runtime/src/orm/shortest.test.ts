@@ -22,10 +22,10 @@ describe("compileShortestPath", () => {
         "MATCH p = SHORTEST 1 (s)((:`User`)-[e0:`FOLLOWS`]->(:`User`)){0,4}(t) " +
         "WITH p ORDER BY length(p) LIMIT 1 " +
         "RETURN [n1 IN nodes(p) | n1{.`id`, .`email`, .`name`, .`age`, .`tags`, .`createdAt`}] AS nodes, " +
-        // The path's nodes carry only their labels (to type the edges): `nodes` has their fields.
-        "{nodes: [x2 IN nodes(p) | {labels: labels(x2)}], " +
-        "edges: [i3 IN range(0, length(p) - 1) | {type: type(relationships(p)[i3]), " +
-        "properties: properties(relationships(p)[i3]), out: startNode(relationships(p)[i3]) = nodes(p)[i3]}]} AS path",
+        // `nodes` has the nodes' fields; FOLLOWS has one relationship model, so the path needs no
+        // node labels to type its edges.
+        "{edges: [i2 IN range(0, length(p) - 1) | {type: type(relationships(p)[i2]), " +
+        "properties: properties(relationships(p)[i2]), out: startNode(relationships(p)[i2]) = nodes(p)[i2]}]} AS path",
     );
     expect(c.params).toEqual({ p0: "a", p1: "b" });
   });
@@ -116,6 +116,52 @@ describe("compileShortestPath", () => {
         edges: [{ type: "FOLLOWS", direction: "out", properties: { since: null } }],
       },
     ]);
+  });
+
+  it("keeps the path's node labels when an edge type has several relationship models", () => {
+    const schema = resolveSchema(
+      parseSchema(`
+        node Ax {
+          id    String @id
+          links Ax[]   @relationship(type: "LINK", direction: OUT)
+        }
+        node Bx {
+          id    String @id
+          links Bx[]   @relationship(type: "LINK", direction: OUT)
+        }
+        relationship AxLink {
+          type "LINK"
+          from Ax
+          to   Ax
+          w    Int
+        }
+        relationship BxLink {
+          type "LINK"
+          from Bx
+          to   Bx
+          v    String
+        }
+      `),
+    );
+    const bx = schema.nodes.find((n) => n.name === "Bx")!;
+    const c = compileShortestPath(
+      new QueryContext(schema),
+      bx,
+      { from: { id: "a" }, to: { id: "b" }, via: "links", maxDepth: 2 },
+      10,
+      false,
+    );
+    expect(c.text).toContain("{nodes: [x2 IN nodes(p) | {labels: labels(x2)}], edges: [i3 IN");
+    const rows = c.decode([
+      {
+        nodes: [{ id: "a" }, { id: "b" }],
+        path: {
+          nodes: [{ labels: ["Bx"] }, { labels: ["Bx"] }],
+          edges: [{ type: "LINK", properties: { v: "x", w: 1 }, out: true }],
+        },
+      },
+    ]);
+    expect(rows[0]!.edges).toEqual([{ type: "LINK", direction: "out", properties: { v: "x" } }]);
   });
 
   it("rejects missing ends, missing or excessive maxDepth and bad options", () => {
