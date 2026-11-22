@@ -517,6 +517,7 @@ export function diffSchemaModels(
     const p = prevNodes.get(n.name);
     if (!p) continue; // new model: no existing nodes to fix up
     labelSteps(p, n, prevNodes, nextNodes, steps);
+    dynamicLabelSteps(p, n, steps);
     const ps = scalarsOf(p);
     const ns = scalarsOf(n);
     // A field inherited from an interface the node already implemented is migrated on the
@@ -560,7 +561,11 @@ export function diffSchemaModels(
     relationshipDataSteps(p, r, steps, warnings, options.dialect);
   }
 
-  const notes = [...onDeleteNotes(prev, next), ...ruleNotes(prev, next)];
+  const notes = [
+    ...onDeleteNotes(prev, next),
+    ...ruleNotes(prev, next),
+    ...dynamicLabelNotes(prev, next),
+  ];
   return { steps: [...drops, ...steps, ...creates], warnings, ...(notes.length ? { notes } : {}) };
 }
 
@@ -711,6 +716,48 @@ function labelSteps(
       cypher: `${match} WHERE n:${q(label)} REMOVE n:${q(label)}`,
     });
   }
+}
+
+/**
+ * A dynamic label (`@@labels`) a node no longer declares: a commented-out step removing it from
+ * existing nodes (data written with it keeps it otherwise). Interfaces are skipped: their nodes are
+ * their implementations', which lose the label too. A label the node now gets from an interface
+ * is kept.
+ */
+function dynamicLabelSteps(
+  prev: ResolvedNodeModel,
+  next: ResolvedNodeModel,
+  steps: MigrationStep[],
+): void {
+  if (prev.abstract || next.abstract) return;
+  const kept = new Set([...(next.dynamicLabels ?? []), ...(next.labels ?? [next.label])]);
+  for (const label of prev.dynamicLabels ?? []) {
+    if (kept.has(label)) continue;
+    steps.push({
+      kind: "destructive",
+      comment: `${next.name} no longer declares the dynamic label ${label}. Uncomment to remove :${label} from existing ${prev.label} nodes.`,
+      cypher: `MATCH (n:${q(prev.label)}) WHERE n:${q(label)} REMOVE n:${q(label)}`,
+    });
+  }
+}
+
+/**
+ * Dynamic labels (`@@labels`) a model starts declaring: no DDL (Cyphra creates no index or
+ * constraint for them) and no data step (existing nodes get them when written).
+ */
+function dynamicLabelNotes(prev: SchemaModel, next: SchemaModel): string[] {
+  const notes: string[] = [];
+  const prevNodes = new Map(prev.nodes.map((n) => [n.name, n]));
+  for (const n of next.nodes) {
+    const p = prevNodes.get(n.name);
+    const before = new Set(p?.dynamicLabels ?? []);
+    const added = (n.dynamicLabels ?? []).filter((l) => !before.has(l));
+    if (!p || added.length === 0) continue;
+    notes.push(
+      `${n.name}: dynamic label${added.length > 1 ? "s" : ""} ${added.map((l) => `:${l}`).join(", ")} declared (no migration step: no DDL is created for dynamic labels, and existing nodes get them when written).`,
+    );
+  }
+  return notes;
 }
 
 /** `true` when the plan has nothing to do. */

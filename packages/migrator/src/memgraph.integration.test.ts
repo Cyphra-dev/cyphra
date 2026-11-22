@@ -160,6 +160,28 @@ relationship MgmL { type "MGM_L"
     expect(warnings.filter((w) => w.includes("Mgm"))).toEqual([]);
   });
 
+  it("pulls interfaces and dynamic labels", async () => {
+    const clean = "MATCH (n) WHERE n:MgmPerson OR n:MgmArch OR n:MgmPost DETACH DELETE n";
+    await run(clean);
+    try {
+      await run(
+        "CREATE (:MgmEmp:MgmPerson:MgmArch {pid: 'e', archivedAt: 1, salary: 1}), " +
+          "(:MgmCust:MgmPerson {pid: 'c', tier: 'gold'}), " +
+          "(:MgmDocA:MgmArch {archivedAt: 2, body: 'x'}), " +
+          "(:MgmPost {title: 'a'}), (:MgmPost:MgmHidden {title: 'b'})",
+      );
+      const { doc, warnings } = schemaFromIntrospection(await introspectDatabase(client));
+      const text = printSchemaDocument(doc);
+      resolveSchema(parseSchema(text));
+      expect(text).toContain("interface MgmPerson {\n  pid String\n}");
+      expect(text).toContain("node MgmEmp implements MgmArch, MgmPerson {\n  salary Int\n}");
+      expect(text).toContain("node MgmPost {\n  title String\n\n  @@labels([MgmHidden])\n}");
+      expect(warnings.filter((w) => /MgmPerson|MgmArch|MgmPost/.test(w))).toEqual([]);
+    } finally {
+      await run(clean);
+    }
+  });
+
   it("applies a generated migration, records it, and reports drift against it", async () => {
     await cleanup();
     const v1 = resolveSchema(

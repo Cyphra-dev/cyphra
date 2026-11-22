@@ -57,6 +57,7 @@ import {
 import { defaultLiteralValue, encodeScalar, integerToNumber, nowValue } from "./values.js";
 import { numericGuard, throwGuardIssues, validateWriteArgs, type NumericCheck } from "./rules.js";
 import { falkordbGuardedEdgeSet } from "./falkordb.js";
+import { createLabels, labelItem, labelSuffix, updateLabels } from "./labels.js";
 
 type AnyRecord = Record<string, unknown>;
 
@@ -439,19 +440,28 @@ export class ModelEngine {
     return props;
   }
 
-  private splitData(data: unknown, op: string): { scalars: AnyRecord; relations: AnyRecord } {
+  /** Split write `data` into scalars, relation writes and `$labels` (left unchecked). */
+  private splitData(
+    data: unknown,
+    op: string,
+  ): { scalars: AnyRecord; relations: AnyRecord; labels: unknown } {
     if (!isPlainObject(data))
       throw new CyphraValidationError(`${this.model.name}.${op}: data must be an object.`);
     const scalars: AnyRecord = {};
     const relations: AnyRecord = {};
+    let labels: unknown;
     for (const [k, v] of Object.entries(data)) {
       if (v === undefined) continue;
+      if (k === "$labels") {
+        labels = v;
+        continue;
+      }
       const f = this.model.fields.find((x) => x.name === k);
       if (!f)
         throw new CyphraValidationError(`Unknown field "${this.model.name}.${k}" in ${op} data.`);
       (f.kind === "scalar" ? scalars : relations)[k] = v;
     }
-    return { scalars, relations };
+    return { scalars, relations, labels };
   }
 
   private edgeProps(rel: ResolvedRelationField, input: unknown): AnyRecord {
@@ -571,17 +581,28 @@ export class ModelEngine {
    * Validate the data of a node to create: its encoded scalar properties (with defaults) and its
    * nested relation writes.
    */
-  private createData(data: unknown, op: string): { props: AnyRecord; relations: AnyRecord } {
+  private createData(
+    data: unknown,
+    op: string,
+  ): { props: AnyRecord; relations: AnyRecord; labels: string[] } {
     assertCreatable(this.model, `${this.model.name}.${op}`);
-    const { scalars, relations } = this.splitData(data, op);
+    const { scalars, relations, labels } = this.splitData(data, op);
     const fields = this.model.fields.filter((f): f is ResolvedScalarField => f.kind === "scalar");
-    return { props: ModelEngine.createProps(this.model.name, fields, scalars), relations };
+    return {
+      props: ModelEngine.createProps(this.model.name, fields, scalars),
+      relations,
+      labels: createLabels(this.model, labels, `${this.model.name}.${op}: data`),
+    };
   }
 
   /** One statement creating a node (`n`) with every nested relation write of `data`. */
   private planCreate(ctx: QueryContext, data: unknown): WritePlan {
-    const { props, relations } = this.createData(data, "create");
-    const plan = new WritePlan(ctx, `CREATE (n:${this.label} ${ctx.param(props)})`, ["n"]);
+    const { props, relations, labels } = this.createData(data, "create");
+    const plan = new WritePlan(
+      ctx,
+      `CREATE (n:${this.label}${labelSuffix(labels)} ${ctx.param(props)})`,
+      ["n"],
+    );
     this.planRelations(plan, "n", relations, "create", ["data"]);
     return plan;
   }
@@ -702,14 +723,16 @@ export class ModelEngine {
     const ctx = plan.ctx;
     const target = this.node(rel.target);
     const child = this.engineFor(target);
+    // A batch shares its dynamic labels (`batchLabels`): they are part of its CREATE pattern.
     let batch: { p: AnyRecord; e: AnyRecord }[] = [];
+    let batchLabels = "";
     const flush = () => {
       if (!batch.length) return;
       const [x, c, r] = [ctx.variable("x"), ctx.variable("c"), ctx.variable("r")];
       const typed = batch.some((row) => Object.keys(row.e).length > 0);
       const edge = ModelEngine.edgePattern(rel, own, c, typed ? r : "");
       plan.add(
-        `FOREACH (${x} IN ${ctx.param(batch)} | CREATE (${c}:${labelExpr(target)}) SET ${c} = ${x}.p ` +
+        `FOREACH (${x} IN ${ctx.param(batch)} | CREATE (${c}:${labelExpr(target)}${batchLabels}) SET ${c} = ${x}.p ` +
           `CREATE ${edge}${typed ? ` SET ${r} = ${x}.e` : ""})`,
       );
       batch = [];
@@ -724,9 +747,12 @@ export class ModelEngine {
         );
       }
       const edge = this.edgeProps(rel, $edge);
-      const { props, relations } = child.createData(data, "create");
+      const { props, relations, labels } = child.createData(data, "create");
+      const extra = labelSuffix(labels);
       plan.relations = true;
       if (Object.keys(relations).length === 0) {
+        if (extra !== batchLabels) flush();
+        batchLabels = extra;
         batch.push({ p: props, e: edge });
         continue;
       }
@@ -734,7 +760,7 @@ export class ModelEngine {
       const c = ctx.variable("c");
       const e = Object.keys(edge).length ? ctx.param(edge) : "";
       plan.add(
-        `CREATE (${c}:${labelExpr(target)} ${ctx.param(props)}) ` +
+        `CREATE (${c}:${labelExpr(target)}${extra} ${ctx.param(props)}) ` +
           `CREATE ${ModelEngine.edgePattern(rel, own, c, "", e)}`,
         [c],
       );
@@ -928,16 +954,47 @@ export class ModelEngine {
   }
 
   /**
-   * `SET` the update on `n` only when the values its numeric operators produce keep within
-   * `@min` / `@max`; the clause returns the broken checks as `bad` (see {@link numericGuard}).
+   * `SET` the update on `n` (and `REMOVE` the dynamic labels in `remove`, an item such as
+   * `` n:`A` ``) only when the values its numeric operators produce keep within `@min` / `@max`;
+   * the clause returns the broken checks as `bad` (see {@link numericGuard}).
    */
-  private static guardedSet(sets: readonly string[], checks: readonly NumericCheck[]): string {
+  private static guardedSet(
+    sets: readonly string[],
+    checks: readonly NumericCheck[],
+    remove: string | null = null,
+  ): string {
     const guard = numericGuard(checks);
-    if (!guard) return sets.length ? ` SET ${sets.join(", ")}` : "";
+    const body = ModelEngine.setAndRemove(sets, remove);
+    if (!guard) return body ? ` ${body}` : "";
     return (
       ` WITH n, ${guard} AS bad` +
-      ` FOREACH (x IN CASE WHEN size(bad) = 0 THEN [1] ELSE [] END | SET ${sets.join(", ")})`
+      ` FOREACH (x IN CASE WHEN size(bad) = 0 THEN [1] ELSE [] END | ${body})`
     );
+  }
+
+  /** `SET a, b REMOVE n:L`, either part left out when empty (`""` for nothing). */
+  private static setAndRemove(sets: readonly string[], remove: string | null): string {
+    const parts: string[] = [];
+    if (sets.length) parts.push(`SET ${sets.join(", ")}`);
+    if (remove) parts.push(`REMOVE ${remove}`);
+    return parts.join(" ");
+  }
+
+  /**
+   * The scalar `SET`s of an update (with their checks), plus the label changes of its `$labels`:
+   * added labels as one more `SET` item, removed ones as a `REMOVE` item.
+   */
+  private updateClauses(
+    ctx: QueryContext,
+    scalars: AnyRecord,
+    labels: unknown,
+    where: string,
+  ): { sets: string[]; checks: NumericCheck[]; remove: string | null } {
+    const change = updateLabels(this.model, labels, where);
+    const { sets, checks } = this.setClauses(ctx, scalars);
+    const add = labelItem("n", change.add);
+    if (add) sets.push(add);
+    return { sets, checks, remove: labelItem("n", change.remove) };
   }
 
   // -------------------------------------------------------------------------
@@ -963,20 +1020,42 @@ export class ModelEngine {
       throw new CyphraValidationError("createMany: data must be an array.");
     validateWriteArgs(this.schema, this.model, "createMany", args);
     const fields = this.model.fields.filter((f): f is ResolvedScalarField => f.kind === "scalar");
-    const rows = args.data.map((d: unknown) => {
-      const { scalars, relations } = this.splitData(d, "createMany");
+    // Rows grouped by their dynamic labels (part of the CREATE pattern), in first-seen order.
+    const groups = new Map<string, AnyRecord[]>();
+    args.data.forEach((d: unknown, i: number) => {
+      const { scalars, relations, labels } = this.splitData(d, "createMany");
       if (Object.keys(relations).length) {
         throw new CyphraValidationError("createMany does not support nested relation writes.");
       }
-      return ModelEngine.createProps(this.model.name, fields, scalars);
+      const extra = labelSuffix(
+        createLabels(this.model, labels, `${this.model.name}.createMany: data[${i}]`),
+      );
+      const rows = groups.get(extra) ?? [];
+      groups.set(extra, rows);
+      rows.push(ModelEngine.createProps(this.model.name, fields, scalars));
     });
-    if (rows.length === 0) return { count: 0 };
+    if (groups.size === 0) return { count: 0 };
     return this.runner.write(async (exec) => {
       const ctx = this.ctx();
-      const res = await exec(
-        `UNWIND ${ctx.param(rows)} AS row CREATE (n:${this.label}) SET n = row RETURN count(n) AS c`,
-        ctx.params,
-      );
+      if (groups.size === 1) {
+        const [[extra, rows]] = [...groups];
+        const res = await exec(
+          `UNWIND ${ctx.param(rows)} AS row CREATE (n:${this.label}${extra}) SET n = row RETURN count(n) AS c`,
+          ctx.params,
+        );
+        return { count: toCount(res[0]?.c) };
+      }
+      // One UNWIND per group, each counted before the next (an aggregation keeps one row).
+      const counts: string[] = [];
+      let text = "";
+      for (const [extra, rows] of groups) {
+        const c = `c${counts.length}`;
+        text +=
+          `${text ? " " : ""}UNWIND ${ctx.param(rows)} AS row CREATE (n:${this.label}${extra}) SET n = row ` +
+          `WITH ${[...counts, `count(n) AS ${c}`].join(", ")}`;
+        counts.push(c);
+      }
+      const res = await exec(`${text} RETURN ${counts.join(" + ")} AS c`, ctx.params);
       return { count: toCount(res[0]?.c) };
     }, SINGLE);
   }
@@ -989,15 +1068,20 @@ export class ModelEngine {
   async update(args: AnyRecord): Promise<AnyRecord> {
     validateWriteArgs(this.schema, this.model, "update", args);
     const where = this.assertUnique(args.where, "update");
-    const { scalars, relations } = this.splitData(args.data, "update");
+    const { scalars, relations, labels } = this.splitData(args.data, "update");
     const ctx = this.ctx();
     const w = compileWhere(ctx, this.model, "n", where);
-    const { sets, checks } = this.setClauses(ctx, scalars);
+    const { sets, checks, remove } = this.updateClauses(
+      ctx,
+      scalars,
+      labels,
+      `${this.model.name}.update: data`,
+    );
     const guarded = numericGuard(checks) !== null;
     const plan = new WritePlan(
       ctx,
       `MATCH (n:${this.label})${w ? ` WHERE ${w}` : ""} WITH n LIMIT 1` +
-        ModelEngine.guardedSet(sets, checks),
+        ModelEngine.guardedSet(sets, checks, remove),
       guarded ? ["n", "bad"] : ["n"],
     );
     this.planRelations(plan, "n", relations, "update", ["data"]);
@@ -1016,13 +1100,19 @@ export class ModelEngine {
    */
   async updateMany(args: AnyRecord): Promise<{ count: number }> {
     validateWriteArgs(this.schema, this.model, "updateMany", args);
-    const { scalars, relations } = this.splitData(args.data, "updateMany");
+    const { scalars, relations, labels } = this.splitData(args.data, "updateMany");
     if (Object.keys(relations).length) {
       throw new CyphraValidationError("updateMany does not support relation writes.");
     }
     const ctx = this.ctx();
     const w = compileWhere(ctx, this.model, "n", args.where);
-    const { sets, checks } = this.setClauses(ctx, scalars);
+    const { sets, checks, remove } = this.updateClauses(
+      ctx,
+      scalars,
+      labels,
+      `${this.model.name}.updateMany: data`,
+    );
+    const body = ModelEngine.setAndRemove(sets, remove);
     const match = `MATCH (n:${this.label})${w ? ` WHERE ${w}` : ""}`;
     const guard = numericGuard(checks);
     return this.runner.write(async (exec) => {
@@ -1030,17 +1120,14 @@ export class ModelEngine {
         const res = await exec(
           `${match} WITH collect(n) AS ns` +
             ` WITH ns, [b IN [n IN ns | ${guard}] WHERE size(b) > 0] AS bad` +
-            ` FOREACH (n IN CASE WHEN size(bad) = 0 THEN ns ELSE [] END | SET ${sets.join(", ")})` +
+            ` FOREACH (n IN CASE WHEN size(bad) = 0 THEN ns ELSE [] END | ${body})` +
             ` RETURN size(ns) AS c, bad[0] AS bad`,
           ctx.params,
         );
         throwGuardIssues("updateMany", this.model, checks, res[0]?.bad, ["data"]);
         return { count: toCount(res[0]?.c) };
       }
-      const res = await exec(
-        `${match}${sets.length ? ` SET ${sets.join(", ")}` : ""} RETURN count(n) AS c`,
-        ctx.params,
-      );
+      const res = await exec(`${match}${body ? ` ${body}` : ""} RETURN count(n) AS c`, ctx.params);
       return { count: toCount(res[0]?.c) };
     }, SINGLE);
   }
@@ -1063,6 +1150,11 @@ export class ModelEngine {
     validateWriteArgs(this.schema, this.model, "upsert", args);
     const create = this.splitData(args.create, "upsert create");
     const update = this.splitData(args.update, "upsert update");
+    const createdLabels = createLabels(
+      this.model,
+      create.labels,
+      `${this.model.name}.upsert: create`,
+    );
     for (const key of keyFields) {
       if (create.scalars[key] !== undefined && !sameValue(create.scalars[key], where[key])) {
         throw new CyphraValidationError(
@@ -1085,25 +1177,34 @@ export class ModelEngine {
       )
       .join(", ");
     const onCreate = Object.keys(props).length ? [`n += ${ctx.param(props)}`] : [];
+    const createdItem = labelItem("n", createdLabels);
+    if (createdItem) onCreate.push(createdItem);
     const rest = Object.fromEntries(Object.entries(where).filter(([k]) => !keyFields.includes(k)));
     const restWhere = compileWhere(ctx, this.model, "n", rest);
-    const { sets, checks } = this.setClauses(ctx, update.scalars);
+    const { sets, checks, remove } = this.updateClauses(
+      ctx,
+      update.scalars,
+      update.labels,
+      `${this.model.name}.upsert: update`,
+    );
     const guard = numericGuard(checks);
     const flag = `n.${q(UPSERT_FLAG)}`;
-    const trackCreated = nested || restWhere !== null || guard !== null;
+    // `ON MATCH SET` cannot remove labels: removing one takes the FOREACH form below.
+    const trackCreated = nested || restWhere !== null || guard !== null || remove !== null;
 
     let text = `MERGE (n:${this.label} {${keyProps}})`;
     if (trackCreated) onCreate.push(`${flag} = true`);
     if (onCreate.length) text += ` ON CREATE SET ${onCreate.join(", ")}`;
-    if (restWhere || guard) {
+    if (restWhere || guard || remove) {
       // Check the extra filters (and the range of the values numeric operators produce) against
       // the node as it was, then update it.
       text += ` WITH n, ${flag} IS NOT NULL AS created REMOVE ${flag}`;
       if (restWhere) text += ` WITH n, created WHERE created OR (${restWhere})`;
       if (guard) text += ` WITH n, created, CASE WHEN created THEN [] ELSE ${guard} END AS bad`;
-      if (sets.length) {
+      const body = ModelEngine.setAndRemove(sets, remove);
+      if (body) {
         const skip = guard ? "created OR size(bad) > 0" : "created";
-        text += ` FOREACH (x IN CASE WHEN ${skip} THEN [] ELSE [1] END | SET ${sets.join(", ")})`;
+        text += ` FOREACH (x IN CASE WHEN ${skip} THEN [] ELSE [1] END | ${body})`;
       }
     } else {
       if (sets.length) text += ` ON MATCH SET ${sets.join(", ")}`;

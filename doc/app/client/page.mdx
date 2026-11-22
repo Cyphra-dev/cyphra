@@ -889,6 +889,53 @@ rejected: create an implementation instead. `connect` works by the interface's u
 [`onDelete` rules](#deleting) of each node's implementation, so `db.person.delete(…)` on an
 employee still cascades along the employee's own `Cascade` relations.
 
+## Dynamic labels
+
+Models declaring [`@@labels([…])`](/schema#dynamic-labels) take `$labels` in writes, filters and
+`select` / `include`, typed with the declared labels:
+
+```ts
+// schema: node Post { … @@labels([Archived, Featured]) }
+const post = await db.post.create({ data: { title: "Hi", $labels: ["Featured"] } });
+
+await db.post.update({
+  where: { id: post.id },
+  data: { $labels: { add: ["Archived"], remove: ["Featured"] } },
+});
+await db.post.update({ where: { id: post.id }, data: { $labels: { set: ["Archived"] } } });
+await db.post.updateMany({
+  where: { $labels: { has: "Archived" } },
+  data: { $labels: { remove: ["Archived"] } },
+});
+
+const featured = await db.post.findMany({
+  where: { $labels: { has: "Featured", hasNone: ["Archived"] } },
+  select: { title: true, $labels: true },
+}); // { title: string; $labels: ("Archived" | "Featured")[] }[]
+```
+
+- **Writes.** `create`, `createMany`, nested `create` and the `create` of `upsert` take
+  `$labels: [...]`, the labels the new node gets. `update`, `updateMany` and the `update` of
+  `upsert` take `{ add, remove }` (a label in both is an error) or `{ set }`: exactly these labels,
+  every other declared label removed. A label change is part of the same statement as the rest of
+  the write: when a [`@min` / `@max` check](#validation-rules) fails, labels are left as they were.
+- **Filters.** `where: { $labels: … }` takes `has` (one label), `hasSome`, `hasEvery`,
+  `hasNone` (arrays) and `isEmpty: true` (none of the model's dynamic labels). It works wherever a
+  `where` of the model does: relation filters (`posts: { some: { $labels: { has: "Featured" } } }`),
+  `count`, `aggregate`, `groupBy`, `_count` filters, `AND` / `OR` / `NOT`. An empty `hasSome`
+  matches nothing, an empty `hasEvery` everything.
+- **Results.** `$labels` is only returned when asked for: `select: { $labels: true }` or
+  `include: { $labels: true }` (with every scalar field), also on loaded relations. It lists the
+  node's dynamic labels in declaration order, never its model or interface labels.
+- **Interfaces.** `@@labels` on an interface is shared by its implementations: the interface's
+  delegate (`db.person`) filters and writes the interface's labels, an implementation's delegate
+  those and its own.
+- **Safety.** Labels are checked against the schema's list before anything runs (any other value,
+  or `$labels` on a model without `@@labels`, is a `CyphraValidationError`), and the statement uses
+  the schema's spelling: `SET n:Archived`, `REMOVE n:Featured`, `WHERE n:Featured`. No label name is
+  ever taken from a value, so there is no Cypher injection through `$labels`, and the same
+  statements run on [Memgraph](/memgraph) and [FalkorDB](/falkordb).
+
 ## Writing
 
 ```ts

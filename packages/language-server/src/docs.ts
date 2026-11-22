@@ -297,6 +297,12 @@ export const DECORATORS: readonly DecoratorDoc[] = [
     ],
   },
   {
+    name: "labels",
+    on: "model",
+    doc: "Dynamic labels: flags a node may carry or not (`@@labels([Archived, Featured])`), added and removed with `data: { $labels: { add, remove } }`, filtered with `where: { $labels: { has } }` and read with `select: { $labels: true }`. Only the listed labels are accepted; they must not be a model's label.",
+    snippet: "labels([${1}])",
+  },
+  {
     name: "index",
     on: "model",
     doc: "A composite range index over several fields of the node (`@@index([tenant, createdAt])`), for filters and sorts that use them together.",
@@ -325,7 +331,9 @@ export function decoratorMarkdown(d: DecoratorDoc): string {
     d.on === "model"
       ? d.name === "fulltext"
         ? "full-text-indexes"
-        : "composite-constraints-and-indexes"
+        : d.name === "labels"
+          ? "dynamic-labels"
+          : "composite-constraints-and-indexes"
       : d.on === "vector"
         ? "vector-fields"
         : d.rule

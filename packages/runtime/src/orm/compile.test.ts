@@ -252,6 +252,7 @@ describe("generated fixture", () => {
     "zod",
     "interfaces",
     "graph",
+    "labels",
   ])("is in sync with %s.cyphra (run the generator if this fails)", async (name) => {
     const { readFile } = await import("node:fs/promises");
     const { parseSchema, renderCyphraGenSource } = await import("@cyphra/schema");

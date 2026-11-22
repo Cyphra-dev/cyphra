@@ -1,6 +1,7 @@
 # Design note: interfaces and multiple labels (#100)
 
-Status: implemented in #166; follow-ups in #167 (see [Follow-ups](#follow-ups-167)).
+Status: implemented in #166; follow-ups in #167 (see [Follow-ups](#follow-ups-167)), dynamic
+labels in #184 and multi-interface pull in #185.
 
 ## Problem
 
@@ -154,7 +155,7 @@ Neo4j reports label combinations per node. When a label `P` never appears alone 
 appears with exactly one other label of the schema (each of those labels `X` always carrying `P`),
 `pull` emits `interface P { <properties every P node has> }` and `node X implements P` with the
 remaining properties. Other multi-label layouts keep today's behaviour (one model per label) and are
-listed in the hints.
+listed in the hints. (Generalised in #185, see [Pull: several interfaces per node](#pull-several-interfaces-per-node-185).)
 
 ## GraphQL importer
 
@@ -195,9 +196,8 @@ schema resolution (the same errors as `cyphra validate`).
   label, never on the intermediate one.
 - `cyphra pull`: a group of labels seen together becomes a hierarchy when each multi-label
   combination has exactly one label of its own and its other labels form a strict chain (each
-  label's nodes all carrying the next, in strictly more combinations). Several unrelated
-  interfaces per node, and a shared label with a single implementation, stay one model per label
-  (#185).
+  label's nodes all carrying the next, in strictly more combinations). Generalised to several
+  unrelated interfaces per node and to dynamic labels in #185 (below).
 
 ### `__typename` filters and sorting (implemented)
 
@@ -240,14 +240,84 @@ names the member: `connect: { Post: { id } }`), and no constraint. Open: whether
 delegate at all or only appears as a relation target. `@neo4j/graphql` v7 unions are exactly this,
 so `@cyphra/graphql` could map them once it exists.
 
-### Dynamic labels (#184)
+### Dynamic labels (#184, implemented)
 
-Labels that come and go on individual nodes (`:Archived`, `:Featured`). They would be declared on
-the model (`@@labels([Archived, Featured])`) so they are typed, never collide with model or
-interface labels, and come from the schema only (never from values: no injection). Writes take
-`data: { $labels: { add, remove } }` (`SET n:Archived` / `REMOVE n:Featured`), filters
-`where: { $labels: { has, hasSome, hasEvery } }`, and removing a flag from the schema offers a
-destructive `REMOVE` step. Label predicates and `SET n:L` work on Memgraph too.
+Labels that come and go on individual nodes (`:Archived`, `:Featured`), declared on the model so
+they are typed and never come from values:
+
+```cyphra
+node Post {
+  id String @id
+  @@labels([Archived, Featured])
+}
+```
+
+- **Schema.** `@@labels([A, B])` on a `node` or an `interface` (not on relationships): at least one
+  label, each once, no arguments, one `@@labels` per model. A dynamic label must not be a model's
+  label (a node carrying it would match that model; the error suggests `implements` for an
+  interface) and must not start with `__`. Several models may share a label. The resolved model
+  gets `dynamicLabels` (absent when none; `SCHEMA_MODEL_VERSION` unchanged): an interface's first,
+  then the model's own, each once. Dynamic labels are never part of `labels` (how a model is
+  matched and created), so `db.post` matches every `:Post`.
+- **Codegen.** The type map gets `dynamicLabels: "Archived" | "Featured"` (only when declared, so
+  other schemas generate the same code).
+- **Writes.** `data.$labels` is an array on `create` / `createMany` / nested `create` / upsert
+  `create` (`CREATE (n:Post:Archived $props)`; nested and bulk creates are batched per label set,
+  `createMany` with several label sets is one statement of one `UNWIND` per set), and
+  `{ add, remove }` or `{ set }` on `update` / `updateMany` / upsert `update` (`SET n:A` as one more
+  `SET` item, `REMOVE n:B`). The label change is part of the existing `SET`, so it sits inside the
+  `@min` / `@max` guard's `FOREACH` and is skipped with it. `ON MATCH SET` cannot remove a label:
+  an upsert removing one takes the `FOREACH (… CASE WHEN created …)` form already used for extra
+  `where` filters.
+- **Filters.** `where.$labels: { has, hasSome, hasEvery, hasNone, isEmpty }` compiles to label
+  predicates (`n:A`, `(n:A) OR (n:B)`, `n:A:B`, `NOT (…)`), anywhere a `where` is compiled.
+- **Results.** `select` / `include: { $labels: true }` projects `labels(n)` (the key interfaces
+  already use for `__typename`) and the decoder keeps the declared labels, in declaration order.
+  Without it the result shape is unchanged.
+- **Safety.** Every label given at runtime is looked up in the model's `dynamicLabels`; anything
+  else (or `$labels` on a model without `@@labels`) is a `CyphraValidationError` before the
+  statement is built, and the Cypher uses the schema's identifier, backtick-quoted. Neo4j 5.24's
+  `SET n:$(expr)` would also be safe with a parameter, but the static form needs no version check,
+  is plain Cypher that Memgraph (and other openCypher databases) run, and lets the planner use
+  label scans in filters. The helpers live
+  in `packages/runtime/src/orm/labels.ts` so other dialects reuse them.
+- **Indexes and constraints.** None are generated: an index covers one label, so a property of
+  flagged nodes is indexed on the flag's label in a hand-written migration, and a constraint on a
+  flag label would span every model declaring it.
+- **Migrations.** No DDL. A newly declared label is listed in the plan's notes; a label removed
+  from a node gives a commented-out destructive step
+  (`MATCH (n:Post) WHERE n:Featured REMOVE n:Featured`), skipped when the node now gets that label
+  through `implements` (the interface step adds it).
+- **Memgraph.** Same statements (static labels and label predicates): supported.
+- **Language server.** `@@labels` completion, hover and diagnostics; inside `@@labels([…])`, the
+  labels other models declare.
+
+### Pull: several interfaces per node (#185)
+
+`cyphra pull` reads each group of labels seen together (connected through shared combinations) as
+an exact cover: it looks for sets of "model" labels such that every label combination holds
+exactly one of them (combinations of one label force it), backtracking with caps on steps and
+solutions. For each such choice, every other label `x` must be either
+
+- an **interface**: on every node of each model it is seen with (implementations = those models);
+  interfaces whose implementations are a strict subset of another's extend it, and each model
+  `implements` its interfaces minus the ones reached through `extends`; or
+- a **dynamic label**: on some nodes of each model it is seen with, with no property its owner's
+  other nodes never have, no constraint or index, and some nodes of each owner carrying none of
+  the owner's dynamic labels (otherwise, e.g. every Post being `:Draft` or `:Published`, those are
+  better read as the models).
+
+Exactly one valid choice is used. Several (always `[Employee, Person]`: either label could be the
+interface) keep one model per label with a warning naming the candidate labels, unless
+`cyphra pull --interface Person` (`schemaFromIntrospection(input, { interfaces })`) removes the
+others; none (e.g. a label on all nodes of one model and some of another's) keep one model per
+label too. A property two unrelated interfaces of one node could both hold stays on the nodes
+(two interfaces of a node cannot declare one field), unless only one of them constrains or indexes
+it. Dynamic labels are dropped from relation endpoints, so edges to `[Post, Archived]` target
+`Post`.
+
+Not done: lifting a dynamic label shared by every implementation of an interface onto the
+interface (each implementation gets its own `@@labels`).
 
 ### GraphQL interfaces (not planned)
 

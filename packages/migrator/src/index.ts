@@ -40,6 +40,7 @@ export {
   schemaFromIntrospection,
   type IntrospectedProperty,
   type IntrospectionResult,
+  type SchemaFromIntrospectionOptions,
 } from "./introspect.js";
 export {
   compareSchemaObjects,

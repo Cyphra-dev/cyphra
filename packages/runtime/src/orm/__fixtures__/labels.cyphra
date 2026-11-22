@@ -1,0 +1,31 @@
+// Dynamic labels: flags a node carries or not, added and removed at runtime.
+interface Content {
+  id    String @id @default(cuid())
+  title String
+
+  @@labels([Archived])
+}
+
+node Article implements Content {
+  views Int    @default(0) @min(0)
+  tags  Tag[]  @relationship(type: "TAGGED", direction: OUT)
+
+  @@labels([Featured, Pinned])
+}
+
+node Page implements Content {
+  path String @unique
+}
+
+node Tag {
+  name     String    @id
+  articles Article[] @relationship(type: "TAGGED", direction: IN)
+
+  @@labels([Hidden])
+}
+
+node Author {
+  id       String    @id @default(cuid())
+  name     String
+  articles Article[] @relationship(type: "WROTE", direction: OUT)
+}

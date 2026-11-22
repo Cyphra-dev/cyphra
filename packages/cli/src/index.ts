@@ -153,9 +153,16 @@ program
   .description("Introspect the database and write schema.cyphra")
   .option("--force", "overwrite an existing schema file")
   .option("--print", "write the schema to stdout instead of the schema file")
-  .action(async (opts: { force?: boolean; print?: boolean }) => {
+  .option(
+    "--interface <labels...>",
+    "read these labels as interfaces where the data leaves it ambiguous (e.g. nodes always labelled :Employee:Person)",
+  )
+  .action(async (opts: { force?: boolean; print?: boolean; interface?: string[] }) => {
     const cwd = process.cwd();
-    await runPull(cwd, await loadConfig(cwd), opts);
+    await runPull(cwd, await loadConfig(cwd), {
+      ...opts,
+      interfaces: (opts.interface ?? []).flatMap((l) => l.split(",")).filter(Boolean),
+    });
   });
 
 program

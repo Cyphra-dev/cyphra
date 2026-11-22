@@ -568,17 +568,15 @@ interface Staff extends Person {
     ]);
   });
 
-  it("falls back to one model per label when the labels form no chain", () => {
+  it("falls back to one model per label when which label is the interface is ambiguous", () => {
     const { doc, warnings } = schemaFromIntrospection({
       ...input,
       nodeTypes: [
-        // Person and Archivable: two unrelated interfaces on one node.
-        { labels: ["Employee", "Person", "Archivable"], properties: [str("id")] },
-        { labels: ["Customer", "Person"], properties: [str("id")] },
-        { labels: ["Doc", "Archivable"], properties: [str("id")] },
         // Staff is always seen with Intern: which one is the node's own label is ambiguous.
         { labels: ["Intern", "Staff", "Worker"], properties: [str("id")] },
         { labels: ["Boss", "Worker"], properties: [str("id")] },
+        // Two labels always together.
+        { labels: ["A", "B"], properties: [str("id")] },
       ],
       relTypes: [],
       constraints: [],
@@ -587,6 +585,11 @@ interface Staff extends Person {
     expect(doc.declarations.some((d) => d.kind === "Node" && (d.abstract || d.implements))).toBe(
       false,
     );
-    expect(warnings.filter((w) => w.includes("became one model per label"))).toHaveLength(5);
+    expect(warnings).toEqual([
+      expect.stringMatching(
+        /^Nodes labelled :Intern:Staff:Worker, :Boss:Worker became one model per label \(Boss, Intern, Staff, Worker\): which labels are interfaces is ambiguous\. .*--interface <label>.*\(candidates: Intern, Staff\)/,
+      ),
+      expect.stringMatching(/^Nodes labelled :A:B became one model per label .*candidates: A, B/),
+    ]);
   });
 });

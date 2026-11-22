@@ -84,6 +84,20 @@ function enumValues(a: Analysis, name: string): string[] {
     .map((t) => t.text);
 }
 
+/** Labels listed by the `@@labels([…])` attributes of the document. */
+function dynamicLabelsInUse(a: Analysis): string[] {
+  const out = new Set<string>();
+  const toks = a.tokens.filter(significant);
+  toks.forEach((t, i) => {
+    if (t.kind !== "atat" || toks[i + 1]?.text !== "labels" || toks[i + 2]?.text !== "(") return;
+    if (toks[i + 3]?.text !== "[") return;
+    for (let j = i + 4; j < toks.length && toks[j]!.text !== "]"; j++) {
+      if (toks[j]!.kind === "ident") out.add(toks[j]!.text);
+    }
+  });
+  return [...out].sort();
+}
+
 /** Relationship types already used in the document (`type "X"`, `type: "X"`). */
 function relationshipTypes(a: Analysis): string[] {
   const out = new Set<string>();
@@ -302,11 +316,18 @@ export function completionsAt(a: Analysis, offset: number): Completion[] {
     const model = sigil.kind === "atat";
     const dec = DECORATORS.find((d) => d.name === callee.text && (d.on === "model") === model);
     if (stmt[open]!.text === "[") {
-      if (!model || !["fulltext", "unique", "index"].includes(callee.text)) return [];
+      if (!model || !["fulltext", "unique", "index", "labels"].includes(callee.text)) return [];
       const listed = stmt
         .slice(open + 1)
         .filter((t) => t.kind === "ident")
         .map((t) => t.text);
+      if (callee.text === "labels") {
+        // Dynamic labels other models declare (never a model's own label).
+        const models = new Set(modelNames(a));
+        return dynamicLabelsInUse(a)
+          .filter((l) => !models.has(l) && !listed.includes(l))
+          .map((l) => ({ label: l, kind: "value" as const, detail: "dynamic label", replace }));
+      }
       if (callee.text !== "fulltext") {
         // @@unique / @@index: single-value scalar fields (no relations, lists, Json or vectors).
         const models = new Set(modelNames(a));

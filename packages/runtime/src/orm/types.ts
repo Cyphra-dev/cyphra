@@ -44,6 +44,11 @@ export type ModelTypeDef = {
   /** Names of the models implementing this interface (only on an interface). */
   readonly implementations?: string;
   /**
+   * Dynamic labels the model declares with `@@labels([...])` (absent when none): what
+   * `data.$labels`, `where.$labels` and `select.$labels` take.
+   */
+  readonly dynamicLabels?: string;
+  /**
    * Computed fields added by `$extends({ result })`, each mapped to its type (absent when none).
    * Never emitted by `cyphra generate`: the extended client's type map carries them.
    */
@@ -94,6 +99,39 @@ export type Implementations<TM extends TypeMap, M extends keyof TM> = TM[M] exte
 }
   ? I & keyof TM
   : never;
+
+/** Dynamic labels (`@@labels([...])`) of model `M` (`never` when it declares none). */
+export type DynamicLabels<TM extends TypeMap, M extends keyof TM> = TM[M] extends {
+  dynamicLabels: infer L extends string;
+}
+  ? L
+  : never;
+
+/** `T` when model `M` declares dynamic labels, `unknown` (nothing) otherwise. */
+type IfLabels<TM extends TypeMap, M extends keyof TM, T> = [DynamicLabels<TM, M>] extends [never]
+  ? unknown
+  : T;
+
+/**
+ * `$labels` in `where`: nodes carrying a label (`has`), at least one (`hasSome`), all
+ * (`hasEvery`) or none (`hasNone`) of these labels, or none of the model's dynamic labels at all
+ * (`isEmpty: true`).
+ */
+export type LabelsFilter<L extends string> = {
+  has?: L;
+  hasSome?: readonly L[];
+  hasEvery?: readonly L[];
+  hasNone?: readonly L[];
+  isEmpty?: boolean;
+};
+
+/**
+ * `$labels` in the `data` of an update: labels to add and to remove, or `set`: exactly these
+ * dynamic labels (the model's others are removed).
+ */
+export type LabelsUpdate<L extends string> =
+  | { add?: readonly L[]; remove?: readonly L[]; set?: never }
+  | { set: readonly L[]; add?: never; remove?: never };
 
 /** `Vector(N)` scalar keys of model `M`. */
 export type VectorKeys<TM extends TypeMap, M extends keyof TM> = TM[M] extends {
@@ -356,6 +394,8 @@ export type WhereInput<TM extends TypeMap, M extends keyof TM> = {
   __typename?: [Implementations<TM, M>] extends [never]
     ? never
     : TypenameFilter<Implementations<TM, M> & string>;
+  /** Filter on the dynamic labels (`@@labels`) of the node. `never` when the model has none. */
+  $labels?: [DynamicLabels<TM, M>] extends [never] ? never : LabelsFilter<DynamicLabels<TM, M>>;
 } & {
   [R in keyof Relations<TM, M>]?: RelationFilter<TM, Rel<TM, M, R>>;
 } & {
@@ -493,14 +533,30 @@ export type SelectInput<TM extends TypeMap, M extends keyof TM> = {
 } & {
   /** Number of related nodes per to-many relation. */
   _count?: RelationCountInput<TM, M>;
-} & OnInput<TM, M, "select">;
+} & OnInput<TM, M, "select"> &
+  LabelsSelect<TM, M>;
 
 export type IncludeInput<TM extends TypeMap, M extends keyof TM> = {
   [R in keyof Relations<TM, M>]?: boolean | RelationLoadArgs<TM, Target<TM, M, R>>;
 } & {
   /** Number of related nodes per to-many relation. */
   _count?: RelationCountInput<TM, M>;
-} & OnInput<TM, M, "include">;
+} & OnInput<TM, M, "include"> &
+  LabelsSelect<TM, M>;
+
+/** `$labels: true` in `select` / `include`: the result gets the node's dynamic labels. */
+type LabelsSelect<TM extends TypeMap, M extends keyof TM> = IfLabels<
+  TM,
+  M,
+  {
+    /** Return the dynamic labels (`@@labels`) the node carries, as `$labels`. */
+    $labels?: boolean;
+  }
+>;
+
+/** `{ $labels: L[] }` when `A` selects `$labels`. */
+type LabelsPart<TM extends TypeMap, M extends keyof TM, A> =
+  "$labels" extends TrueKeys<A> ? { $labels: DynamicLabels<TM, M>[] } : unknown;
 
 /**
  * `$on` in the `select` / `include` of an interface: per implementation, its own `select` /
@@ -571,7 +627,8 @@ type SelectPayload<TM extends TypeMap, M extends keyof TM, S> = {
     Rel<TM, M, R>,
     S[R & keyof S] extends object ? S[R & keyof S] : object
   >;
-} & CountPart<TM, M, S>;
+} & CountPart<TM, M, S> &
+  LabelsPart<TM, M, S>;
 
 type IncludePayload<TM extends TypeMap, M extends keyof TM, I> = NodeFields<TM, M> &
   IncludedRelations<TM, M, I>;
@@ -582,7 +639,8 @@ type IncludedRelations<TM extends TypeMap, M extends keyof TM, I> = {
     Rel<TM, M, R>,
     I[R & keyof I] extends object ? I[R & keyof I] : object
   >;
-} & CountPart<TM, M, I>;
+} & CountPart<TM, M, I> &
+  LabelsPart<TM, M, I>;
 
 /**
  * Result of a query on the interface `M`: a union over its implementations, discriminated by
@@ -663,9 +721,29 @@ type RelationCreateAny<TM extends TypeMap, D extends RelationTypeDef> = {
   connect?: OneOrMany<D, WhereUniqueInput<TM, D["target"] & keyof TM> & EdgeUpdateInput<D>>;
 };
 
+/** `$labels` on a create: the dynamic labels the new node gets. */
+type LabelsCreateInput<TM extends TypeMap, M extends keyof TM> = IfLabels<
+  TM,
+  M,
+  {
+    /** Dynamic labels (`@@labels`) the new node carries. */
+    $labels?: readonly DynamicLabels<TM, M>[];
+  }
+>;
+
+/** `$labels` on an update: dynamic labels to add / remove, or the ones to `set`. */
+type LabelsUpdateInput<TM extends TypeMap, M extends keyof TM> = IfLabels<
+  TM,
+  M,
+  {
+    /** Add and remove dynamic labels (`@@labels`), or `set` exactly these. */
+    $labels?: LabelsUpdate<DynamicLabels<TM, M>>;
+  }
+>;
+
 export type CreateInput<TM extends TypeMap, M extends keyof TM> = ScalarCreate<TM, M> & {
   [R in keyof Relations<TM, M>]?: RelationCreate<TM, Rel<TM, M, R>>;
-};
+} & LabelsCreateInput<TM, M>;
 
 type NumberUpdate = { increment?: number; decrement?: number; multiply?: number };
 type BigIntUpdate = { increment?: bigint; decrement?: bigint; multiply?: bigint };
@@ -696,7 +774,7 @@ type RelationUpdate<TM extends TypeMap, D extends RelationTypeDef> = RelationCre
 
 export type UpdateInput<TM extends TypeMap, M extends keyof TM> = ScalarUpdate<TM, M> & {
   [R in keyof Relations<TM, M>]?: RelationUpdate<TM, Rel<TM, M, R>>;
-};
+} & LabelsUpdateInput<TM, M>;
 
 // ---------------------------------------------------------------------------
 // Operation args
@@ -725,7 +803,7 @@ export type CreateArgs<TM extends TypeMap, M extends keyof TM> = {
 };
 
 export type CreateManyArgs<TM extends TypeMap, M extends keyof TM> = {
-  data: readonly ScalarCreate<TM, M>[];
+  data: readonly (ScalarCreate<TM, M> & LabelsCreateInput<TM, M>)[];
 };
 
 export type UpdateArgs<TM extends TypeMap, M extends keyof TM> = {
@@ -735,7 +813,7 @@ export type UpdateArgs<TM extends TypeMap, M extends keyof TM> = {
 
 export type UpdateManyArgs<TM extends TypeMap, M extends keyof TM> = {
   where?: WhereInput<TM, M>;
-  data: ScalarUpdate<TM, M>;
+  data: ScalarUpdate<TM, M> & LabelsUpdateInput<TM, M>;
 };
 
 export type UpsertArgs<TM extends TypeMap, M extends keyof TM> = {
