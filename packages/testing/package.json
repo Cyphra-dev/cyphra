@@ -1,0 +1,71 @@
+{
+  "name": "@cyphra/testing",
+  "version": "0.17.0",
+  "description": "Test helpers for Cyphra: Neo4j, Memgraph or FalkorDB in Testcontainers, schema and migrations, isolated tests and typed factories",
+  "type": "module",
+  "sideEffects": false,
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@cyphra/migrator": "workspace:*",
+    "@cyphra/runtime": "workspace:*",
+    "@cyphra/schema": "workspace:*"
+  },
+  "peerDependencies": {
+    "neo4j-driver": "^5.28.3 || ^6.0.0",
+    "testcontainers": "^11.0.0 || ^12.0.0"
+  },
+  "peerDependenciesMeta": {
+    "testcontainers": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "neo4j-driver": "^5.28.3",
+    "testcontainers": "12.2.1",
+    "tsup": "^8.5.1",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.12"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Cyphra-dev/cyphra.git",
+    "directory": "packages/testing"
+  },
+  "homepage": "https://www.cyphra.dev/testing",
+  "bugs": {
+    "url": "https://github.com/Cyphra-dev/cyphra/issues"
+  },
+  "keywords": [
+    "testing",
+    "testcontainers",
+    "factories",
+    "fixtures",
+    "neo4j",
+    "memgraph",
+    "falkordb",
+    "vitest",
+    "jest",
+    "cyphra"
+  ]
+}

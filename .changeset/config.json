@@ -12,7 +12,8 @@
       "@cyphra/schema",
       "@cyphra/better-auth",
       "@cyphra/graphql",
-      "@cyphra/language-server"
+      "@cyphra/language-server",
+      "@cyphra/testing"
     ]
   ],
   "linked": [],
