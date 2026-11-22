@@ -1,5 +1,19 @@
 # @cyphra/graphql
 
+## 0.17.0
+
+### Minor Changes
+
+- 8769c04: `compat.v7.makeSchema` serves `@neo4j/graphql` v7 unions of `@node` types instead of throwing `UnsupportedTypeDefsError`: the printed SDL is identical to v7 7.6.8 (root union query, `<Union>Where`, member-keyed connection `where` and nested write inputs), and union selections resolve with inline fragments and `__typename`. Relationships to a union support `where` / `limit` / `offset`, connections with edge properties, cursors, `totalCount` and edge `sort`, relationship and connection filters per member, `@authorization` rules of each member, and nested `create` / `connect` / `update` / `disconnect` / `delete` keyed by member. One deliberate difference: a union `connect` / `disconnect` nested in another one applies its `where`, which v7 ignores. `@cypher` fields returning unions still throw.
+- e44f0ae: `cyphra import graphql` converts `@neo4j/graphql` v7 unions of `@node` types to Cyphra unions (`union Search = Movie | Genre`), and `@relationship` fields to a union to relation fields to it. Members renamed by `@node(labels)` keep their new names and `extend union` is merged. Properties on a relationship to a union are reported and left out (the relation field is converted), and unions of types without `@node` are reported as before.
+
+### Patch Changes
+
+- 2a57ffd: `cyphra import graphql` converts `properties` on a `@relationship` to a union: they become a `relationship` model with the union at that end, shared by the members' inverse fields with the same properties type (no longer reported as not converted).
+- Updated dependencies [1d0fd3c]
+  - @cyphra/schema@0.17.0
+  - @cyphra/runtime@0.17.0
+
 ## 0.16.0
 
 ### Minor Changes

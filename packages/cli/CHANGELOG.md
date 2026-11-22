@@ -1,5 +1,26 @@
 # @cyphra/cli
 
+## 0.17.0
+
+### Minor Changes
+
+- e44f0ae: `cyphra import graphql` converts `@neo4j/graphql` v7 unions of `@node` types to Cyphra unions (`union Search = Movie | Genre`), and `@relationship` fields to a union to relation fields to it. Members renamed by `@node(labels)` keep their new names and `extend union` is merged. Properties on a relationship to a union are reported and left out (the relation field is converted), and unions of types without `@node` are reported as before.
+- 1d0fd3c: `cyphra studio` links and unlinks related records: _Link…_ in a related view connects a record by its key (with the edge properties of a `relationship { … }` model), and each row can be unlinked. For a relation to a union, a member picker comes first (a node, or an interface member by the interface's key). Edge properties can be edited from either direction of the followed relation, relationship models to a union list and edit their edges with each end's member key, and union tables show each row's key.
+
+### Patch Changes
+
+- 2a57ffd: `cyphra import graphql` converts `properties` on a `@relationship` to a union: they become a `relationship` model with the union at that end, shared by the members' inverse fields with the same properties type (no longer reported as not converted).
+- 2a57ffd: On Memgraph, `cyphra push`, migrations and `cyphra migrate reset` wait for running transactions instead of failing with "Cannot get unique access to the storage": index and constraint DDL is run again with backoff (up to a minute) while Memgraph cannot get storage access for it. `withMemgraphStorageAccess` and `isMemgraphStorageAccessError` are exported from `@cyphra/migrator`.
+- Updated dependencies [8769c04]
+- Updated dependencies [e44f0ae]
+- Updated dependencies [2a57ffd]
+- Updated dependencies [2a57ffd]
+- Updated dependencies [1d0fd3c]
+  - @cyphra/graphql@0.17.0
+  - @cyphra/migrator@0.17.0
+  - @cyphra/schema@0.17.0
+  - @cyphra/runtime@0.17.0
+
 ## 0.16.0
 
 ### Minor Changes
