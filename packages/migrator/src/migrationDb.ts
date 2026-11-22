@@ -2,7 +2,8 @@ import type { Session } from "neo4j-driver";
 import { toNative, type CyphraClient } from "@cyphra/runtime";
 import { wrapInTransactions } from "./batch.js";
 import { compileRenameLabel, compileRenameProperty } from "./rename.js";
-import { memgraphDdl } from "./memgraph.js";
+import { isMemgraphDdl, memgraphDdl } from "./memgraph.js";
+import { withMemgraphStorageAccess } from "./memgraphAccess.js";
 import { falkordbDdl, isFalkorDBDdl, runFalkorDBDdl } from "./falkordb.js";
 
 /**
@@ -71,8 +72,8 @@ export function createMigrationDb(client: CyphraClient, session: Session): Migra
     if (memgraph && values.length === 0) {
       const text = strings.join("");
       const translated = ddl(text);
-      if (translated !== text) {
-        await session.run(translated);
+      if (translated !== text || isMemgraphDdl(text)) {
+        await withMemgraphStorageAccess(() => session.run(translated));
         return;
       }
     }
@@ -111,7 +112,11 @@ export function createMigrationDb(client: CyphraClient, session: Session): Migra
   ): Promise<Record<string, unknown>[]> => {
     const statement = ddl(text);
     if (Object.keys(params).length === 0 && (await runDdl(statement))) return [];
-    const result = await session.run(statement, params);
+    // Memgraph DDL waits for running transactions: see withMemgraphStorageAccess.
+    const result =
+      memgraph && isMemgraphDdl(statement)
+        ? await withMemgraphStorageAccess(() => session.run(statement, params))
+        : await session.run(statement, params);
     return result.records.map((r) => toNative(r.toObject()) as Record<string, unknown>);
   };
 

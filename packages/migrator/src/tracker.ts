@@ -1,5 +1,6 @@
 import type { Session } from "neo4j-driver";
 import type { CyphraDialect } from "@cyphra/runtime";
+import { withMemgraphStorageAccess } from "./memgraphAccess.js";
 
 /** Cyphra's migration-name constraint on FalkorDB (a Redis command the transport runs). */
 export const FALKORDB_MIGRATION_CONSTRAINT =
@@ -26,7 +27,9 @@ export async function ensureMigrationInfrastructure(
     return;
   }
   if (dialect === "memgraph") {
-    await session.run(`CREATE CONSTRAINT ON (m:${CYPHRA_MIGRATION_LABEL}) ASSERT m.name IS UNIQUE`);
+    await withMemgraphStorageAccess(() =>
+      session.run(`CREATE CONSTRAINT ON (m:${CYPHRA_MIGRATION_LABEL}) ASSERT m.name IS UNIQUE`),
+    );
     return;
   }
   const r = await session.run(`

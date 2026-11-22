@@ -596,7 +596,7 @@ node User {
     expect(schema).toContain("union Search = Film | Genre\n");
   });
 
-  it("converts the field but not the properties of a relationship to a union", () => {
+  it("properties on a relationship to a union become a relationship model with the union end", () => {
     const { schema, issues } = convert(`
       type Movie @node { title: String! }
       type Genre @node { name: String! }
@@ -607,12 +607,46 @@ node User {
       }
     `);
     expect(schema).toContain('search Search[] @relationship(type: "SEARCH", direction: OUT)');
-    expect(schema).not.toContain("relationship Hit");
-    expect(issueAt(issues, "User.search")).toMatchObject({
-      severity: "unsupported",
-      feature: "@relationship(properties)",
-    });
-    expect(issueAt(issues, "Hit")?.severity).toBe("ignored");
+    expect(schema).toContain(
+      'relationship Hit {\n  type "SEARCH"\n  from User\n  to Search\n  score Float\n}',
+    );
+    expect(issues).toEqual([]);
+  });
+
+  it("members' inverse fields share the model of the union end; other properties stay apart", () => {
+    const { schema, issues } = convert(`
+      type Movie @node {
+        title: String!
+        hitBy: [User!]! @relationship(type: "SEARCH", direction: IN, properties: "Hit")
+      }
+      type Genre @node {
+        name: String!
+        hitBy: [User!]! @relationship(type: "SEARCH", direction: IN, properties: "GenreHit")
+      }
+      union Search = Movie | Genre
+      type Hit @relationshipProperties { score: Float! }
+      type GenreHit @relationshipProperties { score: Float! }
+      type User @node {
+        search: [Search!]! @relationship(type: "SEARCH", direction: OUT, properties: "Hit")
+      }
+    `);
+    expect(schema.match(/^relationship /gm)).toHaveLength(2);
+    expect(schema).toContain('relationship Hit {\n  type "SEARCH"\n  from User\n  to Search\n');
+    expect(schema).toContain('relationship GenreHit {\n  type "SEARCH"\n  from User\n  to Genre\n');
+    expect(issues).toEqual([]);
+  });
+
+  it("properties on an incoming relationship to a union put the union at the start", () => {
+    const { schema } = convert(`
+      type Movie @node { title: String! }
+      type Genre @node { name: String! }
+      union Search = Movie | Genre
+      type Hit @relationshipProperties { score: Float! }
+      type User @node {
+        foundBy: [Search!]! @relationship(type: "FOUND", direction: IN, properties: "Hit")
+      }
+    `);
+    expect(schema).toContain('relationship Hit {\n  type "FOUND"\n  from Search\n  to User\n');
   });
 
   it("does not convert unions of types without @node, nor relationships to them", () => {

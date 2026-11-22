@@ -120,6 +120,39 @@ describe.skipIf(!hasMemgraph)("migrator on Memgraph", () => {
     ).rejects.toThrow(/unique constraint violation/);
   });
 
+  it("waits for running transactions instead of failing on storage access (#203)", async () => {
+    // Memgraph gives DDL 1 s (--storage-access-timeout-sec) to get access to the storage while
+    // other transactions run; text index DDL needs unique access.
+    const doc = parseSchema(`node MgmBusy { id String @id
+  title String
+  @@fulltext([title], name: "mgmBusySearch") }`);
+    const statements = [
+      ...constraintStatementsFromSchema(doc),
+      ...fulltextIndexStatementsFromSchema(doc),
+    ];
+    let opened!: () => void;
+    const isOpen = new Promise<void>((r) => (opened = r));
+    // Another client's write transaction, open for 2.5 s.
+    const held = client.withSession(async (s) => {
+      const tx = s.beginTransaction();
+      await tx.run("CREATE (:MgmBusy {id: 'held'})");
+      opened();
+      await new Promise((r) => setTimeout(r, 2_500));
+      await tx.commit();
+    });
+    await isOpen;
+    const started = Date.now();
+    await applyConstraintStatements(client, statements);
+    expect(Date.now() - started).toBeGreaterThanOrEqual(1_500);
+    await held;
+    const busy = ours(await readSchemaObjects(client)).filter((o) =>
+      o.labelsOrTypes.includes("MgmBusy"),
+    );
+    expect(busy.map((o) => o.name)).toContain("mgmBusySearch");
+    for (const o of busy) await run(memgraphDropStatement(o));
+    await run("MATCH (n:MgmBusy) DELETE n");
+  });
+
   it("refuses a relationship uniqueness constraint", async () => {
     const doc = parseSchema(`node MgmA { id String @id
   links MgmA[] @relationship(type: "MGM_L", direction: OUT) }

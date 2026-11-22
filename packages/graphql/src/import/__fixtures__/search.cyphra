@@ -6,7 +6,6 @@
 // - Series: a Cyphra node's name is its label: renamed to "Show"
 // - Stat: a union of types without @node (e.g. @cypher result types) is not a node union: not converted
 // - User.id: became @id @default(uuid()); Cyphra also adds a uniqueness constraint, which v7 @id does not
-// - User.watched: relationship properties on a relationship to a union are not supported by Cyphra yet: the relation field is converted without them
 
 union Search = Movie | Genre
 
@@ -16,6 +15,7 @@ node Movie {
   title String
   released Int?
   genres Genre[] @relationship(type: "IN_GENRE", direction: OUT)
+  watchedBy User[] @relationship(type: "WATCHED", direction: IN)
 }
 
 node Genre {
@@ -33,4 +33,11 @@ node User {
   searches Search[] @relationship(type: "SAVED", direction: OUT)
   favorite Media? @relationship(type: "FAVORITE", direction: OUT)
   watched Media[] @relationship(type: "WATCHED", direction: OUT)
+}
+
+relationship Watched {
+  type "WATCHED"
+  from User
+  to Media
+  at DateTime
 }

@@ -75,6 +75,11 @@ export {
   type ParsedMemgraphDdl,
 } from "./memgraph.js";
 export {
+  isMemgraphStorageAccessError,
+  withMemgraphStorageAccess,
+  type MemgraphStorageAccessRetry,
+} from "./memgraphAccess.js";
+export {
   dropAllFalkorDBSchema,
   falkordbDdl,
   falkordbDdlStatements,

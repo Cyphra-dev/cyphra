@@ -3,6 +3,8 @@ type Movie @node {
   title: String!
   released: Int
   genres: [Genre!]! @relationship(type: "IN_GENRE", direction: OUT)
+  "Inverse of User.watched: shares the Watched relationship model of the union end"
+  watchedBy: [User!]! @relationship(type: "WATCHED", direction: IN, properties: "Watched")
 }
 
 type Genre @node {

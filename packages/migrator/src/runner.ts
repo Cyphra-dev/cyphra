@@ -3,6 +3,7 @@ import { createMigrationDb } from "./migrationDb.js";
 import type { MigrationDefinition } from "./defineMigration.js";
 import * as tracker from "./tracker.js";
 import { ddlForDialect } from "./memgraph.js";
+import { withMemgraphStorageAccess } from "./memgraphAccess.js";
 import { runFalkorDBDdl } from "./falkordb.js";
 
 /** The client's dialect (a client from an older @cyphra/runtime has none: Neo4j). */
@@ -62,6 +63,11 @@ export async function applyConstraintStatements(
       // FalkorDB has no IF NOT EXISTS: see runFalkorDBDdl.
       if (dialect === "falkordb") {
         await runFalkorDBDdl((text) => session.run(text), statement);
+        continue;
+      }
+      if (dialect === "memgraph") {
+        // Waits for running transactions: see withMemgraphStorageAccess.
+        await withMemgraphStorageAccess(() => session.run(statement));
         continue;
       }
       const r = await session.run(statement);
