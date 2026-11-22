@@ -99,7 +99,7 @@ export const FULLTEXT_ANALYZERS = [
 export const DEFAULT_FULLTEXT_ANALYZER = "standard-no-stop-words";
 
 /** Model-level attributes `schema.cyphra` understands. */
-const MODEL_ATTRIBUTES = ["fulltext", "unique", "index"] as const;
+const MODEL_ATTRIBUTES = ["fulltext", "unique", "index", "labels"] as const;
 
 function argsOnce(where: string, attr: string, args: readonly DecoratorArg[]): void {
   const seen = new Set<string>();
@@ -164,6 +164,60 @@ function validateFulltext(where: string, decl: NodeDeclaration, attr: ModelAttri
       throw new SchemaValidationError(
         `${where}: unknown @@fulltext argument "${a.key}" (expected name, analyzer, eventuallyConsistent).`,
       );
+    }
+  }
+}
+
+/**
+ * `@@labels([Archived, Featured])`: the dynamic labels a node may carry (added and removed at
+ * runtime), at least one, each listed once, no arguments, one `@@labels` per model. Clashes with
+ * model names are checked by {@link validateDynamicLabels}, which sees the whole document.
+ */
+function validateLabelsAttribute(where: string, attr: ModelAttribute, count: number): void {
+  const labels = attr.fields;
+  if (count > 1) {
+    throw new SchemaValidationError(
+      `${where}: @@labels is given ${count} times (list every dynamic label in one @@labels([…])).`,
+    );
+  }
+  if (!labels || labels.length === 0) {
+    throw new SchemaValidationError(
+      `${where}: @@labels needs a list of label names, e.g. @@labels([Archived, Featured]).`,
+    );
+  }
+  const seen = new Set<string>();
+  for (const l of labels) {
+    if (seen.has(l)) throw new SchemaValidationError(`${where}: @@labels lists ${l} twice.`);
+    seen.add(l);
+  }
+  if (attr.args.length) {
+    throw new SchemaValidationError(
+      `${where}: @@labels takes no arguments (only the list of labels: @@labels([${labels.join(", ")}])).`,
+    );
+  }
+}
+
+/**
+ * Dynamic labels (`@@labels([...])`) cannot be the label of a model (a node or an interface):
+ * a node carrying it would also match that model. Labels starting with `__` are reserved.
+ */
+export function validateDynamicLabels(doc: SchemaDocument, decl: NodeDeclaration): void {
+  const models = new Set(doc.declarations.filter((d) => d.kind === "Node").map((d) => d.name));
+  for (const attr of decl.attributes ?? []) {
+    if (attr.name !== "labels") continue;
+    for (const l of attr.fields ?? []) {
+      if (models.has(l)) {
+        const kind = doc.declarations.find((d) => d.kind === "Node" && d.name === l) as
+          NodeDeclaration | undefined;
+        throw new SchemaValidationError(
+          `${nodeOwner(decl)} @@labels: ${l} is the label of ${kind?.abstract ? "interface" : "node"} ${l}; a dynamic label must not be a model's label${kind?.abstract ? ` (to add the interface to every ${decl.name}, write \`implements ${l}\`)` : ""}.`,
+        );
+      }
+      if (l.startsWith("__")) {
+        throw new SchemaValidationError(
+          `${nodeOwner(decl)} @@labels: ${l} starts with "__", which is reserved for Cyphra's own labels.`,
+        );
+      }
     }
   }
 }
@@ -237,13 +291,18 @@ export function validateModelAttributes(decl: NodeDeclaration | RelationshipDecl
           ? "full-text indexes are"
           : attr.name === "unique"
             ? "composite uniqueness constraints are"
-            : "composite indexes are";
+            : attr.name === "labels"
+              ? "dynamic labels are"
+              : "composite indexes are";
       throw new SchemaValidationError(
         `${where}: ${what} only supported on node models (not on relationships).`,
       );
     }
     if (attr.name === "fulltext") validateFulltext(owner, decl, attr);
-    else validateCompound(owner, decl, attr);
+    else if (attr.name === "labels") {
+      const count = (decl.attributes ?? []).filter((a) => a.name === "labels").length;
+      validateLabelsAttribute(owner, attr, count);
+    } else validateCompound(owner, decl, attr);
   }
   // Uniqueness does not depend on field order; a composite index does (it serves its prefixes).
   const uniques = new Set<string>();
@@ -556,6 +615,7 @@ export function validateSchema(doc: SchemaDocument): void {
     if (decl.kind === "Node") {
       validateImplements(doc, decl);
       validateModelAttributes(withInheritedFields(doc, decl));
+      validateDynamicLabels(doc, decl);
     } else {
       validateModelAttributes(decl);
     }

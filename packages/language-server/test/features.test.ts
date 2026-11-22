@@ -123,6 +123,16 @@ describe("diagnostics", () => {
       "author",
     ],
     [
+      "dynamic label clashing with a model",
+      BASE.replace("@@fulltext([title])", "@@labels([Archived, User])"),
+      "User",
+    ],
+    [
+      "dynamic label listed twice",
+      BASE.replace("@@fulltext([title])", "@@labels([Archived, Hidden, Archived])"),
+      "Archived",
+    ],
+    [
       "index needs two fields",
       BASE.replace("@@fulltext([title])", "@@index([title])"),
       "@@index([title])",
@@ -347,6 +357,7 @@ describe("completion", () => {
     expect(labels(BASE.replace("@@fulltext([title])", "@@|"))).toEqual([
       "@@fulltext",
       "@@unique",
+      "@@labels",
       "@@index",
     ]);
   });
@@ -368,6 +379,14 @@ describe("completion", () => {
     expect(labels(BASE.replace("@@fulltext([title])", "@@unique([id, title], |)"))).toEqual([
       "name",
     ]);
+  });
+
+  it("offers labels other models declare inside @@labels([…])", () => {
+    const text = BASE.replace(
+      "posts Post[]",
+      "@@labels([Archived, Hidden])\n  posts Post[]",
+    ).replace("@@fulltext([title])", "@@labels([Hidden, |])");
+    expect(labels(text)).toEqual(["Archived"]);
   });
 
   it("offers type / from / to and node names in relationship blocks", () => {
@@ -412,6 +431,12 @@ describe("hover", () => {
     expect(rule).toContain("Unicode code points");
     expect(rule).toContain("#validation-rules");
     expect(hover(BASE.replace("bio   String?", "bio   Int? @mi|n(0)"))).toContain("`increment`");
+  });
+
+  it("documents @@labels on hover", () => {
+    expect(hover(BASE.replace("@@fulltext([title])", "@@lab|els([Archived])"))).toContain(
+      "#dynamic-labels",
+    );
   });
 
   it("documents @@unique / @@index on hover", () => {

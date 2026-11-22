@@ -185,6 +185,21 @@ With [interfaces extending interfaces](/schema#interfaces-extending-interfaces),
 loses every label up the chain: when `interface Staff` starts extending `Person`, each `Staff`
 implementation gets a step adding `:Person` to its existing nodes.
 
+## Dynamic labels
+
+[Dynamic labels](/schema#dynamic-labels) (`@@labels([…])`) create no constraint or index, so
+declaring one needs no step: the migration lists it under `NOTES`. Removing one from a model adds
+a commented-out destructive step that strips the label from existing nodes, for you to uncomment:
+
+```js
+// Post no longer declares the dynamic label Featured. Uncomment to remove :Featured from existing Post nodes.
+// DESTRUCTIVE: uncomment to apply.
+// await db.execute("MATCH (n:`Post`) WHERE n:`Featured` REMOVE n:`Featured`");
+```
+
+A label that moves from `@@labels` to `implements` (every node of the model now carries it) gets
+the usual step adding it to existing nodes instead.
+
 ## Writing migrations by hand
 
 `cyphra migration:create <name>` creates an empty migration. The `db` handle offers:

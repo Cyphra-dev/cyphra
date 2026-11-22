@@ -155,7 +155,7 @@ jobs:
           NEO4J_TEST_USER: neo4j
           NEO4J_TEST_PASSWORD: cyphra_ci_test
         run: |
-          pnpm --filter @cyphra/runtime --fail-if-no-match exec vitest run src/client.integration.test.ts src/orm/orm.integration.test.ts src/orm/onDelete.integration.test.ts src/orm/rules.integration.test.ts src/orm/interfaces.integration.test.ts src/driver-compat.integration.test.ts
+          pnpm --filter @cyphra/runtime --fail-if-no-match exec vitest run src/client.integration.test.ts src/orm/orm.integration.test.ts src/orm/onDelete.integration.test.ts src/orm/rules.integration.test.ts src/orm/interfaces.integration.test.ts src/orm/labels.integration.test.ts src/driver-compat.integration.test.ts
           pnpm --filter @cyphra/migrator --fail-if-no-match exec vitest run src/push.integration.test.ts src/migrate.integration.test.ts src/drift.integration.test.ts
           # Better Auth conformance suites + adapter, typed-client and migration tests.
           pnpm --filter @cyphra/better-auth --fail-if-no-match exec vitest run test/
@@ -180,7 +180,7 @@ jobs:
           NEO4J_TEST_HTTP_URI: http://127.0.0.1:7474
           NEO4J_TEST_USER: neo4j
           NEO4J_TEST_PASSWORD: cyphra_ci_test
-        run: pnpm --filter @cyphra/runtime --fail-if-no-match exec vitest run src/client.integration.test.ts src/orm/orm.integration.test.ts src/orm/interfaces.integration.test.ts src/http/http.integration.test.ts
+        run: pnpm --filter @cyphra/runtime --fail-if-no-match exec vitest run src/client.integration.test.ts src/orm/orm.integration.test.ts src/orm/interfaces.integration.test.ts src/orm/labels.integration.test.ts src/http/http.integration.test.ts
 
       # examples/graphrag: ingest the sample documents and check hybrid retrieval and graph
       # expansion. Its `cyphra generate` needs the workspace bins, linked once dist/ exists.
@@ -271,7 +271,7 @@ jobs:
 
       - name: Memgraph integration tests
         run: |
-          pnpm --filter @cyphra/runtime --fail-if-no-match exec vitest run src/client.integration.test.ts src/orm/orm.integration.test.ts src/orm/onDelete.integration.test.ts src/orm/rules.integration.test.ts src/orm/interfaces.integration.test.ts src/orm/memgraph.integration.test.ts
+          pnpm --filter @cyphra/runtime --fail-if-no-match exec vitest run src/client.integration.test.ts src/orm/orm.integration.test.ts src/orm/onDelete.integration.test.ts src/orm/rules.integration.test.ts src/orm/interfaces.integration.test.ts src/orm/labels.integration.test.ts src/orm/memgraph.integration.test.ts
           pnpm --filter @cyphra/migrator --fail-if-no-match exec vitest run src/memgraph.integration.test.ts
           pnpm --filter @cyphra/cli --fail-if-no-match exec vitest run src/studio/studio.memgraph.integration.test.ts
           # `cyphra migrate reset` empties the whole database, so it runs on its own (opt-in flag).

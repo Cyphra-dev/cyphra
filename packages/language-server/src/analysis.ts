@@ -232,7 +232,12 @@ function locateAttributeError(
 ): Span | undefined {
   const attrs = (decl.attributes ?? []).filter((a) => a.name === name);
   if (attrs.length === 0) return undefined;
-  const fieldName = /field "([^"]+)"/.exec(rest)?.[1];
+  // `@@labels: X is the label of …` / `@@labels lists X twice`: the label in the list.
+  const fieldName =
+    /field "([^"]+)"/.exec(rest)?.[1] ??
+    (name === "labels"
+      ? /@@labels(?::| lists) (\w+) (?:is the label|starts with|twice)/.exec(rest)?.[1]
+      : undefined);
   const quoted = /"([^"]+)"/.exec(rest)?.[1];
   // `fields [a, b] are already …`: the later of the attributes over those fields.
   const covered = /fields \[([^\]]*)\] are already/.exec(rest)?.[1];

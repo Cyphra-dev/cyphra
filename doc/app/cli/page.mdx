@@ -26,7 +26,7 @@ App code depends on **`cyphra`** separately (see [Getting started](/getting-star
 | `cyphra db seed`                 | Run the `seed` command from `cyphra.json`                                                                                                                           |
 | `cyphra studio`                  | Browse and edit the data in a local web UI built from the schema ([details](#cyphra-studio); `--port`, `--host`, `--no-open`, `--read-only`)                        |
 | `cyphra migration:create <name>` | Empty `.mjs` migration to write by hand                                                                                                                             |
-| `cyphra pull`                    | Introspect the database and write `schema.cyphra` (`--print`, `--force`)                                                                                            |
+| `cyphra pull`                    | Introspect the database and write `schema.cyphra` (`--print`, `--force`, `--interface <labels…>`)                                                                   |
 | `cyphra import graphql <files>`  | Convert `@neo4j/graphql` v7 type definitions to `schema.cyphra` (`--out`, `--merge`, `--force`, `--print`)                                                          |
 | `cyphra import prisma <schema>`  | Convert a Prisma schema to `schema.cyphra`, foreign keys to edges ([details](#import-from-prisma); `--out`, `--merge`, `--force`, `--print`)                        |
 | `cyphra import neogma <files>`   | Convert neogma models (decorator classes or `ModelFactory`) to `schema.cyphra` ([details](#import-from-neogma); `--out`, `--merge`, `--force`, `--print`)           |
@@ -287,16 +287,32 @@ their endpoints. Review the result:
   `eventuallyConsistent: true` when they are not the defaults. Indexes over several labels, on
   relationships, or on properties that were not pulled as `String` / `String[]` fields are skipped
   with a warning.
-- A label `P` that never appears alone, and only ever as `[X, P]` pairs where each `X` always
-  carries `P`, becomes an [`interface P`](/schema#interfaces-and-multiple-labels) with the
-  properties all its nodes share (and those `P`'s constraints cover), and each `X` becomes
-  `node X implements P` with the rest. Chains of labels become
-  [interfaces extending interfaces](/schema#interfaces-extending-interfaces): with nodes labelled
-  `[Employee, Staff, Person]`, `[Contractor, Staff, Person]` and `[Customer, Person]`, `pull`
-  writes `interface Staff extends Person`, `node Employee implements Staff`,
-  `node Contractor implements Staff` and `node Customer implements Person`. Other label
-  combinations (a node carrying two unrelated shared labels, or a shared label with a single
-  implementation, which is ambiguous) stay one model per label, with a warning.
+- Nodes with several labels are read as one model each, plus interfaces and dynamic labels. In
+  each group of labels seen together, `pull` picks one label per node as its model, so that every
+  label combination holds exactly one model label. Each other label is then:
+  - an [`interface`](/schema#interfaces-and-multiple-labels) when it is on every node of the
+    models it is seen with (never alone). It gets the properties all its nodes share (and those its
+    constraints cover), and each model `implements` it with the rest. A node can implement several
+    unrelated interfaces: `[Employee, Person, Archivable]`, `[Customer, Person]` and
+    `[Doc, Archivable]` give `node Employee implements Archivable, Person`. Interfaces whose nodes
+    all carry another one [extend it](/schema#interfaces-extending-interfaces): with
+    `[Employee, Staff, Person]`, `[Contractor, Staff, Person]` and `[Customer, Person]`, `pull`
+    writes `interface Staff extends Person`, `node Employee implements Staff`,
+    `node Contractor implements Staff` and `node Customer implements Person`. A property two
+    unrelated interfaces of a node could both hold stays on the nodes, unless only one of the
+    interfaces constrains or indexes it.
+  - a [dynamic label](/schema#dynamic-labels) (`@@labels([Archived])`) when it is on some nodes of
+    the model only, its nodes have no property the model's other nodes never have, it has no
+    constraint or index, and some nodes of the model carry none of the model's dynamic labels.
+    With `[Post]`, `[Post, Archived]` and `[User, Archived]`, both `Post` and `User` get
+    `@@labels([Archived])`. When every `:Post` is also `:Draft` or `:Published`, those are the
+    models and `Post` their interface.
+
+  A layout that fits none of this stays one model per label, with a warning. So does one that
+  fits in several ways: nodes always labelled `[Employee, Person]` (a shared label with a single
+  implementation) could be either way round. Tell `pull` which labels are interfaces there:
+  `cyphra pull --interface Person` (repeat the label, or give a comma-separated list, for several).
+
 - Unsupported or mixed types (e.g. a property that is a string on some nodes and an integer on
   others) and names that are not identifiers are skipped with a warning.
 - Integers are pulled as `Int` and strings as `String`: the database cannot tell a `BigInt`, an enum

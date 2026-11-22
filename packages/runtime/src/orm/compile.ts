@@ -21,6 +21,7 @@ import { CyphraValidationError } from "./errors.js";
 import { decodeCount, decodeScalar, encodeFilterValue, isPointValue } from "./values.js";
 import type { QueryMode } from "./types.js";
 import type { CyphraDialect } from "../dialect.js";
+import { compileLabelsFilter, decodeDynamicLabels, dynamicLabelsOf } from "./labels.js";
 
 /** Quote an identifier for Cypher (labels, property keys, relationship types). */
 export function q(id: string): string {
@@ -554,6 +555,11 @@ export function compileWhere(
       if (c) parts.push(c);
       continue;
     }
+    if (key === "$labels") {
+      const c = compileLabelsFilter(model, alias, value);
+      if (c) parts.push(c);
+      continue;
+    }
     const f = model.fields.find((x) => x.name === key);
     if (!f) throw new CyphraValidationError(`Unknown field "${model.name}.${key}" in where.`);
     const c =
@@ -782,7 +788,10 @@ export type ShapeVariant = {
   readonly on?: Shape;
 };
 
-/** Key of the labels projected next to an interface's properties (to pick `__typename`). */
+/**
+ * Key of the labels projected next to a node's properties: on an interface to pick `__typename`,
+ * and when `$labels` is selected.
+ */
 const LABELS_KEY = "__labels";
 
 /** Key of what `$on` loads for the implementation `name`, in an interface's projection. */
@@ -806,6 +815,8 @@ export type Shape = {
   }[];
   /** Relations counted under `_count` (absent: no `_count` key in the result). */
   readonly counts?: readonly ResolvedRelationField[];
+  /** `true` when `$labels` is selected: the result gets the node's dynamic labels. */
+  readonly labels?: true;
 };
 
 type LoadArgs = {
@@ -836,12 +847,23 @@ export function compileProjection(
   const allScalars = model.fields.filter((f): f is ResolvedScalarField => f.kind === "scalar");
   let counts: { field: ResolvedRelationField; where: unknown }[] | undefined;
   let on: { spec: AnyRecord; label: string } | undefined;
+  let withLabels = false;
 
   const takeRelations = (spec: AnyRecord, label: string) => {
     for (const [key, v] of Object.entries(spec)) {
       if (v === undefined || v === false) continue;
       if (key === "_count") {
         counts = relationCounts(model, v, label);
+        continue;
+      }
+      if (key === "$labels") {
+        if (v !== true) throw new CyphraValidationError(`${label}.$labels takes true.`);
+        if (dynamicLabelsOf(model).length === 0) {
+          throw new CyphraValidationError(
+            `${label}.$labels: ${model.name} declares no dynamic labels (add @@labels([…]) to the model).`,
+          );
+        }
+        withLabels = true;
         continue;
       }
       if (key === "$on") {
@@ -907,7 +929,7 @@ export function compileProjection(
     }
   }
   const entries: string[] = projected.map((f) => `.${q(f.name)}`);
-  if (variants) entries.push(`${q(LABELS_KEY)}: labels(${alias})`);
+  if (variants || withLabels) entries.push(`${q(LABELS_KEY)}: labels(${alias})`);
   if (on && variants) {
     const { spec, label } = on;
     const impls = model.implementations ?? [];
@@ -927,7 +949,7 @@ export function compileProjection(
       const impl = ctx.node(name);
       if (label === "include") {
         for (const [key, v] of Object.entries(sub)) {
-          if (v === undefined || v === false || key === "_count") continue;
+          if (v === undefined || v === false || key === "_count" || key === "$labels") continue;
           const f = impl.fields.find((x) => x.name === key);
           if (!f) throw new CyphraValidationError(`Unknown field "${name}.${key}" in include.$on.`);
           if (f.kind === "scalar") {
@@ -989,6 +1011,7 @@ export function compileProjection(
       ...(variants ? { variants } : {}),
       relations: relShapes,
       ...(counts ? { counts: counts.map((c) => c.field) } : {}),
+      ...(withLabels ? { labels: true as const } : {}),
     },
   };
 }
@@ -1059,6 +1082,7 @@ export function decodeRow(shape: Shape, row: unknown): AnyRecord | null {
     if (variant?.on) on = decodeRow(variant.on, src[onKey(variant.name)]);
   }
   for (const f of scalars) out[f.name] = decodeScalar(f, src[f.name]);
+  if (shape.labels) out.$labels = decodeDynamicLabels(shape.model, src[LABELS_KEY]);
   for (const r of shape.relations) {
     const decodeItem = (v: unknown) => {
       const item = decodeRow(r.shape, v);

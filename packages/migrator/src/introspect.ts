@@ -29,6 +29,7 @@ import { CYPHRA_MIGRATION_LABEL } from "./tracker.js";
 import { memgraphSchemaObjects } from "./memgraph.js";
 import { falkordbSchemaObjects, normalizeFalkorDBObjects } from "./falkordb.js";
 import type { SchemaObject } from "./drift.js";
+import { labelLayout } from "./labelLayout.js";
 
 export type IntrospectedProperty = {
   readonly propertyName: string;
@@ -578,6 +579,16 @@ function uniqueName(base: string, taken: Set<string>): string {
 
 const dec = (name: string): Decorator => ({ name, args: [] });
 
+/** Options of {@link schemaFromIntrospection}. */
+export type SchemaFromIntrospectionOptions = {
+  /**
+   * Labels to read as interfaces when the label combinations leave it open (`cyphra pull
+   * --interface Person`): e.g. nodes always labelled `:Employee:Person`, where either label could
+   * be the interface.
+   */
+  readonly interfaces?: readonly string[];
+};
+
 /**
  * Convert introspection results into a `.cyphra` {@link SchemaDocument}.
  *
@@ -585,15 +596,22 @@ const dec = (name: string): Decorator => ({ name, args: [] });
  * - Single-property uniqueness constraints become `@id` (property `id` or constraint `…_id`) / `@unique`;
  *   single-property range and point indexes become `@index`. Composite node uniqueness constraints
  *   (and node keys) become `@@unique([...])`, composite range indexes `@@index([...])`.
- * - A label that never appears alone, on nodes that each carry exactly one other label (whose
- *   nodes all carry it), becomes an `interface` with the properties all its nodes have (and the
- *   ones constrained or indexed on it); each other label becomes a `node … implements` it with the
- *   rest. Other label combinations give one model per label (and a warning).
+ * - Label combinations are read as models, interfaces and dynamic labels (see `labelLayout.ts`):
+ *   an interface (`interface P`, or `interface P extends Q`) gets the properties all its nodes
+ *   have (and the ones constrained or indexed on it), and each model `implements` the interfaces
+ *   on all its nodes (several of them when they are unrelated). A label on some of a model's nodes
+ *   only, with no property, constraint or index of its own, becomes a dynamic label of the model
+ *   (`@@labels([Archived])`). Layouts that fit none of this, or more than one way
+ *   ({@link SchemaFromIntrospectionOptions.interfaces} settles those), give one model per label
+ *   (and a warning).
  * - Every sampled `(start)-[:TYPE]->(end)` pair becomes an `OUT` field on the start node and an `IN`
  *   field (`…By`) on the end node, both to-many. Relationship types with properties also get a
  *   `relationship { … }` model.
  */
-export function schemaFromIntrospection(input: IntrospectionResult): {
+export function schemaFromIntrospection(
+  input: IntrospectionResult,
+  options: SchemaFromIntrospectionOptions = {},
+): {
   doc: SchemaDocument;
   warnings: string[];
 } {
@@ -772,82 +790,51 @@ export function schemaFromIntrospection(input: IntrospectionResult): {
     indexOn.add(`${i.entityType}:${i.labelsOrTypes[0]}.${i.properties[0]}`);
   }
 
-  // --- interfaces ------------------------------------------------------------------
-  // Label combinations become an interface hierarchy when, in each group of labels seen together,
-  // every combination of several labels has one label of its own (the node's model, found in no
-  // other combination) and its other labels form a chain where each one's nodes all carry the
-  // next (`node Employee implements Staff`, `interface Staff extends Person`), and no interface
-  // label appears alone. Anything else (e.g. a node carrying two unrelated interfaces, or two
-  // labels always seen together) becomes one model per label.
-  const combos = input.nodeTypes
-    .map((nt) => nt.labels.filter((l) => !skipLabel(l)))
-    .filter((c) => c.length > 0);
-  const combosWith = (l: string) => combos.filter((c) => c.includes(l));
-  /** The parent of each label of `group`'s combinations, or `null` when they are no hierarchy. */
-  const hierarchyOf = (group: readonly (readonly string[])[]): Map<string, string> | null => {
-    const parents = new Map<string, string>();
-    const shared = new Set(group.filter((c) => c.length > 1).flat());
-    const count = (l: string) => combosWith(l).length;
-    for (const c of group) {
-      if (c.length === 1) {
-        if (shared.has(c[0]!)) return null; // an interface (or a node's own label) seen alone
-        continue;
-      }
-      const chain = [...c].sort((a, b) => count(a) - count(b));
-      if (count(chain[0]!) !== 1) return null;
-      for (let i = 0; i + 1 < chain.length; i++) {
-        const [a, b] = [chain[i]!, chain[i + 1]!];
-        if (count(a) >= count(b) || !combosWith(a).every((x) => x.includes(b))) return null;
-        if ((parents.get(a) ?? b) !== b) return null;
-        parents.set(a, b);
-      }
-    }
-    return parents;
-  };
-  /** The interface each label implements (a node) or extends (an interface), if any. */
-  const parentOf = new Map<string, string>();
-  const grouped = new Set<string>();
-  for (const c of combos) {
-    if (c.length < 2 || grouped.has(c[0]!)) continue;
-    // The labels seen together with c's, directly or not, and their combinations.
-    const group = new Set(c);
-    for (let grew = true; grew;) {
-      grew = false;
-      for (const x of combos) {
-        if (x.some((l) => group.has(l)) && x.some((l) => !group.has(l))) {
-          x.forEach((l) => group.add(l));
-          grew = true;
-        }
-      }
-    }
-    group.forEach((l) => grouped.add(l));
-    const groupCombos = combos.filter((x) => x.some((l) => group.has(l)));
-    const parents = hierarchyOf(groupCombos);
-    if (parents) {
-      for (const [l, p] of parents) parentOf.set(l, p);
-      continue;
-    }
-    for (const x of groupCombos) {
-      if (x.length < 2) continue;
-      warnings.push(
-        `Nodes labelled ${x.map((l) => `:${l}`).join("")} became one model per label (${x.join(", ")}): an interface needs a label that never appears alone, on nodes with exactly one label of their own, their other labels forming a chain (each one's nodes all carrying the next).`,
-      );
-    }
-  }
-  const interfaces = new Set(parentOf.values());
+  // --- interfaces and dynamic labels ------------------------------------------------
+  // See labelLayout.ts: in each group of labels seen together, one label per combination is the
+  // node's model; the others are its interfaces (on all its nodes) or dynamic labels (on some).
+  const layout = labelLayout(
+    input.nodeTypes
+      .map((nt) => ({
+        labels: nt.labels.filter((l) => !skipLabel(l)),
+        properties: new Set(nt.properties.map((p) => p.propertyName)),
+      }))
+      .filter((c) => c.labels.length > 0),
+    {
+      interfaces: options.interfaces,
+      hasSchemaObjects: (label) =>
+        uniqueOn.has(label) ||
+        [...indexOn].some((k) => k.startsWith(`NODE:${label}.`)) ||
+        [...vectorOn.keys()].some((k) => k.startsWith(`${label}.`)) ||
+        fulltext.some((f) => f.label === label) ||
+        composite.some((c) => c.label === label),
+    },
+  );
+  warnings.push(...layout.warnings);
+  const { interfaces, flags } = layout;
+  /** The interfaces each label implements (a node) or extends (an interface), directly. */
+  const parentsOf = (label: string) => layout.parents.get(label) ?? [];
   /** Interfaces above `label`, nearest first. */
   const ancestorsOf = (label: string): string[] => {
     const out: string[] = [];
-    for (let p = parentOf.get(label); p; p = parentOf.get(p)) out.push(p);
+    for (let level = parentsOf(label); level.length;) {
+      const next: string[] = [];
+      for (const p of level) {
+        if (out.includes(p)) continue;
+        out.push(p);
+        next.push(...parentsOf(p));
+      }
+      level = next;
+    }
     return out;
   };
   /** Labels below the interface `label` (interfaces and nodes), in label order. */
   const descendantsOf = (label: string) =>
-    [...parentOf.keys()].filter((l) => ancestorsOf(l).includes(label)).sort();
+    [...layout.parents.keys()].filter((l) => ancestorsOf(l).includes(label)).sort();
   /** Labels directly below the interface `label`, sorted. */
   const childrenOf = (label: string) =>
-    [...parentOf]
-      .filter(([, p]) => p === label)
+    [...layout.parents]
+      .filter(([, ps]) => ps.includes(label))
       .map(([l]) => l)
       .sort();
   /** Interfaces in label order, the ones nearer the root first. */
@@ -859,30 +846,53 @@ export function schemaFromIntrospection(input: IntrospectionResult): {
     (uniqueOn.get(label) ?? []).some((u) => u.prop === prop) ||
     indexOn.has(`NODE:${label}.${prop}`) ||
     vectorOn.has(`${label}.${prop}`);
+  /** Whether the interface `p` could hold `prop`: on all its nodes, or constrained / indexed on it. */
+  const fitsInterface = (p: string, prop: string) => {
+    const e = labels.get(p)!;
+    const acc = e.props.get(prop);
+    if (!acc) return false;
+    const own = declaresOn(p, prop);
+    if (!own && acc.presentIn !== e.combos) return false;
+    if (
+      !own &&
+      !vectorOn.has(`${p}.${prop}`) &&
+      !mapType([...acc.types], acc.pointCrs && [...acc.pointCrs])
+    ) {
+      return false;
+    }
+    // A constraint or index on an implementation keeps the field there, unless `p` has one too.
+    return own || !descendantsOf(p).some((x) => declaresOn(x, prop));
+  };
+  const concreteBelow = (p: string) => descendantsOf(p).filter((x) => !interfaces.has(x));
   /**
    * Properties of each interface: on every one of its nodes, or constrained / indexed on it, and
-   * not already a field of an interface it extends.
+   * not already a field of an interface it extends. A property two unrelated interfaces of one
+   * node could both hold stays on the nodes (two interfaces of a node cannot declare one field),
+   * unless only one of them has a constraint or index on it.
    */
   const interfaceProps = new Map<string, Set<string>>();
   for (const p of interfacesTopDown) {
     const e = labels.get(p)!;
     const above = ancestorsOf(p);
-    const below = descendantsOf(p);
+    const below = concreteBelow(p);
+    const rivalsOf = (prop: string) =>
+      interfacesTopDown.filter(
+        (o) =>
+          o !== p &&
+          !above.includes(o) &&
+          !ancestorsOf(o).includes(p) &&
+          concreteBelow(o).some((x) => below.includes(x)) &&
+          fitsInterface(o, prop),
+      );
     const props = new Set<string>();
-    for (const [prop, acc] of e.props) {
+    for (const prop of e.props.keys()) {
       if (above.some((a) => interfaceProps.get(a)!.has(prop))) continue;
-      const own = declaresOn(p, prop);
-      if (!own && acc.presentIn !== e.combos) continue;
-      if (
-        !own &&
-        !vectorOn.has(`${p}.${prop}`) &&
-        !mapType([...acc.types], acc.pointCrs && [...acc.pointCrs])
-      ) {
+      if (!fitsInterface(p, prop)) continue;
+      const rivals = rivalsOf(prop);
+      if (rivals.length && (!declaresOn(p, prop) || rivals.some((o) => declaresOn(o, prop)))) {
         continue;
       }
-      const onImpl = below.filter((x) => declaresOn(x, prop));
-      if (onImpl.length && !own) continue;
-      for (const x of onImpl) {
+      for (const x of descendantsOf(p).filter((d) => declaresOn(d, prop))) {
         warnings.push(
           `Dropped the constraint / index on ${x}.${prop}: ${prop} is a field of interface ${p}, whose constraints and indexes are on :${p}.`,
         );
@@ -912,6 +922,7 @@ export function schemaFromIntrospection(input: IntrospectionResult): {
     return name;
   };
   for (const [label, e] of [...labels].sort(([a], [b]) => a.localeCompare(b))) {
+    if (flags.has(label)) continue; // a dynamic label: no model of its own
     const uniques = uniqueOn.get(label) ?? [];
     const idProp =
       uniques.find((u) => u.prop === "id")?.prop ?? uniques.find((u) => /_id$/.test(u.name))?.prop;
@@ -978,7 +989,7 @@ export function schemaFromIntrospection(input: IntrospectionResult): {
     let pairs: { from: string; to: string }[] = [];
     // A node of an implementation is that implementation (not also its interfaces)...
     const modelLabels = (ls: readonly string[]) => {
-      const valid = ls.filter((l) => !skipLabel(l));
+      const valid = ls.filter((l) => !skipLabel(l) && !flags.has(l));
       return valid.filter(
         (l) => !(interfaces.has(l) && valid.some((x) => ancestorsOf(x).includes(l))),
       );
@@ -1160,15 +1171,22 @@ export function schemaFromIntrospection(input: IntrospectionResult): {
     attributesOf.set(c.label, list);
   }
 
+  // --- dynamic labels → @@labels ---------------------------------------------------
+  for (const [label, dynamic] of layout.dynamic) {
+    const list = attributesOf.get(label) ?? [];
+    list.push({ kind: "ModelAttribute", name: "labels", fields: [...dynamic], args: [] });
+    attributesOf.set(label, list);
+  }
+
   const nodes: NodeDeclaration[] = [...nodeFields].map(([name, fields]) => {
     const attributes = attributesOf.get(name);
-    const parent = parentOf.get(name);
+    const parents = parentsOf(name);
     const abstract = interfaces.has(name);
     return {
       kind: "Node",
       name,
       ...(abstract ? { abstract: true as const } : {}),
-      ...(parent ? { [abstract ? "extends" : "implements"]: [parent] } : {}),
+      ...(parents.length ? { [abstract ? "extends" : "implements"]: [...parents] } : {}),
       fields,
       ...(attributes ? { attributes } : {}),
     };

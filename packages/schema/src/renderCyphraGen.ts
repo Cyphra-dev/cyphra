@@ -149,6 +149,8 @@ export function renderClientSection(model: SchemaModel, names: RuntimeTypeNames 
       lines.push("    abstract: true;");
       lines.push(`    implementations: ${union(n.implementations ?? [])};`);
     }
+    // Only emitted when declared, so schemas without `@@labels` generate the same code as before.
+    if (n.dynamicLabels?.length) lines.push(`    dynamicLabels: ${union(n.dynamicLabels)};`);
     lines.push(`    createRequired: ${union(required)};`);
     lines.push(`    unique: ${union(n.uniqueFields)};`);
     // Only emitted when present, so schemas without vectors generate the same code as before.

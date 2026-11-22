@@ -495,12 +495,51 @@ labels as interfaces extending interfaces.
   implementing `Production` is stored as `(:Movie)`), so they have no exact Cyphra equivalent; the
   importer reports them as unsupported.
 
-Unions of unrelated models and labels added or removed at runtime are tracked as separate
-follow-ups (see the [design note](https://github.com/Cyphra-dev/cyphra/blob/main/docs/design/multi-labels.md)).
+Unions of unrelated models are tracked as a separate follow-up (see the
+[design note](https://github.com/Cyphra-dev/cyphra/blob/main/docs/design/multi-labels.md)).
+
+## Dynamic labels
+
+Graphs often use labels as flags that come and go on single nodes: `:Archived`, `:Featured`,
+`:Deleted`. Declare the ones a model may carry with `@@labels([…])`:
+
+```cyphra
+node Post {
+  id    String @id @default(cuid())
+  title String
+
+  @@labels([Archived, Featured])
+}
+```
+
+- **Typed and checked.** The client [adds, removes and filters on them](/client#dynamic-labels)
+  (`data: { $labels: { add: ["Archived"] } }`, `where: { $labels: { has: "Featured" } }`), typed as
+  `"Archived" | "Featured"`. A label that is not in the list is a `CyphraValidationError` before
+  anything runs: label names in the generated Cypher always come from the schema, never from a
+  value.
+- **Not part of the model.** `db.post` matches every `:Post`, with or without the flags; a flag is
+  never required. A dynamic label cannot be the label of a node or an interface (a node carrying it
+  would also be that model): use [`implements`](#interfaces-and-multiple-labels) for labels every
+  node of the model carries.
+- **Shared names.** Several models may declare the same label (`:Archived` on posts and users).
+  On an interface, `@@labels` applies to every implementation too, and `db.<interface>` can filter
+  and write them; an implementation can declare more of its own.
+- **No DDL.** `@@labels` creates no constraint or index, and [migrations](/migrations#dynamic-labels)
+  need no step to add one. Label lookups (`MATCH (n:Archived)`) use Neo4j's default token lookup
+  index. To index a property of flagged nodes, index it on the flag's label (an index covers one
+  label) in a [hand-written migration](/migrations#writing-migrations-by-hand):
+  `CREATE INDEX Archived_archivedAt IF NOT EXISTS FOR (n:Archived) ON (n.archivedAt)`. Uniqueness
+  among flagged nodes only cannot be declared either; a constraint on `:Archived` would also cover
+  the other models declaring it.
+- It works the same on [Memgraph](/memgraph): plain `SET n:Label` / `REMOVE n:Label` and label
+  predicates.
+
+[`cyphra pull`](/cli#cyphra-pull) recognizes labels found on some nodes of a model only, with no
+property or constraint of their own, as dynamic labels.
 
 ## Decorators
 
-`@id`, `@unique`, `@vectorIndex(…)` (on `Vector(N)` fields, see above), `@@fulltext([…])`, `@@unique([…])` and `@@index([…])` (model attributes, see above), `@index` (Neo4j 5+ **range** index, or a **point** index on a `Point` / `CartesianPoint` field: on nodes via `(n:Label)`, on rich relationships via `()-[r:TYPE]-()`), `@default(…)`, `@relationship(…)`, and the [validation rules](#validation-rules) `@length`, `@size`,
+`@id`, `@unique`, `@vectorIndex(…)` (on `Vector(N)` fields, see above), `@@fulltext([…])`, `@@unique([…])`, `@@index([…])` and `@@labels([…])` (model attributes, see above), `@index` (Neo4j 5+ **range** index, or a **point** index on a `Point` / `CartesianPoint` field: on nodes via `(n:Label)`, on rich relationships via `()-[r:TYPE]-()`), `@default(…)`, `@relationship(…)`, and the [validation rules](#validation-rules) `@length`, `@size`,
 `@min`, `@max`, `@email`, `@url`, `@regex` and `@nonEmpty`. On **nodes**, you cannot combine `@index` with `@id` or `@unique` on the same field (those constraints already imply an index). On **relationship** models, `@unique` maps to a **relationship property uniqueness** constraint (Neo4j **5.7+**); `@id` is not allowed on relationship fields.
 
 ## Programmatic API

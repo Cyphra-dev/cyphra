@@ -124,6 +124,39 @@ describe.skipIf(!hasNeo)("schema migrations and pull (Neo4j)", () => {
     }
   });
 
+  it("pulls unrelated interfaces on one node, a single implementation and dynamic labels", async () => {
+    const clean =
+      "MATCH (n) WHERE n:PullMPerson OR n:PullMArch OR n:PullMSolo OR n:PullMPost DETACH DELETE n";
+    await run(clean);
+    try {
+      await run(
+        "CREATE (:PullMEmp:PullMPerson:PullMArch {pid: 'e', archivedAt: 1, salary: 1}), " +
+          "(:PullMCust:PullMPerson {pid: 'c', tier: 'gold'}), " +
+          "(:PullMDoc:PullMArch {archivedAt: 2, body: 'x'}), " +
+          "(:PullMOne:PullMSolo {sid: 's'}), " +
+          "(:PullMPost {title: 'a'}), (:PullMPost:PullMHidden {title: 'b'})",
+      );
+      const { doc, warnings } = schemaFromIntrospection(await introspectDatabase(client), {
+        interfaces: ["PullMSolo"],
+      });
+      const src = printSchemaDocument(doc);
+      expect(src).toContain("interface PullMPerson {\n  pid String\n}");
+      expect(src).toContain("interface PullMArch {\n  archivedAt Int\n}");
+      expect(src).toContain("node PullMEmp implements PullMArch, PullMPerson {\n  salary Int\n}");
+      expect(src).toContain("node PullMOne implements PullMSolo {\n}");
+      expect(src).toContain("node PullMPost {\n  title String\n\n  @@labels([PullMHidden])\n}");
+      expect(warnings.filter((w) => w.includes("PullM"))).toEqual([]);
+      const model = resolveSchema(parseSchema(src));
+      expect(model.nodes.find((n) => n.name === "PullMEmp")?.labels).toEqual([
+        "PullMEmp",
+        "PullMArch",
+        "PullMPerson",
+      ]);
+    } finally {
+      await run(clean);
+    }
+  });
+
   it("creates vector indexes, recreates them on change, and pulls them back", async () => {
     const v1 = `node MigVector {
   id String @id

@@ -258,6 +258,12 @@ export type ResolvedNodeModel = {
    * the model are written and matched with all of them.
    */
   readonly labels?: readonly string[];
+  /**
+   * Labels declared with `@@labels([...])` (and inherited from interfaces): flags a node of the
+   * model may carry or not, added and removed at runtime (`data: { $labels: … }`) and filtered on
+   * (`where: { $labels: … }`). Never part of how the model is matched. Absent when none.
+   */
+  readonly dynamicLabels?: readonly string[];
   /** Name of the `@id` field, if any. */
   readonly idField?: string;
   /** `@id` and `@unique` scalar fields — valid keys for `findUnique` / `connect`. */
@@ -767,10 +773,12 @@ export function resolveSchema(doc: SchemaDocument): SchemaModel {
       keys.add(key);
       compoundUniques.push({ name, key, fields: fieldsOf });
     }
+    const dynamicLabels = (d.attributes ?? []).find((a) => a.name === "labels")?.fields ?? [];
     nodes.push({
       name: d.name,
       label: d.name,
       ...(d.abstract ? { abstract: true as const } : {}),
+      ...(dynamicLabels.length ? { dynamicLabels: [...dynamicLabels] } : {}),
       ...(idField ? { idField } : {}),
       uniqueFields: scalars.filter((f) => f.id || f.unique).map((f) => f.name),
       fields,
@@ -872,10 +880,15 @@ function linkInterfaces(
     const scalars = fields.filter((f): f is ResolvedScalarField => f.kind === "scalar");
     const idField = scalars.find((f) => f.id)?.name;
     const { label, compoundIndexes } = n;
+    // The interfaces' dynamic labels first (in inheritance order), then the model's own.
+    const dynamicLabels = [
+      ...new Set([...parents.flatMap((p) => p.dynamicLabels ?? []), ...(n.dynamicLabels ?? [])]),
+    ];
     const out: ResolvedNodeModel = {
       name,
       label,
       ...(n.abstract ? { abstract: true as const, extends: [...direct] } : {}),
+      ...(dynamicLabels.length ? { dynamicLabels } : {}),
       interfaces,
       // An interface is matched by its own label; a node is written and matched with all of them.
       ...(n.abstract ? {} : { labels: [label, ...interfaces.map((i) => byName.get(i)!.label)] }),
