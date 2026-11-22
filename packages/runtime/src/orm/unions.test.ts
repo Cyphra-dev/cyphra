@@ -178,11 +178,7 @@ describe("unions: writes through relations", () => {
       data: {
         name: "B",
         items: {
-          create: [
-            { Story: { title: "a" } },
-            { Story: { title: "b" } },
-            { Writer: { name: "c" } },
-          ],
+          create: [{ Story: { title: "a" } }, { Story: { title: "b" } }, { Writer: { name: "c" } }],
           connect: { Editor: { email: "s@x" } },
         },
       },
@@ -227,7 +223,9 @@ describe("unions: writes through relations", () => {
       "OPTIONAL MATCH (n)-[o3:`MARKS`]->(x2) WHERE (x2:`Story` OR x2:`Writer` OR x2:`Editor`) AND (x2 <> b0) DELETE o3",
     );
     // Story.marker (the to-one inverse): drop the story's edge from another marker.
-    expect(text).toContain("OPTIONAL MATCH (x4:`Marker`)-[o5:`MARKS`]->(b0) WHERE x4 <> n DELETE o5");
+    expect(text).toContain(
+      "OPTIONAL MATCH (x4:`Marker`)-[o5:`MARKS`]->(b0) WHERE x4 <> n DELETE o5",
+    );
   });
 
   it("keeps the inverse to-one union field consistent from the member's side", async () => {

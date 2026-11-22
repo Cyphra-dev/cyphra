@@ -90,7 +90,9 @@ describe("union types", () => {
       where: { id: "b" },
       data: { items: { disconnect: { Writer: { name: "a" } }, set: [{ Story: { id: "1" } }] } },
     });
-    await db.marker.create({ data: { label: "l", subject: { connect: { Writer: { name: "a" } } } } });
+    await db.marker.create({
+      data: { label: "l", subject: { connect: { Writer: { name: "a" } } } },
+    });
     // @ts-expect-error the member must be named
     await db.marker.create({ data: { label: "l", subject: { connect: { id: "1" } } } });
     await db.marker.create({

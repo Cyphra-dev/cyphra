@@ -168,7 +168,10 @@ describe.skipIf(!hasTestDb)("unions of unrelated models", () => {
     await db.marker.create({
       data: { label: "p2", subject: { connect: { Story: { id: story!.id } } } },
     });
-    const markers = await db.marker.findMany({ include: { subject: true }, orderBy: { label: "asc" } });
+    const markers = await db.marker.findMany({
+      include: { subject: true },
+      orderBy: { label: "asc" },
+    });
     expect(markers.map((p) => [p.label, p.subject?.__typename ?? null])).toEqual([
       ["p1", null],
       ["p2", "Story"],
