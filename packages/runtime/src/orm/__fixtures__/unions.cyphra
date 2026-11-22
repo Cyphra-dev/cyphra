@@ -1,42 +1,42 @@
-// Unions: a type over unrelated nodes. It adds no label: SearchHit nodes are Articles, Authors
-// and Staff (a Staff node is also a :Member).
-union SearchHit = Article | Author | Staff
+// Unions: a type over unrelated nodes. It adds no label: SearchHit nodes are Stories, Writers
+// and Editors (an Editor node is also a :Contributor).
+union SearchHit = Story | Writer | Editor
 
-interface Member {
+interface Contributor {
   id    String @id @default(cuid())
   email String @unique
 }
 
-node Staff implements Member {
+node Editor implements Contributor {
   role String @default("editor")
 }
 
-node Article {
-  id    String @id @default(cuid())
-  title String @length(max: 200)
-  pin   Pin?   @relationship(type: "PINS", direction: IN)
-  notes Note[] @relationship(type: "HAS_NOTE", direction: OUT, onDelete: Cascade)
+node Story {
+  id      String   @id @default(cuid())
+  title   String   @length(max: 200)
+  marker  Marker?  @relationship(type: "MARKS", direction: IN)
+  remarks Remark[] @relationship(type: "HAS_REMARK", direction: OUT, onDelete: Cascade)
 }
 
-node Author {
+node Writer {
   id     String @id @default(cuid())
   name   String @unique
   rating Int?
 }
 
-node Note {
+node Remark {
   id   String @id @default(cuid())
   text String
 }
 
-node Board {
+node Shelf {
   id    String      @id @default(cuid())
   name  String
   items SearchHit[] @relationship(type: "SHOWS", direction: OUT, onDelete: Cascade)
 }
 
-node Pin {
+node Marker {
   id      String     @id @default(cuid())
   label   String
-  subject SearchHit? @relationship(type: "PINS", direction: OUT)
+  subject SearchHit? @relationship(type: "MARKS", direction: OUT)
 }

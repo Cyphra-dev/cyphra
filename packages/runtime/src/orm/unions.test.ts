@@ -23,23 +23,23 @@ function engine(
   return { calls, e: new ModelEngine(schemaModel, node, runner, dialect ? { dialect } : {}) };
 }
 
-const HIT = "n:`Article` OR n:`Author` OR n:`Staff`";
+const HIT = "n:`Story` OR n:`Writer` OR n:`Editor`";
 const ALL_SCALARS =
   "n{.`id`, .`title`, .`name`, .`rating`, .`email`, .`role`, `__labels`: labels(n)}";
 
 describe("unions: reads", () => {
   it("matches a union by a label predicate and decodes each member", async () => {
     const { calls, e } = engine("SearchHit", () => [
-      { row: { id: "1", title: "T", name: null, rating: null, __labels: ["Article"] } },
-      { row: { id: "2", title: null, name: "N", rating: 3, __labels: ["Author"] } },
-      { row: { id: "3", email: "s@x", role: "editor", __labels: ["Staff", "Member"] } },
+      { row: { id: "1", title: "T", name: null, rating: null, __labels: ["Story"] } },
+      { row: { id: "2", title: null, name: "N", rating: 3, __labels: ["Writer"] } },
+      { row: { id: "3", email: "s@x", role: "editor", __labels: ["Editor", "Contributor"] } },
     ]);
     const rows = await e.findMany();
     expect(calls[0]!.text).toBe(`MATCH (n) WHERE ${HIT} RETURN ${ALL_SCALARS} AS row`);
     expect(rows).toEqual([
-      { __typename: "Article", id: "1", title: "T" },
-      { __typename: "Author", id: "2", name: "N", rating: 3 },
-      { __typename: "Staff", id: "3", email: "s@x", role: "editor" },
+      { __typename: "Story", id: "1", title: "T" },
+      { __typename: "Writer", id: "2", name: "N", rating: 3 },
+      { __typename: "Editor", id: "3", email: "s@x", role: "editor" },
     ]);
   });
 
@@ -47,18 +47,18 @@ describe("unions: reads", () => {
     const { calls, e } = engine("SearchHit", () => [{ c: 2 }]);
     await e.findMany({
       where: {
-        __typename: { not: "Staff" },
-        $on: { Article: { title: { contains: "graph" } }, Author: {} },
+        __typename: { not: "Editor" },
+        $on: { Story: { title: { contains: "graph" } }, Writer: {} },
       },
       orderBy: { __typename: "desc" },
       take: 5,
     });
     expect(calls[0]!.text).toBe(
-      `MATCH (n) WHERE (${HIT}) AND ((NOT (n:\`Staff\`)) AND ` +
-        "(((n:`Article`) AND (n.`title` CONTAINS $p0)) OR (n:`Author`))) " +
-        "WITH n ORDER BY CASE WHEN n:`Article` THEN $p1 WHEN n:`Author` THEN $p2 WHEN n:`Staff` THEN $p3 ELSE $p4 END DESC LIMIT $p5 " +
+      `MATCH (n) WHERE (${HIT}) AND ((NOT (n:\`Editor\`)) AND ` +
+        "(((n:`Story`) AND (n.`title` CONTAINS $p0)) OR (n:`Writer`))) " +
+        "WITH n ORDER BY CASE WHEN n:`Story` THEN $p1 WHEN n:`Writer` THEN $p2 WHEN n:`Editor` THEN $p3 ELSE $p4 END DESC LIMIT $p5 " +
         `RETURN ${ALL_SCALARS} AS row ` +
-        "ORDER BY CASE WHEN n:`Article` THEN $p6 WHEN n:`Author` THEN $p7 WHEN n:`Staff` THEN $p8 ELSE $p9 END DESC",
+        "ORDER BY CASE WHEN n:`Story` THEN $p6 WHEN n:`Writer` THEN $p7 WHEN n:`Editor` THEN $p8 ELSE $p9 END DESC",
     );
     expect(await e.count({ where: { $on: {} } })).toBe(2);
     expect(calls[1]!.text).toBe(`MATCH (n) WHERE (${HIT}) AND (false) RETURN count(n) AS c`);
@@ -68,53 +68,53 @@ describe("unions: reads", () => {
     const { calls, e } = engine("SearchHit", () => [
       {
         row: {
-          __labels: ["Article"],
-          __on_Article: { title: "T", notes: [{ id: "n1", text: "x" }] },
+          __labels: ["Story"],
+          __on_Story: { title: "T", remarks: [{ id: "n1", text: "x" }] },
         },
       },
-      { row: { __labels: ["Author"] } },
+      { row: { __labels: ["Writer"] } },
     ]);
-    const rows = await e.findMany({ select: { $on: { Article: { title: true, notes: true } } } });
+    const rows = await e.findMany({ select: { $on: { Story: { title: true, remarks: true } } } });
     expect(calls[0]!.text).toBe(
-      `MATCH (n) WHERE ${HIT} RETURN n{\`__labels\`: labels(n), \`__on_Article\`: CASE WHEN n:\`Article\` THEN n{.\`title\`, \`notes\`: COLLECT { MATCH (n)-[r1:\`HAS_NOTE\`]->(m0:\`Note\`) RETURN m0{.\`id\`, .\`text\`} }} END} AS row`,
+      `MATCH (n) WHERE ${HIT} RETURN n{\`__labels\`: labels(n), \`__on_Story\`: CASE WHEN n:\`Story\` THEN n{.\`title\`, \`remarks\`: COLLECT { MATCH (n)-[r1:\`HAS_REMARK\`]->(m0:\`Remark\`) RETURN m0{.\`id\`, .\`text\`} }} END} AS row`,
     );
     expect(rows).toEqual([
-      { __typename: "Article", title: "T", notes: [{ id: "n1", text: "x" }] },
-      { __typename: "Author" },
+      { __typename: "Story", title: "T", remarks: [{ id: "n1", text: "x" }] },
+      { __typename: "Writer" },
     ]);
   });
 
   it("loads, filters and counts relations to a union", async () => {
-    const { calls, e } = engine("Board", () => []);
+    const { calls, e } = engine("Shelf", () => []);
     await e.findMany({
-      where: { items: { some: { $on: { Author: { rating: { gte: 4 } } } } } },
-      include: { items: { where: { __typename: "Article" } }, _count: true },
+      where: { items: { some: { $on: { Writer: { rating: { gte: 4 } } } } } },
+      include: { items: { where: { __typename: "Story" } }, _count: true },
     });
     const text = calls[0]!.text;
     expect(text).toContain(
-      "EXISTS { MATCH (n)-[:`SHOWS`]->(m0) WHERE (m0:`Article` OR m0:`Author` OR m0:`Staff`) AND ((m0:`Author`) AND (m0.`rating` >= $p0)) }",
+      "EXISTS { MATCH (n)-[:`SHOWS`]->(m0) WHERE (m0:`Story` OR m0:`Writer` OR m0:`Editor`) AND ((m0:`Writer`) AND (m0.`rating` >= $p0)) }",
     );
     expect(text).toContain(
-      "`items`: COLLECT { MATCH (n)-[r2:`SHOWS`]->(m1) WHERE (m1:`Article` OR m1:`Author` OR m1:`Staff`) AND (m1:`Article`) RETURN m1{",
+      "`items`: COLLECT { MATCH (n)-[r2:`SHOWS`]->(m1) WHERE (m1:`Story` OR m1:`Writer` OR m1:`Editor`) AND (m1:`Story`) RETURN m1{",
     );
     expect(text).toContain(
-      "`_count`: {`items`: COUNT { MATCH (n)-[:`SHOWS`]->(m3) WHERE m3:`Article` OR m3:`Author` OR m3:`Staff` }}",
+      "`_count`: {`items`: COUNT { MATCH (n)-[:`SHOWS`]->(m3) WHERE m3:`Story` OR m3:`Writer` OR m3:`Editor` }}",
     );
   });
 
   it("never mixes `|` label expressions with implementations' `:A:B`", async () => {
-    // Neo4j rejects a clause with both `(n:Staff:Member)` and `(m:A|B)`: unions use predicates.
-    const { calls, e } = engine("Pin", () => []);
-    await e.findMany({ where: { subject: { is: { $on: { Staff: { role: "x" } } } } } });
+    // Neo4j rejects a clause with both `(n:Editor:Contributor)` and `(m:A|B)`: unions use predicates.
+    const { calls, e } = engine("Marker", () => []);
+    await e.findMany({ where: { subject: { is: { $on: { Editor: { role: "x" } } } } } });
     expect(calls[0]!.text).not.toMatch(/`\|`/);
   });
 
   it("traverses into a union", () => {
     const ctx = new QueryContext(schemaModel);
-    const board = schemaModel.nodes.find((n) => n.name === "Board")!;
-    const c = compileTraverse(ctx, board, { from: { id: "b" }, via: [{ rel: "items" }] }, 10);
+    const shelf = schemaModel.nodes.find((n) => n.name === "Shelf")!;
+    const c = compileTraverse(ctx, shelf, { from: { id: "b" }, via: [{ rel: "items" }] }, 10);
     expect(c.text).toBe(
-      "MATCH (s:`Board`) WHERE s.`id` = $p0 MATCH (s)((:`Board`)-[e0:`SHOWS`]->(t1) WHERE (t1:`Article` OR t1:`Author` OR t1:`Staff`)){1,1}(n) " +
+      "MATCH (s:`Shelf`) WHERE s.`id` = $p0 MATCH (s)((:`Shelf`)-[e0:`SHOWS`]->(t1) WHERE (t1:`Story` OR t1:`Writer` OR t1:`Editor`)){1,1}(n) " +
         `WHERE (n <> s) AND (${HIT}) WITH DISTINCT n RETURN ${ALL_SCALARS} AS row`,
     );
   });
@@ -139,7 +139,7 @@ describe("unions: reads", () => {
     const call = async () => (e[op] as (a: unknown) => Promise<unknown>)({ where: {} });
     await expect(call()).rejects.toThrow(
       new CyphraValidationError(
-        `SearchHit.${op}: SearchHit is a union; it supports findMany, findFirst and count (${op} goes through one of its members: Article, Author, Staff).`,
+        `SearchHit.${op}: SearchHit is a union; it supports findMany, findFirst and count (${op} goes through one of its members: Story, Writer, Editor).`,
       ),
     );
     expect(calls).toEqual([]);
@@ -150,21 +150,21 @@ describe("unions: reads", () => {
     await expect(e.findMany({ where: { title: "x" } })).rejects.toThrow(
       'Unknown field "SearchHit.title" in where.',
     );
-    await expect(e.findMany({ where: { $on: { Note: {} } } })).rejects.toThrow(
-      "where.$on.Note: not a member of SearchHit (Article, Author, Staff).",
+    await expect(e.findMany({ where: { $on: { Remark: {} } } })).rejects.toThrow(
+      "where.$on.Remark: not a member of SearchHit (Story, Writer, Editor).",
     );
-    await expect(e.findMany({ select: { $on: { Note: { id: true } } } })).rejects.toThrow(
-      "select.$on.Note: not a member of SearchHit (Article, Author, Staff).",
+    await expect(e.findMany({ select: { $on: { Remark: { id: true } } } })).rejects.toThrow(
+      "select.$on.Remark: not a member of SearchHit (Story, Writer, Editor).",
     );
-    await expect(e.findMany({ where: { __typename: "Note" } })).rejects.toThrow(
-      'expected "Article" | "Author" | "Staff", got "Note"',
+    await expect(e.findMany({ where: { __typename: "Remark" } })).rejects.toThrow(
+      'expected "Story" | "Writer" | "Editor", got "Remark"',
     );
   });
 
   it("rejects $on in the where of a node", async () => {
-    const { e } = engine("Article");
+    const { e } = engine("Story");
     await expect(e.findMany({ where: { $on: {} } })).rejects.toThrow(
-      "where.$on: Article is not an interface or a union",
+      "where.$on: Story is not an interface or a union",
     );
   });
 });
@@ -173,26 +173,26 @@ describe("unions: writes through relations", () => {
   const ok = () => [{ row: { id: "b", name: "B" }, c2: 1, c3: 1, c6: 1, c8: 1 }];
 
   it("creates per member (batched by member) and connects a named member", async () => {
-    const { calls, e } = engine("Board", ok);
+    const { calls, e } = engine("Shelf", ok);
     await e.create({
       data: {
         name: "B",
         items: {
           create: [
-            { Article: { title: "a" } },
-            { Article: { title: "b" } },
-            { Author: { name: "c" } },
+            { Story: { title: "a" } },
+            { Story: { title: "b" } },
+            { Writer: { name: "c" } },
           ],
-          connect: { Staff: { email: "s@x" } },
+          connect: { Editor: { email: "s@x" } },
         },
       },
     });
     const { text, params } = calls[0]!;
     expect(text).toBe(
-      "CREATE (n:`Board` $p0) WITH n " +
-        "CALL { WITH n MATCH (b0:`Staff`:`Member`) WHERE b0.`email` = $p1 WITH n, b0 LIMIT 1 MERGE (n)-[r1:`SHOWS`]->(b0) RETURN count(r1) AS c2 } " +
-        "FOREACH (x3 IN $p2 | CREATE (c4:`Article`) SET c4 = x3.p CREATE (n)-[:`SHOWS`]->(c4)) " +
-        "FOREACH (x6 IN $p3 | CREATE (c7:`Author`) SET c7 = x6.p CREATE (n)-[:`SHOWS`]->(c7)) " +
+      "CREATE (n:`Shelf` $p0) WITH n " +
+        "CALL { WITH n MATCH (b0:`Editor`:`Contributor`) WHERE b0.`email` = $p1 WITH n, b0 LIMIT 1 MERGE (n)-[r1:`SHOWS`]->(b0) RETURN count(r1) AS c2 } " +
+        "FOREACH (x3 IN $p2 | CREATE (c4:`Story`) SET c4 = x3.p CREATE (n)-[:`SHOWS`]->(c4)) " +
+        "FOREACH (x6 IN $p3 | CREATE (c7:`Writer`) SET c7 = x6.p CREATE (n)-[:`SHOWS`]->(c7)) " +
         "RETURN n{.`id`, .`name`} AS row, c2",
     );
     expect((params.p2 as { p: Record<string, unknown> }[]).map((x) => x.p.title)).toEqual([
@@ -203,65 +203,65 @@ describe("unions: writes through relations", () => {
   });
 
   it("disconnects and sets by member keys", async () => {
-    const { calls, e } = engine("Board", ok);
+    const { calls, e } = engine("Shelf", ok);
     await e.update({
       where: { id: "b" },
-      data: { items: { disconnect: { Author: { name: "a" } }, set: [{ Article: { id: "1" } }] } },
+      data: { items: { disconnect: { Writer: { name: "a" } }, set: [{ Story: { id: "1" } }] } },
     });
     const text = calls[0]!.text;
     expect(text).toContain(
-      "MATCH (n)-[r1:`SHOWS`]->(b0) WHERE (b0:`Article` OR b0:`Author` OR b0:`Staff`) AND (((b0:`Author`) AND (b0.`name` = $p1))) DELETE r1",
+      "MATCH (n)-[r1:`SHOWS`]->(b0) WHERE (b0:`Story` OR b0:`Writer` OR b0:`Editor`) AND (((b0:`Writer`) AND (b0.`name` = $p1))) DELETE r1",
     );
     expect(text).toContain(
-      "MATCH (n)-[r4:`SHOWS`]->(b3) WHERE (b3:`Article` OR b3:`Author` OR b3:`Staff`) AND (NOT (((b3:`Article`) AND (b3.`id` = $p2)))) DELETE r4",
+      "MATCH (n)-[r4:`SHOWS`]->(b3) WHERE (b3:`Story` OR b3:`Writer` OR b3:`Editor`) AND (NOT (((b3:`Story`) AND (b3.`id` = $p2)))) DELETE r4",
     );
-    expect(text).toContain("MATCH (b6:`Article`) WHERE b6.`id` = $p3");
+    expect(text).toContain("MATCH (b6:`Story`) WHERE b6.`id` = $p3");
   });
 
   it("replaces the edge of a to-one union relation and of its inverse", async () => {
-    const { calls, e } = engine("Pin", () => [{ row: { id: "p", label: "l" }, c6: 1 }]);
-    await e.create({ data: { label: "l", subject: { connect: { Article: { id: "a" } } } } });
+    const { calls, e } = engine("Marker", () => [{ row: { id: "p", label: "l" }, c6: 1 }]);
+    await e.create({ data: { label: "l", subject: { connect: { Story: { id: "a" } } } } });
     const text = calls[0]!.text;
-    // Pin.subject: drop the edge to any other member.
+    // Marker.subject: drop the edge to any other member.
     expect(text).toContain(
-      "OPTIONAL MATCH (n)-[o3:`PINS`]->(x2) WHERE (x2:`Article` OR x2:`Author` OR x2:`Staff`) AND (x2 <> b0) DELETE o3",
+      "OPTIONAL MATCH (n)-[o3:`MARKS`]->(x2) WHERE (x2:`Story` OR x2:`Writer` OR x2:`Editor`) AND (x2 <> b0) DELETE o3",
     );
-    // Article.pin (the to-one inverse): drop the article's edge from another pin.
-    expect(text).toContain("OPTIONAL MATCH (x4:`Pin`)-[o5:`PINS`]->(b0) WHERE x4 <> n DELETE o5");
+    // Story.marker (the to-one inverse): drop the story's edge from another marker.
+    expect(text).toContain("OPTIONAL MATCH (x4:`Marker`)-[o5:`MARKS`]->(b0) WHERE x4 <> n DELETE o5");
   });
 
   it("keeps the inverse to-one union field consistent from the member's side", async () => {
-    const { calls, e } = engine("Article", () => [{ row: { id: "a", title: "t" }, c6: 1 }]);
-    await e.create({ data: { title: "t", pin: { connect: { id: "p" } } } });
+    const { calls, e } = engine("Story", () => [{ row: { id: "a", title: "t" }, c6: 1 }]);
+    await e.create({ data: { title: "t", marker: { connect: { id: "p" } } } });
     expect(calls[0]!.text).toContain(
-      "OPTIONAL MATCH (x4)<-[o5:`PINS`]-(b0) WHERE (x4:`Article` OR x4:`Author` OR x4:`Staff`) AND (x4 <> n) DELETE o5",
+      "OPTIONAL MATCH (x4)<-[o5:`MARKS`]-(b0) WHERE (x4:`Story` OR x4:`Writer` OR x4:`Editor`) AND (x4 <> n) DELETE o5",
     );
   });
 
   it.each([
     [{ connect: { id: "x" } }, "connect: SearchHit is a union; name the member of each item"],
-    [{ connect: { Article: { id: "x" }, Author: { id: "y" } } }, "got Article, Author"],
-    [{ create: { Note: { text: "x" } } }, "(one of Article, Author, Staff), got Note"],
-    [{ connect: { Article: { title: "x" } } }, "where must set at least one unique field (id)"],
+    [{ connect: { Story: { id: "x" }, Writer: { id: "y" } } }, "got Story, Writer"],
+    [{ create: { Remark: { text: "x" } } }, "(one of Story, Writer, Editor), got Remark"],
+    [{ connect: { Story: { title: "x" } } }, "where must set at least one unique field (id)"],
   ])("rejects a relation write %j without exactly one member", async (items, message) => {
-    const { calls, e } = engine("Board", ok);
+    const { calls, e } = engine("Shelf", ok);
     await expect(e.create({ data: { name: "B", items } })).rejects.toThrow(message);
     expect(calls).toEqual([]);
   });
 
   it("checks the validation rules of the member a nested create names", async () => {
-    const { calls, e } = engine("Board", ok);
+    const { calls, e } = engine("Shelf", ok);
     await expect(
-      e.create({ data: { name: "B", items: { create: { Article: { title: "x".repeat(201) } } } } }),
+      e.create({ data: { name: "B", items: { create: { Story: { title: "x".repeat(201) } } } } }),
     ).rejects.toMatchObject({
-      issues: [{ path: ["data", "items", "create", "Article", "title"] }],
+      issues: [{ path: ["data", "items", "create", "Story", "title"] }],
     });
     expect(calls).toEqual([]);
   });
 
   it("cascades into a union with each member's own rules", () => {
-    const board = schemaModel.nodes.find((n) => n.name === "Board")!;
-    expect(hasDeleteRules(schemaModel, board)).toBe(true);
+    const shelf = schemaModel.nodes.find((n) => n.name === "Shelf")!;
+    expect(hasDeleteRules(schemaModel, shelf)).toBe(true);
   });
 });
 
@@ -269,9 +269,9 @@ describe("unions: dialects", () => {
   it("runs the same statements on Memgraph and FalkorDB", async () => {
     for (const dialect of ["memgraph", "falkordb"] as const) {
       const { calls, e } = engine("SearchHit", () => [], dialect);
-      await e.findMany({ where: { __typename: "Author" } });
+      await e.findMany({ where: { __typename: "Writer" } });
       expect(calls[0]!.text).toBe(
-        `MATCH (n) WHERE (${HIT}) AND (n:\`Author\`) RETURN ${ALL_SCALARS} AS row`,
+        `MATCH (n) WHERE (${HIT}) AND (n:\`Writer\`) RETURN ${ALL_SCALARS} AS row`,
       );
     }
   });

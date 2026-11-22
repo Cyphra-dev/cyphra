@@ -6,13 +6,13 @@ import { createOrm, type OrmClient, type OrmOptions, type SchemaModel } from "..
 
 /** Neo4j node labels from `node` declarations. */
 export const NodeLabel = {
-  Member: "Member",
-  Staff: "Staff",
-  Article: "Article",
-  Author: "Author",
-  Note: "Note",
-  Board: "Board",
-  Pin: "Pin",
+  Contributor: "Contributor",
+  Editor: "Editor",
+  Story: "Story",
+  Writer: "Writer",
+  Remark: "Remark",
+  Shelf: "Shelf",
+  Marker: "Marker",
 } as const;
 
 export type NodeLabelName = keyof typeof NodeLabel;
@@ -25,57 +25,57 @@ export type RelationshipModelName = keyof typeof RelationshipSpec;
 
 /** Distinct Neo4j relationship types used on fields or declarations. */
 export const RelType = {
-  HAS_NOTE: "HAS_NOTE",
-  PINS: "PINS",
+  HAS_REMARK: "HAS_REMARK",
+  MARKS: "MARKS",
   SHOWS: "SHOWS",
 } as const;
 
 export type RelTypeKey = keyof typeof RelType;
 
-/** `SearchHit` union (`Article` | `Author` | `Staff`): a member's properties and its `__typename`. */
-export type SearchHit = ({ __typename: "Article" } & Article) | ({ __typename: "Author" } & Author) | ({ __typename: "Staff" } & Staff);
+/** `SearchHit` union (`Story` | `Writer` | `Editor`): a member's properties and its `__typename`. */
+export type SearchHit = ({ __typename: "Story" } & Story) | ({ __typename: "Writer" } & Writer) | ({ __typename: "Editor" } & Editor);
 
-/** `Member` interface properties (shared by `Staff`). */
-export type Member = {
+/** `Contributor` interface properties (shared by `Editor`). */
+export type Contributor = {
   id: string;
   email: string;
 };
 
-/** `Staff` node properties (labels `:Staff`, `:Member`). */
-export type Staff = {
+/** `Editor` node properties (labels `:Editor`, `:Contributor`). */
+export type Editor = {
   id: string;
   email: string;
   role: string;
 };
 
-/** `Article` node properties. */
-export type Article = {
+/** `Story` node properties. */
+export type Story = {
   id: string;
   /** Validation: `@length(max: 200)`. */
   title: string;
 };
 
-/** `Author` node properties. */
-export type Author = {
+/** `Writer` node properties. */
+export type Writer = {
   id: string;
   name: string;
   rating: number | null;
 };
 
-/** `Note` node properties. */
-export type Note = {
+/** `Remark` node properties. */
+export type Remark = {
   id: string;
   text: string;
 };
 
-/** `Board` node properties. */
-export type Board = {
+/** `Shelf` node properties. */
+export type Shelf = {
   id: string;
   name: string;
 };
 
-/** `Pin` node properties. */
-export type Pin = {
+/** `Marker` node properties. */
+export type Marker = {
   id: string;
   label: string;
 };
@@ -86,56 +86,56 @@ export type CyphraTypeMap = {
     scalars: Record<never, never>;
     abstract: true;
     union: true;
-    implementations: "Article" | "Author" | "Staff";
+    implementations: "Story" | "Writer" | "Editor";
     createRequired: never;
     unique: never;
     relations: Record<never, never>;
   };
-  Member: {
-    scalars: Member;
+  Contributor: {
+    scalars: Contributor;
     abstract: true;
-    implementations: "Staff";
+    implementations: "Editor";
     createRequired: "email";
     unique: "id" | "email";
     relations: Record<never, never>;
   };
-  Staff: {
-    scalars: Staff;
+  Editor: {
+    scalars: Editor;
     createRequired: "email";
     unique: "id" | "email";
     relations: Record<never, never>;
   };
-  Article: {
-    scalars: Article;
+  Story: {
+    scalars: Story;
     createRequired: "title";
     unique: "id";
     relations: {
-      pin: { target: "Pin"; many: false; optional: true; edge: null };
-      notes: { target: "Note"; many: true; optional: false; edge: null };
+      marker: { target: "Marker"; many: false; optional: true; edge: null };
+      remarks: { target: "Remark"; many: true; optional: false; edge: null };
     };
   };
-  Author: {
-    scalars: Author;
+  Writer: {
+    scalars: Writer;
     createRequired: "name";
     unique: "id" | "name";
     relations: Record<never, never>;
   };
-  Note: {
-    scalars: Note;
+  Remark: {
+    scalars: Remark;
     createRequired: "text";
     unique: "id";
     relations: Record<never, never>;
   };
-  Board: {
-    scalars: Board;
+  Shelf: {
+    scalars: Shelf;
     createRequired: "name";
     unique: "id";
     relations: {
       items: { target: "SearchHit"; many: true; optional: false; edge: null };
     };
   };
-  Pin: {
-    scalars: Pin;
+  Marker: {
+    scalars: Marker;
     createRequired: "label";
     unique: "id";
     relations: {
@@ -154,19 +154,19 @@ export const schemaModel: SchemaModel = {
       "abstract": true,
       "union": true,
       "implementations": [
-        "Article",
-        "Author",
-        "Staff"
+        "Story",
+        "Writer",
+        "Editor"
       ],
       "uniqueFields": [],
       "fields": []
     },
     {
-      "name": "Member",
-      "label": "Member",
+      "name": "Contributor",
+      "label": "Contributor",
       "abstract": true,
       "implementations": [
-        "Staff"
+        "Editor"
       ],
       "idField": "id",
       "uniqueFields": [
@@ -201,14 +201,14 @@ export const schemaModel: SchemaModel = {
       ]
     },
     {
-      "name": "Staff",
-      "label": "Staff",
+      "name": "Editor",
+      "label": "Editor",
       "interfaces": [
-        "Member"
+        "Contributor"
       ],
       "labels": [
-        "Staff",
-        "Member"
+        "Editor",
+        "Contributor"
       ],
       "idField": "id",
       "uniqueFields": [
@@ -229,7 +229,7 @@ export const schemaModel: SchemaModel = {
             "kind": "fn",
             "fn": "cuid"
           },
-          "inheritedFrom": "Member"
+          "inheritedFrom": "Contributor"
         },
         {
           "kind": "scalar",
@@ -240,7 +240,7 @@ export const schemaModel: SchemaModel = {
           "id": false,
           "unique": true,
           "index": false,
-          "inheritedFrom": "Member"
+          "inheritedFrom": "Contributor"
         },
         {
           "kind": "scalar",
@@ -259,8 +259,8 @@ export const schemaModel: SchemaModel = {
       ]
     },
     {
-      "name": "Article",
-      "label": "Article",
+      "name": "Story",
+      "label": "Story",
       "idField": "id",
       "uniqueFields": [
         "id"
@@ -298,18 +298,18 @@ export const schemaModel: SchemaModel = {
         },
         {
           "kind": "relation",
-          "name": "pin",
-          "target": "Pin",
-          "relType": "PINS",
+          "name": "marker",
+          "target": "Marker",
+          "relType": "MARKS",
           "direction": "IN",
           "many": false,
           "optional": true
         },
         {
           "kind": "relation",
-          "name": "notes",
-          "target": "Note",
-          "relType": "HAS_NOTE",
+          "name": "remarks",
+          "target": "Remark",
+          "relType": "HAS_REMARK",
           "direction": "OUT",
           "many": true,
           "optional": false,
@@ -318,8 +318,8 @@ export const schemaModel: SchemaModel = {
       ]
     },
     {
-      "name": "Author",
-      "label": "Author",
+      "name": "Writer",
+      "label": "Writer",
       "idField": "id",
       "uniqueFields": [
         "id",
@@ -363,8 +363,8 @@ export const schemaModel: SchemaModel = {
       ]
     },
     {
-      "name": "Note",
-      "label": "Note",
+      "name": "Remark",
+      "label": "Remark",
       "idField": "id",
       "uniqueFields": [
         "id"
@@ -397,8 +397,8 @@ export const schemaModel: SchemaModel = {
       ]
     },
     {
-      "name": "Board",
-      "label": "Board",
+      "name": "Shelf",
+      "label": "Shelf",
       "idField": "id",
       "uniqueFields": [
         "id"
@@ -441,8 +441,8 @@ export const schemaModel: SchemaModel = {
       ]
     },
     {
-      "name": "Pin",
-      "label": "Pin",
+      "name": "Marker",
+      "label": "Marker",
       "idField": "id",
       "uniqueFields": [
         "id"
@@ -476,7 +476,7 @@ export const schemaModel: SchemaModel = {
           "kind": "relation",
           "name": "subject",
           "target": "SearchHit",
-          "relType": "PINS",
+          "relType": "MARKS",
           "direction": "OUT",
           "many": false,
           "optional": true

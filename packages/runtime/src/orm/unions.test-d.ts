@@ -1,5 +1,5 @@
 /**
- * Compile-time tests for unions (`union SearchHit = Article | Author | Staff`), checked by
+ * Compile-time tests for unions (`union SearchHit = Story | Writer | Editor`), checked by
  * `tsc --noEmit` / `pnpm typecheck`. The bodies never run against a database.
  */
 import { describe, expectTypeOf, it } from "vitest";
@@ -7,54 +7,54 @@ import type { Db, SearchHit } from "./__fixtures__/unions.gen.js";
 
 declare const db: Db;
 
-type ArticleRow = { __typename: "Article"; id: string; title: string };
-type AuthorRow = { __typename: "Author"; id: string; name: string; rating: number | null };
-type StaffRow = { __typename: "Staff"; id: string; email: string; role: string };
+type StoryRow = { __typename: "Story"; id: string; title: string };
+type WriterRow = { __typename: "Writer"; id: string; name: string; rating: number | null };
+type EditorRow = { __typename: "Editor"; id: string; email: string; role: string };
 
 describe("union types", () => {
   it("returns the members, discriminated by __typename", async () => {
     const hits = await db.searchHit.findMany({
-      where: { __typename: { in: ["Article", "Author"] } },
+      where: { __typename: { in: ["Story", "Writer"] } },
     });
-    expectTypeOf(hits).toEqualTypeOf<(ArticleRow | AuthorRow | StaffRow)[]>();
+    expectTypeOf(hits).toEqualTypeOf<(StoryRow | WriterRow | EditorRow)[]>();
     expectTypeOf<SearchHit>().toEqualTypeOf<
-      | ({ __typename: "Article" } & { id: string; title: string })
-      | ({ __typename: "Author" } & { id: string; name: string; rating: number | null })
-      | ({ __typename: "Staff" } & { id: string; email: string; role: string })
+      | ({ __typename: "Story" } & { id: string; title: string })
+      | ({ __typename: "Writer" } & { id: string; name: string; rating: number | null })
+      | ({ __typename: "Editor" } & { id: string; email: string; role: string })
     >();
     const first = await db.searchHit.findFirst({ orderBy: { __typename: "asc" } });
-    if (first?.__typename === "Author") expectTypeOf(first.rating).toEqualTypeOf<number | null>();
+    if (first?.__typename === "Writer") expectTypeOf(first.rating).toEqualTypeOf<number | null>();
     expectTypeOf(
-      await db.searchHit.count({ where: { $on: { Author: {} } } }),
+      await db.searchHit.count({ where: { $on: { Writer: {} } } }),
     ).toEqualTypeOf<number>();
   });
 
   it("filters with $on per member, and nothing else", async () => {
     await db.searchHit.findMany({
-      where: { $on: { Article: { title: { contains: "x" } }, Staff: { email: "e" } } },
+      where: { $on: { Story: { title: { contains: "x" } }, Editor: { email: "e" } } },
     });
     // @ts-expect-error a union has no fields
     await db.searchHit.findMany({ where: { title: "x" } });
     // @ts-expect-error not a member
-    await db.searchHit.findMany({ where: { $on: { Note: {} } } });
+    await db.searchHit.findMany({ where: { $on: { Remark: {} } } });
     // @ts-expect-error not a member
-    await db.searchHit.findMany({ where: { __typename: "Note" } });
+    await db.searchHit.findMany({ where: { __typename: "Remark" } });
     // @ts-expect-error a member's fields go through $on
-    await db.searchHit.findMany({ where: { $on: { Author: { title: "x" } } } });
+    await db.searchHit.findMany({ where: { $on: { Writer: { title: "x" } } } });
   });
 
   it("selects per member with $on", async () => {
     const _rows = await db.searchHit.findMany({
-      select: { $on: { Article: { title: true, notes: true } } },
+      select: { $on: { Story: { title: true, remarks: true } } },
     });
     type Row = (typeof _rows)[number];
-    expectTypeOf<Extract<Row, { __typename: "Article" }>>().toEqualTypeOf<{
-      __typename: "Article";
+    expectTypeOf<Extract<Row, { __typename: "Story" }>>().toEqualTypeOf<{
+      __typename: "Story";
       title: string;
-      notes: { id: string; text: string }[];
+      remarks: { id: string; text: string }[];
     }>();
-    expectTypeOf<Extract<Row, { __typename: "Author" }>>().toEqualTypeOf<{
-      __typename: "Author";
+    expectTypeOf<Extract<Row, { __typename: "Writer" }>>().toEqualTypeOf<{
+      __typename: "Writer";
     }>();
   });
 
@@ -70,34 +70,34 @@ describe("union types", () => {
   });
 
   it("loads relations to a union as the members", async () => {
-    const board = await db.board.findFirst({ include: { items: true } });
-    expectTypeOf(board!.items).toEqualTypeOf<(ArticleRow | AuthorRow | StaffRow)[]>();
-    const pin = await db.pin.findFirst({ include: { subject: true } });
-    expectTypeOf(pin!.subject).toEqualTypeOf<ArticleRow | AuthorRow | StaffRow | null>();
+    const shelf = await db.shelf.findFirst({ include: { items: true } });
+    expectTypeOf(shelf!.items).toEqualTypeOf<(StoryRow | WriterRow | EditorRow)[]>();
+    const marker = await db.marker.findFirst({ include: { subject: true } });
+    expectTypeOf(marker!.subject).toEqualTypeOf<StoryRow | WriterRow | EditorRow | null>();
   });
 
   it("names the member in relation writes", async () => {
-    await db.board.create({
+    await db.shelf.create({
       data: {
         name: "b",
         items: {
-          create: [{ Article: { title: "t" } }, { Author: { name: "a" } }],
-          connect: [{ Staff: { email: "s@x" } }, { Article: { id: "1" } }],
+          create: [{ Story: { title: "t" } }, { Writer: { name: "a" } }],
+          connect: [{ Editor: { email: "s@x" } }, { Story: { id: "1" } }],
         },
       },
     });
-    await db.board.update({
+    await db.shelf.update({
       where: { id: "b" },
-      data: { items: { disconnect: { Author: { name: "a" } }, set: [{ Article: { id: "1" } }] } },
+      data: { items: { disconnect: { Writer: { name: "a" } }, set: [{ Story: { id: "1" } }] } },
     });
-    await db.pin.create({ data: { label: "l", subject: { connect: { Author: { name: "a" } } } } });
+    await db.marker.create({ data: { label: "l", subject: { connect: { Writer: { name: "a" } } } } });
     // @ts-expect-error the member must be named
-    await db.pin.create({ data: { label: "l", subject: { connect: { id: "1" } } } });
-    await db.pin.create({
+    await db.marker.create({ data: { label: "l", subject: { connect: { id: "1" } } } });
+    await db.marker.create({
       // @ts-expect-error one member per item
-      data: { label: "l", subject: { connect: { Author: { name: "a" }, Article: { id: "1" } } } },
+      data: { label: "l", subject: { connect: { Writer: { name: "a" }, Story: { id: "1" } } } },
     });
-    // @ts-expect-error Author has no title
-    await db.board.create({ data: { name: "b", items: { create: { Author: { title: "t" } } } } });
+    // @ts-expect-error Writer has no title
+    await db.shelf.create({ data: { name: "b", items: { create: { Writer: { title: "t" } } } } });
   });
 });
