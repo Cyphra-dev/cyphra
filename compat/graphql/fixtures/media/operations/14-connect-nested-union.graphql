@@ -1,0 +1,47 @@
+# features: union, union.mutation, mutation.connect, mutation.nested
+# Known divergence: v7 7.6.8 ignores the `where` and `edge` of a connect through a union field
+# nested in another connect (it connects every node of every member, without edge properties);
+# @cyphra/graphql connects the matching nodes only, with their edge properties.
+mutation {
+  createMovies(
+    input: [
+      {
+        title: "Sequel"
+        year: 2026
+        fans: {
+          connect: [
+            {
+              where: { node: { name: { eq: "cy" } } }
+              edge: { rating: 4 }
+              connect: {
+                favorites: {
+                  Book: [{ where: { node: { isbn: { eq: "b-heat" } } }, edge: { rating: 2 } }]
+                }
+              }
+            }
+          ]
+        }
+      }
+    ]
+  ) {
+    info {
+      nodesCreated
+      relationshipsCreated
+    }
+    movies {
+      title
+      fans {
+        name
+        favorites {
+          __typename
+          ... on Movie {
+            title
+          }
+          ... on Book {
+            title
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,55 @@
+{
+  "data": {
+    "updateUsers": {
+      "info": {
+        "nodesCreated": 1,
+        "relationshipsCreated": 2,
+        "relationshipsDeleted": 1
+      },
+      "users": [
+        {
+          "name": "ana",
+          "favoritesConnection": {
+            "edges": [
+              {
+                "properties": {
+                  "rating": 1,
+                  "note": "a classic"
+                },
+                "node": {
+                  "__typename": "Movie",
+                  "title": "Arrival",
+                  "year": 2017
+                }
+              },
+              {
+                "properties": {
+                  "rating": 4,
+                  "note": "re-read"
+                },
+                "node": {
+                  "__typename": "Book",
+                  "isbn": "b-dune"
+                }
+              }
+            ]
+          },
+          "watchlist": [
+            {
+              "__typename": "Book",
+              "title": "Heat"
+            },
+            {
+              "__typename": "Movie",
+              "title": "Fresh"
+            },
+            {
+              "__typename": "Movie",
+              "title": "Up"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

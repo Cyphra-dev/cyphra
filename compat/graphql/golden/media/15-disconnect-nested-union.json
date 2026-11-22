@@ -1,0 +1,15 @@
+{
+  "data": {
+    "updateMovies": {
+      "info": {
+        "relationshipsDeleted": 3
+      },
+      "movies": [
+        {
+          "title": "Arrival",
+          "fans": []
+        }
+      ]
+    }
+  }
+}

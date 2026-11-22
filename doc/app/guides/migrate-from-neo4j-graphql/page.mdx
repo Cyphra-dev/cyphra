@@ -19,7 +19,7 @@ This guide is a checklist. Each step was run on a small app with `@id`, `@relati
 `@cyphra/graphql` 0.7.
 
 <Callout type="info">
-  Before you start, check that your type definitions are covered: interfaces, unions, subscriptions,
+  Before you start, check that your type definitions are covered: interfaces, subscriptions,
   `@vector`, some scalars, custom resolvers and the schema configuration directives (`@query`,
   `@selectable`, `@filterable`, …) are not supported yet ([full list](#what-is-not-supported-yet)).
   `makeSchema` throws an `UnsupportedTypeDefsError` that names the type or field, so the first run
@@ -370,8 +370,9 @@ Generated values such as `@id` UUIDs and `@timestamp` dates differ between two r
 fields in mutations, or mask those values before comparing. Copy your full-text index statements
 into `seed.cypher` if an operation uses them.
 
-This is a small version of the suite Cyphra runs in CI: 7 apps and 96 operations, with expected
-results recorded from `@neo4j/graphql` 7.6.8, all passing
+This is a small version of the suite Cyphra runs in CI: 8 apps and 113 operations, with expected
+results recorded from `@neo4j/graphql` 7.6.8, all passing but two nested union writes where v7
+ignores `where`
 ([`compat/graphql/REPORT.md`](https://github.com/Cyphra-dev/cyphra/blob/main/compat/graphql/REPORT.md)).
 Its [README](https://github.com/Cyphra-dev/cyphra/blob/main/compat/graphql/README.md) explains how to
 add a fixture; an operation that differs on your app is worth an issue.
@@ -413,7 +414,8 @@ Some v7 behaviour is kept on purpose, because changing it would change your resu
 ## What is not supported yet
 
 - **Subscriptions** ([#76](https://github.com/Cyphra-dev/cyphra/issues/76)).
-- Interfaces and unions.
+- Interfaces, and `@cypher` fields returning a union (unions themselves
+  [work](/graphql#unions)).
 - `@vector` queries.
 - The scalars `Time`, `LocalTime`, `LocalDateTime`, `Duration`, `Point`, `CartesianPoint` and
   custom scalars. `ID`, `String`, `Int`, `Float`, `Boolean`, `BigInt`, `Date`, `DateTime` and enums

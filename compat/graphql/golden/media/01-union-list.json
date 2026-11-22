@@ -1,0 +1,80 @@
+{
+  "data": {
+    "users": [
+      {
+        "name": "ana",
+        "favorites": [
+          {
+            "__typename": "Book",
+            "title": "Dune",
+            "isbn": "b-dune",
+            "pages": 412
+          },
+          {
+            "__typename": "Movie",
+            "title": "Arrival",
+            "year": 2016
+          }
+        ],
+        "watchlist": [
+          {
+            "title": "Up",
+            "genres": []
+          }
+        ]
+      },
+      {
+        "name": "bo",
+        "favorites": [
+          {
+            "__typename": "Book",
+            "title": "Heat",
+            "isbn": "b-heat",
+            "pages": 300
+          },
+          {
+            "__typename": "Movie",
+            "title": "Heat",
+            "year": 1995
+          }
+        ],
+        "watchlist": []
+      },
+      {
+        "name": "cy",
+        "favorites": [],
+        "watchlist": [
+          {
+            "title": "Arrival",
+            "genres": [
+              {
+                "name": "Sci-Fi"
+              }
+            ]
+          },
+          {}
+        ]
+      },
+      {
+        "name": "dee",
+        "favorites": [
+          {
+            "__typename": "Movie",
+            "title": "Up",
+            "year": 2009
+          }
+        ],
+        "watchlist": [
+          {
+            "title": "Arrival",
+            "genres": [
+              {
+                "name": "Sci-Fi"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,55 @@
+# features: union, union.connection, connection.edge-properties
+# ordered
+query {
+  users(where: { name: { eq: "ana" } }) {
+    name
+    favoritesConnection(sort: [{ edge: { rating: DESC } }]) {
+      totalCount
+      pageInfo {
+        hasNextPage
+        hasPreviousPage
+        startCursor
+        endCursor
+      }
+      edges {
+        cursor
+        properties {
+          rating
+          note
+        }
+        node {
+          __typename
+          ... on Movie {
+            title
+          }
+          ... on Book {
+            isbn
+          }
+        }
+      }
+    }
+    filtered: favoritesConnection(
+      where: { Movie: { node: { year: { gt: 2000 } } }, Book: { edge: { rating: { gte: 4 } } } }
+    ) {
+      totalCount
+      edges {
+        properties {
+          rating
+        }
+        node {
+          __typename
+        }
+      }
+    }
+    watchlistConnection(where: { Movie: { node: { title: { eq: "Up" } } } }) {
+      totalCount
+      edges {
+        node {
+          ... on Movie {
+            title
+          }
+        }
+      }
+    }
+  }
+}

@@ -102,6 +102,26 @@ function rootReadResolver(
   };
 }
 
+/** `contents(where, limit, offset)`: the root query of a union. */
+function rootUnionResolver(
+  { model, decoder }: Auth,
+  execute: ReadExecutor,
+  unionName: string,
+): GraphQLFieldResolver<unknown, unknown> {
+  return async (_source, args, ctx, info: GraphQLResolveInfo) => {
+    const union = model.unions.get(unionName)!;
+    const auth = await authContextFor(ctx, model, decoder);
+    const compiled = new SelectionCompiler(model, info, auth).rootUnion(
+      union,
+      args as AnyRecord,
+      info.fieldNodes,
+    );
+    return checked(compiled.decode)(
+      await execute(compiled.cypher, withCypherParams(compiled.params, ctx)),
+    );
+  };
+}
+
 function fulltextResolver(
   { model, decoder }: Auth,
   execute: ReadExecutor,
@@ -230,6 +250,9 @@ function attachResolvers(schema: GraphQLSchema, auth: Auth, executors: Executors
       query[ft.queryName]!.resolve = fulltextResolver(auth, execute, node.name, ft.queryName);
     }
   }
+  for (const u of model.unions.values()) {
+    query[u.plural]!.resolve = rootUnionResolver(auth, execute, u.name);
+  }
   for (const f of model.query.fields) {
     query[f.name]!.resolve = rootCypherResolver(auth, executors, "Query", f.name);
   }
@@ -259,7 +282,8 @@ function attachResolvers(schema: GraphQLSchema, auth: Auth, executors: Executors
  * update, delete with every nested operation and `info` counters) and `@authentication` /
  * `@authorization` (compiled into each statement; JWTs verified with `features.authorization`),
  * `@cypher` fields (on node types, relationship properties, `Query` and `Mutation`; sortable and
- * filterable like v7) and `@fulltext` queries (on indexes the application creates).
+ * filterable like v7), `@fulltext` queries (on indexes the application creates) and unions
+ * (relationships to a union, with member-keyed filters and nested writes, and the root union query).
  *
  * @example
  * ```ts

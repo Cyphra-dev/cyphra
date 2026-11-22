@@ -144,10 +144,72 @@ describe("SDL pieces", () => {
   });
 });
 
+describe("SDL: unions", () => {
+  const UNIONS = /* GraphQL */ `
+    union Content = Movie | Book
+    type User @node {
+      name: String!
+      favorites: [Content!]! @relationship(type: "FAVORITED", direction: OUT, properties: "Fav")
+      watchlist: [Content!]! @relationship(type: "WANTS", direction: OUT)
+    }
+    type Movie @node {
+      title: String!
+    }
+    type Book @node {
+      isbn: ID!
+    }
+    type Fav @relationshipProperties {
+      rating: Int!
+    }
+  `;
+
+  it("prints the root union query and member-keyed where", () => {
+    const query = printed(UNIONS, "Query");
+    expect(query).toContain("contents(limit: Int, offset: Int, where: ContentWhere): [Content!]!");
+    expect(query).not.toContain("contentsConnection");
+    expect(printed(UNIONS, "ContentWhere")).toBe(
+      "input ContentWhere {\n  Book: BookWhere\n  Movie: MovieWhere\n}",
+    );
+  });
+
+  it("relationship fields: no sort on the list, edge sort only with properties, no aggregate", () => {
+    const user = printed(UNIONS, "User");
+    expect(user).toContain("favorites(limit: Int, offset: Int, where: ContentWhere): [Content!]!");
+    expect(user).toContain(
+      "favoritesConnection(after: String, first: Int, sort: [UserFavoritesConnectionSort!], where: UserFavoritesConnectionWhere): UserFavoritesConnection!",
+    );
+    expect(user).toContain(
+      "watchlistConnection(after: String, first: Int, where: UserWatchlistConnectionWhere): UserWatchlistConnection!",
+    );
+    expect(printed(UNIONS, "UserFavoritesConnection")).not.toContain("aggregate");
+    expect(printed(UNIONS, "UserFavoritesConnectionSort")).toBe(
+      "input UserFavoritesConnectionSort {\n  edge: FavSort\n}",
+    );
+    expect(printed(UNIONS, "UserWhere")).not.toContain("favoritesAggregate");
+  });
+
+  it("nested write inputs are keyed by member", () => {
+    expect(printed(UNIONS, "UserFavoritesUpdateInput")).toBe(
+      "input UserFavoritesUpdateInput {\n  Book: [UserFavoritesBookUpdateFieldInput!]\n  Movie: [UserFavoritesMovieUpdateFieldInput!]\n}",
+    );
+    expect(printed(UNIONS, "UserFavoritesCreateInput")).toBe(
+      "input UserFavoritesCreateInput {\n  Book: UserFavoritesBookFieldInput\n  Movie: UserFavoritesMovieFieldInput\n}",
+    );
+    expect(printed(UNIONS, "UserFavoritesMovieConnectFieldInput")).toBe(
+      "input UserFavoritesMovieConnectFieldInput {\n  edge: FavCreateInput!\n  where: MovieConnectWhere\n}",
+    );
+    expect(printed(UNIONS, "UserUpdateInput")).toContain("favorites: UserFavoritesUpdateInput\n");
+  });
+});
+
 describe("unsupported type definitions fail loudly", () => {
   it.each([
     ["interfaces", "interface Production { title: String! }"],
-    ["unions", "type A @node { x: Int } union U = A"],
+    ["unions of non-@node types", "type A @node { x: Int } enum E { X } union U = A | E"],
+    [
+      "@cypher fields returning unions",
+      'type A @node { x: Int, u: [U!]! @cypher(statement: "RETURN 1 AS u", columnName: "u") } union U = A',
+    ],
     ["Duration", "type A @node { d: Duration }"],
     ["unknown directives", 'type A @node { x: Int @populatedBy(callback: "f") }'],
     ["types without @node", "type A { x: Int }"],

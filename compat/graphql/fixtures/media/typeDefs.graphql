@@ -1,0 +1,49 @@
+union Content = Movie | Book
+
+type JWT @jwt {
+  roles: [String!]
+}
+
+type User @node {
+  name: String!
+  favorites: [Content!]! @relationship(type: "FAVORITED", direction: OUT, properties: "Favorite")
+  watchlist: [Content!]! @relationship(type: "WANTS", direction: OUT)
+}
+
+type Movie @node {
+  title: String!
+  year: Int!
+  genres: [Genre!]! @relationship(type: "IN_GENRE", direction: OUT)
+  fans: [User!]! @relationship(type: "FAVORITED", direction: IN, properties: "Favorite")
+}
+
+type Book
+  @node
+  @authorization(
+    filter: [
+      {
+        operations: [READ]
+        requireAuthentication: false
+        where: {
+          OR: [
+            { node: { restricted: { eq: false } } }
+            { jwt: { roles: { includes: "librarian" } } }
+          ]
+        }
+      }
+    ]
+  ) {
+  isbn: ID!
+  title: String!
+  pages: Int
+  restricted: Boolean!
+}
+
+type Genre @node {
+  name: String!
+}
+
+type Favorite @relationshipProperties {
+  rating: Int!
+  note: String
+}

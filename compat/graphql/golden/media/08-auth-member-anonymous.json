@@ -1,0 +1,60 @@
+{
+  "data": {
+    "users": [
+      {
+        "name": "ana",
+        "favorites": [
+          {
+            "__typename": "Book",
+            "title": "Dune"
+          },
+          {
+            "__typename": "Movie"
+          }
+        ],
+        "watchlistConnection": {
+          "totalCount": 1,
+          "edges": [
+            {
+              "node": {
+                "__typename": "Movie"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "name": "cy",
+        "favorites": [],
+        "watchlistConnection": {
+          "totalCount": 2,
+          "edges": [
+            {
+              "node": {
+                "__typename": "Book"
+              }
+            },
+            {
+              "node": {
+                "__typename": "Movie"
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "contents": [
+      {
+        "isbn": "b-dune"
+      },
+      {
+        "isbn": "b-heat"
+      }
+    ],
+    "users2": [
+      {
+        "name": "ana"
+      }
+    ]
+  }
+}

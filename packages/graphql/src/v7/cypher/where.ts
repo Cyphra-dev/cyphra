@@ -6,6 +6,9 @@
  * - `{ eq: null }` matches a missing property (`IS NULL`);
  * - relationship quantifiers: `some`, `none` and `single` with an empty filter (`{}`) are ignored
  *   (they match every node); `all` requires at least one related node and is not vacuously true;
+ * - relationships to unions are filtered per member (`favorites: { some: { Movie: …, Book: … } }`,
+ *   members left out are not tested), the member filters combined with `OR` (`some`), `XOR`
+ *   (`single`) or `AND` (`all`, `none`);
  * - deprecated `field_OPERATOR` keys (`title_CONTAINS`, `actors_SOME`, …) behave like the generic form;
  * - aggregation filters (`actorsConnection: { aggregate: … }` and the deprecated `actorsAggregate`):
  *   each comparison aggregates the related nodes / relationships in its own subquery and compares
@@ -23,13 +26,16 @@
  */
 
 import neo4j from "neo4j-driver";
-import type {
-  Attribute,
-  CypherNodeField,
-  NodeType,
-  PropertiesType,
-  Relationship,
-  V7Model,
+import {
+  isUnionRelationship,
+  selectedMembers,
+  unionMembers,
+  type Attribute,
+  type CypherNodeField,
+  type NodeType,
+  type PropertiesType,
+  type Relationship,
+  type V7Model,
 } from "../model.js";
 import {
   type CypherContext,
@@ -292,6 +298,17 @@ function quantified(
   throw new Error(`Unknown relationship filter ${String(quantifier)}`);
 }
 
+/**
+ * The per-member predicates of a relationship filter to a union, combined like v7: `some` with
+ * `OR`, `single` with `XOR`, `all` / `none` with `AND`.
+ */
+function combineMembers(quantifier: Quantifier, parts: (string | undefined)[]): string | undefined {
+  const ps = parts.filter((p): p is string => p !== undefined);
+  if (ps.length <= 1) return ps[0];
+  const op = quantifier === "some" ? "OR" : quantifier === "single" ? "XOR" : "AND";
+  return ps.map((p) => `(${p})`).join(` ${op} `);
+}
+
 type AggregateScope = { pattern: string; nodeVar: string; relVar: string };
 
 /** Comparison keys of aggregation filters, generic and deprecated (`_EQUAL`, `count_EQ`). */
@@ -509,6 +526,23 @@ export class WhereCompiler {
     where: unknown,
   ): string | undefined {
     if (!isFilterObject(where, "filter")) return undefined;
+    if (isUnionRelationship(this.model, rel)) {
+      // v7: `{}` filters nothing; else one filter per member keyed in `where`. A member without
+      // conditions (`{ Book: {} }`) tests existence for `some` / `none`, and nothing for the others.
+      if (Object.keys(where).length === 0) return undefined;
+      return combineMembers(
+        quantifier,
+        selectedMembers(unionMembers(this.model, rel), where).map(({ rel: m, where: w }) => {
+          const n = this.ctx.variable("n");
+          const pattern = relationshipPattern(this.model, variable, m, n);
+          const pred = this.node(n, this.model.node(m.target), w);
+          if (pred !== undefined) return quantified(pattern, quantifier, pred);
+          if (quantifier === "some") return `EXISTS { MATCH ${pattern} }`;
+          if (quantifier === "none") return `NOT EXISTS { MATCH ${pattern} }`;
+          return undefined;
+        }),
+      );
+    }
     const m = this.ctx.variable("n");
     const target = this.model.node(rel.target);
     return quantified(
@@ -525,6 +559,22 @@ export class WhereCompiler {
     where: unknown,
   ): string | undefined {
     if (!isFilterObject(where, "filter")) return undefined;
+    if (isUnionRelationship(this.model, rel)) {
+      // v7: one filter per member keyed in `where` (every member without keys); a member
+      // without conditions filters nothing.
+      return combineMembers(
+        quantifier,
+        selectedMembers(unionMembers(this.model, rel), where).map(({ rel: m, where: w }) => {
+          const n = this.ctx.variable("n");
+          const r = this.ctx.variable("r");
+          return quantified(
+            relationshipPattern(this.model, variable, m, n, r),
+            quantifier,
+            this.connection(r, n, m, w),
+          );
+        }),
+      );
+    }
     const m = this.ctx.variable("n");
     const r = this.ctx.variable("r");
     return quantified(

@@ -1,0 +1,28 @@
+# features: union, auth.filter, auth.jwt
+query {
+  users(where: { name: { in: ["ana", "cy"] } }) {
+    name
+    favorites {
+      __typename
+      ... on Book {
+        title
+      }
+    }
+    watchlistConnection {
+      totalCount
+      edges {
+        node {
+          __typename
+        }
+      }
+    }
+  }
+  contents(where: { Book: {} }) {
+    ... on Book {
+      isbn
+    }
+  }
+  users2: users(where: { favorites: { some: { Book: { restricted: { eq: true } } } } }) {
+    name
+  }
+}

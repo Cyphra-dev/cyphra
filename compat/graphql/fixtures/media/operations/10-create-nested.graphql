@@ -1,0 +1,53 @@
+# features: union, union.mutation, mutation.create, mutation.nested
+mutation {
+  createUsers(
+    input: [
+      {
+        name: "eve"
+        favorites: {
+          Movie: {
+            create: [{ edge: { rating: 4, note: "new" }, node: { title: "Nope", year: 2022 } }]
+            connect: [{ where: { node: { title: { eq: "Up" } } }, edge: { rating: 3 } }]
+          }
+          Book: {
+            create: [
+              { edge: { rating: 2 }, node: { isbn: "b-new", title: "New Book", restricted: false } }
+            ]
+            connect: [{ where: { node: { isbn: { eq: "b-dune" } } }, edge: { rating: 5 } }]
+          }
+        }
+        watchlist: { Movie: { connect: [{ where: { node: { year: { lt: 2010 } } } }] } }
+      }
+    ]
+  ) {
+    info {
+      nodesCreated
+      relationshipsCreated
+    }
+    users {
+      name
+      favoritesConnection(sort: [{ edge: { rating: DESC } }]) {
+        edges {
+          properties {
+            rating
+            note
+          }
+          node {
+            __typename
+            ... on Movie {
+              title
+            }
+            ... on Book {
+              title
+            }
+          }
+        }
+      }
+      watchlist {
+        ... on Movie {
+          title
+        }
+      }
+    }
+  }
+}

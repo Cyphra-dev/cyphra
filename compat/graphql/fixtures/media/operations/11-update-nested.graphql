@@ -1,0 +1,60 @@
+# features: union, union.mutation, mutation.update, mutation.nested, connection.edge-properties
+mutation {
+  updateUsers(
+    where: { name: { eq: "ana" } }
+    update: {
+      favorites: {
+        Movie: [
+          {
+            where: { node: { title: { eq: "Arrival" } } }
+            update: { edge: { rating: { set: 1 } }, node: { year: { set: 2017 } } }
+          }
+        ]
+        Book: [
+          { disconnect: [{ where: { node: { isbn: { eq: "b-secret" } } } }] }
+          { update: { where: { edge: { rating: { eq: 4 } } }, edge: { note: { set: "re-read" } } } }
+        ]
+      }
+      watchlist: {
+        Book: [{ connect: [{ where: { node: { isbn: { eq: "b-heat" } } } }] }]
+        Movie: [{ create: [{ node: { title: "Fresh", year: 2025 } }] }]
+      }
+    }
+  ) {
+    info {
+      nodesCreated
+      relationshipsCreated
+      relationshipsDeleted
+    }
+    users {
+      name
+      favoritesConnection {
+        edges {
+          properties {
+            rating
+            note
+          }
+          node {
+            __typename
+            ... on Movie {
+              title
+              year
+            }
+            ... on Book {
+              isbn
+            }
+          }
+        }
+      }
+      watchlist {
+        __typename
+        ... on Movie {
+          title
+        }
+        ... on Book {
+          title
+        }
+      }
+    }
+  }
+}

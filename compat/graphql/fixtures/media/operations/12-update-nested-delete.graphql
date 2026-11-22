@@ -1,0 +1,26 @@
+# features: union, union.mutation, mutation.update, mutation.delete
+mutation {
+  updateUsers(
+    where: { name: { eq: "bo" } }
+    update: {
+      favorites: {
+        Movie: [{ delete: [{ where: { node: { title: { eq: "Heat" } } } }] }]
+        Book: [{ delete: [{ where: { edge: { rating: { lt: 3 } } } }] }]
+      }
+    }
+  ) {
+    info {
+      nodesDeleted
+      relationshipsDeleted
+    }
+    users {
+      name
+      favorites {
+        __typename
+        ... on Book {
+          title
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,46 @@
+{
+  "data": {
+    "createMovies": {
+      "info": {
+        "nodesCreated": 1,
+        "relationshipsCreated": 8
+      },
+      "movies": [
+        {
+          "title": "Sequel",
+          "fans": [
+            {
+              "name": "cy",
+              "favorites": [
+                {
+                  "__typename": "Book",
+                  "title": "Dune"
+                },
+                {
+                  "__typename": "Book",
+                  "title": "Heat"
+                },
+                {
+                  "__typename": "Movie",
+                  "title": "Arrival"
+                },
+                {
+                  "__typename": "Movie",
+                  "title": "Heat"
+                },
+                {
+                  "__typename": "Movie",
+                  "title": "Sequel"
+                },
+                {
+                  "__typename": "Movie",
+                  "title": "Up"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

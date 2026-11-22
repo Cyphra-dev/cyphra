@@ -17,6 +17,7 @@ import {
   type FieldDefinitionNode,
   type ObjectTypeDefinitionNode,
   type TypeNode,
+  type UnionTypeDefinitionNode,
 } from "graphql";
 import { entityPlural, upperFirst } from "./naming.js";
 
@@ -132,6 +133,7 @@ export type Attribute = {
 export type Relationship = {
   readonly name: string;
   readonly source: string;
+  /** A `@node` type or a union of `@node` types (see {@link unionMembers}). */
   readonly target: string;
   readonly type: string;
   readonly direction: "IN" | "OUT";
@@ -142,6 +144,12 @@ export type Relationship = {
   readonly elementRequired: boolean;
   readonly description?: string;
   readonly deprecated?: string;
+  /**
+   * Set on the per-member view of a relationship to a union ({@link unionMembers}): the union.
+   * `target` is then the member, and the generated type names get the member name
+   * (`UserFavoritesMovieConnectionWhere`, …).
+   */
+  readonly union?: string;
 };
 
 /** Operations `@authentication` / `@authorization` rules apply to. */
@@ -241,8 +249,18 @@ export type EnumType = {
   readonly values: readonly { name: string; description?: string; deprecated?: string }[];
 };
 
+/** `union Content = Movie | Book` (members are `@node` types; a union adds no label, like v7). */
+export type UnionType = {
+  readonly name: string;
+  readonly description?: string;
+  readonly members: readonly string[];
+  /** Root query field, e.g. `contents`. */
+  readonly plural: string;
+};
+
 export type V7Model = {
   readonly nodes: readonly NodeType[];
+  readonly unions: ReadonlyMap<string, UnionType>;
   /** Schema-level `extend schema @authentication(…)`: applies to every operation on every type. */
   readonly authentication?: AuthenticationAnnotation;
   /**
@@ -257,6 +275,38 @@ export type V7Model = {
   readonly mutation: CypherRootType;
   node(name: string): NodeType;
 };
+
+/** Whether `rel` targets a union (and is not already the view of one member). */
+export function isUnionRelationship(model: V7Model, rel: Relationship): boolean {
+  return rel.union === undefined && model.unions.has(rel.target);
+}
+
+/**
+ * The per-member views of a relationship to a union (`User.favorites` to `Content = Movie | Book`:
+ * one relationship to `Movie`, one to `Book`), in the union's member order. Each behaves like a
+ * relationship to the member type, so filters, projections and nested writes reuse the node code.
+ */
+export function unionMembers(model: V7Model, rel: Relationship): Relationship[] {
+  const u = model.unions.get(rel.target);
+  if (!u || rel.union !== undefined) return [rel];
+  return u.members.map((m) => ({ ...rel, target: m, union: u.name }));
+}
+
+/**
+ * The members a union `where` selects (v7 `getConcreteEntities`): the members with a (truthy) key,
+ * or every member when the object has no key at all.
+ */
+export function selectedMembers(
+  members: readonly Relationship[],
+  where: unknown,
+): { rel: Relationship; where: unknown }[] {
+  if (where === null || where === undefined || typeof where !== "object") {
+    return members.map((rel) => ({ rel, where: undefined }));
+  }
+  const w = where as AnyRecord;
+  if (Object.keys(w).length === 0) return members.map((rel) => ({ rel, where: undefined }));
+  return members.filter((rel) => w[rel.target]).map((rel) => ({ rel, where: w[rel.target] }));
+}
 
 /** The type definitions use a feature `@cyphra/graphql` cannot serve yet. */
 export class UnsupportedTypeDefsError extends Error {
@@ -664,6 +714,7 @@ function readRootType(
   o: ObjectTypeDefinitionNode | undefined,
   enums: ReadonlySet<string>,
   nodes: ReadonlySet<string>,
+  unions: ReadonlyMap<string, UnionType>,
 ): CypherRootType {
   if (!o) return { fields: [] };
   const type = o.name.value;
@@ -692,6 +743,11 @@ function readRootType(
       );
     }
     const t = typeRef(f.type);
+    if (unions.has(t.name)) {
+      throw new UnsupportedTypeDefsError(
+        `${where}: @cypher fields returning unions are not supported by @cyphra/graphql yet.`,
+      );
+    }
     const kind = nodes.has(t.name) ? "node" : enums.has(t.name) ? "enum" : "scalar";
     if (kind === "scalar" && !(SUPPORTED_SCALARS as readonly string[]).includes(t.name)) {
       throw new UnsupportedTypeDefsError(
@@ -710,6 +766,38 @@ function readRootType(
     };
   });
   return { fields, authentication };
+}
+
+/** `union U = A | B`: members must be `@node` types; no directives. */
+function readUnions(
+  defs: readonly UnionTypeDefinitionNode[],
+  nodes: ReadonlySet<string>,
+): Map<string, UnionType> {
+  const unions = new Map<string, UnionType>();
+  for (const def of defs) {
+    const name = def.name.value;
+    if (unions.has(name))
+      throw new UnsupportedTypeDefsError(`union ${name}: defined more than once.`);
+    for (const d of def.directives ?? []) {
+      throw new UnsupportedTypeDefsError(
+        `union ${name}: @${d.name.value} is not supported by @cyphra/graphql yet.`,
+      );
+    }
+    const members = (def.types ?? []).map((t) => t.name.value);
+    if (!members.length) throw new UnsupportedTypeDefsError(`union ${name}: it has no member.`);
+    for (const m of members) {
+      if (!nodes.has(m)) {
+        throw new UnsupportedTypeDefsError(`union ${name}: member ${m} must be a @node type.`);
+      }
+    }
+    unions.set(name, {
+      name,
+      description: def.description?.value,
+      members,
+      plural: entityPlural(name),
+    });
+  }
+  return unions;
 }
 
 /** `@fulltext(indexes: [{ indexName, queryName, fields }])`. */
@@ -752,12 +840,13 @@ function readFulltext(
 
 /**
  * Read v7 type definitions. Throws {@link UnsupportedTypeDefsError} for features `@cyphra/graphql`
- * does not serve yet (interfaces, unions, spatial and some temporal types, …), so the generated
+ * does not serve yet (interfaces, spatial and some temporal types, …), so the generated
  * API never silently differs from v7.
  */
 export function readTypeDefs(typeDefs: string): V7Model {
   const doc = parse(typeDefs);
   const objects: ObjectTypeDefinitionNode[] = [];
+  const unionDefs: UnionTypeDefinitionNode[] = [];
   const enums = new Map<string, EnumType>();
   let schemaAuthentication: AuthenticationAnnotation | undefined;
   for (const def of doc.definitions) {
@@ -785,6 +874,9 @@ export function readTypeDefs(typeDefs: string): V7Model {
       case Kind.OBJECT_TYPE_DEFINITION:
         objects.push(def);
         break;
+      case Kind.UNION_TYPE_DEFINITION:
+        unionDefs.push(def);
+        break;
       case Kind.ENUM_TYPE_DEFINITION:
         enums.set(def.name.value, {
           name: def.name.value,
@@ -807,7 +899,7 @@ export function readTypeDefs(typeDefs: string): V7Model {
         break;
       default:
         throw new UnsupportedTypeDefsError(
-          `${def.kind}${"name" in def && def.name ? ` ${def.name.value}` : ""}: not supported by @cyphra/graphql yet (only object types, enums and relationship properties).`,
+          `${def.kind}${"name" in def && def.name ? ` ${def.name.value}` : ""}: not supported by @cyphra/graphql yet (only object types, unions, enums and relationship properties).`,
         );
     }
   }
@@ -872,6 +964,7 @@ export function readTypeDefs(typeDefs: string): V7Model {
     nodeDefs.push(o);
   }
   const nodeNames = new Set(nodeDefs.map((o) => o.name.value));
+  const unions = readUnions(unionDefs, nodeNames);
 
   const nodes: NodeType[] = nodeDefs.map((o) => {
     const name = o.name.value;
@@ -881,6 +974,11 @@ export function readTypeDefs(typeDefs: string): V7Model {
     for (const f of o.fields ?? []) {
       const rel = directive(f.directives, "relationship");
       const cypher = directive(f.directives, "cypher");
+      if (!rel && unions.has(typeRef(f.type).name)) {
+        throw new UnsupportedTypeDefsError(
+          `${name}.${f.name.value}: fields returning the union ${typeRef(f.type).name} need @relationship (@cypher fields returning unions are not supported by @cyphra/graphql yet).`,
+        );
+      }
       if (cypher && !rel && nodeNames.has(typeRef(f.type).name)) {
         cypherNodes.push(readCypherNodeField(name, f, enumNames));
         continue;
@@ -897,9 +995,9 @@ export function readTypeDefs(typeDefs: string): V7Model {
         }
       }
       const t = typeRef(f.type);
-      if (!nodeNames.has(t.name)) {
+      if (!nodeNames.has(t.name) && !unions.has(t.name)) {
         throw new UnsupportedTypeDefsError(
-          `${name}.${f.name.value}: relationships to ${t.name} are not supported by @cyphra/graphql yet (target must be a @node type).`,
+          `${name}.${f.name.value}: relationships to ${t.name} are not supported by @cyphra/graphql yet (target must be a @node type or a union of them).`,
         );
       }
       for (const a of rel.arguments ?? []) {
@@ -949,7 +1047,7 @@ export function readTypeDefs(typeDefs: string): V7Model {
 
   const byName0 = new Map(nodes.map((n) => [n.name, n]));
   const root = (type: "Query" | "Mutation"): CypherRootType =>
-    readRootType(rootDefs.get(type), enumNames, nodeNames);
+    readRootType(rootDefs.get(type), enumNames, nodeNames, unions);
   const query = root("Query");
   const mutation = root("Mutation");
   const generated = new Set<string>();
@@ -964,6 +1062,14 @@ export function readTypeDefs(typeDefs: string): V7Model {
       }
       generated.add(ft.queryName);
     }
+  }
+  for (const u of unions.values()) {
+    if (generated.has(u.plural)) {
+      throw new UnsupportedTypeDefsError(
+        `union ${u.name}: its root query ${u.plural} conflicts with another generated Query field.`,
+      );
+    }
+    generated.add(u.plural);
   }
   for (const f of query.fields) {
     if (generated.has(f.name)) {
@@ -988,6 +1094,7 @@ export function readTypeDefs(typeDefs: string): V7Model {
   const byName = new Map(nodes.map((n) => [n.name, n]));
   return {
     nodes,
+    unions,
     authentication: schemaAuthentication,
     jwtClaims: jwtClaims ?? new Map(),
     properties,

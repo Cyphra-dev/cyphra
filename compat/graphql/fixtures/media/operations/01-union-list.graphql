@@ -1,0 +1,26 @@
+# features: union, union.list
+query {
+  users {
+    name
+    favorites {
+      __typename
+      ... on Movie {
+        title
+        year
+      }
+      ... on Book {
+        title
+        isbn
+        pages
+      }
+    }
+    watchlist {
+      ... on Movie {
+        title
+        genres {
+          name
+        }
+      }
+    }
+  }
+}

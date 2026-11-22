@@ -1,0 +1,64 @@
+{
+  "data": {
+    "users": [
+      {
+        "name": "ana",
+        "onlyMovieKey": [
+          {
+            "__typename": "Movie",
+            "title": "Arrival"
+          }
+        ],
+        "bothKeys": [],
+        "emptyMember": [
+          {
+            "__typename": "Book",
+            "title": "Dune"
+          }
+        ],
+        "emptyWhere": [
+          {
+            "__typename": "Book"
+          },
+          {
+            "__typename": "Movie"
+          }
+        ],
+        "nested": [
+          {
+            "title": "Arrival"
+          }
+        ]
+      },
+      {
+        "name": "bo",
+        "onlyMovieKey": [],
+        "bothKeys": [
+          {
+            "__typename": "Book",
+            "title": "Heat"
+          },
+          {
+            "__typename": "Movie",
+            "title": "Heat"
+          }
+        ],
+        "emptyMember": [
+          {
+            "__typename": "Book",
+            "title": "Heat"
+          }
+        ],
+        "emptyWhere": [
+          {
+            "__typename": "Book"
+          },
+          {
+            "__typename": "Movie"
+          }
+        ],
+        "nested": []
+      }
+    ]
+  }
+}
