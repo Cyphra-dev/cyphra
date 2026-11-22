@@ -26,14 +26,18 @@ import type {
   RelationshipDeclaration,
   ScalarNodeField,
   SchemaDocument,
+  UnionDeclaration,
 } from "@cyphra/schema";
 import {
   CUSTOM_SCALAR_FIELD,
+  CYPHRA_TYPE_NAMES,
   ENUM_AS_STRING,
   FIELD_DIRECTIVES,
   RELATIONSHIP_API_ARGS,
   SCALARS,
   TYPE_DIRECTIVES,
+  UNION_EDGE_PROPERTIES,
+  convertUnion,
   enumField,
   enumListArg,
   stringArg,
@@ -71,6 +75,8 @@ type TypeInfo = {
   readonly fields: FieldDefinitionNode[];
   /** Values of an enum type. */
   readonly values: string[];
+  /** Member types of a union. */
+  readonly members: string[];
   readonly source: string;
 };
 
@@ -183,6 +189,11 @@ function collectTypes(sources: readonly GraphQLSource[]): Map<string, TypeInfo> 
             (v) => v.name.value,
           ),
         ],
+        members: [
+          ...((def.kind === Kind.UNION_TYPE_DEFINITION ? def.types : undefined) ?? []).map(
+            (m) => m.name.value,
+          ),
+        ],
         source: src.name,
       });
     }
@@ -203,13 +214,29 @@ function collectTypes(sources: readonly GraphQLSource[]): Map<string, TypeInfo> 
     if (def.kind === Kind.ENUM_TYPE_EXTENSION && def.values) {
       base.values.push(...def.values.map((v) => v.name.value));
     }
+    if (def.kind === Kind.UNION_TYPE_EXTENSION && def.types) {
+      base.members.push(...def.types.map((m) => m.name.value));
+    }
   }
   return types;
 }
 
-/** Every field must reference a type that exists (built-in, `@neo4j/graphql` or declared). */
+/**
+ * Every field must reference a type that exists (built-in, `@neo4j/graphql` or declared), and every
+ * union member must be an object type.
+ */
 function checkReferences(types: Map<string, TypeInfo>): void {
   for (const t of types.values()) {
+    if (t.kind === "union") {
+      for (const m of t.members) {
+        const member = types.get(m);
+        if (!member || member.kind !== "object") {
+          throw new GraphQLImportError(
+            `${t.source}: union "${t.name}" can only include object types, not "${m}".`,
+          );
+        }
+      }
+    }
     if (t.kind !== "object" && t.kind !== "interface") continue;
     for (const f of t.fields) {
       const { named } = unwrap(f.type);
@@ -279,12 +306,7 @@ export function convertGraphQLTypeDefs(
         });
         break;
       case "union":
-        report(t.name, {
-          severity: "unsupported",
-          feature: "union",
-          message:
-            "unions are not converted yet: relationships to the union are left out; declare it as a Cyphra `union` (`union Name = A | B`) and add the relation fields to it",
-        });
+        // Converted once the member nodes have their Cyphra names (below).
         break;
       case "scalar":
         report(t.name, {
@@ -369,6 +391,22 @@ export function convertGraphQLTypeDefs(
     nodeName.set(t.name, name);
   }
 
+  // Unions: a Cyphra `union` of the member nodes (no label, like v7).
+  const unions: UnionDeclaration[] = [];
+  const unionNames = new Set<string>();
+  for (const t of types.values()) {
+    if (t.kind !== "union") continue;
+    const effect = convertUnion(
+      t.name,
+      t.members.map((m) => ({ graphqlName: m, node: nodeName.get(m) })),
+      t.directives,
+    );
+    for (const i of effect.issues) report(t.name, i);
+    if (!effect.members) continue;
+    unions.push({ kind: "Union", name: t.name, members: [...effect.members] });
+    unionNames.add(t.name);
+  }
+
   // Enums: a Cyphra `enum` per GraphQL enum, unless its name is taken.
   const enumMap = enumMappings(types, new Set(nodeName.values()), report);
   const usedEnums = new Set<string>();
@@ -400,7 +438,7 @@ export function convertGraphQLTypeDefs(
         continue;
       }
       if (isRelation) {
-        const rel = convertRelation(f, u, at, t.name, types, nodeName, report);
+        const rel = convertRelation(f, u, at, t.name, types, nodeName, unionNames, report);
         if (!rel) {
           note(declName, skippedLine(f, "relationship not converted"));
           continue;
@@ -529,7 +567,7 @@ export function convertGraphQLTypeDefs(
   return {
     document: {
       kind: "Document",
-      declarations: [...enums, ...declarations, ...relationships],
+      declarations: [...enums, ...unions, ...declarations, ...relationships],
     },
     issues,
     notes,
@@ -628,25 +666,6 @@ function dedupeNames(
   }
   return out;
 }
-
-/** Cyphra type names an enum cannot take. */
-const CYPHRA_TYPE_NAMES = new Set([
-  "String",
-  "Int",
-  "Float",
-  "Boolean",
-  "DateTime",
-  "Date",
-  "BigInt",
-  "Json",
-  "LocalDateTime",
-  "LocalTime",
-  "Time",
-  "Duration",
-  "Point",
-  "CartesianPoint",
-  "Vector",
-]);
 
 /** How each GraphQL enum is mapped: a Cyphra enum, or `String` when its name is taken. */
 function enumMappings(
@@ -778,6 +797,7 @@ function convertRelation(
   ownerType: string,
   types: Map<string, TypeInfo>,
   nodeName: Map<string, string>,
+  unionNames: ReadonlySet<string>,
   report: (at: string, d: IssueDraft) => void,
 ): { field: NodeField; usage?: RelUsage } | undefined {
   const rel = directive(f.directives, "relationship");
@@ -790,12 +810,16 @@ function convertRelation(
     });
     return undefined;
   }
-  if (!target || target.kind !== "object" || !nodeName.has(u.named)) {
-    const what = target?.kind === "interface" || target?.kind === "union" ? target.kind : "type";
+  const toUnion = target?.kind === "union";
+  if (toUnion ? !unionNames.has(u.named) : target?.kind !== "object" || !nodeName.has(u.named)) {
     report(at, {
       severity: "unsupported",
       feature: "@relationship",
-      message: `relationships to ${what === "type" ? `"${u.named}" (not a @node type)` : what === "union" ? "a union" : "an interface"} are not supported yet: not converted`,
+      message: toUnion
+        ? `the union "${u.named}" was not converted (see its entry): not converted`
+        : target?.kind === "interface"
+          ? "relationships to an interface are not supported yet: not converted"
+          : `relationships to "${u.named}" (not a @node type) are not supported yet: not converted`,
     });
     return undefined;
   }
@@ -849,7 +873,7 @@ function convertRelation(
     }
   }
   const self = nodeName.get(ownerType)!;
-  const other = nodeName.get(u.named)!;
+  const other = toUnion ? u.named : nodeName.get(u.named)!;
   const field: NodeField = {
     kind: "Relational",
     name: f.name.value,
@@ -868,6 +892,10 @@ function convertRelation(
   };
   const propsType = stringArg(rel, "properties");
   if (!propsType) return { field };
+  if (toUnion) {
+    report(at, UNION_EDGE_PROPERTIES);
+    return { field };
+  }
   const props = types.get(propsType);
   if (!props || !directive(props.directives, "relationshipProperties")) {
     report(at, {

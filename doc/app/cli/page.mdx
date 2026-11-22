@@ -348,6 +348,11 @@ What converts:
   `@default(now())`, `@default` keeps its value, and `@unique` (from v6 and earlier) stays `@unique`.
 - `@relationship(type, direction)` becomes a relation field, and a `@relationshipProperties` type
   becomes a `relationship` model.
+- A union of `@node` types (`union Search = Movie | Genre`) becomes a [Cyphra union](/schema#unions)
+  with the same members, and `@relationship` fields to it become relation fields to the union. Neither
+  adds a label, so the data stays as it is; the root `searches` query becomes `db.search.findMany`.
+  Properties on a relationship to a union are not converted yet (the relation field is), and a union
+  of types without `@node` (`@cypher` result types) is reported.
 - `@fulltext(indexes: [{ indexName, queryName, fields }])` becomes one
   [`@@fulltext([fields], name: indexName)`](/schema#full-text-indexes) per index, so `cyphra migrate`
   creates the indexes. `queryName` names a GraphQL query field and is listed as ignored.
@@ -369,7 +374,7 @@ Converted with differences (3):
   Person.name  @unique: @unique was removed in @neo4j/graphql v7; Cyphra keeps it and creates the uniqueness constraint
 ```
 
-Not converted today: custom scalars, interfaces and unions (`@neo4j/graphql` interfaces are not labels, so they do not map to [Cyphra interfaces](/schema#interfaces-and-multiple-labels); declare one and backfill its label if you want that layout; `@neo4j/graphql` unions are [Cyphra unions](/schema#unions), declare them by hand for now), extra labels, `@cypher` and
+Not converted today: custom scalars, interfaces (`@neo4j/graphql` interfaces are not labels, so they do not map to [Cyphra interfaces](/schema#interfaces-and-multiple-labels); declare one and backfill its label if you want that layout), properties on relationships to a union, extra labels, `@cypher` and
 `@customResolver` fields, `@authentication` and `@authorization` rules, `@vector` indexes (the type
 definitions carry neither the dimensions nor the similarity: declare a
 [`Vector(N)` field with `@vectorIndex`](/schema#vector-fields) by hand), and update timestamps. API-only settings such as `@plural`, `@selectable` or `@filterable`

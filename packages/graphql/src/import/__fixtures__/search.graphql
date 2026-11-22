@@ -1,0 +1,52 @@
+# Unions of @node types (the @neo4j/graphql v7 docs example, extended).
+type Movie @node {
+  title: String!
+  released: Int
+  genres: [Genre!]! @relationship(type: "IN_GENRE", direction: OUT)
+}
+
+type Genre @node {
+  name: String!
+}
+
+type Series @node(labels: ["Show"]) {
+  title: String!
+  seasons: Int!
+}
+
+union Search = Movie | Genre
+union Media = Movie | Series
+
+type User @node {
+  id: ID! @id
+  name: String!
+  "Saved searches: Movie or Genre nodes"
+  searches: [Search!]! @relationship(type: "SAVED", direction: OUT)
+  favorite: Media @relationship(type: "FAVORITE", direction: OUT)
+  watched: [Media!]! @relationship(type: "WATCHED", direction: OUT, properties: "Watched")
+}
+
+type Watched @relationshipProperties {
+  at: DateTime!
+}
+
+# Result of a @cypher query: not a node union.
+type TitleCount {
+  title: String!
+  n: Int!
+}
+
+type GenreCount {
+  name: String!
+  n: Int!
+}
+
+union Stat = TitleCount | GenreCount
+
+type Query {
+  stats: [Stat!]!
+    @cypher(
+      statement: "MATCH (m:Movie) RETURN {__typename: 'TitleCount', title: m.title, n: 1} AS s"
+      columnName: "s"
+    )
+}

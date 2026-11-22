@@ -159,25 +159,20 @@ describe("convertGraphQLTypeDefs: types", () => {
     expect(issueAt(issues, "JWT")?.severity).toBe("ignored");
   });
 
-  it("reports interfaces and unions and the relationships to them", () => {
+  it("reports interfaces and the relationships to them", () => {
     const { schema, issues } = convert(`
       interface Production { title: String! }
       type Movie implements Production @node { title: String! }
       type Series implements Production @node { title: String! }
-      union Media = Movie | Series
       type Person @node {
         name: String
         actedIn: [Production!]! @relationship(type: "ACTED_IN", direction: OUT)
-        likes: [Media!]! @relationship(type: "LIKES", direction: OUT)
       }
     `);
     expect(schema).toContain("node Movie {\n  title String\n}");
     expect(schema).not.toContain("actedIn");
-    expect(schema).not.toContain("likes");
     expect(issueAt(issues, "Production")?.feature).toBe("interface");
-    expect(issueAt(issues, "Media")?.feature).toBe("union");
     expect(issueAt(issues, "Person.actedIn")?.message).toMatch(/interface/);
-    expect(issueAt(issues, "Person.likes")?.message).toMatch(/union/);
   });
 
   it("merges extend type into the base type", () => {
@@ -554,5 +549,100 @@ describe("convertGraphQLTypeDefs: invalid SDL", () => {
 
   it("throws on an extension of an unknown type", () => {
     expect(() => convertGraphQLTypeDefs("extend type T { x: Int }")).toThrow(GraphQLImportError);
+  });
+});
+
+describe("convertGraphQLTypeDefs: unions", () => {
+  it("maps a union of @node types and the relationships to it", () => {
+    const { schema, issues } = convert(`
+      type Movie @node { title: String! }
+      type Genre @node { name: String! }
+      union Search = Movie | Genre
+      type User @node {
+        name: String!
+        search: [Search!]! @relationship(type: "SEARCH", direction: OUT)
+        pinned: Search @relationship(type: "PINS", direction: OUT)
+        featured: Search! @relationship(type: "FEATURES", direction: IN)
+      }
+    `);
+    expect(schema).toBe(`union Search = Movie | Genre
+
+node Movie {
+  title String
+}
+
+node Genre {
+  name String
+}
+
+node User {
+  name String
+  search Search[] @relationship(type: "SEARCH", direction: OUT)
+  pinned Search? @relationship(type: "PINS", direction: OUT)
+  featured Search @relationship(type: "FEATURES", direction: IN)
+}
+`);
+    expect(issues).toEqual([]);
+  });
+
+  it("keeps members renamed by @node(labels), and merges extend union", () => {
+    const { schema } = convert(`
+      type Movie @node(labels: ["Film"]) { title: String! }
+      type Genre @node { name: String! }
+      union Search = Movie
+      extend union Search = Genre
+      type User @node { search: [Search!]! @relationship(type: "SEARCH", direction: OUT) }
+    `);
+    expect(schema).toContain("union Search = Film | Genre\n");
+  });
+
+  it("converts the field but not the properties of a relationship to a union", () => {
+    const { schema, issues } = convert(`
+      type Movie @node { title: String! }
+      type Genre @node { name: String! }
+      union Search = Movie | Genre
+      type Hit @relationshipProperties { score: Float! }
+      type User @node {
+        search: [Search!]! @relationship(type: "SEARCH", direction: OUT, properties: "Hit")
+      }
+    `);
+    expect(schema).toContain('search Search[] @relationship(type: "SEARCH", direction: OUT)');
+    expect(schema).not.toContain("relationship Hit");
+    expect(issueAt(issues, "User.search")).toMatchObject({
+      severity: "unsupported",
+      feature: "@relationship(properties)",
+    });
+    expect(issueAt(issues, "Hit")?.severity).toBe("ignored");
+  });
+
+  it("does not convert unions of types without @node, nor relationships to them", () => {
+    const { schema, issues } = convert(`
+      type Count { n: Int! }
+      type Label { text: String! }
+      union Result = Count | Label
+      type T @node {
+        id: ID!
+        r: Result @relationship(type: "R", direction: OUT)
+      }
+    `);
+    expect(schema).toBe("node T {\n  id String\n}\n");
+    expect(issueAt(issues, "Result")).toMatchObject({ severity: "unsupported", feature: "union" });
+    expect(issueAt(issues, "T.r")?.message).toMatch(/union "Result" was not converted/);
+  });
+
+  it("does not convert a union named like a Cyphra type, and reports union directives", () => {
+    const { schema, issues } = convert(`
+      directive @tag on UNION
+      type A @node { x: Int }
+      union Json @tag = A
+    `);
+    expect(schema).not.toContain("union");
+    expect(issues.map((i) => `${i.at} ${i.feature}`)).toEqual(["Json @tag", "Json union"]);
+  });
+
+  it("rejects union members that are not object types", () => {
+    expect(() =>
+      convertGraphQLTypeDefs("enum E { A } type A @node { x: Int } union U = A | E"),
+    ).toThrow(GraphQLImportError);
   });
 });

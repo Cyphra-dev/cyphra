@@ -394,24 +394,25 @@ real `@neo4j/graphql` 7.6.8. Today all of its 103 checks pass: the printed schem
 the 96 operations (queries, aggregations, mutations, authorization, `@cypher` fields and full-text
 queries). The full report is [`compat/graphql/REPORT.md`](https://github.com/Cyphra-dev/cyphra/blob/main/compat/graphql/REPORT.md).
 
-| Feature                                                                                                                                       | Status                                                  |
-| --------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
-| Generated schema: queries, connections, every `where` / `sort` / mutation input, aggregate types, deprecated `field_OPERATOR` fields          | Works: the printed SDL is identical to v7               |
-| List queries: `movies(where, sort, limit, offset)`, pluralization like v7, `@plural`                                                          | Works                                                   |
-| Filters on `String`, `ID`, `Int`, `Float`, `BigInt`, `Boolean`, `Date`, `DateTime`, enums and lists, with `AND` / `OR` / `NOT`                | Works                                                   |
-| Relationship filters `some` / `all` / `none` / `single`, connection filters on `node` and `edge`                                              | Works                                                   |
-| Connections: `totalCount`, `pageInfo`, cursors with `first` / `after`, nested connections with edge `properties`, sort and filter on edges    | Works                                                   |
-| Nested relationship fields with `where`, `sort`, `limit`, `offset`                                                                            | Works                                                   |
-| Aggregations: `aggregate { count, node, edge }` on root and nested connections, aggregation filters (`aggregate` and deprecated `xAggregate`) | Works                                                   |
-| Mutations: `create`, `update`, `delete` with `info` counters, and the response selection                                                      | Works                                                   |
-| Nested writes: `create`, `connect`, `disconnect`, `update`, `delete` (nested in each other), edge properties                                  | Works                                                   |
-| Update operators: `set`, `add`, `subtract`, `multiply`, `divide`, `push`, `pop` and the deprecated `field_SET` / `field_INCREMENT` / …        | Works                                                   |
-| `@id`, `@timestamp`, `@default`                                                                                                               | Works                                                   |
-| `@authentication` / `@authorization` (type, field and schema level), `@jwt`, `@jwtClaim`, JWT verification (secret or JWKS)                   | Works ([details](#authentication-and-authorization))    |
-| `@cypher` fields: scalars and nodes, arguments, `$jwt`, `where` and `sort`, relationship properties, `Query` and `Mutation` fields            | Works ([details](#custom-cypher-fields))                |
-| `@fulltext` queries: `score`, `where`, `sort`, `first` / `after`                                                                              | Works ([details](#full-text-search))                    |
-| Interfaces, unions, subscriptions, `@vector`, `Point`, `Duration`, custom scalars and custom resolvers                                        | Not yet: `makeSchema` throws `UnsupportedTypeDefsError` |
-| `@populatedBy`, `@relayId`, `@query`, `@mutation`, `@subscription`, `@selectable`, `@settable`, `@filterable`, `@sortable`, `@limit`          | Not yet: `makeSchema` throws `UnsupportedTypeDefsError` |
+| Feature                                                                                                                                                     | Status                                                  |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
+| Generated schema: queries, connections, every `where` / `sort` / mutation input, aggregate types, deprecated `field_OPERATOR` fields                        | Works: the printed SDL is identical to v7               |
+| List queries: `movies(where, sort, limit, offset)`, pluralization like v7, `@plural`                                                                        | Works                                                   |
+| Filters on `String`, `ID`, `Int`, `Float`, `BigInt`, `Boolean`, `Date`, `DateTime`, enums and lists, with `AND` / `OR` / `NOT`                              | Works                                                   |
+| Relationship filters `some` / `all` / `none` / `single`, connection filters on `node` and `edge`                                                            | Works                                                   |
+| Connections: `totalCount`, `pageInfo`, cursors with `first` / `after`, nested connections with edge `properties`, sort and filter on edges                  | Works                                                   |
+| Nested relationship fields with `where`, `sort`, `limit`, `offset`                                                                                          | Works                                                   |
+| Aggregations: `aggregate { count, node, edge }` on root and nested connections, aggregation filters (`aggregate` and deprecated `xAggregate`)               | Works                                                   |
+| Mutations: `create`, `update`, `delete` with `info` counters, and the response selection                                                                    | Works                                                   |
+| Nested writes: `create`, `connect`, `disconnect`, `update`, `delete` (nested in each other), edge properties                                                | Works                                                   |
+| Update operators: `set`, `add`, `subtract`, `multiply`, `divide`, `push`, `pop` and the deprecated `field_SET` / `field_INCREMENT` / …                      | Works                                                   |
+| `@id`, `@timestamp`, `@default`                                                                                                                             | Works                                                   |
+| `@authentication` / `@authorization` (type, field and schema level), `@jwt`, `@jwtClaim`, JWT verification (secret or JWKS)                                 | Works ([details](#authentication-and-authorization))    |
+| `@cypher` fields: scalars and nodes, arguments, `$jwt`, `where` and `sort`, relationship properties, `Query` and `Mutation` fields                          | Works ([details](#custom-cypher-fields))                |
+| `@fulltext` queries: `score`, `where`, `sort`, `first` / `after`                                                                                            | Works ([details](#full-text-search))                    |
+| Unions ([#201](https://github.com/Cyphra-dev/cyphra/issues/201)). `cyphra import graphql` maps them to [Cyphra unions](/schema#unions) for the typed client | Not yet: `makeSchema` throws `UnsupportedTypeDefsError` |
+| Interfaces, subscriptions, `@vector`, `Point`, `Duration`, custom scalars and custom resolvers                                                              | Not yet: `makeSchema` throws `UnsupportedTypeDefsError` |
+| `@populatedBy`, `@relayId`, `@query`, `@mutation`, `@subscription`, `@selectable`, `@settable`, `@filterable`, `@sortable`, `@limit`                        | Not yet: `makeSchema` throws `UnsupportedTypeDefsError` |
 
 ### v7 behaviour you get as well
 

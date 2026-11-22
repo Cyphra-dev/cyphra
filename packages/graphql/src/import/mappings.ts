@@ -12,7 +12,10 @@
  * - `@unique` no longer exists (removed in v7);
  * - `@timestamp(operations)` defaults to `[CREATE, UPDATE]`;
  * - `@relationship(type, direction)` requires both; `properties` names a `@relationshipProperties`
- *   object type.
+ *   object type;
+ * - a union is either made only of `@node` types (it adds no label: a relationship to it matches
+ *   any member, and a root query lists every member) or of types without `@node` (e.g. `@cypher`
+ *   result types); members are object types only (no unions or interfaces).
  *
  * @packageDocumentation
  */
@@ -534,6 +537,92 @@ export const TYPE_DIRECTIVES: Readonly<Record<string, TypeDirectiveRule>> = {
   groupBy: reportType("ignored", API_ONLY),
   deprecated: reportType("ignored", "GraphQL deprecation, no effect"),
 };
+
+// ---------------------------------------------------------------------------------------------
+// Unions
+// ---------------------------------------------------------------------------------------------
+
+/** Cyphra built-in type names: an enum or a union cannot take them. */
+export const CYPHRA_TYPE_NAMES: ReadonlySet<string> = new Set([
+  "String",
+  "Int",
+  "Float",
+  "Boolean",
+  "DateTime",
+  "Date",
+  "BigInt",
+  "Json",
+  "LocalDateTime",
+  "LocalTime",
+  "Time",
+  "Duration",
+  "Point",
+  "CartesianPoint",
+  "Vector",
+]);
+
+/** One member of a GraphQL union, as the converter sees it. */
+export type UnionMemberInfo = {
+  readonly graphqlName: string;
+  /** Name of the Cyphra node it became, when it is a `@node` type. */
+  readonly node?: string;
+};
+
+/** What a GraphQL union becomes: a Cyphra `union` of the converted nodes, or nothing. */
+export type UnionEffect = {
+  /** Cyphra member names, in declaration order; absent when the union is not converted. */
+  readonly members?: readonly string[];
+  readonly issues: readonly IssueDraft[];
+};
+
+/**
+ * `union Search = Movie | Genre`. A v7 union of `@node` types adds no label, exactly like a Cyphra
+ * `union`: it maps one to one (members renamed by `@node(labels)` keep their new names).
+ * Relationships to it are converted by the converter; the root `searches` query becomes
+ * `db.search.findMany` on the read-only union delegate.
+ */
+export function convertUnion(
+  name: string,
+  members: readonly UnionMemberInfo[],
+  directives: readonly ConstDirectiveNode[],
+): UnionEffect {
+  const issues: IssueDraft[] = directives.map((d) =>
+    issue("unsupported", `@${d.name.value}`, `@${d.name.value} on a union: not converted`),
+  );
+  if (CYPHRA_TYPE_NAMES.has(name)) {
+    issues.push(
+      issue(
+        "unsupported",
+        "union",
+        `"${name}" is a Cyphra built-in type name: not converted, nor the relationships to it`,
+      ),
+    );
+    return { issues };
+  }
+  if (members.length === 0) {
+    issues.push(issue("unsupported", "union", "the union has no members: not converted"));
+    return { issues };
+  }
+  const nodes = members.flatMap((m) => (m.node ? [m.node] : []));
+  if (nodes.length !== members.length) {
+    issues.push(
+      issue(
+        "unsupported",
+        "union",
+        "a union of types without @node (e.g. @cypher result types) is not a node union: not converted",
+      ),
+    );
+    return { issues };
+  }
+  return { members: nodes, issues };
+}
+
+/** A `@relationship(properties)` on a relationship to a union. */
+export const UNION_EDGE_PROPERTIES: IssueDraft = issue(
+  "unsupported",
+  "@relationship(properties)",
+  "relationship properties on a relationship to a union are not supported by Cyphra yet: the relation field is converted without them",
+);
 
 /** `@relationship` arguments that only shape the GraphQL API. */
 export const RELATIONSHIP_API_ARGS: readonly string[] = ["nestedOperations", "aggregate"];
