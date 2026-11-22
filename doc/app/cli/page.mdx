@@ -229,6 +229,13 @@ The token in the URL is required: keep it private. Stop with Ctrl+C.
 Records of a model without an `@id`, `@unique` or `@@unique` field can be browsed but not edited
 (nothing identifies one record).
 
+**Memgraph.** The studio uses the `"dialect"` of `cyphra.json`, or, when it sets none, detects
+Memgraph from the server (as `push` and `migrate deploy` do), and shows a _Memgraph_ badge. Fields
+Memgraph cannot store (`Time`) are read-only and left out of the filter builder; the API refuses
+to write them, and answers anything else Memgraph lacks (a `Duration` with months, a Neo4j-only
+procedure in the Cypher tab) with a 400 and the reason, without retrying. See the
+[feature matrix](/memgraph#feature-matrix).
+
 | Option        | Description                                                                          |
 | ------------- | ------------------------------------------------------------------------------------ |
 | `--port <n>`  | Port to listen on (default `5555`)                                                   |
@@ -281,8 +288,13 @@ their endpoints. Review the result:
 - A label `P` that never appears alone, and only ever as `[X, P]` pairs where each `X` always
   carries `P`, becomes an [`interface P`](/schema#interfaces-and-multiple-labels) with the
   properties all its nodes share (and those `P`'s constraints cover), and each `X` becomes
-  `node X implements P` with the rest. Other label combinations stay one model per label, with a
-  warning.
+  `node X implements P` with the rest. Chains of labels become
+  [interfaces extending interfaces](/schema#interfaces-extending-interfaces): with nodes labelled
+  `[Employee, Staff, Person]`, `[Contractor, Staff, Person]` and `[Customer, Person]`, `pull`
+  writes `interface Staff extends Person`, `node Employee implements Staff`,
+  `node Contractor implements Staff` and `node Customer implements Person`. Other label
+  combinations (a node carrying two unrelated shared labels, or a shared label with a single
+  implementation, which is ambiguous) stay one model per label, with a warning.
 - Unsupported or mixed types (e.g. a property that is a string on some nodes and an integer on
   others) and names that are not identifiers are skipped with a warning.
 - Integers are pulled as `Int` and strings as `String`: the database cannot tell a `BigInt`, an enum

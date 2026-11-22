@@ -181,6 +181,10 @@ its label when it starts implementing an interface; a new field of an interface 
 on the interface's label. Constraint names follow the declaring label: moving `email @unique` from
 `Employee` into `interface Person` drops `Employee_email_unique` and creates `Person_email_unique`.
 
+With [interfaces extending interfaces](/schema#interfaces-extending-interfaces), a node gains or
+loses every label up the chain: when `interface Staff` starts extending `Person`, each `Staff`
+implementation gets a step adding `:Person` to its existing nodes.
+
 ## Writing migrations by hand
 
 `cyphra migration:create <name>` creates an empty migration. The `db` handle offers:

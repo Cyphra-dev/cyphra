@@ -1,6 +1,6 @@
 # Design note: interfaces and multiple labels (#100)
 
-Status: implemented in the PR that adds this file.
+Status: implemented in #166; follow-ups in #167 (see [Follow-ups](#follow-ups-167)).
 
 ## Problem
 
@@ -55,8 +55,8 @@ node Customer implements Person {
   fields) and carries the labels `X`, `A` and `B`.
 - Errors: implementing something that is not an interface (or the same interface twice);
   redeclaring an inherited field; two interfaces of one node declaring the same field name; an
-  inherited `@id` plus an own `@id`; `interface … implements …` (interfaces do not extend
-  interfaces, see out of scope).
+  inherited `@id` plus an own `@id`; `interface … implements …` (an interface `extends` others,
+  see [Follow-ups](#follow-ups-167)).
 - Relations may target an interface (`manager Person?`, `members Person[]`), and
   `relationship { from Person to Team }` models may name one.
 
@@ -171,13 +171,85 @@ Keywords `interface` / `implements`, completion of interface names after `implem
 document symbols for interfaces, go-to-definition on implemented interfaces, and diagnostics from
 schema resolution (the same errors as `cyphra validate`).
 
-## Out of scope (follow-ups)
+## Follow-ups (#167)
 
-- Interfaces extending interfaces (`interface Employee implements Person`) and diamonds.
-- Redeclaring (narrowing) an inherited field on an implementation.
-- Filtering an interface query by implementation (`where: { __typename: "Employee" }`): query
-  the implementation's delegate instead.
-- Dynamic labels (adding / removing labels at runtime, `hasLabel` filters) and GraphQL-style
-  unions of unrelated models.
-- Loading implementation-only relations from an interface query (`include` on `Employee.team` from
-  `db.person`).
+### Interfaces extending interfaces (implemented)
+
+`interface Staff extends Person, Contact { … }`. `extends` is the interface keyword
+(`implements` stays the node keyword; mixing them up is an error with a hint).
+
+- Fields: an interface's resolved fields are its parents' (in `extends` order, each one's
+  inherited fields first) then its own. `inheritedFrom` is always the **declaring** interface
+  (`Employee.email` comes from `Person` even through `Staff`), so DDL stays on the declaring label
+  and nothing else changes for constraints, indexes, `search` or `findSimilar`.
+- Diamonds (`Staff` and `Contact` both extending `Person`, `Engineer` implementing both) are
+  allowed: an item reached twice from the same declaring interface is inherited once. Two
+  different interfaces declaring the same field name is still an error, and so is a cycle.
+- Resolved model: an interface gets `extends` (direct) and `interfaces` (every ancestor,
+  depth first); a node's `interfaces` is transitive too, and its `labels` is its own label then
+  those. An interface's `implementations` is every concrete node below it (directly or not), so
+  `__typename` unions, `onDelete` resolution and decoding need no change. An interface is still
+  matched by its own label only (no `labels` on it): every node below it carries it.
+- Migrations: label steps only run for concrete nodes, whose transitive `interfaces` already list
+  every label they gain or lose. An interface's inherited fields are migrated on the declaring
+  label, never on the intermediate one.
+- `cyphra pull`: a group of labels seen together becomes a hierarchy when each multi-label
+  combination has exactly one label of its own and its other labels form a strict chain (each
+  label's nodes all carrying the next, in strictly more combinations). Several unrelated
+  interfaces per node, and a shared label with a single implementation, stay one model per label
+  (#185).
+
+### `__typename` filters and sorting (implemented)
+
+`where: { __typename: "Employee" | { equals, not, in, notIn } }` on an interface compiles to label
+predicates (`n:Employee`, `(n:A) OR (n:B)`, `false` for an empty `in`), anywhere a `where` on the
+interface is compiled (top level, relation filters, `_count` filters, …). Values are the
+interface's implementations (typed as such); `__typename` on a node is an error.
+`orderBy: { __typename }` sorts by `CASE WHEN n:A THEN 'A' … ELSE '<Interface>' END`. The result
+type is not narrowed by the filter (the `where` is not a type parameter of the delegate methods);
+narrow on `__typename`.
+
+### Per-implementation loads: `$on` (implemented)
+
+`include: { $on: { Employee: { team: true } } }` and
+`select: { name: true, $on: { Employee: { salary: true, team: true } } }`. Each part is that
+implementation's own `select` (for `include`, restricted to relations and `_count`), compiled as a
+projection of the same node and evaluated only on its nodes:
+`` `__on_Employee`: CASE WHEN n:`Employee` THEN n{…} END ``. The decoder merges the part of the
+node's implementation into the result (`_count` merged with the interface's). In the types, member
+`T` of the result union gets `SelectPayload<T, $on[T]>` / `IncludedRelations<T, $on[T]>`; other
+members are unchanged. Computed fields (`$extends({ result })`) apply inside `$on`. `GraphQL`
+called this `... on Employee`; `$on` keeps the `$` prefix of Cyphra's other non-field keys
+(`$edge`, `$score`).
+
+### Narrowing inherited fields (not planned)
+
+Redeclaring `bio String` on `Employee` when `Person.bio` is `String?` (or restricting an enum)
+cannot be guaranteed: `db.person.updateMany({ data: { bio: null } })` writes through the interface,
+where only the interface's version of the field is known, so every write through an interface
+would need a per-implementation check of the matched nodes. Declaring the field on each
+implementation gives the same model without the hole.
+
+### Unions of unrelated models (#183)
+
+`union SearchHit = Post | User`: a type, not a label (nothing written or migrated). Relations may
+target it (the target pattern becomes `(m) WHERE m:Post OR m:User`), and results are decoded like
+interface results (`labels(n)` → `__typename`). There are no shared fields, so `where`, `select` and
+`include` take `__typename` and `$on` only, there is no unique key (no `findUnique`, and `connect`
+names the member: `connect: { Post: { id } }`), and no constraint. Open: whether a union has a
+delegate at all or only appears as a relation target. `@neo4j/graphql` v7 unions are exactly this,
+so `@cyphra/graphql` could map them once it exists.
+
+### Dynamic labels (#184)
+
+Labels that come and go on individual nodes (`:Archived`, `:Featured`). They would be declared on
+the model (`@@labels([Archived, Featured])`) so they are typed, never collide with model or
+interface labels, and come from the schema only (never from values: no injection). Writes take
+`data: { $labels: { add, remove } }` (`SET n:Archived` / `REMOVE n:Featured`), filters
+`where: { $labels: { has, hasSome, hasEvery } }`, and removing a flag from the schema offers a
+destructive `REMOVE` step. Label predicates and `SET n:L` work on Memgraph too.
+
+### GraphQL interfaces (not planned)
+
+`@neo4j/graphql` v7 interfaces add no label (see [GraphQL importer](#graphql-importer)), so there is
+no exact mapping; `@cyphra/graphql` and the importer keep reporting them as unsupported.
