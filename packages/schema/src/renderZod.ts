@@ -531,7 +531,7 @@ export function renderZodFromModel(model: SchemaModel, options: RenderZodOptions
     if (!n.union) continue;
     const members = n.implementations ?? [];
     body.push(
-      `/** \`${n.name}\` union results (${members.map((m) => `\`${m}\``).join(" | ")}), as the client returns them. */`,
+      `/** \`${n.name}\` union results (${(n.members ?? members).map((m) => `\`${m}\``).join(" | ")}), as the client returns them. */`,
       `export const ${n.name}Schema = z.discriminatedUnion("__typename", [`,
       ...members.map(
         (m) => `  ${m}Schema.extend({ __typename: z.literal(${JSON.stringify(m)}) }),`,

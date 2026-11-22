@@ -443,8 +443,9 @@ export function validateEnum(decl: EnumDeclaration): void {
 }
 
 /**
- * `union X = A | B`: not a built-in type name, every member a declared `node` (not an interface,
- * a union, an enum or a relationship model), each once.
+ * `union X = A | B`: not a built-in type name, every member a declared `node` or `interface` (not
+ * a union, an enum or a relationship model), each once, and no node a member twice (directly and
+ * through an interface it implements, or through two interfaces).
  */
 export function validateUnion(doc: SchemaDocument, decl: UnionDeclaration): void {
   const where = `Union "${decl.name}"`;
@@ -452,22 +453,37 @@ export function validateUnion(doc: SchemaDocument, decl: UnionDeclaration): void
     throw new SchemaValidationError(`${where}: ${decl.name} is a built-in type name.`);
   }
   const seen = new Set<string>();
+  // Node name -> the member it belongs to the union through.
+  const through = new Map<string, string>();
   for (const m of decl.members) {
     if (seen.has(m)) throw new SchemaValidationError(`${where}: member ${m} is listed twice.`);
     seen.add(m);
     const d = doc.declarations.find((x) => x.name === m);
-    if (d?.kind === "Node" && !d.abstract) continue;
-    let what = "which is not declared";
-    if (d?.kind === "Node") {
-      const impls = doc.declarations
-        .filter((x): x is NodeDeclaration => x.kind === "Node" && !x.abstract)
-        .filter((x) => ancestorInterfaces(doc, x).includes(m))
-        .map((x) => x.name);
-      what = `which is an interface (list its implementations instead${impls.length ? `: ${impls.join(" | ")}` : ""})`;
-    } else if (d?.kind === "Union") what = "which is a union (list its members instead)";
-    else if (d?.kind === "Enum") what = "which is an enum";
-    else if (d) what = "which is a relationship model";
-    throw new SchemaValidationError(`${where}: member ${m}, ${what}; union members are nodes.`);
+    if (d?.kind !== "Node") {
+      let what = "which is not declared";
+      if (d?.kind === "Union") what = "which is a union (list its members instead)";
+      else if (d?.kind === "Enum") what = "which is an enum";
+      else if (d) what = "which is a relationship model";
+      throw new SchemaValidationError(
+        `${where}: member ${m}, ${what}; union members are nodes or interfaces.`,
+      );
+    }
+    const nodes = d.abstract
+      ? doc.declarations
+          .filter((x): x is NodeDeclaration => x.kind === "Node" && !x.abstract)
+          .filter((x) => ancestorInterfaces(doc, x).includes(m))
+          .map((x) => x.name)
+      : [m];
+    for (const n of nodes) {
+      const other = through.get(n);
+      if (other !== undefined) {
+        const how = (x: string) => (x === n ? "directly" : `through ${x}`);
+        throw new SchemaValidationError(
+          `${where}: ${n} is a member twice (${how(other)} and ${how(m)}); list it once.`,
+        );
+      }
+      through.set(n, m);
+    }
   }
 }
 

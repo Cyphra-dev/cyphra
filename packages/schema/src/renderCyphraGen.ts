@@ -121,7 +121,7 @@ export function renderClientSection(model: SchemaModel, names: RuntimeTypeNames 
     if (n.union) {
       const members = n.implementations ?? [];
       lines.push(
-        `/** \`${n.name}\` union (${members.map((m) => `\`${m}\``).join(" | ")}): a member's properties and its \`__typename\`. */`,
+        `/** \`${n.name}\` union (${(n.members ?? members).map((m) => `\`${m}\``).join(" | ")}): a member's properties and its \`__typename\`. */`,
       );
       lines.push(
         `export type ${n.name} = ${members.length ? members.map((m) => `({ __typename: ${JSON.stringify(m)} } & ${m})`).join(" | ") : "never"};`,
@@ -161,6 +161,8 @@ export function renderClientSection(model: SchemaModel, names: RuntimeTypeNames 
       lines.push("    abstract: true;");
       if (n.union) lines.push("    union: true;");
       lines.push(`    implementations: ${union(n.implementations ?? [])};`);
+      const interfaceMembers = (n.members ?? []).filter((m) => !n.implementations?.includes(m));
+      if (interfaceMembers.length) lines.push(`    members: ${union(interfaceMembers)};`);
     }
     // Only emitted when declared, so schemas without `@@labels` generate the same code as before.
     if (n.dynamicLabels?.length) lines.push(`    dynamicLabels: ${union(n.dynamicLabels)};`);

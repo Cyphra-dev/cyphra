@@ -845,10 +845,10 @@ node Tag {
     expect(outline(broken).map((s) => `${s.kind} ${s.name}`)[0]).toBe("union SearchHit");
   });
 
-  it("offers node names (not interfaces) after = and |", () => {
-    expect(complete("union U = ‸\n" + UNION)).toEqual(["Post", "Author", "Tag"]);
-    expect(complete("union U = Post | ‸\n" + UNION)).toEqual(["Author", "Tag"]);
-    expect(complete("union U = Post | Au‸\n" + UNION)).toEqual(["Author", "Tag"]);
+  it("offers node and interface names after = and |", () => {
+    expect(complete("union U = ‸\n" + UNION)).toEqual(["Post", "Author", "Tag", "Thing"]);
+    expect(complete("union U = Post | ‸\n" + UNION)).toEqual(["Author", "Tag", "Thing"]);
+    expect(complete("union U = Post | Au‸\n" + UNION)).toEqual(["Author", "Tag", "Thing"]);
     expect(complete(UNION + "\n‸")).toContain("union");
   });
 
@@ -872,11 +872,16 @@ node Tag {
   });
 
   it("reports union errors on the member", () => {
-    expect(problem(UNION.replace("= Post | Author", "= Post | Thing"))).toEqual({
-      message:
-        'Union "SearchHit": member Thing, which is an interface (list its implementations instead); union members are nodes.',
-      underlined: "Thing",
-    });
+    // An interface member is fine, unless one of its implementations is listed too.
+    expect(problem(UNION.replace("= Post | Author", "= Post | Thing"))).toBeUndefined();
+    const both = UNION.replace("= Post | Author", "= Thing | Post").replace(
+      "node Post {\n  id String @id\n}",
+      "node Post implements Thing {}",
+    );
+    expect(problem(both)?.message).toBe(
+      'Union "SearchHit": Post is a member twice (through Thing and directly); list it once.',
+    );
+    expect(problem(both)?.underlined).toBe("Post");
     expect(problem(UNION.replace("= Post | Author", "= Post | Author | Post"))?.underlined).toBe(
       "Post",
     );

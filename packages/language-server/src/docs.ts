@@ -356,7 +356,7 @@ export const KEYWORD_DOCS: Readonly<Record<string, string>> = {
   interface:
     "`interface Name { … }`: an abstract node model. Its label, fields, relations and constraints are shared by the nodes that implement it; `db.name` queries every implementation (results carry `__typename`), but an interface cannot be created.",
   union:
-    "`union Name = A | B`: a type grouping unrelated nodes. It adds no label: relation fields may target it, `db.name` reads every member (`findMany`, `findFirst`, `count`; results carry `__typename`), and relation writes name the member (`connect: { A: { id } }`).",
+    "`union Name = A | B`: a type grouping unrelated nodes (an interface member stands for every node implementing it). It adds no label: relation fields and `relationship { … }` models may target it, `db.name` reads every member (`findMany`, `findFirst`, `count`; results carry `__typename`), and relation writes name the member (`connect: { A: { id } }`).",
   implements:
     "`node Name implements A, B { … }`: the node inherits the fields of interfaces `A` and `B` and carries their labels (`:Name:A:B`).",
   extends:

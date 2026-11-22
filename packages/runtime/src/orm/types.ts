@@ -47,8 +47,14 @@ export type ModelTypeDef = {
    * the member (`connect: { Post: { id } }`).
    */
   readonly union?: true;
-  /** Names of the models implementing this interface, or the members of a union. */
+  /** Names of the models implementing this interface, or the nodes of a union. */
   readonly implementations?: string;
+  /**
+   * The interface members of a union (`union Party = Person | Team`: `"Person"`), absent when
+   * every member is a node. Relation writes (`connect: { Person: { email } }`) and `where.$on` may
+   * name them; results are typed by {@link ModelTypeDef.implementations}.
+   */
+  readonly members?: string;
   /**
    * Dynamic labels the model declares with `@@labels([...])` (absent when none): what
    * `data.$labels`, `where.$labels` and `select.$labels` take.
@@ -108,6 +114,14 @@ export type Implementations<TM extends TypeMap, M extends keyof TM> = TM[M] exte
 }
   ? I & keyof TM
   : never;
+
+/**
+ * Names a relation write or `where.$on` of the abstract model `M` may use: its implementations,
+ * plus the interface members of a union.
+ */
+export type MemberNames<TM extends TypeMap, M extends keyof TM> =
+  | Implementations<TM, M>
+  | (TM[M] extends { members: infer I extends string } ? I & keyof TM : never);
 
 /** Dynamic labels (`@@labels([...])`) of model `M` (`never` when it declares none). */
 export type DynamicLabels<TM extends TypeMap, M extends keyof TM> = TM[M] extends {
@@ -411,7 +425,7 @@ export type WhereInput<TM extends TypeMap, M extends keyof TM> = {
    */
   $on?: [Implementations<TM, M>] extends [never]
     ? never
-    : { [T in Implementations<TM, M>]?: WhereInput<TM, T> };
+    : { [T in MemberNames<TM, M>]?: WhereInput<TM, T> };
 } & {
   [R in keyof Relations<TM, M>]?: RelationFilter<TM, Rel<TM, M, R>>;
 } & {
@@ -582,12 +596,20 @@ type OnInput<TM extends TypeMap, M extends keyof TM, K extends "select" | "inclu
   IsAbstract<TM, M> extends true
     ? {
         $on?: {
-          [T in Implementations<TM, M>]?: K extends "select"
-            ? SelectInput<TM, T>
-            : IncludeInput<TM, T>;
+          [T in MemberNames<TM, M>]?: K extends "select" ? SelectInput<TM, T> : IncludeInput<TM, T>;
         };
       }
     : unknown;
+
+/**
+ * The `$on` entry that applies to the implementation `T`: `O[T]`, or else the entry of an
+ * interface member of a union that `T` implements (`never`: none).
+ */
+type OnEntry<TM extends TypeMap, T extends keyof TM, O> = T extends keyof O
+  ? NonNullable<O[T]>
+  : {
+      [I in keyof O & keyof TM]: T extends Implementations<TM, I> ? NonNullable<O[I]> : never;
+    }[keyof O & keyof TM];
 
 /** What `$on.<T>` adds to the result member `T` of an interface query (`unknown`: nothing). */
 type OnPayload<
@@ -598,12 +620,10 @@ type OnPayload<
 > = P extends {
   $on?: infer O;
 }
-  ? T extends keyof NonNullable<O>
-    ? IsObject<NonNullable<NonNullable<O>[T]>> extends true
-      ? K extends "select"
-        ? SelectPayload<TM, T, NonNullable<NonNullable<O>[T]>>
-        : IncludedRelations<TM, T, NonNullable<NonNullable<O>[T]>>
-      : unknown
+  ? IsObject<OnEntry<TM, T, NonNullable<O>>> extends true
+    ? K extends "select"
+      ? SelectPayload<TM, T, OnEntry<TM, T, NonNullable<O>>>
+      : IncludedRelations<TM, T, OnEntry<TM, T, NonNullable<O>>>
     : unknown
   : unknown;
 
@@ -736,15 +756,16 @@ type RelationCreate<TM extends TypeMap, D extends RelationTypeDef> =
  * One member of the union `U` named as a key, with its value: `{ Post: X<"Post"> }` or
  * `{ User: X<"User"> }` (exactly one key).
  */
-type MemberInput<TM extends TypeMap, U extends keyof TM, X extends Record<string, unknown>> = {
-  [T in Implementations<TM, U>]: { [K in T]: X[K & keyof X] } & {
-    [K in Exclude<Implementations<TM, U>, T>]?: never;
-  };
-}[Implementations<TM, U>];
+type MemberInput<X extends Record<string, unknown>> = {
+  [T in keyof X]: { [K in T]: X[K] } & { [K in Exclude<keyof X, T>]?: never };
+}[keyof X];
 
-/** Unique `where` of each member of the union `U`, by member name. */
+/**
+ * Unique `where` of each member of the union `U`, by member name (an interface member by its
+ * own unique fields).
+ */
 type MemberUniques<TM extends TypeMap, U extends keyof TM> = {
-  [T in Implementations<TM, U>]: WhereUniqueInput<TM, T>;
+  [T in MemberNames<TM, U>]: WhereUniqueInput<TM, T>;
 };
 
 /** Create input of each member of the union `U`, by member name. */
@@ -754,8 +775,6 @@ type MemberCreates<TM extends TypeMap, U extends keyof TM> = {
 
 /** A related node of a union-typed relation, by its member and unique key: `{ Post: { id } }`. */
 type UnionUniqueInput<TM extends TypeMap, D extends RelationTypeDef> = MemberInput<
-  TM,
-  D["target"] & keyof TM,
   MemberUniques<TM, D["target"] & keyof TM>
 >;
 
@@ -764,8 +783,7 @@ type UnionRelationCreate<TM extends TypeMap, D extends RelationTypeDef> = {
   /** Create related node(s) of the named member and link them: `{ Post: { title } }`. */
   create?: OneOrMany<
     D,
-    MemberInput<TM, D["target"] & keyof TM, MemberCreates<TM, D["target"] & keyof TM>> &
-      EdgeInput<D>
+    MemberInput<MemberCreates<TM, D["target"] & keyof TM>> & EdgeInput<D>
   >;
   /** Link existing node(s) of the named member: `{ Post: { id } }`; throws if one does not exist. */
   connect?: OneOrMany<D, UnionUniqueInput<TM, D> & EdgeUpdateInput<D>>;

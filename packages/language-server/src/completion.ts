@@ -163,7 +163,7 @@ function typeCompletions(ctx: Ctx, inNode: boolean): Completion[] {
 }
 
 /**
- * In a `union X = A | …` declaration, after `=` or `|`: the node names not listed yet
+ * In a `union X = A | …` declaration, after `=` or `|`: the node and interface names not listed yet
  * (`undefined` when not in a union's member list).
  */
 function unionMemberCompletions(ctx: Ctx, before: readonly Token[]): Completion[] | undefined {
@@ -182,9 +182,12 @@ function unionMemberCompletions(ctx: Ctx, before: readonly Token[]): Completion[
     } else return undefined;
   }
   if (k < 2 || toks[k - 1]!.kind !== "ident" || toks[k - 2]!.text !== "union") return undefined;
-  return names(ctx.a, "node")
-    .filter((n) => !listed.has(n))
-    .map((n) => ({ label: n, kind: "node" as const, detail: "node", replace: ctx.replace }));
+  const kinds = ["node", "interface"] as const;
+  return kinds.flatMap((kind) =>
+    names(ctx.a, kind)
+      .filter((n) => !listed.has(n))
+      .map((n) => ({ label: n, kind, detail: kind, replace: ctx.replace })),
+  );
 }
 
 type FieldKind = "scalar" | "relation" | "vector" | "unknown";

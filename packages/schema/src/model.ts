@@ -246,9 +246,17 @@ export type ResolvedNodeModel = {
   readonly union?: true;
   /**
    * Nodes implementing this interface, directly or through an interface extending it, in
-   * declaration order (only on an interface), or the members of a union, in `union` order.
+   * declaration order (only on an interface), or the nodes of a union: its members in `union`
+   * order, an interface member replaced by its implementations.
    */
   readonly implementations?: readonly string[];
+  /**
+   * The members of a union as declared, when one of them is an interface
+   * (`union Party = Person | Team`: `["Person", "Team"]`). A union is matched by its members'
+   * labels, and relation writes and `where.$on` may name an interface member. Absent otherwise
+   * (then the members are {@link ResolvedNodeModel.implementations}).
+   */
+  readonly members?: readonly string[];
   /**
    * Interfaces an interface extends, in `extends` order (only on an interface extending others;
    * {@link ResolvedNodeModel.interfaces} adds the ones they extend).
@@ -606,12 +614,8 @@ export function resolveSchema(doc: SchemaDocument): SchemaModel {
       continue;
     }
     const owner = `Relationship "${d.name}"`;
+    // An end may be a node, an interface or a union (one edge model for every member).
     for (const end of [d.from, d.to]) {
-      if (unionNames.has(end)) {
-        throw new SchemaValidationError(
-          `${owner}: ${end} is a union; a relationship model's ends are nodes or interfaces (declare one per member).`,
-        );
-      }
       if (!nodeNames.has(end)) {
         throw new SchemaValidationError(`${owner}: unknown node "${end}".`);
       }
@@ -714,6 +718,8 @@ export function resolveSchema(doc: SchemaDocument): SchemaModel {
       };
       let edges = edgeModels(d.name);
       for (const i of ancestorInterfaces(doc, d)) if (edges.length === 0) edges = edgeModels(i);
+      // …or else a union it is a member of (directly or through one of its interfaces).
+      for (const u of unionsOf(doc, d)) if (edges.length === 0) edges = edgeModels(u);
       if (edges.length > 1) {
         throw new SchemaValidationError(
           `${where}: several relationship models match (${edges.map((e) => e.name).join(", ")}).`,
@@ -935,6 +941,17 @@ function linkInterfaces(
 }
 
 /**
+ * Unions `decl` is a member of: named directly, or through an interface it inherits from (the
+ * unions of an interface, for an interface).
+ */
+function unionsOf(doc: SchemaDocument, decl: NodeDeclaration): string[] {
+  const names = [decl.name, ...ancestorInterfaces(doc, decl)];
+  return doc.declarations
+    .filter((u) => u.kind === "Union" && u.members.some((m) => names.includes(m)))
+    .map((u) => u.name);
+}
+
+/**
  * `nodes` with the `union` declarations added as abstract models (no fields, no label of their
  * own, their members as `implementations`), every model in declaration order.
  */
@@ -945,12 +962,19 @@ function withUnions(nodes: readonly ResolvedNodeModel[], doc: SchemaDocument): R
   for (const d of doc.declarations) {
     if (d.kind === "Node") out.push(byName.get(d.name)!);
     else if (d.kind === "Union") {
+      // An interface member stands for every node implementing it.
+      const expand = (m: string) => {
+        const n = byName.get(m)!;
+        return n.abstract ? (n.implementations ?? []) : [m];
+      };
+      const withInterface = d.members.some((m) => byName.get(m)?.abstract);
       out.push({
         name: d.name,
         label: d.name,
         abstract: true,
         union: true,
-        implementations: [...d.members],
+        implementations: d.members.flatMap(expand),
+        ...(withInterface ? { members: [...d.members] } : {}),
         uniqueFields: [],
         fields: [],
       });

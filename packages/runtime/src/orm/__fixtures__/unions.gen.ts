@@ -13,12 +13,24 @@ export const NodeLabel = {
   Remark: "Remark",
   Shelf: "Shelf",
   Marker: "Marker",
+  Reviewer: "Reviewer",
+  Desk: "Desk",
 } as const;
 
 export type NodeLabelName = keyof typeof NodeLabel;
 
 /** Rich `relationship { … }` blocks: Neo4j type + endpoint labels. */
 export const RelationshipSpec = {
+  Pick: {
+    neo4jType: "PICKS",
+    fromLabel: "Shelf",
+    toLabel: "SearchHit",
+  },
+  Seat: {
+    neo4jType: "SEATS",
+    fromLabel: "Desk",
+    toLabel: "Party",
+  },
 } as const;
 
 export type RelationshipModelName = keyof typeof RelationshipSpec;
@@ -27,6 +39,9 @@ export type RelationshipModelName = keyof typeof RelationshipSpec;
 export const RelType = {
   HAS_REMARK: "HAS_REMARK",
   MARKS: "MARKS",
+  OWNS: "OWNS",
+  PICKS: "PICKS",
+  SEATS: "SEATS",
   SHOWS: "SHOWS",
 } as const;
 
@@ -35,7 +50,7 @@ export type RelTypeKey = keyof typeof RelType;
 /** `SearchHit` union (`Story` | `Writer` | `Editor`): a member's properties and its `__typename`. */
 export type SearchHit = ({ __typename: "Story" } & Story) | ({ __typename: "Writer" } & Writer) | ({ __typename: "Editor" } & Editor);
 
-/** `Contributor` interface properties (shared by `Editor`). */
+/** `Contributor` interface properties (shared by `Editor`, `Reviewer`). */
 export type Contributor = {
   id: string;
   email: string;
@@ -80,6 +95,34 @@ export type Marker = {
   label: string;
 };
 
+/** `Party` union (`Contributor` | `Writer`): a member's properties and its `__typename`. */
+export type Party = ({ __typename: "Editor" } & Editor) | ({ __typename: "Reviewer" } & Reviewer) | ({ __typename: "Writer" } & Writer);
+
+/** `Reviewer` node properties (labels `:Reviewer`, `:Contributor`). */
+export type Reviewer = {
+  id: string;
+  email: string;
+  level: number;
+};
+
+/** `Desk` node properties. */
+export type Desk = {
+  id: string;
+  name: string;
+};
+
+/** `Pick` (`:PICKS`) edge properties. */
+export type Pick = {
+  /** Validation: `@min(0)`. */
+  rank: number;
+  note: string | null;
+};
+
+/** `Seat` (`:SEATS`) edge properties. */
+export type Seat = {
+  since: number | null;
+};
+
 /** Type-level description of the schema, consumed by the ORM client. */
 export type CyphraTypeMap = {
   SearchHit: {
@@ -94,7 +137,7 @@ export type CyphraTypeMap = {
   Contributor: {
     scalars: Contributor;
     abstract: true;
-    implementations: "Editor";
+    implementations: "Editor" | "Reviewer";
     createRequired: "email";
     unique: "id" | "email";
     relations: Record<never, never>;
@@ -118,7 +161,9 @@ export type CyphraTypeMap = {
     scalars: Writer;
     createRequired: "name";
     unique: "id" | "name";
-    relations: Record<never, never>;
+    relations: {
+      pickedBy: { target: "Shelf"; many: true; optional: false; edge: Pick };
+    };
   };
   Remark: {
     scalars: Remark;
@@ -132,6 +177,7 @@ export type CyphraTypeMap = {
     unique: "id";
     relations: {
       items: { target: "SearchHit"; many: true; optional: false; edge: null };
+      picks: { target: "SearchHit"; many: true; optional: false; edge: Pick };
     };
   };
   Marker: {
@@ -140,6 +186,31 @@ export type CyphraTypeMap = {
     unique: "id";
     relations: {
       subject: { target: "SearchHit"; many: false; optional: true; edge: null };
+    };
+  };
+  Party: {
+    scalars: Record<never, never>;
+    abstract: true;
+    union: true;
+    implementations: "Editor" | "Reviewer" | "Writer";
+    members: "Contributor";
+    createRequired: never;
+    unique: never;
+    relations: Record<never, never>;
+  };
+  Reviewer: {
+    scalars: Reviewer;
+    createRequired: "email";
+    unique: "id" | "email";
+    relations: Record<never, never>;
+  };
+  Desk: {
+    scalars: Desk;
+    createRequired: "name";
+    unique: "id";
+    relations: {
+      owner: { target: "Party"; many: false; optional: true; edge: null };
+      seated: { target: "Party"; many: true; optional: false; edge: Seat };
     };
   };
 };
@@ -166,7 +237,8 @@ export const schemaModel: SchemaModel = {
       "label": "Contributor",
       "abstract": true,
       "implementations": [
-        "Editor"
+        "Editor",
+        "Reviewer"
       ],
       "idField": "id",
       "uniqueFields": [
@@ -359,6 +431,16 @@ export const schemaModel: SchemaModel = {
           "id": false,
           "unique": false,
           "index": false
+        },
+        {
+          "kind": "relation",
+          "name": "pickedBy",
+          "target": "Shelf",
+          "relType": "PICKS",
+          "direction": "IN",
+          "many": true,
+          "optional": false,
+          "edge": "Pick"
         }
       ]
     },
@@ -437,6 +519,16 @@ export const schemaModel: SchemaModel = {
           "many": true,
           "optional": false,
           "onDelete": "Cascade"
+        },
+        {
+          "kind": "relation",
+          "name": "picks",
+          "target": "SearchHit",
+          "relType": "PICKS",
+          "direction": "OUT",
+          "many": true,
+          "optional": false,
+          "edge": "Pick"
         }
       ]
     },
@@ -482,9 +574,194 @@ export const schemaModel: SchemaModel = {
           "optional": true
         }
       ]
+    },
+    {
+      "name": "Party",
+      "label": "Party",
+      "abstract": true,
+      "union": true,
+      "implementations": [
+        "Editor",
+        "Reviewer",
+        "Writer"
+      ],
+      "members": [
+        "Contributor",
+        "Writer"
+      ],
+      "uniqueFields": [],
+      "fields": []
+    },
+    {
+      "name": "Reviewer",
+      "label": "Reviewer",
+      "interfaces": [
+        "Contributor"
+      ],
+      "labels": [
+        "Reviewer",
+        "Contributor"
+      ],
+      "idField": "id",
+      "uniqueFields": [
+        "id",
+        "email"
+      ],
+      "fields": [
+        {
+          "kind": "scalar",
+          "name": "id",
+          "type": "String",
+          "optional": false,
+          "list": false,
+          "id": true,
+          "unique": false,
+          "index": false,
+          "default": {
+            "kind": "fn",
+            "fn": "cuid"
+          },
+          "inheritedFrom": "Contributor"
+        },
+        {
+          "kind": "scalar",
+          "name": "email",
+          "type": "String",
+          "optional": false,
+          "list": false,
+          "id": false,
+          "unique": true,
+          "index": false,
+          "inheritedFrom": "Contributor"
+        },
+        {
+          "kind": "scalar",
+          "name": "level",
+          "type": "Int",
+          "optional": false,
+          "list": false,
+          "id": false,
+          "unique": false,
+          "index": false,
+          "default": {
+            "kind": "literal",
+            "value": 1
+          }
+        }
+      ]
+    },
+    {
+      "name": "Desk",
+      "label": "Desk",
+      "idField": "id",
+      "uniqueFields": [
+        "id"
+      ],
+      "fields": [
+        {
+          "kind": "scalar",
+          "name": "id",
+          "type": "String",
+          "optional": false,
+          "list": false,
+          "id": true,
+          "unique": false,
+          "index": false,
+          "default": {
+            "kind": "fn",
+            "fn": "cuid"
+          }
+        },
+        {
+          "kind": "scalar",
+          "name": "name",
+          "type": "String",
+          "optional": false,
+          "list": false,
+          "id": false,
+          "unique": false,
+          "index": false
+        },
+        {
+          "kind": "relation",
+          "name": "owner",
+          "target": "Party",
+          "relType": "OWNS",
+          "direction": "OUT",
+          "many": false,
+          "optional": true
+        },
+        {
+          "kind": "relation",
+          "name": "seated",
+          "target": "Party",
+          "relType": "SEATS",
+          "direction": "OUT",
+          "many": true,
+          "optional": false,
+          "edge": "Seat"
+        }
+      ]
     }
   ],
-  "relationships": []
+  "relationships": [
+    {
+      "name": "Pick",
+      "relType": "PICKS",
+      "from": "Shelf",
+      "to": "SearchHit",
+      "properties": [
+        {
+          "kind": "scalar",
+          "name": "rank",
+          "type": "Int",
+          "optional": false,
+          "list": false,
+          "id": false,
+          "unique": false,
+          "index": false,
+          "rules": [
+            {
+              "rule": "min",
+              "value": 0
+            }
+          ],
+          "default": {
+            "kind": "literal",
+            "value": 0
+          }
+        },
+        {
+          "kind": "scalar",
+          "name": "note",
+          "type": "String",
+          "optional": true,
+          "list": false,
+          "id": false,
+          "unique": false,
+          "index": false
+        }
+      ]
+    },
+    {
+      "name": "Seat",
+      "relType": "SEATS",
+      "from": "Desk",
+      "to": "Party",
+      "properties": [
+        {
+          "kind": "scalar",
+          "name": "since",
+          "type": "Int",
+          "optional": true,
+          "list": false,
+          "id": false,
+          "unique": false,
+          "index": false
+        }
+      ]
+    }
+  ]
 };
 
 /** Typed Cyphra client for this schema. */
