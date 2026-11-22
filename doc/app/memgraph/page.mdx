@@ -167,6 +167,13 @@ property indexes have no name, so a migration drops them by definition
 indexes keep their names. Memgraph runs DDL outside explicit transactions only; Cyphra's migration
 runner already runs each statement on its own.
 
+Memgraph also runs index and constraint DDL only once no other transaction is running (a text index
+needs unique access to the storage), and gives up after `--storage-access-timeout-sec` (1 second by
+default) with `Cannot get unique access to the storage`. `cyphra push`, migrations and
+`migrate reset` run such a statement again with backoff, for up to a minute, so they wait for your
+application's transactions instead of failing. In your own code, `withMemgraphStorageAccess` from
+`@cyphra/migrator` does the same around one statement.
+
 A migration generated before the dialect was set (Neo4j syntax) still applies: its `CREATE`
 statements are translated when it runs. Its `DROP … <name>` statements are not, so regenerate those
 migrations once you switch.

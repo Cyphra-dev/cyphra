@@ -36,7 +36,6 @@ import {
   RELATIONSHIP_API_ARGS,
   SCALARS,
   TYPE_DIRECTIVES,
-  UNION_EDGE_PROPERTIES,
   convertUnion,
   enumField,
   enumListArg,
@@ -394,6 +393,8 @@ export function convertGraphQLTypeDefs(
   // Unions: a Cyphra `union` of the member nodes (no label, like v7).
   const unions: UnionDeclaration[] = [];
   const unionNames = new Set<string>();
+  /** Cyphra union name → its member node names. */
+  const unionMembers = new Map<string, ReadonlySet<string>>();
   for (const t of types.values()) {
     if (t.kind !== "union") continue;
     const effect = convertUnion(
@@ -404,6 +405,7 @@ export function convertGraphQLTypeDefs(
     for (const i of effect.issues) report(t.name, i);
     if (!effect.members) continue;
     unions.push({ kind: "Union", name: t.name, members: [...effect.members] });
+    unionMembers.set(t.name, new Set(effect.members));
     unionNames.add(t.name);
   }
 
@@ -479,7 +481,7 @@ export function convertGraphQLTypeDefs(
   const takenTriples = new Map<string, string>();
   const allNames = new Set<string>(declarations.map((d) => d.name));
   for (const props of propsTypes.values()) {
-    const triples: RelUsage[] = [];
+    const candidates: RelUsage[] = [];
     for (const u of usages.filter((x) => x.propsType === props.name)) {
       const key = `${u.relType}|${u.start}|${u.end}`;
       const owner = takenTriples.get(key);
@@ -493,9 +495,20 @@ export function convertGraphQLTypeDefs(
       }
       if (!owner) {
         takenTriples.set(key, props.name);
-        triples.push(u);
+        candidates.push(u);
       }
     }
+    // A member's inverse field (`Movie.watchedBy` for `User.watched: [Media]`) shares the model
+    // with the union end, as a Cyphra relation field picks a union end up for its members.
+    const covered = (x: RelUsage): boolean =>
+      candidates.some(
+        (y) =>
+          y !== x &&
+          y.relType === x.relType &&
+          ((y.start === x.start && unionMembers.get(y.end)?.has(x.end)) ||
+            (y.end === x.end && unionMembers.get(y.start)?.has(x.start))),
+      );
+    const triples = candidates.filter((x) => !covered(x));
     if (triples.length === 0) {
       report(props.name, {
         severity: "ignored",
@@ -892,10 +905,6 @@ function convertRelation(
   };
   const propsType = stringArg(rel, "properties");
   if (!propsType) return { field };
-  if (toUnion) {
-    report(at, UNION_EDGE_PROPERTIES);
-    return { field };
-  }
   const props = types.get(propsType);
   if (!props || !directive(props.directives, "relationshipProperties")) {
     report(at, {

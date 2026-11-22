@@ -91,6 +91,28 @@ function falkordbType(neo4jType: string): string {
   );
 }
 
+/**
+ * `run()` (one schema statement), run again while Memgraph cannot get storage access for it.
+ * Memgraph's index and constraint DDL (text index DDL needs unique access) waits at most
+ * `--storage-access-timeout-sec` (1 s) for the transactions running at the same time, and the
+ * suites run in parallel on one server: without this, a schema statement fails whenever another
+ * test file's transaction runs longer than that (#203). The migrator does the same
+ * (`withMemgraphStorageAccess`); this copy keeps the runtime tests free of a migrator dependency.
+ */
+export async function retryStorageAccess<T>(run: () => Promise<T>): Promise<T> {
+  const deadline = Date.now() + 60_000;
+  for (let delay = 100; ; delay = Math.min(delay * 2, 2_000)) {
+    try {
+      return await run();
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      if (!/cannot get (?:unique|read-only|read) access to the storage/i.test(message)) throw e;
+      if (Date.now() + delay > deadline) throw e;
+      await new Promise((r) => setTimeout(r, delay));
+    }
+  }
+}
+
 /** Memgraph statement that drops what a translated `CREATE` made, by the Neo4j name. */
 const drops = new Map<string, string>();
 

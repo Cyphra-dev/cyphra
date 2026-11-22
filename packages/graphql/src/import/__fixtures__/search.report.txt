@@ -1,13 +1,9 @@
-Not converted (5):
-  TitleCount    @node: object type without @node is not a node in v7 (e.g. a @cypher result type): not converted
-  GenreCount    @node: object type without @node is not a node in v7 (e.g. a @cypher result type): not converted
-  Query         Query: custom Query fields (@cypher, resolvers) are not converted (compat.v7 still serves @cypher fields); with the typed client, write them as queries
-  Stat          union: a union of types without @node (e.g. @cypher result types) is not a node union: not converted
-  User.watched  @relationship(properties): relationship properties on a relationship to a union are not supported by Cyphra yet: the relation field is converted without them
+Not converted (4):
+  TitleCount  @node: object type without @node is not a node in v7 (e.g. a @cypher result type): not converted
+  GenreCount  @node: object type without @node is not a node in v7 (e.g. a @cypher result type): not converted
+  Query       Query: custom Query fields (@cypher, resolvers) are not converted (compat.v7 still serves @cypher fields); with the typed client, write them as queries
+  Stat        union: a union of types without @node (e.g. @cypher result types) is not a node union: not converted
 
 Converted with differences (2):
   Series   @node(labels): a Cyphra node's name is its label: renamed to "Show"
   User.id  @id: became @id @default(uuid()); Cyphra also adds a uniqueness constraint, which v7 @id does not
-
-Ignored (GraphQL API only) (1):
-  Watched  @relationshipProperties: not used by any converted @relationship: not converted

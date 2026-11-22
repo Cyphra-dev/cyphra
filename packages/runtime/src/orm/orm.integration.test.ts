@@ -42,6 +42,7 @@ import {
   onFalkorDB,
   onMemgraph,
   storedType,
+  retryStorageAccess,
   testDdl,
   hasTestDb,
   testConnection,
@@ -390,7 +391,8 @@ async function schemaCommand(db: SchemaRunner, text: string): Promise<void> {
   if (!statement) return;
   await db.$client.withSession(async (s) => {
     try {
-      await s.run(statement);
+      // Other suites' transactions can hold Memgraph's storage (see retryStorageAccess).
+      await retryStorageAccess(() => s.run(statement));
     } catch (e) {
       // Memgraph's text and vector index DDL has no IF [NOT] EXISTS, nor FalkorDB's.
       const idempotent =

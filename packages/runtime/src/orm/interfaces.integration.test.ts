@@ -8,6 +8,7 @@ import { CyphraValidationError } from "./errors.js";
 import {
   onFalkorDB,
   onMemgraph,
+  retryStorageAccess,
   testDdl,
   hasTestDb,
   testConnection,
@@ -189,9 +190,11 @@ describe.skipIf(!hasNeo)("interfaces and multiple labels (Neo4j)", () => {
   it("enforces an interface uniqueness constraint across implementations", async () => {
     // Outside a transaction: Memgraph rejects DDL in explicit transactions.
     const ddl = (text: string) =>
-      db.$client.withSession(async (s) => {
-        await s.run(testDdl(text)!);
-      });
+      retryStorageAccess(() =>
+        db.$client.withSession(async (s) => {
+          await s.run(testDdl(text)!);
+        }),
+      );
     await ddl(
       "CREATE CONSTRAINT Person_email_unique IF NOT EXISTS FOR (n:Person) REQUIRE n.email IS UNIQUE",
     );

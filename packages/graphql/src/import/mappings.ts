@@ -14,7 +14,8 @@
  * - `@relationship(type, direction)` requires both; `properties` names a `@relationshipProperties`
  *   object type;
  * - a union is either made only of `@node` types (it adds no label: a relationship to it matches
- *   any member, and a root query lists every member) or of types without `@node` (e.g. `@cypher`
+ *   any member, its `properties` apply to the edges to every member, and a root query lists every
+ *   member) or of types without `@node` (e.g. `@cypher`
  *   result types); members are object types only (no unions or interfaces).
  *
  * @packageDocumentation
@@ -578,7 +579,9 @@ export type UnionEffect = {
 /**
  * `union Search = Movie | Genre`. A v7 union of `@node` types adds no label, exactly like a Cyphra
  * `union`: it maps one to one (members renamed by `@node(labels)` keep their new names).
- * Relationships to it are converted by the converter; the root `searches` query becomes
+ * Relationships to it are converted by the converter, `properties` included: one relationship
+ * model with the union end (`relationship Watched { from User to Media }`), shared by the members'
+ * inverse fields with the same properties type. The root `searches` query becomes
  * `db.search.findMany` on the read-only union delegate.
  */
 export function convertUnion(
@@ -616,13 +619,6 @@ export function convertUnion(
   }
   return { members: nodes, issues };
 }
-
-/** A `@relationship(properties)` on a relationship to a union. */
-export const UNION_EDGE_PROPERTIES: IssueDraft = issue(
-  "unsupported",
-  "@relationship(properties)",
-  "relationship properties on a relationship to a union are not supported by Cyphra yet: the relation field is converted without them",
-);
 
 /** `@relationship` arguments that only shape the GraphQL API. */
 export const RELATIONSHIP_API_ARGS: readonly string[] = ["nestedOperations", "aggregate"];

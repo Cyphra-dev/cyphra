@@ -6,6 +6,7 @@ import {
   memgraphDropStatement,
   readSchemaObjects,
   runPendingMigrations,
+  withMemgraphStorageAccess,
 } from "@cyphra/migrator";
 import { clientForConfig, falkordbGraphFromEnv, falkordbUrlFromEnv } from "../clientFromEnv.js";
 import type { CyphraConfig } from "../config.js";
@@ -187,12 +188,14 @@ async function resetMemgraph(client: CyphraClient): Promise<ResetCounts> {
     let constraints = 0;
     let indexes = 0;
     for (const o of objects) {
-      await session.run(memgraphDropStatement(o));
+      await withMemgraphStorageAccess(() => session.run(memgraphDropStatement(o)));
       if (o.kind === "constraint") constraints++;
       else indexes++;
     }
     // Cyphra's migration-name constraint (left out of `readSchemaObjects`).
-    await session.run(`DROP CONSTRAINT ON (m:${CYPHRA_MIGRATION_LABEL}) ASSERT m.name IS UNIQUE`);
+    await withMemgraphStorageAccess(() =>
+      session.run(`DROP CONSTRAINT ON (m:${CYPHRA_MIGRATION_LABEL}) ASSERT m.name IS UNIQUE`),
+    );
     const [row] = (await session.run("MATCH (n) RETURN count(n) AS c")).records;
     const c = row?.get("c") as { toNumber?: () => number } | number | undefined;
     const nodes = typeof c === "object" && c?.toNumber ? c.toNumber() : Number(c ?? 0);

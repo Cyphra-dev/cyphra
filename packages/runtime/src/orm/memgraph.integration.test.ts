@@ -11,7 +11,7 @@ import {
 } from "./__fixtures__/search.gen.js";
 import { createClient as createGeoClient } from "./__fixtures__/geo.gen.js";
 import { createClient as createBlogClient } from "./__fixtures__/blog.gen.js";
-import { onMemgraph, testDialect } from "./__fixtures__/testDialect.js";
+import { onMemgraph, retryStorageAccess, testDialect } from "./__fixtures__/testDialect.js";
 import { CyphraError, UnsupportedFeatureError } from "./errors.js";
 import { CyphraClient } from "../client.js";
 import { detectDialect } from "../dialect.js";
@@ -32,10 +32,13 @@ const conn = () => ({
 
 describe.skipIf(!hasMemgraph)("Memgraph text search", () => {
   let db: SearchDb;
+  // Schema statements: other suites' transactions can hold the storage (see retryStorageAccess).
   const run = (text: string) =>
-    db.$client.withSession(async (s) => {
-      await s.run(text);
-    });
+    retryStorageAccess(() =>
+      db.$client.withSession(async (s) => {
+        await s.run(text);
+      }),
+    );
 
   beforeAll(async () => {
     db = createSearchClient({ ...conn(), dialect: testDialect });
