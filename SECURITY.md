@@ -4,7 +4,7 @@
 
 We support the latest published minor release line of Cyphra packages on npm.
 
-The support policy for 1.0 and later (including fixes for the previous major) is being drafted in the [stability policy](./STABILITY.md).
+From 1.0, the previous major also gets high and critical security fixes for 6 months after the next major ships; see the [stability policy](./STABILITY.md) (draft for 1.0).
 
 ## Reporting a vulnerability
 
