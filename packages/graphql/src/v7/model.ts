@@ -8,12 +8,17 @@
  * @packageDocumentation
  */
 
+import { CyphraError } from "@cyphra/runtime";
 import {
+  getLocation,
   Kind,
   parse,
+  type ASTNode,
   valueFromASTUntyped,
   type ConstDirectiveNode,
   type ConstValueNode,
+  type DefinitionNode,
+  type DocumentNode,
   type FieldDefinitionNode,
   type InputObjectTypeDefinitionNode,
   type InterfaceTypeDefinitionNode,
@@ -567,9 +572,154 @@ export function selectedMembers(
   return members.filter((rel) => w[rel.target]).map((rel) => ({ rel, where: w[rel.target] }));
 }
 
-/** The type definitions use a feature `@cyphra/graphql` cannot serve yet. */
-export class UnsupportedTypeDefsError extends Error {
+/**
+ * The kind of a {@link TypeDefsIssue}: `UNSUPPORTED` for a construct `@cyphra/graphql` does not
+ * serve yet, `INVALID` for type definitions `@neo4j/graphql` 7 rejects too (with v7's message),
+ * `SYNTAX` for type definitions that do not parse (from `checkTypeDefs` only).
+ */
+export type TypeDefsIssueCode = "UNSUPPORTED" | "INVALID" | "SYNTAX";
+
+/** Where a {@link TypeDefsIssue} is in the type definitions. */
+export type TypeDefsIssueLocation = {
+  /** The type definitions file (or source name) `line` and `column` are in, when known. */
+  readonly source?: string;
+  /** The type (or `schema`) the issue is on. */
+  readonly type?: string;
+  /** The field of `type` the issue is on. */
+  readonly field?: string;
+  /** 1-based line of the construct in the type definitions. */
+  readonly line?: number;
+  /** 1-based column of the construct in the type definitions. */
+  readonly column?: number;
+};
+
+/** One unsupported construct or invalid usage in the type definitions. */
+export type TypeDefsIssue = {
+  readonly code: TypeDefsIssueCode;
+  readonly message: string;
+  readonly location: TypeDefsIssueLocation;
+};
+
+function issueCode(message: string): TypeDefsIssueCode {
+  return /not supported|is not an argument of|cannot be used on a @/.test(message)
+    ? "UNSUPPORTED"
+    : "INVALID";
+}
+
+/** ` (User.name, line 3, column 5)` / ` (User.name, schema.graphql:3:5)`; empty without location. */
+export function formatIssueLocation(location: TypeDefsIssueLocation): string {
+  const { type, field, source, line, column } = location;
+  const position =
+    line === undefined
+      ? source
+      : source !== undefined
+        ? `${source}:${line}${column !== undefined ? `:${column}` : ""}`
+        : `line ${line}${column !== undefined ? `, column ${column}` : ""}`;
+  const at = [type && (field ? `${type}.${field}` : type), position].filter(Boolean);
+  return at.length ? ` (${at.join(", ")})` : "";
+}
+
+/**
+ * The type definitions use features `@cyphra/graphql` cannot serve yet, or are invalid for
+ * `@neo4j/graphql` 7. `issues` lists every one of them (`compat.v7.makeSchema` reads the whole type
+ * definitions before throwing); with one issue, `message` is that issue's message.
+ *
+ * @example
+ * ```ts
+ * try {
+ *   compat.v7.makeSchema({ typeDefs, driver });
+ * } catch (e) {
+ *   if (e instanceof UnsupportedTypeDefsError) for (const i of e.issues) console.error(i.message);
+ * }
+ * ```
+ */
+export class UnsupportedTypeDefsError extends CyphraError {
   override name = "UnsupportedTypeDefsError";
+  /** Every unsupported construct or invalid usage found, in type definitions order. */
+  readonly issues: readonly TypeDefsIssue[];
+
+  constructor(message: string, issues?: readonly TypeDefsIssue[]) {
+    super(message);
+    this.issues = issues ?? [{ code: issueCode(message), message, location: {} }];
+  }
+
+  /** One error listing `issues` (at least one). */
+  static fromIssues(issues: readonly TypeDefsIssue[]): UnsupportedTypeDefsError {
+    if (issues.length === 1) return new UnsupportedTypeDefsError(issues[0]!.message, issues);
+    // The messages name their type and field: the lines add the position only.
+    const lines = issues.map(({ message, location: { source, line, column } }) => {
+      const at = line === undefined ? "" : formatIssueLocation({ source, line, column });
+      return `- ${message}${at}`;
+    });
+    return new UnsupportedTypeDefsError(
+      `${issues.length} problems in the type definitions:\n${lines.join("\n")}`,
+      issues,
+    );
+  }
+}
+
+type IssueFrame = { node?: ASTNode; type?: string; field?: string };
+
+/**
+ * Collects the issues of one reading of the type definitions: {@link attempt} records the
+ * {@link UnsupportedTypeDefsError} of a construct and reading goes on with the next one.
+ */
+class IssueCollector {
+  readonly issues: TypeDefsIssue[] = [];
+  private readonly frames: IssueFrame[] = [];
+
+  run<T>(frame: IssueFrame, fn: () => T): T | undefined {
+    this.frames.push(frame);
+    try {
+      return fn();
+    } catch (e) {
+      if (!(e instanceof UnsupportedTypeDefsError)) throw e;
+      this.record(e);
+      return undefined;
+    } finally {
+      this.frames.pop();
+    }
+  }
+
+  /** Records `e` at the innermost frame (its type, field and AST position). */
+  record(e: UnsupportedTypeDefsError): void {
+    const inner = [...this.frames].reverse();
+    const at = inner.find((f) => f.type !== undefined);
+    const node = inner.find((f) => f.node?.loc)?.node;
+    const type = at?.type;
+    const field = at?.field;
+    const pos = node?.loc ? getLocation(node.loc.source, node.loc.start) : undefined;
+    for (const issue of e.issues) {
+      this.issues.push({
+        code: issue.code,
+        message: issue.message,
+        location: {
+          ...(type !== undefined && { type }),
+          ...(field !== undefined && { field }),
+          ...(pos && { line: pos.line, column: pos.column }),
+          ...issue.location,
+        },
+      });
+    }
+  }
+}
+
+let collector: IssueCollector | undefined;
+
+/**
+ * Runs `fn`, the reading of one construct (`node`, on `type` / `field`). While the type definitions
+ * are read, an {@link UnsupportedTypeDefsError} it throws is recorded and `undefined` returned so
+ * the reading goes on; otherwise the error is thrown.
+ */
+function attempt<T>(frame: IssueFrame, fn: () => T): T | undefined {
+  return collector ? collector.run(frame, fn) : fn();
+}
+
+/** Records an issue at `frame` (throws it when no type definitions are being read). */
+function report(frame: IssueFrame, message: string): void {
+  attempt(frame, () => {
+    throw new UnsupportedTypeDefsError(message);
+  });
 }
 
 function directive(
@@ -817,7 +967,8 @@ function readAttribute(
 ): Attribute {
   for (const d of f.directives ?? []) {
     if (!ACCEPTED_FIELD_DIRECTIVES.has(d.name.value)) {
-      throw new UnsupportedTypeDefsError(
+      report(
+        { node: d },
         `${owner}.${f.name.value}: @${d.name.value} is not supported by @cyphra/graphql yet.`,
       );
     }
@@ -1206,7 +1357,8 @@ function readJwtClaims(o: ObjectTypeDefinitionNode): Map<string, string> {
   for (const f of o.fields ?? []) {
     for (const d of f.directives ?? []) {
       if (d.name.value !== "jwtClaim") {
-        throw new UnsupportedTypeDefsError(
+        report(
+          { node: d, type: o.name.value, field: f.name.value },
           `${o.name.value}.${f.name.value}: @${d.name.value} is not supported on the @jwt type.`,
         );
       }
@@ -1228,7 +1380,8 @@ function readCypherNodeField(
   const where = `${owner}.${f.name.value}`;
   for (const d of f.directives ?? []) {
     if (!CYPHER_FIELD_DIRECTIVES.has(d.name.value)) {
-      throw new UnsupportedTypeDefsError(
+      report(
+        { node: d },
         `${where}: @${d.name.value} on a @cypher field returning nodes is not supported by @cyphra/graphql yet.`,
       );
     }
@@ -1257,19 +1410,28 @@ function readRootType(
   const type = o.name.value;
   let authentication: AuthenticationAnnotation | undefined;
   for (const d of o.directives ?? []) {
-    if (d.name.value !== "authentication") {
-      throw new UnsupportedTypeDefsError(
-        `type ${type}: @${d.name.value} is not supported by @cyphra/graphql yet.`,
-      );
-    }
-    authentication = readAuthentication(`type ${type}`, d);
+    attempt({ node: d, type }, () => {
+      if (d.name.value !== "authentication") {
+        throw new UnsupportedTypeDefsError(
+          `type ${type}: @${d.name.value} is not supported by @cyphra/graphql yet.`,
+        );
+      }
+      authentication = readAuthentication(`type ${type}`, d);
+    });
   }
   const resolved: UserRootField[] = [];
-  const fields = (o.fields ?? []).flatMap((f): CypherRootField[] => {
+  const fields = (o.fields ?? []).flatMap(
+    (f): CypherRootField[] =>
+      attempt({ node: f, type, field: f.name.value }, () => readRootField(f)) ?? [],
+  );
+  return { fields, resolved, authentication };
+
+  function readRootField(f: FieldDefinitionNode): CypherRootField[] {
     const where = `${type}.${f.name.value}`;
     for (const d of f.directives ?? []) {
       if (!["cypher", "deprecated", "authentication"].includes(d.name.value)) {
-        throw new UnsupportedTypeDefsError(
+        report(
+          { node: d },
           `${where}: @${d.name.value} is not supported on ${type} fields by @cyphra/graphql yet.`,
         );
       }
@@ -1308,8 +1470,7 @@ function readRootType(
         authentication: readAuthentication(where, directive(f.directives, "authentication")),
       },
     ];
-  });
-  return { fields, resolved, authentication };
+  }
 }
 
 /** `union U = A | B`: members must be `@node` types; no directives. */
@@ -1321,30 +1482,34 @@ function readUnions(
   const unions = new Map<string, UnionType>();
   for (const def of defs) {
     const name = def.name.value;
-    if (unions.has(name))
-      throw new UnsupportedTypeDefsError(`union ${name}: defined more than once.`);
-    let query: QueryConfig | undefined;
-    for (const d of def.directives ?? []) {
-      if (d.name.value !== "query" || query) {
-        throw new UnsupportedTypeDefsError(
-          `union ${name}: @${d.name.value} is not supported by @cyphra/graphql yet.`,
-        );
+    attempt({ node: def, type: name }, () => {
+      if (unions.has(name))
+        throw new UnsupportedTypeDefsError(`union ${name}: defined more than once.`);
+      let query: QueryConfig | undefined;
+      for (const d of def.directives ?? []) {
+        attempt({ node: d }, () => {
+          if (d.name.value !== "query" || query) {
+            throw new UnsupportedTypeDefsError(
+              `union ${name}: @${d.name.value} is not supported by @cyphra/graphql yet.`,
+            );
+          }
+          query = readQueryConfig(`union ${name}`, d);
+        });
       }
-      query = readQueryConfig(`union ${name}`, d);
-    }
-    const members = (def.types ?? []).map((t) => t.name.value);
-    if (!members.length) throw new UnsupportedTypeDefsError(`union ${name}: it has no member.`);
-    for (const m of members) {
-      if (!nodes.has(m)) {
-        throw new UnsupportedTypeDefsError(`union ${name}: member ${m} must be a @node type.`);
+      const members = (def.types ?? []).map((t) => t.name.value);
+      if (!members.length) throw new UnsupportedTypeDefsError(`union ${name}: it has no member.`);
+      for (const t of def.types ?? []) {
+        if (!nodes.has(t.name.value)) {
+          report({ node: t }, `union ${name}: member ${t.name.value} must be a @node type.`);
+        }
       }
-    }
-    unions.set(name, {
-      name,
-      description: def.description?.value,
-      members,
-      plural: entityPlural(name),
-      read: (query ?? schemaQuery)?.read ?? true,
+      unions.set(name, {
+        name,
+        description: def.description?.value,
+        members,
+        plural: entityPlural(name),
+        read: (query ?? schemaQuery)?.read ?? true,
+      });
     });
   }
   return unions;
@@ -1397,7 +1562,8 @@ function readUserField(
   const where = `${owner}.${f.name.value}`;
   for (const d of f.directives ?? []) {
     if (!["customResolver", "deprecated", ...FIELD_CONFIG_DIRECTIVES].includes(d.name.value)) {
-      throw new UnsupportedTypeDefsError(
+      report(
+        { node: d },
         `${where}: @${d.name.value} on a field served by resolvers is not supported by @cyphra/graphql yet.`,
       );
     }
@@ -1461,10 +1627,13 @@ function readUserTypes(
   const out = new Map<string, UserTypeDefinition>();
   const add = (def: UserTypeDefinition, kind: string) => {
     const name = def.name.value;
-    if (out.has(name))
-      throw new UnsupportedTypeDefsError(`${kind} ${name}: defined more than once.`);
+    if (out.has(name)) {
+      report({ node: def, type: name }, `${kind} ${name}: defined more than once.`);
+      return;
+    }
     for (const d of def.directives ?? []) {
-      throw new UnsupportedTypeDefsError(
+      report(
+        { node: d, type: name },
         `${kind} ${name}: @${d.name.value} is not supported by @cyphra/graphql yet.`,
       );
     }
@@ -1474,7 +1643,8 @@ function readUserTypes(
     for (const f of o.fields ?? []) {
       for (const d of f.directives ?? []) {
         if (d.name.value !== "deprecated") {
-          throw new UnsupportedTypeDefsError(
+          report(
+            { node: d, type: o.name.value, field: f.name.value },
             `${o.name.value}.${f.name.value}: @${d.name.value} on a type without @node is not supported by @cyphra/graphql yet.`,
           );
         }
@@ -1488,7 +1658,8 @@ function readUserTypes(
     const members = (u.types ?? []).map((t) => t.name.value);
     if (!members.length || !members.every((m) => plain.has(m))) {
       if (members.some((m) => plain.has(m)) && members.some((m) => nodes.has(m))) {
-        throw new UnsupportedTypeDefsError(
+        report(
+          { node: u, type: u.name.value },
           `union ${u.name.value}: unions mixing @node types and types without @node are not supported by @cyphra/graphql yet.`,
         );
       }
@@ -1522,18 +1693,25 @@ function checkUserTypeReferences(opts: {
     scalarsAndEnums.has(n) ||
     outputs.has(n) ||
     (userTypes.has(n) && userTypes.get(n)!.kind !== Kind.INPUT_OBJECT_TYPE_DEFINITION);
-  const fail = (where: string, name: string, input: boolean): never => {
-    throw new UnsupportedTypeDefsError(
+  const fail = (
+    at: IssueFrame & { node: ASTNode },
+    where: string,
+    name: string,
+    input: boolean,
+  ): void => {
+    report(
+      at,
       `${where}: type ${name} is not supported by @cyphra/graphql yet (${input ? "scalars, enums and input types" : "scalars, enums, @node types, unions and object types"} of the type definitions only).`,
     );
   };
   const checkField = (owner: string, f: FieldDefinitionNode) => {
     const where = `${owner}.${f.name.value}`;
+    const at = { type: owner, field: f.name.value };
     const out = namedTypeOf(f.type);
-    if (!isOutput(out)) fail(where, out, false);
+    if (!isOutput(out)) fail({ ...at, node: f.type }, where, out, false);
     for (const a of f.arguments ?? []) {
       const t = namedTypeOf(a.type);
-      if (!isInput(t)) fail(`${where}(${a.name.value})`, t, true);
+      if (!isInput(t)) fail({ ...at, node: a }, `${where}(${a.name.value})`, t, true);
     }
   };
   for (const def of userTypes.values()) {
@@ -1543,7 +1721,14 @@ function checkUserTypeReferences(opts: {
     } else if (def.kind === Kind.INPUT_OBJECT_TYPE_DEFINITION) {
       for (const f of def.fields ?? []) {
         const t = namedTypeOf(f.type);
-        if (!isInput(t)) fail(`${name}.${f.name.value}`, t, true);
+        if (!isInput(t)) {
+          fail(
+            { node: f.type, type: name, field: f.name.value },
+            `${name}.${f.name.value}`,
+            t,
+            true,
+          );
+        }
       }
     }
   }
@@ -1573,10 +1758,17 @@ function readInterfaces(
     unions: ReadonlyMap<string, UnionType>;
     interfaces: ReadonlySet<string>;
     schemaQuery: QueryConfig | undefined;
+    /** `Type.field` of the `@node` fields that could not be read (already reported). */
+    failed: ReadonlySet<string>;
   },
 ): Map<string, InterfaceType> {
   const out = new Map<string, InterfaceType>();
   for (const def of defs) {
+    attempt({ node: def, type: def.name.value }, () => readInterface(def));
+  }
+  return out;
+
+  function readInterface(def: InterfaceTypeDefinitionNode): void {
     const name = def.name.value;
     if (out.has(name))
       throw new UnsupportedTypeDefsError(`interface ${name}: defined more than once.`);
@@ -1588,12 +1780,10 @@ function readInterfaces(
     for (const d of def.directives ?? []) {
       if (d.name.value === "authorization" || d.name.value === "authentication") {
         // v7 rejects them (the rules go on the implementations).
-        throw new UnsupportedTypeDefsError(
-          `Directive "@${d.name.value}" may not be used on INTERFACE.`,
-        );
-      }
-      if (!["query", "plural", "limit"].includes(d.name.value)) {
-        throw new UnsupportedTypeDefsError(
+        report({ node: d }, `Directive "@${d.name.value}" may not be used on INTERFACE.`);
+      } else if (!["query", "plural", "limit"].includes(d.name.value)) {
+        report(
+          { node: d },
           `interface ${name}: @${d.name.value} is not supported by @cyphra/graphql yet.`,
         );
       }
@@ -1607,8 +1797,19 @@ function readInterfaces(
     const attributes: Attribute[] = [];
     const relationships: Relationship[] = [];
     for (const f of def.fields ?? []) {
+      attempt({ node: f, type: name, field: f.name.value }, () => readInterfaceField(f));
+    }
+    function readInterfaceField(f: FieldDefinitionNode): void {
       const where = `${name}.${f.name.value}`;
-      for (const d of f.directives ?? []) {
+      const directivesOk = (f.directives ?? []).map((d) =>
+        attempt({ node: d }, () => {
+          checkDirective(d);
+          return true;
+        }),
+      );
+      // The field is read with its directives (the issues of the others are reported).
+      if (directivesOk.includes(undefined)) return;
+      function checkDirective(d: ConstDirectiveNode): void {
         if (d.name.value === "relationship") {
           throw new UnsupportedTypeDefsError(
             `Invalid directive usage: Directive @relationship is not supported on fields of interface types (${name}). Since version 5.0.0, interface fields can only have @declareRelationship. Please add the @relationship directive to the fields in all types which implement it.`,
@@ -1630,6 +1831,8 @@ function readInterfaces(
           `${where}: field arguments on interfaces are not supported by @cyphra/graphql yet.`,
         );
       }
+      // An implementation field that could not be read is already reported.
+      if (impls.some((n) => known.failed.has(`${n.name}.${f.name.value}`))) return;
       const t = typeRef(f.type);
       const implFields = impls.map((n) => ({
         node: n,
@@ -1689,7 +1892,7 @@ function readInterfaces(
           config,
           uniform,
         });
-        continue;
+        return;
       }
       const isEnum = known.enums.has(t.name);
       if (!isEnum && !(SUPPORTED_SCALARS as readonly string[]).includes(t.name)) {
@@ -1756,16 +1959,79 @@ function readInterfaces(
       limit: readLimit(`interface ${name}`, directive(def.directives, "limit")),
     });
   }
-  return out;
 }
 
 /**
  * Read v7 type definitions. Throws {@link UnsupportedTypeDefsError} for features `@cyphra/graphql`
- * does not serve yet (spatial and some temporal types, …), so the generated
- * API never silently differs from v7.
+ * does not serve yet (spatial and some temporal types, …), so the generated API never silently
+ * differs from v7. The whole type definitions are read first: the error lists every issue.
  */
 export function readTypeDefs(typeDefs: string): V7Model {
-  const doc = parse(typeDefs);
+  const { model, issues } = collectTypeDefsIssues(typeDefs);
+  if (issues.length) throw UnsupportedTypeDefsError.fromIssues(issues);
+  return model;
+}
+
+/**
+ * Read v7 type definitions, collecting every unsupported construct or invalid usage instead of
+ * throwing at the first one. `model` is only meaningful when `issues` is empty (the constructs with
+ * an issue are left out of it). Throws the `GraphQLError` of `parse` on a syntax error.
+ */
+export function collectTypeDefsIssues(typeDefs: string): {
+  model: V7Model;
+  issues: TypeDefsIssue[];
+  document: DocumentNode;
+} {
+  const document = parse(typeDefs);
+  const previous = collector;
+  const current = new IssueCollector();
+  collector = current;
+  try {
+    const model = readDocument(document.definitions);
+    return { model, issues: sortIssues(current.issues), document };
+  } finally {
+    collector = previous;
+  }
+}
+
+/**
+ * An issue on `type` (and `field`) of the type definitions `document`, with the position of that
+ * field or type when the document has it.
+ */
+export function issueAt(
+  document: DocumentNode,
+  message: string,
+  type: string,
+  field?: string,
+): TypeDefsIssue {
+  const def = document.definitions.find(
+    (d) => "name" in d && d.name?.value === type && "fields" in d,
+  ) as ObjectTypeDefinitionNode | InterfaceTypeDefinitionNode | undefined;
+  const fieldNode = field ? def?.fields?.find((f) => f.name.value === field) : undefined;
+  const node: ASTNode | undefined = fieldNode ?? def;
+  const pos = node?.loc ? getLocation(node.loc.source, node.loc.start) : undefined;
+  return {
+    code: issueCode(message),
+    message,
+    location: {
+      type,
+      ...(field !== undefined && { field }),
+      ...(pos && { line: pos.line, column: pos.column }),
+    },
+  };
+}
+
+/** The issues in type definitions order (those without a position last). */
+export function sortIssues(issues: readonly TypeDefsIssue[]): TypeDefsIssue[] {
+  const key = (i: TypeDefsIssue) =>
+    (i.location.line ?? Number.MAX_SAFE_INTEGER) * 1e6 + (i.location.column ?? 0);
+  return issues
+    .map((issue, index) => ({ issue, index }))
+    .sort((a, b) => key(a.issue) - key(b.issue) || a.index - b.index)
+    .map((x) => x.issue);
+}
+
+function readDocument(definitions: readonly DefinitionNode[]): V7Model {
   const objects: ObjectTypeDefinitionNode[] = [];
   const interfaceDefs: InterfaceTypeDefinitionNode[] = [];
   const unionDefs: UnionTypeDefinitionNode[] = [];
@@ -1775,45 +2041,49 @@ export function readTypeDefs(typeDefs: string): V7Model {
   let schemaSubscription: ReadonlySet<SubscriptionEvent> | undefined;
   let schemaQuery: QueryConfig | undefined;
   let schemaMutation: MutationConfig | undefined;
-  for (const def of doc.definitions) {
+  for (const def of definitions) {
     switch (def.kind) {
       case Kind.SCHEMA_EXTENSION:
       case Kind.SCHEMA_DEFINITION: {
+        const at = { node: def, type: "schema" };
         if (def.operationTypes?.length) {
-          throw new UnsupportedTypeDefsError(
+          report(
+            at,
             "schema: custom root operation types are not supported by @cyphra/graphql yet.",
           );
         }
         for (const d of def.directives ?? []) {
-          if (d.name.value === "subscription") {
-            if (schemaSubscription) {
-              throw new UnsupportedTypeDefsError("schema: @subscription is set more than once.");
+          attempt({ ...at, node: d }, () => {
+            if (d.name.value === "subscription") {
+              if (schemaSubscription) {
+                throw new UnsupportedTypeDefsError("schema: @subscription is set more than once.");
+              }
+              schemaSubscription = readSubscription("schema", d);
+              return;
             }
-            schemaSubscription = readSubscription("schema", d);
-            continue;
-          }
-          if (d.name.value === "query") {
-            if (schemaQuery)
-              throw new UnsupportedTypeDefsError("schema: @query is set more than once.");
-            schemaQuery = readQueryConfig("schema", d);
-            continue;
-          }
-          if (d.name.value === "mutation") {
-            if (schemaMutation) {
-              throw new UnsupportedTypeDefsError("schema: @mutation is set more than once.");
+            if (d.name.value === "query") {
+              if (schemaQuery)
+                throw new UnsupportedTypeDefsError("schema: @query is set more than once.");
+              schemaQuery = readQueryConfig("schema", d);
+              return;
             }
-            schemaMutation = readMutationConfig("schema", d);
-            continue;
-          }
-          if (d.name.value !== "authentication") {
-            throw new UnsupportedTypeDefsError(
-              `schema: @${d.name.value} is not supported by @cyphra/graphql yet.`,
-            );
-          }
-          if (schemaAuthentication) {
-            throw new UnsupportedTypeDefsError("schema: @authentication is set more than once.");
-          }
-          schemaAuthentication = readAuthentication("schema", d);
+            if (d.name.value === "mutation") {
+              if (schemaMutation) {
+                throw new UnsupportedTypeDefsError("schema: @mutation is set more than once.");
+              }
+              schemaMutation = readMutationConfig("schema", d);
+              return;
+            }
+            if (d.name.value !== "authentication") {
+              throw new UnsupportedTypeDefsError(
+                `schema: @${d.name.value} is not supported by @cyphra/graphql yet.`,
+              );
+            }
+            if (schemaAuthentication) {
+              throw new UnsupportedTypeDefsError("schema: @authentication is set more than once.");
+            }
+            schemaAuthentication = readAuthentication("schema", d);
+          });
         }
         break;
       }
@@ -1829,23 +2099,26 @@ export function readTypeDefs(typeDefs: string): V7Model {
       case Kind.INPUT_OBJECT_TYPE_DEFINITION:
         inputDefs.push(def);
         break;
-      case Kind.ENUM_TYPE_DEFINITION:
+      case Kind.ENUM_TYPE_DEFINITION: {
+        const name = def.name.value;
         for (const d of def.directives ?? []) {
-          throw new UnsupportedTypeDefsError(
-            `enum ${def.name.value}: @${d.name.value} is not supported by @cyphra/graphql yet.`,
+          report(
+            { node: d, type: name },
+            `enum ${name}: @${d.name.value} is not supported by @cyphra/graphql yet.`,
           );
         }
         for (const v of def.values ?? []) {
           for (const d of v.directives ?? []) {
             if (d.name.value !== "deprecated") {
-              throw new UnsupportedTypeDefsError(
-                `enum ${def.name.value}.${v.name.value}: @${d.name.value} is not supported by @cyphra/graphql yet.`,
+              report(
+                { node: d, type: name, field: v.name.value },
+                `enum ${name}.${v.name.value}: @${d.name.value} is not supported by @cyphra/graphql yet.`,
               );
             }
           }
         }
-        enums.set(def.name.value, {
-          name: def.name.value,
+        enums.set(name, {
+          name,
           description: def.description?.value,
           values: (def.values ?? []).map((v) => ({
             name: v.name.value,
@@ -1854,9 +2127,11 @@ export function readTypeDefs(typeDefs: string): V7Model {
           })),
         });
         break;
+      }
       case Kind.SCALAR_TYPE_DEFINITION:
         if (!(SUPPORTED_SCALARS as readonly string[]).includes(def.name.value)) {
-          throw new UnsupportedTypeDefsError(
+          report(
+            { node: def, type: def.name.value },
             `scalar ${def.name.value}: custom scalars are not supported by @cyphra/graphql yet.`,
           );
         }
@@ -1864,7 +2139,8 @@ export function readTypeDefs(typeDefs: string): V7Model {
       case Kind.DIRECTIVE_DEFINITION:
         break;
       default:
-        throw new UnsupportedTypeDefsError(
+        report(
+          { node: def, ...("name" in def && def.name ? { type: def.name.value } : {}) },
           `${def.kind}${"name" in def && def.name ? ` ${def.name.value}` : ""}: not supported by @cyphra/graphql yet (only object, interface, input, union and enum types).`,
         );
     }
@@ -1875,32 +2151,40 @@ export function readTypeDefs(typeDefs: string): V7Model {
   const nodeDefs: ObjectTypeDefinitionNode[] = [];
   const plainDefs: ObjectTypeDefinitionNode[] = [];
   const rootDefs = new Map<string, ObjectTypeDefinitionNode>();
+  /** `Type.field` of the fields that could not be read (their issue is reported). */
+  const failed = new Set<string>();
   let jwtClaims: Map<string, string> | undefined;
   for (const o of objects) {
     const name = o.name.value;
+    const at = { node: o, type: name };
     if (name === "Subscription") {
-      throw new UnsupportedTypeDefsError(
+      report(
+        at,
         "type Subscription: custom subscription fields are not supported by @cyphra/graphql yet (the generated ones come from @subscription).",
       );
+      continue;
     }
     if (name === "Query" || name === "Mutation") {
       if (rootDefs.has(name)) {
-        throw new UnsupportedTypeDefsError(`type ${name}: defined more than once.`);
+        report(at, `type ${name}: defined more than once.`);
+        continue;
       }
       rootDefs.set(name, o);
       continue;
     }
     for (const d of o.directives ?? []) {
       if (!ACCEPTED_TYPE_DIRECTIVES.has(d.name.value)) {
-        throw new UnsupportedTypeDefsError(
+        report(
+          { ...at, node: d },
           `type ${name}: @${d.name.value} is not supported by @cyphra/graphql yet.`,
         );
       }
     }
     const only = (own: string) => {
       for (const d of o.directives ?? []) {
-        if (d.name.value !== own) {
-          throw new UnsupportedTypeDefsError(
+        if (d.name.value !== own && ACCEPTED_TYPE_DIRECTIVES.has(d.name.value)) {
+          report(
+            { ...at, node: d },
             `type ${name}: @${d.name.value} cannot be used on a @${own} type.`,
           );
         }
@@ -1908,32 +2192,35 @@ export function readTypeDefs(typeDefs: string): V7Model {
     };
     if (directive(o.directives, "jwt")) {
       only("jwt");
-      if (jwtClaims)
-        throw new UnsupportedTypeDefsError(`type ${name}: only one @jwt type is allowed.`);
-      jwtClaims = readJwtClaims(o);
+      if (jwtClaims) {
+        report(at, `type ${name}: only one @jwt type is allowed.`);
+        continue;
+      }
+      jwtClaims = attempt(at, () => readJwtClaims(o)) ?? new Map();
       continue;
     }
     if (directive(o.directives, "relationshipProperties")) {
       only("relationshipProperties");
       properties.set(name, {
         name,
-        attributes: (o.fields ?? []).map((f) => {
-          const a = readAttribute(name, f, enumNames);
-          if (a.auth) {
-            throw new UnsupportedTypeDefsError(
-              `${name}.${f.name.value}: @authentication / @authorization on relationship properties are not supported.`,
-            );
-          }
-          return a;
+        attributes: (o.fields ?? []).flatMap((f) => {
+          const a = attempt({ node: f, type: name, field: f.name.value }, () => {
+            const a = readAttribute(name, f, enumNames);
+            if (a.auth) {
+              throw new UnsupportedTypeDefsError(
+                `${name}.${f.name.value}: @authentication / @authorization on relationship properties are not supported.`,
+              );
+            }
+            return a;
+          });
+          return a ? [a] : [];
         }),
       });
       continue;
     }
     if (!directive(o.directives, "node")) {
       if (o.interfaces?.length) {
-        throw new UnsupportedTypeDefsError(
-          `type ${name}: only @node types can implement interfaces in @cyphra/graphql.`,
-        );
+        report(at, `type ${name}: only @node types can implement interfaces in @cyphra/graphql.`);
       }
       // v7: an object type without @node is a plain type, served by the application's resolvers.
       plainDefs.push(o);
@@ -1947,8 +2234,11 @@ export function readTypeDefs(typeDefs: string): V7Model {
     [schemaMutation, "mutation"],
   ] as const) {
     if (!config) continue;
-    if ([...nodeDefs, ...unionDefs].some((t) => directive(t.directives, name))) {
-      throw new UnsupportedTypeDefsError(
+    for (const t of [...nodeDefs, ...unionDefs]) {
+      const d = directive(t.directives, name);
+      if (!d) continue;
+      report(
+        { node: d, type: t.name.value },
         `Invalid directive usage: Directive @${name} can only be used in one location: either schema or type.`,
       );
     }
@@ -1958,7 +2248,8 @@ export function readTypeDefs(typeDefs: string): V7Model {
     if (o.kind === Kind.OBJECT_TYPE_DEFINITION && !nodeNames.has(o.name.value)) continue;
     for (const i of o.interfaces ?? []) {
       if (!interfaceDefs.some((d) => d.name.value === i.name.value)) {
-        throw new UnsupportedTypeDefsError(
+        report(
+          { node: i, type: o.name.value },
           `type ${o.name.value}: implements ${i.name.value}, which is not an interface of the type definitions.`,
         );
       }
@@ -1983,9 +2274,11 @@ export function readTypeDefs(typeDefs: string): V7Model {
         const byField = declaredOn.get(impl) ?? new Map<string, string>();
         const other = byField.get(f.name.value);
         if (other) {
-          throw new UnsupportedTypeDefsError(
+          report(
+            { node: f, type: d.name.value, field: f.name.value },
             `type ${impl}: relationship ${f.name.value} is declared by both ${other} and ${d.name.value}, which @cyphra/graphql does not support.`,
           );
+          continue;
         }
         byField.set(f.name.value, d.name.value);
         declaredOn.set(impl, byField);
@@ -2007,7 +2300,7 @@ export function readTypeDefs(typeDefs: string): V7Model {
     const relationships: Relationship[] = [];
     const cypherNodes: CypherNodeField[] = [];
     const userFields: UserField[] = [];
-    for (const f of o.fields ?? []) {
+    const readField = (f: FieldDefinitionNode): void => {
       const rel = directive(f.directives, "relationship");
       const cypher = directive(f.directives, "cypher");
       const custom = directive(f.directives, "customResolver");
@@ -2018,7 +2311,7 @@ export function readTypeDefs(typeDefs: string): V7Model {
       }
       if (custom || (!rel && !cypher && isUserOutput(typeRef(f.type).name))) {
         userFields.push(readUserField(name, f, custom));
-        continue;
+        return;
       }
       if (!rel && unions.has(typeRef(f.type).name)) {
         throw new UnsupportedTypeDefsError(
@@ -2027,21 +2320,30 @@ export function readTypeDefs(typeDefs: string): V7Model {
       }
       if (cypher && !rel && nodeNames.has(typeRef(f.type).name)) {
         cypherNodes.push(readCypherNodeField(name, f, enumNames));
-        continue;
+        return;
       }
       if (!rel) {
         attributes.push(readAttribute(name, f, enumNames));
-        continue;
+        return;
       }
       for (const d of f.directives ?? []) {
         if (d.name.value === "authentication" || d.name.value === "authorization") {
-          throw new UnsupportedTypeDefsError(
+          report(
+            { node: d },
             `${name}.${f.name.value}: @${d.name.value} on a relationship field is not supported (put the rules on the related type).`,
           );
-        }
-        if (!RELATIONSHIP_FIELD_DIRECTIVES.has(d.name.value)) {
-          throw new UnsupportedTypeDefsError(
+        } else if (!RELATIONSHIP_FIELD_DIRECTIVES.has(d.name.value)) {
+          report(
+            { node: d },
             `${name}.${f.name.value}: @${d.name.value} on a relationship field is not supported by @cyphra/graphql yet.`,
+          );
+        }
+      }
+      for (const a of rel.arguments ?? []) {
+        if (!["type", "direction", "properties"].includes(a.name.value)) {
+          report(
+            { node: a },
+            `${name}.${f.name.value}: @relationship(${a.name.value}) is not supported by @cyphra/graphql yet.`,
           );
         }
       }
@@ -2050,13 +2352,6 @@ export function readTypeDefs(typeDefs: string): V7Model {
         throw new UnsupportedTypeDefsError(
           `${name}.${f.name.value}: relationships to ${t.name} are not supported by @cyphra/graphql yet (target must be a @node type, an interface or a union of @node types).`,
         );
-      }
-      for (const a of rel.arguments ?? []) {
-        if (!["type", "direction", "properties"].includes(a.name.value)) {
-          throw new UnsupportedTypeDefsError(
-            `${name}.${f.name.value}: @relationship(${a.name.value}) is not supported by @cyphra/graphql yet.`,
-          );
-        }
       }
       if (!t.list && t.required) {
         // v7 rejects these type definitions (a to-one relationship cannot guarantee a node).
@@ -2092,13 +2387,26 @@ export function readTypeDefs(typeDefs: string): V7Model {
         config,
         declaredBy: declaredOn.get(name)?.get(f.name.value),
       });
+    };
+    for (const f of o.fields ?? []) {
+      const at = { node: f, type: name, field: f.name.value };
+      const before = collector?.issues.length ?? 0;
+      const ok = attempt(at, () => {
+        readField(f);
+        return true;
+      });
+      // Also a field read with a reported issue (e.g. an ignored unsupported directive).
+      if (!ok || (collector?.issues.length ?? 0) > before) failed.add(`${name}.${f.name.value}`);
     }
+    const at = { node: o, type: name };
     const nodeDir = directive(o.directives, "node");
     const labels = listArg(nodeDir, "labels") ?? [name];
     const pluralDir = directive(o.directives, "plural");
     const typeQuery = directive(o.directives, "query");
     const typeMutation = directive(o.directives, "mutation");
     const plural = entityPlural(name, stringArg(pluralDir, "value"));
+    const typeDirective = <T>(d: string, fn: () => T): T | undefined =>
+      attempt({ ...at, node: directive(o.directives, d) ?? o }, fn);
     return {
       name,
       description: o.description?.value,
@@ -2109,26 +2417,54 @@ export function readTypeDefs(typeDefs: string): V7Model {
       relationships,
       cypherNodes,
       userFields,
-      fulltext: readFulltext(name, directive(o.directives, "fulltext"), attributes),
-      auth: readAuthAnnotations(`type ${name}`, o.directives) ?? {},
-      subscription: readSubscription(`type ${name}`, directive(o.directives, "subscription")),
-      subscriptionsAuthorization: readSubscriptionsAuthorization(
-        `type ${name}`,
-        directive(o.directives, "subscriptionsAuthorization"),
-        attributes,
+      fulltext:
+        typeDirective("fulltext", () =>
+          readFulltext(name, directive(o.directives, "fulltext"), attributes),
+        ) ?? [],
+      auth:
+        attempt(at, () => {
+          const authentication = typeDirective("authentication", () =>
+            readAuthentication(`type ${name}`, directive(o.directives, "authentication")),
+          );
+          const authorization = typeDirective("authorization", () =>
+            readAuthorization(`type ${name}`, directive(o.directives, "authorization")),
+          );
+          return authentication || authorization ? { authentication, authorization } : undefined;
+        }) ?? {},
+      subscription: typeDirective("subscription", () =>
+        readSubscription(`type ${name}`, directive(o.directives, "subscription")),
       ),
-      query: typeQuery ? readQueryConfig(`type ${name}`, typeQuery) : (schemaQuery ?? ALL_QUERIES),
-      mutation: typeMutation
-        ? readMutationConfig(`type ${name}`, typeMutation)
-        : (schemaMutation ?? ALL_MUTATIONS),
-      limit: readLimit(`type ${name}`, directive(o.directives, "limit")),
+      subscriptionsAuthorization: typeDirective("subscriptionsAuthorization", () =>
+        readSubscriptionsAuthorization(
+          `type ${name}`,
+          directive(o.directives, "subscriptionsAuthorization"),
+          attributes,
+        ),
+      ),
+      query:
+        (typeQuery && typeDirective("query", () => readQueryConfig(`type ${name}`, typeQuery))) ||
+        (schemaQuery ?? ALL_QUERIES),
+      mutation:
+        (typeMutation &&
+          typeDirective("mutation", () => readMutationConfig(`type ${name}`, typeMutation))) ||
+        (schemaMutation ?? ALL_MUTATIONS),
+      limit: typeDirective("limit", () =>
+        readLimit(`type ${name}`, directive(o.directives, "limit")),
+      ),
       interfaces: (o.interfaces ?? []).map((i) => i.name.value),
     };
   });
   const interfaces = readInterfaces(
     interfaceDefs.filter((d) => interfaceNames.has(d.name.value)),
     nodes,
-    { enums: enumNames, nodes: nodeNames, unions, interfaces: interfaceNames, schemaQuery },
+    {
+      enums: enumNames,
+      nodes: nodeNames,
+      unions,
+      interfaces: interfaceNames,
+      schemaQuery,
+      failed,
+    },
   );
 
   const byName0 = new Map(nodes.map((n) => [n.name, n]));
@@ -2137,15 +2473,18 @@ export function readTypeDefs(typeDefs: string): V7Model {
   const query = root("Query");
   const mutation = root("Mutation");
   const generated = new Set<string>();
+  const nodeDef = (name: string) => nodeDefs.find((o) => o.name.value === name);
   for (const n of byName0.values()) {
     // Root fields hidden by `@query` can be defined by the application instead (as in v7).
     if (n.query.read) generated.add(n.plural);
     if (n.query.connection || n.query.aggregate) generated.add(`${n.plural}Connection`);
     for (const ft of n.fulltext) {
       if (generated.has(ft.queryName)) {
-        throw new UnsupportedTypeDefsError(
+        report(
+          { node: directive(nodeDef(n.name)?.directives, "fulltext"), type: n.name },
           `type ${n.name} @fulltext: queryName ${ft.queryName} is already a Query field.`,
         );
+        continue;
       }
       generated.add(ft.queryName);
     }
@@ -2156,9 +2495,11 @@ export function readTypeDefs(typeDefs: string): V7Model {
       ...(i.query.connection || i.query.aggregate ? [`${i.plural}Connection`] : []),
     ]) {
       if (generated.has(field)) {
-        throw new UnsupportedTypeDefsError(
+        report(
+          { node: interfaceDefs.find((d) => d.name.value === i.name), type: i.name },
           `interface ${i.name}: its root query ${field} conflicts with another generated Query field.`,
         );
+        continue;
       }
       generated.add(field);
     }
@@ -2166,15 +2507,20 @@ export function readTypeDefs(typeDefs: string): V7Model {
   for (const u of unions.values()) {
     if (!u.read) continue;
     if (generated.has(u.plural)) {
-      throw new UnsupportedTypeDefsError(
+      report(
+        { node: unionDefs.find((d) => d.name.value === u.name), type: u.name },
         `union ${u.name}: its root query ${u.plural} conflicts with another generated Query field.`,
       );
+      continue;
     }
     generated.add(u.plural);
   }
+  const rootField = (type: string, name: string) =>
+    rootDefs.get(type)?.fields?.find((f) => f.name.value === name);
   for (const f of [...query.fields, ...query.resolved]) {
     if (generated.has(f.name)) {
-      throw new UnsupportedTypeDefsError(
+      report(
+        { node: rootField("Query", f.name), type: "Query", field: f.name },
         `Query.${f.name}: conflicts with a generated Query field.`,
       );
     }
@@ -2188,7 +2534,8 @@ export function readTypeDefs(typeDefs: string): V7Model {
   );
   for (const f of [...mutation.fields, ...mutation.resolved]) {
     if (generatedMutations.has(f.name)) {
-      throw new UnsupportedTypeDefsError(
+      report(
+        { node: rootField("Mutation", f.name), type: "Mutation", field: f.name },
         `Mutation.${f.name}: conflicts with a generated Mutation field.`,
       );
     }
