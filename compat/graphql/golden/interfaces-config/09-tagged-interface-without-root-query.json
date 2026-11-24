@@ -1,0 +1,21 @@
+{
+  "data": {
+    "folders": [
+      {
+        "tagged": [
+          {
+            "__typename": "Image",
+            "tag": "red"
+          },
+          {
+            "__typename": "Sound",
+            "tag": "red"
+          }
+        ],
+        "taggedConnection": {
+          "totalCount": 3
+        }
+      }
+    ]
+  }
+}

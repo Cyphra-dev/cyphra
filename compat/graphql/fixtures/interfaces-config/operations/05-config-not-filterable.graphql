@@ -1,0 +1,6 @@
+# features: interface.filter, config.filterable
+query {
+  media(where: { label: { eq: "brand" } }) {
+    id
+  }
+}

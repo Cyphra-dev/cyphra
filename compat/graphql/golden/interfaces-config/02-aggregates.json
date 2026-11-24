@@ -1,0 +1,58 @@
+{
+  "data": {
+    "mediaConnection": {
+      "aggregate": {
+        "count": {
+          "nodes": 4
+        },
+        "node": {
+          "name": {
+            "shortest": "Logo",
+            "longest": "Contract"
+          },
+          "size": {
+            "min": 120,
+            "max": 900,
+            "average": 455,
+            "sum": 1820
+          },
+          "label": {
+            "shortest": "brand"
+          }
+        }
+      }
+    },
+    "folders": [
+      {
+        "assetsConnection": {
+          "aggregate": {
+            "count": {
+              "nodes": 3
+            },
+            "node": {
+              "size": {
+                "sum": 1520
+              }
+            }
+          }
+        }
+      }
+    ],
+    "owners": [
+      {
+        "assetsConnection": {
+          "aggregate": {
+            "count": {
+              "nodes": 2
+            },
+            "node": {
+              "name": {
+                "longest": "Contract"
+              }
+            }
+          }
+        }
+      }
+    ]
+  }
+}

@@ -1,0 +1,14 @@
+# features: interface.read, config.selectable
+query {
+  media(where: { id: { in: ["img-1", "doc-1"] } }) {
+    id
+    ... on Image {
+      secret
+      width
+    }
+    ... on Document {
+      secret
+      pages
+    }
+  }
+}

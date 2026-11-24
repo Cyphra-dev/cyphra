@@ -1,0 +1,79 @@
+{
+  "data": {
+    "media": [
+      {
+        "id": "doc-1",
+        "ownersConnection": {
+          "totalCount": 1,
+          "edges": [
+            {
+              "properties": {
+                "__typename": "DocOwnership",
+                "role": "signer"
+              },
+              "node": {
+                "name": "Ada"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "id": "img-1",
+        "ownersConnection": {
+          "totalCount": 1,
+          "edges": [
+            {
+              "properties": {
+                "__typename": "Ownership",
+                "since": 2019
+              },
+              "node": {
+                "name": "Ada"
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "ownedSince": [
+      {
+        "id": "doc-1"
+      },
+      {
+        "id": "doc-2"
+      },
+      {
+        "id": "img-2"
+      },
+      {
+        "id": "snd-1"
+      }
+    ],
+    "signers": [
+      {
+        "id": "doc-1"
+      },
+      {
+        "id": "img-1"
+      },
+      {
+        "id": "img-2"
+      },
+      {
+        "id": "snd-1"
+      }
+    ],
+    "ownedByAda": [
+      {
+        "id": "doc-1"
+      },
+      {
+        "id": "img-1"
+      },
+      {
+        "id": "snd-1"
+      }
+    ]
+  }
+}

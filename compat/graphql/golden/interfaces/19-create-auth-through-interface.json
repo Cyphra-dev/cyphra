@@ -1,0 +1,15 @@
+{
+  "data": {
+    "createTracks": {
+      "tracks": [
+        {
+          "name": "Video track",
+          "contains": [],
+          "containsConnection": {
+            "totalCount": 0
+          }
+        }
+      ]
+    }
+  }
+}

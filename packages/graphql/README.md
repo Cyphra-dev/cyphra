@@ -43,6 +43,13 @@ Status (early release):
   edge properties included), member-keyed `where` (`{ Movie: {…}, Book: {…} }`) and nested writes.
   One deliberate difference: a union `connect` / `disconnect` nested in another one applies its
   `where` (v7 7.6.8 ignores it and connects or disconnects every member node).
+- Interfaces implemented by `@node` types (no implicit label, like v7: share a label through
+  `@node(labels)`): root `learningActivities` / `learningActivitiesConnection` queries, `typename`
+  filters, relationships to interfaces (edge properties included), `@declareRelationship` fields,
+  nested writes through them (`create` keyed by implementation) and each implementation's
+  `@authorization` on reads through the interface. Queries v7 7.6.8 fails on (interface
+  aggregates with `@authorization`, `typename` in nested filters, …) are served
+  ([details](https://www.cyphra.dev/graphql#interfaces)).
 - Subscriptions (`@subscription`, `@subscriptionsAuthorization`, `where` on events) on Neo4j
   Change Data Capture, with `features.subscriptions` (Neo4j Enterprise or Aura with CDC enabled;
   run the server as a long-lived process, not a serverless function).
@@ -57,7 +64,7 @@ Status (early release):
   inputs) and `@limit` on every read of the type. A root field they hide can be redefined in
   `Query` / `Mutation` and served by your resolvers.
 - One Cypher statement per root field, in its own transaction. Needs Neo4j 5.23+.
-- Not yet: interfaces, `@cypher` fields returning unions, `@vector`, `@populatedBy`, `@relayId`,
+- Not yet: interfaces implementing interfaces, `@cypher` fields returning unions, `@vector`, `@populatedBy`, `@relayId`,
   `@coalesce`, `Point` / `Duration` and custom scalars. `makeSchema` throws
   `UnsupportedTypeDefsError` for any directive or argument it does not implement: it never ignores
   one.

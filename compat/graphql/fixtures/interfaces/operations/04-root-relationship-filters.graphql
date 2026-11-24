@@ -1,0 +1,48 @@
+# features: interface.filter, filter.relationship, connection.edge-properties
+query {
+  inLinuxTrack: learningActivities(where: { tracks: { some: { name: { eq: "Linux" } } } }) {
+    id
+  }
+  inNoTrack: learningActivities(where: { tracks: { none: {} } }) {
+    id
+  }
+  onlyInLinux: learningActivities(where: { tracks: { all: { name: { eq: "Linux" } } } }) {
+    id
+  }
+  byAda: learningActivities(where: { author: { name: { eq: "Ada" } } }) {
+    id
+  }
+  noAuthor: learningActivities(where: { author: null }) {
+    id
+  }
+  firstInATrack: learningActivities(
+    where: { tracksConnection: { some: { edge: { ContainsProperties: { position: { eq: 1 } } } } } }
+  ) {
+    id
+  }
+  optionalSomewhere: learningActivities(
+    where: {
+      tracksConnection: {
+        some: {
+          edge: { ContainsProperties: { optional: { eq: true } } }
+          node: { name: { eq: "Linux" } }
+        }
+      }
+    }
+  ) {
+    id
+  }
+  authorConnection: learningActivities(
+    where: { authorConnection: { node: { name: { eq: "Bob" } } } }
+  ) {
+    id
+  }
+  inTwoTracks: learningActivities(
+    where: { tracksConnection: { aggregate: { count: { nodes: { eq: 2 } } } } }
+  ) {
+    id
+  }
+  legacyAggregate: learningActivities(where: { tracksAggregate: { count: { gte: 1 } } }) {
+    id
+  }
+}

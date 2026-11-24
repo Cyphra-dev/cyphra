@@ -1,0 +1,54 @@
+# features: interface.mutation, mutation.create, mutation.nested-create, connection.edge-properties
+mutation {
+  createTracks(
+    input: [
+      {
+        name: "New track"
+        contains: {
+          create: [
+            { edge: { position: 1 }, node: { Lab: { title: "New lab", image: "debian:12" } } }
+            {
+              edge: { position: 2, optional: true }
+              node: {
+                Article: {
+                  title: "New article"
+                  durationMinutes: 7
+                  author: { create: { node: { name: "Cy" } } }
+                }
+              }
+            }
+          ]
+        }
+        featured: { create: { node: { Quiz: { title: "Featured quiz", questions: 3 } } } }
+      }
+    ]
+  ) {
+    info {
+      nodesCreated
+      relationshipsCreated
+    }
+    tracks {
+      name
+      containsConnection(sort: [{ edge: { position: ASC } }]) {
+        edges {
+          properties {
+            position
+            optional
+          }
+          node {
+            __typename
+            title
+            durationMinutes
+            author {
+              name
+            }
+          }
+        }
+      }
+      featured {
+        __typename
+        title
+      }
+    }
+  }
+}

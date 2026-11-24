@@ -1,0 +1,42 @@
+{
+  "data": {
+    "updateOwners": {
+      "owners": [
+        {
+          "imagesConnection": {
+            "edges": [
+              {
+                "properties": {
+                  "since": 2023
+                },
+                "node": {
+                  "id": "img-2",
+                  "related": []
+                }
+              },
+              {
+                "properties": {
+                  "since": 2024
+                },
+                "node": {
+                  "id": "img-1",
+                  "related": [
+                    {
+                      "name": "Contract"
+                    },
+                    {
+                      "name": "Jingle"
+                    },
+                    {
+                      "name": "Notes"
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

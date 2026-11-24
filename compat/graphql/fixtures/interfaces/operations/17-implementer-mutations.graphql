@@ -1,0 +1,53 @@
+# features: interface.mutation, mutation.create, mutation.update, connection.edge-properties
+mutation {
+  createQuizzes(
+    input: [
+      {
+        title: "Quiz with tracks"
+        questions: 4
+        tracks: {
+          connect: [{ where: { node: { name: { eq: "Empty" } } }, edge: { position: 1 } }]
+          create: [{ edge: { position: 2 }, node: { name: "Created from quiz" } }]
+        }
+      }
+    ]
+  ) {
+    quizzes {
+      title
+      tracksConnection(sort: [{ edge: { ContainsProperties: { position: ASC } } }]) {
+        totalCount
+        edges {
+          node {
+            name
+          }
+        }
+      }
+    }
+  }
+  updateLabs(
+    where: { id: { eq: "lab-1" } }
+    update: {
+      tracks: [
+        {
+          disconnect: [{ where: { edge: { ContainsProperties: { position: { eq: 3 } } } } }]
+          update: { where: { node: { name: { eq: "Linux" } } }, edge: { position: { set: 10 } } }
+        }
+      ]
+    }
+  ) {
+    labs {
+      tracksConnection {
+        edges {
+          properties {
+            ... on ContainsProperties {
+              position
+            }
+          }
+          node {
+            name
+          }
+        }
+      }
+    }
+  }
+}

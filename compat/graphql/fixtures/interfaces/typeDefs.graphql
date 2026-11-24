@@ -1,0 +1,85 @@
+type JWT @jwt {
+  roles: [String!]
+}
+
+"""
+Something a learner does in a track. Every implementation carries the shared LearningActivity
+label explicitly: v7 adds no implicit label for interfaces.
+"""
+interface LearningActivity {
+  id: ID!
+  "Shown in the catalogue"
+  title: String!
+  durationMinutes: Int
+  tracks: [Track!]! @declareRelationship
+  author: Author @declareRelationship
+}
+
+type Lab implements LearningActivity @node(labels: ["Lab", "LearningActivity"]) {
+  id: ID! @id
+  title: String!
+  durationMinutes: Int
+  image: String
+  tracks: [Track!]! @relationship(type: "CONTAINS", direction: IN, properties: "ContainsProperties")
+  author: Author @relationship(type: "WROTE", direction: IN)
+}
+
+type Quiz implements LearningActivity @node(labels: ["Quiz", "LearningActivity"]) {
+  id: ID! @id
+  title: String!
+  durationMinutes: Int
+  questions: Int!
+  tracks: [Track!]! @relationship(type: "CONTAINS", direction: IN, properties: "ContainsProperties")
+  author: Author @relationship(type: "WROTE", direction: IN)
+}
+
+"Published videos are public; drafts are visible to admins only."
+type Video implements LearningActivity
+  @node(labels: ["Video", "LearningActivity"])
+  @authorization(
+    filter: [
+      {
+        requireAuthentication: false
+        where: {
+          OR: [{ node: { published: { eq: true } } }, { jwt: { roles: { includes: "admin" } } }]
+        }
+      }
+    ]
+  ) {
+  id: ID! @id
+  title: String!
+  durationMinutes: Int
+  url: String
+  published: Boolean!
+  tracks: [Track!]! @relationship(type: "CONTAINS", direction: IN, properties: "ContainsProperties")
+  author: Author @relationship(type: "WROTE", direction: IN)
+}
+
+"Articles store their duration under another property and are linked to authors differently."
+type Article implements LearningActivity @node(labels: ["Article", "LearningActivity", "Content"]) {
+  id: ID! @id
+  title: String!
+  durationMinutes: Int @alias(property: "readingMinutes")
+  body: String
+  tracks: [Track!]! @relationship(type: "CONTAINS", direction: IN, properties: "ContainsProperties")
+  author: Author @relationship(type: "AUTHORED", direction: IN)
+}
+
+type Track @node {
+  id: ID! @id
+  name: String!
+  contains: [LearningActivity!]!
+    @relationship(type: "CONTAINS", direction: OUT, properties: "ContainsProperties")
+  featured: LearningActivity @relationship(type: "FEATURES", direction: OUT)
+}
+
+type ContainsProperties @relationshipProperties {
+  position: Int!
+  optional: Boolean
+}
+
+type Author @node {
+  id: ID! @id
+  name: String!
+  wrote: [LearningActivity!]! @relationship(type: "WROTE", direction: OUT)
+}

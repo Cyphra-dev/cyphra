@@ -1,0 +1,2335 @@
+"""
+Articles store their duration under another property and are linked to authors differently.
+"""
+type Article implements LearningActivity {
+  author: Author
+  authorConnection: LearningActivityAuthorConnection!
+  body: String
+  durationMinutes: Int
+  id: ID!
+  title: String!
+  tracks(limit: Int, offset: Int, sort: [TrackSort!], where: TrackWhere): [Track!]!
+  tracksConnection(after: String, first: Int, sort: [LearningActivityTracksConnectionSort!], where: LearningActivityTracksConnectionWhere): LearningActivityTracksConnection!
+}
+
+type ArticleAggregate {
+  count: Count!
+  node: ArticleAggregateNode!
+}
+
+type ArticleAggregateNode {
+  body: StringAggregateSelection!
+  durationMinutes: IntAggregateSelection!
+  title: StringAggregateSelection!
+}
+
+input ArticleAuthorCreateFieldInput {
+  node: AuthorCreateInput!
+}
+
+input ArticleAuthorFieldInput {
+  create: ArticleAuthorCreateFieldInput
+}
+
+input ArticleCreateInput {
+  author: ArticleAuthorFieldInput
+  body: String
+  durationMinutes: Int
+  title: String!
+  tracks: ArticleTracksFieldInput
+}
+
+input ArticleDeleteInput {
+  author: LearningActivityAuthorDeleteFieldInput
+  tracks: [LearningActivityTracksDeleteFieldInput!]
+}
+
+type ArticleEdge {
+  cursor: String!
+  node: Article!
+}
+
+"""
+Fields to sort Articles by. The order in which sorts are applied is not guaranteed when specifying many fields in one ArticleSort object.
+"""
+input ArticleSort {
+  body: SortDirection
+  durationMinutes: SortDirection
+  id: SortDirection
+  title: SortDirection
+}
+
+input ArticleTracksAggregateInput {
+  AND: [ArticleTracksAggregateInput!]
+  NOT: ArticleTracksAggregateInput
+  OR: [ArticleTracksAggregateInput!]
+  count: IntScalarFilters
+  count_EQ: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { eq: ... } } }' instead.")
+  count_GT: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { gt: ... } } }' instead.")
+  count_GTE: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { gte: ... } } }' instead.")
+  count_LT: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { lt: ... } } }' instead.")
+  count_LTE: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { lte: ... } } }' instead.")
+  edge: ContainsPropertiesAggregationWhereInput
+  node: ArticleTracksNodeAggregationWhereInput
+}
+
+input ArticleTracksConnectFieldInput {
+  connect: [TrackConnectInput!]
+  edge: ContainsPropertiesCreateInput!
+  where: TrackConnectWhere
+}
+
+input ArticleTracksConnectionAggregateInput {
+  AND: [ArticleTracksConnectionAggregateInput!]
+  NOT: ArticleTracksConnectionAggregateInput
+  OR: [ArticleTracksConnectionAggregateInput!]
+  count: ConnectionAggregationCountFilterInput
+  edge: ContainsPropertiesAggregationWhereInput
+  node: ArticleTracksNodeAggregationWhereInput
+}
+
+input ArticleTracksConnectionFilters {
+  """
+  Filter Articles by aggregating results on related LearningActivityTracksConnections
+  """
+  aggregate: ArticleTracksConnectionAggregateInput
+
+  """
+  Return Articles where all of the related LearningActivityTracksConnections match this filter
+  """
+  all: LearningActivityTracksConnectionWhere
+
+  """
+  Return Articles where none of the related LearningActivityTracksConnections match this filter
+  """
+  none: LearningActivityTracksConnectionWhere
+
+  """
+  Return Articles where one of the related LearningActivityTracksConnections match this filter
+  """
+  single: LearningActivityTracksConnectionWhere
+
+  """
+  Return Articles where some of the related LearningActivityTracksConnections match this filter
+  """
+  some: LearningActivityTracksConnectionWhere
+}
+
+input ArticleTracksCreateFieldInput {
+  edge: ContainsPropertiesCreateInput!
+  node: TrackCreateInput!
+}
+
+input ArticleTracksFieldInput {
+  connect: [ArticleTracksConnectFieldInput!]
+  create: [ArticleTracksCreateFieldInput!]
+}
+
+input ArticleTracksNodeAggregationWhereInput {
+  AND: [ArticleTracksNodeAggregationWhereInput!]
+  NOT: ArticleTracksNodeAggregationWhereInput
+  OR: [ArticleTracksNodeAggregationWhereInput!]
+  name: StringScalarAggregationFilters
+  name_AVERAGE_LENGTH_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { eq: ... } } }' instead.")
+  name_AVERAGE_LENGTH_GT: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { gt: ... } } }' instead.")
+  name_AVERAGE_LENGTH_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { gte: ... } } }' instead.")
+  name_AVERAGE_LENGTH_LT: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { lt: ... } } }' instead.")
+  name_AVERAGE_LENGTH_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { lte: ... } } }' instead.")
+  name_LONGEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { eq: ... } } }' instead.")
+  name_LONGEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { gt: ... } } }' instead.")
+  name_LONGEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { gte: ... } } }' instead.")
+  name_LONGEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { lt: ... } } }' instead.")
+  name_LONGEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { lte: ... } } }' instead.")
+  name_SHORTEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { eq: ... } } }' instead.")
+  name_SHORTEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { gt: ... } } }' instead.")
+  name_SHORTEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { gte: ... } } }' instead.")
+  name_SHORTEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { lt: ... } } }' instead.")
+  name_SHORTEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { lte: ... } } }' instead.")
+}
+
+input ArticleTracksUpdateConnectionInput {
+  edge: ContainsPropertiesUpdateInput
+  node: TrackUpdateInput
+  where: LearningActivityTracksConnectionWhere
+}
+
+input ArticleTracksUpdateFieldInput {
+  connect: [ArticleTracksConnectFieldInput!]
+  create: [ArticleTracksCreateFieldInput!]
+  delete: [LearningActivityTracksDeleteFieldInput!]
+  disconnect: [LearningActivityTracksDisconnectFieldInput!]
+  update: ArticleTracksUpdateConnectionInput
+}
+
+input ArticleUpdateInput {
+  body: StringScalarMutations
+  body_SET: String @deprecated(reason: "Please use the generic mutation 'body: { set: ... } }' instead.")
+  durationMinutes: IntScalarMutations
+  durationMinutes_DECREMENT: Int @deprecated(reason: "Please use the relevant generic mutation 'durationMinutes: { decrement: ... } }' instead.")
+  durationMinutes_INCREMENT: Int @deprecated(reason: "Please use the relevant generic mutation 'durationMinutes: { increment: ... } }' instead.")
+  durationMinutes_SET: Int @deprecated(reason: "Please use the generic mutation 'durationMinutes: { set: ... } }' instead.")
+  title: StringScalarMutations
+  title_SET: String @deprecated(reason: "Please use the generic mutation 'title: { set: ... } }' instead.")
+  tracks: [ArticleTracksUpdateFieldInput!]
+}
+
+input ArticleWhere {
+  AND: [ArticleWhere!]
+  NOT: ArticleWhere
+  OR: [ArticleWhere!]
+  author: AuthorWhere
+  authorConnection: LearningActivityAuthorConnectionWhere
+  body: StringScalarFilters
+  body_CONTAINS: String @deprecated(reason: "Please use the relevant generic filter body: { contains: ... }")
+  body_ENDS_WITH: String @deprecated(reason: "Please use the relevant generic filter body: { endsWith: ... }")
+  body_EQ: String @deprecated(reason: "Please use the relevant generic filter body: { eq: ... }")
+  body_IN: [String] @deprecated(reason: "Please use the relevant generic filter body: { in: ... }")
+  body_STARTS_WITH: String @deprecated(reason: "Please use the relevant generic filter body: { startsWith: ... }")
+  durationMinutes: IntScalarFilters
+  durationMinutes_EQ: Int @deprecated(reason: "Please use the relevant generic filter durationMinutes: { eq: ... }")
+  durationMinutes_GT: Int @deprecated(reason: "Please use the relevant generic filter durationMinutes: { gt: ... }")
+  durationMinutes_GTE: Int @deprecated(reason: "Please use the relevant generic filter durationMinutes: { gte: ... }")
+  durationMinutes_IN: [Int] @deprecated(reason: "Please use the relevant generic filter durationMinutes: { in: ... }")
+  durationMinutes_LT: Int @deprecated(reason: "Please use the relevant generic filter durationMinutes: { lt: ... }")
+  durationMinutes_LTE: Int @deprecated(reason: "Please use the relevant generic filter durationMinutes: { lte: ... }")
+  id: IDScalarFilters
+  id_CONTAINS: ID @deprecated(reason: "Please use the relevant generic filter id: { contains: ... }")
+  id_ENDS_WITH: ID @deprecated(reason: "Please use the relevant generic filter id: { endsWith: ... }")
+  id_EQ: ID @deprecated(reason: "Please use the relevant generic filter id: { eq: ... }")
+  id_IN: [ID!] @deprecated(reason: "Please use the relevant generic filter id: { in: ... }")
+  id_STARTS_WITH: ID @deprecated(reason: "Please use the relevant generic filter id: { startsWith: ... }")
+  title: StringScalarFilters
+  title_CONTAINS: String @deprecated(reason: "Please use the relevant generic filter title: { contains: ... }")
+  title_ENDS_WITH: String @deprecated(reason: "Please use the relevant generic filter title: { endsWith: ... }")
+  title_EQ: String @deprecated(reason: "Please use the relevant generic filter title: { eq: ... }")
+  title_IN: [String!] @deprecated(reason: "Please use the relevant generic filter title: { in: ... }")
+  title_STARTS_WITH: String @deprecated(reason: "Please use the relevant generic filter title: { startsWith: ... }")
+  tracks: TrackRelationshipFilters
+  tracksAggregate: ArticleTracksAggregateInput @deprecated(reason: "Aggregate filters are moved inside the tracksConnection filter, please use { tracksConnection: { aggregate: {...} } } instead")
+  tracksConnection: ArticleTracksConnectionFilters
+
+  """
+  Return Articles where all of the related LearningActivityTracksConnections match this filter
+  """
+  tracksConnection_ALL: LearningActivityTracksConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'tracksConnection: { all: { node: ... } } }' instead.")
+
+  """
+  Return Articles where none of the related LearningActivityTracksConnections match this filter
+  """
+  tracksConnection_NONE: LearningActivityTracksConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'tracksConnection: { none: { node: ... } } }' instead.")
+
+  """
+  Return Articles where one of the related LearningActivityTracksConnections match this filter
+  """
+  tracksConnection_SINGLE: LearningActivityTracksConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'tracksConnection: { single: { node: ... } } }' instead.")
+
+  """
+  Return Articles where some of the related LearningActivityTracksConnections match this filter
+  """
+  tracksConnection_SOME: LearningActivityTracksConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'tracksConnection: { some: { node: ... } } }' instead.")
+
+  """Return Articles where all of the related Tracks match this filter"""
+  tracks_ALL: TrackWhere @deprecated(reason: "Please use the relevant generic filter 'tracks: { all: ... }' instead.")
+
+  """Return Articles where none of the related Tracks match this filter"""
+  tracks_NONE: TrackWhere @deprecated(reason: "Please use the relevant generic filter 'tracks: { none: ... }' instead.")
+
+  """Return Articles where one of the related Tracks match this filter"""
+  tracks_SINGLE: TrackWhere @deprecated(reason: "Please use the relevant generic filter 'tracks: {  single: ... }' instead.")
+
+  """Return Articles where some of the related Tracks match this filter"""
+  tracks_SOME: TrackWhere @deprecated(reason: "Please use the relevant generic filter 'tracks: {  some: ... }' instead.")
+}
+
+type ArticlesConnection {
+  aggregate: ArticleAggregate!
+  edges: [ArticleEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+type Author {
+  id: ID!
+  name: String!
+  wrote(limit: Int, offset: Int, sort: [LearningActivitySort!], where: LearningActivityWhere): [LearningActivity!]!
+  wroteConnection(after: String, first: Int, sort: [AuthorWroteConnectionSort!], where: AuthorWroteConnectionWhere): AuthorWroteConnection!
+}
+
+type AuthorAggregate {
+  count: Count!
+  node: AuthorAggregateNode!
+}
+
+type AuthorAggregateNode {
+  name: StringAggregateSelection!
+}
+
+input AuthorCreateInput {
+  name: String!
+  wrote: AuthorWroteFieldInput
+}
+
+input AuthorDeleteInput {
+  wrote: [AuthorWroteDeleteFieldInput!]
+}
+
+type AuthorEdge {
+  cursor: String!
+  node: Author!
+}
+
+type AuthorLearningActivityWroteAggregateSelection {
+  count: CountConnection!
+  node: AuthorLearningActivityWroteNodeAggregateSelection
+}
+
+type AuthorLearningActivityWroteNodeAggregateSelection {
+  durationMinutes: IntAggregateSelection!
+  title: StringAggregateSelection!
+}
+
+"""
+Fields to sort Authors by. The order in which sorts are applied is not guaranteed when specifying many fields in one AuthorSort object.
+"""
+input AuthorSort {
+  id: SortDirection
+  name: SortDirection
+}
+
+input AuthorUpdateInput {
+  name: StringScalarMutations
+  name_SET: String @deprecated(reason: "Please use the generic mutation 'name: { set: ... } }' instead.")
+  wrote: [AuthorWroteUpdateFieldInput!]
+}
+
+input AuthorWhere {
+  AND: [AuthorWhere!]
+  NOT: AuthorWhere
+  OR: [AuthorWhere!]
+  id: IDScalarFilters
+  id_CONTAINS: ID @deprecated(reason: "Please use the relevant generic filter id: { contains: ... }")
+  id_ENDS_WITH: ID @deprecated(reason: "Please use the relevant generic filter id: { endsWith: ... }")
+  id_EQ: ID @deprecated(reason: "Please use the relevant generic filter id: { eq: ... }")
+  id_IN: [ID!] @deprecated(reason: "Please use the relevant generic filter id: { in: ... }")
+  id_STARTS_WITH: ID @deprecated(reason: "Please use the relevant generic filter id: { startsWith: ... }")
+  name: StringScalarFilters
+  name_CONTAINS: String @deprecated(reason: "Please use the relevant generic filter name: { contains: ... }")
+  name_ENDS_WITH: String @deprecated(reason: "Please use the relevant generic filter name: { endsWith: ... }")
+  name_EQ: String @deprecated(reason: "Please use the relevant generic filter name: { eq: ... }")
+  name_IN: [String!] @deprecated(reason: "Please use the relevant generic filter name: { in: ... }")
+  name_STARTS_WITH: String @deprecated(reason: "Please use the relevant generic filter name: { startsWith: ... }")
+  wrote: LearningActivityRelationshipFilters
+  wroteAggregate: AuthorWroteAggregateInput @deprecated(reason: "Aggregate filters are moved inside the wroteConnection filter, please use { wroteConnection: { aggregate: {...} } } instead")
+  wroteConnection: AuthorWroteConnectionFilters
+
+  """
+  Return Authors where all of the related AuthorWroteConnections match this filter
+  """
+  wroteConnection_ALL: AuthorWroteConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'wroteConnection: { all: { node: ... } } }' instead.")
+
+  """
+  Return Authors where none of the related AuthorWroteConnections match this filter
+  """
+  wroteConnection_NONE: AuthorWroteConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'wroteConnection: { none: { node: ... } } }' instead.")
+
+  """
+  Return Authors where one of the related AuthorWroteConnections match this filter
+  """
+  wroteConnection_SINGLE: AuthorWroteConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'wroteConnection: { single: { node: ... } } }' instead.")
+
+  """
+  Return Authors where some of the related AuthorWroteConnections match this filter
+  """
+  wroteConnection_SOME: AuthorWroteConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'wroteConnection: { some: { node: ... } } }' instead.")
+
+  """
+  Return Authors where all of the related LearningActivities match this filter
+  """
+  wrote_ALL: LearningActivityWhere @deprecated(reason: "Please use the relevant generic filter 'wrote: { all: ... }' instead.")
+
+  """
+  Return Authors where none of the related LearningActivities match this filter
+  """
+  wrote_NONE: LearningActivityWhere @deprecated(reason: "Please use the relevant generic filter 'wrote: { none: ... }' instead.")
+
+  """
+  Return Authors where one of the related LearningActivities match this filter
+  """
+  wrote_SINGLE: LearningActivityWhere @deprecated(reason: "Please use the relevant generic filter 'wrote: {  single: ... }' instead.")
+
+  """
+  Return Authors where some of the related LearningActivities match this filter
+  """
+  wrote_SOME: LearningActivityWhere @deprecated(reason: "Please use the relevant generic filter 'wrote: {  some: ... }' instead.")
+}
+
+input AuthorWroteAggregateInput {
+  AND: [AuthorWroteAggregateInput!]
+  NOT: AuthorWroteAggregateInput
+  OR: [AuthorWroteAggregateInput!]
+  count: IntScalarFilters
+  count_EQ: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { eq: ... } } }' instead.")
+  count_GT: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { gt: ... } } }' instead.")
+  count_GTE: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { gte: ... } } }' instead.")
+  count_LT: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { lt: ... } } }' instead.")
+  count_LTE: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { lte: ... } } }' instead.")
+  node: AuthorWroteNodeAggregationWhereInput
+}
+
+input AuthorWroteConnectFieldInput {
+  connect: LearningActivityConnectInput
+  where: LearningActivityConnectWhere
+}
+
+type AuthorWroteConnection {
+  aggregate: AuthorLearningActivityWroteAggregateSelection!
+  edges: [AuthorWroteRelationship!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+input AuthorWroteConnectionAggregateInput {
+  AND: [AuthorWroteConnectionAggregateInput!]
+  NOT: AuthorWroteConnectionAggregateInput
+  OR: [AuthorWroteConnectionAggregateInput!]
+  count: ConnectionAggregationCountFilterInput
+  node: AuthorWroteNodeAggregationWhereInput
+}
+
+input AuthorWroteConnectionFilters {
+  """
+  Filter Authors by aggregating results on related AuthorWroteConnections
+  """
+  aggregate: AuthorWroteConnectionAggregateInput
+
+  """
+  Return Authors where all of the related AuthorWroteConnections match this filter
+  """
+  all: AuthorWroteConnectionWhere
+
+  """
+  Return Authors where none of the related AuthorWroteConnections match this filter
+  """
+  none: AuthorWroteConnectionWhere
+
+  """
+  Return Authors where one of the related AuthorWroteConnections match this filter
+  """
+  single: AuthorWroteConnectionWhere
+
+  """
+  Return Authors where some of the related AuthorWroteConnections match this filter
+  """
+  some: AuthorWroteConnectionWhere
+}
+
+input AuthorWroteConnectionSort {
+  node: LearningActivitySort
+}
+
+input AuthorWroteConnectionWhere {
+  AND: [AuthorWroteConnectionWhere!]
+  NOT: AuthorWroteConnectionWhere
+  OR: [AuthorWroteConnectionWhere!]
+  node: LearningActivityWhere
+}
+
+input AuthorWroteCreateFieldInput {
+  node: LearningActivityCreateInput!
+}
+
+input AuthorWroteDeleteFieldInput {
+  delete: LearningActivityDeleteInput
+  where: AuthorWroteConnectionWhere
+}
+
+input AuthorWroteDisconnectFieldInput {
+  disconnect: LearningActivityDisconnectInput
+  where: AuthorWroteConnectionWhere
+}
+
+input AuthorWroteFieldInput {
+  connect: [AuthorWroteConnectFieldInput!]
+  create: [AuthorWroteCreateFieldInput!]
+}
+
+input AuthorWroteNodeAggregationWhereInput {
+  AND: [AuthorWroteNodeAggregationWhereInput!]
+  NOT: AuthorWroteNodeAggregationWhereInput
+  OR: [AuthorWroteNodeAggregationWhereInput!]
+  durationMinutes: IntScalarAggregationFilters
+  durationMinutes_AVERAGE_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'durationMinutes: { average: { eq: ... } } }' instead.")
+  durationMinutes_AVERAGE_GT: Float @deprecated(reason: "Please use the relevant generic filter 'durationMinutes: { average: { gt: ... } } }' instead.")
+  durationMinutes_AVERAGE_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'durationMinutes: { average: { gte: ... } } }' instead.")
+  durationMinutes_AVERAGE_LT: Float @deprecated(reason: "Please use the relevant generic filter 'durationMinutes: { average: { lt: ... } } }' instead.")
+  durationMinutes_AVERAGE_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'durationMinutes: { average: { lte: ... } } }' instead.")
+  durationMinutes_MAX_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'durationMinutes: { max: { eq: ... } } }' instead.")
+  durationMinutes_MAX_GT: Int @deprecated(reason: "Please use the relevant generic filter 'durationMinutes: { max: { gt: ... } } }' instead.")
+  durationMinutes_MAX_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'durationMinutes: { max: { gte: ... } } }' instead.")
+  durationMinutes_MAX_LT: Int @deprecated(reason: "Please use the relevant generic filter 'durationMinutes: { max: { lt: ... } } }' instead.")
+  durationMinutes_MAX_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'durationMinutes: { max: { lte: ... } } }' instead.")
+  durationMinutes_MIN_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'durationMinutes: { min: { eq: ... } } }' instead.")
+  durationMinutes_MIN_GT: Int @deprecated(reason: "Please use the relevant generic filter 'durationMinutes: { min: { gt: ... } } }' instead.")
+  durationMinutes_MIN_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'durationMinutes: { min: { gte: ... } } }' instead.")
+  durationMinutes_MIN_LT: Int @deprecated(reason: "Please use the relevant generic filter 'durationMinutes: { min: { lt: ... } } }' instead.")
+  durationMinutes_MIN_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'durationMinutes: { min: { lte: ... } } }' instead.")
+  durationMinutes_SUM_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'durationMinutes: { sum: { eq: ... } } }' instead.")
+  durationMinutes_SUM_GT: Int @deprecated(reason: "Please use the relevant generic filter 'durationMinutes: { sum: { gt: ... } } }' instead.")
+  durationMinutes_SUM_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'durationMinutes: { sum: { gte: ... } } }' instead.")
+  durationMinutes_SUM_LT: Int @deprecated(reason: "Please use the relevant generic filter 'durationMinutes: { sum: { lt: ... } } }' instead.")
+  durationMinutes_SUM_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'durationMinutes: { sum: { lte: ... } } }' instead.")
+  title: StringScalarAggregationFilters
+  title_AVERAGE_LENGTH_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'title: { averageLength: { eq: ... } } }' instead.")
+  title_AVERAGE_LENGTH_GT: Float @deprecated(reason: "Please use the relevant generic filter 'title: { averageLength: { gt: ... } } }' instead.")
+  title_AVERAGE_LENGTH_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'title: { averageLength: { gte: ... } } }' instead.")
+  title_AVERAGE_LENGTH_LT: Float @deprecated(reason: "Please use the relevant generic filter 'title: { averageLength: { lt: ... } } }' instead.")
+  title_AVERAGE_LENGTH_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'title: { averageLength: { lte: ... } } }' instead.")
+  title_LONGEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'title: { longestLength: { eq: ... } } }' instead.")
+  title_LONGEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'title: { longestLength: { gt: ... } } }' instead.")
+  title_LONGEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'title: { longestLength: { gte: ... } } }' instead.")
+  title_LONGEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'title: { longestLength: { lt: ... } } }' instead.")
+  title_LONGEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'title: { longestLength: { lte: ... } } }' instead.")
+  title_SHORTEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'title: { shortestLength: { eq: ... } } }' instead.")
+  title_SHORTEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'title: { shortestLength: { gt: ... } } }' instead.")
+  title_SHORTEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'title: { shortestLength: { gte: ... } } }' instead.")
+  title_SHORTEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'title: { shortestLength: { lt: ... } } }' instead.")
+  title_SHORTEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'title: { shortestLength: { lte: ... } } }' instead.")
+}
+
+type AuthorWroteRelationship {
+  cursor: String!
+  node: LearningActivity!
+}
+
+input AuthorWroteUpdateConnectionInput {
+  node: LearningActivityUpdateInput
+  where: AuthorWroteConnectionWhere
+}
+
+input AuthorWroteUpdateFieldInput {
+  connect: [AuthorWroteConnectFieldInput!]
+  create: [AuthorWroteCreateFieldInput!]
+  delete: [AuthorWroteDeleteFieldInput!]
+  disconnect: [AuthorWroteDisconnectFieldInput!]
+  update: AuthorWroteUpdateConnectionInput
+}
+
+type AuthorsConnection {
+  aggregate: AuthorAggregate!
+  edges: [AuthorEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+"""Boolean filters"""
+input BooleanScalarFilters {
+  eq: Boolean
+}
+
+"""Boolean mutations"""
+input BooleanScalarMutations {
+  set: Boolean
+}
+
+input ConnectionAggregationCountFilterInput {
+  edges: IntScalarFilters
+  nodes: IntScalarFilters
+}
+
+"""
+The edge properties for the following fields:
+* Lab.tracks
+* Quiz.tracks
+* Video.tracks
+* Article.tracks
+* Track.contains
+"""
+type ContainsProperties {
+  optional: Boolean
+  position: Int!
+}
+
+input ContainsPropertiesAggregationWhereInput {
+  AND: [ContainsPropertiesAggregationWhereInput!]
+  NOT: ContainsPropertiesAggregationWhereInput
+  OR: [ContainsPropertiesAggregationWhereInput!]
+  position: IntScalarAggregationFilters
+  position_AVERAGE_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'position: { average: { eq: ... } } }' instead.")
+  position_AVERAGE_GT: Float @deprecated(reason: "Please use the relevant generic filter 'position: { average: { gt: ... } } }' instead.")
+  position_AVERAGE_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'position: { average: { gte: ... } } }' instead.")
+  position_AVERAGE_LT: Float @deprecated(reason: "Please use the relevant generic filter 'position: { average: { lt: ... } } }' instead.")
+  position_AVERAGE_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'position: { average: { lte: ... } } }' instead.")
+  position_MAX_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'position: { max: { eq: ... } } }' instead.")
+  position_MAX_GT: Int @deprecated(reason: "Please use the relevant generic filter 'position: { max: { gt: ... } } }' instead.")
+  position_MAX_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'position: { max: { gte: ... } } }' instead.")
+  position_MAX_LT: Int @deprecated(reason: "Please use the relevant generic filter 'position: { max: { lt: ... } } }' instead.")
+  position_MAX_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'position: { max: { lte: ... } } }' instead.")
+  position_MIN_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'position: { min: { eq: ... } } }' instead.")
+  position_MIN_GT: Int @deprecated(reason: "Please use the relevant generic filter 'position: { min: { gt: ... } } }' instead.")
+  position_MIN_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'position: { min: { gte: ... } } }' instead.")
+  position_MIN_LT: Int @deprecated(reason: "Please use the relevant generic filter 'position: { min: { lt: ... } } }' instead.")
+  position_MIN_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'position: { min: { lte: ... } } }' instead.")
+  position_SUM_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'position: { sum: { eq: ... } } }' instead.")
+  position_SUM_GT: Int @deprecated(reason: "Please use the relevant generic filter 'position: { sum: { gt: ... } } }' instead.")
+  position_SUM_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'position: { sum: { gte: ... } } }' instead.")
+  position_SUM_LT: Int @deprecated(reason: "Please use the relevant generic filter 'position: { sum: { lt: ... } } }' instead.")
+  position_SUM_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'position: { sum: { lte: ... } } }' instead.")
+}
+
+input ContainsPropertiesCreateInput {
+  optional: Boolean
+  position: Int!
+}
+
+input ContainsPropertiesSort {
+  optional: SortDirection
+  position: SortDirection
+}
+
+input ContainsPropertiesUpdateInput {
+  optional: BooleanScalarMutations
+  optional_SET: Boolean @deprecated(reason: "Please use the generic mutation 'optional: { set: ... } }' instead.")
+  position: IntScalarMutations
+  position_DECREMENT: Int @deprecated(reason: "Please use the relevant generic mutation 'position: { decrement: ... } }' instead.")
+  position_INCREMENT: Int @deprecated(reason: "Please use the relevant generic mutation 'position: { increment: ... } }' instead.")
+  position_SET: Int @deprecated(reason: "Please use the generic mutation 'position: { set: ... } }' instead.")
+}
+
+input ContainsPropertiesWhere {
+  AND: [ContainsPropertiesWhere!]
+  NOT: ContainsPropertiesWhere
+  OR: [ContainsPropertiesWhere!]
+  optional: BooleanScalarFilters
+  optional_EQ: Boolean @deprecated(reason: "Please use the relevant generic filter optional: { eq: ... }")
+  position: IntScalarFilters
+  position_EQ: Int @deprecated(reason: "Please use the relevant generic filter position: { eq: ... }")
+  position_GT: Int @deprecated(reason: "Please use the relevant generic filter position: { gt: ... }")
+  position_GTE: Int @deprecated(reason: "Please use the relevant generic filter position: { gte: ... }")
+  position_IN: [Int!] @deprecated(reason: "Please use the relevant generic filter position: { in: ... }")
+  position_LT: Int @deprecated(reason: "Please use the relevant generic filter position: { lt: ... }")
+  position_LTE: Int @deprecated(reason: "Please use the relevant generic filter position: { lte: ... }")
+}
+
+type Count {
+  nodes: Int!
+}
+
+type CountConnection {
+  edges: Int!
+  nodes: Int!
+}
+
+type CreateArticlesMutationResponse {
+  articles: [Article!]!
+  info: CreateInfo!
+}
+
+type CreateAuthorsMutationResponse {
+  authors: [Author!]!
+  info: CreateInfo!
+}
+
+"""
+Information about the number of nodes and relationships created during a create mutation
+"""
+type CreateInfo {
+  nodesCreated: Int!
+  relationshipsCreated: Int!
+}
+
+type CreateLabsMutationResponse {
+  info: CreateInfo!
+  labs: [Lab!]!
+}
+
+type CreateQuizzesMutationResponse {
+  info: CreateInfo!
+  quizzes: [Quiz!]!
+}
+
+type CreateTracksMutationResponse {
+  info: CreateInfo!
+  tracks: [Track!]!
+}
+
+type CreateVideosMutationResponse {
+  info: CreateInfo!
+  videos: [Video!]!
+}
+
+"""
+Information about the number of nodes and relationships deleted during a delete mutation
+"""
+type DeleteInfo {
+  nodesDeleted: Int!
+  relationshipsDeleted: Int!
+}
+
+"""Float filters"""
+input FloatScalarFilters {
+  eq: Float
+  gt: Float
+  gte: Float
+  in: [Float!]
+  lt: Float
+  lte: Float
+}
+
+"""ID filters"""
+input IDScalarFilters {
+  contains: ID
+  endsWith: ID
+  eq: ID
+  in: [ID!]
+  startsWith: ID
+}
+
+"""ID mutations"""
+input IDScalarMutations {
+  set: ID
+}
+
+type IntAggregateSelection {
+  average: Float
+  max: Int
+  min: Int
+  sum: Int
+}
+
+"""Filters for an aggregation of an int field"""
+input IntScalarAggregationFilters {
+  average: FloatScalarFilters
+  max: IntScalarFilters
+  min: IntScalarFilters
+  sum: IntScalarFilters
+}
+
+"""Int filters"""
+input IntScalarFilters {
+  eq: Int
+  gt: Int
+  gte: Int
+  in: [Int!]
+  lt: Int
+  lte: Int
+}
+
+"""Int mutations"""
+input IntScalarMutations {
+  add: Int
+  set: Int
+  subtract: Int
+}
+
+type Lab implements LearningActivity {
+  author: Author
+  authorConnection: LearningActivityAuthorConnection!
+  durationMinutes: Int
+  id: ID!
+  image: String
+  title: String!
+  tracks(limit: Int, offset: Int, sort: [TrackSort!], where: TrackWhere): [Track!]!
+  tracksConnection(after: String, first: Int, sort: [LearningActivityTracksConnectionSort!], where: LearningActivityTracksConnectionWhere): LearningActivityTracksConnection!
+}
+
+type LabAggregate {
+  count: Count!
+  node: LabAggregateNode!
+}
+
+type LabAggregateNode {
+  durationMinutes: IntAggregateSelection!
+  image: StringAggregateSelection!
+  title: StringAggregateSelection!
+}
+
+input LabAuthorCreateFieldInput {
+  node: AuthorCreateInput!
+}
+
+input LabAuthorFieldInput {
+  create: LabAuthorCreateFieldInput
+}
+
+input LabCreateInput {
+  author: LabAuthorFieldInput
+  durationMinutes: Int
+  image: String
+  title: String!
+  tracks: LabTracksFieldInput
+}
+
+input LabDeleteInput {
+  author: LearningActivityAuthorDeleteFieldInput
+  tracks: [LearningActivityTracksDeleteFieldInput!]
+}
+
+type LabEdge {
+  cursor: String!
+  node: Lab!
+}
+
+"""
+Fields to sort Labs by. The order in which sorts are applied is not guaranteed when specifying many fields in one LabSort object.
+"""
+input LabSort {
+  durationMinutes: SortDirection
+  id: SortDirection
+  image: SortDirection
+  title: SortDirection
+}
+
+input LabTracksAggregateInput {
+  AND: [LabTracksAggregateInput!]
+  NOT: LabTracksAggregateInput
+  OR: [LabTracksAggregateInput!]
+  count: IntScalarFilters
+  count_EQ: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { eq: ... } } }' instead.")
+  count_GT: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { gt: ... } } }' instead.")
+  count_GTE: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { gte: ... } } }' instead.")
+  count_LT: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { lt: ... } } }' instead.")
+  count_LTE: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { lte: ... } } }' instead.")
+  edge: ContainsPropertiesAggregationWhereInput
+  node: LabTracksNodeAggregationWhereInput
+}
+
+input LabTracksConnectFieldInput {
+  connect: [TrackConnectInput!]
+  edge: ContainsPropertiesCreateInput!
+  where: TrackConnectWhere
+}
+
+input LabTracksConnectionAggregateInput {
+  AND: [LabTracksConnectionAggregateInput!]
+  NOT: LabTracksConnectionAggregateInput
+  OR: [LabTracksConnectionAggregateInput!]
+  count: ConnectionAggregationCountFilterInput
+  edge: ContainsPropertiesAggregationWhereInput
+  node: LabTracksNodeAggregationWhereInput
+}
+
+input LabTracksConnectionFilters {
+  """
+  Filter Labs by aggregating results on related LearningActivityTracksConnections
+  """
+  aggregate: LabTracksConnectionAggregateInput
+
+  """
+  Return Labs where all of the related LearningActivityTracksConnections match this filter
+  """
+  all: LearningActivityTracksConnectionWhere
+
+  """
+  Return Labs where none of the related LearningActivityTracksConnections match this filter
+  """
+  none: LearningActivityTracksConnectionWhere
+
+  """
+  Return Labs where one of the related LearningActivityTracksConnections match this filter
+  """
+  single: LearningActivityTracksConnectionWhere
+
+  """
+  Return Labs where some of the related LearningActivityTracksConnections match this filter
+  """
+  some: LearningActivityTracksConnectionWhere
+}
+
+input LabTracksCreateFieldInput {
+  edge: ContainsPropertiesCreateInput!
+  node: TrackCreateInput!
+}
+
+input LabTracksFieldInput {
+  connect: [LabTracksConnectFieldInput!]
+  create: [LabTracksCreateFieldInput!]
+}
+
+input LabTracksNodeAggregationWhereInput {
+  AND: [LabTracksNodeAggregationWhereInput!]
+  NOT: LabTracksNodeAggregationWhereInput
+  OR: [LabTracksNodeAggregationWhereInput!]
+  name: StringScalarAggregationFilters
+  name_AVERAGE_LENGTH_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { eq: ... } } }' instead.")
+  name_AVERAGE_LENGTH_GT: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { gt: ... } } }' instead.")
+  name_AVERAGE_LENGTH_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { gte: ... } } }' instead.")
+  name_AVERAGE_LENGTH_LT: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { lt: ... } } }' instead.")
+  name_AVERAGE_LENGTH_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { lte: ... } } }' instead.")
+  name_LONGEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { eq: ... } } }' instead.")
+  name_LONGEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { gt: ... } } }' instead.")
+  name_LONGEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { gte: ... } } }' instead.")
+  name_LONGEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { lt: ... } } }' instead.")
+  name_LONGEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { lte: ... } } }' instead.")
+  name_SHORTEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { eq: ... } } }' instead.")
+  name_SHORTEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { gt: ... } } }' instead.")
+  name_SHORTEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { gte: ... } } }' instead.")
+  name_SHORTEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { lt: ... } } }' instead.")
+  name_SHORTEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { lte: ... } } }' instead.")
+}
+
+input LabTracksUpdateConnectionInput {
+  edge: ContainsPropertiesUpdateInput
+  node: TrackUpdateInput
+  where: LearningActivityTracksConnectionWhere
+}
+
+input LabTracksUpdateFieldInput {
+  connect: [LabTracksConnectFieldInput!]
+  create: [LabTracksCreateFieldInput!]
+  delete: [LearningActivityTracksDeleteFieldInput!]
+  disconnect: [LearningActivityTracksDisconnectFieldInput!]
+  update: LabTracksUpdateConnectionInput
+}
+
+input LabUpdateInput {
+  durationMinutes: IntScalarMutations
+  durationMinutes_DECREMENT: Int @deprecated(reason: "Please use the relevant generic mutation 'durationMinutes: { decrement: ... } }' instead.")
+  durationMinutes_INCREMENT: Int @deprecated(reason: "Please use the relevant generic mutation 'durationMinutes: { increment: ... } }' instead.")
+  durationMinutes_SET: Int @deprecated(reason: "Please use the generic mutation 'durationMinutes: { set: ... } }' instead.")
+  image: StringScalarMutations
+  image_SET: String @deprecated(reason: "Please use the generic mutation 'image: { set: ... } }' instead.")
+  title: StringScalarMutations
+  title_SET: String @deprecated(reason: "Please use the generic mutation 'title: { set: ... } }' instead.")
+  tracks: [LabTracksUpdateFieldInput!]
+}
+
+input LabWhere {
+  AND: [LabWhere!]
+  NOT: LabWhere
+  OR: [LabWhere!]
+  author: AuthorWhere
+  authorConnection: LearningActivityAuthorConnectionWhere
+  durationMinutes: IntScalarFilters
+  durationMinutes_EQ: Int @deprecated(reason: "Please use the relevant generic filter durationMinutes: { eq: ... }")
+  durationMinutes_GT: Int @deprecated(reason: "Please use the relevant generic filter durationMinutes: { gt: ... }")
+  durationMinutes_GTE: Int @deprecated(reason: "Please use the relevant generic filter durationMinutes: { gte: ... }")
+  durationMinutes_IN: [Int] @deprecated(reason: "Please use the relevant generic filter durationMinutes: { in: ... }")
+  durationMinutes_LT: Int @deprecated(reason: "Please use the relevant generic filter durationMinutes: { lt: ... }")
+  durationMinutes_LTE: Int @deprecated(reason: "Please use the relevant generic filter durationMinutes: { lte: ... }")
+  id: IDScalarFilters
+  id_CONTAINS: ID @deprecated(reason: "Please use the relevant generic filter id: { contains: ... }")
+  id_ENDS_WITH: ID @deprecated(reason: "Please use the relevant generic filter id: { endsWith: ... }")
+  id_EQ: ID @deprecated(reason: "Please use the relevant generic filter id: { eq: ... }")
+  id_IN: [ID!] @deprecated(reason: "Please use the relevant generic filter id: { in: ... }")
+  id_STARTS_WITH: ID @deprecated(reason: "Please use the relevant generic filter id: { startsWith: ... }")
+  image: StringScalarFilters
+  image_CONTAINS: String @deprecated(reason: "Please use the relevant generic filter image: { contains: ... }")
+  image_ENDS_WITH: String @deprecated(reason: "Please use the relevant generic filter image: { endsWith: ... }")
+  image_EQ: String @deprecated(reason: "Please use the relevant generic filter image: { eq: ... }")
+  image_IN: [String] @deprecated(reason: "Please use the relevant generic filter image: { in: ... }")
+  image_STARTS_WITH: String @deprecated(reason: "Please use the relevant generic filter image: { startsWith: ... }")
+  title: StringScalarFilters
+  title_CONTAINS: String @deprecated(reason: "Please use the relevant generic filter title: { contains: ... }")
+  title_ENDS_WITH: String @deprecated(reason: "Please use the relevant generic filter title: { endsWith: ... }")
+  title_EQ: String @deprecated(reason: "Please use the relevant generic filter title: { eq: ... }")
+  title_IN: [String!] @deprecated(reason: "Please use the relevant generic filter title: { in: ... }")
+  title_STARTS_WITH: String @deprecated(reason: "Please use the relevant generic filter title: { startsWith: ... }")
+  tracks: TrackRelationshipFilters
+  tracksAggregate: LabTracksAggregateInput @deprecated(reason: "Aggregate filters are moved inside the tracksConnection filter, please use { tracksConnection: { aggregate: {...} } } instead")
+  tracksConnection: LabTracksConnectionFilters
+
+  """
+  Return Labs where all of the related LearningActivityTracksConnections match this filter
+  """
+  tracksConnection_ALL: LearningActivityTracksConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'tracksConnection: { all: { node: ... } } }' instead.")
+
+  """
+  Return Labs where none of the related LearningActivityTracksConnections match this filter
+  """
+  tracksConnection_NONE: LearningActivityTracksConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'tracksConnection: { none: { node: ... } } }' instead.")
+
+  """
+  Return Labs where one of the related LearningActivityTracksConnections match this filter
+  """
+  tracksConnection_SINGLE: LearningActivityTracksConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'tracksConnection: { single: { node: ... } } }' instead.")
+
+  """
+  Return Labs where some of the related LearningActivityTracksConnections match this filter
+  """
+  tracksConnection_SOME: LearningActivityTracksConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'tracksConnection: { some: { node: ... } } }' instead.")
+
+  """Return Labs where all of the related Tracks match this filter"""
+  tracks_ALL: TrackWhere @deprecated(reason: "Please use the relevant generic filter 'tracks: { all: ... }' instead.")
+
+  """Return Labs where none of the related Tracks match this filter"""
+  tracks_NONE: TrackWhere @deprecated(reason: "Please use the relevant generic filter 'tracks: { none: ... }' instead.")
+
+  """Return Labs where one of the related Tracks match this filter"""
+  tracks_SINGLE: TrackWhere @deprecated(reason: "Please use the relevant generic filter 'tracks: {  single: ... }' instead.")
+
+  """Return Labs where some of the related Tracks match this filter"""
+  tracks_SOME: TrackWhere @deprecated(reason: "Please use the relevant generic filter 'tracks: {  some: ... }' instead.")
+}
+
+type LabsConnection {
+  aggregate: LabAggregate!
+  edges: [LabEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+type LearningActivitiesConnection {
+  aggregate: LearningActivityAggregate!
+  edges: [LearningActivityEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+interface LearningActivity {
+  author: Author
+  authorConnection: LearningActivityAuthorConnection!
+  durationMinutes: Int
+  id: ID!
+
+  """Shown in the catalogue"""
+  title: String!
+  tracks(limit: Int, offset: Int, sort: [TrackSort!], where: TrackWhere): [Track!]!
+  tracksConnection(after: String, first: Int, sort: [LearningActivityTracksConnectionSort!], where: LearningActivityTracksConnectionWhere): LearningActivityTracksConnection!
+}
+
+type LearningActivityAggregate {
+  count: Count!
+  node: LearningActivityAggregateNode!
+}
+
+type LearningActivityAggregateNode {
+  durationMinutes: IntAggregateSelection!
+  title: StringAggregateSelection!
+}
+
+type LearningActivityAuthorConnection {
+  edges: [LearningActivityAuthorRelationship!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+input LearningActivityAuthorConnectionWhere {
+  AND: [LearningActivityAuthorConnectionWhere!]
+  NOT: LearningActivityAuthorConnectionWhere
+  OR: [LearningActivityAuthorConnectionWhere!]
+  node: AuthorWhere
+}
+
+input LearningActivityAuthorDeleteFieldInput {
+  delete: AuthorDeleteInput
+  where: LearningActivityAuthorConnectionWhere
+}
+
+type LearningActivityAuthorRelationship {
+  cursor: String!
+  node: Author!
+}
+
+input LearningActivityConnectInput {
+  tracks: [LearningActivityTracksConnectFieldInput!]
+}
+
+input LearningActivityConnectWhere {
+  node: LearningActivityWhere!
+}
+
+input LearningActivityCreateInput {
+  Article: ArticleCreateInput
+  Lab: LabCreateInput
+  Quiz: QuizCreateInput
+  Video: VideoCreateInput
+}
+
+input LearningActivityDeleteInput {
+  author: LearningActivityAuthorDeleteFieldInput
+  tracks: [LearningActivityTracksDeleteFieldInput!]
+}
+
+input LearningActivityDisconnectInput {
+  tracks: [LearningActivityTracksDisconnectFieldInput!]
+}
+
+type LearningActivityEdge {
+  cursor: String!
+  node: LearningActivity!
+}
+
+enum LearningActivityImplementation {
+  Article
+  Lab
+  Quiz
+  Video
+}
+
+input LearningActivityRelationshipFilters {
+  """
+  Filter type where all of the related LearningActivities match this filter
+  """
+  all: LearningActivityWhere
+
+  """
+  Filter type where none of the related LearningActivities match this filter
+  """
+  none: LearningActivityWhere
+
+  """
+  Filter type where one of the related LearningActivities match this filter
+  """
+  single: LearningActivityWhere
+
+  """
+  Filter type where some of the related LearningActivities match this filter
+  """
+  some: LearningActivityWhere
+}
+
+"""
+Fields to sort LearningActivities by. The order in which sorts are applied is not guaranteed when specifying many fields in one LearningActivitySort object.
+"""
+input LearningActivitySort {
+  durationMinutes: SortDirection
+  id: SortDirection
+  title: SortDirection
+}
+
+input LearningActivityTracksAggregateInput {
+  AND: [LearningActivityTracksAggregateInput!]
+  NOT: LearningActivityTracksAggregateInput
+  OR: [LearningActivityTracksAggregateInput!]
+  count: IntScalarFilters
+  count_EQ: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { eq: ... } } }' instead.")
+  count_GT: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { gt: ... } } }' instead.")
+  count_GTE: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { gte: ... } } }' instead.")
+  count_LT: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { lt: ... } } }' instead.")
+  count_LTE: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { lte: ... } } }' instead.")
+  edge: LearningActivityTracksEdgeAggregationWhereInput
+  node: LearningActivityTracksNodeAggregationWhereInput
+}
+
+input LearningActivityTracksConnectFieldInput {
+  connect: [TrackConnectInput!]
+  edge: LearningActivityTracksEdgeCreateInput!
+  where: TrackConnectWhere
+}
+
+type LearningActivityTracksConnection {
+  edges: [LearningActivityTracksRelationship!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+input LearningActivityTracksConnectionAggregateInput {
+  AND: [LearningActivityTracksConnectionAggregateInput!]
+  NOT: LearningActivityTracksConnectionAggregateInput
+  OR: [LearningActivityTracksConnectionAggregateInput!]
+  count: ConnectionAggregationCountFilterInput
+  edge: LearningActivityTracksEdgeAggregationWhereInput
+  node: LearningActivityTracksNodeAggregationWhereInput
+}
+
+input LearningActivityTracksConnectionFilters {
+  """
+  Filter LearningActivities by aggregating results on related LearningActivityTracksConnections
+  """
+  aggregate: LearningActivityTracksConnectionAggregateInput
+
+  """
+  Return LearningActivities where all of the related LearningActivityTracksConnections match this filter
+  """
+  all: LearningActivityTracksConnectionWhere
+
+  """
+  Return LearningActivities where none of the related LearningActivityTracksConnections match this filter
+  """
+  none: LearningActivityTracksConnectionWhere
+
+  """
+  Return LearningActivities where one of the related LearningActivityTracksConnections match this filter
+  """
+  single: LearningActivityTracksConnectionWhere
+
+  """
+  Return LearningActivities where some of the related LearningActivityTracksConnections match this filter
+  """
+  some: LearningActivityTracksConnectionWhere
+}
+
+input LearningActivityTracksConnectionSort {
+  edge: LearningActivityTracksEdgeSort
+  node: TrackSort
+}
+
+input LearningActivityTracksConnectionWhere {
+  AND: [LearningActivityTracksConnectionWhere!]
+  NOT: LearningActivityTracksConnectionWhere
+  OR: [LearningActivityTracksConnectionWhere!]
+  edge: LearningActivityTracksEdgeWhere
+  node: TrackWhere
+}
+
+input LearningActivityTracksCreateFieldInput {
+  edge: LearningActivityTracksEdgeCreateInput!
+  node: TrackCreateInput!
+}
+
+input LearningActivityTracksDeleteFieldInput {
+  delete: TrackDeleteInput
+  where: LearningActivityTracksConnectionWhere
+}
+
+input LearningActivityTracksDisconnectFieldInput {
+  disconnect: TrackDisconnectInput
+  where: LearningActivityTracksConnectionWhere
+}
+
+input LearningActivityTracksEdgeAggregationWhereInput {
+  """
+  Relationship properties when source node is of type:
+  * Lab
+  * Quiz
+  * Video
+  * Article
+  """
+  ContainsProperties: ContainsPropertiesAggregationWhereInput
+}
+
+input LearningActivityTracksEdgeCreateInput {
+  """
+  Relationship properties when source node is of type:
+  * Lab
+  * Quiz
+  * Video
+  * Article
+  """
+  ContainsProperties: ContainsPropertiesCreateInput!
+}
+
+input LearningActivityTracksEdgeSort {
+  """
+  Relationship properties when source node is of type:
+  * Lab
+  * Quiz
+  * Video
+  * Article
+  """
+  ContainsProperties: ContainsPropertiesSort
+}
+
+input LearningActivityTracksEdgeUpdateInput {
+  """
+  Relationship properties when source node is of type:
+  * Lab
+  * Quiz
+  * Video
+  * Article
+  """
+  ContainsProperties: ContainsPropertiesUpdateInput
+}
+
+input LearningActivityTracksEdgeWhere {
+  """
+  Relationship properties when source node is of type:
+  * Lab
+  * Quiz
+  * Video
+  * Article
+  """
+  ContainsProperties: ContainsPropertiesWhere
+}
+
+input LearningActivityTracksNodeAggregationWhereInput {
+  AND: [LearningActivityTracksNodeAggregationWhereInput!]
+  NOT: LearningActivityTracksNodeAggregationWhereInput
+  OR: [LearningActivityTracksNodeAggregationWhereInput!]
+  name: StringScalarAggregationFilters
+  name_AVERAGE_LENGTH_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { eq: ... } } }' instead.")
+  name_AVERAGE_LENGTH_GT: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { gt: ... } } }' instead.")
+  name_AVERAGE_LENGTH_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { gte: ... } } }' instead.")
+  name_AVERAGE_LENGTH_LT: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { lt: ... } } }' instead.")
+  name_AVERAGE_LENGTH_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { lte: ... } } }' instead.")
+  name_LONGEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { eq: ... } } }' instead.")
+  name_LONGEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { gt: ... } } }' instead.")
+  name_LONGEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { gte: ... } } }' instead.")
+  name_LONGEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { lt: ... } } }' instead.")
+  name_LONGEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { lte: ... } } }' instead.")
+  name_SHORTEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { eq: ... } } }' instead.")
+  name_SHORTEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { gt: ... } } }' instead.")
+  name_SHORTEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { gte: ... } } }' instead.")
+  name_SHORTEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { lt: ... } } }' instead.")
+  name_SHORTEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { lte: ... } } }' instead.")
+}
+
+type LearningActivityTracksRelationship {
+  cursor: String!
+  node: Track!
+  properties: LearningActivityTracksRelationshipProperties!
+}
+
+union LearningActivityTracksRelationshipProperties = ContainsProperties
+
+input LearningActivityTracksUpdateConnectionInput {
+  edge: LearningActivityTracksEdgeUpdateInput
+  node: TrackUpdateInput
+  where: LearningActivityTracksConnectionWhere
+}
+
+input LearningActivityTracksUpdateFieldInput {
+  connect: [LearningActivityTracksConnectFieldInput!]
+  create: [LearningActivityTracksCreateFieldInput!]
+  delete: [LearningActivityTracksDeleteFieldInput!]
+  disconnect: [LearningActivityTracksDisconnectFieldInput!]
+  update: LearningActivityTracksUpdateConnectionInput
+}
+
+input LearningActivityUpdateInput {
+  durationMinutes: IntScalarMutations
+  durationMinutes_DECREMENT: Int @deprecated(reason: "Please use the relevant generic mutation 'durationMinutes: { decrement: ... } }' instead.")
+  durationMinutes_INCREMENT: Int @deprecated(reason: "Please use the relevant generic mutation 'durationMinutes: { increment: ... } }' instead.")
+  durationMinutes_SET: Int @deprecated(reason: "Please use the generic mutation 'durationMinutes: { set: ... } }' instead.")
+  id: IDScalarMutations
+  id_SET: ID @deprecated(reason: "Please use the generic mutation 'id: { set: ... } }' instead.")
+  title: StringScalarMutations
+  title_SET: String @deprecated(reason: "Please use the generic mutation 'title: { set: ... } }' instead.")
+  tracks: [LearningActivityTracksUpdateFieldInput!]
+}
+
+input LearningActivityWhere {
+  AND: [LearningActivityWhere!]
+  NOT: LearningActivityWhere
+  OR: [LearningActivityWhere!]
+  author: AuthorWhere
+  authorConnection: LearningActivityAuthorConnectionWhere
+  durationMinutes: IntScalarFilters
+  durationMinutes_EQ: Int @deprecated(reason: "Please use the relevant generic filter durationMinutes: { eq: ... }")
+  durationMinutes_GT: Int @deprecated(reason: "Please use the relevant generic filter durationMinutes: { gt: ... }")
+  durationMinutes_GTE: Int @deprecated(reason: "Please use the relevant generic filter durationMinutes: { gte: ... }")
+  durationMinutes_IN: [Int] @deprecated(reason: "Please use the relevant generic filter durationMinutes: { in: ... }")
+  durationMinutes_LT: Int @deprecated(reason: "Please use the relevant generic filter durationMinutes: { lt: ... }")
+  durationMinutes_LTE: Int @deprecated(reason: "Please use the relevant generic filter durationMinutes: { lte: ... }")
+  id: IDScalarFilters
+  id_CONTAINS: ID @deprecated(reason: "Please use the relevant generic filter id: { contains: ... }")
+  id_ENDS_WITH: ID @deprecated(reason: "Please use the relevant generic filter id: { endsWith: ... }")
+  id_EQ: ID @deprecated(reason: "Please use the relevant generic filter id: { eq: ... }")
+  id_IN: [ID!] @deprecated(reason: "Please use the relevant generic filter id: { in: ... }")
+  id_STARTS_WITH: ID @deprecated(reason: "Please use the relevant generic filter id: { startsWith: ... }")
+  title: StringScalarFilters
+  title_CONTAINS: String @deprecated(reason: "Please use the relevant generic filter title: { contains: ... }")
+  title_ENDS_WITH: String @deprecated(reason: "Please use the relevant generic filter title: { endsWith: ... }")
+  title_EQ: String @deprecated(reason: "Please use the relevant generic filter title: { eq: ... }")
+  title_IN: [String!] @deprecated(reason: "Please use the relevant generic filter title: { in: ... }")
+  title_STARTS_WITH: String @deprecated(reason: "Please use the relevant generic filter title: { startsWith: ... }")
+  tracks: TrackRelationshipFilters
+  tracksAggregate: LearningActivityTracksAggregateInput @deprecated(reason: "Aggregate filters are moved inside the tracksConnection filter, please use { tracksConnection: { aggregate: {...} } } instead")
+  tracksConnection: LearningActivityTracksConnectionFilters
+
+  """
+  Return LearningActivities where all of the related LearningActivityTracksConnections match this filter
+  """
+  tracksConnection_ALL: LearningActivityTracksConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'tracksConnection: { all: { node: ... } } }' instead.")
+
+  """
+  Return LearningActivities where none of the related LearningActivityTracksConnections match this filter
+  """
+  tracksConnection_NONE: LearningActivityTracksConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'tracksConnection: { none: { node: ... } } }' instead.")
+
+  """
+  Return LearningActivities where one of the related LearningActivityTracksConnections match this filter
+  """
+  tracksConnection_SINGLE: LearningActivityTracksConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'tracksConnection: { single: { node: ... } } }' instead.")
+
+  """
+  Return LearningActivities where some of the related LearningActivityTracksConnections match this filter
+  """
+  tracksConnection_SOME: LearningActivityTracksConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'tracksConnection: { some: { node: ... } } }' instead.")
+
+  """
+  Return LearningActivities where all of the related Tracks match this filter
+  """
+  tracks_ALL: TrackWhere @deprecated(reason: "Please use the relevant generic filter 'tracks: { all: ... }' instead.")
+
+  """
+  Return LearningActivities where none of the related Tracks match this filter
+  """
+  tracks_NONE: TrackWhere @deprecated(reason: "Please use the relevant generic filter 'tracks: { none: ... }' instead.")
+
+  """
+  Return LearningActivities where one of the related Tracks match this filter
+  """
+  tracks_SINGLE: TrackWhere @deprecated(reason: "Please use the relevant generic filter 'tracks: {  single: ... }' instead.")
+
+  """
+  Return LearningActivities where some of the related Tracks match this filter
+  """
+  tracks_SOME: TrackWhere @deprecated(reason: "Please use the relevant generic filter 'tracks: {  some: ... }' instead.")
+  typename: [LearningActivityImplementation!]
+}
+
+type Mutation {
+  createArticles(input: [ArticleCreateInput!]!): CreateArticlesMutationResponse!
+  createAuthors(input: [AuthorCreateInput!]!): CreateAuthorsMutationResponse!
+  createLabs(input: [LabCreateInput!]!): CreateLabsMutationResponse!
+  createQuizzes(input: [QuizCreateInput!]!): CreateQuizzesMutationResponse!
+  createTracks(input: [TrackCreateInput!]!): CreateTracksMutationResponse!
+  createVideos(input: [VideoCreateInput!]!): CreateVideosMutationResponse!
+  deleteArticles(delete: ArticleDeleteInput, where: ArticleWhere): DeleteInfo!
+  deleteAuthors(delete: AuthorDeleteInput, where: AuthorWhere): DeleteInfo!
+  deleteLabs(delete: LabDeleteInput, where: LabWhere): DeleteInfo!
+  deleteQuizzes(delete: QuizDeleteInput, where: QuizWhere): DeleteInfo!
+  deleteTracks(delete: TrackDeleteInput, where: TrackWhere): DeleteInfo!
+  deleteVideos(delete: VideoDeleteInput, where: VideoWhere): DeleteInfo!
+  updateArticles(update: ArticleUpdateInput, where: ArticleWhere): UpdateArticlesMutationResponse!
+  updateAuthors(update: AuthorUpdateInput, where: AuthorWhere): UpdateAuthorsMutationResponse!
+  updateLabs(update: LabUpdateInput, where: LabWhere): UpdateLabsMutationResponse!
+  updateQuizzes(update: QuizUpdateInput, where: QuizWhere): UpdateQuizzesMutationResponse!
+  updateTracks(update: TrackUpdateInput, where: TrackWhere): UpdateTracksMutationResponse!
+  updateVideos(update: VideoUpdateInput, where: VideoWhere): UpdateVideosMutationResponse!
+}
+
+"""Pagination information (Relay)"""
+type PageInfo {
+  endCursor: String
+  hasNextPage: Boolean!
+  hasPreviousPage: Boolean!
+  startCursor: String
+}
+
+type Query {
+  articles(limit: Int, offset: Int, sort: [ArticleSort!], where: ArticleWhere): [Article!]!
+  articlesConnection(after: String, first: Int, sort: [ArticleSort!], where: ArticleWhere): ArticlesConnection!
+  authors(limit: Int, offset: Int, sort: [AuthorSort!], where: AuthorWhere): [Author!]!
+  authorsConnection(after: String, first: Int, sort: [AuthorSort!], where: AuthorWhere): AuthorsConnection!
+  labs(limit: Int, offset: Int, sort: [LabSort!], where: LabWhere): [Lab!]!
+  labsConnection(after: String, first: Int, sort: [LabSort!], where: LabWhere): LabsConnection!
+  learningActivities(limit: Int, offset: Int, sort: [LearningActivitySort!], where: LearningActivityWhere): [LearningActivity!]!
+  learningActivitiesConnection(after: String, first: Int, sort: [LearningActivitySort!], where: LearningActivityWhere): LearningActivitiesConnection!
+  quizzes(limit: Int, offset: Int, sort: [QuizSort!], where: QuizWhere): [Quiz!]!
+  quizzesConnection(after: String, first: Int, sort: [QuizSort!], where: QuizWhere): QuizzesConnection!
+  tracks(limit: Int, offset: Int, sort: [TrackSort!], where: TrackWhere): [Track!]!
+  tracksConnection(after: String, first: Int, sort: [TrackSort!], where: TrackWhere): TracksConnection!
+  videos(limit: Int, offset: Int, sort: [VideoSort!], where: VideoWhere): [Video!]!
+  videosConnection(after: String, first: Int, sort: [VideoSort!], where: VideoWhere): VideosConnection!
+}
+
+type Quiz implements LearningActivity {
+  author: Author
+  authorConnection: LearningActivityAuthorConnection!
+  durationMinutes: Int
+  id: ID!
+  questions: Int!
+  title: String!
+  tracks(limit: Int, offset: Int, sort: [TrackSort!], where: TrackWhere): [Track!]!
+  tracksConnection(after: String, first: Int, sort: [LearningActivityTracksConnectionSort!], where: LearningActivityTracksConnectionWhere): LearningActivityTracksConnection!
+}
+
+type QuizAggregate {
+  count: Count!
+  node: QuizAggregateNode!
+}
+
+type QuizAggregateNode {
+  durationMinutes: IntAggregateSelection!
+  questions: IntAggregateSelection!
+  title: StringAggregateSelection!
+}
+
+input QuizAuthorCreateFieldInput {
+  node: AuthorCreateInput!
+}
+
+input QuizAuthorFieldInput {
+  create: QuizAuthorCreateFieldInput
+}
+
+input QuizCreateInput {
+  author: QuizAuthorFieldInput
+  durationMinutes: Int
+  questions: Int!
+  title: String!
+  tracks: QuizTracksFieldInput
+}
+
+input QuizDeleteInput {
+  author: LearningActivityAuthorDeleteFieldInput
+  tracks: [LearningActivityTracksDeleteFieldInput!]
+}
+
+type QuizEdge {
+  cursor: String!
+  node: Quiz!
+}
+
+"""
+Fields to sort Quizzes by. The order in which sorts are applied is not guaranteed when specifying many fields in one QuizSort object.
+"""
+input QuizSort {
+  durationMinutes: SortDirection
+  id: SortDirection
+  questions: SortDirection
+  title: SortDirection
+}
+
+input QuizTracksAggregateInput {
+  AND: [QuizTracksAggregateInput!]
+  NOT: QuizTracksAggregateInput
+  OR: [QuizTracksAggregateInput!]
+  count: IntScalarFilters
+  count_EQ: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { eq: ... } } }' instead.")
+  count_GT: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { gt: ... } } }' instead.")
+  count_GTE: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { gte: ... } } }' instead.")
+  count_LT: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { lt: ... } } }' instead.")
+  count_LTE: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { lte: ... } } }' instead.")
+  edge: ContainsPropertiesAggregationWhereInput
+  node: QuizTracksNodeAggregationWhereInput
+}
+
+input QuizTracksConnectFieldInput {
+  connect: [TrackConnectInput!]
+  edge: ContainsPropertiesCreateInput!
+  where: TrackConnectWhere
+}
+
+input QuizTracksConnectionAggregateInput {
+  AND: [QuizTracksConnectionAggregateInput!]
+  NOT: QuizTracksConnectionAggregateInput
+  OR: [QuizTracksConnectionAggregateInput!]
+  count: ConnectionAggregationCountFilterInput
+  edge: ContainsPropertiesAggregationWhereInput
+  node: QuizTracksNodeAggregationWhereInput
+}
+
+input QuizTracksConnectionFilters {
+  """
+  Filter Quizzes by aggregating results on related LearningActivityTracksConnections
+  """
+  aggregate: QuizTracksConnectionAggregateInput
+
+  """
+  Return Quizzes where all of the related LearningActivityTracksConnections match this filter
+  """
+  all: LearningActivityTracksConnectionWhere
+
+  """
+  Return Quizzes where none of the related LearningActivityTracksConnections match this filter
+  """
+  none: LearningActivityTracksConnectionWhere
+
+  """
+  Return Quizzes where one of the related LearningActivityTracksConnections match this filter
+  """
+  single: LearningActivityTracksConnectionWhere
+
+  """
+  Return Quizzes where some of the related LearningActivityTracksConnections match this filter
+  """
+  some: LearningActivityTracksConnectionWhere
+}
+
+input QuizTracksCreateFieldInput {
+  edge: ContainsPropertiesCreateInput!
+  node: TrackCreateInput!
+}
+
+input QuizTracksFieldInput {
+  connect: [QuizTracksConnectFieldInput!]
+  create: [QuizTracksCreateFieldInput!]
+}
+
+input QuizTracksNodeAggregationWhereInput {
+  AND: [QuizTracksNodeAggregationWhereInput!]
+  NOT: QuizTracksNodeAggregationWhereInput
+  OR: [QuizTracksNodeAggregationWhereInput!]
+  name: StringScalarAggregationFilters
+  name_AVERAGE_LENGTH_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { eq: ... } } }' instead.")
+  name_AVERAGE_LENGTH_GT: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { gt: ... } } }' instead.")
+  name_AVERAGE_LENGTH_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { gte: ... } } }' instead.")
+  name_AVERAGE_LENGTH_LT: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { lt: ... } } }' instead.")
+  name_AVERAGE_LENGTH_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { lte: ... } } }' instead.")
+  name_LONGEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { eq: ... } } }' instead.")
+  name_LONGEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { gt: ... } } }' instead.")
+  name_LONGEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { gte: ... } } }' instead.")
+  name_LONGEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { lt: ... } } }' instead.")
+  name_LONGEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { lte: ... } } }' instead.")
+  name_SHORTEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { eq: ... } } }' instead.")
+  name_SHORTEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { gt: ... } } }' instead.")
+  name_SHORTEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { gte: ... } } }' instead.")
+  name_SHORTEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { lt: ... } } }' instead.")
+  name_SHORTEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { lte: ... } } }' instead.")
+}
+
+input QuizTracksUpdateConnectionInput {
+  edge: ContainsPropertiesUpdateInput
+  node: TrackUpdateInput
+  where: LearningActivityTracksConnectionWhere
+}
+
+input QuizTracksUpdateFieldInput {
+  connect: [QuizTracksConnectFieldInput!]
+  create: [QuizTracksCreateFieldInput!]
+  delete: [LearningActivityTracksDeleteFieldInput!]
+  disconnect: [LearningActivityTracksDisconnectFieldInput!]
+  update: QuizTracksUpdateConnectionInput
+}
+
+input QuizUpdateInput {
+  durationMinutes: IntScalarMutations
+  durationMinutes_DECREMENT: Int @deprecated(reason: "Please use the relevant generic mutation 'durationMinutes: { decrement: ... } }' instead.")
+  durationMinutes_INCREMENT: Int @deprecated(reason: "Please use the relevant generic mutation 'durationMinutes: { increment: ... } }' instead.")
+  durationMinutes_SET: Int @deprecated(reason: "Please use the generic mutation 'durationMinutes: { set: ... } }' instead.")
+  questions: IntScalarMutations
+  questions_DECREMENT: Int @deprecated(reason: "Please use the relevant generic mutation 'questions: { decrement: ... } }' instead.")
+  questions_INCREMENT: Int @deprecated(reason: "Please use the relevant generic mutation 'questions: { increment: ... } }' instead.")
+  questions_SET: Int @deprecated(reason: "Please use the generic mutation 'questions: { set: ... } }' instead.")
+  title: StringScalarMutations
+  title_SET: String @deprecated(reason: "Please use the generic mutation 'title: { set: ... } }' instead.")
+  tracks: [QuizTracksUpdateFieldInput!]
+}
+
+input QuizWhere {
+  AND: [QuizWhere!]
+  NOT: QuizWhere
+  OR: [QuizWhere!]
+  author: AuthorWhere
+  authorConnection: LearningActivityAuthorConnectionWhere
+  durationMinutes: IntScalarFilters
+  durationMinutes_EQ: Int @deprecated(reason: "Please use the relevant generic filter durationMinutes: { eq: ... }")
+  durationMinutes_GT: Int @deprecated(reason: "Please use the relevant generic filter durationMinutes: { gt: ... }")
+  durationMinutes_GTE: Int @deprecated(reason: "Please use the relevant generic filter durationMinutes: { gte: ... }")
+  durationMinutes_IN: [Int] @deprecated(reason: "Please use the relevant generic filter durationMinutes: { in: ... }")
+  durationMinutes_LT: Int @deprecated(reason: "Please use the relevant generic filter durationMinutes: { lt: ... }")
+  durationMinutes_LTE: Int @deprecated(reason: "Please use the relevant generic filter durationMinutes: { lte: ... }")
+  id: IDScalarFilters
+  id_CONTAINS: ID @deprecated(reason: "Please use the relevant generic filter id: { contains: ... }")
+  id_ENDS_WITH: ID @deprecated(reason: "Please use the relevant generic filter id: { endsWith: ... }")
+  id_EQ: ID @deprecated(reason: "Please use the relevant generic filter id: { eq: ... }")
+  id_IN: [ID!] @deprecated(reason: "Please use the relevant generic filter id: { in: ... }")
+  id_STARTS_WITH: ID @deprecated(reason: "Please use the relevant generic filter id: { startsWith: ... }")
+  questions: IntScalarFilters
+  questions_EQ: Int @deprecated(reason: "Please use the relevant generic filter questions: { eq: ... }")
+  questions_GT: Int @deprecated(reason: "Please use the relevant generic filter questions: { gt: ... }")
+  questions_GTE: Int @deprecated(reason: "Please use the relevant generic filter questions: { gte: ... }")
+  questions_IN: [Int!] @deprecated(reason: "Please use the relevant generic filter questions: { in: ... }")
+  questions_LT: Int @deprecated(reason: "Please use the relevant generic filter questions: { lt: ... }")
+  questions_LTE: Int @deprecated(reason: "Please use the relevant generic filter questions: { lte: ... }")
+  title: StringScalarFilters
+  title_CONTAINS: String @deprecated(reason: "Please use the relevant generic filter title: { contains: ... }")
+  title_ENDS_WITH: String @deprecated(reason: "Please use the relevant generic filter title: { endsWith: ... }")
+  title_EQ: String @deprecated(reason: "Please use the relevant generic filter title: { eq: ... }")
+  title_IN: [String!] @deprecated(reason: "Please use the relevant generic filter title: { in: ... }")
+  title_STARTS_WITH: String @deprecated(reason: "Please use the relevant generic filter title: { startsWith: ... }")
+  tracks: TrackRelationshipFilters
+  tracksAggregate: QuizTracksAggregateInput @deprecated(reason: "Aggregate filters are moved inside the tracksConnection filter, please use { tracksConnection: { aggregate: {...} } } instead")
+  tracksConnection: QuizTracksConnectionFilters
+
+  """
+  Return Quizzes where all of the related LearningActivityTracksConnections match this filter
+  """
+  tracksConnection_ALL: LearningActivityTracksConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'tracksConnection: { all: { node: ... } } }' instead.")
+
+  """
+  Return Quizzes where none of the related LearningActivityTracksConnections match this filter
+  """
+  tracksConnection_NONE: LearningActivityTracksConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'tracksConnection: { none: { node: ... } } }' instead.")
+
+  """
+  Return Quizzes where one of the related LearningActivityTracksConnections match this filter
+  """
+  tracksConnection_SINGLE: LearningActivityTracksConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'tracksConnection: { single: { node: ... } } }' instead.")
+
+  """
+  Return Quizzes where some of the related LearningActivityTracksConnections match this filter
+  """
+  tracksConnection_SOME: LearningActivityTracksConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'tracksConnection: { some: { node: ... } } }' instead.")
+
+  """Return Quizzes where all of the related Tracks match this filter"""
+  tracks_ALL: TrackWhere @deprecated(reason: "Please use the relevant generic filter 'tracks: { all: ... }' instead.")
+
+  """Return Quizzes where none of the related Tracks match this filter"""
+  tracks_NONE: TrackWhere @deprecated(reason: "Please use the relevant generic filter 'tracks: { none: ... }' instead.")
+
+  """Return Quizzes where one of the related Tracks match this filter"""
+  tracks_SINGLE: TrackWhere @deprecated(reason: "Please use the relevant generic filter 'tracks: {  single: ... }' instead.")
+
+  """Return Quizzes where some of the related Tracks match this filter"""
+  tracks_SOME: TrackWhere @deprecated(reason: "Please use the relevant generic filter 'tracks: {  some: ... }' instead.")
+}
+
+type QuizzesConnection {
+  aggregate: QuizAggregate!
+  edges: [QuizEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+"""An enum for sorting in either ascending or descending order."""
+enum SortDirection {
+  """Sort by field values in ascending order."""
+  ASC
+
+  """Sort by field values in descending order."""
+  DESC
+}
+
+type StringAggregateSelection {
+  longest: String
+  shortest: String
+}
+
+"""Filters for an aggregation of a string field"""
+input StringScalarAggregationFilters {
+  averageLength: FloatScalarFilters
+  longestLength: IntScalarFilters
+  shortestLength: IntScalarFilters
+}
+
+"""String filters"""
+input StringScalarFilters {
+  contains: String
+  endsWith: String
+  eq: String
+  in: [String!]
+  startsWith: String
+}
+
+"""String mutations"""
+input StringScalarMutations {
+  set: String
+}
+
+type Track {
+  contains(limit: Int, offset: Int, sort: [LearningActivitySort!], where: LearningActivityWhere): [LearningActivity!]!
+  containsConnection(after: String, first: Int, sort: [TrackContainsConnectionSort!], where: TrackContainsConnectionWhere): TrackContainsConnection!
+  featured: LearningActivity
+  featuredConnection: TrackFeaturedConnection!
+  id: ID!
+  name: String!
+}
+
+type TrackAggregate {
+  count: Count!
+  node: TrackAggregateNode!
+}
+
+type TrackAggregateNode {
+  name: StringAggregateSelection!
+}
+
+input TrackConnectInput {
+  contains: [TrackContainsConnectFieldInput!]
+}
+
+input TrackConnectWhere {
+  node: TrackWhere!
+}
+
+input TrackContainsAggregateInput {
+  AND: [TrackContainsAggregateInput!]
+  NOT: TrackContainsAggregateInput
+  OR: [TrackContainsAggregateInput!]
+  count: IntScalarFilters
+  count_EQ: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { eq: ... } } }' instead.")
+  count_GT: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { gt: ... } } }' instead.")
+  count_GTE: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { gte: ... } } }' instead.")
+  count_LT: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { lt: ... } } }' instead.")
+  count_LTE: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { lte: ... } } }' instead.")
+  edge: ContainsPropertiesAggregationWhereInput
+  node: TrackContainsNodeAggregationWhereInput
+}
+
+input TrackContainsConnectFieldInput {
+  connect: LearningActivityConnectInput
+  edge: ContainsPropertiesCreateInput!
+  where: LearningActivityConnectWhere
+}
+
+type TrackContainsConnection {
+  aggregate: TrackLearningActivityContainsAggregateSelection!
+  edges: [TrackContainsRelationship!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+input TrackContainsConnectionAggregateInput {
+  AND: [TrackContainsConnectionAggregateInput!]
+  NOT: TrackContainsConnectionAggregateInput
+  OR: [TrackContainsConnectionAggregateInput!]
+  count: ConnectionAggregationCountFilterInput
+  edge: ContainsPropertiesAggregationWhereInput
+  node: TrackContainsNodeAggregationWhereInput
+}
+
+input TrackContainsConnectionFilters {
+  """
+  Filter Tracks by aggregating results on related TrackContainsConnections
+  """
+  aggregate: TrackContainsConnectionAggregateInput
+
+  """
+  Return Tracks where all of the related TrackContainsConnections match this filter
+  """
+  all: TrackContainsConnectionWhere
+
+  """
+  Return Tracks where none of the related TrackContainsConnections match this filter
+  """
+  none: TrackContainsConnectionWhere
+
+  """
+  Return Tracks where one of the related TrackContainsConnections match this filter
+  """
+  single: TrackContainsConnectionWhere
+
+  """
+  Return Tracks where some of the related TrackContainsConnections match this filter
+  """
+  some: TrackContainsConnectionWhere
+}
+
+input TrackContainsConnectionSort {
+  edge: ContainsPropertiesSort
+  node: LearningActivitySort
+}
+
+input TrackContainsConnectionWhere {
+  AND: [TrackContainsConnectionWhere!]
+  NOT: TrackContainsConnectionWhere
+  OR: [TrackContainsConnectionWhere!]
+  edge: ContainsPropertiesWhere
+  node: LearningActivityWhere
+}
+
+input TrackContainsCreateFieldInput {
+  edge: ContainsPropertiesCreateInput!
+  node: LearningActivityCreateInput!
+}
+
+input TrackContainsDeleteFieldInput {
+  delete: LearningActivityDeleteInput
+  where: TrackContainsConnectionWhere
+}
+
+input TrackContainsDisconnectFieldInput {
+  disconnect: LearningActivityDisconnectInput
+  where: TrackContainsConnectionWhere
+}
+
+input TrackContainsFieldInput {
+  connect: [TrackContainsConnectFieldInput!]
+  create: [TrackContainsCreateFieldInput!]
+}
+
+input TrackContainsNodeAggregationWhereInput {
+  AND: [TrackContainsNodeAggregationWhereInput!]
+  NOT: TrackContainsNodeAggregationWhereInput
+  OR: [TrackContainsNodeAggregationWhereInput!]
+  durationMinutes: IntScalarAggregationFilters
+  durationMinutes_AVERAGE_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'durationMinutes: { average: { eq: ... } } }' instead.")
+  durationMinutes_AVERAGE_GT: Float @deprecated(reason: "Please use the relevant generic filter 'durationMinutes: { average: { gt: ... } } }' instead.")
+  durationMinutes_AVERAGE_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'durationMinutes: { average: { gte: ... } } }' instead.")
+  durationMinutes_AVERAGE_LT: Float @deprecated(reason: "Please use the relevant generic filter 'durationMinutes: { average: { lt: ... } } }' instead.")
+  durationMinutes_AVERAGE_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'durationMinutes: { average: { lte: ... } } }' instead.")
+  durationMinutes_MAX_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'durationMinutes: { max: { eq: ... } } }' instead.")
+  durationMinutes_MAX_GT: Int @deprecated(reason: "Please use the relevant generic filter 'durationMinutes: { max: { gt: ... } } }' instead.")
+  durationMinutes_MAX_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'durationMinutes: { max: { gte: ... } } }' instead.")
+  durationMinutes_MAX_LT: Int @deprecated(reason: "Please use the relevant generic filter 'durationMinutes: { max: { lt: ... } } }' instead.")
+  durationMinutes_MAX_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'durationMinutes: { max: { lte: ... } } }' instead.")
+  durationMinutes_MIN_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'durationMinutes: { min: { eq: ... } } }' instead.")
+  durationMinutes_MIN_GT: Int @deprecated(reason: "Please use the relevant generic filter 'durationMinutes: { min: { gt: ... } } }' instead.")
+  durationMinutes_MIN_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'durationMinutes: { min: { gte: ... } } }' instead.")
+  durationMinutes_MIN_LT: Int @deprecated(reason: "Please use the relevant generic filter 'durationMinutes: { min: { lt: ... } } }' instead.")
+  durationMinutes_MIN_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'durationMinutes: { min: { lte: ... } } }' instead.")
+  durationMinutes_SUM_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'durationMinutes: { sum: { eq: ... } } }' instead.")
+  durationMinutes_SUM_GT: Int @deprecated(reason: "Please use the relevant generic filter 'durationMinutes: { sum: { gt: ... } } }' instead.")
+  durationMinutes_SUM_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'durationMinutes: { sum: { gte: ... } } }' instead.")
+  durationMinutes_SUM_LT: Int @deprecated(reason: "Please use the relevant generic filter 'durationMinutes: { sum: { lt: ... } } }' instead.")
+  durationMinutes_SUM_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'durationMinutes: { sum: { lte: ... } } }' instead.")
+  title: StringScalarAggregationFilters
+  title_AVERAGE_LENGTH_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'title: { averageLength: { eq: ... } } }' instead.")
+  title_AVERAGE_LENGTH_GT: Float @deprecated(reason: "Please use the relevant generic filter 'title: { averageLength: { gt: ... } } }' instead.")
+  title_AVERAGE_LENGTH_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'title: { averageLength: { gte: ... } } }' instead.")
+  title_AVERAGE_LENGTH_LT: Float @deprecated(reason: "Please use the relevant generic filter 'title: { averageLength: { lt: ... } } }' instead.")
+  title_AVERAGE_LENGTH_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'title: { averageLength: { lte: ... } } }' instead.")
+  title_LONGEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'title: { longestLength: { eq: ... } } }' instead.")
+  title_LONGEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'title: { longestLength: { gt: ... } } }' instead.")
+  title_LONGEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'title: { longestLength: { gte: ... } } }' instead.")
+  title_LONGEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'title: { longestLength: { lt: ... } } }' instead.")
+  title_LONGEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'title: { longestLength: { lte: ... } } }' instead.")
+  title_SHORTEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'title: { shortestLength: { eq: ... } } }' instead.")
+  title_SHORTEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'title: { shortestLength: { gt: ... } } }' instead.")
+  title_SHORTEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'title: { shortestLength: { gte: ... } } }' instead.")
+  title_SHORTEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'title: { shortestLength: { lt: ... } } }' instead.")
+  title_SHORTEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'title: { shortestLength: { lte: ... } } }' instead.")
+}
+
+type TrackContainsRelationship {
+  cursor: String!
+  node: LearningActivity!
+  properties: ContainsProperties!
+}
+
+input TrackContainsUpdateConnectionInput {
+  edge: ContainsPropertiesUpdateInput
+  node: LearningActivityUpdateInput
+  where: TrackContainsConnectionWhere
+}
+
+input TrackContainsUpdateFieldInput {
+  connect: [TrackContainsConnectFieldInput!]
+  create: [TrackContainsCreateFieldInput!]
+  delete: [TrackContainsDeleteFieldInput!]
+  disconnect: [TrackContainsDisconnectFieldInput!]
+  update: TrackContainsUpdateConnectionInput
+}
+
+input TrackCreateInput {
+  contains: TrackContainsFieldInput
+  featured: TrackFeaturedFieldInput
+  name: String!
+}
+
+input TrackDeleteInput {
+  contains: [TrackContainsDeleteFieldInput!]
+  featured: TrackFeaturedDeleteFieldInput
+}
+
+input TrackDisconnectInput {
+  contains: [TrackContainsDisconnectFieldInput!]
+}
+
+type TrackEdge {
+  cursor: String!
+  node: Track!
+}
+
+type TrackFeaturedConnection {
+  edges: [TrackFeaturedRelationship!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+input TrackFeaturedConnectionWhere {
+  AND: [TrackFeaturedConnectionWhere!]
+  NOT: TrackFeaturedConnectionWhere
+  OR: [TrackFeaturedConnectionWhere!]
+  node: LearningActivityWhere
+}
+
+input TrackFeaturedCreateFieldInput {
+  node: LearningActivityCreateInput!
+}
+
+input TrackFeaturedDeleteFieldInput {
+  delete: LearningActivityDeleteInput
+  where: TrackFeaturedConnectionWhere
+}
+
+input TrackFeaturedFieldInput {
+  create: TrackFeaturedCreateFieldInput
+}
+
+type TrackFeaturedRelationship {
+  cursor: String!
+  node: LearningActivity!
+}
+
+type TrackLearningActivityContainsAggregateSelection {
+  count: CountConnection!
+  edge: TrackLearningActivityContainsEdgeAggregateSelection
+  node: TrackLearningActivityContainsNodeAggregateSelection
+}
+
+type TrackLearningActivityContainsEdgeAggregateSelection {
+  position: IntAggregateSelection!
+}
+
+type TrackLearningActivityContainsNodeAggregateSelection {
+  durationMinutes: IntAggregateSelection!
+  title: StringAggregateSelection!
+}
+
+input TrackRelationshipFilters {
+  """Filter type where all of the related Tracks match this filter"""
+  all: TrackWhere
+
+  """Filter type where none of the related Tracks match this filter"""
+  none: TrackWhere
+
+  """Filter type where one of the related Tracks match this filter"""
+  single: TrackWhere
+
+  """Filter type where some of the related Tracks match this filter"""
+  some: TrackWhere
+}
+
+"""
+Fields to sort Tracks by. The order in which sorts are applied is not guaranteed when specifying many fields in one TrackSort object.
+"""
+input TrackSort {
+  id: SortDirection
+  name: SortDirection
+}
+
+input TrackUpdateInput {
+  contains: [TrackContainsUpdateFieldInput!]
+  name: StringScalarMutations
+  name_SET: String @deprecated(reason: "Please use the generic mutation 'name: { set: ... } }' instead.")
+}
+
+input TrackWhere {
+  AND: [TrackWhere!]
+  NOT: TrackWhere
+  OR: [TrackWhere!]
+  contains: LearningActivityRelationshipFilters
+  containsAggregate: TrackContainsAggregateInput @deprecated(reason: "Aggregate filters are moved inside the containsConnection filter, please use { containsConnection: { aggregate: {...} } } instead")
+  containsConnection: TrackContainsConnectionFilters
+
+  """
+  Return Tracks where all of the related TrackContainsConnections match this filter
+  """
+  containsConnection_ALL: TrackContainsConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'containsConnection: { all: { node: ... } } }' instead.")
+
+  """
+  Return Tracks where none of the related TrackContainsConnections match this filter
+  """
+  containsConnection_NONE: TrackContainsConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'containsConnection: { none: { node: ... } } }' instead.")
+
+  """
+  Return Tracks where one of the related TrackContainsConnections match this filter
+  """
+  containsConnection_SINGLE: TrackContainsConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'containsConnection: { single: { node: ... } } }' instead.")
+
+  """
+  Return Tracks where some of the related TrackContainsConnections match this filter
+  """
+  containsConnection_SOME: TrackContainsConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'containsConnection: { some: { node: ... } } }' instead.")
+
+  """
+  Return Tracks where all of the related LearningActivities match this filter
+  """
+  contains_ALL: LearningActivityWhere @deprecated(reason: "Please use the relevant generic filter 'contains: { all: ... }' instead.")
+
+  """
+  Return Tracks where none of the related LearningActivities match this filter
+  """
+  contains_NONE: LearningActivityWhere @deprecated(reason: "Please use the relevant generic filter 'contains: { none: ... }' instead.")
+
+  """
+  Return Tracks where one of the related LearningActivities match this filter
+  """
+  contains_SINGLE: LearningActivityWhere @deprecated(reason: "Please use the relevant generic filter 'contains: {  single: ... }' instead.")
+
+  """
+  Return Tracks where some of the related LearningActivities match this filter
+  """
+  contains_SOME: LearningActivityWhere @deprecated(reason: "Please use the relevant generic filter 'contains: {  some: ... }' instead.")
+  featured: LearningActivityWhere
+  featuredConnection: TrackFeaturedConnectionWhere
+  id: IDScalarFilters
+  id_CONTAINS: ID @deprecated(reason: "Please use the relevant generic filter id: { contains: ... }")
+  id_ENDS_WITH: ID @deprecated(reason: "Please use the relevant generic filter id: { endsWith: ... }")
+  id_EQ: ID @deprecated(reason: "Please use the relevant generic filter id: { eq: ... }")
+  id_IN: [ID!] @deprecated(reason: "Please use the relevant generic filter id: { in: ... }")
+  id_STARTS_WITH: ID @deprecated(reason: "Please use the relevant generic filter id: { startsWith: ... }")
+  name: StringScalarFilters
+  name_CONTAINS: String @deprecated(reason: "Please use the relevant generic filter name: { contains: ... }")
+  name_ENDS_WITH: String @deprecated(reason: "Please use the relevant generic filter name: { endsWith: ... }")
+  name_EQ: String @deprecated(reason: "Please use the relevant generic filter name: { eq: ... }")
+  name_IN: [String!] @deprecated(reason: "Please use the relevant generic filter name: { in: ... }")
+  name_STARTS_WITH: String @deprecated(reason: "Please use the relevant generic filter name: { startsWith: ... }")
+}
+
+type TracksConnection {
+  aggregate: TrackAggregate!
+  edges: [TrackEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+type UpdateArticlesMutationResponse {
+  articles: [Article!]!
+  info: UpdateInfo!
+}
+
+type UpdateAuthorsMutationResponse {
+  authors: [Author!]!
+  info: UpdateInfo!
+}
+
+"""
+Information about the number of nodes and relationships created and deleted during an update mutation
+"""
+type UpdateInfo {
+  nodesCreated: Int!
+  nodesDeleted: Int!
+  relationshipsCreated: Int!
+  relationshipsDeleted: Int!
+}
+
+type UpdateLabsMutationResponse {
+  info: UpdateInfo!
+  labs: [Lab!]!
+}
+
+type UpdateQuizzesMutationResponse {
+  info: UpdateInfo!
+  quizzes: [Quiz!]!
+}
+
+type UpdateTracksMutationResponse {
+  info: UpdateInfo!
+  tracks: [Track!]!
+}
+
+type UpdateVideosMutationResponse {
+  info: UpdateInfo!
+  videos: [Video!]!
+}
+
+"""Published videos are public; drafts are visible to admins only."""
+type Video implements LearningActivity {
+  author: Author
+  authorConnection: LearningActivityAuthorConnection!
+  durationMinutes: Int
+  id: ID!
+  published: Boolean!
+  title: String!
+  tracks(limit: Int, offset: Int, sort: [TrackSort!], where: TrackWhere): [Track!]!
+  tracksConnection(after: String, first: Int, sort: [LearningActivityTracksConnectionSort!], where: LearningActivityTracksConnectionWhere): LearningActivityTracksConnection!
+  url: String
+}
+
+type VideoAggregate {
+  count: Count!
+  node: VideoAggregateNode!
+}
+
+type VideoAggregateNode {
+  durationMinutes: IntAggregateSelection!
+  title: StringAggregateSelection!
+  url: StringAggregateSelection!
+}
+
+input VideoAuthorCreateFieldInput {
+  node: AuthorCreateInput!
+}
+
+input VideoAuthorFieldInput {
+  create: VideoAuthorCreateFieldInput
+}
+
+input VideoCreateInput {
+  author: VideoAuthorFieldInput
+  durationMinutes: Int
+  published: Boolean!
+  title: String!
+  tracks: VideoTracksFieldInput
+  url: String
+}
+
+input VideoDeleteInput {
+  author: LearningActivityAuthorDeleteFieldInput
+  tracks: [LearningActivityTracksDeleteFieldInput!]
+}
+
+type VideoEdge {
+  cursor: String!
+  node: Video!
+}
+
+"""
+Fields to sort Videos by. The order in which sorts are applied is not guaranteed when specifying many fields in one VideoSort object.
+"""
+input VideoSort {
+  durationMinutes: SortDirection
+  id: SortDirection
+  published: SortDirection
+  title: SortDirection
+  url: SortDirection
+}
+
+input VideoTracksAggregateInput {
+  AND: [VideoTracksAggregateInput!]
+  NOT: VideoTracksAggregateInput
+  OR: [VideoTracksAggregateInput!]
+  count: IntScalarFilters
+  count_EQ: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { eq: ... } } }' instead.")
+  count_GT: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { gt: ... } } }' instead.")
+  count_GTE: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { gte: ... } } }' instead.")
+  count_LT: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { lt: ... } } }' instead.")
+  count_LTE: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { lte: ... } } }' instead.")
+  edge: ContainsPropertiesAggregationWhereInput
+  node: VideoTracksNodeAggregationWhereInput
+}
+
+input VideoTracksConnectFieldInput {
+  connect: [TrackConnectInput!]
+  edge: ContainsPropertiesCreateInput!
+  where: TrackConnectWhere
+}
+
+input VideoTracksConnectionAggregateInput {
+  AND: [VideoTracksConnectionAggregateInput!]
+  NOT: VideoTracksConnectionAggregateInput
+  OR: [VideoTracksConnectionAggregateInput!]
+  count: ConnectionAggregationCountFilterInput
+  edge: ContainsPropertiesAggregationWhereInput
+  node: VideoTracksNodeAggregationWhereInput
+}
+
+input VideoTracksConnectionFilters {
+  """
+  Filter Videos by aggregating results on related LearningActivityTracksConnections
+  """
+  aggregate: VideoTracksConnectionAggregateInput
+
+  """
+  Return Videos where all of the related LearningActivityTracksConnections match this filter
+  """
+  all: LearningActivityTracksConnectionWhere
+
+  """
+  Return Videos where none of the related LearningActivityTracksConnections match this filter
+  """
+  none: LearningActivityTracksConnectionWhere
+
+  """
+  Return Videos where one of the related LearningActivityTracksConnections match this filter
+  """
+  single: LearningActivityTracksConnectionWhere
+
+  """
+  Return Videos where some of the related LearningActivityTracksConnections match this filter
+  """
+  some: LearningActivityTracksConnectionWhere
+}
+
+input VideoTracksCreateFieldInput {
+  edge: ContainsPropertiesCreateInput!
+  node: TrackCreateInput!
+}
+
+input VideoTracksFieldInput {
+  connect: [VideoTracksConnectFieldInput!]
+  create: [VideoTracksCreateFieldInput!]
+}
+
+input VideoTracksNodeAggregationWhereInput {
+  AND: [VideoTracksNodeAggregationWhereInput!]
+  NOT: VideoTracksNodeAggregationWhereInput
+  OR: [VideoTracksNodeAggregationWhereInput!]
+  name: StringScalarAggregationFilters
+  name_AVERAGE_LENGTH_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { eq: ... } } }' instead.")
+  name_AVERAGE_LENGTH_GT: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { gt: ... } } }' instead.")
+  name_AVERAGE_LENGTH_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { gte: ... } } }' instead.")
+  name_AVERAGE_LENGTH_LT: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { lt: ... } } }' instead.")
+  name_AVERAGE_LENGTH_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { lte: ... } } }' instead.")
+  name_LONGEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { eq: ... } } }' instead.")
+  name_LONGEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { gt: ... } } }' instead.")
+  name_LONGEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { gte: ... } } }' instead.")
+  name_LONGEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { lt: ... } } }' instead.")
+  name_LONGEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { lte: ... } } }' instead.")
+  name_SHORTEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { eq: ... } } }' instead.")
+  name_SHORTEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { gt: ... } } }' instead.")
+  name_SHORTEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { gte: ... } } }' instead.")
+  name_SHORTEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { lt: ... } } }' instead.")
+  name_SHORTEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { lte: ... } } }' instead.")
+}
+
+input VideoTracksUpdateConnectionInput {
+  edge: ContainsPropertiesUpdateInput
+  node: TrackUpdateInput
+  where: LearningActivityTracksConnectionWhere
+}
+
+input VideoTracksUpdateFieldInput {
+  connect: [VideoTracksConnectFieldInput!]
+  create: [VideoTracksCreateFieldInput!]
+  delete: [LearningActivityTracksDeleteFieldInput!]
+  disconnect: [LearningActivityTracksDisconnectFieldInput!]
+  update: VideoTracksUpdateConnectionInput
+}
+
+input VideoUpdateInput {
+  durationMinutes: IntScalarMutations
+  durationMinutes_DECREMENT: Int @deprecated(reason: "Please use the relevant generic mutation 'durationMinutes: { decrement: ... } }' instead.")
+  durationMinutes_INCREMENT: Int @deprecated(reason: "Please use the relevant generic mutation 'durationMinutes: { increment: ... } }' instead.")
+  durationMinutes_SET: Int @deprecated(reason: "Please use the generic mutation 'durationMinutes: { set: ... } }' instead.")
+  published: BooleanScalarMutations
+  published_SET: Boolean @deprecated(reason: "Please use the generic mutation 'published: { set: ... } }' instead.")
+  title: StringScalarMutations
+  title_SET: String @deprecated(reason: "Please use the generic mutation 'title: { set: ... } }' instead.")
+  tracks: [VideoTracksUpdateFieldInput!]
+  url: StringScalarMutations
+  url_SET: String @deprecated(reason: "Please use the generic mutation 'url: { set: ... } }' instead.")
+}
+
+input VideoWhere {
+  AND: [VideoWhere!]
+  NOT: VideoWhere
+  OR: [VideoWhere!]
+  author: AuthorWhere
+  authorConnection: LearningActivityAuthorConnectionWhere
+  durationMinutes: IntScalarFilters
+  durationMinutes_EQ: Int @deprecated(reason: "Please use the relevant generic filter durationMinutes: { eq: ... }")
+  durationMinutes_GT: Int @deprecated(reason: "Please use the relevant generic filter durationMinutes: { gt: ... }")
+  durationMinutes_GTE: Int @deprecated(reason: "Please use the relevant generic filter durationMinutes: { gte: ... }")
+  durationMinutes_IN: [Int] @deprecated(reason: "Please use the relevant generic filter durationMinutes: { in: ... }")
+  durationMinutes_LT: Int @deprecated(reason: "Please use the relevant generic filter durationMinutes: { lt: ... }")
+  durationMinutes_LTE: Int @deprecated(reason: "Please use the relevant generic filter durationMinutes: { lte: ... }")
+  id: IDScalarFilters
+  id_CONTAINS: ID @deprecated(reason: "Please use the relevant generic filter id: { contains: ... }")
+  id_ENDS_WITH: ID @deprecated(reason: "Please use the relevant generic filter id: { endsWith: ... }")
+  id_EQ: ID @deprecated(reason: "Please use the relevant generic filter id: { eq: ... }")
+  id_IN: [ID!] @deprecated(reason: "Please use the relevant generic filter id: { in: ... }")
+  id_STARTS_WITH: ID @deprecated(reason: "Please use the relevant generic filter id: { startsWith: ... }")
+  published: BooleanScalarFilters
+  published_EQ: Boolean @deprecated(reason: "Please use the relevant generic filter published: { eq: ... }")
+  title: StringScalarFilters
+  title_CONTAINS: String @deprecated(reason: "Please use the relevant generic filter title: { contains: ... }")
+  title_ENDS_WITH: String @deprecated(reason: "Please use the relevant generic filter title: { endsWith: ... }")
+  title_EQ: String @deprecated(reason: "Please use the relevant generic filter title: { eq: ... }")
+  title_IN: [String!] @deprecated(reason: "Please use the relevant generic filter title: { in: ... }")
+  title_STARTS_WITH: String @deprecated(reason: "Please use the relevant generic filter title: { startsWith: ... }")
+  tracks: TrackRelationshipFilters
+  tracksAggregate: VideoTracksAggregateInput @deprecated(reason: "Aggregate filters are moved inside the tracksConnection filter, please use { tracksConnection: { aggregate: {...} } } instead")
+  tracksConnection: VideoTracksConnectionFilters
+
+  """
+  Return Videos where all of the related LearningActivityTracksConnections match this filter
+  """
+  tracksConnection_ALL: LearningActivityTracksConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'tracksConnection: { all: { node: ... } } }' instead.")
+
+  """
+  Return Videos where none of the related LearningActivityTracksConnections match this filter
+  """
+  tracksConnection_NONE: LearningActivityTracksConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'tracksConnection: { none: { node: ... } } }' instead.")
+
+  """
+  Return Videos where one of the related LearningActivityTracksConnections match this filter
+  """
+  tracksConnection_SINGLE: LearningActivityTracksConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'tracksConnection: { single: { node: ... } } }' instead.")
+
+  """
+  Return Videos where some of the related LearningActivityTracksConnections match this filter
+  """
+  tracksConnection_SOME: LearningActivityTracksConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'tracksConnection: { some: { node: ... } } }' instead.")
+
+  """Return Videos where all of the related Tracks match this filter"""
+  tracks_ALL: TrackWhere @deprecated(reason: "Please use the relevant generic filter 'tracks: { all: ... }' instead.")
+
+  """Return Videos where none of the related Tracks match this filter"""
+  tracks_NONE: TrackWhere @deprecated(reason: "Please use the relevant generic filter 'tracks: { none: ... }' instead.")
+
+  """Return Videos where one of the related Tracks match this filter"""
+  tracks_SINGLE: TrackWhere @deprecated(reason: "Please use the relevant generic filter 'tracks: {  single: ... }' instead.")
+
+  """Return Videos where some of the related Tracks match this filter"""
+  tracks_SOME: TrackWhere @deprecated(reason: "Please use the relevant generic filter 'tracks: {  some: ... }' instead.")
+  url: StringScalarFilters
+  url_CONTAINS: String @deprecated(reason: "Please use the relevant generic filter url: { contains: ... }")
+  url_ENDS_WITH: String @deprecated(reason: "Please use the relevant generic filter url: { endsWith: ... }")
+  url_EQ: String @deprecated(reason: "Please use the relevant generic filter url: { eq: ... }")
+  url_IN: [String] @deprecated(reason: "Please use the relevant generic filter url: { in: ... }")
+  url_STARTS_WITH: String @deprecated(reason: "Please use the relevant generic filter url: { startsWith: ... }")
+}
+
+type VideosConnection {
+  aggregate: VideoAggregate!
+  edges: [VideoEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}

@@ -1,0 +1,41 @@
+{
+  "data": {
+    "updateTracks": {
+      "info": {
+        "relationshipsCreated": 3
+      },
+      "tracks": [
+        {
+          "containsConnection": {
+            "edges": [
+              {
+                "properties": {
+                  "position": 7
+                },
+                "node": {
+                  "id": "lab-1"
+                }
+              },
+              {
+                "properties": {
+                  "position": 7
+                },
+                "node": {
+                  "id": "quiz-1"
+                }
+              },
+              {
+                "properties": {
+                  "position": 8
+                },
+                "node": {
+                  "id": "article-1"
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,28 @@
+# features: interface.relationship, sort, pagination
+# ordered
+query {
+  tracks(sort: [{ name: ASC }]) {
+    name
+    contains(sort: [{ title: DESC }]) {
+      __typename
+      title
+      ... on Lab {
+        image
+      }
+      ... on Article {
+        body
+        durationMinutes
+      }
+    }
+    labs: contains(where: { typename: [Lab] }, sort: [{ id: ASC }]) {
+      id
+    }
+    firstTwo: contains(sort: [{ durationMinutes: ASC }], limit: 2) {
+      id
+    }
+    featured {
+      __typename
+      id
+    }
+  }
+}

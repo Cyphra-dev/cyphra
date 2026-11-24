@@ -21,15 +21,17 @@
  */
 
 import { GraphQLError } from "graphql";
-import type {
-  Attribute,
-  AuthAnnotations,
-  AuthOperation,
-  AuthorizationRule,
-  NodeType,
-  V7Model,
+import {
+  isInterface,
+  type Attribute,
+  type AuthAnnotations,
+  type AuthOperation,
+  type AuthorizationRule,
+  type InterfaceType,
+  type NodeType,
+  type V7Model,
 } from "../model.js";
-import type { CypherContext } from "../cypher/context.js";
+import { labels, type CypherContext } from "../cypher/context.js";
 import { AuthValue, WhereCompiler } from "../cypher/where.js";
 import {
   claimValue,
@@ -105,11 +107,34 @@ export class AuthRules {
   private forbiddenParam?: string;
 
   constructor(
-    model: V7Model,
+    private readonly model: V7Model,
     private readonly ctx: CypherContext,
     readonly auth: AuthContext,
   ) {
     this.where = new WhereCompiler(model, ctx, true);
+  }
+
+  /**
+   * The rules of each implementation of an interface, for a node of the interface: `(v:Lab AND
+   * <Lab rules>) OR (v:Quiz) OR …` (an implementation without rules holds), or `undefined` when no
+   * implementation has rules. `attributes` are matched by name on each implementation.
+   */
+  perImplementation(
+    variable: string,
+    iface: InterfaceType,
+    attributes: readonly Attribute[],
+    predicate: (node: NodeType, attributes: Attribute[]) => string | undefined,
+  ): string | undefined {
+    const names = new Set(attributes.map((a) => a.name));
+    const preds = iface.implementations.map((name) => {
+      const node = this.model.node(name);
+      return predicate(
+        node,
+        node.attributes.filter((a) => names.has(a.name)),
+      );
+    });
+    if (preds.every((p) => p === undefined)) return undefined;
+    return or(preds.map((p, i) => and([`${variable}${labels(iface.labelSets[i]!)}`, p])));
   }
 
   /** `$pN` holding the "Forbidden" message (one parameter per statement). */
@@ -133,6 +158,11 @@ export class AuthRules {
     operation: AuthOperation,
     attributes: readonly Attribute[] = [],
   ): string | undefined {
+    if (isInterface(node)) {
+      return this.perImplementation(variable, node, attributes, (n, attrs) =>
+        this.filter(variable, n, operation, attrs),
+      );
+    }
     return and(
       annotations(node, attributes).map((a) =>
         or(
@@ -155,6 +185,14 @@ export class AuthRules {
     when: When,
     attributes: readonly Attribute[] = [],
   ): string[] {
+    if (isInterface(node)) {
+      // One validation: the implementation's validations hold (`true` without any).
+      const v = this.perImplementation(variable, node, attributes, (n, attrs) => {
+        const vs = this.validations(variable, n, operation, when, attrs);
+        return vs.length ? and(vs) : undefined;
+      });
+      return v === undefined ? [] : [v];
+    }
     const out: string[] = [];
     for (const a of annotations(node, attributes)) {
       const p = or(

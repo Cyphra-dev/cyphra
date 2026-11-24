@@ -1,0 +1,28 @@
+# features: interface.read, sort, pagination
+# ordered
+query {
+  learningActivities(sort: [{ title: ASC }]) {
+    __typename
+    id
+    title
+    durationMinutes
+    ... on Lab {
+      image
+    }
+    ... on Quiz {
+      questions
+    }
+    ... on Video {
+      url
+      published
+    }
+    ... on Article {
+      body
+    }
+  }
+  page: learningActivities(sort: [{ durationMinutes: DESC }], limit: 2, offset: 1) {
+    __typename
+    id
+    durationMinutes
+  }
+}

@@ -31,11 +31,16 @@
 
 import neo4j from "neo4j-driver";
 import {
+  edgeValue,
+  isInterface,
   isUnionRelationship,
+  keyedConnectionEdge,
+  keyedEdgeInput,
   selectedMembers,
   unionMembers,
   type Attribute,
   type CypherNodeField,
+  type InterfaceType,
   type NodeType,
   type PropertiesType,
   type Relationship,
@@ -45,6 +50,8 @@ import {
   type CypherContext,
   labels,
   listAggregate,
+  nodePattern,
+  property,
   q,
   withList,
   type ListAggregate,
@@ -95,6 +102,31 @@ function and(parts: (string | undefined)[]): string | undefined {
   if (ps.length === 0) return undefined;
   if (ps.length === 1) return ps[0];
   return ps.map((p) => `(${p})`).join(" AND ");
+}
+
+/** Parts combined with OR; a part that filters nothing (`undefined`) makes the whole filter nothing. */
+function or(parts: (string | undefined)[]): string | undefined {
+  if (parts.some((p) => p === undefined)) return undefined;
+  const ps = parts as string[];
+  if (ps.length === 0) return undefined;
+  if (ps.length === 1) return ps[0];
+  return ps.map((p) => `(${p})`).join(" OR ");
+}
+
+/** The implementations named by a `typename` filter, `undefined` when it selects them all. */
+function typenames(value: unknown): string[] | undefined {
+  if (value === null || value === undefined) return undefined;
+  const list = (Array.isArray(value) ? value : [value]).filter(
+    (v): v is string => typeof v === "string",
+  );
+  return list.length ? list : undefined;
+}
+
+/** Whether a `where` key filters on relationship `name` (`r`, `rConnection`, `rAggregate`, `r_SOME`, …). */
+function relationshipKey(key: string, name: string): boolean {
+  if (key === name || key === `${name}Connection` || key === `${name}Aggregate`) return true;
+  const m = /^(.+)_(ALL|NONE|SINGLE|SOME)$/.exec(key);
+  return m !== null && (m[1] === name || m[1] === `${name}Connection`);
 }
 
 /**
@@ -199,7 +231,7 @@ function attributeComparison(
 
 /** `variable.property`, or the value of a `@cypher` field (see `scalarExpr`). */
 function attributeExpr(ctx: CypherContext, variable: string, attr: Attribute): string {
-  if (!attr.cypher) return `${variable}.${q(attr.property)}`;
+  if (!attr.cypher) return property(variable, attr);
   if (attr.args.length)
     throw new Error(`Cannot filter on @cypher field ${attr.name} with arguments`);
   return scalarExpr(ctx, variable, attr.cypher, attr.type.list);
@@ -278,7 +310,8 @@ export function relationshipPattern(
 ): string {
   const target = model.node(rel.target);
   const edge = `[${relVar}:${q(rel.type)}]`;
-  const end = `(${to}${labels(target.labels)})`;
+  // An interface needs a variable for its label predicate.
+  const end = nodePattern(to || (isInterface(target) ? `${from}_target` : ""), target);
   return rel.direction === "OUT" ? `(${from})-${edge}->${end}` : `(${from})<-${edge}-${end}`;
 }
 
@@ -383,15 +416,26 @@ export class WhereCompiler {
     private readonly authorization = false,
   ) {}
 
-  /** Predicate for a `${Node}Where` input on `variable`, or `undefined` when it filters nothing. */
-  node(variable: string, node: NodeType, where: unknown): string | undefined {
+  /**
+   * Predicate for a `${Node}Where` input on `variable`, or `undefined` when it filters nothing.
+   * `viaInterface`: the input is an `${Interface}Where` applied to one implementation (its
+   * `typename` key selects implementations, edge aggregation inputs are keyed).
+   */
+  node(variable: string, node: NodeType, where: unknown, viaInterface = false): string | undefined {
+    if (isInterface(node)) return this.interfaceNode(variable, node, where);
     if (!isFilterObject(where, "filter")) return undefined;
     const parts: (string | undefined)[] = [];
     for (const [key, value] of Object.entries(where)) {
       if (value === undefined) continue;
-      const l = logical(where, key, (w) => this.node(variable, node, w));
+      const l = logical(where, key, (w) => this.node(variable, node, w, viaInterface));
       if (l.handled) {
         parts.push(l.predicate);
+        continue;
+      }
+      if (key === "typename" && viaInterface) {
+        // The `typename` filter of an interface, on one of its implementations.
+        const names = typenames(value);
+        parts.push(names === undefined || names.includes(node.name) ? undefined : "false");
         continue;
       }
       const a = attributeFilter(this.ctx, variable, node.attributes, key, value);
@@ -404,7 +448,60 @@ export class WhereCompiler {
         parts.push(c.predicate);
         continue;
       }
-      parts.push(this.relationshipFilter(variable, node, key, value));
+      parts.push(this.relationshipFilter(variable, node, key, value, viaInterface));
+    }
+    return and(parts);
+  }
+
+  /**
+   * An `${Interface}Where` (v7 semantics, also where v7 fails): `typename` tests the labels of the
+   * listed implementations (an empty list filters nothing), attributes are compared on the property
+   * of each implementation, relationships an interface declares are filtered like a node's when
+   * every implementation has the same relationship type, direction and properties, else per
+   * implementation (`(v:Lab AND …) OR (v:Article AND …)`).
+   */
+  private interfaceNode(
+    variable: string,
+    iface: InterfaceType,
+    where: unknown,
+  ): string | undefined {
+    if (!isFilterObject(where, "filter")) return undefined;
+    const parts: (string | undefined)[] = [];
+    for (const [key, value] of Object.entries(where)) {
+      if (value === undefined) continue;
+      const l = logical(where, key, (w) => this.interfaceNode(variable, iface, w));
+      if (l.handled) {
+        parts.push(l.predicate);
+        continue;
+      }
+      if (key === "typename") {
+        const names = typenames(value);
+        if (names === undefined) continue;
+        parts.push(
+          or(
+            iface.implementations.flatMap((name, i) =>
+              names.includes(name) ? [`${variable}${labels(iface.labelSets[i]!)}`] : [],
+            ),
+          ) ?? "false",
+        );
+        continue;
+      }
+      const a = attributeFilter(this.ctx, variable, iface.attributes, key, value);
+      if (a.handled) {
+        parts.push(a.predicate);
+        continue;
+      }
+      const rel = iface.relationships.find((r) => relationshipKey(key, r.name));
+      if (!rel) throw new Error(`Unknown filter ${iface.name}Where.${key}`);
+      if (rel.uniform) {
+        parts.push(this.relationshipFilter(variable, iface, key, value));
+        continue;
+      }
+      const preds = iface.implementations.map((name) =>
+        this.relationshipFilter(variable, this.model.node(name), key, value, true),
+      );
+      if (preds.every((p) => p === undefined)) continue;
+      parts.push(or(preds.map((p, i) => and([`${variable}${labels(iface.labelSets[i]!)}`, p]))));
     }
     return and(parts);
   }
@@ -490,8 +587,12 @@ export class WhereCompiler {
     node: NodeType,
     key: string,
     value: unknown,
+    viaInterface = false,
   ): string | undefined {
-    const find = (name: string) => node.relationships.find((r) => r.name === name);
+    const find = (name: string) => {
+      const r = node.relationships.find((x) => x.name === name);
+      return r && viaInterface ? { ...r, viaInterface: true } : r;
+    };
     // `actors: { some: … }`
     let rel = find(key);
     if (rel && !rel.list) return this.toOne(variable, rel, value);
@@ -685,7 +786,9 @@ export class WhereCompiler {
         if (key === "edge") {
           const props = this.model.properties.get(rel.properties ?? "");
           if (!props) throw new Error(`Unknown aggregation filter ${key}`);
-          parts.push(this.aggregationWhere(scope, props.attributes, "edge", false, value));
+          // `edge: { ContainsProperties: … }` through an interface.
+          const edge = edgeValue(props, keyedEdgeInput(this.model, rel), value);
+          parts.push(this.aggregationWhere(scope, props.attributes, "edge", false, edge));
           continue;
         }
         throw new Error(`Unknown aggregation filter ${key}`);
@@ -763,7 +866,7 @@ export class WhereCompiler {
     fn: ListAggregate,
   ): string {
     const v = on === "node" ? scope.nodeVar : scope.relVar;
-    const prop = `${v}.${q(attr.property)}`;
+    const prop = property(v, attr);
     const expr = attr.kind === "scalar" && attr.type.name === "String" ? `size(${prop})` : prop;
     const dedupe = distinct ? ` WITH DISTINCT ${v}` : "";
     const list = `COLLECT { MATCH ${scope.pattern}${dedupe} WITH ${v} WHERE ${prop} IS NOT NULL RETURN ${expr} }`;
@@ -787,12 +890,19 @@ export class WhereCompiler {
         continue;
       }
       if (key === "node") {
-        parts.push(this.node(nodeVar, this.model.node(rel.target), value));
+        parts.push(
+          this.node(nodeVar, this.model.node(rel.target), value, rel.interfaceTarget !== undefined),
+        );
         continue;
       }
       if (key === "edge") {
         const props = this.model.properties.get(rel.properties ?? "");
-        if (props) parts.push(this.edge(relVar, props, value));
+        // `edge: { ContainsProperties: … }` keys of other types (or on an implementation without
+        // properties) filter nothing, like v7.
+        if (props) {
+          const edge = edgeValue(props, keyedConnectionEdge(this.model, rel), value);
+          parts.push(this.edge(relVar, props, edge));
+        }
         continue;
       }
       throw new Error(`Unknown connection filter ${key}`);

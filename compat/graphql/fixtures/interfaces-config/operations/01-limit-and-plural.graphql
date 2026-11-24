@@ -1,0 +1,28 @@
+# features: interface.read, config.limit, sort
+# ordered
+query {
+  media(sort: [{ name: ASC }]) {
+    __typename
+    name
+  }
+  capped: media(limit: 10, sort: [{ name: ASC }]) {
+    name
+  }
+  mediaConnection(sort: [{ name: DESC }]) {
+    totalCount
+    pageInfo {
+      hasNextPage
+    }
+    edges {
+      node {
+        name
+      }
+    }
+  }
+  folders(sort: [{ name: ASC }]) {
+    name
+    assets(sort: [{ name: ASC }]) {
+      name
+    }
+  }
+}

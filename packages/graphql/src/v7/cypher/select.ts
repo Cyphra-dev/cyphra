@@ -40,10 +40,14 @@ import neo4j, { isInt } from "neo4j-driver";
 import { checkAuthentication, type AuthContext } from "../auth/context.js";
 import { AuthRules } from "../auth/rules.js";
 import {
+  edgeValue,
+  isInterface,
   isUnionRelationship,
+  keyedConnectionEdge,
   selectedMembers,
   unionMembers,
   type Attribute,
+  type InterfaceType,
   type CypherAnnotation,
   type CypherNodeField,
   type CypherRootField,
@@ -58,6 +62,9 @@ import {
   CypherContext,
   labels,
   listAggregate,
+  labelPredicate,
+  nodePattern,
+  property,
   q,
   withList,
   type ListAggregate,
@@ -498,6 +505,22 @@ export class SelectionCompiler {
     node: NodeType,
     fieldNodes: readonly FieldNode[],
   ): { filter?: string; failure?: string } {
+    if (isInterface(node)) {
+      // The rules of each implementation, with the fields selected on it (fragments included).
+      const attrsOf = (impl: NodeType) =>
+        this.selectedAttributes(
+          impl,
+          narrowFieldNodes(this.info, fieldNodes, impl.name, node.name),
+        );
+      return {
+        filter: this.rules.perImplementation(variable, node, [], (impl) =>
+          this.rules.filter(variable, impl, "READ", attrsOf(impl)),
+        ),
+        failure: this.rules.perImplementation(variable, node, [], (impl) =>
+          this.rules.fails(variable, impl, "READ", "BEFORE", attrsOf(impl)),
+        ),
+      };
+    }
     const attrs = this.selectedAttributes(node, fieldNodes);
     return {
       filter: this.rules.filter(variable, node, "READ", attrs),
@@ -531,7 +554,7 @@ export class SelectionCompiler {
         items.push(`${this.sortValue(variable, a, pre)} ${dir}`);
         continue;
       }
-      items.push(`${variable}.${q(a.property)} ${dir}`);
+      items.push(`${property(variable, a)} ${dir}`);
     }
     return items;
   }
@@ -571,8 +594,11 @@ export class SelectionCompiler {
       for (const [k, v] of Object.entries(s as AnyRecord)) {
         if (k === "node")
           items.push(...this.sortItems(nodeVar, target.attributes, v, target.name, pre));
-        else if (k === "edge" && props)
-          items.push(...this.sortItems(relVar, props.attributes, v, props.name, pre));
+        else if (k === "edge" && props) {
+          // `edge: { ContainsProperties: … }` on relationships an interface declares.
+          const edge = edgeValue(props, keyedConnectionEdge(this.model, rel), v);
+          items.push(...this.sortItems(relVar, props.attributes, edge, props.name, pre));
+        }
       }
     }
     return items.length ? `ORDER BY ${items.join(", ")}` : "";
@@ -614,6 +640,8 @@ export class SelectionCompiler {
     /** Entries added to the projected map (the hidden keys of union rows). */
     extra: readonly string[] = [],
   ): { expr: string; decode: Decoder } {
+    if (isInterface(node))
+      return this.projectInterface(variable, node, fieldNodes, scope, pre, extra);
     const selection = this.nodeSelection(node, fieldNodes);
     const fields = [...selection.values()].map((n) => n[0]!.name.value);
     this.authenticate(node, "READ", fields);
@@ -687,6 +715,33 @@ export class SelectionCompiler {
     };
   }
 
+  /**
+   * The projection of a node of an interface: `CASE WHEN v:Lab THEN { <Lab projection> } WHEN …
+   * END`, each implementation with the selections that apply to it (fragments on it or on the
+   * interface), and its type in the row for `__typename` / type resolution.
+   */
+  private projectInterface(
+    variable: string,
+    iface: InterfaceType,
+    fieldNodes: readonly FieldNode[],
+    scope: Scope,
+    pre: SortScope | undefined,
+    extra: readonly string[],
+  ): { expr: string; decode: Decoder } {
+    const decoders = new Map<string, Decoder>();
+    const whens = iface.implementations.map((name, i) => {
+      const impl = this.model.node(name);
+      const nodes = narrowFieldNodes(this.info, fieldNodes, name, iface.name);
+      const p = this.projectNode(variable, impl, nodes, scope, pre, [
+        ...extra,
+        `${q(TYPE_KEY)}: ${this.ctx.param(name)}`,
+      ]);
+      decoders.set(name, p.decode);
+      return `WHEN ${variable}${labels(iface.labelSets[i]!)} THEN ${p.expr}`;
+    });
+    return { expr: `CASE ${whens.join(" ")} END`, decode: this.unionDecoder(decoders) };
+  }
+
   private projectProperties(
     relVar: string,
     props: PropertiesType,
@@ -697,7 +752,10 @@ export class SelectionCompiler {
     const entries: string[] = [];
     const decoders: [string, Decoder][] = [];
     const type = objectType(this.info, props.name);
-    for (const [key, nodes] of collectFields(this.info, subSelections(fieldNodes))) {
+    // `properties` may be a union of properties types (relationships an interface declares):
+    // only the fragments on this type apply.
+    const narrowed = narrowFieldNodes(this.info, fieldNodes, props.name, props.name);
+    for (const [key, nodes] of collectFields(this.info, subSelections(narrowed))) {
       const name = nodes[0]!.name.value;
       if (name === "__typename") continue;
       const attr = props.attributes.find((a) => a.name === name);
@@ -712,7 +770,8 @@ export class SelectionCompiler {
       expr: `{ ${entries.join(", ")} }`,
       decode: (raw) => {
         const r = (raw ?? {}) as AnyRecord;
-        const out: AnyRecord = {};
+        // The type, for `properties` unions (`LearningActivityTracksRelationshipProperties`).
+        const out: AnyRecord = { __typename: props.name };
         for (const [key, dec] of decoders) out[key] = dec(r[key]);
         return out;
       },
@@ -1081,7 +1140,7 @@ export class SelectionCompiler {
     attr: Attribute,
     fieldNodes: readonly FieldNode[],
   ): { expr: string; decode: Decoder } {
-    const prop = `${variable}.${q(attr.property)}`;
+    const prop = property(variable, attr);
     const type = attr.type.name;
     const ops: [string, string][] = [];
     for (const [k, n] of collectFields(this.info, subSelections(fieldNodes))) {
@@ -1244,7 +1303,7 @@ export class SelectionCompiler {
         match:
           rel && fromVar !== undefined
             ? relationshipPattern(this.model, fromVar, rel, t)
-            : `(${t}${labels(node.labels)})`,
+            : nodePattern(t, node),
         nodeVar: t,
         predicate: this.where.node(t, node, where),
         ruleNodes: nodes,
@@ -1458,7 +1517,7 @@ export class SelectionCompiler {
     const inner: Scope = [];
     const proj = this.projectNode(v, node, fieldNodes, inner, pre);
     const head = [
-      `MATCH (${v}${labels(node.labels)})`,
+      `MATCH ${nodePattern(v, node)}`,
       pred ? `WHERE ${pred}` : "",
       ...pre.clauses,
       withClause(v, order, page, pre),
@@ -1469,7 +1528,7 @@ export class SelectionCompiler {
       const root: Scope = [];
       const row = this.rowGate(inner, auth.failure, proj.expr, this.forbiddenMap());
       const list = this.subquery(root, "collect", head, row);
-      const match = `(${v}${labels(node.labels)})`;
+      const match = nodePattern(v, node);
       const value = this.gate(root, match, pred, auth.failure, list, this.forbiddenList());
       return {
         cypher: [...root, `RETURN ${value} AS this`].join("\n"),
@@ -1488,7 +1547,7 @@ export class SelectionCompiler {
     const pre = sortScope();
     const c = this.connection({
       scope: root,
-      match: `(${v}${labels(node.labels)})`,
+      match: nodePattern(v, node),
       predicate: this.where.node(v, node, args.where),
       order: this.nodeOrder(v, node, args.sort, pre),
       pre,
@@ -1572,7 +1631,7 @@ export class SelectionCompiler {
     const where = (args.where ?? {}) as AnyRecord;
     const scoreWhere = (where.score ?? {}) as AnyRecord;
     const pred = and([
-      `${v}${labels(node.labels)}`,
+      labelPredicate(v, node),
       typeof scoreWhere.min === "number"
         ? `${score} >= ${this.ctx.param(scoreWhere.min)}`
         : undefined,

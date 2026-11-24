@@ -1,0 +1,104 @@
+{
+  "data": {
+    "inLinuxTrack": [
+      {
+        "id": "article-1"
+      },
+      {
+        "id": "lab-1"
+      },
+      {
+        "id": "quiz-1"
+      },
+      {
+        "id": "video-1"
+      }
+    ],
+    "inNoTrack": [
+      {
+        "id": "article-1"
+      },
+      {
+        "id": "lab-1"
+      },
+      {
+        "id": "lab-2"
+      },
+      {
+        "id": "quiz-1"
+      },
+      {
+        "id": "video-1"
+      }
+    ],
+    "onlyInLinux": [
+      {
+        "id": "article-1"
+      },
+      {
+        "id": "quiz-1"
+      },
+      {
+        "id": "video-1"
+      }
+    ],
+    "byAda": [
+      {
+        "id": "article-1"
+      },
+      {
+        "id": "lab-1"
+      },
+      {
+        "id": "quiz-1"
+      },
+      {
+        "id": "video-1"
+      }
+    ],
+    "noAuthor": [],
+    "firstInATrack": [
+      {
+        "id": "lab-1"
+      },
+      {
+        "id": "lab-2"
+      }
+    ],
+    "optionalSomewhere": [
+      {
+        "id": "article-1"
+      },
+      {
+        "id": "quiz-1"
+      }
+    ],
+    "authorConnection": [
+      {
+        "id": "lab-2"
+      }
+    ],
+    "inTwoTracks": [
+      {
+        "id": "lab-1"
+      }
+    ],
+    "legacyAggregate": [
+      {
+        "id": "article-1"
+      },
+      {
+        "id": "lab-1"
+      },
+      {
+        "id": "lab-2"
+      },
+      {
+        "id": "quiz-1"
+      },
+      {
+        "id": "video-1"
+      }
+    ]
+  }
+}

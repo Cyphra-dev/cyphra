@@ -1,0 +1,53 @@
+# features: interface.read, aggregate, config.selectable
+query {
+  mediaConnection(where: { size: { gte: 100 } }) {
+    aggregate {
+      count {
+        nodes
+      }
+      node {
+        name {
+          shortest
+          longest
+        }
+        size {
+          min
+          max
+          average
+          sum
+        }
+        label {
+          shortest
+        }
+      }
+    }
+  }
+  folders(where: { id: { eq: "fold-1" } }) {
+    assetsConnection {
+      aggregate {
+        count {
+          nodes
+        }
+        node {
+          size {
+            sum
+          }
+        }
+      }
+    }
+  }
+  owners(where: { id: { eq: "own-1" } }) {
+    assetsConnection(where: { node: { size: { lt: 400 } } }) {
+      aggregate {
+        count {
+          nodes
+        }
+        node {
+          name {
+            longest
+          }
+        }
+      }
+    }
+  }
+}

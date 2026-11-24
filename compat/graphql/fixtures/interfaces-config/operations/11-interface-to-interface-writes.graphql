@@ -1,0 +1,22 @@
+# features: interface.mutation, mutation.nested-create, mutation.disconnect
+mutation {
+  updateImages(
+    where: { id: { eq: "img-1" } }
+    update: {
+      related: [
+        {
+          create: [{ node: { Sound: { id: "snd-2", name: "Beep", size: 1 } } }]
+          disconnect: [{ where: { node: { typename: [Document] } } }]
+        }
+      ]
+      label: { set: "new" }
+    }
+  ) {
+    images {
+      related {
+        __typename
+        name
+      }
+    }
+  }
+}

@@ -1,0 +1,23 @@
+# features: interface.mutation, mutation.disconnect, mutation.nested-delete
+mutation {
+  updateTracks(
+    where: { id: { eq: "track-1" } }
+    update: {
+      contains: [
+        { disconnect: [{ where: { node: { typename: [Quiz] } } }] }
+        { delete: [{ where: { node: { typename: [Article] } } }] }
+        { disconnect: [{ where: { edge: { position: { eq: 1 } } } }] }
+      ]
+    }
+  ) {
+    info {
+      nodesDeleted
+      relationshipsDeleted
+    }
+    tracks {
+      contains {
+        id
+      }
+    }
+  }
+}

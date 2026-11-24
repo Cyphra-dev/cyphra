@@ -1,0 +1,28 @@
+# features: interface.relationship, interface.filter
+query {
+  media(where: { related: { some: { name: { eq: "Jingle" } } } }) {
+    id
+    related {
+      __typename
+      name
+      folder {
+        name
+      }
+    }
+  }
+  inLegal: media(where: { folder: { name: { eq: "Legal" } } }) {
+    id
+  }
+  noFolder: media(where: { folder: null }) {
+    id
+  }
+  relatedConnection: media(where: { id: { eq: "img-1" } }) {
+    relatedConnection(sort: [{ node: { name: DESC } }]) {
+      edges {
+        node {
+          id
+        }
+      }
+    }
+  }
+}

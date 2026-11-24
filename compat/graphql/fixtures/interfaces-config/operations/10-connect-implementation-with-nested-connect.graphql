@@ -1,0 +1,35 @@
+# features: interface.mutation, mutation.connect, connection.edge-properties
+mutation {
+  updateOwners(
+    where: { id: { eq: "own-2" } }
+    update: {
+      images: [
+        {
+          connect: [
+            {
+              where: { node: { id: { eq: "img-1" } } }
+              edge: { since: 2024 }
+              connect: { related: [{ where: { node: { name: { eq: "Notes" } } } }] }
+            }
+          ]
+        }
+      ]
+    }
+  ) {
+    owners {
+      imagesConnection {
+        edges {
+          properties {
+            since
+          }
+          node {
+            id
+            related {
+              name
+            }
+          }
+        }
+      }
+    }
+  }
+}

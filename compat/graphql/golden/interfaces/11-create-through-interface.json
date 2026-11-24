@@ -1,0 +1,49 @@
+{
+  "data": {
+    "createTracks": {
+      "info": {
+        "nodesCreated": 5,
+        "relationshipsCreated": 4
+      },
+      "tracks": [
+        {
+          "name": "New track",
+          "containsConnection": {
+            "edges": [
+              {
+                "properties": {
+                  "position": 1,
+                  "optional": null
+                },
+                "node": {
+                  "__typename": "Lab",
+                  "title": "New lab",
+                  "durationMinutes": null,
+                  "author": null
+                }
+              },
+              {
+                "properties": {
+                  "position": 2,
+                  "optional": true
+                },
+                "node": {
+                  "__typename": "Article",
+                  "title": "New article",
+                  "durationMinutes": 7,
+                  "author": {
+                    "name": "Cy"
+                  }
+                }
+              }
+            ]
+          },
+          "featured": {
+            "__typename": "Quiz",
+            "title": "Featured quiz"
+          }
+        }
+      ]
+    }
+  }
+}

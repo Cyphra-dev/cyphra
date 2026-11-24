@@ -1,0 +1,61 @@
+{
+  "data": {
+    "updateTracks": {
+      "info": {
+        "nodesCreated": 0
+      },
+      "tracks": [
+        {
+          "containsConnection": {
+            "edges": [
+              {
+                "properties": {
+                  "position": 1,
+                  "optional": null
+                },
+                "node": {
+                  "id": "lab-1",
+                  "title": "Linux basics",
+                  "durationMinutes": 30
+                }
+              },
+              {
+                "properties": {
+                  "position": 2,
+                  "optional": false
+                },
+                "node": {
+                  "id": "quiz-1",
+                  "title": "Updated",
+                  "durationMinutes": 11
+                }
+              },
+              {
+                "properties": {
+                  "position": 3,
+                  "optional": false
+                },
+                "node": {
+                  "id": "video-1",
+                  "title": "Updated",
+                  "durationMinutes": 6
+                }
+              },
+              {
+                "properties": {
+                  "position": 4,
+                  "optional": false
+                },
+                "node": {
+                  "id": "article-1",
+                  "title": "Updated",
+                  "durationMinutes": 21
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

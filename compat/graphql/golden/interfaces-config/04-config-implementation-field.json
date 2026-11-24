@@ -1,0 +1,16 @@
+{
+  "data": {
+    "media": [
+      {
+        "id": "doc-1",
+        "secret": "s-doc-1",
+        "pages": 12
+      },
+      {
+        "id": "img-1",
+        "secret": "s-img-1",
+        "width": 64
+      }
+    ]
+  }
+}

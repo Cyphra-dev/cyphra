@@ -1,0 +1,12 @@
+# features: interface.relationship, config.query
+query {
+  folders(where: { id: { eq: "fold-1" } }) {
+    tagged(where: { tag: { eq: "red" } }) {
+      __typename
+      tag
+    }
+    taggedConnection {
+      totalCount
+    }
+  }
+}

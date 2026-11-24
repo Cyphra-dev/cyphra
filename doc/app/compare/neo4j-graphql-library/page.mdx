@@ -13,7 +13,7 @@ GraphQL type definitions into a GraphQL API. Cyphra turns a `.cyphra` schema int
 TypeScript client (`db.user.findMany(…)`) and migration files, and its
 [`@cyphra/graphql`](/graphql) package serves the same API as `@neo4j/graphql` 7 from the same type
 definitions.** Pick `@neo4j/graphql` if you need what `@cyphra/graphql` does not support yet
-(Apollo Federation, interfaces, among others) or want a library maintained
+(Apollo Federation, `@vector`, among others) or want a library maintained
 by Neo4j. Pick Cyphra if you want migrations and a typed client, with or without the GraphQL API.
 
 ## At a glance
@@ -101,14 +101,14 @@ GraphQL](/guides/migrate-from-neo4j-graphql#using-the-typed-client-alongside-gra
 ## What `@neo4j/graphql` does that Cyphra does not
 
 `@cyphra/graphql` serves the v7 API for queries, aggregations, mutations, `@authentication` /
-`@authorization`, `@cypher` fields, custom resolvers, `@fulltext` queries, unions, CDC
-subscriptions and the schema configuration directives. Its compatibility suite runs 253 operations
-on 18 apps, with expected results recorded from `@neo4j/graphql` 7.6.8, and 268 of the 271 checks
+`@authorization`, `@cypher` fields, custom resolvers, `@fulltext` queries, unions, interfaces, CDC
+subscriptions and the schema configuration directives. Its compatibility suite runs 288 operations
+on 20 apps, with expected results recorded from `@neo4j/graphql` 7.6.8, and 305 of the 308 checks
 pass, the three others on purpose ([report](https://github.com/Cyphra-dev/cyphra/blob/main/compat/graphql/REPORT.md)). What it
 does not have yet:
 
 - The **Apollo Federation** integration.
-- **Interfaces**, `@cypher` fields returning unions, **`@vector`** queries, and the `Time`, `LocalTime`, `LocalDateTime`,
+- Interfaces implementing interfaces, `@cypher` fields returning unions, **`@vector`** queries, and the `Time`, `LocalTime`, `LocalDateTime`,
   `Duration`, `Point` and `CartesianPoint` scalars.
 - `@populatedBy`, `@relayId` and `@coalesce`. The schema configuration directives (`@query`,
   `@mutation`, `@selectable`, `@settable`, `@filterable`, `@sortable`, `@limit`)
@@ -153,7 +153,7 @@ the type definitions and run `cyphra import graphql --merge`. The client does no
 
 ## When to choose `@neo4j/graphql` instead
 
-- You need Apollo Federation, interfaces, `@vector` or another feature from the list above.
+- You need Apollo Federation, `@vector` or another feature from the list above.
 - You are on the 5.x LTS line and do not plan to move to version 7.
 - You want a library maintained by Neo4j, Inc. with a published versioning policy (current and LTS
   lines).

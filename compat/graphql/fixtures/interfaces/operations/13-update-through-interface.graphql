@@ -1,0 +1,36 @@
+# features: interface.mutation, mutation.update, mutation.nested-update, connection.edge-properties
+mutation {
+  updateTracks(
+    where: { id: { eq: "track-1" } }
+    update: {
+      contains: [
+        {
+          update: {
+            where: { node: { durationMinutes: { lte: 20 } }, edge: { position: { gte: 2 } } }
+            node: { durationMinutes: { add: 1 }, title: { set: "Updated" } }
+            edge: { optional: { set: false } }
+          }
+        }
+      ]
+    }
+  ) {
+    info {
+      nodesCreated
+    }
+    tracks {
+      containsConnection(sort: [{ edge: { position: ASC } }]) {
+        edges {
+          properties {
+            position
+            optional
+          }
+          node {
+            id
+            title
+            durationMinutes
+          }
+        }
+      }
+    }
+  }
+}
