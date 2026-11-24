@@ -1,0 +1,82 @@
+{
+  "data": {
+    "media": [
+      {
+        "__typename": "Image",
+        "name": "Banner"
+      },
+      {
+        "__typename": "Document",
+        "name": "Contract"
+      },
+      {
+        "__typename": "Sound",
+        "name": "Jingle"
+      }
+    ],
+    "capped": [
+      {
+        "name": "Banner"
+      },
+      {
+        "name": "Contract"
+      },
+      {
+        "name": "Jingle"
+      },
+      {
+        "name": "Logo"
+      }
+    ],
+    "mediaConnection": {
+      "totalCount": 5,
+      "pageInfo": {
+        "hasNextPage": false
+      },
+      "edges": [
+        {
+          "node": {
+            "name": "Notes"
+          }
+        },
+        {
+          "node": {
+            "name": "Logo"
+          }
+        },
+        {
+          "node": {
+            "name": "Jingle"
+          }
+        }
+      ]
+    },
+    "folders": [
+      {
+        "name": "Legal",
+        "assets": [
+          {
+            "name": "Contract"
+          },
+          {
+            "name": "Notes"
+          }
+        ]
+      },
+      {
+        "name": "Marketing",
+        "assets": [
+          {
+            "name": "Banner"
+          },
+          {
+            "name": "Jingle"
+          },
+          {
+            "name": "Logo"
+          }
+        ]
+      }
+    ]
+  }
+}

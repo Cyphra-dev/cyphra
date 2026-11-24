@@ -1,0 +1,6 @@
+# features: interface.read, config.sortable
+query {
+  media(sort: [{ size: ASC }]) {
+    id
+  }
+}

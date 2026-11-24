@@ -1,0 +1,13 @@
+# features: interface.mutation, mutation.delete, mutation.nested-delete
+mutation {
+  deleteTracks(
+    where: { id: { eq: "track-2" } }
+    delete: {
+      contains: [{ where: { node: { typename: [Lab] } }, delete: { author: { where: {} } } }]
+      featured: { where: {} }
+    }
+  ) {
+    nodesDeleted
+    relationshipsDeleted
+  }
+}

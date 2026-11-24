@@ -1,0 +1,25 @@
+# features: interface.mutation, interface.auth, auth.validate
+mutation {
+  updateFolders(
+    where: { id: { eq: "fold-1" } }
+    update: { assets: [{ update: { node: { size: { set: 20000 } } } }] }
+  ) {
+    folders {
+      assets {
+        size
+      }
+    }
+  }
+  documents: updateFolders(
+    where: { id: { eq: "fold-2" } }
+    update: {
+      assets: [
+        { update: { where: { node: { name: { eq: "Notes" } } }, node: { size: { add: 20000 } } } }
+      ]
+    }
+  ) {
+    folders {
+      id
+    }
+  }
+}

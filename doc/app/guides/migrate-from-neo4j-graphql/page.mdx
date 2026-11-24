@@ -19,8 +19,8 @@ This guide is a checklist. Each step was run on a small app with `@id`, `@relati
 `@cyphra/graphql` 0.7.
 
 <Callout type="info">
-  Before you start, check that your type definitions are covered: interfaces, `@vector`, some
-  scalars, `@populatedBy`, `@relayId` and `@coalesce` are not supported yet ([full
+  Before you start, check that your type definitions are covered: `@vector`, some scalars,
+  `@populatedBy`, `@relayId` and `@coalesce` are not supported yet ([full
   list](#what-is-not-supported-yet)). `makeSchema` throws an `UnsupportedTypeDefsError` that names
   the type or field, so the first run tells you.
 </Callout>
@@ -412,8 +412,8 @@ Some v7 behaviour is kept on purpose, because changing it would change your resu
 
 ## What is not supported yet
 
-- Interfaces, and `@cypher` fields returning a union (unions themselves
-  [work](/graphql#unions)).
+- Interfaces implementing interfaces, and `@cypher` fields returning a union (unions and
+  [interfaces](/graphql#interfaces) themselves work).
 - `@vector` queries.
 - The scalars `Time`, `LocalTime`, `LocalDateTime`, `Duration`, `Point`, `CartesianPoint` and
   custom scalars. `ID`, `String`, `Int`, `Float`, `Boolean`, `BigInt`, `Date`, `DateTime` and enums

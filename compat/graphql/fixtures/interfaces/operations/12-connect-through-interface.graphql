@@ -1,0 +1,35 @@
+# features: interface.mutation, mutation.connect, connection.edge-properties
+mutation {
+  updateTracks(
+    where: { id: { eq: "track-3" } }
+    update: {
+      contains: [
+        {
+          connect: [
+            {
+              where: { node: { title: { contains: "Linux" }, typename: [Lab, Article, Quiz] } }
+              edge: { position: 7 }
+            }
+            { where: { node: { id: { eq: "article-1" } } }, edge: { position: 8 } }
+          ]
+        }
+      ]
+    }
+  ) {
+    info {
+      relationshipsCreated
+    }
+    tracks {
+      containsConnection(sort: [{ edge: { position: ASC } }]) {
+        edges {
+          properties {
+            position
+          }
+          node {
+            id
+          }
+        }
+      }
+    }
+  }
+}

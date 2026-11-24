@@ -13,12 +13,13 @@
  */
 
 import { GraphQLError } from "graphql";
-import type {
-  AuthenticationAnnotation,
-  AuthOperation,
-  CypherRootField,
-  NodeType,
-  V7Model,
+import {
+  isInterface,
+  type AuthenticationAnnotation,
+  type AuthOperation,
+  type CypherRootField,
+  type NodeType,
+  type V7Model,
 } from "../model.js";
 import type { JwtDecoder } from "./jwt.js";
 
@@ -234,6 +235,16 @@ export function checkAuthentication(
   field?: string,
 ): void {
   applyAuthentication(model.authentication, operations, auth);
+  if (isInterface(node)) {
+    // Through an interface: the annotations of every implementation (any may be returned).
+    for (const name of node.implementations) {
+      const impl = model.node(name);
+      if (field === undefined || impl.attributes.some((a) => a.name === field)) {
+        checkAuthentication(model, auth, impl, operations, field);
+      }
+    }
+    return;
+  }
   if (field === undefined) {
     applyAuthentication(node.auth.authentication, operations, auth);
   } else {

@@ -1,0 +1,6 @@
+# features: interface.filter
+query {
+  learningActivities(where: { typename: [Track] }) {
+    id
+  }
+}

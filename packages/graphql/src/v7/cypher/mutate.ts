@@ -45,7 +45,11 @@ import { checkAuthentication, type AuthContext } from "../auth/context.js";
 import type { AuthRules } from "../auth/rules.js";
 import {
   DEFAULT_FIELD_CONFIG,
+  edgeValue,
+  interfaceTargets,
+  isInterface,
   isUnionRelationship,
+  keyedEdgeInput,
   unionMembers,
   type Attribute,
   type AuthOperation,
@@ -257,10 +261,19 @@ export class MutationCompiler {
     return rel.properties ? this.model.properties.get(rel.properties) : undefined;
   }
 
-  private relationship(node: NodeType, name: string): Relationship {
+  /**
+   * The relationship `name` of `node`; `viaInterface` when the input is the interface's (an
+   * `${Interface}UpdateInput`, …: edge inputs keyed by properties type).
+   */
+  private relationship(node: NodeType, name: string, viaInterface = false): Relationship {
     const rel = node.relationships.find((r) => r.name === name);
     if (!rel) throw new Error(`Unknown relationship ${node.name}.${name}`);
-    return rel;
+    return viaInterface ? { ...rel, viaInterface: true } : rel;
+  }
+
+  /** The `edge` input of `rel` for its properties (unwrapped when keyed by properties type). */
+  private edgeInput(rel: Relationship, value: unknown): unknown {
+    return edgeValue(this.props(rel), keyedEdgeInput(this.model, rel), value);
   }
 
   /**
@@ -430,6 +443,7 @@ export class MutationCompiler {
     input: unknown,
     afterCreate?: () => void,
   ): void {
+    if (isInterface(node)) throw new Error(`Cannot create a node of the interface ${node.name}`);
     const written = this.writtenAttributes(node, input);
     this.authenticate(
       node,
@@ -470,10 +484,23 @@ export class MutationCompiler {
     if (after) block.check([after]);
   }
 
-  /** `{ node, edge }` of a relationship `create`: a new related node and the edge to it. */
+  /**
+   * `{ node, edge }` of a relationship `create`: a new related node and the edge to it. To an
+   * interface, `node` is keyed by implementation (`{ Lab: { … } }`): like v7, each key creates a node.
+   */
   private nestedCreate(block: Block, from: string, rel: Relationship, el: unknown): void {
     if (!isPlainObject(el)) return;
     const target = this.model.node(rel.target);
+    if (isInterface(target)) {
+      if (!isPlainObject(el.node)) return;
+      for (const [name, node] of Object.entries(el.node)) {
+        if (node === undefined || node === null) continue;
+        const view = interfaceTargets(this.model, rel).find((r) => r.target === name);
+        if (!view) throw new Error(`Unknown field ${target.name}CreateInput.${name}`);
+        this.nestedCreate(block, from, view, { ...el, node });
+      }
+      return;
+    }
     const inner = new Block();
     const t = this.ctx.variable("this");
     const r = this.ctx.variable("edge");
@@ -483,7 +510,7 @@ export class MutationCompiler {
       if (props) {
         const sets = [
           ...onCreateGenerated(r, props.attributes),
-          ...this.createAssignments(r, props.attributes, el.edge, props.name),
+          ...this.createAssignments(r, props.attributes, this.edgeInput(rel, el.edge), props.name),
         ];
         if (sets.length) inner.add(`SET ${sets.join(", ")}`);
       }
@@ -492,9 +519,17 @@ export class MutationCompiler {
     this.call(block, [from], inner);
   }
 
-  /** `{ where, edge, connect }`: an edge to every node matching `where` (then nested connects). */
+  /**
+   * `{ where, edge, connect }`: an edge to every node matching `where` (then nested connects). To an
+   * interface: to every node of each implementation matching the interface `where`.
+   */
   private connect(block: Block, from: string, rel: Relationship, el: unknown): void {
     if (!isPlainObject(el)) return;
+    if (this.model.interfaces.has(rel.target)) {
+      for (const view of interfaceTargets(this.model, rel)) this.connect(block, from, view, el);
+      return;
+    }
+    const viaInterface = rel.interfaceTarget !== undefined;
     const target = this.model.node(rel.target);
     const source = this.model.node(rel.source);
     this.authenticate(target, "CREATE_RELATIONSHIP");
@@ -503,7 +538,7 @@ export class MutationCompiler {
     const t = this.ctx.variable("this");
     const where = isPlainObject(el.where) ? el.where.node : undefined;
     const pred = and([
-      this.where.node(t, target, where),
+      this.where.node(t, target, where, viaInterface),
       this.rules.filter(t, target, "CREATE_RELATIONSHIP"),
     ]);
     inner.add(`MATCH (${t}${labels(target.labels)})${pred ? ` WHERE ${pred}` : ""}`);
@@ -514,7 +549,7 @@ export class MutationCompiler {
     for (const nested of asList(el.connect)) {
       if (!isPlainObject(nested)) continue;
       for (const [name, els] of Object.entries(nested)) {
-        for (const [rel2, e] of this.elements(this.relationship(target, name), els))
+        for (const [rel2, e] of this.elements(this.relationship(target, name, viaInterface), els))
           this.connect(inner, t, rel2, e);
       }
     }
@@ -522,7 +557,12 @@ export class MutationCompiler {
     inner.add(`CREATE ${edgePattern(from, rel, r, t)}`);
     const props = this.props(rel);
     if (props) {
-      const sets = this.createAssignments(r, props.attributes, el.edge, props.name);
+      const sets = this.createAssignments(
+        r,
+        props.attributes,
+        this.edgeInput(rel, el.edge),
+        props.name,
+      );
       if (sets.length) inner.add(`SET ${sets.join(", ")}`);
     }
     inner.count("rc", "1");
@@ -538,12 +578,22 @@ export class MutationCompiler {
   // Update
   // ---------------------------------------------------------------------------------------------
 
-  /** The relationship operations of a `${Node}UpdateInput` on `v`. */
-  private updateRelationships(block: Block, v: string, node: NodeType, input: unknown): void {
+  /**
+   * The relationship operations of a `${Node}UpdateInput` on `v` (`viaInterface`: an
+   * `${Interface}UpdateInput` applied to one implementation).
+   */
+  private updateRelationships(
+    block: Block,
+    v: string,
+    node: NodeType,
+    input: unknown,
+    viaInterface = false,
+  ): void {
     if (!isPlainObject(input)) return;
     for (const [key, value] of Object.entries(input)) {
-      const relationship = node.relationships.find((r) => r.name === key);
-      if (!relationship || value === null || value === undefined) continue;
+      if (!node.relationships.some((r) => r.name === key) || value === null || value === undefined)
+        continue;
+      const relationship = this.relationship(node, key, viaInterface);
       for (const [rel, el] of this.elements(relationship, value)) {
         if (!isPlainObject(el)) continue;
         for (const op of ELEMENT_OPERATIONS) {
@@ -571,9 +621,17 @@ export class MutationCompiler {
     }
   }
 
-  /** `{ where, node, edge }`: updates the related nodes (and edges) matching `where`. */
+  /**
+   * `{ where, node, edge }`: updates the related nodes (and edges) matching `where`; through an
+   * interface, the nodes of each implementation (`node` is an `${Interface}UpdateInput`).
+   */
   private nestedUpdate(block: Block, from: string, rel: Relationship, el: unknown): void {
     if (!isPlainObject(el)) return;
+    if (this.model.interfaces.has(rel.target)) {
+      for (const view of interfaceTargets(this.model, rel))
+        this.nestedUpdate(block, from, view, el);
+      return;
+    }
     const target = this.model.node(rel.target);
     const written = this.writtenAttributes(target, el.node);
     this.authenticate(
@@ -607,11 +665,19 @@ export class MutationCompiler {
         checks,
         target.relationships,
       ),
-      ...(props ? this.updateAssignments(r, props.attributes, el.edge, props.name, checks) : []),
+      ...(props
+        ? this.updateAssignments(
+            r,
+            props.attributes,
+            this.edgeInput(rel, el.edge),
+            props.name,
+            checks,
+          )
+        : []),
     ];
     if (sets.length) inner.add(`SET ${sets.join(", ")}`);
     inner.check(checks);
-    this.updateRelationships(inner, t, target, el.node);
+    this.updateRelationships(inner, t, target, el.node, rel.interfaceTarget !== undefined);
     const after = this.updateCheck(t, target, "AFTER", written, typeRules);
     if (after) inner.check([after]);
     if (!inner.hasCounts() && inner.clauses.length === 1) return;
@@ -645,9 +711,16 @@ export class MutationCompiler {
     return this.rules.check(this.rules.failure(validations));
   }
 
-  /** `{ where, disconnect }`: deletes the matching relationships (then nested disconnects). */
+  /**
+   * `{ where, disconnect }`: deletes the matching relationships (then nested disconnects); through
+   * an interface, those of each implementation.
+   */
   private disconnect(block: Block, from: string, rel: Relationship, el: unknown): void {
     if (!isPlainObject(el)) return;
+    if (this.model.interfaces.has(rel.target)) {
+      for (const view of interfaceTargets(this.model, rel)) this.disconnect(block, from, view, el);
+      return;
+    }
     const target = this.model.node(rel.target);
     const source = this.model.node(rel.source);
     this.authenticate(target, "DELETE_RELATIONSHIP");
@@ -687,8 +760,8 @@ export class MutationCompiler {
     );
     if (isPlainObject(el.disconnect)) {
       for (const [name, els] of Object.entries(el.disconnect)) {
-        for (const [rel2, e] of this.elements(this.relationship(target, name), els))
-          this.disconnect(inner, t, rel2, e);
+        const nested = this.relationship(target, name, rel.interfaceTarget !== undefined);
+        for (const [rel2, e] of this.elements(nested, els)) this.disconnect(inner, t, rel2, e);
       }
     }
     if (inner.clauses.length > 1) inner.add("WITH *");
@@ -734,11 +807,13 @@ export class MutationCompiler {
     const lists = [`COLLECT { ${match} RETURN DISTINCT ${t} }`];
     if (!isPlainObject(del)) return lists;
     for (const [name, els] of Object.entries(del)) {
-      for (const [rel, el] of this.elements(this.relationship(node, name), els)) {
+      for (const [relationship, el] of this.elements(this.relationship(node, name), els)) {
         if (!isPlainObject(el)) continue;
-        const target = this.model.node(rel.target);
-        const { chain, u } = this.nestedDeleteMatch(match, t, rel, target, el, failures);
-        lists.push(...this.deleteLists(chain, u, target, el.delete, failures));
+        for (const rel of interfaceTargets(this.model, relationship)) {
+          const target = this.model.node(rel.target);
+          const { chain, u } = this.nestedDeleteMatch(match, t, rel, target, el, failures);
+          lists.push(...this.deleteLists(chain, u, target, el.delete, failures));
+        }
       }
     }
     return lists;
@@ -793,13 +868,19 @@ export class MutationCompiler {
     block.count("rd", n);
   }
 
-  /** `{ where, delete }` inside an update: deletes the matching related nodes. */
-  private nestedDelete(block: Block, from: string, rel: Relationship, el: unknown): void {
+  /**
+   * `{ where, delete }` inside an update: deletes the matching related nodes (through an interface,
+   * those of each implementation).
+   */
+  private nestedDelete(block: Block, from: string, relationship: Relationship, el: unknown): void {
     if (!isPlainObject(el)) return;
-    const target = this.model.node(rel.target);
     const failures: string[] = [];
-    const { chain, u } = this.nestedDeleteMatch("", from, rel, target, el, failures);
-    const lists = this.deleteLists(chain, u, target, el.delete, failures);
+    const lists: string[] = [];
+    for (const rel of interfaceTargets(this.model, relationship)) {
+      const target = this.model.node(rel.target);
+      const { chain, u } = this.nestedDeleteMatch("", from, rel, target, el, failures);
+      lists.push(...this.deleteLists(chain, u, target, el.delete, failures));
+    }
     const inner = new Block();
     const keep: string[] = [];
     if (failures.length) {
@@ -1044,11 +1125,13 @@ export class MutationCompiler {
     const rootFailure = this.rules.check(this.rules.fails(v, node, "DELETE", "BEFORE"));
     if (isPlainObject(args.delete)) {
       for (const [name, els] of Object.entries(args.delete)) {
-        for (const [rel, el] of this.elements(this.relationship(node, name), els)) {
+        for (const [relationship, el] of this.elements(this.relationship(node, name), els)) {
           if (!isPlainObject(el)) continue;
-          const target = this.model.node(rel.target);
-          const { chain, u } = this.nestedDeleteMatch("", v, rel, target, el, failures);
-          nested.push(...this.deleteLists(chain, u, target, el.delete, failures));
+          for (const rel of interfaceTargets(this.model, relationship)) {
+            const target = this.model.node(rel.target);
+            const { chain, u } = this.nestedDeleteMatch("", v, rel, target, el, failures);
+            nested.push(...this.deleteLists(chain, u, target, el.delete, failures));
+          }
         }
       }
     }

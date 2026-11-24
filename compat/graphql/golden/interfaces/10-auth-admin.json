@@ -1,0 +1,41 @@
+{
+  "data": {
+    "learningActivities": [
+      {
+        "id": "video-1"
+      },
+      {
+        "id": "video-2"
+      }
+    ],
+    "learningActivitiesConnection": {
+      "totalCount": 3
+    },
+    "tracks": [
+      {
+        "contains": [
+          {
+            "id": "lab-1"
+          },
+          {
+            "id": "lab-2"
+          },
+          {
+            "id": "video-2"
+          }
+        ],
+        "containsConnection": {
+          "totalCount": 3
+        },
+        "featured": {
+          "id": "video-2"
+        }
+      }
+    ],
+    "draftTracks": [
+      {
+        "id": "track-2"
+      }
+    ]
+  }
+}

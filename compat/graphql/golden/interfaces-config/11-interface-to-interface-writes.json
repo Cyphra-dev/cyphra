@@ -1,0 +1,20 @@
+{
+  "data": {
+    "updateImages": {
+      "images": [
+        {
+          "related": [
+            {
+              "__typename": "Sound",
+              "name": "Beep"
+            },
+            {
+              "__typename": "Sound",
+              "name": "Jingle"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

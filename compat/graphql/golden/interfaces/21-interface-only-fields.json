@@ -1,0 +1,7 @@
+{
+  "errors": [
+    {
+      "message": "Cannot query field \"image\" on type \"LearningActivity\". Did you mean to use an inline fragment on \"Lab\"?"
+    }
+  ]
+}

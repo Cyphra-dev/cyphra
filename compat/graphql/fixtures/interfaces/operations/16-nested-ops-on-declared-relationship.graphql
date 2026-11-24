@@ -1,0 +1,54 @@
+# features: interface.mutation, mutation.nested-update, connection.edge-properties
+mutation {
+  updateTracks(
+    where: { id: { eq: "track-2" } }
+    update: {
+      contains: [
+        {
+          update: {
+            where: { node: { id: { eq: "lab-2" } } }
+            node: {
+              tracks: [
+                {
+                  connect: [
+                    {
+                      where: { node: { name: { eq: "Empty" } } }
+                      edge: { ContainsProperties: { position: 9 } }
+                    }
+                  ]
+                }
+                {
+                  update: {
+                    where: { edge: { ContainsProperties: { position: { eq: 1 } } } }
+                    edge: { ContainsProperties: { optional: { set: true } } }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ) {
+    tracks {
+      id
+      contains(where: { id: { eq: "lab-2" } }) {
+        ... on Lab {
+          tracksConnection(sort: [{ node: { name: ASC } }]) {
+            edges {
+              properties {
+                ... on ContainsProperties {
+                  position
+                  optional
+                }
+              }
+              node {
+                name
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

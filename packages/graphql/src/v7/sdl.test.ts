@@ -249,7 +249,30 @@ describe("SDL: to-one relationships (v7 7.6.8)", () => {
 
 describe("unsupported type definitions fail loudly", () => {
   it.each([
-    ["interfaces", "interface Production { title: String! }"],
+    [
+      "interfaces implemented by types without @node",
+      "interface Production { title: String! } type Movie implements Production { title: String! }",
+    ],
+    [
+      "interfaces implementing interfaces",
+      "interface A { x: Int } interface B implements A { x: Int } type T implements A & B @node { x: Int }",
+    ],
+    [
+      "@authorization on interfaces",
+      "interface A @authorization(filter: [{ where: { node: { x: { eq: 1 } } } }]) { x: Int } type T implements A @node { x: Int }",
+    ],
+    [
+      "@relationship on interface fields",
+      'interface A { t: [T!]! @relationship(type: "R", direction: OUT) } type T implements A @node { t: [T!]! @relationship(type: "R", direction: OUT) }',
+    ],
+    [
+      "declared relationships without @relationship on an implementation",
+      "interface A { t: [T!]! @declareRelationship } type T implements A @node { x: Int }",
+    ],
+    [
+      "declared relationships to unions",
+      'union U = T interface A { u: [U!]! @declareRelationship } type T implements A @node { u: [U!]! @relationship(type: "R", direction: OUT) }',
+    ],
     ["unions of non-@node types", "type A @node { x: Int } enum E { X } union U = A | E"],
     [
       "@cypher fields returning unions",

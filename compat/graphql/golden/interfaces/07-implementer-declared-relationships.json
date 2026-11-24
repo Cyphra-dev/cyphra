@@ -1,0 +1,99 @@
+{
+  "data": {
+    "labs": [
+      {
+        "id": "lab-2",
+        "tracks": [
+          {
+            "name": "Containers"
+          }
+        ],
+        "tracksConnection": {
+          "totalCount": 1,
+          "edges": [
+            {
+              "properties": {
+                "__typename": "ContainsProperties",
+                "position": 1
+              },
+              "node": {
+                "name": "Containers"
+              }
+            }
+          ]
+        },
+        "author": {
+          "name": "Bob"
+        },
+        "authorConnection": {
+          "edges": [
+            {
+              "node": {
+                "name": "Bob"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "id": "lab-1",
+        "tracks": [
+          {
+            "name": "Containers"
+          },
+          {
+            "name": "Linux"
+          }
+        ],
+        "tracksConnection": {
+          "totalCount": 1,
+          "edges": [
+            {
+              "properties": {
+                "__typename": "ContainsProperties",
+                "position": 1
+              },
+              "node": {
+                "name": "Linux"
+              }
+            }
+          ]
+        },
+        "author": {
+          "name": "Ada"
+        },
+        "authorConnection": {
+          "edges": [
+            {
+              "node": {
+                "name": "Ada"
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "learningActivities": [
+      {
+        "id": "article-1",
+        "author": {
+          "name": "Ada"
+        },
+        "tracksConnection": {
+          "totalCount": 1,
+          "edges": [
+            {
+              "properties": {
+                "position": 4,
+                "optional": true
+              },
+              "node": {
+                "id": "track-1"
+              }
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

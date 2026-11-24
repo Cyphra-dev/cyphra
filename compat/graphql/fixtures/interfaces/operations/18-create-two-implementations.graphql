@@ -1,0 +1,22 @@
+# features: interface.mutation, mutation.nested-create
+mutation {
+  createTracks(
+    input: [
+      {
+        name: "Two at once"
+        featured: { create: { node: { Lab: { title: "A" }, Quiz: { title: "B", questions: 1 } } } }
+      }
+    ]
+  ) {
+    info {
+      nodesCreated
+      relationshipsCreated
+    }
+    tracks {
+      name
+      featuredConnection {
+        totalCount
+      }
+    }
+  }
+}

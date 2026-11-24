@@ -1,0 +1,21 @@
+# features: interface.read, connection, pagination
+# ordered
+query {
+  learningActivitiesConnection(first: 2, sort: [{ durationMinutes: ASC }]) {
+    totalCount
+    pageInfo {
+      hasNextPage
+      hasPreviousPage
+      startCursor
+      endCursor
+    }
+    edges {
+      cursor
+      node {
+        __typename
+        id
+        durationMinutes
+      }
+    }
+  }
+}

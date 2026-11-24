@@ -1,0 +1,52 @@
+{
+  "data": {
+    "media": [
+      {
+        "id": "img-1",
+        "related": [
+          {
+            "__typename": "Document",
+            "name": "Contract",
+            "folder": {
+              "name": "Legal"
+            }
+          },
+          {
+            "__typename": "Sound",
+            "name": "Jingle",
+            "folder": {
+              "name": "Marketing"
+            }
+          }
+        ]
+      }
+    ],
+    "inLegal": [
+      {
+        "id": "doc-1"
+      },
+      {
+        "id": "doc-2"
+      }
+    ],
+    "noFolder": [],
+    "relatedConnection": [
+      {
+        "relatedConnection": {
+          "edges": [
+            {
+              "node": {
+                "id": "doc-1"
+              }
+            },
+            {
+              "node": {
+                "id": "snd-1"
+              }
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

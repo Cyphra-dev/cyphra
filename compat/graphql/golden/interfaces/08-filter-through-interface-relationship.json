@@ -1,0 +1,77 @@
+{
+  "data": {
+    "withQuizTitle": [
+      {
+        "id": "track-1"
+      }
+    ],
+    "allLinux": [],
+    "noneLong": [
+      {
+        "id": "track-1"
+      },
+      {
+        "id": "track-3"
+      }
+    ],
+    "oneLong": [
+      {
+        "id": "track-2"
+      }
+    ],
+    "articleMinutes": [
+      {
+        "id": "track-1"
+      }
+    ],
+    "optionalEdge": [
+      {
+        "id": "track-1"
+      }
+    ],
+    "byNodeAndEdge": [
+      {
+        "id": "track-2"
+      }
+    ],
+    "countFilter": [
+      {
+        "id": "track-1"
+      }
+    ],
+    "nodeAggregate": [
+      {
+        "id": "track-1"
+      },
+      {
+        "id": "track-2"
+      }
+    ],
+    "featuredLinux": [
+      {
+        "id": "track-1"
+      }
+    ],
+    "authorsOfLabs": [
+      {
+        "id": "author-1"
+      },
+      {
+        "id": "author-2"
+      }
+    ],
+    "nested": [
+      {
+        "id": "track-2"
+      }
+    ],
+    "nestedTracks": [
+      {
+        "id": "track-1"
+      },
+      {
+        "id": "track-2"
+      }
+    ]
+  }
+}

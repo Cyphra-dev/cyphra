@@ -15,8 +15,8 @@ frontend queries, and the API runs on the Cyphra runtime.
 <Callout type="warning">
   This is an early release. The full v7 schema is generated, and queries (aggregations included),
   mutations, `@authentication` / `@authorization` rules, `@cypher` fields, `@fulltext` queries,
-  unions and [subscriptions](#subscriptions) work. Interfaces and some scalars are not supported
-  yet. See [what works today](#what-works-today).
+  unions, [interfaces](#interfaces) and [subscriptions](#subscriptions) work. Some scalars are not
+  supported yet. See [what works today](#what-works-today).
 </Callout>
 
 ## Install
@@ -56,7 +56,7 @@ export const schema = compat.v7.makeSchema({ typeDefs, driver });
 | `features` | `{ authorization }`: how JWTs are verified, as in v7 ([below](#authentication-and-authorization)). |
 
 `makeSchema` throws an `UnsupportedTypeDefsError` when the type definitions use something it cannot
-serve yet (interfaces, `Point`, `Duration`, custom scalars, …). It never serves an API that
+serve yet (`Point`, `Duration`, custom scalars, …). It never serves an API that
 differs from v7 without telling you: a directive or argument it does not implement is rejected, never
 ignored.
 
@@ -524,6 +524,75 @@ every relationship of the field. `@cyphra/graphql` applies `where` and `edge` th
 two of the three checks of the compatibility suite that differ on purpose. `@cypher` fields returning a
 union are not supported yet.
 
+## Interfaces
+
+An interface implemented by `@node` types gets the v7 API: the root queries
+`learningActivities(where, sort, limit, offset)` and `learningActivitiesConnection` (with
+`aggregate`), relationships to the interface, relationship fields declared on the interface with
+`@declareRelationship`, and nested writes through them.
+
+```graphql
+interface LearningActivity {
+  id: ID!
+  title: String!
+  durationMinutes: Int
+  tracks: [Track!]! @declareRelationship
+}
+
+type Lab implements LearningActivity @node(labels: ["Lab", "LearningActivity"]) {
+  id: ID! @id
+  title: String!
+  durationMinutes: Int
+  image: String
+  tracks: [Track!]! @relationship(type: "CONTAINS", direction: IN, properties: "ContainsProperties")
+}
+
+type Track @node {
+  id: ID! @id
+  name: String!
+  contains: [LearningActivity!]!
+    @relationship(type: "CONTAINS", direction: OUT, properties: "ContainsProperties")
+}
+```
+
+- Like v7, an interface adds no label. A node is a `LearningActivity` when it has every label of one
+  implementation: `Lab` nodes need both `Lab` and `LearningActivity` here. Give the
+  implementations a shared label in `@node(labels)` to find them all with one label in Cypher.
+- `where` takes the interface fields, the declared relationships and `typename: [Lab, Quiz]` (the
+  implementations to keep; `[]` keeps all). `sort`, `limit`, `offset`, cursors and `aggregate` apply
+  across implementations. An implementation can store a field under another property
+  (`@alias`) or declare a relationship with another type or direction: each is read and filtered
+  with its own.
+- Results come back with their implementation type: select its fields with fragments
+  (`... on Lab { image }`).
+- `@authorization` goes on the implementations (v7 rejects it on interfaces): reading through the
+  interface applies each implementation's rules to its nodes. `@authentication` of every
+  implementation applies to reads through the interface.
+- Writes go to implementations. `create` through a relationship to the interface is keyed by
+  implementation (`node: { Lab: { title: "…" } }`); `connect`, `update`, `disconnect` and `delete`
+  apply the interface `where` (with `typename`) to the nodes of each implementation.
+- A relationship an interface declares uses the interface's connection types on every
+  implementation (`Lab.tracksConnection: LearningActivityTracksConnection!`, without `aggregate`).
+  Its connection `where` and `sort`, and edge inputs written through the interface, key edge
+  properties by properties type (`edge: { ContainsProperties: { position: { eq: 1 } } }`), and
+  `properties` is a union of the properties types: read it with `... on ContainsProperties`.
+- `@query`, `@plural` and `@limit` work on interfaces, and `@selectable`, `@settable`, `@filterable`,
+  `@sortable` on their fields (they shape the interface types, not the implementations).
+
+Some v7 7.6.8 queries on interfaces fail with an internal error, and `@cyphra/graphql` serves them:
+`aggregate` on the root interface connection when an implementation has `@authorization` rules,
+`count { edges }` in the `aggregate` of a connection to an interface, `typename` inside a nested
+filter (`contains: { some: { typename: [Lab] } }`), keyed `edge` filters in aggregation filters
+through an interface, and keyed edge inputs when implementations use different properties types.
+`after` on the root interface connection skips one node more than the cursor in v7; here it
+continues right after the cursor, like for node types. A node with the labels of two implementations
+is returned once (as the first implementation in definition order), not once per implementation.
+
+Not supported yet (`makeSchema` throws `UnsupportedTypeDefsError`): interfaces implementing
+interfaces, `@declareRelationship` to a union or with arguments, implementations without `@node`,
+an implementation narrowing a declared relationship to another type, interface fields implemented by
+`@cypher` fields, and `@cypher` fields returning interfaces.
+
 ## Subscriptions
 
 `@subscription` types get the v7 `Subscription` fields: `movieCreated`, `movieUpdated` and
@@ -748,10 +817,10 @@ Differences from v7, on purpose:
 
 ## What works today
 
-Compatibility is checked by a suite of 18 apps and 253 operations. Its expected results come from
-the real `@neo4j/graphql` 7.6.8. Today 268 of its 271 checks pass: the printed schema of the 18
-apps and 250 operations (queries, aggregations, mutations, authorization, `@cypher` fields, custom
-resolvers, full-text queries, unions, to-one relationships, schema configuration directives, and
+Compatibility is checked by a suite of 20 apps and 288 operations. Its expected results come from
+the real `@neo4j/graphql` 7.6.8. Today 305 of its 308 checks pass: the printed schema of the 20
+apps and 285 operations (queries, aggregations, mutations, authorization, `@cypher` fields, custom
+resolvers, full-text queries, unions, interfaces, to-one relationships, schema configuration directives, and
 subscription events on Neo4j Enterprise with CDC). The three others differ on purpose: the nested
 union `connect` / `disconnect` where v7 ignores `where` ([unions](#unions)), and `limit: 0` on a
 type with `@limit` ([schema configuration](#schema-configuration)). The full report is [`compat/graphql/REPORT.md`](https://github.com/Cyphra-dev/cyphra/blob/main/compat/graphql/REPORT.md).
@@ -774,10 +843,11 @@ type with `@limit` ([schema configuration](#schema-configuration)). The full rep
 | `@cypher` fields: scalars and nodes, arguments, `$jwt`, `where` and `sort`, relationship properties, `Query` and `Mutation` fields                                             | Works ([details](#custom-cypher-fields))                |
 | `@fulltext` queries: `score`, `where`, `sort`, `first` / `after`                                                                                                               | Works ([details](#full-text-search))                    |
 | Unions: root query, relationships to unions with edge properties, member-keyed `where` and nested writes. `cyphra import graphql` maps them to [Cyphra unions](/schema#unions) | Works ([details](#unions))                              |
+| Interfaces: root queries and connections, `typename` filters, relationships to interfaces, `@declareRelationship`, nested writes, per-implementation `@authorization`          | Works ([details](#interfaces))                          |
 | Subscriptions on CDC: `@subscription`, `@subscriptionsAuthorization`, `where`, `@authentication(SUBSCRIBE)` (Neo4j Enterprise / Aura)                                          | Works ([details](#subscriptions))                       |
 | Custom resolvers: the `resolvers` option, `Query` / `Mutation` fields without `@cypher`, types without `@node`, `@customResolver(requires)`                                    | Works ([details](#custom-resolvers))                    |
 | `@query`, `@mutation`, `@selectable`, `@settable`, `@filterable`, `@sortable`, `@limit` (type, field and schema level)                                                         | Works ([details](#schema-configuration))                |
-| Interfaces, `@vector`, `Point`, `Duration` and custom scalars                                                                                                                  | Not yet: `makeSchema` throws `UnsupportedTypeDefsError` |
+| `@vector`, `Point`, `Duration` and custom scalars                                                                                                                              | Not yet: `makeSchema` throws `UnsupportedTypeDefsError` |
 | `@populatedBy`, `@relayId`, `@coalesce`, `@relationship(nestedOperations, aggregate, queryDirection)`                                                                          | Not yet: `makeSchema` throws `UnsupportedTypeDefsError` |
 
 ### v7 behaviour you get as well

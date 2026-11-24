@@ -1,3 +1,5 @@
+import { isInterface, type Attribute, type NodeType } from "../model.js";
+
 /** Parameters and fresh variable names for one Cypher statement. */
 export class CypherContext {
   readonly params: Record<string, unknown> = {};
@@ -33,6 +35,36 @@ export function q(id: string): string {
 /** `:`A`:`B`` for a list of labels. */
 export function labels(ls: readonly string[]): string {
   return ls.map((l) => `:${q(l)}`).join("");
+}
+
+/**
+ * `v:A:B` for a `@node` type; for an interface, whether the node has the labels of one of its
+ * implementations (`(v:Lab:LearningActivity OR v:Quiz:LearningActivity)`), since v7 adds no label
+ * for interfaces. (Neo4j does not allow `:A&B` label expressions in a statement that also uses
+ * `:A:B`, so interfaces are matched with predicates.)
+ */
+export function labelPredicate(variable: string, n: NodeType): string {
+  if (!isInterface(n)) return `${variable}${labels(n.labels)}`;
+  const sets = n.labelSets.map((set) => `${variable}${labels(set)}`);
+  return sets.length === 1 ? sets[0]! : `(${sets.join(" OR ")})`;
+}
+
+/** The node pattern of a node of `n`: `(v:Movie)`, or `(v WHERE <label predicate>)` for an interface. */
+export function nodePattern(variable: string, n: NodeType): string {
+  if (!isInterface(n)) return `(${variable}${labels(n.labels)})`;
+  return `(${variable} WHERE ${labelPredicate(variable, n)})`;
+}
+
+/**
+ * `v.property`, or for an interface field stored under different properties by its
+ * implementations, `CASE WHEN v:Lab THEN v.minutes … END`.
+ */
+export function property(variable: string, attr: Pick<Attribute, "property" | "variants">): string {
+  if (!attr.variants) return `${variable}.${q(attr.property)}`;
+  const whens = attr.variants.map(
+    (v) => `WHEN ${variable}${labels(v.labels)} THEN ${variable}.${q(v.property)}`,
+  );
+  return `CASE ${whens.join(" ")} END`;
 }
 
 export type ListAggregate = "min" | "max" | "sum" | "avg";

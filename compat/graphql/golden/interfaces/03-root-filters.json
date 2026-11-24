@@ -1,0 +1,80 @@
+{
+  "data": {
+    "labsAndQuizzes": [
+      {
+        "id": "lab-1"
+      },
+      {
+        "id": "lab-2"
+      },
+      {
+        "id": "quiz-1"
+      }
+    ],
+    "notLabs": [
+      {
+        "id": "article-1"
+      },
+      {
+        "id": "quiz-1"
+      },
+      {
+        "id": "video-1"
+      }
+    ],
+    "emptyTypename": [
+      {
+        "id": "article-1"
+      },
+      {
+        "id": "lab-1"
+      },
+      {
+        "id": "lab-2"
+      },
+      {
+        "id": "quiz-1"
+      },
+      {
+        "id": "video-1"
+      }
+    ],
+    "linux": [
+      {
+        "id": "lab-1"
+      },
+      {
+        "id": "quiz-1"
+      }
+    ],
+    "short": [
+      {
+        "id": "article-1"
+      },
+      {
+        "id": "quiz-1"
+      },
+      {
+        "id": "video-1"
+      }
+    ],
+    "either": [
+      {
+        "id": "article-1"
+      },
+      {
+        "id": "lab-2"
+      }
+    ],
+    "legacy": [
+      {
+        "id": "quiz-1"
+      }
+    ],
+    "combined": [
+      {
+        "id": "lab-2"
+      }
+    ]
+  }
+}

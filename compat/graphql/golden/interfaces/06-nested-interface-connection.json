@@ -1,0 +1,76 @@
+{
+  "data": {
+    "tracks": [
+      {
+        "containsConnection": {
+          "totalCount": 4,
+          "edges": [
+            {
+              "properties": {
+                "position": 4,
+                "optional": true
+              },
+              "node": {
+                "__typename": "Article",
+                "id": "article-1"
+              }
+            },
+            {
+              "properties": {
+                "position": 3,
+                "optional": null
+              },
+              "node": {
+                "__typename": "Video",
+                "id": "video-1"
+              }
+            },
+            {
+              "properties": {
+                "position": 2,
+                "optional": true
+              },
+              "node": {
+                "__typename": "Quiz",
+                "id": "quiz-1"
+              }
+            },
+            {
+              "properties": {
+                "position": 1,
+                "optional": null
+              },
+              "node": {
+                "__typename": "Lab",
+                "id": "lab-1"
+              }
+            }
+          ]
+        },
+        "filtered": {
+          "totalCount": 2,
+          "pageInfo": {
+            "hasNextPage": true
+          },
+          "edges": [
+            {
+              "node": {
+                "id": "quiz-1"
+              }
+            }
+          ]
+        },
+        "featuredConnection": {
+          "totalCount": 1,
+          "edges": [
+            {
+              "node": {
+                "id": "lab-1"
+              }
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

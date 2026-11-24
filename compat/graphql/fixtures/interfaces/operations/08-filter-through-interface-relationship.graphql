@@ -1,0 +1,58 @@
+# features: interface.filter, filter.relationship, connection.edge-properties, aggregate
+query {
+  withQuizTitle: tracks(where: { contains: { some: { title: { eq: "Linux quiz" } } } }) {
+    id
+  }
+  allLinux: tracks(where: { contains: { all: { title: { contains: "Linux" } } } }) {
+    id
+  }
+  noneLong: tracks(where: { contains: { none: { durationMinutes: { gte: 40 } } } }) {
+    id
+  }
+  oneLong: tracks(where: { contains: { single: { durationMinutes: { gte: 40 } } } }) {
+    id
+  }
+  articleMinutes: tracks(where: { contains: { some: { durationMinutes: { eq: 20 } } } }) {
+    id
+  }
+  optionalEdge: tracks(
+    where: { containsConnection: { some: { edge: { optional: { eq: true } } } } }
+  ) {
+    id
+  }
+  byNodeAndEdge: tracks(
+    where: {
+      containsConnection: {
+        some: { node: { title: { startsWith: "Docker" } }, edge: { position: { eq: 1 } } }
+      }
+    }
+  ) {
+    id
+  }
+  countFilter: tracks(
+    where: { containsConnection: { aggregate: { count: { nodes: { gt: 3 } } } } }
+  ) {
+    id
+  }
+  nodeAggregate: tracks(
+    where: {
+      containsConnection: { aggregate: { node: { durationMinutes: { sum: { gte: 60 } } } } }
+    }
+  ) {
+    id
+  }
+  featuredLinux: tracks(where: { featured: { title: { contains: "Linux" } } }) {
+    id
+  }
+  authorsOfLabs: authors(where: { wrote: { some: { durationMinutes: { gte: 30 } } } }) {
+    id
+  }
+  nested: tracks(where: { contains: { some: { author: { name: { eq: "Bob" } } } } }) {
+    id
+  }
+  nestedTracks: tracks(
+    where: { contains: { some: { tracks: { some: { name: { eq: "Containers" } } } } } }
+  ) {
+    id
+  }
+}

@@ -1,0 +1,86 @@
+{
+  "data": {
+    "tracks": [
+      {
+        "name": "Containers",
+        "contains": [
+          {
+            "__typename": "Lab",
+            "title": "Linux basics",
+            "image": "ubuntu:24.04"
+          },
+          {
+            "__typename": "Lab",
+            "title": "Docker networking",
+            "image": "alpine:3"
+          }
+        ],
+        "labs": [
+          {
+            "id": "lab-1"
+          },
+          {
+            "id": "lab-2"
+          }
+        ],
+        "firstTwo": [
+          {
+            "id": "lab-1"
+          },
+          {
+            "id": "lab-2"
+          }
+        ],
+        "featured": null
+      },
+      {
+        "name": "Empty",
+        "contains": [],
+        "labs": [],
+        "firstTwo": [],
+        "featured": null
+      },
+      {
+        "name": "Linux",
+        "contains": [
+          {
+            "__typename": "Article",
+            "title": "Reading list",
+            "body": "Read this",
+            "durationMinutes": 20
+          },
+          {
+            "__typename": "Quiz",
+            "title": "Linux quiz"
+          },
+          {
+            "__typename": "Lab",
+            "title": "Linux basics",
+            "image": "ubuntu:24.04"
+          },
+          {
+            "__typename": "Video",
+            "title": "Intro video"
+          }
+        ],
+        "labs": [
+          {
+            "id": "lab-1"
+          }
+        ],
+        "firstTwo": [
+          {
+            "id": "video-1"
+          },
+          {
+            "id": "quiz-1"
+          }
+        ],
+        "featured": {
+          "__typename": "Lab",
+          "id": "lab-1"
+        }
+      }
+    ]
+  }
+}

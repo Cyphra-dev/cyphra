@@ -1,0 +1,54 @@
+{
+  "data": {
+    "learningActivities": [
+      {
+        "__typename": "Lab",
+        "id": "lab-2",
+        "title": "Docker networking",
+        "durationMinutes": 45,
+        "image": "alpine:3"
+      },
+      {
+        "__typename": "Video",
+        "id": "video-1",
+        "title": "Intro video",
+        "durationMinutes": 5,
+        "url": "https://example.test/v1",
+        "published": true
+      },
+      {
+        "__typename": "Lab",
+        "id": "lab-1",
+        "title": "Linux basics",
+        "durationMinutes": 30,
+        "image": "ubuntu:24.04"
+      },
+      {
+        "__typename": "Quiz",
+        "id": "quiz-1",
+        "title": "Linux quiz",
+        "durationMinutes": 10,
+        "questions": 12
+      },
+      {
+        "__typename": "Article",
+        "id": "article-1",
+        "title": "Reading list",
+        "durationMinutes": 20,
+        "body": "Read this"
+      }
+    ],
+    "page": [
+      {
+        "__typename": "Lab",
+        "id": "lab-1",
+        "durationMinutes": 30
+      },
+      {
+        "__typename": "Article",
+        "id": "article-1",
+        "durationMinutes": 20
+      }
+    ]
+  }
+}

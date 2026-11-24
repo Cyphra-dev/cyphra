@@ -1,0 +1,25 @@
+# features: interface.mutation, interface.auth, mutation.nested-create
+mutation {
+  createTracks(
+    input: [
+      {
+        name: "Video track"
+        contains: {
+          create: [
+            { edge: { position: 1 }, node: { Video: { title: "Unpublished", published: false } } }
+          ]
+        }
+      }
+    ]
+  ) {
+    tracks {
+      name
+      contains {
+        id
+      }
+      containsConnection {
+        totalCount
+      }
+    }
+  }
+}

@@ -1,0 +1,57 @@
+# features: interface.relationship, connection.edge-properties
+# ordered
+query {
+  labs(sort: [{ title: ASC }]) {
+    id
+    tracks(sort: [{ name: ASC }]) {
+      name
+    }
+    tracksConnection(
+      where: { edge: { ContainsProperties: { position: { lte: 1 } } } }
+      sort: [{ edge: { ContainsProperties: { position: ASC } } }]
+    ) {
+      totalCount
+      edges {
+        properties {
+          __typename
+          ... on ContainsProperties {
+            position
+          }
+        }
+        node {
+          name
+        }
+      }
+    }
+    author {
+      name
+    }
+    authorConnection {
+      edges {
+        node {
+          name
+        }
+      }
+    }
+  }
+  learningActivities(where: { id: { eq: "article-1" } }) {
+    id
+    author {
+      name
+    }
+    tracksConnection {
+      totalCount
+      edges {
+        properties {
+          ... on ContainsProperties {
+            position
+            optional
+          }
+        }
+        node {
+          id
+        }
+      }
+    }
+  }
+}

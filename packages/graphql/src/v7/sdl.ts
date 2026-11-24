@@ -17,6 +17,7 @@ import {
   GraphQLID,
   GraphQLInputObjectType,
   GraphQLInt,
+  GraphQLInterfaceType,
   GraphQLList,
   GraphQLNonNull,
   GraphQLObjectType,
@@ -42,6 +43,9 @@ import {
   type GraphQLType,
 } from "graphql";
 import {
+  declaredRelationship,
+  implementationRelationships,
+  isInterface,
   isUnionRelationship,
   subscriptionEvents,
   SUBSCRIPTION_EVENTS,
@@ -49,6 +53,7 @@ import {
   type Attribute,
   type CypherRootField,
   type FieldArgument,
+  type InterfaceType,
   type NodeType,
   type PropertiesType,
   type Relationship,
@@ -693,94 +698,127 @@ class TypeRegistry {
   // Nodes
   // -------------------------------------------------------------------------
 
+  /** The object type of a `@node` type (the interface type of an interface). */
   node(n: NodeType): GraphQLObjectType {
-    return this.object(
+    if (isInterface(n)) return this.interfaceType(n) as unknown as GraphQLObjectType;
+    return this.get(
       n.name,
-      () => {
-        const fields = attributeOutputFields(this, n.attributes);
-        for (const f of n.userFields) {
-          if (f.config.onRead) fields[f.name] = this.fieldFromAST(f.definition);
-        }
-        for (const c of n.cypherNodes) {
-          if (!c.config.onRead) continue;
-          fields[c.name] = {
-            type: this.nodeRefType(c.type, c.target),
-            description: c.description,
-            deprecationReason: c.deprecated,
-            args: argumentConfigs(this, c.args),
-          };
-        }
-        for (const r of n.relationships) {
-          // v7: without `@selectable(onRead)`, a list relationship keeps its connection field
-          // for the `aggregate` selection (not for unions, which have none).
-          const connectionOnly = !r.config.onRead;
-          if (connectionOnly && isUnionRelationship(this.model, r)) continue;
-          if (!r.list) {
-            // v7: a to-one relationship and its connection take no arguments.
-            fields[r.name] = {
-              type: relationshipType(this, r),
-              description: r.description,
-              deprecationReason: r.deprecated,
-            };
-            fields[`${r.name}Connection`] = {
-              type: nn(this.relConnection(r)),
-              deprecationReason: r.deprecated,
-            };
-            continue;
-          }
-          if (isUnionRelationship(this.model, r)) {
-            const u = this.model.unions.get(r.target)!;
-            fields[r.name] = {
-              type: relationshipType(this, r),
-              description: r.description,
-              deprecationReason: r.deprecated,
-              args: {
-                limit: { type: GraphQLInt },
-                offset: { type: GraphQLInt },
-                where: { type: this.unionWhere(u) },
-              },
-            };
-            fields[`${r.name}Connection`] = {
-              type: nn(this.relConnection(r)),
-              deprecationReason: r.deprecated,
-              args: {
-                after: { type: GraphQLString },
-                first: { type: GraphQLInt },
-                ...sortArg(this.relConnectionSort(r)),
-                where: { type: this.relConnectionWhere(r) },
-              },
-            };
-            continue;
-          }
-          const target = this.model.node(r.target);
-          if (!connectionOnly) {
-            fields[r.name] = {
-              type: relationshipType(this, r),
-              description: r.description,
-              deprecationReason: r.deprecated,
-              args: {
-                limit: { type: GraphQLInt },
-                offset: { type: GraphQLInt },
-                ...sortArg(this.nodeSort(target)),
-                where: { type: this.nodeWhere(target) },
-              },
-            };
-          }
-          fields[`${r.name}Connection`] = {
-            type: nn(this.relConnection(r)),
-            deprecationReason: r.deprecated,
-            args: {
-              after: { type: GraphQLString },
-              first: { type: GraphQLInt },
-              ...sortArg(this.relConnectionSort(r)),
-              where: { type: this.relConnectionWhere(r) },
-            },
-          };
-        }
-        return fields;
-      },
-      n.description,
+      () =>
+        new GraphQLObjectType({
+          name: n.name,
+          description: n.description,
+          fields: () => this.nodeFields(n),
+          interfaces: () =>
+            (n.interfaces ?? [])
+              .filter((i) => this.model.interfaces.has(i))
+              .map((i) => this.interfaceType(this.model.interfaces.get(i)!)),
+        }),
     );
+  }
+
+  /** `interface LearningActivity`: v7 prints it without its description. */
+  interfaceType(i: InterfaceType): GraphQLInterfaceType {
+    return this.get(
+      i.name,
+      () => new GraphQLInterfaceType({ name: i.name, fields: () => this.nodeFields(i) }),
+    );
+  }
+
+  /** `LearningActivityImplementation`: the implementations, sorted (the `typename` filter). */
+  implementationEnum(i: InterfaceType): GraphQLEnumType {
+    const name = `${i.name}Implementation`;
+    return this.get(
+      name,
+      () =>
+        new GraphQLEnumType({
+          name,
+          values: Object.fromEntries([...i.implementations].sort().map((m) => [m, { value: m }])),
+        }),
+    );
+  }
+
+  private nodeFields(n: NodeType): GraphQLFieldConfigMap<unknown, unknown> {
+    const fields = attributeOutputFields(this, n.attributes);
+    for (const f of n.userFields) {
+      if (f.config.onRead) fields[f.name] = this.fieldFromAST(f.definition);
+    }
+    for (const c of n.cypherNodes) {
+      if (!c.config.onRead) continue;
+      fields[c.name] = {
+        type: this.nodeRefType(c.type, c.target),
+        description: c.description,
+        deprecationReason: c.deprecated,
+        args: argumentConfigs(this, c.args),
+      };
+    }
+    for (const r of n.relationships) {
+      // v7: without `@selectable(onRead)`, a list relationship keeps its connection field
+      // for the `aggregate` selection (not for unions, which have none).
+      const connectionOnly = !r.config.onRead;
+      if (connectionOnly && isUnionRelationship(this.model, r)) continue;
+      if (!r.list) {
+        // v7: a to-one relationship and its connection take no arguments.
+        fields[r.name] = {
+          type: relationshipType(this, r),
+          description: r.description,
+          deprecationReason: r.deprecated,
+        };
+        fields[`${r.name}Connection`] = {
+          type: nn(this.relConnection(r)),
+          deprecationReason: r.deprecated,
+        };
+        continue;
+      }
+      if (isUnionRelationship(this.model, r)) {
+        const u = this.model.unions.get(r.target)!;
+        fields[r.name] = {
+          type: relationshipType(this, r),
+          description: r.description,
+          deprecationReason: r.deprecated,
+          args: {
+            limit: { type: GraphQLInt },
+            offset: { type: GraphQLInt },
+            where: { type: this.unionWhere(u) },
+          },
+        };
+        fields[`${r.name}Connection`] = {
+          type: nn(this.relConnection(r)),
+          deprecationReason: r.deprecated,
+          args: {
+            after: { type: GraphQLString },
+            first: { type: GraphQLInt },
+            ...sortArg(this.relConnectionSort(r)),
+            where: { type: this.relConnectionWhere(r) },
+          },
+        };
+        continue;
+      }
+      const target = this.model.node(r.target);
+      if (!connectionOnly) {
+        fields[r.name] = {
+          type: relationshipType(this, r),
+          description: r.description,
+          deprecationReason: r.deprecated,
+          args: {
+            limit: { type: GraphQLInt },
+            offset: { type: GraphQLInt },
+            ...sortArg(this.nodeSort(target)),
+            where: { type: this.nodeWhere(target) },
+          },
+        };
+      }
+      fields[`${r.name}Connection`] = {
+        type: nn(this.relConnection(r)),
+        deprecationReason: r.deprecated,
+        args: {
+          after: { type: GraphQLString },
+          first: { type: GraphQLInt },
+          ...sortArg(this.relConnectionSort(r)),
+          where: { type: this.relConnectionWhere(r) },
+        },
+      };
+    }
+    return fields;
   }
 
   // -------------------------------------------------------------------------
@@ -873,6 +911,7 @@ class TypeRegistry {
         for (const q of QUANTIFIERS)
           out[`${c.name}_${q.toUpperCase()}`] = { type: this.nodeWhere(target) };
       }
+      if (isInterface(n)) out.typename = { type: list(nn(this.implementationEnum(n))) };
       const sourcePlural = pluralize(n.name);
       for (const r of n.relationships) {
         const union = isUnionRelationship(this.model, r)
@@ -887,7 +926,7 @@ class TypeRegistry {
           out[`${r.name}Connection`] = { type: connWhere };
           continue;
         }
-        const connPlural = pluralize(relConnectionName(r));
+        const connPlural = pluralize(this.connName(r));
         const byValue = r.config.byValue;
         // v7: no aggregation filters on unions.
         const byAggregate = r.config.byAggregate && !union;
@@ -1167,6 +1206,14 @@ class TypeRegistry {
   }
 
   nodeCreate(n: NodeType): GraphQLInputObjectType {
+    if (isInterface(n)) {
+      // `LearningActivityCreateInput { Lab: LabCreateInput, … }`.
+      return this.input(`${n.name}CreateInput`, () =>
+        Object.fromEntries(
+          n.implementations.map((m) => [m, { type: this.nodeCreate(this.model.node(m)) }]),
+        ),
+      );
+    }
     return this.input(`${n.name}CreateInput`, () => {
       const out = this.attributeCreateFields(n.attributes);
       for (const r of n.relationships) {
@@ -1294,11 +1341,97 @@ class TypeRegistry {
     );
   }
 
+  /**
+   * The relationship naming the connection, edge, `where` / `sort` and nested delete / disconnect
+   * types: the interface's for a relationship an interface declares (v7 shares them).
+   */
+  private named(r: Relationship): Relationship {
+    return declaredRelationship(this.model, r) ?? r;
+  }
+
+  /** `MovieActorsConnection` (`LearningActivityTracksConnection` for declared relationships). */
+  connName(r: Relationship): string {
+    return relConnectionName(this.named(r));
+  }
+
+  private fromInterface(r: Relationship): boolean {
+    return this.model.interfaces.has(r.source);
+  }
+
+  /**
+   * The properties types of a relationship an interface declares, with the implementations using
+   * each (definition order), for the `edge` inputs keyed by properties type.
+   */
+  private propertiesByType(r: Relationship): { props: PropertiesType; users: string[] }[] {
+    const out: { props: PropertiesType; users: string[] }[] = [];
+    for (const { node, rel } of implementationRelationships(this.model, r)) {
+      const p = this.props(rel);
+      if (!p) continue;
+      const entry = out.find((e) => e.props === p);
+      if (entry) entry.users.push(node.name);
+      else out.push({ props: p, users: [node.name] });
+    }
+    return out;
+  }
+
+  /**
+   * `LearningActivityTracksEdgeWhere { ContainsProperties: ContainsPropertiesWhere }` and the other
+   * edge inputs of a relationship an interface declares, or `undefined` when no key applies.
+   */
+  private keyedEdge(
+    r: Relationship,
+    suffix: string,
+    member: (p: PropertiesType) => GraphQLInputType | undefined,
+  ): GraphQLInputObjectType | undefined {
+    const entries = this.propertiesByType(r).flatMap(({ props, users }) => {
+      const type = member(props);
+      return type ? [{ props, users, type }] : [];
+    });
+    if (!entries.length) return undefined;
+    return this.input(`${prefix(r)}Edge${suffix}`, () =>
+      Object.fromEntries(
+        entries.map(({ props, users, type }) => [
+          props.name,
+          {
+            type,
+            description: `Relationship properties when source node is of type:\n${users.map((u) => `* ${u}`).join("\n")}`,
+          },
+        ]),
+      ),
+    );
+  }
+
+  /** The `edge` create input of a relationship (keyed by properties type through an interface). */
+  private edgeCreateRef(r: Relationship): GraphQLInputType | undefined {
+    if (this.fromInterface(r)) {
+      const keyed = this.keyedEdge(r, "CreateInput", (p) => this.propertiesCreateRef(p));
+      if (!keyed) return undefined;
+      const required = Object.values(keyed.getFields()).some(
+        (f) => f.type instanceof GraphQLNonNull,
+      );
+      return required ? nn(keyed) : keyed;
+    }
+    const p = this.props(r);
+    return p ? this.propertiesCreateRef(p) : undefined;
+  }
+
+  private edgeUpdate(r: Relationship): GraphQLInputType | undefined {
+    if (this.fromInterface(r))
+      return this.keyedEdge(r, "UpdateInput", (p) => this.propertiesUpdate(p));
+    const p = this.props(r);
+    return p ? this.propertiesUpdate(p) : undefined;
+  }
+
   relConnection(r: Relationship): GraphQLObjectType {
+    const named = this.named(r);
+    if (named !== r) return this.relConnection(named);
     const union = isUnionRelationship(this.model, r);
     return this.object(relConnectionName(r), () => ({
-      // v7: no aggregate on relationships to unions or on to-one relationships.
-      ...(union || !r.list ? {} : { aggregate: { type: nn(this.relAggregateSelection(r)) } }),
+      // v7: no aggregate on relationships to unions, on to-one relationships or on relationships
+      // an interface declares.
+      ...(union || !r.list || this.fromInterface(r)
+        ? {}
+        : { aggregate: { type: nn(this.relAggregateSelection(r)) } }),
       // v7: `@selectable(onRead: false)` leaves only the aggregate.
       ...(r.config.onRead
         ? {
@@ -1311,6 +1444,32 @@ class TypeRegistry {
   }
 
   relRelationship(r: Relationship): GraphQLObjectType {
+    if (this.fromInterface(r)) {
+      // `properties: LearningActivityTracksRelationshipProperties!` (a union of the types).
+      return this.object(`${prefix(r)}Relationship`, () => {
+        const fields: GraphQLFieldConfigMap<unknown, unknown> = {
+          cursor: { type: nn(GraphQLString) },
+          node: { type: nn(this.node(this.model.node(r.target))) },
+        };
+        const types = this.propertiesByType(r).map(({ props }) => props);
+        if (types.length) {
+          const name = `${prefix(r)}RelationshipProperties`;
+          fields.properties = {
+            type: nn(
+              this.get(
+                name,
+                () =>
+                  new GraphQLUnionType({
+                    name,
+                    types: () => types.map((p) => this.propertiesObject(p)),
+                  }),
+              ),
+            ),
+          };
+        }
+        return fields;
+      });
+    }
     return this.object(`${prefix(r)}Relationship`, () => {
       const fields: GraphQLFieldConfigMap<unknown, unknown> = {
         cursor: { type: nn(GraphQLString) },
@@ -1356,8 +1515,14 @@ class TypeRegistry {
 
   /** `MovieActorsConnectionSort { edge, node }`, or nothing when there is nothing to sort on. */
   relConnectionSort(r: Relationship): GraphQLInputObjectType | undefined {
+    const named = this.named(r);
+    if (named !== r) return this.relConnectionSort(named);
     const p = this.props(r);
-    const edge = p ? this.propertiesSort(p) : undefined;
+    const edge = this.fromInterface(r)
+      ? this.keyedEdge(r, "Sort", (x) => this.propertiesSort(x))
+      : p
+        ? this.propertiesSort(p)
+        : undefined;
     // v7: relationships to unions sort on edge properties only.
     const node = isUnionRelationship(this.model, r)
       ? undefined
@@ -1370,6 +1535,8 @@ class TypeRegistry {
   }
 
   relConnectionWhere(r: Relationship): GraphQLInputObjectType {
+    const named = this.named(r);
+    if (named !== r) return this.relConnectionWhere(named);
     return this.input(`${relConnectionName(r)}Where`, () => {
       if (isUnionRelationship(this.model, r)) {
         // `UserFavoritesConnectionWhere { Book: UserFavoritesBookConnectionWhere, … }`.
@@ -1384,7 +1551,12 @@ class TypeRegistry {
         OR: { type: list(nn(self)) },
       };
       const p = this.props(r);
-      if (p) out.edge = { type: this.propertiesWhere(p) };
+      const edge = this.fromInterface(r)
+        ? this.keyedEdge(r, "Where", (x) => this.propertiesWhere(x))
+        : p
+          ? this.propertiesWhere(p)
+          : undefined;
+      if (edge) out.edge = { type: edge };
       out.node = { type: this.nodeWhere(this.model.node(r.target)) };
       return out;
     });
@@ -1394,7 +1566,7 @@ class TypeRegistry {
     return this.input(`${prefix(r)}ConnectionFilters`, () => {
       const where = this.relConnectionWhere(r);
       const sourcePlural = pluralize(r.source);
-      const connPlural = pluralize(relConnectionName(r));
+      const connPlural = pluralize(this.connName(r));
       const out: GraphQLInputFieldConfigMap =
         isUnionRelationship(this.model, r) || !r.config.byAggregate
           ? {}
@@ -1424,7 +1596,12 @@ class TypeRegistry {
   private aggregateInputEdgeNode(r: Relationship): GraphQLInputFieldConfigMap {
     const out: GraphQLInputFieldConfigMap = {};
     const p = this.props(r);
-    if (p && p.attributes.some(isAggregationFilterable))
+    if (this.fromInterface(r)) {
+      const edge = this.keyedEdge(r, "AggregationWhereInput", (x) =>
+        x.attributes.some(isAggregationFilterable) ? this.propertiesAggregationWhere(x) : undefined,
+      );
+      if (edge) out.edge = { type: edge };
+    } else if (p && p.attributes.some(isAggregationFilterable))
       out.edge = { type: this.propertiesAggregationWhere(p) };
     if (this.model.node(r.target).attributes.some(isAggregationFilterable)) {
       out.node = { type: this.relNodeAggregationWhere(r) };
@@ -1483,9 +1660,10 @@ class TypeRegistry {
       const target = this.model.node(r.target);
       const out: GraphQLInputFieldConfigMap = {};
       const connect = this.nodeConnect(target);
-      if (connect) out.connect = { type: list(nn(connect)) };
-      const p = this.props(r);
-      if (p) out.edge = { type: this.propertiesCreateRef(p) };
+      // v7: `connect: LearningActivityConnectInput` (not a list) for an interface.
+      if (connect) out.connect = { type: isInterface(target) ? connect : list(nn(connect)) };
+      const edge = this.edgeCreateRef(r);
+      if (edge) out.edge = { type: edge };
       out.where = { type: this.nodeConnectWhere(target) };
       return out;
     });
@@ -1494,14 +1672,17 @@ class TypeRegistry {
   relCreateFieldInput(r: Relationship): GraphQLInputObjectType {
     return this.input(`${prefix(r)}CreateFieldInput`, () => {
       const out: GraphQLInputFieldConfigMap = {};
-      const p = this.props(r);
-      if (p) out.edge = { type: this.propertiesCreateRef(p) };
+      const edge = this.edgeCreateRef(r);
+      if (edge) out.edge = { type: edge };
       out.node = { type: nn(this.nodeCreate(this.model.node(r.target))) };
       return out;
     });
   }
 
   relDeleteFieldInput(r: Relationship): GraphQLInputObjectType {
+    // v7 names them after the interface, except for relationships to an interface.
+    const named = this.model.interfaces.has(r.target) ? r : this.named(r);
+    if (named !== r) return this.relDeleteFieldInput(named);
     return this.input(`${prefix(r)}DeleteFieldInput`, () => {
       const out: GraphQLInputFieldConfigMap = {};
       const del = this.nodeDelete(this.model.node(r.target));
@@ -1512,6 +1693,9 @@ class TypeRegistry {
   }
 
   relDisconnectFieldInput(r: Relationship): GraphQLInputObjectType {
+    // v7 names them after the interface, except for relationships to an interface.
+    const named = this.model.interfaces.has(r.target) ? r : this.named(r);
+    if (named !== r) return this.relDisconnectFieldInput(named);
     return this.input(`${prefix(r)}DisconnectFieldInput`, () => {
       const out: GraphQLInputFieldConfigMap = {};
       const dis = this.nodeDisconnect(this.model.node(r.target));
@@ -1524,8 +1708,8 @@ class TypeRegistry {
   relUpdateConnectionInput(r: Relationship): GraphQLInputObjectType {
     return this.input(`${prefix(r)}UpdateConnectionInput`, () => {
       const out: GraphQLInputFieldConfigMap = {};
-      const p = this.props(r);
-      if (p) out.edge = { type: this.propertiesUpdate(p) };
+      const edge = this.edgeUpdate(r);
+      if (edge) out.edge = { type: edge };
       out.node = { type: this.nodeUpdate(this.model.node(r.target)) };
       out.where = { type: this.relConnectionWhere(r) };
       return out;
@@ -1663,6 +1847,31 @@ export function buildV7Schema(model: V7Model): GraphQLSchema {
           };
         for (const ft of n.fulltext) fields[ft.queryName] = reg.fulltextField(n);
       }
+      for (const i of model.interfaces.values()) {
+        const iface = reg.interfaceType(i);
+        if (i.query.read) {
+          fields[i.plural] = {
+            type: nn(list(nn(iface))),
+            args: {
+              limit: { type: GraphQLInt },
+              offset: { type: GraphQLInt },
+              ...sortArg(reg.nodeSort(i)),
+              where: { type: reg.nodeWhere(i) },
+            },
+          };
+        }
+        if (i.query.connection || i.query.aggregate) {
+          fields[`${i.plural}Connection`] = {
+            type: nn(reg.rootConnection(i)),
+            args: {
+              after: { type: GraphQLString },
+              first: { type: GraphQLInt },
+              ...sortArg(reg.nodeSort(i)),
+              where: { type: reg.nodeWhere(i) },
+            },
+          };
+        }
+      }
       // v7: `contents(where, limit, offset): [Content!]!` (no sort, no connection).
       for (const u of model.unions.values()) {
         if (!u.read) continue;
@@ -1736,5 +1945,14 @@ export function buildV7Schema(model: V7Model): GraphQLSchema {
     model.mutation.fields.length > 0 ||
     model.mutation.resolved.length > 0 ||
     model.nodes.some((n) => n.mutation.create || n.mutation.update || n.mutation.delete);
-  return new GraphQLSchema({ query, mutation: hasMutation ? mutation : undefined, subscription });
+  // The implementations of an interface are in the schema with it (possible types).
+  const types = [...model.interfaces.values()].flatMap((i) =>
+    i.implementations.map((m) => reg.node(model.node(m))),
+  );
+  return new GraphQLSchema({
+    query,
+    mutation: hasMutation ? mutation : undefined,
+    subscription,
+    types,
+  });
 }

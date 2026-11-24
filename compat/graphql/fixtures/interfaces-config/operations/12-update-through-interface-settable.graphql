@@ -1,0 +1,11 @@
+# features: interface.mutation, config.settable
+mutation {
+  updateFolders(
+    where: { id: { eq: "fold-1" } }
+    update: { assets: [{ update: { node: { label: { set: "x" } } } }] }
+  ) {
+    folders {
+      id
+    }
+  }
+}

@@ -1,0 +1,29 @@
+# features: interface.filter, filter.string, filter.logical
+query {
+  labsAndQuizzes: learningActivities(where: { typename: [Lab, Quiz] }) {
+    id
+  }
+  notLabs: learningActivities(where: { NOT: { typename: [Lab] } }) {
+    id
+  }
+  emptyTypename: learningActivities(where: { typename: [] }) {
+    id
+  }
+  linux: learningActivities(where: { title: { contains: "Linux" } }) {
+    id
+  }
+  short: learningActivities(where: { durationMinutes: { lt: 25 } }) {
+    id
+  }
+  either: learningActivities(
+    where: { OR: [{ typename: [Article] }, { title: { startsWith: "Docker" } }] }
+  ) {
+    id
+  }
+  legacy: learningActivities(where: { title_EQ: "Linux quiz" }) {
+    id
+  }
+  combined: learningActivities(where: { typename: [Lab], durationMinutes: { gte: 40 } }) {
+    id
+  }
+}

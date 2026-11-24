@@ -1,0 +1,38 @@
+# features: interface.relationship, connection.edge-properties
+query {
+  media(where: { id: { in: ["img-1", "doc-1"] } }) {
+    id
+    ownersConnection {
+      totalCount
+      edges {
+        properties {
+          __typename
+          ... on Ownership {
+            since
+          }
+          ... on DocOwnership {
+            role
+          }
+        }
+        node {
+          name
+        }
+      }
+    }
+  }
+  ownedSince: media(
+    limit: 4
+    where: { ownersConnection: { some: { edge: { Ownership: { since: { gt: 2020 } } } } } }
+  ) {
+    id
+  }
+  signers: media(
+    limit: 4
+    where: { ownersConnection: { some: { edge: { DocOwnership: { role: { eq: "signer" } } } } } }
+  ) {
+    id
+  }
+  ownedByAda: media(limit: 4, where: { owners: { some: { name: { eq: "Ada" } } } }) {
+    id
+  }
+}

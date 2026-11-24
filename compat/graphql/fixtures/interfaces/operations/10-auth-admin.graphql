@@ -1,0 +1,23 @@
+# features: interface.auth, auth.filter, auth.jwt
+query {
+  learningActivities(where: { typename: [Video] }) {
+    id
+  }
+  learningActivitiesConnection(where: { typename: [Video, Quiz] }) {
+    totalCount
+  }
+  tracks(where: { id: { eq: "track-2" } }) {
+    contains {
+      id
+    }
+    containsConnection {
+      totalCount
+    }
+    featured {
+      id
+    }
+  }
+  draftTracks: tracks(where: { contains: { some: { title: { eq: "Draft video" } } } }) {
+    id
+  }
+}

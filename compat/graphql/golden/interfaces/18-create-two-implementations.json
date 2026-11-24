@@ -1,0 +1,18 @@
+{
+  "data": {
+    "createTracks": {
+      "info": {
+        "nodesCreated": 3,
+        "relationshipsCreated": 2
+      },
+      "tracks": [
+        {
+          "name": "Two at once",
+          "featuredConnection": {
+            "totalCount": 2
+          }
+        }
+      ]
+    }
+  }
+}

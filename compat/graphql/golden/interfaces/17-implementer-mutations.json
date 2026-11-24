@@ -1,0 +1,44 @@
+{
+  "data": {
+    "createQuizzes": {
+      "quizzes": [
+        {
+          "title": "Quiz with tracks",
+          "tracksConnection": {
+            "totalCount": 2,
+            "edges": [
+              {
+                "node": {
+                  "name": "Created from quiz"
+                }
+              },
+              {
+                "node": {
+                  "name": "Empty"
+                }
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "updateLabs": {
+      "labs": [
+        {
+          "tracksConnection": {
+            "edges": [
+              {
+                "properties": {
+                  "position": 10
+                },
+                "node": {
+                  "name": "Linux"
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

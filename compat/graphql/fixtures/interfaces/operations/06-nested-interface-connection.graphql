@@ -1,0 +1,42 @@
+# features: interface.relationship, connection, connection.edge-properties, sort
+# ordered
+query {
+  tracks(where: { id: { eq: "track-1" } }) {
+    containsConnection(sort: [{ edge: { position: DESC } }]) {
+      totalCount
+      edges {
+        properties {
+          position
+          optional
+        }
+        node {
+          __typename
+          id
+        }
+      }
+    }
+    filtered: containsConnection(
+      where: { edge: { optional: { eq: true } }, node: { typename: [Article, Quiz] } }
+      first: 1
+      sort: [{ node: { title: ASC } }]
+    ) {
+      totalCount
+      pageInfo {
+        hasNextPage
+      }
+      edges {
+        node {
+          id
+        }
+      }
+    }
+    featuredConnection {
+      totalCount
+      edges {
+        node {
+          id
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,87 @@
+"Configuration directives on interfaces and their fields, mixed relationship properties, interface-to-interface relationships."
+interface Asset @plural(value: "media") @limit(default: 3, max: 4) @query(aggregate: true) {
+  id: ID!
+  name: String!
+  size: Int @sortable(byValue: false)
+  secret: String @selectable(onRead: false, onAggregate: false)
+  label: String @settable(onUpdate: false) @filterable(byValue: false)
+  owners: [Owner!]! @declareRelationship
+  folder: Folder @declareRelationship
+  related: [Asset!]! @declareRelationship
+}
+
+interface Taggable @query(read: false, connection: false) {
+  tag: String
+}
+
+type Image implements Asset & Taggable @node(labels: ["Image", "Asset"]) {
+  id: ID!
+  name: String!
+  size: Int
+  secret: String
+  label: String
+  tag: String
+  width: Int
+  owners: [Owner!]! @relationship(type: "OWNS", direction: IN, properties: "Ownership")
+  folder: Folder @relationship(type: "IN_FOLDER", direction: OUT)
+  related: [Asset!]! @relationship(type: "RELATED", direction: OUT)
+}
+
+"Documents over 10000 bytes are rejected, whichever input creates or updates them."
+type Document implements Asset
+  @node(labels: ["Document", "Asset"])
+  @authorization(
+    validate: [
+      {
+        operations: [CREATE, UPDATE]
+        when: [AFTER]
+        requireAuthentication: false
+        where: { node: { size: { lt: 10000 } } }
+      }
+    ]
+  ) {
+  id: ID!
+  name: String!
+  size: Int
+  secret: String
+  label: String
+  pages: Int
+  owners: [Owner!]! @relationship(type: "OWNS", direction: IN, properties: "DocOwnership")
+  folder: Folder @relationship(type: "IN_FOLDER", direction: OUT)
+  related: [Asset!]! @relationship(type: "RELATED", direction: OUT)
+}
+
+type Sound implements Asset & Taggable @node {
+  id: ID!
+  name: String!
+  size: Int
+  secret: String
+  label: String
+  tag: String
+  seconds: Int
+  owners: [Owner!]! @relationship(type: "OWNS", direction: IN)
+  folder: Folder @relationship(type: "IN_FOLDER", direction: OUT)
+  related: [Asset!]! @relationship(type: "RELATED", direction: OUT)
+}
+
+type Ownership @relationshipProperties {
+  since: Int
+}
+
+type DocOwnership @relationshipProperties {
+  role: String!
+}
+
+type Owner @node {
+  id: ID!
+  name: String!
+  images: [Image!]! @relationship(type: "OWNS", direction: OUT, properties: "Ownership")
+  assets: [Asset!]! @relationship(type: "OWNS", direction: OUT)
+}
+
+type Folder @node {
+  id: ID!
+  name: String!
+  assets: [Asset!]! @relationship(type: "IN_FOLDER", direction: IN)
+  tagged: [Taggable!]! @relationship(type: "IN_FOLDER", direction: IN)
+}

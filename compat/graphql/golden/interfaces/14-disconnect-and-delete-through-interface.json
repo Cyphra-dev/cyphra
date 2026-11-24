@@ -1,0 +1,19 @@
+{
+  "data": {
+    "updateTracks": {
+      "info": {
+        "nodesDeleted": 1,
+        "relationshipsDeleted": 4
+      },
+      "tracks": [
+        {
+          "contains": [
+            {
+              "id": "video-1"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

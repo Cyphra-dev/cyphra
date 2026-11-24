@@ -1,0 +1,7 @@
+{
+  "errors": [
+    {
+      "message": "Field \"label\" is not defined by type \"AssetUpdateInput\". Did you mean \"name\"?"
+    }
+  ]
+}

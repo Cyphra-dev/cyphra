@@ -16,6 +16,7 @@ import {
   type ConstValueNode,
   type FieldDefinitionNode,
   type InputObjectTypeDefinitionNode,
+  type InterfaceTypeDefinitionNode,
   type ObjectTypeDefinitionNode,
   type SelectionSetNode,
   type TypeNode,
@@ -213,6 +214,11 @@ export type Attribute = {
   readonly defaultAst?: ConstValueNode;
   /** `@timestamp(operations)`. */
   readonly timestamp?: readonly ("CREATE" | "UPDATE")[];
+  /**
+   * Field of an interface whose implementations store it under different properties (`@alias`):
+   * the property per implementation label set (`property` is then not used).
+   */
+  readonly variants?: readonly { readonly labels: readonly string[]; readonly property: string }[];
   readonly cypher?: CypherAnnotation;
   /** Arguments of a `@cypher` field (other fields have none). */
   readonly args: readonly FieldArgument[];
@@ -245,6 +251,31 @@ export type Relationship = {
   readonly union?: string;
   /** `@selectable` / `@settable` / `@filterable` of the relationship field. */
   readonly config: FieldConfig;
+  /**
+   * On a relationship of an interface implementation: the interface declaring it
+   * (`@declareRelationship`). Its connection, edge and nested delete / disconnect types are the
+   * interface's (`LearningActivityTracksConnection`), and its connection `where` / `sort` key the
+   * edge by properties type (`edge: { ContainsProperties: … }`).
+   */
+  readonly declaredBy?: string;
+  /**
+   * Set on the view of an implementation's relationship reached through its interface (an
+   * `${Interface}Where`, `${Interface}UpdateInput`, …): edge create / update / aggregation inputs
+   * are keyed by properties type as well.
+   */
+  readonly viaInterface?: boolean;
+  /**
+   * Set on the per-implementation view of a relationship to an interface (writes and filters run
+   * per implementation): the interface. `target` is then the implementation, and `where` inputs are
+   * `${Interface}Where` (with `typename`).
+   */
+  readonly interfaceTarget?: string;
+  /**
+   * On a relationship declared by an interface: whether every implementation has the same
+   * relationship type, direction and properties (then `type` / `direction` / `properties` are
+   * theirs; otherwise filters compile per implementation).
+   */
+  readonly uniform?: boolean;
 };
 
 /** Operations `@authentication` / `@authorization` rules apply to. */
@@ -355,7 +386,102 @@ export type NodeType = {
   /** `@mutation` of the type, or of the schema. */
   readonly mutation: MutationConfig;
   readonly limit?: LimitConfig;
+  /** `interface` for an {@link InterfaceType} (structurally a node type), absent for `@node` types. */
+  readonly kind?: "interface";
+  /** Interfaces this `@node` type implements. */
+  readonly interfaces?: readonly string[];
 };
+
+/**
+ * `interface LearningActivity { … }` implemented by `@node` types. Like v7, an interface adds no
+ * label: a node is of the interface when it has every label of one implementation (in
+ * {@link InterfaceType.labelSets}). Read like a node type (root queries, filters, sorting,
+ * aggregations); writes go to the implementations (`LearningActivityCreateInput` is keyed by
+ * implementation). `relationships` are the `@declareRelationship` fields, `labels` is empty.
+ */
+export type InterfaceType = NodeType & {
+  readonly kind: "interface";
+  /** The implementing `@node` types, in definition order. */
+  readonly implementations: readonly string[];
+  /** The labels of each implementation (same order). */
+  readonly labelSets: readonly (readonly string[])[];
+};
+
+export function isInterface(n: NodeType): n is InterfaceType {
+  return n.kind === "interface";
+}
+
+/** Whether `rel` targets an interface. */
+export function isInterfaceRelationship(model: V7Model, rel: Relationship): boolean {
+  return model.interfaces.has(rel.target);
+}
+
+/**
+ * The relationship an implementation's `@declareRelationship` field implements, as declared by the
+ * interface (`source` is the interface), or `undefined` for other relationships.
+ */
+export function declaredRelationship(model: V7Model, rel: Relationship): Relationship | undefined {
+  if (!rel.declaredBy) return undefined;
+  return model.interfaces.get(rel.declaredBy)?.relationships.find((r) => r.name === rel.name);
+}
+
+/**
+ * The implementations' relationships of a relationship declared by an interface (views flagged
+ * {@link Relationship.viaInterface}), in implementation order.
+ */
+export function implementationRelationships(
+  model: V7Model,
+  rel: Relationship,
+): { node: NodeType; rel: Relationship }[] {
+  const iface = model.interfaces.get(rel.source);
+  if (!iface) return [];
+  return iface.implementations.map((name) => {
+    const node = model.node(name);
+    const r = node.relationships.find((x) => x.name === rel.name)!;
+    return { node, rel: { ...r, viaInterface: true } };
+  });
+}
+
+/**
+ * The per-implementation views of a relationship to an interface (each targets one implementation,
+ * see {@link Relationship.interfaceTarget}); `[rel]` for other relationships.
+ */
+export function interfaceTargets(model: V7Model, rel: Relationship): Relationship[] {
+  const iface = model.interfaces.get(rel.target);
+  if (!iface) return [rel];
+  return iface.implementations.map((m) => ({ ...rel, target: m, interfaceTarget: iface.name }));
+}
+
+/**
+ * Whether connection `where` / `sort` inputs of `rel` key the edge by properties type: relationships
+ * declared by an interface, seen from the interface or from an implementation.
+ */
+export function keyedConnectionEdge(model: V7Model, rel: Relationship): boolean {
+  return rel.declaredBy !== undefined || model.interfaces.has(rel.source);
+}
+
+/**
+ * Whether edge create / update / aggregation inputs of `rel` are keyed by properties type: only
+ * through the interface (`LearningActivityTracksEdgeCreateInput`), not from an implementation's own
+ * inputs (`LabTracksConnectFieldInput.edge: ContainsPropertiesCreateInput`).
+ */
+export function keyedEdgeInput(model: V7Model, rel: Relationship): boolean {
+  return model.interfaces.has(rel.source) || rel.viaInterface === true;
+}
+
+/**
+ * The properties type of `rel` and the input key edge inputs use for it: the type name when the
+ * input is keyed (see {@link keyedConnectionEdge} / {@link keyedEdgeInput}), else `undefined`.
+ */
+export function edgeValue(
+  props: PropertiesType | undefined,
+  keyed: boolean,
+  value: unknown,
+): unknown {
+  if (!keyed || value === null || value === undefined) return value;
+  if (!props || typeof value !== "object" || Array.isArray(value)) return undefined;
+  return (value as AnyRecord)[props.name];
+}
 
 export type PropertiesType = {
   readonly name: string;
@@ -381,6 +507,8 @@ export type UnionType = {
 
 export type V7Model = {
   readonly nodes: readonly NodeType[];
+  /** Interfaces implemented by at least one `@node` type (v7 drops the others). */
+  readonly interfaces: ReadonlyMap<string, InterfaceType>;
   readonly unions: ReadonlyMap<string, UnionType>;
   /** Schema-level `extend schema @authentication(…)`: applies to every operation on every type. */
   readonly authentication?: AuthenticationAnnotation;
@@ -398,6 +526,7 @@ export type V7Model = {
   readonly mutation: CypherRootType;
   /** Schema-level `extend schema @subscription(events)`. */
   readonly subscription?: ReadonlySet<SubscriptionEvent>;
+  /** A `@node` type, or an interface (a relationship target). */
   node(name: string): NodeType;
 };
 
@@ -1424,14 +1553,221 @@ function checkUserTypeReferences(opts: {
   }
 }
 
+/** Directives accepted on interface fields (v7 rejects the `@node`-only ones). */
+const INTERFACE_FIELD_DIRECTIVES = new Set([
+  "declareRelationship",
+  "deprecated",
+  ...FIELD_CONFIG_DIRECTIVES,
+]);
+
+/**
+ * `interface I { … }` implemented by `@node` types: attributes, `@declareRelationship` fields
+ * (checked against each implementation's `@relationship`), `@query`, `@plural`, `@limit`.
+ */
+function readInterfaces(
+  defs: readonly InterfaceTypeDefinitionNode[],
+  nodes: readonly NodeType[],
+  known: {
+    enums: ReadonlySet<string>;
+    nodes: ReadonlySet<string>;
+    unions: ReadonlyMap<string, UnionType>;
+    interfaces: ReadonlySet<string>;
+    schemaQuery: QueryConfig | undefined;
+  },
+): Map<string, InterfaceType> {
+  const out = new Map<string, InterfaceType>();
+  for (const def of defs) {
+    const name = def.name.value;
+    if (out.has(name))
+      throw new UnsupportedTypeDefsError(`interface ${name}: defined more than once.`);
+    if (def.interfaces?.length) {
+      throw new UnsupportedTypeDefsError(
+        `interface ${name}: interfaces implementing interfaces are not supported by @cyphra/graphql yet.`,
+      );
+    }
+    for (const d of def.directives ?? []) {
+      if (d.name.value === "authorization" || d.name.value === "authentication") {
+        // v7 rejects them (the rules go on the implementations).
+        throw new UnsupportedTypeDefsError(
+          `Directive "@${d.name.value}" may not be used on INTERFACE.`,
+        );
+      }
+      if (!["query", "plural", "limit"].includes(d.name.value)) {
+        throw new UnsupportedTypeDefsError(
+          `interface ${name}: @${d.name.value} is not supported by @cyphra/graphql yet.`,
+        );
+      }
+    }
+    if (known.schemaQuery && directive(def.directives, "query")) {
+      throw new UnsupportedTypeDefsError(
+        "Invalid directive usage: Directive @query can only be used in one location: either schema or type.",
+      );
+    }
+    const impls = nodes.filter((n) => n.interfaces?.includes(name));
+    const attributes: Attribute[] = [];
+    const relationships: Relationship[] = [];
+    for (const f of def.fields ?? []) {
+      const where = `${name}.${f.name.value}`;
+      for (const d of f.directives ?? []) {
+        if (d.name.value === "relationship") {
+          throw new UnsupportedTypeDefsError(
+            `Invalid directive usage: Directive @relationship is not supported on fields of interface types (${name}). Since version 5.0.0, interface fields can only have @declareRelationship. Please add the @relationship directive to the fields in all types which implement it.`,
+          );
+        }
+        if (["id", "default", "cypher", "timestamp", "alias"].includes(d.name.value)) {
+          throw new UnsupportedTypeDefsError(
+            `${where}: Directive "${d.name.value}" must be in a type with "@node"${d.name.value === "cypher" ? " or on root types: Query, and Mutation" : ""}.`,
+          );
+        }
+        if (!INTERFACE_FIELD_DIRECTIVES.has(d.name.value)) {
+          throw new UnsupportedTypeDefsError(
+            `${where}: @${d.name.value} on an interface field is not supported by @cyphra/graphql yet.`,
+          );
+        }
+      }
+      if (f.arguments?.length) {
+        throw new UnsupportedTypeDefsError(
+          `${where}: field arguments on interfaces are not supported by @cyphra/graphql yet.`,
+        );
+      }
+      const t = typeRef(f.type);
+      const implFields = impls.map((n) => ({
+        node: n,
+        rel: n.relationships.find((r) => r.name === f.name.value),
+        attr: n.attributes.find((a) => a.name === f.name.value),
+      }));
+      const declare = directive(f.directives, "declareRelationship");
+      const config = readFieldConfig(where, f.directives);
+      if (declare) {
+        for (const a of declare.arguments ?? []) {
+          throw new UnsupportedTypeDefsError(
+            `${where}: @declareRelationship(${a.name.value}) is not supported by @cyphra/graphql yet.`,
+          );
+        }
+        if (!known.nodes.has(t.name) && !known.interfaces.has(t.name)) {
+          throw new UnsupportedTypeDefsError(
+            `${where}: relationships to ${t.name} are not supported by @cyphra/graphql yet (target must be a @node type or an interface).`,
+          );
+        }
+        if (!t.list && t.required) {
+          throw new UnsupportedTypeDefsError(
+            `${where}: Non-list relationship property "${f.name.value}" cannot have non-nullable type.`,
+          );
+        }
+        for (const { node, rel } of implFields) {
+          if (!rel) {
+            throw new UnsupportedTypeDefsError(
+              `${node.name}.${f.name.value}: Field was declared as a relationship but the \`@relationship\` directive is missing from the implementation.`,
+            );
+          }
+          if (rel.target !== t.name || rel.list !== t.list) {
+            throw new UnsupportedTypeDefsError(
+              `${node.name}.${f.name.value}: must have the type of ${where} (@cyphra/graphql does not support covariant relationship fields).`,
+            );
+          }
+        }
+        const rels = implFields.map((x) => x.rel!);
+        const first = rels[0]!;
+        const uniform = rels.every(
+          (r) =>
+            r.type === first.type &&
+            r.direction === first.direction &&
+            r.properties === first.properties,
+        );
+        relationships.push({
+          name: f.name.value,
+          source: name,
+          target: t.name,
+          type: first.type,
+          direction: first.direction,
+          properties: uniform ? first.properties : undefined,
+          list: t.list,
+          required: t.required,
+          elementRequired: t.elementRequired,
+          description: f.description?.value,
+          deprecated: deprecationReason(f.directives),
+          config,
+          uniform,
+        });
+        continue;
+      }
+      const isEnum = known.enums.has(t.name);
+      if (!isEnum && !(SUPPORTED_SCALARS as readonly string[]).includes(t.name)) {
+        throw new UnsupportedTypeDefsError(
+          `${where}: type ${t.name} is not supported on interfaces by @cyphra/graphql yet (scalars, enums and @declareRelationship fields only).`,
+        );
+      }
+      for (const { node, rel, attr } of implFields) {
+        if (rel) {
+          throw new UnsupportedTypeDefsError(
+            `${node.name}.${f.name.value}: Field was declared as a relationship but the \`@declareRelationship\` directive is missing from the interface.`,
+          );
+        }
+        if (!attr) {
+          throw new UnsupportedTypeDefsError(
+            `Interface field ${where} expected but ${node.name} does not provide it.`,
+          );
+        }
+        if (attr.cypher) {
+          throw new UnsupportedTypeDefsError(
+            `${node.name}.${f.name.value}: implementing the interface field ${where} with @cypher is not supported by @cyphra/graphql yet.`,
+          );
+        }
+      }
+      const attrs = implFields.map((x) => x.attr!);
+      const property = attrs[0]!.property;
+      const uniform = attrs.every((a) => a.property === property);
+      attributes.push({
+        name: f.name.value,
+        property: uniform ? property : f.name.value,
+        variants: uniform
+          ? undefined
+          : implFields.map((x) => ({ labels: x.node.labels, property: x.attr!.property })),
+        type: t,
+        kind: isEnum ? "enum" : "scalar",
+        description: f.description?.value,
+        id: false,
+        args: [],
+        deprecated: deprecationReason(f.directives),
+        config,
+      });
+    }
+    const typeQuery = directive(def.directives, "query");
+    const plural = entityPlural(name, stringArg(directive(def.directives, "plural"), "value"));
+    out.set(name, {
+      kind: "interface",
+      name,
+      description: def.description?.value,
+      labels: [],
+      labelSets: impls.map((n) => n.labels),
+      implementations: impls.map((n) => n.name),
+      plural,
+      pascalPlural: upperFirst(plural),
+      attributes,
+      relationships,
+      cypherNodes: [],
+      userFields: [],
+      fulltext: [],
+      auth: {},
+      query: typeQuery
+        ? readQueryConfig(`interface ${name}`, typeQuery)
+        : (known.schemaQuery ?? ALL_QUERIES),
+      mutation: { create: false, update: false, delete: false },
+      limit: readLimit(`interface ${name}`, directive(def.directives, "limit")),
+    });
+  }
+  return out;
+}
+
 /**
  * Read v7 type definitions. Throws {@link UnsupportedTypeDefsError} for features `@cyphra/graphql`
- * does not serve yet (interfaces, spatial and some temporal types, …), so the generated
+ * does not serve yet (spatial and some temporal types, …), so the generated
  * API never silently differs from v7.
  */
 export function readTypeDefs(typeDefs: string): V7Model {
   const doc = parse(typeDefs);
   const objects: ObjectTypeDefinitionNode[] = [];
+  const interfaceDefs: InterfaceTypeDefinitionNode[] = [];
   const unionDefs: UnionTypeDefinitionNode[] = [];
   const inputDefs: InputObjectTypeDefinitionNode[] = [];
   const enums = new Map<string, EnumType>();
@@ -1487,6 +1823,9 @@ export function readTypeDefs(typeDefs: string): V7Model {
       case Kind.UNION_TYPE_DEFINITION:
         unionDefs.push(def);
         break;
+      case Kind.INTERFACE_TYPE_DEFINITION:
+        interfaceDefs.push(def);
+        break;
       case Kind.INPUT_OBJECT_TYPE_DEFINITION:
         inputDefs.push(def);
         break;
@@ -1526,7 +1865,7 @@ export function readTypeDefs(typeDefs: string): V7Model {
         break;
       default:
         throw new UnsupportedTypeDefsError(
-          `${def.kind}${"name" in def && def.name ? ` ${def.name.value}` : ""}: not supported by @cyphra/graphql yet (only object, input, union and enum types).`,
+          `${def.kind}${"name" in def && def.name ? ` ${def.name.value}` : ""}: not supported by @cyphra/graphql yet (only object, interface, input, union and enum types).`,
         );
     }
   }
@@ -1550,11 +1889,6 @@ export function readTypeDefs(typeDefs: string): V7Model {
       }
       rootDefs.set(name, o);
       continue;
-    }
-    if (o.interfaces?.length) {
-      throw new UnsupportedTypeDefsError(
-        `type ${name}: interfaces are not supported by @cyphra/graphql yet.`,
-      );
     }
     for (const d of o.directives ?? []) {
       if (!ACCEPTED_TYPE_DIRECTIVES.has(d.name.value)) {
@@ -1596,6 +1930,11 @@ export function readTypeDefs(typeDefs: string): V7Model {
       continue;
     }
     if (!directive(o.directives, "node")) {
+      if (o.interfaces?.length) {
+        throw new UnsupportedTypeDefsError(
+          `type ${name}: only @node types can implement interfaces in @cyphra/graphql.`,
+        );
+      }
       // v7: an object type without @node is a plain type, served by the application's resolvers.
       plainDefs.push(o);
       continue;
@@ -1615,6 +1954,44 @@ export function readTypeDefs(typeDefs: string): V7Model {
     }
   }
   const nodeNames = new Set(nodeDefs.map((o) => o.name.value));
+  for (const o of [...objects, ...interfaceDefs]) {
+    if (o.kind === Kind.OBJECT_TYPE_DEFINITION && !nodeNames.has(o.name.value)) continue;
+    for (const i of o.interfaces ?? []) {
+      if (!interfaceDefs.some((d) => d.name.value === i.name.value)) {
+        throw new UnsupportedTypeDefsError(
+          `type ${o.name.value}: implements ${i.name.value}, which is not an interface of the type definitions.`,
+        );
+      }
+    }
+  }
+  // v7 drops interfaces no `@node` type implements.
+  const implementedBy = new Map<string, string[]>();
+  for (const o of nodeDefs) {
+    for (const i of o.interfaces ?? []) {
+      implementedBy.set(i.name.value, [...(implementedBy.get(i.name.value) ?? []), o.name.value]);
+    }
+  }
+  const interfaceNames = new Set(
+    interfaceDefs.map((d) => d.name.value).filter((n) => implementedBy.has(n)),
+  );
+  const declaredOn = new Map<string, Map<string, string>>();
+  for (const d of interfaceDefs) {
+    if (!interfaceNames.has(d.name.value)) continue;
+    for (const f of d.fields ?? []) {
+      if (!directive(f.directives, "declareRelationship")) continue;
+      for (const impl of implementedBy.get(d.name.value)!) {
+        const byField = declaredOn.get(impl) ?? new Map<string, string>();
+        const other = byField.get(f.name.value);
+        if (other) {
+          throw new UnsupportedTypeDefsError(
+            `type ${impl}: relationship ${f.name.value} is declared by both ${other} and ${d.name.value}, which @cyphra/graphql does not support.`,
+          );
+        }
+        byField.set(f.name.value, d.name.value);
+        declaredOn.set(impl, byField);
+      }
+    }
+  }
   const userTypes = readUserTypes(plainDefs, inputDefs, unionDefs, nodeNames);
   const unions = readUnions(
     unionDefs.filter((u) => !userTypes.has(u.name.value)),
@@ -1634,6 +2011,11 @@ export function readTypeDefs(typeDefs: string): V7Model {
       const rel = directive(f.directives, "relationship");
       const cypher = directive(f.directives, "cypher");
       const custom = directive(f.directives, "customResolver");
+      if (!rel && interfaceNames.has(typeRef(f.type).name)) {
+        throw new UnsupportedTypeDefsError(
+          `${name}.${f.name.value}: fields returning the interface ${typeRef(f.type).name} need @relationship (@cypher fields and fields served by resolvers returning interfaces are not supported by @cyphra/graphql yet).`,
+        );
+      }
       if (custom || (!rel && !cypher && isUserOutput(typeRef(f.type).name))) {
         userFields.push(readUserField(name, f, custom));
         continue;
@@ -1664,9 +2046,9 @@ export function readTypeDefs(typeDefs: string): V7Model {
         }
       }
       const t = typeRef(f.type);
-      if (!nodeNames.has(t.name) && !unions.has(t.name)) {
+      if (!nodeNames.has(t.name) && !unions.has(t.name) && !interfaceNames.has(t.name)) {
         throw new UnsupportedTypeDefsError(
-          `${name}.${f.name.value}: relationships to ${t.name} are not supported by @cyphra/graphql yet (target must be a @node type or a union of them).`,
+          `${name}.${f.name.value}: relationships to ${t.name} are not supported by @cyphra/graphql yet (target must be a @node type, an interface or a union of @node types).`,
         );
       }
       for (const a of rel.arguments ?? []) {
@@ -1708,6 +2090,7 @@ export function readTypeDefs(typeDefs: string): V7Model {
         description: f.description?.value,
         deprecated: deprecationReason(f.directives),
         config,
+        declaredBy: declaredOn.get(name)?.get(f.name.value),
       });
     }
     const nodeDir = directive(o.directives, "node");
@@ -1739,8 +2122,14 @@ export function readTypeDefs(typeDefs: string): V7Model {
         ? readMutationConfig(`type ${name}`, typeMutation)
         : (schemaMutation ?? ALL_MUTATIONS),
       limit: readLimit(`type ${name}`, directive(o.directives, "limit")),
+      interfaces: (o.interfaces ?? []).map((i) => i.name.value),
     };
   });
+  const interfaces = readInterfaces(
+    interfaceDefs.filter((d) => interfaceNames.has(d.name.value)),
+    nodes,
+    { enums: enumNames, nodes: nodeNames, unions, interfaces: interfaceNames, schemaQuery },
+  );
 
   const byName0 = new Map(nodes.map((n) => [n.name, n]));
   const root = (type: "Query" | "Mutation"): CypherRootType =>
@@ -1759,6 +2148,19 @@ export function readTypeDefs(typeDefs: string): V7Model {
         );
       }
       generated.add(ft.queryName);
+    }
+  }
+  for (const i of interfaces.values()) {
+    for (const field of [
+      ...(i.query.read ? [i.plural] : []),
+      ...(i.query.connection || i.query.aggregate ? [`${i.plural}Connection`] : []),
+    ]) {
+      if (generated.has(field)) {
+        throw new UnsupportedTypeDefsError(
+          `interface ${i.name}: its root query ${field} conflicts with another generated Query field.`,
+        );
+      }
+      generated.add(field);
     }
   }
   for (const u of unions.values()) {
@@ -1793,15 +2195,19 @@ export function readTypeDefs(typeDefs: string): V7Model {
   }
   checkUserTypeReferences({
     scalarsAndEnums: new Set([...SUPPORTED_SCALARS, ...enumNames]),
-    outputs: new Set([...nodeNames, ...unions.keys()]),
+    outputs: new Set([...nodeNames, ...unions.keys(), ...interfaces.keys()]),
     userTypes,
     nodes,
     roots: { Query: query, Mutation: mutation },
   });
 
-  const byName = new Map(nodes.map((n) => [n.name, n]));
+  const byName = new Map<string, NodeType>([
+    ...nodes.map((n): [string, NodeType] => [n.name, n]),
+    ...[...interfaces.values()].map((i): [string, NodeType] => [i.name, i]),
+  ]);
   return {
     nodes,
+    interfaces,
     unions,
     authentication: schemaAuthentication,
     jwtClaims: jwtClaims ?? new Map(),

@@ -324,6 +324,15 @@ function attachResolvers(schema: GraphQLSchema, auth: Auth, executors: Executors
       query[ft.queryName]!.resolve = fulltextResolver(auth, execute, node.name, ft.queryName);
     }
   }
+  for (const i of model.interfaces.values()) {
+    attach(query, i.query.read, i.plural, rootReadResolver(auth, execute, i.name, "list"));
+    attach(
+      query,
+      i.query.connection || i.query.aggregate,
+      `${i.plural}Connection`,
+      rootReadResolver(auth, execute, i.name, "connection"),
+    );
+  }
   for (const u of model.unions.values()) {
     attach(query, u.read, u.plural, rootUnionResolver(auth, execute, u.name));
   }
@@ -517,6 +526,7 @@ function addDefaultFieldResolvers(schema: GraphQLSchema): void {
  * `@cypher` fields (on node types, relationship properties, `Query` and `Mutation`; sortable and
  * filterable like v7), `@fulltext` queries (on indexes the application creates) and unions
  * (relationships to a union, with member-keyed filters and nested writes, and the root union query),
+ * interfaces (root queries, relationships to interfaces, `@declareRelationship`, nested writes),
  * subscriptions (`@subscription`, `@subscriptionsAuthorization`) on Neo4j Change Data Capture
  * with `features.subscriptions`, and the schema configuration directives (`@query`, `@mutation`,
  * `@selectable`, `@settable`, `@filterable`, `@sortable`, `@limit`). A directive or argument it does
