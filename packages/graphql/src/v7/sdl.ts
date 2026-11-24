@@ -3,7 +3,9 @@
  * mutations, connection and edge types, every `where` / `sort` / `create` / `update` / `connect` /
  * `disconnect` / `delete` input, aggregate selection types, and the deprecated `field_OPERATOR`
  * fields v7 still prints. Names, descriptions and deprecation reasons are the v7 ones, so the
- * printed SDL is identical.
+ * printed SDL is identical. Types, fields, arguments, input fields and enum values also come in the
+ * order v7 generates them (see {@link inV7TypeOrder}), so `printSchema` output is byte-identical
+ * without sorting: applications that commit the printed schema see no diff when they switch.
  *
  * Only types reachable from `Query` / `Mutation` / `Subscription` end up in the schema (as with v7).
  *
@@ -26,6 +28,11 @@ import {
   GraphQLDeprecatedDirective,
   GraphQLUnionType,
   getDirectiveValues,
+  isEnumType,
+  isInterfaceType,
+  isObjectType,
+  isScalarType,
+  isUnionType,
   Kind,
   valueFromAST,
   type FieldDefinitionNode,
@@ -51,6 +58,7 @@ import {
   SUBSCRIPTION_EVENTS,
   unionMembers,
   type Attribute,
+  type CypherNodeField,
   type CypherRootField,
   type FieldArgument,
   type InterfaceType,
@@ -59,6 +67,7 @@ import {
   type Relationship,
   type TypeRef,
   type UnionType,
+  type UserField,
   type UserTypeDefinition,
   type V7Model,
 } from "./model.js";
@@ -258,8 +267,8 @@ class TypeRegistry {
 
   countConnection(): GraphQLObjectType {
     return this.object("CountConnection", () => ({
-      edges: { type: nn(GraphQLInt) },
       nodes: { type: nn(GraphQLInt) },
+      edges: { type: nn(GraphQLInt) },
     }));
   }
 
@@ -302,10 +311,10 @@ class TypeRegistry {
       return this.input(
         `${t}ScalarFilters`,
         () => ({
-          contains: { type: named },
-          endsWith: { type: named },
           eq: { type: named },
           in: { type: list(nn(named)) },
+          contains: { type: named },
+          endsWith: { type: named },
           startsWith: { type: named },
         }),
         `${t} filters`,
@@ -341,9 +350,9 @@ class TypeRegistry {
       return this.input(
         a.kind === "enum" ? `List${t}EnumScalarMutations` : `List${t}Mutations`,
         () => ({
-          pop: { type: GraphQLInt },
-          push: { type: list(nn(named)) },
           set: { type: list(nn(named)) },
+          push: { type: list(nn(named)) },
+          pop: { type: GraphQLInt },
         }),
         `Mutations for a list for ${t}`,
       );
@@ -360,18 +369,18 @@ class TypeRegistry {
       case "BigInt":
         return this.input(
           `${t}ScalarMutations`,
-          () => ({ add: { type: named }, set: { type: named }, subtract: { type: named } }),
+          () => ({ set: { type: named }, add: { type: named }, subtract: { type: named } }),
           `${t} mutations`,
         );
       case "Float":
         return this.input(
           "FloatScalarMutations",
           () => ({
-            add: { type: named },
-            divide: { type: named },
-            multiply: { type: named },
             set: { type: named },
+            add: { type: named },
             subtract: { type: named },
+            multiply: { type: named },
+            divide: { type: named },
           }),
           "Float mutations",
         );
@@ -390,28 +399,28 @@ class TypeRegistry {
     switch (t) {
       case "String":
         return this.object("StringAggregateSelection", () => ({
-          longest: { type: GraphQLString },
           shortest: { type: GraphQLString },
+          longest: { type: GraphQLString },
         }));
       case "Int":
         return this.object("IntAggregateSelection", () => ({
-          average: { type: GraphQLFloat },
           max: { type: GraphQLInt },
           min: { type: GraphQLInt },
+          average: { type: GraphQLFloat },
           sum: { type: GraphQLInt },
         }));
       case "Float":
       case "BigInt":
         return this.object(`${t}AggregateSelection`, () => ({
-          average: { type: named },
           max: { type: named },
           min: { type: named },
+          average: { type: named },
           sum: { type: named },
         }));
       default:
         return this.object(`${t}AggregateSelection`, () => ({
-          max: { type: named },
           min: { type: named },
+          max: { type: named },
         }));
     }
   }
@@ -424,8 +433,8 @@ class TypeRegistry {
           "StringScalarAggregationFilters",
           () => ({
             averageLength: { type: this.floatFilters() },
-            longestLength: { type: this.intFilters() },
             shortestLength: { type: this.intFilters() },
+            longestLength: { type: this.intFilters() },
           }),
           "Filters for an aggregation of a string field",
         );
@@ -477,8 +486,8 @@ class TypeRegistry {
 
   connectionAggregationCountFilter(): GraphQLInputObjectType {
     return this.input("ConnectionAggregationCountFilterInput", () => ({
-      edges: { type: this.intFilters() },
       nodes: { type: this.intFilters() },
+      edges: { type: this.intFilters() },
     }));
   }
 
@@ -489,39 +498,42 @@ class TypeRegistry {
   /** `where` fields of attributes, with the deprecated `field_OPERATOR` variants. */
   attributeWhereFields(attributes: readonly Attribute[]): GraphQLInputFieldConfigMap {
     const out: GraphQLInputFieldConfigMap = {};
-    for (const a of attributes) {
-      // v7: `@cypher` fields with arguments cannot be filtered on.
-      if (a.args.length || !a.config.byValue) continue;
-      out[a.name] = { type: this.scalarFilters(a), deprecationReason: a.deprecated };
-      const named = this.namedType(a.type.name);
-      const dep = (op: string) =>
-        a.deprecated ?? `Please use the relevant generic filter ${a.name}: { ${op}: ... }`;
-      out[`${a.name}_EQ`] = {
-        type: a.type.list ? list(a.type.elementRequired ? nn(named) : named) : named,
-        deprecationReason: dep("eq"),
-      };
-      if (a.kind === "scalar" && a.type.name === "Boolean") continue;
-      if (a.type.list) {
-        out[`${a.name}_INCLUDES`] = { type: named, deprecationReason: dep("includes") };
-        continue;
-      }
-      out[`${a.name}_IN`] = {
-        type: list(a.type.required ? nn(named) : named),
-        deprecationReason: dep("in"),
-      };
-      if (a.kind === "scalar" && NUMERIC_OR_TEMPORAL.has(a.type.name)) {
-        for (const op of ["LT", "LTE", "GT", "GTE"]) {
-          out[`${a.name}_${op}`] = { type: named, deprecationReason: dep(op.toLowerCase()) };
-        }
-        continue;
-      }
-      if (a.kind === "scalar" && (a.type.name === "String" || a.type.name === "ID")) {
-        out[`${a.name}_CONTAINS`] = { type: named, deprecationReason: dep("contains") };
-        out[`${a.name}_STARTS_WITH`] = { type: named, deprecationReason: dep("startsWith") };
-        out[`${a.name}_ENDS_WITH`] = { type: named, deprecationReason: dep("endsWith") };
-      }
-    }
+    for (const a of attributes) this.attributeWhereField(a, out);
     return out;
+  }
+
+  /** The `where` fields of one attribute (none for `@cypher` fields with arguments). */
+  private attributeWhereField(a: Attribute, out: GraphQLInputFieldConfigMap): void {
+    // v7: `@cypher` fields with arguments cannot be filtered on.
+    if (a.args.length || !a.config.byValue) return;
+    out[a.name] = { type: this.scalarFilters(a), deprecationReason: a.deprecated };
+    const named = this.namedType(a.type.name);
+    const dep = (op: string) =>
+      a.deprecated ?? `Please use the relevant generic filter ${a.name}: { ${op}: ... }`;
+    out[`${a.name}_EQ`] = {
+      type: a.type.list ? list(a.type.elementRequired ? nn(named) : named) : named,
+      deprecationReason: dep("eq"),
+    };
+    if (a.kind === "scalar" && a.type.name === "Boolean") return;
+    if (a.type.list) {
+      out[`${a.name}_INCLUDES`] = { type: named, deprecationReason: dep("includes") };
+      return;
+    }
+    out[`${a.name}_IN`] = {
+      type: list(a.type.required ? nn(named) : named),
+      deprecationReason: dep("in"),
+    };
+    if (a.kind === "scalar" && NUMERIC_OR_TEMPORAL.has(a.type.name)) {
+      for (const op of ["LT", "LTE", "GT", "GTE"]) {
+        out[`${a.name}_${op}`] = { type: named, deprecationReason: dep(op.toLowerCase()) };
+      }
+      return;
+    }
+    if (a.kind === "scalar" && (a.type.name === "String" || a.type.name === "ID")) {
+      out[`${a.name}_CONTAINS`] = { type: named, deprecationReason: dep("contains") };
+      out[`${a.name}_STARTS_WITH`] = { type: named, deprecationReason: dep("startsWith") };
+      out[`${a.name}_ENDS_WITH`] = { type: named, deprecationReason: dep("endsWith") };
+    }
   }
 
   /** Aggregation `where` fields (`name: StringScalarAggregationFilters`, `name_AVERAGE_LENGTH_GT`…). */
@@ -529,15 +541,16 @@ class TypeRegistry {
     self: () => GraphQLInputObjectType,
     attributes: readonly Attribute[],
   ): GraphQLInputFieldConfigMap {
+    // v7 order: `AND`, `OR`, `NOT`, then per attribute the deprecated `field_OP_CMP` fields
+    // (comparator by comparator) and the generic `field` filter.
     const out: GraphQLInputFieldConfigMap = {
       AND: { type: list(nn(self())) },
-      NOT: { type: self() },
       OR: { type: list(nn(self())) },
+      NOT: { type: self() },
     };
     for (const a of attributes) {
       if (!isAggregationFilterable(a)) continue;
       const t = a.type.name;
-      out[a.name] = { type: this.aggregationFilters(t) };
       const named = this.namedType(t);
       const ops: [string, string, GraphQLInputType][] =
         t === "String"
@@ -548,36 +561,37 @@ class TypeRegistry {
             ]
           : t === "Int"
             ? [
-                ["AVERAGE", "average", GraphQLFloat],
-                ["MAX", "max", GraphQLInt],
                 ["MIN", "min", GraphQLInt],
+                ["MAX", "max", GraphQLInt],
                 ["SUM", "sum", GraphQLInt],
+                ["AVERAGE", "average", GraphQLFloat],
               ]
             : t === "Float" || t === "BigInt"
               ? [
-                  ["AVERAGE", "average", named],
-                  ["MAX", "max", named],
                   ["MIN", "min", named],
+                  ["MAX", "max", named],
                   ["SUM", "sum", named],
+                  ["AVERAGE", "average", named],
                 ]
               : [
-                  ["MAX", "max", named],
                   ["MIN", "min", named],
+                  ["MAX", "max", named],
                 ];
-      for (const [legacy, generic, type] of ops) {
-        for (const [cmp, op] of [
-          ["EQUAL", "eq"],
-          ["GT", "gt"],
-          ["GTE", "gte"],
-          ["LT", "lt"],
-          ["LTE", "lte"],
-        ] as const) {
+      for (const [cmp, op] of [
+        ["EQUAL", "eq"],
+        ["GT", "gt"],
+        ["GTE", "gte"],
+        ["LT", "lt"],
+        ["LTE", "lte"],
+      ] as const) {
+        for (const [legacy, generic, type] of ops) {
           out[`${a.name}_${legacy}_${cmp}`] = {
             type,
             deprecationReason: `Please use the relevant generic filter '${a.name}: { ${generic}: { ${op}: ... } } }' instead.`,
           };
         }
       }
+      out[a.name] = { type: this.aggregationFilters(t) };
     }
     return out;
   }
@@ -608,9 +622,9 @@ class TypeRegistry {
         a.deprecated ??
         `Please use the relevant generic mutation '${a.name}: { ${op}: ... } }' instead.`;
       if (a.type.list) {
+        out[`${a.name}_SET`] = { type: list(nn(named)), deprecationReason: generic("set") };
         out[`${a.name}_POP`] = { type: GraphQLInt, deprecationReason: generic("pop") };
         out[`${a.name}_PUSH`] = { type: list(nn(named)), deprecationReason: generic("push") };
-        out[`${a.name}_SET`] = { type: list(nn(named)), deprecationReason: generic("set") };
         continue;
       }
       out[`${a.name}_SET`] = { type: named, deprecationReason: generic("set") };
@@ -645,10 +659,10 @@ class TypeRegistry {
   propertiesWhere(p: PropertiesType): GraphQLInputObjectType {
     const self = (): GraphQLInputObjectType => this.propertiesWhere(p);
     return this.input(`${p.name}Where`, () => ({
+      ...this.attributeWhereFields(p.attributes),
+      OR: { type: list(nn(self())) },
       AND: { type: list(nn(self())) },
       NOT: { type: self() },
-      OR: { type: list(nn(self())) },
-      ...this.attributeWhereFields(p.attributes),
     }));
   }
 
@@ -724,7 +738,7 @@ class TypeRegistry {
     );
   }
 
-  /** `LearningActivityImplementation`: the implementations, sorted (the `typename` filter). */
+  /** `LearningActivityImplementation`: the implementations (the `typename` filter). */
   implementationEnum(i: InterfaceType): GraphQLEnumType {
     const name = `${i.name}Implementation`;
     return this.get(
@@ -732,24 +746,33 @@ class TypeRegistry {
       () =>
         new GraphQLEnumType({
           name,
-          values: Object.fromEntries([...i.implementations].sort().map((m) => [m, { value: m }])),
+          values: Object.fromEntries(i.implementations.map((m) => [m, { value: m }])),
         }),
     );
   }
 
   private nodeFields(n: NodeType): GraphQLFieldConfigMap<unknown, unknown> {
-    const fields = attributeOutputFields(this, n.attributes);
-    for (const f of n.userFields) {
-      if (f.config.onRead) fields[f.name] = this.fieldFromAST(f.definition);
-    }
-    for (const c of n.cypherNodes) {
-      if (!c.config.onRead) continue;
-      fields[c.name] = {
-        type: this.nodeRefType(c.type, c.target),
-        description: c.description,
-        deprecationReason: c.deprecated,
-        args: argumentConfigs(this, c.args),
-      };
+    // v7 order: attributes, `@cypher` fields and fields served by resolvers in definition order,
+    // then each relationship and its connection.
+    const fields: GraphQLFieldConfigMap<unknown, unknown> = {};
+    for (const f of inDefinitionOrder<Attribute | UserField | CypherNodeField>(n, [
+      ...n.attributes,
+      ...n.userFields,
+      ...n.cypherNodes,
+    ])) {
+      if (!f.config.onRead) continue;
+      if ("definition" in f) {
+        fields[f.name] = this.fieldFromAST(f.definition);
+      } else if ("target" in f) {
+        fields[f.name] = {
+          type: this.nodeRefType(f.type, f.target),
+          description: f.description,
+          deprecationReason: f.deprecated,
+          args: argumentConfigs(this, f.args),
+        };
+      } else {
+        Object.assign(fields, attributeOutputFields(this, [f]));
+      }
     }
     for (const r of n.relationships) {
       // v7: without `@selectable(onRead)`, a list relationship keeps its connection field
@@ -776,19 +799,19 @@ class TypeRegistry {
           description: r.description,
           deprecationReason: r.deprecated,
           args: {
+            where: { type: this.unionWhere(u) },
             limit: { type: GraphQLInt },
             offset: { type: GraphQLInt },
-            where: { type: this.unionWhere(u) },
           },
         };
         fields[`${r.name}Connection`] = {
           type: nn(this.relConnection(r)),
           deprecationReason: r.deprecated,
           args: {
-            after: { type: GraphQLString },
-            first: { type: GraphQLInt },
-            ...sortArg(this.relConnectionSort(r)),
             where: { type: this.relConnectionWhere(r) },
+            first: { type: GraphQLInt },
+            after: { type: GraphQLString },
+            ...sortArg(this.relConnectionSort(r)),
           },
         };
         continue;
@@ -800,10 +823,10 @@ class TypeRegistry {
           description: r.description,
           deprecationReason: r.deprecated,
           args: {
+            where: { type: this.nodeWhere(target) },
             limit: { type: GraphQLInt },
             offset: { type: GraphQLInt },
             ...sortArg(this.nodeSort(target)),
-            where: { type: this.nodeWhere(target) },
           },
         };
       }
@@ -811,10 +834,10 @@ class TypeRegistry {
         type: nn(this.relConnection(r)),
         deprecationReason: r.deprecated,
         args: {
-          after: { type: GraphQLString },
-          first: { type: GraphQLInt },
-          ...sortArg(this.relConnectionSort(r)),
           where: { type: this.relConnectionWhere(r) },
+          first: { type: GraphQLInt },
+          after: { type: GraphQLString },
+          ...sortArg(this.relConnectionSort(r)),
         },
       };
     }
@@ -852,10 +875,10 @@ class TypeRegistry {
     return this.input(subscriptionNames(n.name).where, () => {
       const self = this.subscriptionWhere(n);
       return {
+        ...this.attributeWhereFields(n.attributes.filter((a) => !a.cypher)),
+        OR: { type: list(nn(self)) },
         AND: { type: list(nn(self)) },
         NOT: { type: self },
-        OR: { type: list(nn(self)) },
-        ...this.attributeWhereFields(n.attributes.filter((a) => !a.cypher)),
       };
     });
   }
@@ -893,13 +916,18 @@ class TypeRegistry {
   nodeWhere(n: NodeType): GraphQLInputObjectType {
     return this.input(`${n.name}Where`, () => {
       const self = this.nodeWhere(n);
-      const out: GraphQLInputFieldConfigMap = {
-        AND: { type: list(nn(self)) },
-        NOT: { type: self },
-        OR: { type: list(nn(self)) },
-        ...this.attributeWhereFields(n.attributes),
-      };
-      for (const c of n.cypherNodes) {
+      // v7 order: attribute and `@cypher` filters in definition order, `OR` / `AND` / `NOT`,
+      // `typename`, then the relationship filters.
+      const out: GraphQLInputFieldConfigMap = {};
+      for (const f of inDefinitionOrder<Attribute | CypherNodeField>(n, [
+        ...n.attributes,
+        ...n.cypherNodes,
+      ])) {
+        if (!("target" in f)) {
+          this.attributeWhereField(f, out);
+          continue;
+        }
+        const c = f;
         if (c.args.length || !c.config.byValue) continue;
         const target = this.model.node(c.target);
         if (!c.type.list) {
@@ -907,10 +935,13 @@ class TypeRegistry {
           continue;
         }
         // v7 prints the `_ALL` / … variants of `@cypher` fields without description or deprecation.
-        out[c.name] = { type: this.relationshipFilters(target) };
         for (const q of QUANTIFIERS)
           out[`${c.name}_${q.toUpperCase()}`] = { type: this.nodeWhere(target) };
+        out[c.name] = { type: this.relationshipFilters(target) };
       }
+      out.OR = { type: list(nn(self)) };
+      out.AND = { type: list(nn(self)) };
+      out.NOT = { type: self };
       if (isInterface(n)) out.typename = { type: list(nn(this.implementationEnum(n))) };
       const sourcePlural = pluralize(n.name);
       for (const r of n.relationships) {
@@ -931,32 +962,35 @@ class TypeRegistry {
         // v7: no aggregation filters on unions.
         const byAggregate = r.config.byAggregate && !union;
         if (!byValue && !byAggregate) continue;
+        // v7 order: `rel`, `rel_ALL` … `rel_SOME`, `relConnection_ALL` … `relConnection_SOME`,
+        // `relConnection`, `relAggregate`.
         if (byValue) {
           out[r.name] = {
             type: union
               ? this.unionRelationshipFilters(union)
               : this.relationshipFilters(target as NodeType),
           };
+          for (const q of QUANTIFIERS) {
+            const spacing = q === "single" || q === "some" ? "  " : " ";
+            out[`${r.name}_${q.toUpperCase()}`] = {
+              type: targetWhere,
+              description: `Return ${sourcePlural} where ${QUANTIFIER_WORD[q]} of the related ${pluralize(target.name)} match this filter`,
+              deprecationReason: `Please use the relevant generic filter '${r.name}: {${spacing}${q}: ... }' instead.`,
+            };
+          }
+          for (const q of QUANTIFIERS) {
+            out[`${r.name}Connection_${q.toUpperCase()}`] = {
+              type: connWhere,
+              description: `Return ${sourcePlural} where ${QUANTIFIER_WORD[q]} of the related ${connPlural} match this filter`,
+              deprecationReason: `Please use the relevant generic filter '${r.name}Connection: { ${q}: { node: ... } } }' instead.`,
+            };
+          }
         }
+        out[`${r.name}Connection`] = { type: this.relConnectionFilters(r) };
         if (byAggregate) {
           out[`${r.name}Aggregate`] = {
             type: this.relAggregateInput(r),
             deprecationReason: `Aggregate filters are moved inside the ${r.name}Connection filter, please use { ${r.name}Connection: { aggregate: {...} } } instead`,
-          };
-        }
-        out[`${r.name}Connection`] = { type: this.relConnectionFilters(r) };
-        if (!byValue) continue;
-        for (const q of QUANTIFIERS) {
-          out[`${r.name}Connection_${q.toUpperCase()}`] = {
-            type: connWhere,
-            description: `Return ${sourcePlural} where ${QUANTIFIER_WORD[q]} of the related ${connPlural} match this filter`,
-            deprecationReason: `Please use the relevant generic filter '${r.name}Connection: { ${q}: { node: ... } } }' instead.`,
-          };
-          const spacing = q === "single" || q === "some" ? "  " : " ";
-          out[`${r.name}_${q.toUpperCase()}`] = {
-            type: targetWhere,
-            description: `Return ${sourcePlural} where ${QUANTIFIER_WORD[q]} of the related ${pluralize(target.name)} match this filter`,
-            deprecationReason: `Please use the relevant generic filter '${r.name}: {${spacing}${q}: ... }' instead.`,
           };
         }
       }
@@ -1113,7 +1147,7 @@ class TypeRegistry {
   floatWhere(): GraphQLInputObjectType {
     return this.input(
       "FloatWhere",
-      () => ({ max: { type: GraphQLFloat }, min: { type: GraphQLFloat } }),
+      () => ({ min: { type: GraphQLFloat }, max: { type: GraphQLFloat } }),
       "The input for filtering a float",
     );
   }
@@ -1128,9 +1162,9 @@ class TypeRegistry {
 
   fulltextConnection(n: NodeType): GraphQLObjectType {
     return this.object(`${n.pascalPlural}IndexConnection`, () => ({
-      edges: { type: nn(list(nn(this.fulltextEdge(n)))) },
-      pageInfo: { type: nn(this.pageInfo()) },
       totalCount: { type: nn(GraphQLInt) },
+      pageInfo: { type: nn(this.pageInfo()) },
+      edges: { type: nn(list(nn(this.fulltextEdge(n)))) },
     }));
   }
 
@@ -1140,8 +1174,8 @@ class TypeRegistry {
       () => {
         const sort = this.nodeSort(n);
         return {
-          ...(sort ? { node: { type: sort } } : {}),
           score: { type: this.sortDirection() },
+          ...(sort ? { node: { type: sort } } : {}),
         };
       },
       `The input for sorting a Fulltext query on an index of ${n.name}`,
@@ -1151,7 +1185,7 @@ class TypeRegistry {
   fulltextWhere(n: NodeType): GraphQLInputObjectType {
     return this.input(
       `${n.name}IndexWhere`,
-      () => ({ node: { type: this.nodeWhere(n) }, score: { type: this.floatWhere() } }),
+      () => ({ score: { type: this.floatWhere() }, node: { type: this.nodeWhere(n) } }),
       `The input for filtering a full-text query on an index of ${n.name}`,
     );
   }
@@ -1161,11 +1195,11 @@ class TypeRegistry {
     return {
       type: nn(this.fulltextConnection(n)),
       args: {
-        after: { type: GraphQLString },
-        first: { type: GraphQLInt },
         phrase: { type: nn(GraphQLString) },
-        sort: { type: list(nn(this.fulltextSort(n))) },
         where: { type: this.fulltextWhere(n) },
+        sort: { type: list(nn(this.fulltextSort(n))) },
+        first: { type: GraphQLInt },
+        after: { type: GraphQLString },
       },
     };
   }
@@ -1194,14 +1228,14 @@ class TypeRegistry {
   /** `MoviesConnection`: `edges` / `totalCount` / `pageInfo` and `aggregate` per `@query`. */
   rootConnection(n: NodeType): GraphQLObjectType {
     return this.object(`${n.pascalPlural}Connection`, () => ({
-      ...(n.query.aggregate ? { aggregate: { type: nn(this.nodeAggregate(n)) } } : {}),
       ...(n.query.connection
         ? {
             edges: { type: nn(list(nn(this.nodeEdge(n)))) },
-            pageInfo: { type: nn(this.pageInfo()) },
             totalCount: { type: nn(GraphQLInt) },
+            pageInfo: { type: nn(this.pageInfo()) },
           }
         : {}),
+      ...(n.query.aggregate ? { aggregate: { type: nn(this.nodeAggregate(n)) } } : {}),
     }));
   }
 
@@ -1427,19 +1461,19 @@ class TypeRegistry {
     if (named !== r) return this.relConnection(named);
     const union = isUnionRelationship(this.model, r);
     return this.object(relConnectionName(r), () => ({
+      // v7: `@selectable(onRead: false)` leaves only the aggregate.
+      ...(r.config.onRead
+        ? {
+            edges: { type: nn(list(nn(this.relRelationship(r)))) },
+            totalCount: { type: nn(GraphQLInt) },
+            pageInfo: { type: nn(this.pageInfo()) },
+          }
+        : {}),
       // v7: no aggregate on relationships to unions, on to-one relationships or on relationships
       // an interface declares.
       ...(union || !r.list || this.fromInterface(r)
         ? {}
         : { aggregate: { type: nn(this.relAggregateSelection(r)) } }),
-      // v7: `@selectable(onRead: false)` leaves only the aggregate.
-      ...(r.config.onRead
-        ? {
-            edges: { type: nn(list(nn(this.relRelationship(r)))) },
-            pageInfo: { type: nn(this.pageInfo()) },
-            totalCount: { type: nn(GraphQLInt) },
-          }
-        : {}),
     }));
   }
 
@@ -1493,19 +1527,19 @@ class TypeRegistry {
       const fields: GraphQLFieldConfigMap<unknown, unknown> = {
         count: { type: nn(this.countConnection()) },
       };
-      const p = this.props(r);
-      if (p && p.attributes.some(isAggregable)) {
-        fields.edge = {
-          type: this.object(`${base}EdgeAggregateSelection`, () =>
-            aggregateSelectionFields(this, p.attributes),
-          ),
-        };
-      }
       const target = this.model.node(r.target);
       if (target.attributes.some(isAggregable)) {
         fields.node = {
           type: this.object(`${base}NodeAggregateSelection`, () =>
             aggregateSelectionFields(this, target.attributes),
+          ),
+        };
+      }
+      const p = this.props(r);
+      if (p && p.attributes.some(isAggregable)) {
+        fields.edge = {
+          type: this.object(`${base}EdgeAggregateSelection`, () =>
+            aggregateSelectionFields(this, p.attributes),
           ),
         };
       }
@@ -1529,8 +1563,8 @@ class TypeRegistry {
       : this.nodeSort(this.model.node(r.target));
     if (!edge && !node) return undefined;
     return this.input(`${relConnectionName(r)}Sort`, () => ({
-      ...(edge ? { edge: { type: edge } } : {}),
       ...(node ? { node: { type: node } } : {}),
+      ...(edge ? { edge: { type: edge } } : {}),
     }));
   }
 
@@ -1547,8 +1581,9 @@ class TypeRegistry {
       const self = this.relConnectionWhere(r);
       const out: GraphQLInputFieldConfigMap = {
         AND: { type: list(nn(self)) },
-        NOT: { type: self },
         OR: { type: list(nn(self)) },
+        NOT: { type: self },
+        node: { type: this.nodeWhere(this.model.node(r.target)) },
       };
       const p = this.props(r);
       const edge = this.fromInterface(r)
@@ -1557,7 +1592,6 @@ class TypeRegistry {
           ? this.propertiesWhere(p)
           : undefined;
       if (edge) out.edge = { type: edge };
-      out.node = { type: this.nodeWhere(this.model.node(r.target)) };
       return out;
     });
   }
@@ -1567,19 +1601,17 @@ class TypeRegistry {
       const where = this.relConnectionWhere(r);
       const sourcePlural = pluralize(r.source);
       const connPlural = pluralize(this.connName(r));
-      const out: GraphQLInputFieldConfigMap =
-        isUnionRelationship(this.model, r) || !r.config.byAggregate
-          ? {}
-          : {
-              aggregate: {
-                type: this.relConnectionAggregateInput(r),
-                description: `Filter ${sourcePlural} by aggregating results on related ${connPlural}`,
-              },
-            };
+      const out: GraphQLInputFieldConfigMap = {};
       for (const q of r.config.byValue ? QUANTIFIERS : []) {
         out[q] = {
           type: where,
           description: `Return ${sourcePlural} where ${QUANTIFIER_WORD[q]} of the related ${connPlural} match this filter`,
+        };
+      }
+      if (!isUnionRelationship(this.model, r) && r.config.byAggregate) {
+        out.aggregate = {
+          type: this.relConnectionAggregateInput(r),
+          description: `Filter ${sourcePlural} by aggregating results on related ${connPlural}`,
         };
       }
       return out;
@@ -1595,6 +1627,9 @@ class TypeRegistry {
 
   private aggregateInputEdgeNode(r: Relationship): GraphQLInputFieldConfigMap {
     const out: GraphQLInputFieldConfigMap = {};
+    if (this.model.node(r.target).attributes.some(isAggregationFilterable)) {
+      out.node = { type: this.relNodeAggregationWhere(r) };
+    }
     const p = this.props(r);
     if (this.fromInterface(r)) {
       const edge = this.keyedEdge(r, "AggregationWhereInput", (x) =>
@@ -1603,28 +1638,27 @@ class TypeRegistry {
       if (edge) out.edge = { type: edge };
     } else if (p && p.attributes.some(isAggregationFilterable))
       out.edge = { type: this.propertiesAggregationWhere(p) };
-    if (this.model.node(r.target).attributes.some(isAggregationFilterable)) {
-      out.node = { type: this.relNodeAggregationWhere(r) };
-    }
     return out;
   }
 
   relAggregateInput(r: Relationship): GraphQLInputObjectType {
     return this.input(`${prefix(r)}AggregateInput`, () => {
       const self = this.relAggregateInput(r);
-      const out: GraphQLInputFieldConfigMap = {
-        AND: { type: list(nn(self)) },
-        NOT: { type: self },
-        OR: { type: list(nn(self)) },
-        count: { type: this.intFilters() },
-      };
-      for (const op of ["eq", "gt", "gte", "lt", "lte"]) {
+      const out: GraphQLInputFieldConfigMap = {};
+      for (const op of ["eq", "lt", "lte", "gt", "gte"]) {
         out[`count_${op.toUpperCase()}`] = {
           type: GraphQLInt,
           deprecationReason: `Please use the relevant generic filter '{ count: { ${op}: ... } } }' instead.`,
         };
       }
-      return { ...out, ...this.aggregateInputEdgeNode(r) };
+      return {
+        ...out,
+        count: { type: this.intFilters() },
+        AND: { type: list(nn(self)) },
+        OR: { type: list(nn(self)) },
+        NOT: { type: self },
+        ...this.aggregateInputEdgeNode(r),
+      };
     });
   }
 
@@ -1632,10 +1666,10 @@ class TypeRegistry {
     return this.input(`${prefix(r)}ConnectionAggregateInput`, () => {
       const self = this.relConnectionAggregateInput(r);
       return {
-        AND: { type: list(nn(self)) },
-        NOT: { type: self },
-        OR: { type: list(nn(self)) },
         count: { type: this.connectionAggregationCountFilter() },
+        AND: { type: list(nn(self)) },
+        OR: { type: list(nn(self)) },
+        NOT: { type: self },
         ...this.aggregateInputEdgeNode(r),
       };
     });
@@ -1659,12 +1693,12 @@ class TypeRegistry {
     return this.input(`${prefix(r)}ConnectFieldInput`, () => {
       const target = this.model.node(r.target);
       const out: GraphQLInputFieldConfigMap = {};
-      const connect = this.nodeConnect(target);
-      // v7: `connect: LearningActivityConnectInput` (not a list) for an interface.
-      if (connect) out.connect = { type: isInterface(target) ? connect : list(nn(connect)) };
       const edge = this.edgeCreateRef(r);
       if (edge) out.edge = { type: edge };
       out.where = { type: this.nodeConnectWhere(target) };
+      const connect = this.nodeConnect(target);
+      // v7: `connect: LearningActivityConnectInput` (not a list) for an interface.
+      if (connect) out.connect = { type: isInterface(target) ? connect : list(nn(connect)) };
       return out;
     });
   }
@@ -1684,10 +1718,9 @@ class TypeRegistry {
     const named = this.model.interfaces.has(r.target) ? r : this.named(r);
     if (named !== r) return this.relDeleteFieldInput(named);
     return this.input(`${prefix(r)}DeleteFieldInput`, () => {
-      const out: GraphQLInputFieldConfigMap = {};
+      const out: GraphQLInputFieldConfigMap = { where: { type: this.relConnectionWhere(r) } };
       const del = this.nodeDelete(this.model.node(r.target));
       if (del) out.delete = { type: del };
-      out.where = { type: this.relConnectionWhere(r) };
       return out;
     });
   }
@@ -1697,21 +1730,21 @@ class TypeRegistry {
     const named = this.model.interfaces.has(r.target) ? r : this.named(r);
     if (named !== r) return this.relDisconnectFieldInput(named);
     return this.input(`${prefix(r)}DisconnectFieldInput`, () => {
-      const out: GraphQLInputFieldConfigMap = {};
+      const out: GraphQLInputFieldConfigMap = { where: { type: this.relConnectionWhere(r) } };
       const dis = this.nodeDisconnect(this.model.node(r.target));
       if (dis) out.disconnect = { type: dis };
-      out.where = { type: this.relConnectionWhere(r) };
       return out;
     });
   }
 
   relUpdateConnectionInput(r: Relationship): GraphQLInputObjectType {
     return this.input(`${prefix(r)}UpdateConnectionInput`, () => {
-      const out: GraphQLInputFieldConfigMap = {};
+      const out: GraphQLInputFieldConfigMap = {
+        node: { type: this.nodeUpdate(this.model.node(r.target)) },
+        where: { type: this.relConnectionWhere(r) },
+      };
       const edge = this.edgeUpdate(r);
       if (edge) out.edge = { type: edge };
-      out.node = { type: this.nodeUpdate(this.model.node(r.target)) };
-      out.where = { type: this.relConnectionWhere(r) };
       return out;
     });
   }
@@ -1719,10 +1752,10 @@ class TypeRegistry {
   relUpdateFieldInput(r: Relationship): GraphQLInputObjectType {
     return this.input(`${prefix(r)}UpdateFieldInput`, () => ({
       connect: { type: list(nn(this.relConnectFieldInput(r))) },
-      create: { type: list(nn(this.relCreateFieldInput(r))) },
-      delete: { type: list(nn(this.relDeleteFieldInput(r))) },
       disconnect: { type: list(nn(this.relDisconnectFieldInput(r))) },
+      create: { type: list(nn(this.relCreateFieldInput(r))) },
       update: { type: this.relUpdateConnectionInput(r) },
+      delete: { type: list(nn(this.relDeleteFieldInput(r))) },
     }));
   }
 }
@@ -1733,6 +1766,19 @@ function deprecationOf(def: FieldDefinitionNode | InputValueDefinitionNode): str
 
 function sortArg(t: GraphQLInputObjectType | undefined): GraphQLFieldConfigArgumentMap {
   return t ? { sort: { type: list(nn(t)) } } : {};
+}
+
+/**
+ * `items` (fields of `n`) in the order of the type definition: v7 generates fields in that order,
+ * attributes, `@cypher` fields and fields served by resolvers interleaved.
+ */
+function inDefinitionOrder<T extends { readonly name: string }>(
+  n: NodeType,
+  items: readonly T[],
+): T[] {
+  const pos = new Map(n.fieldOrder.map((f, i) => [f, i]));
+  const at = (x: T) => pos.get(x.name) ?? n.fieldOrder.length;
+  return [...items].sort((a, b) => at(a) - at(b));
 }
 
 function scalarRef(name: string): TypeRef {
@@ -1822,70 +1868,55 @@ function aggregateSelectionFields(
 /** Builds the v7 schema (without resolvers) for a model. */
 export function buildV7Schema(model: V7Model): GraphQLSchema {
   const reg = new TypeRegistry(model);
+  // v7 order: fields served by resolvers, then per entity (unions, interfaces, `@node` types, each
+  // in definition order) its queries, then the `@cypher` fields.
   const query = new GraphQLObjectType({
     name: "Query",
     fields: () => {
       const fields: GraphQLFieldConfigMap<unknown, unknown> = {};
-      for (const n of model.nodes) {
-        const listArgs: GraphQLFieldConfigArgumentMap = {
-          limit: { type: GraphQLInt },
-          offset: { type: GraphQLInt },
-          ...sortArg(reg.nodeSort(n)),
-          where: { type: reg.nodeWhere(n) },
-        };
-        // `@query(read, connection, aggregate)`.
-        if (n.query.read) fields[n.plural] = { type: nn(list(nn(reg.node(n)))), args: listArgs };
-        if (n.query.connection || n.query.aggregate)
-          fields[`${n.plural}Connection`] = {
-            type: nn(reg.rootConnection(n)),
-            args: {
-              after: { type: GraphQLString },
-              first: { type: GraphQLInt },
-              ...sortArg(reg.nodeSort(n)),
-              where: { type: reg.nodeWhere(n) },
-            },
-          };
-        for (const ft of n.fulltext) fields[ft.queryName] = reg.fulltextField(n);
-      }
-      for (const i of model.interfaces.values()) {
-        const iface = reg.interfaceType(i);
-        if (i.query.read) {
-          fields[i.plural] = {
-            type: nn(list(nn(iface))),
-            args: {
-              limit: { type: GraphQLInt },
-              offset: { type: GraphQLInt },
-              ...sortArg(reg.nodeSort(i)),
-              where: { type: reg.nodeWhere(i) },
-            },
-          };
-        }
-        if (i.query.connection || i.query.aggregate) {
-          fields[`${i.plural}Connection`] = {
-            type: nn(reg.rootConnection(i)),
-            args: {
-              after: { type: GraphQLString },
-              first: { type: GraphQLInt },
-              ...sortArg(reg.nodeSort(i)),
-              where: { type: reg.nodeWhere(i) },
-            },
-          };
-        }
-      }
+      for (const f of model.query.resolved) fields[f.name] = reg.fieldFromAST(f.definition);
       // v7: `contents(where, limit, offset): [Content!]!` (no sort, no connection).
       for (const u of model.unions.values()) {
         if (!u.read) continue;
         fields[u.plural] = {
           type: nn(list(nn(reg.union(u)))),
           args: {
+            where: { type: reg.unionWhere(u) },
             limit: { type: GraphQLInt },
             offset: { type: GraphQLInt },
-            where: { type: reg.unionWhere(u) },
           },
         };
       }
+      const entityQueries = (n: NodeType, type: GraphQLOutputType) => {
+        if (n.query.connection || n.query.aggregate)
+          fields[`${n.plural}Connection`] = {
+            type: nn(reg.rootConnection(n)),
+            args: {
+              first: { type: GraphQLInt },
+              after: { type: GraphQLString },
+              where: { type: reg.nodeWhere(n) },
+              ...sortArg(reg.nodeSort(n)),
+            },
+          };
+        // `@query(read, connection, aggregate)`.
+        if (n.query.read) {
+          fields[n.plural] = {
+            type: nn(list(nn(type))),
+            args: {
+              where: { type: reg.nodeWhere(n) },
+              limit: { type: GraphQLInt },
+              offset: { type: GraphQLInt },
+              ...sortArg(reg.nodeSort(n)),
+            },
+          };
+        }
+      };
+      for (const i of model.interfaces.values()) entityQueries(i, reg.interfaceType(i));
+      for (const n of model.nodes) {
+        for (const ft of n.fulltext) fields[ft.queryName] = reg.fulltextField(n);
+        entityQueries(n, reg.node(n));
+      }
       for (const f of model.query.fields) fields[f.name] = rootField(reg, f);
-      for (const f of model.query.resolved) fields[f.name] = reg.fieldFromAST(f.definition);
       return fields;
     },
   });
@@ -1893,6 +1924,7 @@ export function buildV7Schema(model: V7Model): GraphQLSchema {
     name: "Mutation",
     fields: () => {
       const fields: GraphQLFieldConfigMap<unknown, unknown> = {};
+      for (const f of model.mutation.resolved) fields[f.name] = reg.fieldFromAST(f.definition);
       for (const n of model.nodes) {
         // `@mutation(operations)`: only the listed root mutations exist.
         if (n.mutation.create) {
@@ -1906,8 +1938,8 @@ export function buildV7Schema(model: V7Model): GraphQLSchema {
           fields[`delete${n.pascalPlural}`] = {
             type: nn(reg.deleteInfo()),
             args: {
-              ...(del ? { delete: { type: del } } : {}),
               where: { type: reg.nodeWhere(n) },
+              ...(del ? { delete: { type: del } } : {}),
             },
           };
         }
@@ -1915,14 +1947,13 @@ export function buildV7Schema(model: V7Model): GraphQLSchema {
           fields[`update${n.pascalPlural}`] = {
             type: nn(reg.mutationResponse(n, "Update")),
             args: {
-              update: { type: reg.nodeUpdate(n) },
               where: { type: reg.nodeWhere(n) },
+              update: { type: reg.nodeUpdate(n) },
             },
           };
         }
       }
       for (const f of model.mutation.fields) fields[f.name] = rootField(reg, f);
-      for (const f of model.mutation.resolved) fields[f.name] = reg.fieldFromAST(f.definition);
       return fields;
     },
   });
@@ -1949,10 +1980,39 @@ export function buildV7Schema(model: V7Model): GraphQLSchema {
   const types = [...model.interfaces.values()].flatMap((i) =>
     i.implementations.map((m) => reg.node(model.node(m))),
   );
-  return new GraphQLSchema({
-    query,
-    mutation: hasMutation ? mutation : undefined,
-    subscription,
-    types,
-  });
+  return inV7TypeOrder(
+    new GraphQLSchema({
+      query,
+      mutation: hasMutation ? mutation : undefined,
+      subscription,
+      types,
+    }),
+  );
+}
+
+/**
+ * v7 prints its schema with graphql-compose's `GROUP_BY_TYPE` order: `Query`, `Mutation`,
+ * `Subscription`, then scalars, enums, unions, interfaces, object types and input types, each
+ * group sorted by name (`localeCompare`). `printSchema` follows the type map, so the schema is
+ * rebuilt with its types in that order.
+ */
+function inV7TypeOrder(schema: GraphQLSchema): GraphQLSchema {
+  const roots = ["Query", "Mutation", "Subscription"];
+  const group = (t: GraphQLNamedType): number => {
+    if (isScalarType(t)) return 2;
+    if (isEnumType(t)) return 3;
+    if (isUnionType(t)) return 4;
+    if (isInterfaceType(t)) return 5;
+    if (isObjectType(t)) return roots.includes(t.name) ? 1 : 6;
+    return 7;
+  };
+  const types = Object.values(schema.getTypeMap())
+    .filter((t) => !t.name.startsWith("__"))
+    .sort(
+      (a, b) =>
+        group(a) - group(b) ||
+        (group(a) === 1 ? roots.indexOf(a.name) - roots.indexOf(b.name) : 0) ||
+        a.name.localeCompare(b.name),
+    );
+  return new GraphQLSchema({ ...schema.toConfig(), types });
 }

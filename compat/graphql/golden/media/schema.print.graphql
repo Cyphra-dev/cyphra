@@ -1,0 +1,1409 @@
+type Query {
+  contents(where: ContentWhere, limit: Int, offset: Int): [Content!]!
+  usersConnection(first: Int, after: String, where: UserWhere, sort: [UserSort!]): UsersConnection!
+  users(where: UserWhere, limit: Int, offset: Int, sort: [UserSort!]): [User!]!
+  moviesConnection(first: Int, after: String, where: MovieWhere, sort: [MovieSort!]): MoviesConnection!
+  movies(where: MovieWhere, limit: Int, offset: Int, sort: [MovieSort!]): [Movie!]!
+  booksConnection(first: Int, after: String, where: BookWhere, sort: [BookSort!]): BooksConnection!
+  books(where: BookWhere, limit: Int, offset: Int, sort: [BookSort!]): [Book!]!
+  genresConnection(first: Int, after: String, where: GenreWhere, sort: [GenreSort!]): GenresConnection!
+  genres(where: GenreWhere, limit: Int, offset: Int, sort: [GenreSort!]): [Genre!]!
+}
+
+type Mutation {
+  createUsers(input: [UserCreateInput!]!): CreateUsersMutationResponse!
+  deleteUsers(where: UserWhere, delete: UserDeleteInput): DeleteInfo!
+  updateUsers(where: UserWhere, update: UserUpdateInput): UpdateUsersMutationResponse!
+  createMovies(input: [MovieCreateInput!]!): CreateMoviesMutationResponse!
+  deleteMovies(where: MovieWhere, delete: MovieDeleteInput): DeleteInfo!
+  updateMovies(where: MovieWhere, update: MovieUpdateInput): UpdateMoviesMutationResponse!
+  createBooks(input: [BookCreateInput!]!): CreateBooksMutationResponse!
+  deleteBooks(where: BookWhere): DeleteInfo!
+  updateBooks(where: BookWhere, update: BookUpdateInput): UpdateBooksMutationResponse!
+  createGenres(input: [GenreCreateInput!]!): CreateGenresMutationResponse!
+  deleteGenres(where: GenreWhere): DeleteInfo!
+  updateGenres(where: GenreWhere, update: GenreUpdateInput): UpdateGenresMutationResponse!
+}
+
+"""An enum for sorting in either ascending or descending order."""
+enum SortDirection {
+  """Sort by field values in ascending order."""
+  ASC
+
+  """Sort by field values in descending order."""
+  DESC
+}
+
+union Content = Movie | Book
+
+type Book {
+  isbn: ID!
+  title: String!
+  pages: Int
+  restricted: Boolean!
+}
+
+type BookAggregate {
+  count: Count!
+  node: BookAggregateNode!
+}
+
+type BookAggregateNode {
+  title: StringAggregateSelection!
+  pages: IntAggregateSelection!
+}
+
+type BookEdge {
+  cursor: String!
+  node: Book!
+}
+
+type BooksConnection {
+  edges: [BookEdge!]!
+  totalCount: Int!
+  pageInfo: PageInfo!
+  aggregate: BookAggregate!
+}
+
+type Count {
+  nodes: Int!
+}
+
+type CountConnection {
+  nodes: Int!
+  edges: Int!
+}
+
+type CreateBooksMutationResponse {
+  info: CreateInfo!
+  books: [Book!]!
+}
+
+type CreateGenresMutationResponse {
+  info: CreateInfo!
+  genres: [Genre!]!
+}
+
+"""
+Information about the number of nodes and relationships created during a create mutation
+"""
+type CreateInfo {
+  nodesCreated: Int!
+  relationshipsCreated: Int!
+}
+
+type CreateMoviesMutationResponse {
+  info: CreateInfo!
+  movies: [Movie!]!
+}
+
+type CreateUsersMutationResponse {
+  info: CreateInfo!
+  users: [User!]!
+}
+
+"""
+Information about the number of nodes and relationships deleted during a delete mutation
+"""
+type DeleteInfo {
+  nodesDeleted: Int!
+  relationshipsDeleted: Int!
+}
+
+"""
+The edge properties for the following fields:
+* User.favorites
+* Movie.fans
+"""
+type Favorite {
+  rating: Int!
+  note: String
+}
+
+type Genre {
+  name: String!
+}
+
+type GenreAggregate {
+  count: Count!
+  node: GenreAggregateNode!
+}
+
+type GenreAggregateNode {
+  name: StringAggregateSelection!
+}
+
+type GenreEdge {
+  cursor: String!
+  node: Genre!
+}
+
+type GenresConnection {
+  edges: [GenreEdge!]!
+  totalCount: Int!
+  pageInfo: PageInfo!
+  aggregate: GenreAggregate!
+}
+
+type IntAggregateSelection {
+  max: Int
+  min: Int
+  average: Float
+  sum: Int
+}
+
+type Movie {
+  title: String!
+  year: Int!
+  genres(where: GenreWhere, limit: Int, offset: Int, sort: [GenreSort!]): [Genre!]!
+  genresConnection(where: MovieGenresConnectionWhere, first: Int, after: String, sort: [MovieGenresConnectionSort!]): MovieGenresConnection!
+  fans(where: UserWhere, limit: Int, offset: Int, sort: [UserSort!]): [User!]!
+  fansConnection(where: MovieFansConnectionWhere, first: Int, after: String, sort: [MovieFansConnectionSort!]): MovieFansConnection!
+}
+
+type MovieAggregate {
+  count: Count!
+  node: MovieAggregateNode!
+}
+
+type MovieAggregateNode {
+  title: StringAggregateSelection!
+  year: IntAggregateSelection!
+}
+
+type MovieEdge {
+  cursor: String!
+  node: Movie!
+}
+
+type MovieFansConnection {
+  edges: [MovieFansRelationship!]!
+  totalCount: Int!
+  pageInfo: PageInfo!
+  aggregate: MovieUserFansAggregateSelection!
+}
+
+type MovieFansRelationship {
+  cursor: String!
+  node: User!
+  properties: Favorite!
+}
+
+type MovieGenreGenresAggregateSelection {
+  count: CountConnection!
+  node: MovieGenreGenresNodeAggregateSelection
+}
+
+type MovieGenreGenresNodeAggregateSelection {
+  name: StringAggregateSelection!
+}
+
+type MovieGenresConnection {
+  edges: [MovieGenresRelationship!]!
+  totalCount: Int!
+  pageInfo: PageInfo!
+  aggregate: MovieGenreGenresAggregateSelection!
+}
+
+type MovieGenresRelationship {
+  cursor: String!
+  node: Genre!
+}
+
+type MoviesConnection {
+  edges: [MovieEdge!]!
+  totalCount: Int!
+  pageInfo: PageInfo!
+  aggregate: MovieAggregate!
+}
+
+type MovieUserFansAggregateSelection {
+  count: CountConnection!
+  node: MovieUserFansNodeAggregateSelection
+  edge: MovieUserFansEdgeAggregateSelection
+}
+
+type MovieUserFansEdgeAggregateSelection {
+  rating: IntAggregateSelection!
+  note: StringAggregateSelection!
+}
+
+type MovieUserFansNodeAggregateSelection {
+  name: StringAggregateSelection!
+}
+
+"""Pagination information (Relay)"""
+type PageInfo {
+  hasNextPage: Boolean!
+  hasPreviousPage: Boolean!
+  startCursor: String
+  endCursor: String
+}
+
+type StringAggregateSelection {
+  shortest: String
+  longest: String
+}
+
+type UpdateBooksMutationResponse {
+  info: UpdateInfo!
+  books: [Book!]!
+}
+
+type UpdateGenresMutationResponse {
+  info: UpdateInfo!
+  genres: [Genre!]!
+}
+
+"""
+Information about the number of nodes and relationships created and deleted during an update mutation
+"""
+type UpdateInfo {
+  nodesCreated: Int!
+  nodesDeleted: Int!
+  relationshipsCreated: Int!
+  relationshipsDeleted: Int!
+}
+
+type UpdateMoviesMutationResponse {
+  info: UpdateInfo!
+  movies: [Movie!]!
+}
+
+type UpdateUsersMutationResponse {
+  info: UpdateInfo!
+  users: [User!]!
+}
+
+type User {
+  name: String!
+  favorites(where: ContentWhere, limit: Int, offset: Int): [Content!]!
+  favoritesConnection(where: UserFavoritesConnectionWhere, first: Int, after: String, sort: [UserFavoritesConnectionSort!]): UserFavoritesConnection!
+  watchlist(where: ContentWhere, limit: Int, offset: Int): [Content!]!
+  watchlistConnection(where: UserWatchlistConnectionWhere, first: Int, after: String): UserWatchlistConnection!
+}
+
+type UserAggregate {
+  count: Count!
+  node: UserAggregateNode!
+}
+
+type UserAggregateNode {
+  name: StringAggregateSelection!
+}
+
+type UserEdge {
+  cursor: String!
+  node: User!
+}
+
+type UserFavoritesConnection {
+  edges: [UserFavoritesRelationship!]!
+  totalCount: Int!
+  pageInfo: PageInfo!
+}
+
+type UserFavoritesRelationship {
+  cursor: String!
+  node: Content!
+  properties: Favorite!
+}
+
+type UsersConnection {
+  edges: [UserEdge!]!
+  totalCount: Int!
+  pageInfo: PageInfo!
+  aggregate: UserAggregate!
+}
+
+type UserWatchlistConnection {
+  edges: [UserWatchlistRelationship!]!
+  totalCount: Int!
+  pageInfo: PageInfo!
+}
+
+type UserWatchlistRelationship {
+  cursor: String!
+  node: Content!
+}
+
+input BookConnectWhere {
+  node: BookWhere!
+}
+
+input BookCreateInput {
+  isbn: ID!
+  title: String!
+  pages: Int
+  restricted: Boolean!
+}
+
+"""
+Fields to sort Books by. The order in which sorts are applied is not guaranteed when specifying many fields in one BookSort object.
+"""
+input BookSort {
+  isbn: SortDirection
+  title: SortDirection
+  pages: SortDirection
+  restricted: SortDirection
+}
+
+input BookUpdateInput {
+  isbn: IDScalarMutations
+  isbn_SET: ID @deprecated(reason: "Please use the generic mutation 'isbn: { set: ... } }' instead.")
+  title: StringScalarMutations
+  title_SET: String @deprecated(reason: "Please use the generic mutation 'title: { set: ... } }' instead.")
+  pages: IntScalarMutations
+  pages_SET: Int @deprecated(reason: "Please use the generic mutation 'pages: { set: ... } }' instead.")
+  pages_INCREMENT: Int @deprecated(reason: "Please use the relevant generic mutation 'pages: { increment: ... } }' instead.")
+  pages_DECREMENT: Int @deprecated(reason: "Please use the relevant generic mutation 'pages: { decrement: ... } }' instead.")
+  restricted: BooleanScalarMutations
+  restricted_SET: Boolean @deprecated(reason: "Please use the generic mutation 'restricted: { set: ... } }' instead.")
+}
+
+input BookWhere {
+  isbn: IDScalarFilters
+  isbn_EQ: ID @deprecated(reason: "Please use the relevant generic filter isbn: { eq: ... }")
+  isbn_IN: [ID!] @deprecated(reason: "Please use the relevant generic filter isbn: { in: ... }")
+  isbn_CONTAINS: ID @deprecated(reason: "Please use the relevant generic filter isbn: { contains: ... }")
+  isbn_STARTS_WITH: ID @deprecated(reason: "Please use the relevant generic filter isbn: { startsWith: ... }")
+  isbn_ENDS_WITH: ID @deprecated(reason: "Please use the relevant generic filter isbn: { endsWith: ... }")
+  title: StringScalarFilters
+  title_EQ: String @deprecated(reason: "Please use the relevant generic filter title: { eq: ... }")
+  title_IN: [String!] @deprecated(reason: "Please use the relevant generic filter title: { in: ... }")
+  title_CONTAINS: String @deprecated(reason: "Please use the relevant generic filter title: { contains: ... }")
+  title_STARTS_WITH: String @deprecated(reason: "Please use the relevant generic filter title: { startsWith: ... }")
+  title_ENDS_WITH: String @deprecated(reason: "Please use the relevant generic filter title: { endsWith: ... }")
+  pages: IntScalarFilters
+  pages_EQ: Int @deprecated(reason: "Please use the relevant generic filter pages: { eq: ... }")
+  pages_IN: [Int] @deprecated(reason: "Please use the relevant generic filter pages: { in: ... }")
+  pages_LT: Int @deprecated(reason: "Please use the relevant generic filter pages: { lt: ... }")
+  pages_LTE: Int @deprecated(reason: "Please use the relevant generic filter pages: { lte: ... }")
+  pages_GT: Int @deprecated(reason: "Please use the relevant generic filter pages: { gt: ... }")
+  pages_GTE: Int @deprecated(reason: "Please use the relevant generic filter pages: { gte: ... }")
+  restricted: BooleanScalarFilters
+  restricted_EQ: Boolean @deprecated(reason: "Please use the relevant generic filter restricted: { eq: ... }")
+  OR: [BookWhere!]
+  AND: [BookWhere!]
+  NOT: BookWhere
+}
+
+"""Boolean filters"""
+input BooleanScalarFilters {
+  eq: Boolean
+}
+
+"""Boolean mutations"""
+input BooleanScalarMutations {
+  set: Boolean
+}
+
+input ConnectionAggregationCountFilterInput {
+  nodes: IntScalarFilters
+  edges: IntScalarFilters
+}
+
+input ContentRelationshipFilters {
+  """Filter type where all of the related Contents match this filter"""
+  all: ContentWhere
+
+  """Filter type where none of the related Contents match this filter"""
+  none: ContentWhere
+
+  """Filter type where one of the related Contents match this filter"""
+  single: ContentWhere
+
+  """Filter type where some of the related Contents match this filter"""
+  some: ContentWhere
+}
+
+input ContentWhere {
+  Movie: MovieWhere
+  Book: BookWhere
+}
+
+input FavoriteAggregationWhereInput {
+  AND: [FavoriteAggregationWhereInput!]
+  OR: [FavoriteAggregationWhereInput!]
+  NOT: FavoriteAggregationWhereInput
+  rating_MIN_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'rating: { min: { eq: ... } } }' instead.")
+  rating_MAX_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'rating: { max: { eq: ... } } }' instead.")
+  rating_SUM_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'rating: { sum: { eq: ... } } }' instead.")
+  rating_AVERAGE_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'rating: { average: { eq: ... } } }' instead.")
+  rating_MIN_GT: Int @deprecated(reason: "Please use the relevant generic filter 'rating: { min: { gt: ... } } }' instead.")
+  rating_MAX_GT: Int @deprecated(reason: "Please use the relevant generic filter 'rating: { max: { gt: ... } } }' instead.")
+  rating_SUM_GT: Int @deprecated(reason: "Please use the relevant generic filter 'rating: { sum: { gt: ... } } }' instead.")
+  rating_AVERAGE_GT: Float @deprecated(reason: "Please use the relevant generic filter 'rating: { average: { gt: ... } } }' instead.")
+  rating_MIN_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'rating: { min: { gte: ... } } }' instead.")
+  rating_MAX_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'rating: { max: { gte: ... } } }' instead.")
+  rating_SUM_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'rating: { sum: { gte: ... } } }' instead.")
+  rating_AVERAGE_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'rating: { average: { gte: ... } } }' instead.")
+  rating_MIN_LT: Int @deprecated(reason: "Please use the relevant generic filter 'rating: { min: { lt: ... } } }' instead.")
+  rating_MAX_LT: Int @deprecated(reason: "Please use the relevant generic filter 'rating: { max: { lt: ... } } }' instead.")
+  rating_SUM_LT: Int @deprecated(reason: "Please use the relevant generic filter 'rating: { sum: { lt: ... } } }' instead.")
+  rating_AVERAGE_LT: Float @deprecated(reason: "Please use the relevant generic filter 'rating: { average: { lt: ... } } }' instead.")
+  rating_MIN_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'rating: { min: { lte: ... } } }' instead.")
+  rating_MAX_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'rating: { max: { lte: ... } } }' instead.")
+  rating_SUM_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'rating: { sum: { lte: ... } } }' instead.")
+  rating_AVERAGE_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'rating: { average: { lte: ... } } }' instead.")
+  rating: IntScalarAggregationFilters
+  note_AVERAGE_LENGTH_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'note: { averageLength: { eq: ... } } }' instead.")
+  note_LONGEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'note: { longestLength: { eq: ... } } }' instead.")
+  note_SHORTEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'note: { shortestLength: { eq: ... } } }' instead.")
+  note_AVERAGE_LENGTH_GT: Float @deprecated(reason: "Please use the relevant generic filter 'note: { averageLength: { gt: ... } } }' instead.")
+  note_LONGEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'note: { longestLength: { gt: ... } } }' instead.")
+  note_SHORTEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'note: { shortestLength: { gt: ... } } }' instead.")
+  note_AVERAGE_LENGTH_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'note: { averageLength: { gte: ... } } }' instead.")
+  note_LONGEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'note: { longestLength: { gte: ... } } }' instead.")
+  note_SHORTEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'note: { shortestLength: { gte: ... } } }' instead.")
+  note_AVERAGE_LENGTH_LT: Float @deprecated(reason: "Please use the relevant generic filter 'note: { averageLength: { lt: ... } } }' instead.")
+  note_LONGEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'note: { longestLength: { lt: ... } } }' instead.")
+  note_SHORTEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'note: { shortestLength: { lt: ... } } }' instead.")
+  note_AVERAGE_LENGTH_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'note: { averageLength: { lte: ... } } }' instead.")
+  note_LONGEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'note: { longestLength: { lte: ... } } }' instead.")
+  note_SHORTEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'note: { shortestLength: { lte: ... } } }' instead.")
+  note: StringScalarAggregationFilters
+}
+
+input FavoriteCreateInput {
+  rating: Int!
+  note: String
+}
+
+input FavoriteSort {
+  rating: SortDirection
+  note: SortDirection
+}
+
+input FavoriteUpdateInput {
+  rating: IntScalarMutations
+  rating_SET: Int @deprecated(reason: "Please use the generic mutation 'rating: { set: ... } }' instead.")
+  rating_INCREMENT: Int @deprecated(reason: "Please use the relevant generic mutation 'rating: { increment: ... } }' instead.")
+  rating_DECREMENT: Int @deprecated(reason: "Please use the relevant generic mutation 'rating: { decrement: ... } }' instead.")
+  note: StringScalarMutations
+  note_SET: String @deprecated(reason: "Please use the generic mutation 'note: { set: ... } }' instead.")
+}
+
+input FavoriteWhere {
+  rating: IntScalarFilters
+  rating_EQ: Int @deprecated(reason: "Please use the relevant generic filter rating: { eq: ... }")
+  rating_IN: [Int!] @deprecated(reason: "Please use the relevant generic filter rating: { in: ... }")
+  rating_LT: Int @deprecated(reason: "Please use the relevant generic filter rating: { lt: ... }")
+  rating_LTE: Int @deprecated(reason: "Please use the relevant generic filter rating: { lte: ... }")
+  rating_GT: Int @deprecated(reason: "Please use the relevant generic filter rating: { gt: ... }")
+  rating_GTE: Int @deprecated(reason: "Please use the relevant generic filter rating: { gte: ... }")
+  note: StringScalarFilters
+  note_EQ: String @deprecated(reason: "Please use the relevant generic filter note: { eq: ... }")
+  note_IN: [String] @deprecated(reason: "Please use the relevant generic filter note: { in: ... }")
+  note_CONTAINS: String @deprecated(reason: "Please use the relevant generic filter note: { contains: ... }")
+  note_STARTS_WITH: String @deprecated(reason: "Please use the relevant generic filter note: { startsWith: ... }")
+  note_ENDS_WITH: String @deprecated(reason: "Please use the relevant generic filter note: { endsWith: ... }")
+  OR: [FavoriteWhere!]
+  AND: [FavoriteWhere!]
+  NOT: FavoriteWhere
+}
+
+"""Float filters"""
+input FloatScalarFilters {
+  eq: Float
+  gt: Float
+  gte: Float
+  in: [Float!]
+  lt: Float
+  lte: Float
+}
+
+input GenreConnectWhere {
+  node: GenreWhere!
+}
+
+input GenreCreateInput {
+  name: String!
+}
+
+input GenreRelationshipFilters {
+  """Filter type where all of the related Genres match this filter"""
+  all: GenreWhere
+
+  """Filter type where none of the related Genres match this filter"""
+  none: GenreWhere
+
+  """Filter type where one of the related Genres match this filter"""
+  single: GenreWhere
+
+  """Filter type where some of the related Genres match this filter"""
+  some: GenreWhere
+}
+
+"""
+Fields to sort Genres by. The order in which sorts are applied is not guaranteed when specifying many fields in one GenreSort object.
+"""
+input GenreSort {
+  name: SortDirection
+}
+
+input GenreUpdateInput {
+  name: StringScalarMutations
+  name_SET: String @deprecated(reason: "Please use the generic mutation 'name: { set: ... } }' instead.")
+}
+
+input GenreWhere {
+  name: StringScalarFilters
+  name_EQ: String @deprecated(reason: "Please use the relevant generic filter name: { eq: ... }")
+  name_IN: [String!] @deprecated(reason: "Please use the relevant generic filter name: { in: ... }")
+  name_CONTAINS: String @deprecated(reason: "Please use the relevant generic filter name: { contains: ... }")
+  name_STARTS_WITH: String @deprecated(reason: "Please use the relevant generic filter name: { startsWith: ... }")
+  name_ENDS_WITH: String @deprecated(reason: "Please use the relevant generic filter name: { endsWith: ... }")
+  OR: [GenreWhere!]
+  AND: [GenreWhere!]
+  NOT: GenreWhere
+}
+
+"""ID filters"""
+input IDScalarFilters {
+  eq: ID
+  in: [ID!]
+  contains: ID
+  endsWith: ID
+  startsWith: ID
+}
+
+"""ID mutations"""
+input IDScalarMutations {
+  set: ID
+}
+
+"""Filters for an aggregation of an int field"""
+input IntScalarAggregationFilters {
+  average: FloatScalarFilters
+  max: IntScalarFilters
+  min: IntScalarFilters
+  sum: IntScalarFilters
+}
+
+"""Int filters"""
+input IntScalarFilters {
+  eq: Int
+  gt: Int
+  gte: Int
+  in: [Int!]
+  lt: Int
+  lte: Int
+}
+
+"""Int mutations"""
+input IntScalarMutations {
+  set: Int
+  add: Int
+  subtract: Int
+}
+
+input MovieConnectInput {
+  genres: [MovieGenresConnectFieldInput!]
+  fans: [MovieFansConnectFieldInput!]
+}
+
+input MovieConnectWhere {
+  node: MovieWhere!
+}
+
+input MovieCreateInput {
+  title: String!
+  year: Int!
+  genres: MovieGenresFieldInput
+  fans: MovieFansFieldInput
+}
+
+input MovieDeleteInput {
+  genres: [MovieGenresDeleteFieldInput!]
+  fans: [MovieFansDeleteFieldInput!]
+}
+
+input MovieDisconnectInput {
+  genres: [MovieGenresDisconnectFieldInput!]
+  fans: [MovieFansDisconnectFieldInput!]
+}
+
+input MovieFansAggregateInput {
+  count_EQ: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { eq: ... } } }' instead.")
+  count_LT: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { lt: ... } } }' instead.")
+  count_LTE: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { lte: ... } } }' instead.")
+  count_GT: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { gt: ... } } }' instead.")
+  count_GTE: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { gte: ... } } }' instead.")
+  count: IntScalarFilters
+  AND: [MovieFansAggregateInput!]
+  OR: [MovieFansAggregateInput!]
+  NOT: MovieFansAggregateInput
+  node: MovieFansNodeAggregationWhereInput
+  edge: FavoriteAggregationWhereInput
+}
+
+input MovieFansConnectFieldInput {
+  edge: FavoriteCreateInput!
+  where: UserConnectWhere
+  connect: [UserConnectInput!]
+}
+
+input MovieFansConnectionAggregateInput {
+  count: ConnectionAggregationCountFilterInput
+  AND: [MovieFansConnectionAggregateInput!]
+  OR: [MovieFansConnectionAggregateInput!]
+  NOT: MovieFansConnectionAggregateInput
+  node: MovieFansNodeAggregationWhereInput
+  edge: FavoriteAggregationWhereInput
+}
+
+input MovieFansConnectionFilters {
+  """
+  Return Movies where all of the related MovieFansConnections match this filter
+  """
+  all: MovieFansConnectionWhere
+
+  """
+  Return Movies where none of the related MovieFansConnections match this filter
+  """
+  none: MovieFansConnectionWhere
+
+  """
+  Return Movies where one of the related MovieFansConnections match this filter
+  """
+  single: MovieFansConnectionWhere
+
+  """
+  Return Movies where some of the related MovieFansConnections match this filter
+  """
+  some: MovieFansConnectionWhere
+
+  """Filter Movies by aggregating results on related MovieFansConnections"""
+  aggregate: MovieFansConnectionAggregateInput
+}
+
+input MovieFansConnectionSort {
+  node: UserSort
+  edge: FavoriteSort
+}
+
+input MovieFansConnectionWhere {
+  AND: [MovieFansConnectionWhere!]
+  OR: [MovieFansConnectionWhere!]
+  NOT: MovieFansConnectionWhere
+  node: UserWhere
+  edge: FavoriteWhere
+}
+
+input MovieFansCreateFieldInput {
+  edge: FavoriteCreateInput!
+  node: UserCreateInput!
+}
+
+input MovieFansDeleteFieldInput {
+  where: MovieFansConnectionWhere
+  delete: UserDeleteInput
+}
+
+input MovieFansDisconnectFieldInput {
+  where: MovieFansConnectionWhere
+  disconnect: UserDisconnectInput
+}
+
+input MovieFansFieldInput {
+  connect: [MovieFansConnectFieldInput!]
+  create: [MovieFansCreateFieldInput!]
+}
+
+input MovieFansNodeAggregationWhereInput {
+  AND: [MovieFansNodeAggregationWhereInput!]
+  OR: [MovieFansNodeAggregationWhereInput!]
+  NOT: MovieFansNodeAggregationWhereInput
+  name_AVERAGE_LENGTH_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { eq: ... } } }' instead.")
+  name_LONGEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { eq: ... } } }' instead.")
+  name_SHORTEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { eq: ... } } }' instead.")
+  name_AVERAGE_LENGTH_GT: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { gt: ... } } }' instead.")
+  name_LONGEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { gt: ... } } }' instead.")
+  name_SHORTEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { gt: ... } } }' instead.")
+  name_AVERAGE_LENGTH_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { gte: ... } } }' instead.")
+  name_LONGEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { gte: ... } } }' instead.")
+  name_SHORTEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { gte: ... } } }' instead.")
+  name_AVERAGE_LENGTH_LT: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { lt: ... } } }' instead.")
+  name_LONGEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { lt: ... } } }' instead.")
+  name_SHORTEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { lt: ... } } }' instead.")
+  name_AVERAGE_LENGTH_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { lte: ... } } }' instead.")
+  name_LONGEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { lte: ... } } }' instead.")
+  name_SHORTEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { lte: ... } } }' instead.")
+  name: StringScalarAggregationFilters
+}
+
+input MovieFansUpdateConnectionInput {
+  node: UserUpdateInput
+  where: MovieFansConnectionWhere
+  edge: FavoriteUpdateInput
+}
+
+input MovieFansUpdateFieldInput {
+  connect: [MovieFansConnectFieldInput!]
+  disconnect: [MovieFansDisconnectFieldInput!]
+  create: [MovieFansCreateFieldInput!]
+  update: MovieFansUpdateConnectionInput
+  delete: [MovieFansDeleteFieldInput!]
+}
+
+input MovieGenresAggregateInput {
+  count_EQ: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { eq: ... } } }' instead.")
+  count_LT: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { lt: ... } } }' instead.")
+  count_LTE: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { lte: ... } } }' instead.")
+  count_GT: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { gt: ... } } }' instead.")
+  count_GTE: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { gte: ... } } }' instead.")
+  count: IntScalarFilters
+  AND: [MovieGenresAggregateInput!]
+  OR: [MovieGenresAggregateInput!]
+  NOT: MovieGenresAggregateInput
+  node: MovieGenresNodeAggregationWhereInput
+}
+
+input MovieGenresConnectFieldInput {
+  where: GenreConnectWhere
+}
+
+input MovieGenresConnectionAggregateInput {
+  count: ConnectionAggregationCountFilterInput
+  AND: [MovieGenresConnectionAggregateInput!]
+  OR: [MovieGenresConnectionAggregateInput!]
+  NOT: MovieGenresConnectionAggregateInput
+  node: MovieGenresNodeAggregationWhereInput
+}
+
+input MovieGenresConnectionFilters {
+  """
+  Return Movies where all of the related MovieGenresConnections match this filter
+  """
+  all: MovieGenresConnectionWhere
+
+  """
+  Return Movies where none of the related MovieGenresConnections match this filter
+  """
+  none: MovieGenresConnectionWhere
+
+  """
+  Return Movies where one of the related MovieGenresConnections match this filter
+  """
+  single: MovieGenresConnectionWhere
+
+  """
+  Return Movies where some of the related MovieGenresConnections match this filter
+  """
+  some: MovieGenresConnectionWhere
+
+  """Filter Movies by aggregating results on related MovieGenresConnections"""
+  aggregate: MovieGenresConnectionAggregateInput
+}
+
+input MovieGenresConnectionSort {
+  node: GenreSort
+}
+
+input MovieGenresConnectionWhere {
+  AND: [MovieGenresConnectionWhere!]
+  OR: [MovieGenresConnectionWhere!]
+  NOT: MovieGenresConnectionWhere
+  node: GenreWhere
+}
+
+input MovieGenresCreateFieldInput {
+  node: GenreCreateInput!
+}
+
+input MovieGenresDeleteFieldInput {
+  where: MovieGenresConnectionWhere
+}
+
+input MovieGenresDisconnectFieldInput {
+  where: MovieGenresConnectionWhere
+}
+
+input MovieGenresFieldInput {
+  connect: [MovieGenresConnectFieldInput!]
+  create: [MovieGenresCreateFieldInput!]
+}
+
+input MovieGenresNodeAggregationWhereInput {
+  AND: [MovieGenresNodeAggregationWhereInput!]
+  OR: [MovieGenresNodeAggregationWhereInput!]
+  NOT: MovieGenresNodeAggregationWhereInput
+  name_AVERAGE_LENGTH_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { eq: ... } } }' instead.")
+  name_LONGEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { eq: ... } } }' instead.")
+  name_SHORTEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { eq: ... } } }' instead.")
+  name_AVERAGE_LENGTH_GT: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { gt: ... } } }' instead.")
+  name_LONGEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { gt: ... } } }' instead.")
+  name_SHORTEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { gt: ... } } }' instead.")
+  name_AVERAGE_LENGTH_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { gte: ... } } }' instead.")
+  name_LONGEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { gte: ... } } }' instead.")
+  name_SHORTEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { gte: ... } } }' instead.")
+  name_AVERAGE_LENGTH_LT: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { lt: ... } } }' instead.")
+  name_LONGEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { lt: ... } } }' instead.")
+  name_SHORTEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { lt: ... } } }' instead.")
+  name_AVERAGE_LENGTH_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { lte: ... } } }' instead.")
+  name_LONGEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { lte: ... } } }' instead.")
+  name_SHORTEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { lte: ... } } }' instead.")
+  name: StringScalarAggregationFilters
+}
+
+input MovieGenresUpdateConnectionInput {
+  node: GenreUpdateInput
+  where: MovieGenresConnectionWhere
+}
+
+input MovieGenresUpdateFieldInput {
+  connect: [MovieGenresConnectFieldInput!]
+  disconnect: [MovieGenresDisconnectFieldInput!]
+  create: [MovieGenresCreateFieldInput!]
+  update: MovieGenresUpdateConnectionInput
+  delete: [MovieGenresDeleteFieldInput!]
+}
+
+"""
+Fields to sort Movies by. The order in which sorts are applied is not guaranteed when specifying many fields in one MovieSort object.
+"""
+input MovieSort {
+  title: SortDirection
+  year: SortDirection
+}
+
+input MovieUpdateInput {
+  title: StringScalarMutations
+  title_SET: String @deprecated(reason: "Please use the generic mutation 'title: { set: ... } }' instead.")
+  year: IntScalarMutations
+  year_SET: Int @deprecated(reason: "Please use the generic mutation 'year: { set: ... } }' instead.")
+  year_INCREMENT: Int @deprecated(reason: "Please use the relevant generic mutation 'year: { increment: ... } }' instead.")
+  year_DECREMENT: Int @deprecated(reason: "Please use the relevant generic mutation 'year: { decrement: ... } }' instead.")
+  genres: [MovieGenresUpdateFieldInput!]
+  fans: [MovieFansUpdateFieldInput!]
+}
+
+input MovieWhere {
+  title: StringScalarFilters
+  title_EQ: String @deprecated(reason: "Please use the relevant generic filter title: { eq: ... }")
+  title_IN: [String!] @deprecated(reason: "Please use the relevant generic filter title: { in: ... }")
+  title_CONTAINS: String @deprecated(reason: "Please use the relevant generic filter title: { contains: ... }")
+  title_STARTS_WITH: String @deprecated(reason: "Please use the relevant generic filter title: { startsWith: ... }")
+  title_ENDS_WITH: String @deprecated(reason: "Please use the relevant generic filter title: { endsWith: ... }")
+  year: IntScalarFilters
+  year_EQ: Int @deprecated(reason: "Please use the relevant generic filter year: { eq: ... }")
+  year_IN: [Int!] @deprecated(reason: "Please use the relevant generic filter year: { in: ... }")
+  year_LT: Int @deprecated(reason: "Please use the relevant generic filter year: { lt: ... }")
+  year_LTE: Int @deprecated(reason: "Please use the relevant generic filter year: { lte: ... }")
+  year_GT: Int @deprecated(reason: "Please use the relevant generic filter year: { gt: ... }")
+  year_GTE: Int @deprecated(reason: "Please use the relevant generic filter year: { gte: ... }")
+  OR: [MovieWhere!]
+  AND: [MovieWhere!]
+  NOT: MovieWhere
+  genres: GenreRelationshipFilters
+
+  """Return Movies where all of the related Genres match this filter"""
+  genres_ALL: GenreWhere @deprecated(reason: "Please use the relevant generic filter 'genres: { all: ... }' instead.")
+
+  """Return Movies where none of the related Genres match this filter"""
+  genres_NONE: GenreWhere @deprecated(reason: "Please use the relevant generic filter 'genres: { none: ... }' instead.")
+
+  """Return Movies where one of the related Genres match this filter"""
+  genres_SINGLE: GenreWhere @deprecated(reason: "Please use the relevant generic filter 'genres: {  single: ... }' instead.")
+
+  """Return Movies where some of the related Genres match this filter"""
+  genres_SOME: GenreWhere @deprecated(reason: "Please use the relevant generic filter 'genres: {  some: ... }' instead.")
+
+  """
+  Return Movies where all of the related MovieGenresConnections match this filter
+  """
+  genresConnection_ALL: MovieGenresConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'genresConnection: { all: { node: ... } } }' instead.")
+
+  """
+  Return Movies where none of the related MovieGenresConnections match this filter
+  """
+  genresConnection_NONE: MovieGenresConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'genresConnection: { none: { node: ... } } }' instead.")
+
+  """
+  Return Movies where one of the related MovieGenresConnections match this filter
+  """
+  genresConnection_SINGLE: MovieGenresConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'genresConnection: { single: { node: ... } } }' instead.")
+
+  """
+  Return Movies where some of the related MovieGenresConnections match this filter
+  """
+  genresConnection_SOME: MovieGenresConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'genresConnection: { some: { node: ... } } }' instead.")
+  genresConnection: MovieGenresConnectionFilters
+  genresAggregate: MovieGenresAggregateInput @deprecated(reason: "Aggregate filters are moved inside the genresConnection filter, please use { genresConnection: { aggregate: {...} } } instead")
+  fans: UserRelationshipFilters
+
+  """Return Movies where all of the related Users match this filter"""
+  fans_ALL: UserWhere @deprecated(reason: "Please use the relevant generic filter 'fans: { all: ... }' instead.")
+
+  """Return Movies where none of the related Users match this filter"""
+  fans_NONE: UserWhere @deprecated(reason: "Please use the relevant generic filter 'fans: { none: ... }' instead.")
+
+  """Return Movies where one of the related Users match this filter"""
+  fans_SINGLE: UserWhere @deprecated(reason: "Please use the relevant generic filter 'fans: {  single: ... }' instead.")
+
+  """Return Movies where some of the related Users match this filter"""
+  fans_SOME: UserWhere @deprecated(reason: "Please use the relevant generic filter 'fans: {  some: ... }' instead.")
+
+  """
+  Return Movies where all of the related MovieFansConnections match this filter
+  """
+  fansConnection_ALL: MovieFansConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'fansConnection: { all: { node: ... } } }' instead.")
+
+  """
+  Return Movies where none of the related MovieFansConnections match this filter
+  """
+  fansConnection_NONE: MovieFansConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'fansConnection: { none: { node: ... } } }' instead.")
+
+  """
+  Return Movies where one of the related MovieFansConnections match this filter
+  """
+  fansConnection_SINGLE: MovieFansConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'fansConnection: { single: { node: ... } } }' instead.")
+
+  """
+  Return Movies where some of the related MovieFansConnections match this filter
+  """
+  fansConnection_SOME: MovieFansConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'fansConnection: { some: { node: ... } } }' instead.")
+  fansConnection: MovieFansConnectionFilters
+  fansAggregate: MovieFansAggregateInput @deprecated(reason: "Aggregate filters are moved inside the fansConnection filter, please use { fansConnection: { aggregate: {...} } } instead")
+}
+
+"""Filters for an aggregation of a string field"""
+input StringScalarAggregationFilters {
+  averageLength: FloatScalarFilters
+  shortestLength: IntScalarFilters
+  longestLength: IntScalarFilters
+}
+
+"""String filters"""
+input StringScalarFilters {
+  eq: String
+  in: [String!]
+  contains: String
+  endsWith: String
+  startsWith: String
+}
+
+"""String mutations"""
+input StringScalarMutations {
+  set: String
+}
+
+input UserConnectInput {
+  favorites: UserFavoritesConnectInput
+  watchlist: UserWatchlistConnectInput
+}
+
+input UserConnectWhere {
+  node: UserWhere!
+}
+
+input UserCreateInput {
+  name: String!
+  favorites: UserFavoritesCreateInput
+  watchlist: UserWatchlistCreateInput
+}
+
+input UserDeleteInput {
+  favorites: UserFavoritesDeleteInput
+  watchlist: UserWatchlistDeleteInput
+}
+
+input UserDisconnectInput {
+  favorites: UserFavoritesDisconnectInput
+  watchlist: UserWatchlistDisconnectInput
+}
+
+input UserFavoritesBookConnectFieldInput {
+  edge: FavoriteCreateInput!
+  where: BookConnectWhere
+}
+
+input UserFavoritesBookConnectionWhere {
+  AND: [UserFavoritesBookConnectionWhere!]
+  OR: [UserFavoritesBookConnectionWhere!]
+  NOT: UserFavoritesBookConnectionWhere
+  node: BookWhere
+  edge: FavoriteWhere
+}
+
+input UserFavoritesBookCreateFieldInput {
+  edge: FavoriteCreateInput!
+  node: BookCreateInput!
+}
+
+input UserFavoritesBookDeleteFieldInput {
+  where: UserFavoritesBookConnectionWhere
+}
+
+input UserFavoritesBookDisconnectFieldInput {
+  where: UserFavoritesBookConnectionWhere
+}
+
+input UserFavoritesBookFieldInput {
+  connect: [UserFavoritesBookConnectFieldInput!]
+  create: [UserFavoritesBookCreateFieldInput!]
+}
+
+input UserFavoritesBookUpdateConnectionInput {
+  node: BookUpdateInput
+  where: UserFavoritesBookConnectionWhere
+  edge: FavoriteUpdateInput
+}
+
+input UserFavoritesBookUpdateFieldInput {
+  connect: [UserFavoritesBookConnectFieldInput!]
+  disconnect: [UserFavoritesBookDisconnectFieldInput!]
+  create: [UserFavoritesBookCreateFieldInput!]
+  update: UserFavoritesBookUpdateConnectionInput
+  delete: [UserFavoritesBookDeleteFieldInput!]
+}
+
+input UserFavoritesConnectInput {
+  Movie: [UserFavoritesMovieConnectFieldInput!]
+  Book: [UserFavoritesBookConnectFieldInput!]
+}
+
+input UserFavoritesConnectionFilters {
+  """
+  Return Users where all of the related UserFavoritesConnections match this filter
+  """
+  all: UserFavoritesConnectionWhere
+
+  """
+  Return Users where none of the related UserFavoritesConnections match this filter
+  """
+  none: UserFavoritesConnectionWhere
+
+  """
+  Return Users where one of the related UserFavoritesConnections match this filter
+  """
+  single: UserFavoritesConnectionWhere
+
+  """
+  Return Users where some of the related UserFavoritesConnections match this filter
+  """
+  some: UserFavoritesConnectionWhere
+}
+
+input UserFavoritesConnectionSort {
+  edge: FavoriteSort
+}
+
+input UserFavoritesConnectionWhere {
+  Movie: UserFavoritesMovieConnectionWhere
+  Book: UserFavoritesBookConnectionWhere
+}
+
+input UserFavoritesCreateInput {
+  Movie: UserFavoritesMovieFieldInput
+  Book: UserFavoritesBookFieldInput
+}
+
+input UserFavoritesDeleteInput {
+  Movie: [UserFavoritesMovieDeleteFieldInput!]
+  Book: [UserFavoritesBookDeleteFieldInput!]
+}
+
+input UserFavoritesDisconnectInput {
+  Movie: [UserFavoritesMovieDisconnectFieldInput!]
+  Book: [UserFavoritesBookDisconnectFieldInput!]
+}
+
+input UserFavoritesMovieConnectFieldInput {
+  edge: FavoriteCreateInput!
+  where: MovieConnectWhere
+  connect: [MovieConnectInput!]
+}
+
+input UserFavoritesMovieConnectionWhere {
+  AND: [UserFavoritesMovieConnectionWhere!]
+  OR: [UserFavoritesMovieConnectionWhere!]
+  NOT: UserFavoritesMovieConnectionWhere
+  node: MovieWhere
+  edge: FavoriteWhere
+}
+
+input UserFavoritesMovieCreateFieldInput {
+  edge: FavoriteCreateInput!
+  node: MovieCreateInput!
+}
+
+input UserFavoritesMovieDeleteFieldInput {
+  where: UserFavoritesMovieConnectionWhere
+  delete: MovieDeleteInput
+}
+
+input UserFavoritesMovieDisconnectFieldInput {
+  where: UserFavoritesMovieConnectionWhere
+  disconnect: MovieDisconnectInput
+}
+
+input UserFavoritesMovieFieldInput {
+  connect: [UserFavoritesMovieConnectFieldInput!]
+  create: [UserFavoritesMovieCreateFieldInput!]
+}
+
+input UserFavoritesMovieUpdateConnectionInput {
+  node: MovieUpdateInput
+  where: UserFavoritesMovieConnectionWhere
+  edge: FavoriteUpdateInput
+}
+
+input UserFavoritesMovieUpdateFieldInput {
+  connect: [UserFavoritesMovieConnectFieldInput!]
+  disconnect: [UserFavoritesMovieDisconnectFieldInput!]
+  create: [UserFavoritesMovieCreateFieldInput!]
+  update: UserFavoritesMovieUpdateConnectionInput
+  delete: [UserFavoritesMovieDeleteFieldInput!]
+}
+
+input UserFavoritesUpdateInput {
+  Movie: [UserFavoritesMovieUpdateFieldInput!]
+  Book: [UserFavoritesBookUpdateFieldInput!]
+}
+
+input UserRelationshipFilters {
+  """Filter type where all of the related Users match this filter"""
+  all: UserWhere
+
+  """Filter type where none of the related Users match this filter"""
+  none: UserWhere
+
+  """Filter type where one of the related Users match this filter"""
+  single: UserWhere
+
+  """Filter type where some of the related Users match this filter"""
+  some: UserWhere
+}
+
+"""
+Fields to sort Users by. The order in which sorts are applied is not guaranteed when specifying many fields in one UserSort object.
+"""
+input UserSort {
+  name: SortDirection
+}
+
+input UserUpdateInput {
+  name: StringScalarMutations
+  name_SET: String @deprecated(reason: "Please use the generic mutation 'name: { set: ... } }' instead.")
+  favorites: UserFavoritesUpdateInput
+  watchlist: UserWatchlistUpdateInput
+}
+
+input UserWatchlistBookConnectFieldInput {
+  where: BookConnectWhere
+}
+
+input UserWatchlistBookConnectionWhere {
+  AND: [UserWatchlistBookConnectionWhere!]
+  OR: [UserWatchlistBookConnectionWhere!]
+  NOT: UserWatchlistBookConnectionWhere
+  node: BookWhere
+}
+
+input UserWatchlistBookCreateFieldInput {
+  node: BookCreateInput!
+}
+
+input UserWatchlistBookDeleteFieldInput {
+  where: UserWatchlistBookConnectionWhere
+}
+
+input UserWatchlistBookDisconnectFieldInput {
+  where: UserWatchlistBookConnectionWhere
+}
+
+input UserWatchlistBookFieldInput {
+  connect: [UserWatchlistBookConnectFieldInput!]
+  create: [UserWatchlistBookCreateFieldInput!]
+}
+
+input UserWatchlistBookUpdateConnectionInput {
+  node: BookUpdateInput
+  where: UserWatchlistBookConnectionWhere
+}
+
+input UserWatchlistBookUpdateFieldInput {
+  connect: [UserWatchlistBookConnectFieldInput!]
+  disconnect: [UserWatchlistBookDisconnectFieldInput!]
+  create: [UserWatchlistBookCreateFieldInput!]
+  update: UserWatchlistBookUpdateConnectionInput
+  delete: [UserWatchlistBookDeleteFieldInput!]
+}
+
+input UserWatchlistConnectInput {
+  Movie: [UserWatchlistMovieConnectFieldInput!]
+  Book: [UserWatchlistBookConnectFieldInput!]
+}
+
+input UserWatchlistConnectionFilters {
+  """
+  Return Users where all of the related UserWatchlistConnections match this filter
+  """
+  all: UserWatchlistConnectionWhere
+
+  """
+  Return Users where none of the related UserWatchlistConnections match this filter
+  """
+  none: UserWatchlistConnectionWhere
+
+  """
+  Return Users where one of the related UserWatchlistConnections match this filter
+  """
+  single: UserWatchlistConnectionWhere
+
+  """
+  Return Users where some of the related UserWatchlistConnections match this filter
+  """
+  some: UserWatchlistConnectionWhere
+}
+
+input UserWatchlistConnectionWhere {
+  Movie: UserWatchlistMovieConnectionWhere
+  Book: UserWatchlistBookConnectionWhere
+}
+
+input UserWatchlistCreateInput {
+  Movie: UserWatchlistMovieFieldInput
+  Book: UserWatchlistBookFieldInput
+}
+
+input UserWatchlistDeleteInput {
+  Movie: [UserWatchlistMovieDeleteFieldInput!]
+  Book: [UserWatchlistBookDeleteFieldInput!]
+}
+
+input UserWatchlistDisconnectInput {
+  Movie: [UserWatchlistMovieDisconnectFieldInput!]
+  Book: [UserWatchlistBookDisconnectFieldInput!]
+}
+
+input UserWatchlistMovieConnectFieldInput {
+  where: MovieConnectWhere
+  connect: [MovieConnectInput!]
+}
+
+input UserWatchlistMovieConnectionWhere {
+  AND: [UserWatchlistMovieConnectionWhere!]
+  OR: [UserWatchlistMovieConnectionWhere!]
+  NOT: UserWatchlistMovieConnectionWhere
+  node: MovieWhere
+}
+
+input UserWatchlistMovieCreateFieldInput {
+  node: MovieCreateInput!
+}
+
+input UserWatchlistMovieDeleteFieldInput {
+  where: UserWatchlistMovieConnectionWhere
+  delete: MovieDeleteInput
+}
+
+input UserWatchlistMovieDisconnectFieldInput {
+  where: UserWatchlistMovieConnectionWhere
+  disconnect: MovieDisconnectInput
+}
+
+input UserWatchlistMovieFieldInput {
+  connect: [UserWatchlistMovieConnectFieldInput!]
+  create: [UserWatchlistMovieCreateFieldInput!]
+}
+
+input UserWatchlistMovieUpdateConnectionInput {
+  node: MovieUpdateInput
+  where: UserWatchlistMovieConnectionWhere
+}
+
+input UserWatchlistMovieUpdateFieldInput {
+  connect: [UserWatchlistMovieConnectFieldInput!]
+  disconnect: [UserWatchlistMovieDisconnectFieldInput!]
+  create: [UserWatchlistMovieCreateFieldInput!]
+  update: UserWatchlistMovieUpdateConnectionInput
+  delete: [UserWatchlistMovieDeleteFieldInput!]
+}
+
+input UserWatchlistUpdateInput {
+  Movie: [UserWatchlistMovieUpdateFieldInput!]
+  Book: [UserWatchlistBookUpdateFieldInput!]
+}
+
+input UserWhere {
+  name: StringScalarFilters
+  name_EQ: String @deprecated(reason: "Please use the relevant generic filter name: { eq: ... }")
+  name_IN: [String!] @deprecated(reason: "Please use the relevant generic filter name: { in: ... }")
+  name_CONTAINS: String @deprecated(reason: "Please use the relevant generic filter name: { contains: ... }")
+  name_STARTS_WITH: String @deprecated(reason: "Please use the relevant generic filter name: { startsWith: ... }")
+  name_ENDS_WITH: String @deprecated(reason: "Please use the relevant generic filter name: { endsWith: ... }")
+  OR: [UserWhere!]
+  AND: [UserWhere!]
+  NOT: UserWhere
+  favorites: ContentRelationshipFilters
+
+  """Return Users where all of the related Contents match this filter"""
+  favorites_ALL: ContentWhere @deprecated(reason: "Please use the relevant generic filter 'favorites: { all: ... }' instead.")
+
+  """Return Users where none of the related Contents match this filter"""
+  favorites_NONE: ContentWhere @deprecated(reason: "Please use the relevant generic filter 'favorites: { none: ... }' instead.")
+
+  """Return Users where one of the related Contents match this filter"""
+  favorites_SINGLE: ContentWhere @deprecated(reason: "Please use the relevant generic filter 'favorites: {  single: ... }' instead.")
+
+  """Return Users where some of the related Contents match this filter"""
+  favorites_SOME: ContentWhere @deprecated(reason: "Please use the relevant generic filter 'favorites: {  some: ... }' instead.")
+
+  """
+  Return Users where all of the related UserFavoritesConnections match this filter
+  """
+  favoritesConnection_ALL: UserFavoritesConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'favoritesConnection: { all: { node: ... } } }' instead.")
+
+  """
+  Return Users where none of the related UserFavoritesConnections match this filter
+  """
+  favoritesConnection_NONE: UserFavoritesConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'favoritesConnection: { none: { node: ... } } }' instead.")
+
+  """
+  Return Users where one of the related UserFavoritesConnections match this filter
+  """
+  favoritesConnection_SINGLE: UserFavoritesConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'favoritesConnection: { single: { node: ... } } }' instead.")
+
+  """
+  Return Users where some of the related UserFavoritesConnections match this filter
+  """
+  favoritesConnection_SOME: UserFavoritesConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'favoritesConnection: { some: { node: ... } } }' instead.")
+  favoritesConnection: UserFavoritesConnectionFilters
+  watchlist: ContentRelationshipFilters
+
+  """Return Users where all of the related Contents match this filter"""
+  watchlist_ALL: ContentWhere @deprecated(reason: "Please use the relevant generic filter 'watchlist: { all: ... }' instead.")
+
+  """Return Users where none of the related Contents match this filter"""
+  watchlist_NONE: ContentWhere @deprecated(reason: "Please use the relevant generic filter 'watchlist: { none: ... }' instead.")
+
+  """Return Users where one of the related Contents match this filter"""
+  watchlist_SINGLE: ContentWhere @deprecated(reason: "Please use the relevant generic filter 'watchlist: {  single: ... }' instead.")
+
+  """Return Users where some of the related Contents match this filter"""
+  watchlist_SOME: ContentWhere @deprecated(reason: "Please use the relevant generic filter 'watchlist: {  some: ... }' instead.")
+
+  """
+  Return Users where all of the related UserWatchlistConnections match this filter
+  """
+  watchlistConnection_ALL: UserWatchlistConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'watchlistConnection: { all: { node: ... } } }' instead.")
+
+  """
+  Return Users where none of the related UserWatchlistConnections match this filter
+  """
+  watchlistConnection_NONE: UserWatchlistConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'watchlistConnection: { none: { node: ... } } }' instead.")
+
+  """
+  Return Users where one of the related UserWatchlistConnections match this filter
+  """
+  watchlistConnection_SINGLE: UserWatchlistConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'watchlistConnection: { single: { node: ... } } }' instead.")
+
+  """
+  Return Users where some of the related UserWatchlistConnections match this filter
+  """
+  watchlistConnection_SOME: UserWatchlistConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'watchlistConnection: { some: { node: ... } } }' instead.")
+  watchlistConnection: UserWatchlistConnectionFilters
+}

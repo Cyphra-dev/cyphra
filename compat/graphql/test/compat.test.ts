@@ -8,7 +8,13 @@ import { existsSync, readFileSync } from "node:fs";
 import type { GraphQLSchema } from "graphql";
 import type { Driver } from "neo4j-driver";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { goldenResultPath, goldenSchemaPath, loadFixtures } from "../src/fixtures.js";
+import {
+  goldenPrintedSchemaPath,
+  goldenResultPath,
+  goldenSchemaPath,
+  loadFixtures,
+} from "../src/fixtures.js";
+import { PRINT_CHECK } from "../src/compare.js";
 import { checkId, mustPass, unlistedPassHint } from "../src/expected.js";
 import { implementations } from "../src/implementations.js";
 import {
@@ -18,6 +24,7 @@ import {
   connect,
   neo4jEnv,
   printSortedSchema,
+  printUnsortedSchema,
   runOperation,
   runSubscription,
 } from "../src/runner.js";
@@ -100,6 +107,15 @@ describe.skipIf(!env)("GraphQL compatibility (goldens from @neo4j/graphql)", () 
               "schema",
               async () => printSortedSchema(schema!),
               golden(goldenSchemaPath(fixture.name)),
+            );
+          });
+
+          // Unsorted print, byte for byte: the contract applications commit and diff in CI.
+          it("schema (printed, v7 order)", async () => {
+            await check(
+              PRINT_CHECK,
+              async () => printUnsortedSchema(schema!),
+              golden(goldenPrintedSchemaPath(fixture.name)),
             );
           });
 

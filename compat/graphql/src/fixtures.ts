@@ -162,6 +162,11 @@ export function goldenSchemaPath(fixture: string): string {
   return path.join(GOLDEN_DIR, fixture, "schema.graphql");
 }
 
+/** `printSchema` output without sorting: the contract applications commit and diff in CI. */
+export function goldenPrintedSchemaPath(fixture: string): string {
+  return path.join(GOLDEN_DIR, fixture, "schema.print.graphql");
+}
+
 export function goldenResultPath(fixture: string, operation: string): string {
   return path.join(GOLDEN_DIR, fixture, `${operation}.json`);
 }

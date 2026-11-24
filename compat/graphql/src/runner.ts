@@ -60,6 +60,11 @@ export function printSortedSchema(schema: GraphQLSchema): string {
   return `${printSchema(lexicographicSortSchema(schema))}\n`;
 }
 
+/** `printSchema` as is: types, fields, arguments and values in the implementation's order. */
+export function printUnsortedSchema(schema: GraphQLSchema): string {
+  return `${printSchema(schema)}\n`;
+}
+
 export async function buildFixtureSchema(
   impl: GraphQLImplementation,
   fixture: Fixture,

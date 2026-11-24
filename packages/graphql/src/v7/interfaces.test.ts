@@ -58,7 +58,7 @@ describe("compat.v7 interfaces", () => {
     const schema = buildV7Schema(readTypeDefs(TYPE_DEFS));
     expect(schema.getType("Activity")).toBeInstanceOf(GraphQLInterfaceType);
     expect(printed("ActivityImplementation")).toBe(
-      "enum ActivityImplementation {\n  Article\n  Lab\n}",
+      "enum ActivityImplementation {\n  Lab\n  Article\n}",
     );
     expect(printed("ActivityWhere")).toContain("typename: [ActivityImplementation!]");
     expect(printed("ActivityCreateInput")).toBe(

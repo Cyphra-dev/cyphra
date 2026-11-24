@@ -1,21 +1,34 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import type { Driver } from "neo4j-driver";
-import { goldenResultPath, goldenSchemaPath, type Fixture } from "./fixtures.js";
+import {
+  goldenPrintedSchemaPath,
+  goldenResultPath,
+  goldenSchemaPath,
+  type Fixture,
+} from "./fixtures.js";
 import type { GraphQLImplementation } from "./implementations.js";
 import {
   buildFixtureSchema,
   CDC_SKIP_REASON,
   cdcAvailable,
   printSortedSchema,
+  printUnsortedSchema,
   runOperation,
   runSubscription,
 } from "./runner.js";
 
 export type Status = "pass" | "fail" | "skipped";
 
+/**
+ * The printed-schema check: unsorted `printSchema` output (types, fields, arguments, input fields
+ * and enum values in the implementation's order), byte for byte. Applications commit this print
+ * as their contract and diff it in CI.
+ */
+export const PRINT_CHECK = "schema-print";
+
 export type CheckResult = {
-  /** `schema` for the SDL check, otherwise the operation name. */
+  /** `schema` (sorted SDL), `schema-print` (unsorted print), otherwise the operation name. */
   check: string;
   features: string[];
   status: Status;
@@ -87,6 +100,12 @@ export async function compareImplementation(
         fixture: f.name,
         checks: [
           { check: "schema", features: ["schema"], status: "skipped", detail: skipReason },
+          {
+            check: PRINT_CHECK,
+            features: ["schema.print"],
+            status: "skipped",
+            detail: skipReason,
+          },
           ...f.operations.map((op): CheckResult => ({
             check: op.name,
             features: op.features,
@@ -112,14 +131,25 @@ export async function compareImplementation(
           printSortedSchema(schema),
           readGolden(goldenSchemaPath(fixture.name)),
         ),
+        compareText(
+          PRINT_CHECK,
+          ["schema.print"],
+          printUnsortedSchema(schema),
+          readGolden(goldenPrintedSchemaPath(fixture.name)),
+        ),
       );
     } catch (err) {
-      checks.push({
-        check: "schema",
-        features: ["schema"],
-        status: "fail",
-        detail: `buildSchema threw: ${errorMessage(err)}`,
-      });
+      for (const [check, feature] of [
+        ["schema", "schema"],
+        [PRINT_CHECK, "schema.print"],
+      ] as const) {
+        checks.push({
+          check,
+          features: [feature],
+          status: "fail",
+          detail: `buildSchema threw: ${errorMessage(err)}`,
+        });
+      }
     }
     for (const op of fixture.operations) {
       if (op.kind === "subscription" && !cdc) {
@@ -174,6 +204,7 @@ export async function writeGoldens(
     const schemaFile = goldenSchemaPath(fixture.name);
     mkdirSync(path.dirname(schemaFile), { recursive: true });
     writeFileSync(schemaFile, printSortedSchema(schema));
+    writeFileSync(goldenPrintedSchemaPath(fixture.name), printUnsortedSchema(schema));
     for (const op of fixture.operations) {
       if (op.kind === "subscription") {
         if (!cdc) {
