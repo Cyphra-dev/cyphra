@@ -60,6 +60,24 @@ serve yet (`Point`, `Duration`, custom scalars, …). It never serves an API tha
 differs from v7 without telling you: a directive or argument it does not implement is rejected, never
 ignored.
 
+The error lists every issue at once, not only the first one: its `issues` hold a `code`
+(`UNSUPPORTED` for what `@cyphra/graphql` does not serve yet, `INVALID` for type definitions v7
+rejects too, with v7's message), the `message` and a `location` (`type`, `field`, `line`,
+`column`). `UnsupportedTypeDefsError` extends `CyphraError`. To evaluate a migration from
+`@neo4j/graphql` without building the schema, get the same list with `checkTypeDefs`, or run
+[`cyphra graphql check`](/cli#check-neo4jgraphql-type-definitions) on your `.graphql` files:
+
+```ts
+import { compat } from "@cyphra/graphql";
+
+for (const issue of compat.v7.checkTypeDefs(typeDefs)) {
+  console.log(`${issue.location.line}:${issue.location.column} ${issue.code} ${issue.message}`);
+}
+```
+
+`checkTypeDefs` also takes several files, `[{ name, body }]`, checked together: each issue's
+`location.source` is then its file.
+
 ## Serve it from a Next.js route
 
 With GraphQL Yoga:

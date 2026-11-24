@@ -14,6 +14,7 @@ import {
   isUnionType,
   Kind,
   validate,
+  type DocumentNode,
   type GraphQLField,
   type GraphQLFieldResolver,
   type GraphQLResolveInfo,
@@ -32,8 +33,11 @@ import {
 } from "./execute.js";
 import {
   AUTH_OPERATIONS,
-  readTypeDefs,
+  collectTypeDefsIssues,
+  issueAt,
+  sortIssues,
   UnsupportedTypeDefsError,
+  type TypeDefsIssue,
   type UserRootField,
   type V7Model,
 } from "./model.js";
@@ -267,7 +271,12 @@ function rootMutationResolver(
  * Compiles every `@authorization` rule once with an empty context, so a rule that does not fit the
  * type (unknown field, wrong operator, …) fails when the schema is built, not on a request.
  */
-function checkRules(model: V7Model): void {
+function checkRules(
+  model: V7Model,
+  document: DocumentNode,
+  skip: ReadonlySet<string>,
+): TypeDefsIssue[] {
+  const issues: TypeDefsIssue[] = [];
   const auth: AuthContext = {
     isAuthenticated: false,
     jwt: undefined,
@@ -275,6 +284,8 @@ function checkRules(model: V7Model): void {
     context: {},
   };
   for (const node of model.nodes) {
+    // A type with another issue is partly read: its rules could refer to what is left out.
+    if (skip.has(node.name)) continue;
     for (const attr of [undefined, ...node.attributes]) {
       const annotation = attr ? attr.auth : node.auth;
       if (!annotation?.authorization) continue;
@@ -288,12 +299,18 @@ function checkRules(model: V7Model): void {
           rules.validations("this", target, op, "AFTER", attrs);
         }
       } catch (e) {
-        throw new UnsupportedTypeDefsError(
-          `${node.name}${attr ? `.${attr.name}` : ""}: invalid @authorization rule: ${(e as Error).message}`,
+        issues.push(
+          issueAt(
+            document,
+            `${node.name}${attr ? `.${attr.name}` : ""}: invalid @authorization rule: ${(e as Error).message}`,
+            node.name,
+            attr?.name,
+          ),
         );
       }
     }
   }
+  return issues;
 }
 
 /** Attaches resolvers: one Cypher statement (and transaction) per root field. */
@@ -459,7 +476,12 @@ function wrapRootField(
 }
 
 /** v7 checks `@customResolver(requires)` against the type: the selection must be valid on it. */
-function checkRequires(schema: GraphQLSchema, model: V7Model): void {
+function checkRequires(
+  schema: GraphQLSchema,
+  model: V7Model,
+  document: DocumentNode,
+): TypeDefsIssue[] {
+  const issues: TypeDefsIssue[] = [];
   for (const node of model.nodes) {
     for (const f of node.userFields) {
       if (!f.requires) continue;
@@ -479,12 +501,18 @@ function checkRequires(schema: GraphQLSchema, model: V7Model): void {
         },
       );
       if (errors.length) {
-        throw new UnsupportedTypeDefsError(
-          `Invalid selection set provided to @customResolver on ${node.name}:\n${errors.join("\n")}`,
+        issues.push(
+          issueAt(
+            document,
+            `Invalid selection set provided to @customResolver on ${node.name}:\n${errors.join("\n")}`,
+            node.name,
+            f.name,
+          ),
         );
       }
     }
   }
+  return issues;
 }
 
 /** v7 warns about `@customResolver` fields the resolvers do not serve. */
@@ -539,10 +567,8 @@ function addDefaultFieldResolvers(schema: GraphQLSchema): void {
  * ```
  */
 export function makeSchema(options: MakeSchemaOptions): GraphQLSchema {
-  const model = readTypeDefs(options.typeDefs);
-  checkRules(model);
-  const schema = buildV7Schema(model);
-  checkRequires(schema, model);
+  const { model, schema, issues } = analyzeTypeDefs(options.typeDefs);
+  if (!schema || issues.length) throw UnsupportedTypeDefsError.fromIssues(issues);
   const resolvers = mergeResolvers(options.resolvers);
   warnMissingCustomResolvers(model, resolvers);
   const feature = options.features?.authorization;
@@ -558,6 +584,100 @@ export function makeSchema(options: MakeSchemaOptions): GraphQLSchema {
   wrapRootFields(schema, { model, decoder }, options.driver);
   addDefaultFieldResolvers(schema);
   return schema;
+}
+
+/**
+ * Reads the type definitions and builds their schema (without resolvers), collecting every issue:
+ * those of the type definitions, then the `@authorization` rules of the types without one, then
+ * (when there is no issue so far) the `@customResolver(requires)` selections.
+ */
+function analyzeTypeDefs(typeDefs: string): {
+  model: V7Model;
+  schema?: GraphQLSchema;
+  issues: TypeDefsIssue[];
+} {
+  const { model, issues, document } = collectTypeDefsIssues(typeDefs);
+  const withIssue = new Set(issues.flatMap((i) => (i.location.type ? [i.location.type] : [])));
+  const all = sortIssues([...issues, ...checkRules(model, document, withIssue)]);
+  if (all.length) return { model, issues: all };
+  const schema = buildV7Schema(model);
+  return { model, schema, issues: checkRequires(schema, model, document) };
+}
+
+/** One type definitions file for {@link checkTypeDefs}. */
+export type TypeDefsSource = {
+  /** File name (or any source name), set as `location.source` of its issues. */
+  readonly name: string;
+  readonly body: string;
+};
+
+/** Options of {@link checkTypeDefs}. */
+export type CheckTypeDefsOptions = {
+  /** Source name set as `location.source` of the issues when `typeDefs` is a string. */
+  readonly source?: string;
+};
+
+/**
+ * Every unsupported construct or invalid usage of the type definitions, as
+ * {@link makeSchema} would report them in its {@link UnsupportedTypeDefsError} (with a `SYNTAX`
+ * issue when they do not parse): an empty list means `makeSchema` accepts them. Nothing is
+ * executed and no database is needed: use it to evaluate a migration from `@neo4j/graphql` 7 in
+ * one run (`cyphra graphql check` on the command line).
+ *
+ * Several files are checked together (types can refer to types of other files); each issue's
+ * `location` then names its file and the line in it.
+ *
+ * @example
+ * ```ts
+ * import { compat } from "@cyphra/graphql";
+ * for (const issue of compat.v7.checkTypeDefs(typeDefs)) {
+ *   console.log(issue.code, issue.message, issue.location.line);
+ * }
+ * ```
+ */
+export function checkTypeDefs(
+  typeDefs: string | readonly TypeDefsSource[],
+  opts: CheckTypeDefsOptions = {},
+): TypeDefsIssue[] {
+  const sources: readonly TypeDefsSource[] =
+    typeof typeDefs === "string" ? [{ name: opts.source ?? "", body: typeDefs }] : typeDefs;
+  // Line where each source starts in the joined type definitions.
+  const starts: number[] = [];
+  let line = 1;
+  for (const s of sources) {
+    starts.push(line);
+    line += s.body.split("\n").length;
+  }
+  const relocate = (issue: TypeDefsIssue): TypeDefsIssue => {
+    const at = issue.location.line;
+    if (at === undefined) return issue;
+    let i = starts.length - 1;
+    while (i > 0 && starts[i]! > at) i--;
+    const name = sources[i]?.name;
+    return {
+      ...issue,
+      location: {
+        ...issue.location,
+        ...(name ? { source: name } : {}),
+        line: at - starts[i]! + 1,
+      },
+    };
+  };
+  let issues: TypeDefsIssue[];
+  try {
+    issues = analyzeTypeDefs(sources.map((s) => s.body).join("\n")).issues;
+  } catch (e) {
+    if (!(e instanceof GraphQLError)) throw e;
+    const pos = e.locations?.[0];
+    issues = [
+      {
+        code: "SYNTAX",
+        message: e.message,
+        location: pos ? { line: pos.line, column: pos.column } : {},
+      },
+    ];
+  }
+  return issues.map(relocate);
 }
 
 /** The CDC engine of `features.subscriptions`, created from `driver` / `client` unless given. */
@@ -620,7 +740,15 @@ export function cyphraSchema(typeDefs: string): {
   return { document, model: resolveSchema(document), issues };
 }
 
-export { readTypeDefs, UnsupportedTypeDefsError, type V7Model } from "./model.js";
+export {
+  formatIssueLocation,
+  readTypeDefs,
+  UnsupportedTypeDefsError,
+  type TypeDefsIssue,
+  type TypeDefsIssueCode,
+  type TypeDefsIssueLocation,
+  type V7Model,
+} from "./model.js";
 export type { AuthorizationFeature, Features, JwtKey, SubscriptionsFeature } from "./auth/jwt.js";
 export {
   CDCSubscriptionsEngine,

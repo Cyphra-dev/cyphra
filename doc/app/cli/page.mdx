@@ -28,6 +28,7 @@ App code depends on **`cyphra`** separately (see [Getting started](/getting-star
 | `cyphra migration:create <name>` | Empty `.mjs` migration to write by hand                                                                                                                             |
 | `cyphra pull`                    | Introspect the database and write `schema.cyphra` (`--print`, `--force`, `--interface <labels…>`)                                                                   |
 | `cyphra import graphql <files>`  | Convert `@neo4j/graphql` v7 type definitions to `schema.cyphra` (`--out`, `--merge`, `--force`, `--print`, `--url`, `--id-fields`, `--add-interface-labels`)        |
+| `cyphra graphql check <files>`   | Report what `compat.v7.makeSchema` does not serve in v7 type definitions ([details](#check-neo4jgraphql-type-definitions); `--json`; exit 1)                        |
 | `cyphra import prisma <schema>`  | Convert a Prisma schema to `schema.cyphra`, foreign keys to edges ([details](#import-from-prisma); `--out`, `--merge`, `--force`, `--print`)                        |
 | `cyphra import neogma <files>`   | Convert neogma models (decorator classes or `ModelFactory`) to `schema.cyphra` ([details](#import-from-neogma); `--out`, `--merge`, `--force`, `--print`)           |
 | `cyphra push`                    | Apply constraints and range, vector and full-text indexes directly (prototyping)                                                                                    |
@@ -326,6 +327,33 @@ their endpoints. Review the result:
 - Integers are pulled as `Int` and strings as `String`: the database cannot tell a `BigInt`, an enum
   or a `Json` field apart from those. Change the types by hand where it applies (for example an
   `Int` whose values exceed 2^53 to `BigInt`, a status string to an [enum](/schema#enums)).
+
+## Check @neo4j/graphql type definitions
+
+Before serving `@neo4j/graphql` v7 type definitions with [`compat.v7.makeSchema`](/graphql), list
+in one run everything it does not serve yet (or that v7 rejects too). No database is needed:
+
+```bash
+cyphra graphql check typeDefs.graphql
+cyphra graphql check src/**/*.graphql --json
+```
+
+The files are checked together, like the type definitions of one `makeSchema` call. Each issue has
+its file, line and column, a code (`UNSUPPORTED`: not served by `@cyphra/graphql` yet, `INVALID`:
+rejected by v7 as well, with v7's message, `SYNTAX`: the file does not parse) and the message
+`makeSchema` throws:
+
+```text
+user.graphql:2:11  UNSUPPORTED  User.id: @unique is not supported by @cyphra/graphql yet.
+user.graphql:3:3   INVALID      User.best: Non-list relationship property "best" cannot have non-nullable type.
+post.graphql:3:17  UNSUPPORTED  Post.title: @coalesce is not supported by @cyphra/graphql yet.
+
+3 issues in 2 files (2 unsupported by @cyphra/graphql, 1 invalid for @neo4j/graphql 7).
+```
+
+The command exits with 1 when there are issues, so it can run in CI. `--json` prints
+`{ "files": [...], "issues": [{ "code", "message", "location": { "type", "field", "source", "line", "column" } }] }`.
+The same check is available in code as `compat.v7.checkTypeDefs` ([GraphQL](/graphql#create-the-schema)).
 
 ## Import from @neo4j/graphql
 

@@ -14,6 +14,11 @@ export const compat = { v7 } as const;
 export type {
   AuthorizationFeature,
   CDCEngineOptions,
+  CheckTypeDefsOptions,
+  TypeDefsIssue,
+  TypeDefsIssueCode,
+  TypeDefsIssueLocation,
+  TypeDefsSource,
   Features,
   JwtKey,
   MakeSchemaOptions,
@@ -21,7 +26,7 @@ export type {
   SubscriptionsFeature,
 } from "./v7/index.js";
 export { CDCSubscriptionsEngine } from "./v7/index.js";
-export { UnsupportedTypeDefsError } from "./v7/model.js";
+export { formatIssueLocation, UnsupportedTypeDefsError } from "./v7/model.js";
 
 export {
   GraphQLImportError,

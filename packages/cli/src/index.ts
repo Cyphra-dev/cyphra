@@ -4,6 +4,7 @@ import { Command } from "commander";
 import { runDev } from "./commands/dev.js";
 import { runFormat } from "./commands/format.js";
 import { runGenerate, runGenerateWatch, withZodFlags } from "./commands/generate.js";
+import { runGraphqlCheck } from "./commands/graphqlCheck.js";
 import { runImportGraphql } from "./commands/importGraphql.js";
 import { runImportNeogma } from "./commands/importNeogma.js";
 import { runImportPrisma } from "./commands/importPrisma.js";
@@ -349,6 +350,21 @@ importCmd
       process.exitCode = await runImportNeogma(process.cwd(), files, opts);
     },
   );
+
+const graphqlCmd = program
+  .command("graphql")
+  .description("@neo4j/graphql v7 compatibility (compat.v7 of @cyphra/graphql)");
+
+graphqlCmd
+  .command("check")
+  .argument("<typeDefs...>", "@neo4j/graphql v7 type definitions (.graphql files)")
+  .description(
+    "List every construct compat.v7.makeSchema does not serve (or v7 rejects), in one run, without a database; exits with 1 when there are issues",
+  )
+  .option("--json", "print { files, issues } as JSON (issues: code, message, location)")
+  .action(async (files: string[], opts: { json?: boolean }) => {
+    process.exitCode = await runGraphqlCheck(process.cwd(), files, opts);
+  });
 
 const schemaCmd = program.command("schema").description("Schema utilities");
 
