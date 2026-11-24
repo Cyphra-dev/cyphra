@@ -1,7 +1,8 @@
 # Design note: the Cyphra-native GraphQL API (#77)
 
-Status: proposal, for review. Nothing here is implemented. Part of the GraphQL epic (#68); the
-phased plan at the end lists candidate sub-issues.
+Status: design agreed; the open questions were decided by the maintainer (see
+[Decisions](#decisions)). Nothing here is implemented. Part of the GraphQL epic (#68); the phased
+plan at the end lists candidate sub-issues.
 
 ## Problem
 
@@ -52,7 +53,7 @@ be that client, over GraphQL.
 
 Non-goals: reproducing v7 (that is `compat.v7`), a schema-first API where the user writes SDL and
 Cyphra fills in resolvers (custom SDL is an extension point, not the source of the model), and
-Relay `Node` / global ids by default (see [Open questions](#open-questions)).
+Relay `Node` / global ids by default (opt-in with `relay: true`, see [Decisions](#decisions)).
 
 ## Entry point
 
@@ -72,6 +73,23 @@ export const schema = native.makeSchema({
 `native.makeSchema` reads the resolved `SchemaModel` from the client (no type definitions to pass)
 and returns a `GraphQLSchema` with resolvers, like `compat.v7.makeSchema`, so it is served by
 GraphQL Yoga, Apollo Server or anything else.
+
+## Architecture: one engine
+
+Decided by the maintainer: there is **one GraphQL engine**. The native API, built on the typed
+client's compiler, is the core, and `compat.v7` becomes a thin translation layer on top of it (v7
+request → native / client call → v7-shaped response). A fix to filtering, paging, rules or
+statement building lands once and serves both APIs.
+
+- Both stay in `@cyphra/graphql` (`import { compat, native } from "@cyphra/graphql"`); no separate
+  package.
+- The `compat/graphql` golden suite keeps guarding v7 behaviour during and after the refactor. v7
+  semantics the native API changes on purpose (duplicate-edge `connect`, v7 auth semantics, offset
+  cursors, …) are reproduced by the translation layer or by engine options it passes; a golden diff
+  blocks the change otherwise.
+- Order: native reads and writes first, then `compat.v7` moves onto the shared engine (phase 4 of
+  the [plan](#implementation-plan-candidate-sub-issues)). The seven compat gaps filed as #223–#229
+  are fixed in the current compat compiler first; they do not wait for the refactor.
 
 ```ts filename="graphql.config.ts"
 import { defineGraphQL } from "@cyphra/graphql/native";
@@ -738,7 +756,7 @@ mutation {
 }
 ```
 
-- **`connect` is a `MERGE`** (the client's semantics, as decided for #77): connecting a pair that is
+- **`connect` is a `MERGE`** (the client's semantics, decided by the maintainer): connecting a pair that is
   already linked keeps one edge and updates the `_edge` properties passed; edge defaults are set
   only when the edge is created; on a to-one relation, `connect` replaces the edge; when the other
   side is to-one (connecting a post through `user.posts` while `Post.author` is `User?`), the post
@@ -752,7 +770,8 @@ mutation {
   (GraphQL distinguishes `null` from an absent key, and so does the client). Numeric operators go in
   `_ops` (`{ increment, decrement, multiply }`, Hasura's `_inc` idea), because GraphQL cannot accept
   either `3` or `{ increment: 1 }` for one field. Setting a field and an operator on it is a
-  `BAD_USER_INPUT` error. See [Open questions](#open-questions) for the `{ set }` alternative.
+  `BAD_USER_INPUT` error. Decided over `{ set, increment, … }` objects on every field (v7 style,
+  more verbose).
 - **Unique keys.** `PostWhereUnique` has every `@id` / `@unique` field (bare values) and
   composite key (`providerId_accountId: AccountProviderIdAccountIdKey`) as optional fields, plus
   the model's filters for its other fields (as the client allows extra filters next to the key); at least one key is required, checked by the client (`BAD_USER_INPUT`), since GraphQL
@@ -800,8 +819,8 @@ defaults: { operations: { read: true, create: false, update: false, delete: fals
 - `fields.<f>.read: false` (alias `false`) hides a field; `filter` / `sort` / `create` / `update`
   toggle the rest. A required field without a default that cannot be written makes `create` of the
   model impossible: `makeSchema` reports it unless `create` is off.
-- **Default** (see [Open questions](#open-questions)): reads on, writes off, so a model is only
-  writable through the API once someone decided it should be.
+- **Default** (decided): reads on, writes off, so a model is only writable through the API once
+  someone decided it should be.
 
 ## Auth
 
@@ -858,10 +877,11 @@ rules: {
 `fields.email.read: ({ ctx }) => boolean` is a context-only predicate, evaluated once per request
 before the statement is built: a denied field selected is `null` with a `FORBIDDEN` error at its
 path (the field is generated nullable), and a denied field used in `where` / `orderBy` / `groupBy`
-fails the root field with `FORBIDDEN`. Row-dependent field rules ("email readable by its owner")
-are expressible as `read: { where: ({ ctx }) => ({ id: ctx.user?.id }) }`, compiled to
-`CASE WHEN <where> THEN n.email END`; whether to support them in the first version is an open
-question.
+fails the root field with `FORBIDDEN`. **Row-dependent field rules** ("email readable by its
+owner") are in the first version (decided):
+`read: { where: ({ ctx }) => ({ id: ctx.user?.id }) }`, compiled to
+`CASE WHEN <where> THEN n.email END`, so the field is `null` on the rows the `where` does not
+match, and the same `where` guards the field in filters and ordering.
 
 ### Hooks via `$extends`
 
@@ -920,7 +940,7 @@ cypherFields: {
 ```
 
 Such fields can be selected, and (when they return a scalar) filtered and sorted on, as v7 allows.
-They come after computed fields in the plan (phase 4).
+They come after computed fields in the plan (phase 7).
 
 ### Custom root fields and non-node result types
 
@@ -1009,7 +1029,8 @@ not part of the public client types), see [Runtime prerequisites](#runtime-prere
 `maxTake` (default `take` and the cap), `maxAliases` and a complexity budget (relations × take),
 checked before the statement is built; exceeding one is `BAD_USER_INPUT` with the limit named.
 
-**Mutations and transactions.** Each root field is its own transaction (as in v7 and `compat.v7`).
+**Mutations and transactions.** Each root field is its own transaction (decided; as in v7 and
+`compat.v7`).
 `config.mutationTransaction: "request"` runs every root field of one mutation operation in a single
 write transaction (one statement each, serially, as the GraphQL spec orders them), so
 `mutation { a: postCreate(…) b: tagCreate(…) }` commits both or neither. v7 has no equivalent.
@@ -1085,13 +1106,12 @@ const api = native.makeSchema({ client: db, config });
 export const { GET, POST } = routeBySegment({ "": yoga(v7), v2: yoga(api) });
 ```
 
-- **Separate endpoints** are the recommendation: the two schemas have types with the same names
-  (`User`, `Post`) and different shapes, and frontends move operation by operation. A single
-  endpoint (native fields under a prefix, `native: NativeQuery`) is possible with a `typePrefix`
-  option; see [Open questions](#open-questions).
+- **Separate endpoints** (decided): the two schemas have types with the same names (`User`,
+  `Post`) and different shapes, and frontends move operation by operation. One schema with a
+  `typePrefix` option was rejected.
 - Both run on one client, so `query` events, OpenTelemetry spans and missing-index warnings cover
-  both APIs, and the native one runs the client's hooks (compat does not, it compiles its own
-  statements).
+  both APIs. The native API runs the client's hooks; `compat.v7` does too once it is on the shared
+  engine (phase 4), and until then compiles its own statements.
 - Auth: the v7 rules stay in `typeDefs.graphql` for `/api/graphql`; the native API needs its rules
   in `graphql.config.ts` before writes are enabled there. `cyphra graphql migrate-rules` prints a
   draft translation of each `@authorization` rule into a native rule (`"$jwt.sub"` → `ctx.jwt.sub`,
@@ -1119,9 +1139,9 @@ export const { GET, POST } = routeBySegment({ "": yoga(v7), v2: yoga(api) });
 | `deleteMovies(where, delete: { actors: … }) { nodesDeleted }`                                 | `movieDelete(where)` / `movieDeleteMany(where) { count nodes }`; nested delete: `onDelete: Cascade` in `schema.cyphra`           |
 | nested `connect: [{ where: { node: { name: { eq: "x" } } }, edge: { role } }]`                | `connect: [{ name: "x", _edge: { role } }]` (unique keys only, and a `MERGE`)                                                    |
 | nested `connect` by a non-unique `where` (many nodes)                                         | not supported: connect by key, or a custom mutation                                                                              |
-| nested `update` / `delete`                                                                    | phase 5 (client first); until then root mutations or a custom resolver                                                           |
+| nested `update` / `delete`                                                                    | phase 8 (client first); until then root mutations or a custom resolver                                                           |
 | `@fulltext` query `moviesByTitle(phrase)` with `score`                                        | `movieSearch(index, query, mode) { _score }`                                                                                     |
-| `@cypher` field                                                                               | `cypherFields` (phase 4)                                                                                                         |
+| `@cypher` field                                                                               | `cypherFields` (phase 7)                                                                                                         |
 | `@authorization` / `@authentication`                                                          | `rules` / `authenticated` in TypeScript                                                                                          |
 | `@query`, `@mutation(operations: [])`, `@selectable`, `@settable`, `@filterable`, `@sortable` | `operations` and `fields` toggles                                                                                                |
 | `@plural`                                                                                     | not needed; `naming` overrides single names                                                                                      |
@@ -1151,8 +1171,8 @@ export const { GET, POST } = routeBySegment({ "": yoga(v7), v2: yoga(api) });
 The two `compat/graphql` checks that fail on purpose (`media/14-connect-nested-union`,
 `media/15-disconnect-nested-union`: v7 ignores the `where` of a union `connect` / `disconnect`
 nested in another one) are the native behaviour, and stay listed as deliberate in
-`cyphra-expected.json`. The native API does not change `compat.v7`; in particular `compat.v7`
-keeps v7's duplicate-edge `connect`.
+`cyphra-expected.json`. Moving `compat.v7` onto the shared engine does not change its behaviour:
+in particular `compat.v7` keeps v7's duplicate-edge `connect`, and the golden suite checks it.
 
 ## Versioning and the printed contract
 
@@ -1191,37 +1211,30 @@ each useful on its own:
 6. Later: nested `update` / `delete` / `upsert` / `connectOrCreate`; `_count` filters in `where`
    (for v7 aggregation filters).
 
-## Open questions
+## Decisions
 
-1. **Root field names.** `postFindMany` / `postCreate` (proposed), `findManyPost` (Prisma 1 style),
-   or short names (`posts`, `post`, `createPost`) with pluralization? The proposal avoids plurals
-   on purpose; `naming` overrides cover the few that read badly.
-2. **Default exposure.** Reads on and writes off by default (proposed), everything on (v7-like,
-   easier migration), or nothing until listed in `models` (strictest)?
-3. **Scalar update shape.** Bare values plus `_ops` for numeric operators (proposed, closest to the
-   client), or `{ set, increment, … }` objects on every field (closest to v7 7.x, makes the codemod
-   simpler, more verbose)?
-4. **List query result.** `postFindMany` returning `PostList { nodes pageInfo totalCount }`
-   (proposed, one list API with both pagings), or returning `[Post!]!` like the client, with cursor
-   paging only through a separate field?
-5. **`_edge` with several relationship models** targeting one node: a union `UserEdge` (proposed),
-   or one wrapper type per relation (`UserViaFollowing`), more precise but breaks fragment reuse on
-   `User`?
-6. **Row-dependent field rules** (`email` readable by its owner) in the first version, or
-   context-only field rules first?
-7. **Config location.** TypeScript only (`graphql.config.ts`, proposed), or also schema attributes
-   in `schema.cyphra` (`@@graphql(operations: [read])`, `@graphql(hidden)`) for the toggles that are
-   not code? Schema attributes would make the language server aware of them, but mix API policy
-   into the data model.
-8. **One endpoint or two.** Separate endpoints (proposed), or a `typePrefix` option to serve both in
-   one schema?
-9. **Relay.** Add an opt-in `Node` interface with global ids (`node(id: ID!)`) for Relay clients, or
-   leave it out?
-10. **Mutation transactions.** Per root field (proposed default, like v7) or per request by default?
-11. **Package layout.** `native` inside `@cyphra/graphql` next to `compat` (proposed), or a separate
-    `@cyphra/graphql-native` so compat users do not pull it in?
-12. **`findFirst` / `count` root fields.** Keep them for parity with the client, or drop them
-    (`findMany(take: 1)`, `totalCount`) for a smaller schema?
+The open questions of the review, as decided by the maintainer:
+
+1. **Root field names**: `postFindMany` / `postCreate` (`<delegateKey><Operation>`, no
+   pluralization; `naming` overrides cover the few that read badly).
+2. **Default exposure**: reads on, writes off.
+3. **Scalar updates**: plain values, plus `_ops` for numeric operators.
+4. **List result**: `PostList { nodes pageInfo totalCount }`, one list query for offset and cursor
+   paging.
+5. **`_edge` with several relationship models** targeting one node type: a union (`UserEdge`),
+   selected with inline fragments.
+6. **Row-dependent field rules** (`email` readable by its owner): in the first version.
+7. **Config**: TypeScript only (`graphql.config.ts`), no schema attributes in `schema.cyphra`.
+8. **Endpoints**: separate endpoints for `compat.v7` and native.
+9. **Relay**: an opt-in `Node` interface with global ids and `node(id: ID!)` (`relay: true`), off
+   by default.
+10. **Mutation transactions**: one per root field by default (`mutationTransaction: "request"`
+    opts in to one per request).
+11. **Package layout and architecture**: one engine, native at the core and `compat.v7` a thin
+    translation layer on top, both in `@cyphra/graphql` (`import { compat, native }`); see
+    [Architecture](#architecture-one-engine).
+12. **`findFirst` / `count` root fields**: kept, for parity with the client.
+13. **`connect` in native**: a `MERGE`.
 
 ## Implementation plan (candidate sub-issues)
 
@@ -1233,26 +1246,32 @@ fixtures and goldens: printed SDL plus results) grows with it.
 2. **Native read API**: `native.makeSchema`, `defineGraphQL` (typed config, startup checks), naming,
    object types, `findUnique` / `findFirst` / `findMany` (offset + cursor) / `count`, filters,
    ordering, relations with `_edge`, `_count`, interfaces and unions (fragments → `$on`), scalars,
-   operation and field toggles, limits, error mapping, `cyphra graphql print [--check]`.
+   operation and field toggles, limits, error mapping, opt-in Relay `Node` (`relay: true`),
+   `cyphra graphql print [--check]`.
 3. **Native write API**: `create` / `createMany` / `update` / `updateMany` / `upsert` / `delete` /
    `deleteMany` returning records (with `select` on batch operations in the client), nested
    `create` / `connect` (MERGE) / `disconnect` / `set`, `_ops`, validation issue paths,
    `mutationTransaction: "request"`.
-4. **Auth**: `rules` (read / create / update / delete / connect / disconnect / after),
-   `authenticated`, field rules, `native.jwtContext`, `ctx.cyphra`, a security test per v7 footgun
-   fixed.
-5. **Aggregates, groupBy, search, findSimilar, union search, traversals** (`<model>Traverse`,
+4. **`compat.v7` on the shared engine**: rewrite `compat.v7` as a translation layer (v7 request →
+   native / client call → v7-shaped response), operation family by family, with the golden suite
+   green at every step. v7 features whose engine pieces come in later phases (aggregations,
+   fulltext, `@cypher`, `@authorization`) keep the current compat compiler until those land. The
+   compat gaps #223–#229 are fixed in the current compiler before this phase.
+5. **Auth**: `rules` (read / create / update / delete / connect / disconnect / after),
+   `authenticated`, field rules (context-only and row-dependent), `native.jwtContext`,
+   `ctx.cyphra`, a security test per v7 footgun fixed.
+6. **Aggregates, groupBy, search, findSimilar, union search, traversals** (`<model>Traverse`,
    `TraversePaths`, `ShortestPath`, named traversal fields).
-6. **Extension points**: computed fields, `extend` SDL + resolvers, `ctx.cyphra.selection(info)`,
+7. **Extension points**: computed fields, `extend` SDL + resolvers, `ctx.cyphra.selection(info)`,
    Cypher-backed fields.
-7. **Runtime prerequisites, part 2 + exposure**: nested `update` / `delete` / `upsert` /
+8. **Runtime prerequisites, part 2 + exposure**: nested `update` / `delete` / `upsert` /
    `connectOrCreate`, `_count` filters in `where`.
-8. **Migration tooling**: mapping table in the docs, `cyphra graphql migrate-operations`,
+9. **Migration tooling**: mapping table in the docs, `cyphra graphql migrate-operations`,
    `cyphra graphql compare` (dual-run), `migrate-rules` drafts, the "Next: the native API" section of
    `/guides/migrate-from-neo4j-graphql` (follow-up comment on #77).
-9. **Subscriptions** on #76's CDC reader: `<model>Changed`, relationship events, rule-aware
-   re-reads.
+10. **Subscriptions** on #76's CDC reader: `<model>Changed`, relationship events, rule-aware
+    re-reads.
 
 Acceptance criteria of #77 map to phases 2 (both modes served side by side, with a test serving
-both from one server), 4 (typed rules fail at build time on unknown fields: a `test-d.ts` with
+both from one server), 5 (typed rules fail at build time on unknown fields: a `test-d.ts` with
 `@ts-expect-error`, plus the startup check) and this document (reviewed before implementation).
