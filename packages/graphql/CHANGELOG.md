@@ -1,5 +1,23 @@
 # @cyphra/graphql
 
+## 0.18.0
+
+### Minor Changes
+
+- f6baa35: GraphQL subscriptions on Neo4j Change Data Capture, as in `@neo4j/graphql` v7: `@subscription`
+  types get `<type>Created`, `<type>Updated` and `<type>Deleted` fields with a `where` argument,
+  `@subscriptionsAuthorization` filters events and `@authentication(operations: [SUBSCRIBE])` checks
+  subscribers. Enable them with `features.subscriptions` (`true`, options such as `pollTime` and
+  `onlyGraphQLEvents`, or a `CDCSubscriptionsEngine`, also exported as
+  `compat.v7.Neo4jGraphQLSubscriptionsCDCEngine`). They need Neo4j Enterprise or Aura with CDC
+  enabled; on other databases subscribing fails with a clear error.
+
+### Patch Changes
+
+- Updated dependencies [27bfd81]
+  - @cyphra/runtime@0.18.0
+  - @cyphra/schema@0.18.0
+
 ## 0.17.0
 
 ### Minor Changes
