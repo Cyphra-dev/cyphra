@@ -1,0 +1,11 @@
+{
+  "data": null,
+  "errors": [
+    {
+      "message": "Invalid input for relationship pinned. Expected single entity input for non-list relationship but received multiple.",
+      "path": [
+        "createUsers"
+      ]
+    }
+  ]
+}

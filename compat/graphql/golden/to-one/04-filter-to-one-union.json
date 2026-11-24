@@ -1,0 +1,49 @@
+{
+  "data": {
+    "pinnedDraftLab": [
+      {
+        "id": "u1"
+      }
+    ],
+    "pinnedAnyProfile": [
+      {
+        "id": "u2"
+      }
+    ],
+    "pinnedNothing": [
+      {
+        "id": "u1"
+      },
+      {
+        "id": "u2"
+      },
+      {
+        "id": "u3"
+      }
+    ],
+    "pinnedEmpty": [
+      {
+        "id": "u1"
+      },
+      {
+        "id": "u2"
+      },
+      {
+        "id": "u3"
+      }
+    ],
+    "pinnedEither": [
+      {
+        "id": "u1"
+      },
+      {
+        "id": "u2"
+      }
+    ],
+    "pinnedConnection": [
+      {
+        "id": "u2"
+      }
+    ]
+  }
+}

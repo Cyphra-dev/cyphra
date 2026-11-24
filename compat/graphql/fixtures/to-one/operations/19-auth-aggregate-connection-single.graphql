@@ -1,0 +1,24 @@
+# features: relationship.to-one, auth.filter, auth.aggregate, aggregate
+query {
+  labsConnection {
+    aggregate {
+      count {
+        nodes
+      }
+      node {
+        rating {
+          sum
+        }
+      }
+    }
+  }
+  users(where: { id: { eq: "u2" } }) {
+    labsConnection {
+      aggregate {
+        count {
+          nodes
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,20 @@
+# features: relationship.to-one, mutation.update, mutation.connect
+mutation {
+  updateUsers(
+    where: { id: { eq: "u2" } }
+    update: { labs: [{ connect: [{ where: { node: { id: { eq: "lab-1" } } } }] }] }
+  ) {
+    info {
+      relationshipsCreated
+    }
+    users {
+      id
+      labs {
+        id
+        ownerConnection {
+          totalCount
+        }
+      }
+    }
+  }
+}

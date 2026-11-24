@@ -1,0 +1,15 @@
+# features: relationship.to-one, auth.filter
+query {
+  labRuntimes(sort: [{ id: ASC }]) {
+    id
+  }
+  labs(where: { id: { in: ["lab-1", "lab-2"] } }, sort: [{ id: ASC }]) {
+    id
+    runtime {
+      id
+    }
+    runtimeConnection {
+      totalCount
+    }
+  }
+}

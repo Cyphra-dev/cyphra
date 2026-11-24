@@ -619,8 +619,17 @@ export class SelectionCompiler {
         const p = isUnionRelationship(this.model, rel)
           ? this.unionList(scope, variable, rel, args, nodes)
           : this.relationshipList(scope, variable, rel, args, nodes);
-        entries.push(`${q(key)}: ${p.expr}`);
-        decoders.push([key, p.decode]);
+        if (rel.list) {
+          entries.push(`${q(key)}: ${p.expr}`);
+          decoders.push([key, p.decode]);
+          continue;
+        }
+        // To-one (v7: `head(collect(…))`): the first related node, or null.
+        entries.push(`${q(key)}: head(${p.expr})`);
+        decoders.push([
+          key,
+          (raw) => (raw === null || raw === undefined ? null : (p.decode([raw]) as unknown[])[0]),
+        ]);
         continue;
       }
       const connRel = name.endsWith("Connection")

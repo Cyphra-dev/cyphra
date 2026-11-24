@@ -1,0 +1,49 @@
+# features: relationship.to-one, mutation.create, mutation.nested-create
+mutation {
+  createLabs(
+    input: [
+      {
+        id: "lab-9"
+        name: "New"
+        state: "PUBLISHED"
+        owner: {
+          create: {
+            node: {
+              id: "u9"
+              name: "Dee"
+              profile: { create: { node: { id: "p9", bio: "Newcomer" } } }
+            }
+          }
+        }
+        runtime: { create: { edge: { since: 2024 }, node: { id: "rt-9", image: "nix" } } }
+      }
+    ]
+  ) {
+    info {
+      nodesCreated
+      relationshipsCreated
+    }
+    labs {
+      id
+      owner {
+        name
+        profile {
+          bio
+        }
+      }
+      runtime {
+        image
+        lab {
+          id
+        }
+      }
+      runtimeConnection {
+        edges {
+          properties {
+            since
+          }
+        }
+      }
+    }
+  }
+}

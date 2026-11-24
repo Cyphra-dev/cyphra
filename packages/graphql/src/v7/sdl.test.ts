@@ -202,6 +202,51 @@ describe("SDL: unions", () => {
   });
 });
 
+describe("SDL: to-one relationships (v7 7.6.8)", () => {
+  const TO_ONE = /* GraphQL */ `
+    type Lab @node {
+      name: String!
+      owner: User @relationship(type: "OWNS", direction: IN)
+    }
+    type User @node {
+      name: String!
+      labs: [Lab!]! @relationship(type: "OWNS", direction: OUT)
+    }
+  `;
+
+  it("field and connection without arguments, connection without aggregate", () => {
+    const lab = printed(TO_ONE, "Lab");
+    expect(lab).toContain("  owner: User\n  ownerConnection: LabOwnerConnection!\n");
+    expect(printed(TO_ONE, "LabOwnerConnection")).not.toContain("aggregate");
+  });
+
+  it("where takes the target filter and a connection filter", () => {
+    const where = printed(TO_ONE, "LabWhere");
+    expect(where).toContain("  owner: UserWhere\n  ownerConnection: LabOwnerConnectionWhere\n");
+    expect(where).not.toContain("ownerAggregate");
+    expect(where).not.toContain("owner_SOME");
+  });
+
+  it("writes: single create and delete inputs, no connect / disconnect / update", () => {
+    expect(printed(TO_ONE, "LabOwnerFieldInput")).toBe(
+      "input LabOwnerFieldInput {\n  create: LabOwnerCreateFieldInput\n}",
+    );
+    expect(printed(TO_ONE, "LabDeleteInput")).toBe(
+      "input LabDeleteInput {\n  owner: LabOwnerDeleteFieldInput\n}",
+    );
+    expect(printed(TO_ONE, "LabUpdateInput")).not.toContain("owner");
+    const schema = schemaOf(TO_ONE);
+    expect(schema.getType("LabConnectInput")).toBeUndefined();
+    expect(schema.getType("LabDisconnectInput")).toBeUndefined();
+  });
+
+  it("rejects a non-nullable to-one relationship, like v7", () => {
+    expect(() => readTypeDefs(TO_ONE.replace("owner: User @", "owner: User! @"))).toThrow(
+      /Non-list relationship property "owner" cannot have non-nullable type/,
+    );
+  });
+});
+
 describe("unsupported type definitions fail loudly", () => {
   it.each([
     ["interfaces", "interface Production { title: String! }"],

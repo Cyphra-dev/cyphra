@@ -1,0 +1,52 @@
+{
+  "data": {
+    "users": [
+      {
+        "id": "u1",
+        "pinned": {
+          "__typename": "Lab",
+          "id": "lab-2",
+          "state": "DRAFT"
+        },
+        "pinnedConnection": {
+          "totalCount": 1,
+          "edges": [
+            {
+              "node": {
+                "__typename": "Lab",
+                "name": "Draft"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "id": "u2",
+        "pinned": {
+          "__typename": "Profile",
+          "id": "p2",
+          "bio": "Builder"
+        },
+        "pinnedConnection": {
+          "totalCount": 1,
+          "edges": [
+            {
+              "node": {
+                "__typename": "Profile",
+                "bio": "Builder"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "id": "u3",
+        "pinned": null,
+        "pinnedConnection": {
+          "totalCount": 0,
+          "edges": []
+        }
+      }
+    ]
+  }
+}

@@ -1,0 +1,83 @@
+type JWT @jwt {
+  roles: [String!]
+}
+
+type User @node {
+  id: ID!
+  name: String!
+  labs: [Lab!]! @relationship(type: "OWNS", direction: OUT)
+  profile: Profile @relationship(type: "HAS_PROFILE", direction: OUT)
+  pinned: Pinnable @relationship(type: "PINNED", direction: OUT)
+}
+
+union Pinnable = Lab | Profile
+
+type Profile @node {
+  id: ID!
+  bio: String
+  user: User @relationship(type: "HAS_PROFILE", direction: IN)
+}
+
+type Lab
+  @node
+  @authorization(
+    filter: [
+      {
+        operations: [AGGREGATE]
+        requireAuthentication: false
+        where: { node: { runtimeConnection: { node: { memory: { gte: 100 } } } } }
+      }
+    ]
+  ) {
+  id: ID!
+  name: String!
+  state: String!
+  rating: Int
+  owner: User @relationship(type: "OWNS", direction: IN)
+  runtime: LabRuntime @relationship(type: "HAS_RUNTIME", direction: OUT, properties: "RuntimeLink")
+  sessions: [Session!]! @relationship(type: "OF_LAB", direction: IN)
+}
+
+type RuntimeLink @relationshipProperties {
+  since: Int
+}
+
+type LabRuntime
+  @node
+  @authorization(
+    filter: [
+      { requireAuthentication: false, where: { node: { lab: { state: { eq: "PUBLISHED" } } } } }
+    ]
+  ) {
+  id: ID!
+  image: String!
+  memory: Int
+  lab: Lab @relationship(type: "HAS_RUNTIME", direction: IN, properties: "RuntimeLink")
+}
+
+type Session
+  @node
+  @authorization(
+    filter: [
+      {
+        operations: [READ, AGGREGATE]
+        where: {
+          OR: [
+            { node: { lab: { owner: { id: { eq: "$jwt.sub" } } } } }
+            { jwt: { roles: { includes: "admin" } } }
+          ]
+        }
+      }
+    ]
+    validate: [
+      {
+        operations: [CREATE]
+        when: [AFTER]
+        where: { node: { lab: { owner: { id: { eq: "$jwt.sub" } } } } }
+      }
+    ]
+  ) {
+  id: ID!
+  score: Int
+  lab: Lab @relationship(type: "OF_LAB", direction: OUT)
+}

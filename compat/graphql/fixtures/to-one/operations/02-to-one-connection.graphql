@@ -1,0 +1,33 @@
+# features: relationship.to-one, connection, connection.edge-properties
+# ordered
+query {
+  labs(where: { id: { in: ["lab-1", "lab-2", "lab-3"] } }, sort: [{ id: ASC }]) {
+    id
+    ownerConnection {
+      totalCount
+      pageInfo {
+        hasNextPage
+        hasPreviousPage
+        startCursor
+        endCursor
+      }
+      edges {
+        cursor
+        node {
+          name
+        }
+      }
+    }
+    runtimeConnection {
+      totalCount
+      edges {
+        properties {
+          since
+        }
+        node {
+          image
+        }
+      }
+    }
+  }
+}

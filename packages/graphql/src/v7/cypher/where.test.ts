@@ -190,3 +190,45 @@ describe("where: aggregation filters", () => {
     expect(predicate).toMatch(/\]\[0\] > datetime\(\$p0\)$/);
   });
 });
+
+describe("where: to-one relationships", () => {
+  const toOne = readTypeDefs(/* GraphQL */ `
+    type Lab @node {
+      state: String!
+      owner: User @relationship(type: "OWNS", direction: IN)
+    }
+    type User @node {
+      id: ID!
+      labs: [Lab!]! @relationship(type: "OWNS", direction: OUT)
+    }
+  `);
+  const filter = (where: unknown, authorization = false) =>
+    new WhereCompiler(toOne, new CypherContext(), authorization).node(
+      "this",
+      toOne.node("Lab"),
+      where,
+    );
+
+  it("`owner: { … }` tests the related node", () => {
+    expect(filter({ owner: { id: { eq: "u1" } } })).toBe(
+      "EXISTS { MATCH (this)<-[:`OWNS`]-(n0:`User`) WHERE n0.`id` = $p0 }",
+    );
+  });
+
+  it("`owner: null` matches nodes without one; `{}` filters nothing", () => {
+    expect(filter({ owner: null })).toBe("NOT EXISTS { MATCH (this)<-[:`OWNS`]-(:`User`) }");
+    expect(filter({ owner: {} })).toBeUndefined();
+  });
+
+  it("`ownerConnection` is `some`, and `single` in authorization rules", () => {
+    expect(filter({ ownerConnection: { node: { id: { eq: "u1" } } } })).toMatch(/^EXISTS \{/);
+    expect(filter({ ownerConnection: { node: { id: { eq: "u1" } } } }, true)).toMatch(
+      /^COUNT \{ .* \} = 1$/,
+    );
+  });
+
+  it("rejects list-only filters", () => {
+    expect(() => filter({ owner_SOME: { id: { eq: "u1" } } })).toThrow(/Unknown filter/);
+    expect(() => filter({ ownerAggregate: { count: { eq: 1 } } })).toThrow(/Unknown filter/);
+  });
+});

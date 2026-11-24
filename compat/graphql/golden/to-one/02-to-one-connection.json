@@ -1,0 +1,80 @@
+{
+  "data": {
+    "labs": [
+      {
+        "id": "lab-1",
+        "ownerConnection": {
+          "totalCount": 1,
+          "pageInfo": {
+            "hasNextPage": false,
+            "hasPreviousPage": false,
+            "startCursor": "YXJyYXljb25uZWN0aW9uOjA=",
+            "endCursor": "YXJyYXljb25uZWN0aW9uOjA="
+          },
+          "edges": [
+            {
+              "cursor": "YXJyYXljb25uZWN0aW9uOjA=",
+              "node": {
+                "name": "Ada"
+              }
+            }
+          ]
+        },
+        "runtimeConnection": {
+          "totalCount": 1,
+          "edges": [
+            {
+              "properties": {
+                "since": 2020
+              },
+              "node": {
+                "image": "ubuntu:24.04"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "id": "lab-2",
+        "ownerConnection": {
+          "totalCount": 1,
+          "pageInfo": {
+            "hasNextPage": false,
+            "hasPreviousPage": false,
+            "startCursor": "YXJyYXljb25uZWN0aW9uOjA=",
+            "endCursor": "YXJyYXljb25uZWN0aW9uOjA="
+          },
+          "edges": [
+            {
+              "cursor": "YXJyYXljb25uZWN0aW9uOjA=",
+              "node": {
+                "name": "Ada"
+              }
+            }
+          ]
+        },
+        "runtimeConnection": {
+          "totalCount": 0,
+          "edges": []
+        }
+      },
+      {
+        "id": "lab-3",
+        "ownerConnection": {
+          "totalCount": 0,
+          "pageInfo": {
+            "hasNextPage": false,
+            "hasPreviousPage": false,
+            "startCursor": null,
+            "endCursor": null
+          },
+          "edges": []
+        },
+        "runtimeConnection": {
+          "totalCount": 0,
+          "edges": []
+        }
+      }
+    ]
+  }
+}

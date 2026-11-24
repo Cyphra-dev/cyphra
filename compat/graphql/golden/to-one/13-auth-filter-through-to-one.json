@@ -1,0 +1,33 @@
+{
+  "data": {
+    "labRuntimes": [
+      {
+        "id": "rt-1"
+      },
+      {
+        "id": "rt-4a"
+      },
+      {
+        "id": "rt-4b"
+      }
+    ],
+    "labs": [
+      {
+        "id": "lab-1",
+        "runtime": {
+          "id": "rt-1"
+        },
+        "runtimeConnection": {
+          "totalCount": 1
+        }
+      },
+      {
+        "id": "lab-2",
+        "runtime": null,
+        "runtimeConnection": {
+          "totalCount": 0
+        }
+      }
+    ]
+  }
+}

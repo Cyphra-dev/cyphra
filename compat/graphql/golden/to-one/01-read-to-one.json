@@ -1,0 +1,51 @@
+{
+  "data": {
+    "labs": [
+      {
+        "id": "lab-1",
+        "name": "Intro",
+        "owner": {
+          "id": "u1",
+          "name": "Ada",
+          "profile": {
+            "bio": "Mathematician",
+            "user": {
+              "id": "u1"
+            }
+          }
+        },
+        "runtime": {
+          "id": "rt-1",
+          "memory": 512,
+          "lab": {
+            "id": "lab-1"
+          }
+        },
+        "sessions": []
+      },
+      {
+        "id": "lab-2",
+        "name": "Draft",
+        "owner": {
+          "id": "u1",
+          "name": "Ada",
+          "profile": {
+            "bio": "Mathematician",
+            "user": {
+              "id": "u1"
+            }
+          }
+        },
+        "runtime": null,
+        "sessions": []
+      },
+      {
+        "id": "lab-3",
+        "name": "Orphan",
+        "owner": null,
+        "runtime": null,
+        "sessions": []
+      }
+    ]
+  }
+}

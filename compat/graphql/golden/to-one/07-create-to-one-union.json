@@ -1,0 +1,20 @@
+{
+  "data": {
+    "createUsers": {
+      "info": {
+        "nodesCreated": 2,
+        "relationshipsCreated": 1
+      },
+      "users": [
+        {
+          "id": "u9",
+          "pinned": {
+            "__typename": "Profile",
+            "id": "p9",
+            "bio": "Pinned"
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,25 @@
+# features: relationship.to-one, union, filter.relationship
+query {
+  pinnedDraftLab: users(where: { pinned: { Lab: { state: { eq: "DRAFT" } } } }) {
+    id
+  }
+  pinnedAnyProfile: users(where: { pinned: { Profile: {} } }) {
+    id
+  }
+  pinnedNothing: users(where: { pinned: null }) {
+    id
+  }
+  pinnedEmpty: users(where: { pinned: {} }) {
+    id
+  }
+  pinnedEither: users(
+    where: { pinned: { Lab: { name: { eq: "Draft" } }, Profile: { bio: { eq: "Builder" } } } }
+  ) {
+    id
+  }
+  pinnedConnection: users(
+    where: { pinnedConnection: { Profile: { node: { bio: { eq: "Builder" } } } } }
+  ) {
+    id
+  }
+}
