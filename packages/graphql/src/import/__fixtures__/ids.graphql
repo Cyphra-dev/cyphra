@@ -1,0 +1,37 @@
+# `id: ID!` fields and the uniqueness constraints of the database (see golden.test.ts for the
+# constraints and hints this fixture is converted with).
+
+type User @node {
+  id: ID!
+  email: String!
+  handle: ID
+  name: String
+}
+
+type Team @node {
+  id: ID! @id
+  slug: ID!
+}
+
+# Two types sharing a label whose constraint backs `id`.
+type Org @node(labels: ["Org", "Tenant"]) {
+  id: ID!
+  region: String!
+  code: String!
+}
+
+type Workspace @node(labels: ["Workspace", "Tenant"]) {
+  id: ID!
+  region: String!
+  code: String!
+}
+
+type Tag @node {
+  id: ID!
+  label: String!
+}
+
+type Note @node {
+  id: ID!
+  body: String
+}

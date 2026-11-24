@@ -1,0 +1,12 @@
+Converted with differences (11):
+  Team.id         @id: became @id @default(uuid()); Cyphra also adds a uniqueness constraint, which v7 @id does not
+  Tenant          @node(labels): label shared by Org and Workspace: mapped to interface Tenant (Cyphra writes and matches the label, like v7); it declares their common fields id and region; kept on each implementation: code (uniqueness constraint workspace_code is on :Workspace)
+  User.id         constraint: uniqueness constraint user_id on :User(id): marked @id; no default: the application gives the value, as with v7
+  User.email      constraint: uniqueness constraint user_email on :User(email): marked @unique
+  User.handle     constraint: uniqueness constraint user_handle on :User(handle): marked @unique (the field is optional, an @id cannot be)
+  Team.slug       constraint: uniqueness constraint team_slug on :Team(slug): marked @unique (it already has an @id)
+  Tenant.id       constraint: node key tenant_id on :Tenant(id): marked @id; no default: the application gives the value, as with v7
+  Workspace.code  constraint: uniqueness constraint workspace_code on :Workspace(code): marked @unique
+  Org             constraint: uniqueness constraint org_region_code on :Org(region, code): became @@unique([region, code])
+  Tag.id          --id-fields: hinted with --id-fields: marked @id; no default: the application gives the value, as with v7
+  Note.id         constraint: no uniqueness constraint on :Note(id) in the database: kept as a plain String (pass --id-fields Note.id to mark it @id)

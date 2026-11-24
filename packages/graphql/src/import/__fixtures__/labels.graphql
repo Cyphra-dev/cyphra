@@ -1,0 +1,81 @@
+# Shared labels and interfaces. In @neo4j/graphql v7 every label of @node(labels) is written on
+# create and matched on read; an interface adds no label of its own.
+
+# Every implementation carries the interface's name as a label: an exact Cyphra interface.
+interface LearningActivity {
+  id: ID!
+  title: String!
+  durationMinutes: Int
+  skills: [Skill!]! @declareRelationship
+}
+
+type Lab implements LearningActivity @node(labels: ["Lab", "LearningActivity"]) {
+  id: ID! @id
+  title: String!
+  durationMinutes: Int
+  skills: [Skill!]! @relationship(type: "TEACHES", direction: OUT, properties: "Teaches")
+  environment: String!
+}
+
+type Quiz implements LearningActivity @node(labels: ["Quiz", "LearningActivity"]) {
+  id: ID! @id
+  title: String!
+  durationMinutes: Int
+  skills: [Skill!]! @relationship(type: "TEACHES", direction: OUT, properties: "Teaches")
+  passMark: Int!
+}
+
+type Skill @node {
+  name: String!
+  activities: [LearningActivity!]!
+    @relationship(type: "TEACHES", direction: IN, properties: "Teaches")
+}
+
+type Teaches @relationshipProperties {
+  weight: Float
+}
+
+# A label shared by two types whose common fields line up: an interface with those fields.
+type Course @node(labels: ["Course", "Catalogued"]) {
+  code: String!
+  name: String!
+  activities: [LearningActivity!]! @relationship(type: "INCLUDES", direction: OUT)
+}
+
+type Path @node(labels: ["Path", "Catalogued"]) {
+  code: String!
+  name: String!
+  courses: [Course!]! @relationship(type: "STEP", direction: OUT)
+}
+
+# A label on a single type: an interface without fields.
+type Learner @node(labels: ["Learner", "Person"]) {
+  email: String!
+  completed: [LearningActivity!]! @relationship(type: "COMPLETED", direction: OUT)
+}
+
+# Common fields that do not line up (String vs Int): the label becomes @@labels.
+type Badge @node(labels: ["Badge", "Award"]) {
+  level: String!
+}
+
+type Certificate @node(labels: ["Certificate", "Award"]) {
+  level: Int!
+}
+
+# A label that is another node's label: not expressible.
+type Mentor @node(labels: ["Mentor", "Learner"]) {
+  email: String!
+}
+
+# An interface whose implementations do not carry its label: not converted without
+# --add-interface-labels.
+interface Rated {
+  rating: Float
+}
+
+type Review implements Rated @node {
+  rating: Float
+  text: String
+  about: [Rated!]! @relationship(type: "ABOUT", direction: OUT)
+}

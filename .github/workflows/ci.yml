@@ -171,8 +171,9 @@ jobs:
           pnpm --filter @cyphra/nestjs --fail-if-no-match exec vitest run test/nestjs.integration.test.ts
           # @cyphra/testing: schema, migrations, wipe, rollback and factories (only Tst* nodes).
           pnpm --filter @cyphra/testing --fail-if-no-match exec vitest run test/database.integration.test.ts
-          # `cyphra studio` API through the ORM (own Sd* labels: safe alongside the other suites).
-          pnpm --filter @cyphra/cli --fail-if-no-match exec vitest run src/studio/studio.integration.test.ts src/studio/studio.unions.integration.test.ts
+          # `cyphra studio` API through the ORM (own Sd* labels: safe alongside the other suites), and
+          # `cyphra import graphql --url` (own ImpX labels, its constraints dropped at the end).
+          pnpm --filter @cyphra/cli --fail-if-no-match exec vitest run src/studio/studio.integration.test.ts src/studio/studio.unions.integration.test.ts src/commands/importGraphql.integration.test.ts
           # `cyphra migrate reset` empties the whole database, so it runs on its own (opt-in flag).
           CYPHRA_TEST_RESET_DB=1 pnpm --filter @cyphra/cli --fail-if-no-match exec vitest run src/commands/migrateReset.integration.test.ts
           # `cyphra migrate status` compares the whole database with the migrations: same opt-in flag.

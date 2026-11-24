@@ -327,14 +327,15 @@ describe("convertGraphQLTypeDefs: type directives", () => {
     expect(issueAt(issues, "Movie")?.severity).toBe("changed");
   });
 
-  it("@node with extra and dynamic labels is reported", () => {
+  it("@node maps an extra label to an interface and reports dynamic labels", () => {
     const { schema, issues } = convert(`
-      type A @node(labels: ["A", "Extra"]) { x: Int }
+      type A @node(labels: ["A", "Extra", "$jwt.tenant"]) { x: Int }
       type B @node(labels: ["$jwt.tenant"]) { x: Int }
     `);
-    expect(schema).toContain("node A {");
+    expect(schema).toContain("node A implements Extra {");
     expect(schema).toContain("node B {");
-    expect(issueAt(issues, "A")?.message).toMatch(/"Extra"/);
+    expect(issueAt(issues, "Extra")?.message).toMatch(/mapped to interface Extra/);
+    expect(issueAt(issues, "A")?.message).toMatch(/dynamic/);
     expect(issueAt(issues, "B")?.message).toMatch(/dynamic/);
   });
 

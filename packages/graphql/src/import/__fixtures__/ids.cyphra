@@ -1,0 +1,50 @@
+// Imported from @neo4j/graphql type definitions with `cyphra import graphql`.
+// Review before use (run the import again to see the full report):
+// - Team.id: became @id @default(uuid()); Cyphra also adds a uniqueness constraint, which v7 @id does not
+// - Tenant: label shared by Org and Workspace: mapped to interface Tenant (Cyphra writes and matches the label, like v7); it declares their common fields id and region; kept on each implementation: code (uniqueness constraint workspace_code is on :Workspace)
+// - User.id: uniqueness constraint user_id on :User(id): marked @id; no default: the application gives the value, as with v7
+// - User.email: uniqueness constraint user_email on :User(email): marked @unique
+// - User.handle: uniqueness constraint user_handle on :User(handle): marked @unique (the field is optional, an @id cannot be)
+// - Team.slug: uniqueness constraint team_slug on :Team(slug): marked @unique (it already has an @id)
+// - Tenant.id: node key tenant_id on :Tenant(id): marked @id; no default: the application gives the value, as with v7
+// - Workspace.code: uniqueness constraint workspace_code on :Workspace(code): marked @unique
+// - Org: uniqueness constraint org_region_code on :Org(region, code): became @@unique([region, code])
+// - Tag.id: hinted with --id-fields: marked @id; no default: the application gives the value, as with v7
+// - Note.id: no uniqueness constraint on :Note(id) in the database: kept as a plain String (pass --id-fields Note.id to mark it @id)
+
+interface Tenant {
+  id String @id
+  region String
+}
+
+node User {
+  id String @id
+  email String @unique
+  handle String? @unique
+  name String?
+}
+
+node Team {
+  id String @id @default(uuid())
+  slug String @unique
+}
+
+node Org implements Tenant {
+  code String
+
+  @@unique([region, code])
+}
+
+node Workspace implements Tenant {
+  code String @unique
+}
+
+node Tag {
+  id String @id
+  label String
+}
+
+node Note {
+  id String
+  body String?
+}

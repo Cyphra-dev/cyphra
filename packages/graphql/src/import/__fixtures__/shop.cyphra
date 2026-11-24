@@ -1,16 +1,16 @@
 // Imported from @neo4j/graphql type definitions with `cyphra import graphql`.
 // Review before use (run the import again to see the full report):
 // - JSON: custom scalars are not supported by Cyphra: fields of this type are not converted
-// - Purchasable: @neo4j/graphql interfaces are not labels (Cyphra interfaces are): implementing @node types are converted with their own fields, relationships to the interface are not; to share a label, declare a Cyphra `interface`, implement it and backfill the label
 // - Product: a Cyphra node's name is its label: renamed to "Item"
 // - Product.sku: @unique was removed in @neo4j/graphql v7; Cyphra keeps it and creates the uniqueness constraint
 // - Product.attributes: custom scalars are not supported by Cyphra: not converted
 // - Category.id: became @id @default(uuid()); Cyphra also adds a uniqueness constraint, which v7 @id does not
 // - Customer.id: became @id @default(uuid()); Cyphra also adds a uniqueness constraint, which v7 @id does not
-// - Customer.wishlist: relationships to an interface are not supported yet: not converted
 // - Order.id: became @id @default(uuid()); Cyphra also adds a uniqueness constraint, which v7 @id does not
 // - Order.total: @cypher fields are computed by a Cypher query: not converted (compat.v7 still serves it); with the typed client, write it as a query
 // - Review.id: became @id @default(uuid()); Cyphra also adds a uniqueness constraint, which v7 @id does not
+// - Purchasable: v7 interfaces add no label and Product does not carry "Purchasable" through @node(labels); pass --add-interface-labels to map it to a Cyphra interface (the label must then be added to the existing nodes): not converted, nor the relationships to it; the implementations keep their own fields
+// - Customer.wishlist: the interface "Purchasable" was not converted (see its entry): not converted
 
 enum OrderStatus {
   PENDING

@@ -162,9 +162,13 @@ listed in the hints. (Generalised in #185, see [Pull: several interfaces per nod
 `@neo4j/graphql` v7 interfaces are not labels: `type Movie implements Production` stores
 `(:Movie)` only, and queries on `Production` union the implementations' labels. Importing them as
 Cyphra interfaces would change the stored layout (every Movie would need a `:Production` label), so
-the mapping is not exact: interfaces and unions stay reported as unsupported, with a hint to declare
-a Cyphra `interface` and backfill the label if that layout is wanted. `@node(labels: [...])` with
-extra labels stays reported too.
+the mapping is not exact in general.
+
+Shared labels are exact (#229): v7 writes and matches every label of `@node(labels)`, so a label
+after the first becomes a Cyphra interface its carriers implement, holding the fields they declare
+the same way (else `@@labels`). A GraphQL interface is mapped when its implementations carry its
+name as a label (then it is the same layout), or with `--add-interface-labels` and a backfill. With
+`--url`, uniqueness constraints in the database mark `id: ID!` fields `@id` (or `@unique`).
 
 ## Language server
 

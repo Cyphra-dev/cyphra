@@ -257,7 +257,8 @@ const importCmd = program.command("import").description("Import a schema from an
 
 importCmd
   .command("graphql")
-  .argument("<typeDefs...>", "@neo4j/graphql v7 type definitions (.graphql files)")
+  // Optional for commander only: `--url a.graphql` hands the file to the option (see below).
+  .argument("[typeDefs...]", "@neo4j/graphql v7 type definitions (.graphql files)")
   .description(
     "Convert @neo4j/graphql v7 type definitions to schema.cyphra and report what was not converted",
   )
@@ -265,12 +266,49 @@ importCmd
   .option("--merge", "merge into the existing schema, keeping its models, fields and comments")
   .option("--force", "overwrite an existing schema file")
   .option("--print", "write the schema to stdout instead of a file")
+  .option(
+    "--url [uri]",
+    "read the database's uniqueness constraints to mark the fields they cover @id / @unique (no value: NEO4J_URI and the credentials of the environment, like cyphra pull)",
+  )
+  .option(
+    "--id-fields <fields>",
+    "mark these fields @id without a database: Type.field, comma-separated or repeated (Type: a @node type, a shared label or an interface)",
+    (value: string, previous: string[]) => [...previous, value],
+    [] as string[],
+  )
+  .option(
+    "--add-interface-labels",
+    "map GraphQL interfaces to Cyphra interfaces even when their implementations do not carry the interface's label (the label must then be added to the existing nodes)",
+  )
   .action(
     async (
       files: string[],
-      opts: { out?: string; merge?: boolean; force?: boolean; print?: boolean },
+      opts: {
+        out?: string;
+        merge?: boolean;
+        force?: boolean;
+        print?: boolean;
+        url?: string | true;
+        idFields?: string[];
+        addInterfaceLabels?: boolean;
+      },
     ) => {
-      process.exitCode = await runImportGraphql(process.cwd(), files, opts);
+      // `--url a.graphql`: the optional value took a file, not a URI.
+      let url = opts.url;
+      if (typeof url === "string" && !url.includes("://")) {
+        files = [url, ...files];
+        url = true;
+      }
+      if (files.length === 0) {
+        console.error("Give the type definitions files: cyphra import graphql <typeDefs...>");
+        process.exitCode = 1;
+        return;
+      }
+      process.exitCode = await runImportGraphql(process.cwd(), files, {
+        ...opts,
+        url,
+        idFields: (opts.idFields ?? []).flatMap((f) => f.split(",")).filter(Boolean),
+      });
     },
   );
 

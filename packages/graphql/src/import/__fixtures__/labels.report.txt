@@ -1,0 +1,13 @@
+Not converted (3):
+  Rated         interface: v7 interfaces add no label and Review does not carry "Rated" through @node(labels); pass --add-interface-labels to map it to a Cyphra interface (the label must then be added to the existing nodes): not converted, nor the relationships to it; the implementations keep their own fields
+  Mentor        @node(labels): label "Learner" is the label of node Learner: a Mentor would also be read as a Learner, which Cyphra cannot express; not converted
+  Review.about  @relationship: the interface "Rated" was not converted (see its entry): not converted
+
+Converted with differences (7):
+  Lab.id            @id: became @id @default(uuid()); Cyphra also adds a uniqueness constraint, which v7 @id does not
+  Quiz.id           @id: became @id @default(uuid()); Cyphra also adds a uniqueness constraint, which v7 @id does not
+  LearningActivity  interface: mapped to interface LearningActivity, implemented by Lab and Quiz, which carry its label through @node(labels) (Cyphra writes and matches it, like v7); it declares their common fields id, title, durationMinutes and skills; the uniqueness of id now spans every :LearningActivity node (one constraint on :LearningActivity instead of one per label)
+  Catalogued        @node(labels): label shared by Course and Path: mapped to interface Catalogued (Cyphra writes and matches the label, like v7); it declares their common fields code and name
+  Person            @node(labels): label of Learner: mapped to interface Person (Cyphra writes and matches the label, like v7); it declares no field
+  Badge             @node(labels): label "Award" became @@labels([Award]) (the fields do not line up: field "level" differs: Badge has `level String`, Certificate has `level Int`): Cyphra matches Badge nodes with or without it and does not add it on create; add it with `$labels: { add: ["Award"] }`
+  Certificate       @node(labels): label "Award" became @@labels([Award]) (the fields do not line up: field "level" differs: Badge has `level String`, Certificate has `level Int`): Cyphra matches Certificate nodes with or without it and does not add it on create; add it with `$labels: { add: ["Award"] }`

@@ -492,8 +492,10 @@ labels as interfaces extending interfaces.
   implementation's version of the field, so the schema could not guarantee it. Declare the field on
   each implementation instead of on the interface.
 - **Interfaces in `@cyphra/graphql`.** `@neo4j/graphql` v7 interfaces add no label (a `Movie`
-  implementing `Production` is stored as `(:Movie)`), so they have no exact Cyphra equivalent; the
-  importer reports them as unsupported.
+  implementing `Production` is stored as `(:Movie)`), so they have no exact Cyphra equivalent. The
+  importer maps one to a Cyphra interface when its implementations also carry its name in
+  `@node(labels)`, or when you accept to add the label
+  ([`--add-interface-labels`](/cli#shared-labels-and-interfaces)).
 
 Models that share nothing (the hits of a search box, the target of a polymorphic relation) are a
 [union](#unions) rather than an interface.

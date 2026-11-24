@@ -6,7 +6,9 @@
  * in `convert.ts` only walks the SDL and applies these rules.
  *
  * Semantics follow `@neo4j/graphql` 7.x (checked against 7.6.8):
- * - only object types with `@node` are nodes; `@node(labels)` sets the Neo4j labels;
+ * - only object types with `@node` are nodes; `@node(labels)` sets the Neo4j labels, all of which
+ *   are written on create and matched on read;
+ * - interfaces add no label: a type implementing one is stored with its own labels only;
  * - `@id` takes no arguments, is only valid on `ID` fields, autogenerates a UUID and does not
  *   create a uniqueness constraint;
  * - `@unique` no longer exists (removed in v7);
@@ -431,6 +433,11 @@ export type FulltextDraft = { readonly name: string; readonly fields: readonly s
 export type TypeEffect = {
   /** Rename the Cyphra node (its name is its Neo4j label). */
   readonly rename?: string;
+  /**
+   * Labels after the first one in `@node(labels)`: every node of the type carries them. The
+   * converter maps each to a Cyphra interface, or to `@@labels` (see `interfaces.ts`).
+   */
+  readonly extraLabels?: readonly string[];
   /** `@@fulltext` indexes to add to the node. */
   readonly fulltext?: readonly FulltextDraft[];
   readonly issues?: readonly IssueDraft[];
@@ -470,16 +477,29 @@ export const TYPE_DIRECTIVES: Readonly<Record<string, TypeDirectiveRule>> = {
         );
       }
     }
-    if (rest.length > 0) {
-      issues.push(
-        issue(
-          "unsupported",
-          "@node(labels)",
-          `extra labels ${rest.map((l) => `"${l}"`).join(", ")} are not supported: Cyphra nodes have one label`,
-        ),
-      );
+    // Extra labels are mapped by the converter (a Cyphra interface or `@@labels`), which needs
+    // every type's labels and fields to decide.
+    const extraLabels: string[] = [];
+    for (const l of rest) {
+      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(l)) {
+        issues.push(
+          issue(
+            "unsupported",
+            "@node(labels)",
+            `label "${l}" is not an identifier (dynamic labels are not supported): not converted`,
+          ),
+        );
+      } else if (l === first || extraLabels.includes(l)) {
+        issues.push(issue("ignored", "@node(labels)", `label "${l}" is listed twice`));
+      } else {
+        extraLabels.push(l);
+      }
     }
-    return rename ? { rename, issues } : { issues };
+    return {
+      ...(rename ? { rename } : {}),
+      ...(extraLabels.length ? { extraLabels } : {}),
+      issues,
+    };
   },
   fulltext: (d) => {
     const raw = arg(d, "indexes");

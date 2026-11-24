@@ -29,8 +29,10 @@ export {
   formatImportReport,
   mergeImportedSchema,
   printImportedSchema,
+  type GraphQLImportOptions,
   type GraphQLImportResult,
   type GraphQLSource,
   type ImportIssue,
   type ImportSeverity,
+  type UniquenessConstraint,
 } from "./import/index.js";
