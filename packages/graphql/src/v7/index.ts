@@ -29,6 +29,7 @@ import {
   type Executors,
   type ExecutorOptions,
   type ReadExecutor,
+  type SessionConfig,
   type WriteExecutor,
 } from "./execute.js";
 import {
@@ -141,6 +142,19 @@ function withCypherParams(params: Record<string, unknown>, ctx: unknown): Record
   return { ...(extra as AnyRecord), ...params };
 }
 
+/**
+ * v7 opens the request's sessions with `context.sessionConfig` (`database`, `impersonatedUser`,
+ * `auth`) spread over the defaults: the statement runs on that database, as that user.
+ */
+function sessionConfigOf(ctx: unknown): SessionConfig | undefined {
+  const config = ctx && typeof ctx === "object" ? (ctx as AnyRecord).sessionConfig : undefined;
+  if (config === undefined || config === null) return undefined;
+  if (typeof config !== "object" || Array.isArray(config)) {
+    throw new GraphQLError("context.sessionConfig must be an object.");
+  }
+  return config as SessionConfig;
+}
+
 /** Throws `Forbidden` when the statement replaced a selection by the forbidden marker. */
 function checked<T>(decode: (rows: readonly unknown[]) => T): (rows: readonly unknown[]) => T {
   return (rows) => {
@@ -165,7 +179,7 @@ function rootReadResolver(
         ? compiler.rootList(node, args as AnyRecord, info.fieldNodes)
         : compiler.rootConnection(node, args as AnyRecord, info.fieldNodes);
     return checked(compiled.decode)(
-      await execute(compiled.cypher, withCypherParams(compiled.params, ctx)),
+      await execute(compiled.cypher, withCypherParams(compiled.params, ctx), sessionConfigOf(ctx)),
     );
   };
 }
@@ -186,7 +200,7 @@ function rootUnionResolver(
       info.fieldNodes,
     );
     return checked(compiled.decode)(
-      await execute(compiled.cypher, withCypherParams(compiled.params, ctx)),
+      await execute(compiled.cypher, withCypherParams(compiled.params, ctx), sessionConfigOf(ctx)),
     );
   };
 }
@@ -209,7 +223,7 @@ function fulltextResolver(
       info.fieldNodes,
     );
     return checked(compiled.decode)(
-      await execute(compiled.cypher, withCypherParams(compiled.params, ctx)),
+      await execute(compiled.cypher, withCypherParams(compiled.params, ctx), sessionConfigOf(ctx)),
     );
   };
 }
@@ -234,9 +248,10 @@ function rootCypherResolver(
       info.fieldNodes,
     );
     const params = withCypherParams(compiled.params, ctx);
+    const session = sessionConfigOf(ctx);
     if (type === "Query")
-      return checked(compiled.decode)(await executors.read(compiled.cypher, params));
-    return executors.write(compiled.cypher, params, checked(compiled.decode));
+      return checked(compiled.decode)(await executors.read(compiled.cypher, params, session));
+    return executors.write(compiled.cypher, params, checked(compiled.decode), session);
   };
 }
 
@@ -263,6 +278,7 @@ function rootMutationResolver(
       compiled.cypher,
       withCypherParams(compiled.params, ctx),
       checked(compiled.decode),
+      sessionConfigOf(ctx),
     );
   };
 }
@@ -715,11 +731,17 @@ function warnUnfilteredAuthorization(model: V7Model): void {
 /**
  * The GraphQL `contextValue` for a request, as v7 reads it: `token` is the `Authorization` header
  * (`Bearer <jwt>`, verified with `features.authorization`), `jwt` a payload the server already
- * verified (trusted as-is, takes precedence over `token`). Other keys are kept for
- * `$context.<path>` references in rules.
+ * verified (trusted as-is, takes precedence over `token`), `sessionConfig` the session options of
+ * the request's statements (`database`, `impersonatedUser`, `auth`; needs `driver`). Other keys are
+ * kept for `$context.<path>` references in rules.
  */
 export function contextFor(
-  opts: { jwt?: Record<string, unknown>; token?: string; [key: string]: unknown } = {},
+  opts: {
+    jwt?: Record<string, unknown>;
+    token?: string;
+    sessionConfig?: SessionConfig;
+    [key: string]: unknown;
+  } = {},
 ): Record<string, unknown> {
   return Object.fromEntries(Object.entries(opts).filter(([, v]) => v !== undefined));
 }
@@ -749,6 +771,7 @@ export {
   type TypeDefsIssueLocation,
   type V7Model,
 } from "./model.js";
+export type { SessionConfig } from "./execute.js";
 export type { AuthorizationFeature, Features, JwtKey, SubscriptionsFeature } from "./auth/jwt.js";
 export {
   CDCSubscriptionsEngine,

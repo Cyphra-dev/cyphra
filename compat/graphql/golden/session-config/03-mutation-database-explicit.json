@@ -1,0 +1,12 @@
+{
+  "data": {
+    "createThings": {
+      "things": [
+        {
+          "id": "t3",
+          "name": "Cog"
+        }
+      ]
+    }
+  }
+}

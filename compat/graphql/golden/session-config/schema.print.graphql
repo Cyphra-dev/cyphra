@@ -1,0 +1,165 @@
+type Query {
+  thingsConnection(first: Int, after: String, where: ThingWhere, sort: [ThingSort!]): ThingsConnection!
+  things(where: ThingWhere, limit: Int, offset: Int, sort: [ThingSort!]): [Thing!]!
+  thingCount: Int!
+}
+
+type Mutation {
+  createThings(input: [ThingCreateInput!]!): CreateThingsMutationResponse!
+  deleteThings(where: ThingWhere): DeleteInfo!
+  updateThings(where: ThingWhere, update: ThingUpdateInput): UpdateThingsMutationResponse!
+}
+
+"""An enum for sorting in either ascending or descending order."""
+enum SortDirection {
+  """Sort by field values in ascending order."""
+  ASC
+
+  """Sort by field values in descending order."""
+  DESC
+}
+
+type Count {
+  nodes: Int!
+}
+
+"""
+Information about the number of nodes and relationships created during a create mutation
+"""
+type CreateInfo {
+  nodesCreated: Int!
+  relationshipsCreated: Int!
+}
+
+type CreateThingsMutationResponse {
+  info: CreateInfo!
+  things: [Thing!]!
+}
+
+"""
+Information about the number of nodes and relationships deleted during a delete mutation
+"""
+type DeleteInfo {
+  nodesDeleted: Int!
+  relationshipsDeleted: Int!
+}
+
+"""Pagination information (Relay)"""
+type PageInfo {
+  hasNextPage: Boolean!
+  hasPreviousPage: Boolean!
+  startCursor: String
+  endCursor: String
+}
+
+type StringAggregateSelection {
+  shortest: String
+  longest: String
+}
+
+type Thing {
+  id: ID!
+  name: String
+}
+
+type ThingAggregate {
+  count: Count!
+  node: ThingAggregateNode!
+}
+
+type ThingAggregateNode {
+  name: StringAggregateSelection!
+}
+
+type ThingEdge {
+  cursor: String!
+  node: Thing!
+}
+
+type ThingsConnection {
+  edges: [ThingEdge!]!
+  totalCount: Int!
+  pageInfo: PageInfo!
+  aggregate: ThingAggregate!
+}
+
+"""
+Information about the number of nodes and relationships created and deleted during an update mutation
+"""
+type UpdateInfo {
+  nodesCreated: Int!
+  nodesDeleted: Int!
+  relationshipsCreated: Int!
+  relationshipsDeleted: Int!
+}
+
+type UpdateThingsMutationResponse {
+  info: UpdateInfo!
+  things: [Thing!]!
+}
+
+"""ID filters"""
+input IDScalarFilters {
+  eq: ID
+  in: [ID!]
+  contains: ID
+  endsWith: ID
+  startsWith: ID
+}
+
+"""ID mutations"""
+input IDScalarMutations {
+  set: ID
+}
+
+"""String filters"""
+input StringScalarFilters {
+  eq: String
+  in: [String!]
+  contains: String
+  endsWith: String
+  startsWith: String
+}
+
+"""String mutations"""
+input StringScalarMutations {
+  set: String
+}
+
+input ThingCreateInput {
+  id: ID!
+  name: String
+}
+
+"""
+Fields to sort Things by. The order in which sorts are applied is not guaranteed when specifying many fields in one ThingSort object.
+"""
+input ThingSort {
+  id: SortDirection
+  name: SortDirection
+}
+
+input ThingUpdateInput {
+  id: IDScalarMutations
+  id_SET: ID @deprecated(reason: "Please use the generic mutation 'id: { set: ... } }' instead.")
+  name: StringScalarMutations
+  name_SET: String @deprecated(reason: "Please use the generic mutation 'name: { set: ... } }' instead.")
+}
+
+input ThingWhere {
+  id: IDScalarFilters
+  id_EQ: ID @deprecated(reason: "Please use the relevant generic filter id: { eq: ... }")
+  id_IN: [ID!] @deprecated(reason: "Please use the relevant generic filter id: { in: ... }")
+  id_CONTAINS: ID @deprecated(reason: "Please use the relevant generic filter id: { contains: ... }")
+  id_STARTS_WITH: ID @deprecated(reason: "Please use the relevant generic filter id: { startsWith: ... }")
+  id_ENDS_WITH: ID @deprecated(reason: "Please use the relevant generic filter id: { endsWith: ... }")
+  name: StringScalarFilters
+  name_EQ: String @deprecated(reason: "Please use the relevant generic filter name: { eq: ... }")
+  name_IN: [String] @deprecated(reason: "Please use the relevant generic filter name: { in: ... }")
+  name_CONTAINS: String @deprecated(reason: "Please use the relevant generic filter name: { contains: ... }")
+  name_STARTS_WITH: String @deprecated(reason: "Please use the relevant generic filter name: { startsWith: ... }")
+  name_ENDS_WITH: String @deprecated(reason: "Please use the relevant generic filter name: { endsWith: ... }")
+  OR: [ThingWhere!]
+  AND: [ThingWhere!]
+  NOT: ThingWhere
+}

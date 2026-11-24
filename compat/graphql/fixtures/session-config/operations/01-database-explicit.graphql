@@ -1,0 +1,7 @@
+# features: context.sessionConfig
+query {
+  things {
+    id
+    name
+  }
+}
