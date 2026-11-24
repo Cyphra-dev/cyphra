@@ -106,4 +106,37 @@ describe("cyphra import graphql", () => {
     expect(String(write.mock.calls[0]![0])).toContain("node Movie {");
     expect(err.join("\n")).toContain("Not converted (2):");
   });
+
+  it("--id-fields marks the fields @id and --add-interface-labels maps interfaces", async () => {
+    await writeFile(
+      join(dir, "t.graphql"),
+      `interface Production { title: String! }
+type Movie implements Production @node { id: ID! title: String! }
+type Series implements Production @node { id: ID! title: String! }
+`,
+    );
+    const opts = { idFields: ["Movie.id", "Series.id"], addInterfaceLabels: true };
+    expect(await runImportGraphql(dir, ["t.graphql"], opts)).toBe(0);
+    const schema = await readFile(join(dir, "schema.cyphra"), "utf8");
+    expect(schema).toContain("interface Production {\n  title String\n}");
+    expect(schema).toContain("node Movie implements Production {\n  id String @id\n}");
+    const report = err.join("\n");
+    expect(report).toMatch(/Movie\.id\s+--id-fields: hinted with --id-fields: marked @id/);
+    expect(report).toContain("MATCH (n:Movie) SET n:Production");
+  });
+
+  it("--url exits 1 when the database cannot be read", async () => {
+    await writeFile(join(dir, "t.graphql"), TYPEDEFS);
+    const env = { ...process.env };
+    delete process.env.NEO4J_USERNAME;
+    delete process.env.NEO4J_USER;
+    delete process.env.NEO4J_PASSWORD;
+    try {
+      expect(await runImportGraphql(dir, ["t.graphql"], { url: "bolt://localhost:1" })).toBe(1);
+    } finally {
+      process.env = env;
+    }
+    expect(err.join("\n")).toMatch(/^Cannot read the database's constraints: Give the credentials/);
+    await expect(readFile(join(dir, "schema.cyphra"), "utf8")).rejects.toThrow();
+  });
 });

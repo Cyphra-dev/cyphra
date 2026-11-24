@@ -45,6 +45,13 @@ import {
   type IssueDraft,
   type ScalarMapping,
 } from "./mappings.js";
+import {
+  applyBackings,
+  pinnedBy,
+  resolveBackings,
+  type UniquenessConstraint,
+} from "./constraints.js";
+import { mapInterfaces, type NodeDraft } from "./interfaces.js";
 
 /** One type definitions file. */
 export type GraphQLSource = { readonly name: string; readonly body: string };
@@ -58,6 +65,28 @@ export type GraphQLImportResult = {
    * field that was not converted.
    */
   readonly notes: ReadonlyMap<string, readonly string[]>;
+};
+
+/** Options of {@link convertGraphQLTypeDefs}. */
+export type GraphQLImportOptions = {
+  /**
+   * The node uniqueness constraints (and node keys) of the database the type definitions serve.
+   * The fields they cover become `@id` (an `ID` field) or `@unique`, a constraint over several
+   * properties `@@unique([…])`. When given (even empty), the report also lists the `ID` fields no
+   * constraint covers.
+   */
+  readonly constraints?: readonly UniquenessConstraint[];
+  /**
+   * `Type.field` hints for fields to mark `@id` without a database (`Type` is a `@node` type, a
+   * shared label or an interface; `field` a GraphQL field name). No default is added.
+   */
+  readonly idFields?: readonly string[];
+  /**
+   * Map GraphQL interfaces to Cyphra interfaces even when their implementations do not carry the
+   * interface's name as a label (v7 interfaces add no label). The label must then be added to the
+   * existing nodes; the report gives the Cypher.
+   */
+  readonly addInterfaceLabels?: boolean;
 };
 
 /** The type definitions are not valid GraphQL (syntax error, unknown type, duplicate type). */
@@ -76,6 +105,8 @@ type TypeInfo = {
   readonly values: string[];
   /** Member types of a union. */
   readonly members: string[];
+  /** Interfaces an object (or interface) type implements. */
+  readonly interfaces: string[];
   readonly source: string;
 };
 
@@ -193,6 +224,12 @@ function collectTypes(sources: readonly GraphQLSource[]): Map<string, TypeInfo> 
             (m) => m.name.value,
           ),
         ],
+        interfaces: [
+          ...((def.kind === Kind.OBJECT_TYPE_DEFINITION ||
+          def.kind === Kind.INTERFACE_TYPE_DEFINITION
+            ? def.interfaces
+            : undefined) ?? []),
+        ].map((i) => i.name.value),
         source: src.name,
       });
     }
@@ -209,6 +246,12 @@ function collectTypes(sources: readonly GraphQLSource[]): Map<string, TypeInfo> 
       def.fields
     ) {
       base.fields.push(...def.fields);
+    }
+    if (
+      (def.kind === Kind.OBJECT_TYPE_EXTENSION || def.kind === Kind.INTERFACE_TYPE_EXTENSION) &&
+      def.interfaces
+    ) {
+      base.interfaces.push(...def.interfaces.map((i) => i.name.value));
     }
     if (def.kind === Kind.ENUM_TYPE_EXTENSION && def.values) {
       base.values.push(...def.values.map((v) => v.name.value));
@@ -237,6 +280,13 @@ function checkReferences(types: Map<string, TypeInfo>): void {
       }
     }
     if (t.kind !== "object" && t.kind !== "interface") continue;
+    for (const i of t.interfaces) {
+      if (types.get(i)?.kind !== "interface") {
+        throw new GraphQLImportError(
+          `${t.source}: type "${t.name}" can only implement interfaces, not "${i}".`,
+        );
+      }
+    }
     for (const f of t.fields) {
       const { named } = unwrap(f.type);
       if (!types.has(named) && !SCALARS[named]) {
@@ -251,9 +301,22 @@ function checkReferences(types: Map<string, TypeInfo>): void {
 type RelUsage = {
   readonly propsType: string;
   readonly relType: string;
-  readonly start: string;
-  readonly end: string;
+  start: string;
+  end: string;
   readonly at: string;
+  /** GraphQL type and field declaring the relationship, and which end that type is. */
+  readonly owner: string;
+  readonly field: string;
+  readonly self: "start" | "end";
+};
+
+/** A relation field to a GraphQL interface: kept only if the interface is converted. */
+type InterfaceRelation = {
+  readonly owner: string;
+  readonly field: NodeField;
+  readonly target: string;
+  readonly at: string;
+  readonly line: string;
 };
 
 /**
@@ -261,10 +324,12 @@ type RelUsage = {
  * converted. Never throws for unsupported features; only for invalid SDL.
  *
  * @param input - SDL text, or several named sources (merged like one document).
+ * @param options - Database constraints, `@id` hints, interface labels.
  * @throws {GraphQLImportError} On a syntax error, an unknown type or a duplicate type.
  */
 export function convertGraphQLTypeDefs(
   input: string | readonly GraphQLSource[],
+  options: GraphQLImportOptions = {},
 ): GraphQLImportResult {
   const sources = typeof input === "string" ? [{ name: "typeDefs", body: input }] : input;
   const types = collectTypes(sources);
@@ -297,12 +362,7 @@ export function convertGraphQLTypeDefs(
         // Converted to a Cyphra `enum` when a converted field uses it (see `enumMappings`).
         break;
       case "interface":
-        report(t.name, {
-          severity: "unsupported",
-          feature: "interface",
-          message:
-            "@neo4j/graphql interfaces are not labels (Cyphra interfaces are): implementing @node types are converted with their own fields, relationships to the interface are not; to share a label, declare a Cyphra `interface`, implement it and backfill the label",
-        });
+        // Converted with the shared labels, once the nodes' fields are known (see `interfaces.ts`).
         break;
       case "union":
         // Converted once the member nodes have their Cyphra names (below).
@@ -349,6 +409,7 @@ export function convertGraphQLTypeDefs(
 
   const usedNames = new Set<string>(types.keys());
   const fulltextOf = new Map<string, FulltextDraft[]>();
+  const extraLabelsOf = new Map<string, readonly string[]>();
   for (const t of nodeTypes) {
     let name = t.name;
     for (const d of t.directives) {
@@ -372,6 +433,9 @@ export function convertGraphQLTypeDefs(
       }
       const effect = rule(d, t.name);
       for (const i of effect.issues ?? []) report(t.name, i);
+      if (effect.extraLabels?.length) {
+        extraLabelsOf.set(t.name, [...(extraLabelsOf.get(t.name) ?? []), ...effect.extraLabels]);
+      }
       if (effect.fulltext?.length) {
         fulltextOf.set(t.name, [...(fulltextOf.get(t.name) ?? []), ...effect.fulltext]);
       }
@@ -420,12 +484,14 @@ export function convertGraphQLTypeDefs(
 
   // Pass 2: fields.
   const usages: RelUsage[] = [];
-  const declarations: NodeDeclaration[] = [];
+  const interfaceRelations: InterfaceRelation[] = [];
+  const drafts: NodeDraft[] = [];
   for (const t of nodeTypes) {
     const declName = nodeName.get(t.name)!;
     const fields: NodeField[] = [];
-    /** GraphQL field name → converted scalar field (its name may differ after `@alias`). */
-    const scalarOf = new Map<string, ScalarNodeField>();
+    /** GraphQL field name → converted field (its name may differ after `@alias`). */
+    const converted = new Map<string, NodeField>();
+    const graphqlTypeOf = new Map<string, string>();
     let hasId = false;
     for (const f of t.fields) {
       const at = `${t.name}.${f.name.value}`;
@@ -446,7 +512,17 @@ export function convertGraphQLTypeDefs(
           continue;
         }
         fields.push(rel.field);
+        converted.set(f.name.value, rel.field);
         if (rel.usage) usages.push(rel.usage);
+        if (target?.kind === "interface") {
+          interfaceRelations.push({
+            owner: t.name,
+            field: rel.field,
+            target: u.named,
+            at,
+            line: skippedLine(f, "relationship not converted"),
+          });
+        }
         continue;
       }
       const scalar = convertScalar(f, u, at, "node", hasId, mapScalar, report);
@@ -456,25 +532,117 @@ export function convertGraphQLTypeDefs(
       }
       if (scalar.takesId) hasId = true;
       fields.push(scalar.field);
-      scalarOf.set(f.name.value, scalar.field);
+      converted.set(f.name.value, scalar.field);
+      graphqlTypeOf.set(scalar.field.name, u.named);
     }
     const kept = dedupeNames(fields, t.name, report);
     const attributes = fulltextAttributes(
       t.name,
       fulltextOf.get(t.name) ?? [],
       (name) => {
-        const f = scalarOf.get(name);
-        return f && kept.includes(f) ? f : undefined;
+        const f = converted.get(name);
+        return f?.kind === "Scalar" && kept.includes(f) ? f : undefined;
       },
       report,
     );
-    declarations.push({
-      kind: "Node",
+    drafts.push({
+      graphqlName: t.name,
       name: declName,
       fields: kept,
-      ...(attributes.length ? { attributes } : {}),
+      byGraphql: new Map([...converted].filter(([, f]) => kept.includes(f))),
+      graphqlTypeOf,
+      extraLabels: extraLabelsOf.get(t.name) ?? [],
+      interfaces: t.interfaces,
+      implements: [],
+      attributes,
     });
   }
+
+  // Shared labels and GraphQL interfaces: Cyphra interfaces (or `@@labels`).
+  const graphqlInterfaces = [...types.values()].filter((t) => t.kind === "interface");
+  const backings = resolveBackings(
+    drafts,
+    options.constraints ?? [],
+    options.idFields ?? [],
+    new Set([...graphqlInterfaces.map((i) => i.name), ...drafts.flatMap((d) => d.extraLabels)]),
+    report,
+  );
+  const nodeNames = new Set(drafts.map((d) => d.name));
+  const pass = mapInterfaces({
+    nodes: drafts,
+    graphqlInterfaces: graphqlInterfaces.map((i) => ({
+      name: i.name,
+      fields: i.fields.map((f) => f.name.value),
+      directives: i.directives.map((d) => d.name.value),
+    })),
+    nodeNames,
+    takenNames: new Set([
+      ...CYPHRA_TYPE_NAMES,
+      ...[...types.values()].filter((t) => t.kind !== "interface").map((t) => t.name),
+    ]),
+    pinned: pinnedBy(backings),
+    addInterfaceLabels: Boolean(options.addInterfaceLabels),
+    report,
+  });
+  const interfaceNames = new Set(pass.interfaces.map((i) => i.name));
+
+  // Relationships to GraphQL interfaces that were not converted.
+  for (const r of interfaceRelations) {
+    if (interfaceNames.has(r.target)) continue;
+    report(r.at, {
+      severity: "unsupported",
+      feature: "@relationship",
+      message: `the interface "${r.target}" was not converted (see its entry): not converted`,
+    });
+    const owner = drafts.find((d) => d.graphqlName === r.owner)!;
+    const hoistedTo = pass.hoisted.get(r.owner)?.get(r.field.name);
+    const decl = hoistedTo ? pass.interfaces.find((i) => i.name === hoistedTo)! : owner;
+    if (decl.fields.includes(r.field)) {
+      decl.fields = decl.fields.filter((f) => f !== r.field);
+      note(decl.name, r.line);
+    }
+  }
+  const dropped = new Set(
+    interfaceRelations.filter((r) => !interfaceNames.has(r.target)).map((r) => r.at),
+  );
+
+  applyBackings(backings, drafts, pass.interfaces, {
+    fromDatabase: options.constraints !== undefined,
+    unmappedLabels: new Set(
+      drafts.flatMap((d) => d.extraLabels).filter((l) => !interfaceNames.has(l)),
+    ),
+    report,
+  });
+
+  // A relationship declared on an interface starts (or ends) at the interface.
+  const relUsages: RelUsage[] = [];
+  for (const u of usages) {
+    if (dropped.has(u.at)) continue;
+    const to = pass.hoisted.get(u.owner)?.get(u.field);
+    if (to) u[u.self] = to;
+    relUsages.push(u);
+  }
+  /** Cyphra union or interface name → its member node names. */
+  const abstractMembers = new Map<string, ReadonlySet<string>>(unionMembers);
+  for (const i of pass.interfaces)
+    abstractMembers.set(i.name, new Set(i.members.map((m) => m.name)));
+
+  const declarations: NodeDeclaration[] = [
+    ...pass.interfaces.map((i): NodeDeclaration => ({
+      kind: "Node",
+      name: i.name,
+      abstract: true,
+      fields: i.fields,
+      ...(i.attributes.length ? { attributes: i.attributes } : {}),
+    })),
+    ...drafts.map((d): NodeDeclaration => ({
+      kind: "Node",
+      name: d.name,
+      ...(d.implements.length ? { implements: [...d.implements] } : {}),
+      fields: d.fields,
+      ...(d.attributes.length ? { attributes: d.attributes } : {}),
+    })),
+  ];
 
   // Relationship models: one per (props type, relType, start, end).
   const relationships: RelationshipDeclaration[] = [];
@@ -482,7 +650,7 @@ export function convertGraphQLTypeDefs(
   const allNames = new Set<string>(declarations.map((d) => d.name));
   for (const props of propsTypes.values()) {
     const candidates: RelUsage[] = [];
-    for (const u of usages.filter((x) => x.propsType === props.name)) {
+    for (const u of relUsages.filter((x) => x.propsType === props.name)) {
       const key = `${u.relType}|${u.start}|${u.end}`;
       const owner = takenTriples.get(key);
       if (owner && owner !== props.name) {
@@ -505,8 +673,8 @@ export function convertGraphQLTypeDefs(
         (y) =>
           y !== x &&
           y.relType === x.relType &&
-          ((y.start === x.start && unionMembers.get(y.end)?.has(x.end)) ||
-            (y.end === x.end && unionMembers.get(y.start)?.has(x.start))),
+          ((y.start === x.start && abstractMembers.get(y.end)?.has(x.end)) ||
+            (y.end === x.end && abstractMembers.get(y.start)?.has(x.start))),
       );
     const triples = candidates.filter((x) => !covered(x));
     if (triples.length === 0) {
@@ -824,15 +992,18 @@ function convertRelation(
     return undefined;
   }
   const toUnion = target?.kind === "union";
-  if (toUnion ? !unionNames.has(u.named) : target?.kind !== "object" || !nodeName.has(u.named)) {
+  // To an interface: kept if the interface is converted (decided once every node is converted).
+  const toInterface = target?.kind === "interface";
+  if (
+    !toInterface &&
+    (toUnion ? !unionNames.has(u.named) : target?.kind !== "object" || !nodeName.has(u.named))
+  ) {
     report(at, {
       severity: "unsupported",
       feature: "@relationship",
       message: toUnion
         ? `the union "${u.named}" was not converted (see its entry): not converted`
-        : target?.kind === "interface"
-          ? "relationships to an interface are not supported yet: not converted"
-          : `relationships to "${u.named}" (not a @node type) are not supported yet: not converted`,
+        : `relationships to "${u.named}" (not a @node type) are not supported yet: not converted`,
     });
     return undefined;
   }
@@ -886,7 +1057,7 @@ function convertRelation(
     }
   }
   const self = nodeName.get(ownerType)!;
-  const other = toUnion ? u.named : nodeName.get(u.named)!;
+  const other = toUnion || toInterface ? u.named : nodeName.get(u.named)!;
   const field: NodeField = {
     kind: "Relational",
     name: f.name.value,
@@ -915,5 +1086,17 @@ function convertRelation(
     return { field };
   }
   const [start, end] = direction === "OUT" ? [self, other] : [other, self];
-  return { field, usage: { propsType, relType, start, end, at } };
+  return {
+    field,
+    usage: {
+      propsType,
+      relType,
+      start,
+      end,
+      at,
+      owner: ownerType,
+      field: f.name.value,
+      self: direction === "OUT" ? "start" : "end",
+    },
+  };
 }

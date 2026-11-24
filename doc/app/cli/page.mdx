@@ -27,7 +27,7 @@ App code depends on **`cyphra`** separately (see [Getting started](/getting-star
 | `cyphra studio`                  | Browse and edit the data in a local web UI built from the schema ([details](#cyphra-studio); `--port`, `--host`, `--no-open`, `--read-only`)                        |
 | `cyphra migration:create <name>` | Empty `.mjs` migration to write by hand                                                                                                                             |
 | `cyphra pull`                    | Introspect the database and write `schema.cyphra` (`--print`, `--force`, `--interface <labels…>`)                                                                   |
-| `cyphra import graphql <files>`  | Convert `@neo4j/graphql` v7 type definitions to `schema.cyphra` (`--out`, `--merge`, `--force`, `--print`)                                                          |
+| `cyphra import graphql <files>`  | Convert `@neo4j/graphql` v7 type definitions to `schema.cyphra` (`--out`, `--merge`, `--force`, `--print`, `--url`, `--id-fields`, `--add-interface-labels`)        |
 | `cyphra import prisma <schema>`  | Convert a Prisma schema to `schema.cyphra`, foreign keys to edges ([details](#import-from-prisma); `--out`, `--merge`, `--force`, `--print`)                        |
 | `cyphra import neogma <files>`   | Convert neogma models (decorator classes or `ModelFactory`) to `schema.cyphra` ([details](#import-from-neogma); `--out`, `--merge`, `--force`, `--print`)           |
 | `cyphra push`                    | Apply constraints and range, vector and full-text indexes directly (prototyping)                                                                                    |
@@ -363,25 +363,110 @@ What converts:
 - `@fulltext(indexes: [{ indexName, queryName, fields }])` becomes one
   [`@@fulltext([fields], name: indexName)`](/schema#full-text-indexes) per index, so `cyphra migrate`
   creates the indexes. `queryName` names a GraphQL query field and is listed as ignored.
+- Shared labels and interfaces, see [below](#shared-labels-and-interfaces).
+- `id: ID!` fields backed by a uniqueness constraint, with `--url` or `--id-fields`, see
+  [below](#unique-fields-and-id).
+
+### Shared labels and interfaces
+
+v7 writes every label of `@node(labels)` on create and matches on all of them, so
+`@node(labels: ["Lab", "LearningActivity"])` stores `(:Lab:LearningActivity)`. That is what a
+[Cyphra interface](/schema#interfaces-and-multiple-labels) is, so a label after the first becomes
+one:
+
+```graphql
+type Lab @node(labels: ["Lab", "LearningActivity"]) {
+  id: ID! @id
+  title: String!
+  environment: String!
+}
+
+type Quiz @node(labels: ["Quiz", "LearningActivity"]) {
+  id: ID! @id
+  title: String!
+  passMark: Int!
+}
+```
+
+```cyphra
+interface LearningActivity {
+  id String @id @default(uuid())
+  title String
+}
+
+node Lab implements LearningActivity {
+  environment String
+}
+
+node Quiz implements LearningActivity {
+  passMark Int
+}
+```
+
+- **Common fields move to the interface** when every type carrying the label declares them the same
+  way (type, nullability, directives). A `@unique` or `@id` that moves then covers every
+  `:LearningActivity` node (one constraint on the shared label), and the report says so. A label on
+  one type becomes an interface without fields.
+- **When the fields do not line up** (a common field declared `String!` on one type and `Int` on
+  another), the label becomes [`@@labels([LearningActivity])`](/schema#dynamic-labels) on each type
+  instead. Cyphra reads and filters on it, but does not add it on create: pass
+  `$labels: { add: ["LearningActivity"] }` when you create.
+- A label that is another type's label (`@node(labels: ["Mentor", "Learner"])` next to a `Learner`
+  type) cannot be expressed and is reported.
+
+A GraphQL `interface` adds no label in v7: a `Movie` implementing `Production` is stored as
+`(:Movie)`. It becomes a Cyphra interface (relationships to it and `@relationshipProperties` on them
+included: `relationship ActedIn { from Person to Production }`) when its implementations carry its
+name as a label, `@node(labels: ["Movie", "Production"])`, and declare its fields the same way. When
+they do not carry the label, the interface is reported and its relationships are not converted, so
+the schema keeps matching the stored nodes. Pass `--add-interface-labels` to map it anyway: the
+report then gives the Cypher that adds the label to the existing nodes
+(`MATCH (n:Movie) SET n:Production`), to run before reading them through Cyphra.
+
+### Unique fields and @id
+
+The type definitions do not say whether `id: ID!` is unique: v7 `@id` generates a UUID but creates no
+constraint, and a plain `ID!` field is just a string. Without more information, the import keeps
+`id: ID!` as `id String`. Give it the database, or name the fields:
+
+```bash
+cyphra import graphql typeDefs.graphql --url                    # NEO4J_URI, NEO4J_USERNAME, NEO4J_PASSWORD
+cyphra import graphql typeDefs.graphql --url bolt://neo4j:secret@localhost:7687
+cyphra import graphql typeDefs.graphql --id-fields User.id,Tag.key
+```
+
+- `--url` reads the database's constraints (read-only, `SHOW CONSTRAINTS`; without a value, the
+  connection of the environment and the `dialect` of `cyphra.json`, like [`cyphra pull`](#cyphra-pull)).
+  A uniqueness constraint or node key on one property marks the field: an `ID` field becomes the
+  node's `@id`, another field (or a second `ID` field, or an optional one) `@unique`. A constraint on
+  a shared label marks the interface's field. A constraint over several properties becomes
+  `@@unique([…])`. The report lists every field it marked, and every `ID` field no constraint covers.
+- `--id-fields Type.field` (comma-separated or repeated) marks fields `@id` without a database.
+  `Type` is a `@node` type, a shared label or an interface, `field` the GraphQL field name.
+- Neither adds a default: the application gives the values, as it did with v7. A field already
+  marked `@id` in the type definitions keeps `@id @default(uuid())`.
+- A field whose constraint is on each type's own label (`:Lab(id)`) stays on each type rather than
+  moving to the shared interface, so the constraint keeps its label.
 
 Everything else is listed in a report, never dropped silently. Fields that were not converted also
 appear as comments in the schema. The command exits with 0 when it wrote the schema, warnings included,
-and with 1 only when the type definitions are not valid GraphQL:
+and with 1 only when the type definitions are not valid GraphQL (or `--url` cannot read the database):
 
 ```text
 Wrote schema.cyphra (2 node(s), 1 relationship model(s))
 
-Not converted (2):
-  Person         @node(labels): extra labels "Actor" are not supported: Cyphra nodes have one label
+Not converted (1):
   Movie.similar  @cypher: @cypher fields are computed by a Cypher query: not converted (compat.v7 still serves it); with the typed client, write it as a query
 
-Converted with differences (3):
+Converted with differences (4):
   Movie.id     @id: became @id @default(uuid()); Cyphra also adds a uniqueness constraint, which v7 @id does not
   Person.id    @id: became @id @default(uuid()); Cyphra also adds a uniqueness constraint, which v7 @id does not
   Person.name  @unique: @unique was removed in @neo4j/graphql v7; Cyphra keeps it and creates the uniqueness constraint
+  Actor        @node(labels): label of Person: mapped to interface Actor (Cyphra writes and matches the label, like v7); it declares no field
 ```
 
-Not converted today: custom scalars, interfaces (`@neo4j/graphql` interfaces are not labels, so they do not map to [Cyphra interfaces](/schema#interfaces-and-multiple-labels); declare one and backfill its label if you want that layout), extra labels, `@cypher` and
+Not converted today: custom scalars, interfaces whose implementations do not carry their label
+(unless you pass `--add-interface-labels`, see [above](#shared-labels-and-interfaces)), `@cypher` and
 `@customResolver` fields, `@authentication` and `@authorization` rules, `@vector` indexes (the type
 definitions carry neither the dimensions nor the similarity: declare a
 [`Vector(N)` field with `@vectorIndex`](/schema#vector-fields) by hand), and update timestamps. API-only settings such as `@plural`, `@selectable` or `@filterable`

@@ -8,8 +8,10 @@
 export {
   GraphQLImportError,
   convertGraphQLTypeDefs,
+  type GraphQLImportOptions,
   type GraphQLImportResult,
   type GraphQLSource,
 } from "./convert.js";
+export type { UniquenessConstraint } from "./constraints.js";
 export type { ImportIssue, ImportSeverity } from "./mappings.js";
 export { formatImportReport, mergeImportedSchema, printImportedSchema } from "./print.js";

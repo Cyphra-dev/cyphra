@@ -6,7 +6,12 @@
  * @packageDocumentation
  */
 
-import { formatImportIssues, mergeImportResult, printImportResult } from "@cyphra/schema";
+import {
+  formatImportIssues,
+  mergeImportResult,
+  parseSchema,
+  printImportResult,
+} from "@cyphra/schema";
 import type { GraphQLImportResult } from "./convert.js";
 import type { ImportIssue } from "./mappings.js";
 
@@ -36,7 +41,23 @@ export function mergeImportedSchema(
   existing: string,
   result: GraphQLImportResult,
 ): { source: string; issues: ImportIssue[] } {
-  return mergeImportResult(existing, result, { header: HEADER });
+  const merged = mergeImportResult(existing, result, { header: HEADER });
+  // An existing node keeps its `implements` list: say which interfaces it does not implement.
+  const current = parseSchema(existing).declarations;
+  for (const decl of result.document.declarations) {
+    if (decl.kind !== "Node" || !decl.implements?.length) continue;
+    const mine = current.find((d) => d.name === decl.name);
+    if (mine?.kind !== "Node") continue;
+    const missing = decl.implements.filter((i) => !mine.implements?.includes(i));
+    if (missing.length === 0) continue;
+    merged.issues.push({
+      severity: "changed",
+      at: decl.name,
+      feature: "--merge",
+      message: `the import implements ${missing.join(", ")}: kept yours, which does not (add \`implements ${missing.join(", ")}\` and remove the fields it declares)`,
+    });
+  }
+  return merged;
 }
 
 /**

@@ -140,4 +140,22 @@ relationship P {
       ),
     ).toThrow(/invalid schema/);
   });
+
+  it("reports the interfaces an existing node does not implement", () => {
+    const existing = `node Lab {
+  id String @id
+  title String
+}
+`;
+    const result = convertGraphQLTypeDefs(`
+      type Lab @node(labels: ["Lab", "Activity"]) { id: ID! title: String! }
+      type Quiz @node(labels: ["Quiz", "Activity"]) { id: ID! title: String! }
+    `);
+    const { source, issues } = mergeImportedSchema(existing, result);
+    expect(source).toContain("interface Activity {");
+    expect(source).toContain("node Quiz implements Activity {");
+    expect(source).toContain("node Lab {\n  id String @id\n  title String\n}");
+    expect(issues.find((i) => i.at === "Lab")?.message).toMatch(/implements Activity: kept yours/);
+    resolveSchema(parseSchema(source));
+  });
 });

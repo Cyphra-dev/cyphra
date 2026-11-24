@@ -1,8 +1,8 @@
-Not converted (2):
-  Person         @node(labels): extra labels "Actor" are not supported: Cyphra nodes have one label
+Not converted (1):
   Movie.similar  @cypher: @cypher fields are computed by a Cypher query: not converted (compat.v7 still serves it); with the typed client, write it as a query
 
-Converted with differences (3):
+Converted with differences (4):
   Movie.id     @id: became @id @default(uuid()); Cyphra also adds a uniqueness constraint, which v7 @id does not
   Person.id    @id: became @id @default(uuid()); Cyphra also adds a uniqueness constraint, which v7 @id does not
   Person.name  @unique: @unique was removed in @neo4j/graphql v7; Cyphra keeps it and creates the uniqueness constraint
+  Actor        @node(labels): label of Person: mapped to interface Actor (Cyphra writes and matches the label, like v7); it declares no field
