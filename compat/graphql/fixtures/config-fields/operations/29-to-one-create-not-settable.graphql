@@ -1,0 +1,8 @@
+# features: config.settable, relationship.to-one
+mutation {
+  createMovies(input: [{ id: "m9", title: "New", studio: { create: { node: {} } } }]) {
+    movies {
+      id
+    }
+  }
+}

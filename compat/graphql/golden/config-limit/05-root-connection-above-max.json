@@ -1,0 +1,28 @@
+{
+  "data": {
+    "volumesConnection": {
+      "totalCount": 5,
+      "pageInfo": {
+        "hasNextPage": false,
+        "endCursor": "YXJyYXljb25uZWN0aW9uOjM="
+      },
+      "edges": [
+        {
+          "node": {
+            "id": "v2"
+          }
+        },
+        {
+          "node": {
+            "id": "v3"
+          }
+        },
+        {
+          "node": {
+            "id": "v4"
+          }
+        }
+      ]
+    }
+  }
+}

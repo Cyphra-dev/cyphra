@@ -1,0 +1,15 @@
+# features: config.mutation
+mutation {
+  createComments(input: [{ id: "c2", text: "Second" }]) {
+    comments {
+      id
+      text
+    }
+  }
+  updateComments(where: { id: { eq: "c1" } }, update: { text: { set: "Edited" } }) {
+    comments {
+      id
+      text
+    }
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "errors": [
+    {
+      "message": "Field \"role\" is not defined by type \"ActedInUpdateInput\"."
+    }
+  ]
+}

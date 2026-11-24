@@ -1,0 +1,19 @@
+{
+  "data": {
+    "teams": [
+      {
+        "name": "Core",
+        "accounts": [
+          {
+            "id": "a1",
+            "displayName": "ADA"
+          },
+          {
+            "id": "a2",
+            "displayName": "BOB"
+          }
+        ]
+      }
+    ]
+  }
+}

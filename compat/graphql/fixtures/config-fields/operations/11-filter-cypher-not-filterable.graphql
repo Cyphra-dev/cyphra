@@ -1,0 +1,6 @@
+# features: config.filterable, cypher
+query {
+  movies(where: { computed: { eq: "Alpha!" } }) {
+    id
+  }
+}

@@ -1,0 +1,13 @@
+# features: config.limit, sort
+# ordered
+query {
+  authors {
+    id
+    volumes(sort: [{ id: DESC }]) {
+      id
+    }
+    capped: volumes(limit: 5, sort: [{ id: ASC }]) {
+      id
+    }
+  }
+}

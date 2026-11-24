@@ -1,0 +1,17 @@
+{
+  "data": {
+    "reportsConnection": {
+      "totalCount": 2,
+      "aggregate": {
+        "count": {
+          "nodes": 2
+        },
+        "node": {
+          "pages": {
+            "sum": 40
+          }
+        }
+      }
+    }
+  }
+}

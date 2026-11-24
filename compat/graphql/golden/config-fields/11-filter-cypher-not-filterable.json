@@ -1,0 +1,7 @@
+{
+  "errors": [
+    {
+      "message": "Field \"computed\" is not defined by type \"MovieWhere\"."
+    }
+  ]
+}

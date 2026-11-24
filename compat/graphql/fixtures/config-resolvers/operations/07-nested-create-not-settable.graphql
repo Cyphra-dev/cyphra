@@ -1,0 +1,16 @@
+# features: config.settable, resolvers
+mutation {
+  createTeams(
+    input: [
+      {
+        id: "t2"
+        name: "New"
+        accounts: { create: [{ node: { id: "x", email: "x@example.test", role: "admin" } }] }
+      }
+    ]
+  ) {
+    teams {
+      id
+    }
+  }
+}

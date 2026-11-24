@@ -1,0 +1,7 @@
+{
+  "errors": [
+    {
+      "message": "Field \"title\" is not defined by type \"MovieSort\"."
+    }
+  ]
+}

@@ -1,0 +1,24 @@
+# features: config.limit, aggregate
+query {
+  volumesConnection {
+    aggregate {
+      count {
+        nodes
+      }
+      node {
+        pages {
+          sum
+        }
+      }
+    }
+  }
+  authors {
+    volumesConnection {
+      aggregate {
+        count {
+          nodes
+        }
+      }
+    }
+  }
+}

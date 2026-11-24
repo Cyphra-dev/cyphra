@@ -1,0 +1,8 @@
+# features: config.mutation, resolvers
+mutation {
+  updateAccounts(update: { role: { set: "admin" } }) {
+    accounts {
+      id
+    }
+  }
+}

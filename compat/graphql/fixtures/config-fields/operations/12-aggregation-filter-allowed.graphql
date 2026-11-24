@@ -1,0 +1,6 @@
+# features: config.filterable, filter.aggregate
+query {
+  actors(where: { moviesConnection: { aggregate: { node: { budget: { sum: { gt: 110 } } } } } }) {
+    name
+  }
+}

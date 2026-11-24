@@ -78,6 +78,7 @@ export type CypherNodeField = {
   readonly args: readonly FieldArgument[];
   readonly description?: string;
   readonly deprecated?: string;
+  readonly config: FieldConfig;
 };
 
 /** A `@cypher` field of `Query` or `Mutation`. */
@@ -125,6 +126,11 @@ export type UserField = {
   readonly definition: FieldDefinitionNode;
   /** `@customResolver(requires)`: the selection always fetched for the resolver's parent. */
   readonly requires?: SelectionSetNode;
+  /**
+   * `@selectable` / `@settable` / `@filterable` / `@sortable`. Like v7, only `onRead` matters: these
+   * fields are never in filters, sorts, inputs or aggregations anyway.
+   */
+  readonly config: FieldConfig;
 };
 
 /** Types without `@node` (object, input and union types), served as written. */
@@ -138,6 +144,59 @@ export type FulltextIndex = {
   readonly queryName: string;
   readonly fields: readonly string[];
 };
+
+/**
+ * v7 schema configuration of a field (`@selectable`, `@settable`, `@filterable`, `@sortable`),
+ * resolved with v7's argument defaults: every flag is `true` without the directive, but an
+ * applied directive defaults `onAggregate` / `byAggregate` to `false` (`@filterable` alone turns
+ * aggregation filters off, like v7).
+ */
+export type FieldConfig = {
+  /** `@selectable(onRead)`: the field is in the object type (and subscription payloads). */
+  readonly onRead: boolean;
+  /** `@selectable(onAggregate)`: the field is in aggregate selections. */
+  readonly onAggregate: boolean;
+  /** `@settable(onCreate)`: the field is in create inputs. */
+  readonly onCreate: boolean;
+  /** `@settable(onUpdate)`: the field is in update inputs. */
+  readonly onUpdate: boolean;
+  /** `@filterable(byValue)`: the field is in `where` inputs. */
+  readonly byValue: boolean;
+  /** `@filterable(byAggregate)`: the field is in aggregation filters. */
+  readonly byAggregate: boolean;
+  /** `@sortable(byValue)`: the field is in sort inputs. */
+  readonly sortable: boolean;
+};
+
+export const DEFAULT_FIELD_CONFIG: FieldConfig = {
+  onRead: true,
+  onAggregate: true,
+  onCreate: true,
+  onUpdate: true,
+  byValue: true,
+  byAggregate: true,
+  sortable: true,
+};
+
+/** `@query(read, connection, aggregate)` of a type (or the schema), resolved. */
+export type QueryConfig = {
+  /** The root list query (`movies`). */
+  readonly read: boolean;
+  /** The root connection query (`moviesConnection`) with `edges` / `totalCount` / `pageInfo`. */
+  readonly connection: boolean;
+  /** The `aggregate` field of the root connection (which exists when this or `connection` holds). */
+  readonly aggregate: boolean;
+};
+
+/** `@mutation(operations)` of a type (or the schema): which root mutations exist. */
+export type MutationConfig = {
+  readonly create: boolean;
+  readonly update: boolean;
+  readonly delete: boolean;
+};
+
+/** `@limit(default, max)` of a type. */
+export type LimitConfig = { readonly default?: number; readonly max?: number };
 
 export type Attribute = {
   readonly name: string;
@@ -161,6 +220,7 @@ export type Attribute = {
   readonly deprecated?: string;
   /** Field-level `@authentication` / `@authorization`. */
   readonly auth?: AuthAnnotations;
+  readonly config: FieldConfig;
 };
 
 export type Relationship = {
@@ -183,6 +243,8 @@ export type Relationship = {
    * (`UserFavoritesMovieConnectionWhere`, …).
    */
   readonly union?: string;
+  /** `@selectable` / `@settable` / `@filterable` of the relationship field. */
+  readonly config: FieldConfig;
 };
 
 /** Operations `@authentication` / `@authorization` rules apply to. */
@@ -288,6 +350,11 @@ export type NodeType = {
   readonly subscription?: ReadonlySet<SubscriptionEvent>;
   /** `@subscriptionsAuthorization(filter)`: which events a subscriber receives. */
   readonly subscriptionsAuthorization?: readonly SubscriptionsAuthorizationRule[];
+  /** `@query` of the type, or of the schema. */
+  readonly query: QueryConfig;
+  /** `@mutation` of the type, or of the schema. */
+  readonly mutation: MutationConfig;
+  readonly limit?: LimitConfig;
 };
 
 export type PropertiesType = {
@@ -308,6 +375,8 @@ export type UnionType = {
   readonly members: readonly string[];
   /** Root query field, e.g. `contents`. */
   readonly plural: string;
+  /** `@query(read)` of the union, or of the schema: whether the root query exists. */
+  readonly read: boolean;
 };
 
 export type V7Model = {
@@ -428,7 +497,10 @@ function typeRef(t: TypeNode): TypeRef {
   };
 }
 
-/** Directives without an effect on the read API that are accepted as-is. */
+/** The field-level configuration directives. */
+const FIELD_CONFIG_DIRECTIVES = new Set(["selectable", "settable", "filterable", "sortable"]);
+
+/** Directives accepted on attribute fields. */
 const ACCEPTED_FIELD_DIRECTIVES = new Set([
   "authentication",
   "authorization",
@@ -439,10 +511,18 @@ const ACCEPTED_FIELD_DIRECTIVES = new Set([
   "relationship",
   "alias",
   "deprecated",
-  "coalesce",
-  "unique",
   // Accepted and ignored on fields, like v7 (only the type-level directive filters events).
   "subscriptionsAuthorization",
+  ...FIELD_CONFIG_DIRECTIVES,
+]);
+/**
+ * Directives accepted on relationship fields. Like v7, `@selectable(onAggregate)` and `@sortable`
+ * have no effect there (aggregations and sorting apply to the related type's own fields).
+ */
+const RELATIONSHIP_FIELD_DIRECTIVES = new Set([
+  "relationship",
+  "deprecated",
+  ...FIELD_CONFIG_DIRECTIVES,
 ]);
 const ACCEPTED_TYPE_DIRECTIVES = new Set([
   "node",
@@ -454,7 +534,146 @@ const ACCEPTED_TYPE_DIRECTIVES = new Set([
   "jwt",
   "subscription",
   "subscriptionsAuthorization",
+  "query",
+  "mutation",
+  "limit",
 ]);
+
+/**
+ * The Boolean arguments of a schema configuration directive, with v7's defaults for missing ones.
+ * Every argument is `Boolean!` in v7 except `@query(connection)`.
+ */
+function booleanArgs<K extends string>(
+  where: string,
+  d: ConstDirectiveNode,
+  defaults: Record<K, boolean | undefined>,
+): Record<K, boolean | undefined> {
+  const out = { ...defaults };
+  for (const a of d.arguments ?? []) {
+    const name = a.name.value;
+    if (!(name in defaults)) {
+      throw new UnsupportedTypeDefsError(
+        `${where}: @${d.name.value}(${name}) is not an argument of @${d.name.value}.`,
+      );
+    }
+    if (a.value.kind === Kind.NULL && name === "connection") {
+      out[name as K] = undefined;
+      continue;
+    }
+    if (a.value.kind !== Kind.BOOLEAN) {
+      throw new UnsupportedTypeDefsError(`${where}: @${d.name.value}(${name}) must be a Boolean.`);
+    }
+    out[name as K] = a.value.value;
+  }
+  return out;
+}
+
+/** `@selectable` / `@settable` / `@filterable` / `@sortable` of a field, with v7's defaults. */
+function readFieldConfig(
+  where: string,
+  dirs: readonly ConstDirectiveNode[] | undefined,
+): FieldConfig {
+  const one = (name: string) => {
+    const found = (dirs ?? []).filter((d) => d.name.value === name);
+    if (found.length > 1) {
+      throw new UnsupportedTypeDefsError(`${where}: @${name} is set more than once.`);
+    }
+    return found[0];
+  };
+  const selectable = one("selectable");
+  const settable = one("settable");
+  const filterable = one("filterable");
+  const sortable = one("sortable");
+  const sel = selectable
+    ? booleanArgs(where, selectable, { onRead: true, onAggregate: false })
+    : { onRead: true, onAggregate: true };
+  const set = settable
+    ? booleanArgs(where, settable, { onCreate: true, onUpdate: true })
+    : { onCreate: true, onUpdate: true };
+  const fil = filterable
+    ? booleanArgs(where, filterable, { byValue: true, byAggregate: false })
+    : { byValue: true, byAggregate: true };
+  const sort = sortable ? booleanArgs(where, sortable, { byValue: true }) : { byValue: true };
+  return {
+    onRead: sel.onRead !== false,
+    onAggregate: sel.onAggregate !== false,
+    onCreate: set.onCreate !== false,
+    onUpdate: set.onUpdate !== false,
+    byValue: fil.byValue !== false,
+    byAggregate: fil.byAggregate !== false,
+    sortable: sort.byValue !== false,
+  };
+}
+
+/** `@query(read = true, connection = read, aggregate = false)`. */
+function readQueryConfig(where: string, d: ConstDirectiveNode): QueryConfig {
+  const a = booleanArgs(where, d, { read: true, connection: undefined, aggregate: false });
+  const read = a.read !== false;
+  return { read, connection: a.connection ?? read, aggregate: a.aggregate === true };
+}
+
+const MUTATION_OPERATIONS = ["CREATE", "UPDATE", "DELETE"] as const;
+
+/** `@mutation(operations = [CREATE, UPDATE, DELETE])`. */
+function readMutationConfig(where: string, d: ConstDirectiveNode): MutationConfig {
+  for (const a of d.arguments ?? []) {
+    if (a.name.value !== "operations") {
+      throw new UnsupportedTypeDefsError(
+        `${where}: @mutation(${a.name.value}) is not an argument of @mutation.`,
+      );
+    }
+  }
+  const v = arg(d, "operations");
+  let ops: readonly string[] = MUTATION_OPERATIONS;
+  if (v) {
+    const values = v.kind === Kind.LIST ? v.values : [v];
+    ops = values.map((x) => {
+      if (x.kind !== Kind.ENUM || !(MUTATION_OPERATIONS as readonly string[]).includes(x.value)) {
+        throw new UnsupportedTypeDefsError(
+          `${where}: @mutation(operations) must list CREATE, UPDATE or DELETE.`,
+        );
+      }
+      return x.value;
+    });
+  }
+  return {
+    create: ops.includes("CREATE"),
+    update: ops.includes("UPDATE"),
+    delete: ops.includes("DELETE"),
+  };
+}
+
+const ALL_QUERIES: QueryConfig = { read: true, connection: true, aggregate: true };
+const ALL_MUTATIONS: MutationConfig = { create: true, update: true, delete: true };
+
+/** `@limit(default, max)`, validated like v7 (both positive, `max` at least `default`). */
+function readLimit(where: string, d: ConstDirectiveNode | undefined): LimitConfig | undefined {
+  if (!d) return undefined;
+  const out: { default?: number; max?: number } = {};
+  for (const a of d.arguments ?? []) {
+    const name = a.name.value;
+    if (name !== "default" && name !== "max") {
+      throw new UnsupportedTypeDefsError(`${where}: @limit(${name}) is not an argument of @limit.`);
+    }
+    if (a.value.kind === Kind.NULL) continue;
+    if (a.value.kind !== Kind.INT) {
+      throw new UnsupportedTypeDefsError(`${where}: @limit ${name} must be a number`);
+    }
+    const value = Number(a.value.value);
+    if (value <= 0) {
+      throw new UnsupportedTypeDefsError(
+        `${where}: @limit.${name} invalid value: ${value}. Must be greater than 0.`,
+      );
+    }
+    out[name] = value;
+  }
+  if (out.default !== undefined && out.max !== undefined && out.max < out.default) {
+    throw new UnsupportedTypeDefsError(
+      `${where}: @limit.max invalid value: ${out.max}. Must be greater than limit.default: ${out.default}.`,
+    );
+  }
+  return out;
+}
 
 function deprecationReason(dirs: readonly ConstDirectiveNode[] | undefined): string | undefined {
   const d = directive(dirs, "deprecated");
@@ -513,6 +732,7 @@ function readAttribute(
     args: readArguments(`${owner}.${f.name.value}`, f, enums),
     deprecated: deprecationReason(dirs),
     auth: readAuthAnnotations(`${owner}.${f.name.value}`, dirs),
+    config: readFieldConfig(`${owner}.${f.name.value}`, dirs),
   };
 }
 
@@ -868,7 +1088,7 @@ function readJwtClaims(o: ObjectTypeDefinitionNode): Map<string, string> {
   return claims;
 }
 
-const CYPHER_FIELD_DIRECTIVES = new Set(["cypher", "deprecated"]);
+const CYPHER_FIELD_DIRECTIVES = new Set(["cypher", "deprecated", ...FIELD_CONFIG_DIRECTIVES]);
 
 /** A `@cypher` field of a node type returning nodes. */
 function readCypherNodeField(
@@ -893,6 +1113,7 @@ function readCypherNodeField(
     args: readArguments(where, f, enums),
     description: f.description?.value,
     deprecated: deprecationReason(f.directives),
+    config: readFieldConfig(where, f.directives),
   };
 }
 
@@ -966,16 +1187,21 @@ function readRootType(
 function readUnions(
   defs: readonly UnionTypeDefinitionNode[],
   nodes: ReadonlySet<string>,
+  schemaQuery: QueryConfig | undefined,
 ): Map<string, UnionType> {
   const unions = new Map<string, UnionType>();
   for (const def of defs) {
     const name = def.name.value;
     if (unions.has(name))
       throw new UnsupportedTypeDefsError(`union ${name}: defined more than once.`);
+    let query: QueryConfig | undefined;
     for (const d of def.directives ?? []) {
-      throw new UnsupportedTypeDefsError(
-        `union ${name}: @${d.name.value} is not supported by @cyphra/graphql yet.`,
-      );
+      if (d.name.value !== "query" || query) {
+        throw new UnsupportedTypeDefsError(
+          `union ${name}: @${d.name.value} is not supported by @cyphra/graphql yet.`,
+        );
+      }
+      query = readQueryConfig(`union ${name}`, d);
     }
     const members = (def.types ?? []).map((t) => t.name.value);
     if (!members.length) throw new UnsupportedTypeDefsError(`union ${name}: it has no member.`);
@@ -989,6 +1215,7 @@ function readUnions(
       description: def.description?.value,
       members,
       plural: entityPlural(name),
+      read: (query ?? schemaQuery)?.read ?? true,
     });
   }
   return unions;
@@ -1040,10 +1267,26 @@ function readUserField(
 ): UserField {
   const where = `${owner}.${f.name.value}`;
   for (const d of f.directives ?? []) {
-    if (!["customResolver", "deprecated"].includes(d.name.value)) {
+    if (!["customResolver", "deprecated", ...FIELD_CONFIG_DIRECTIVES].includes(d.name.value)) {
       throw new UnsupportedTypeDefsError(
         `${where}: @${d.name.value} on a field served by resolvers is not supported by @cyphra/graphql yet.`,
       );
+    }
+  }
+  // v7: `@customResolver` cannot be combined with the field configuration directives.
+  if (custom) {
+    for (const d of f.directives ?? []) {
+      const other =
+        d.name.value === "customResolver"
+          ? f.directives!.find((x) => FIELD_CONFIG_DIRECTIVES.has(x.name.value))?.name.value
+          : FIELD_CONFIG_DIRECTIVES.has(d.name.value)
+            ? "customResolver"
+            : undefined;
+      if (other) {
+        throw new UnsupportedTypeDefsError(
+          `${where}: Invalid directive usage: Directive @${d.name.value} cannot be used in combination with @${other}`,
+        );
+      }
     }
   }
   for (const a of custom?.arguments ?? []) {
@@ -1068,7 +1311,12 @@ function readUserField(
       );
     }
   }
-  return { name: f.name.value, definition: f, requires };
+  return {
+    name: f.name.value,
+    definition: f,
+    requires,
+    config: readFieldConfig(where, f.directives),
+  };
 }
 
 /**
@@ -1189,6 +1437,8 @@ export function readTypeDefs(typeDefs: string): V7Model {
   const enums = new Map<string, EnumType>();
   let schemaAuthentication: AuthenticationAnnotation | undefined;
   let schemaSubscription: ReadonlySet<SubscriptionEvent> | undefined;
+  let schemaQuery: QueryConfig | undefined;
+  let schemaMutation: MutationConfig | undefined;
   for (const def of doc.definitions) {
     switch (def.kind) {
       case Kind.SCHEMA_EXTENSION:
@@ -1204,6 +1454,19 @@ export function readTypeDefs(typeDefs: string): V7Model {
               throw new UnsupportedTypeDefsError("schema: @subscription is set more than once.");
             }
             schemaSubscription = readSubscription("schema", d);
+            continue;
+          }
+          if (d.name.value === "query") {
+            if (schemaQuery)
+              throw new UnsupportedTypeDefsError("schema: @query is set more than once.");
+            schemaQuery = readQueryConfig("schema", d);
+            continue;
+          }
+          if (d.name.value === "mutation") {
+            if (schemaMutation) {
+              throw new UnsupportedTypeDefsError("schema: @mutation is set more than once.");
+            }
+            schemaMutation = readMutationConfig("schema", d);
             continue;
           }
           if (d.name.value !== "authentication") {
@@ -1228,6 +1491,20 @@ export function readTypeDefs(typeDefs: string): V7Model {
         inputDefs.push(def);
         break;
       case Kind.ENUM_TYPE_DEFINITION:
+        for (const d of def.directives ?? []) {
+          throw new UnsupportedTypeDefsError(
+            `enum ${def.name.value}: @${d.name.value} is not supported by @cyphra/graphql yet.`,
+          );
+        }
+        for (const v of def.values ?? []) {
+          for (const d of v.directives ?? []) {
+            if (d.name.value !== "deprecated") {
+              throw new UnsupportedTypeDefsError(
+                `enum ${def.name.value}.${v.name.value}: @${d.name.value} is not supported by @cyphra/graphql yet.`,
+              );
+            }
+          }
+        }
         enums.set(def.name.value, {
           name: def.name.value,
           description: def.description?.value,
@@ -1286,13 +1563,24 @@ export function readTypeDefs(typeDefs: string): V7Model {
         );
       }
     }
+    const only = (own: string) => {
+      for (const d of o.directives ?? []) {
+        if (d.name.value !== own) {
+          throw new UnsupportedTypeDefsError(
+            `type ${name}: @${d.name.value} cannot be used on a @${own} type.`,
+          );
+        }
+      }
+    };
     if (directive(o.directives, "jwt")) {
+      only("jwt");
       if (jwtClaims)
         throw new UnsupportedTypeDefsError(`type ${name}: only one @jwt type is allowed.`);
       jwtClaims = readJwtClaims(o);
       continue;
     }
     if (directive(o.directives, "relationshipProperties")) {
+      only("relationshipProperties");
       properties.set(name, {
         name,
         attributes: (o.fields ?? []).map((f) => {
@@ -1314,11 +1602,24 @@ export function readTypeDefs(typeDefs: string): V7Model {
     }
     nodeDefs.push(o);
   }
+  // v7: `@query` / `@mutation` go either on the schema or on types, not both.
+  for (const [config, name] of [
+    [schemaQuery, "query"],
+    [schemaMutation, "mutation"],
+  ] as const) {
+    if (!config) continue;
+    if ([...nodeDefs, ...unionDefs].some((t) => directive(t.directives, name))) {
+      throw new UnsupportedTypeDefsError(
+        `Invalid directive usage: Directive @${name} can only be used in one location: either schema or type.`,
+      );
+    }
+  }
   const nodeNames = new Set(nodeDefs.map((o) => o.name.value));
   const userTypes = readUserTypes(plainDefs, inputDefs, unionDefs, nodeNames);
   const unions = readUnions(
     unionDefs.filter((u) => !userTypes.has(u.name.value)),
     nodeNames,
+    schemaQuery,
   );
   const isUserOutput = (t: string) =>
     userTypes.get(t)?.kind !== Kind.INPUT_OBJECT_TYPE_DEFINITION && userTypes.has(t);
@@ -1356,6 +1657,11 @@ export function readTypeDefs(typeDefs: string): V7Model {
             `${name}.${f.name.value}: @${d.name.value} on a relationship field is not supported (put the rules on the related type).`,
           );
         }
+        if (!RELATIONSHIP_FIELD_DIRECTIVES.has(d.name.value)) {
+          throw new UnsupportedTypeDefsError(
+            `${name}.${f.name.value}: @${d.name.value} on a relationship field is not supported by @cyphra/graphql yet.`,
+          );
+        }
       }
       const t = typeRef(f.type);
       if (!nodeNames.has(t.name) && !unions.has(t.name)) {
@@ -1376,6 +1682,13 @@ export function readTypeDefs(typeDefs: string): V7Model {
           `${name}.${f.name.value}: Non-list relationship property "${f.name.value}" cannot have non-nullable type.`,
         );
       }
+      const config = readFieldConfig(`${name}.${f.name.value}`, f.directives);
+      if (!t.list && !config.onRead) {
+        // v7 generates a connection type without fields for it: an invalid schema.
+        throw new UnsupportedTypeDefsError(
+          `${name}.${f.name.value}: @selectable(onRead: false) on a to-one relationship is not supported (@neo4j/graphql 7 generates an invalid schema for it).`,
+        );
+      }
       const props = stringArg(rel, "properties");
       if (props && !properties.has(props)) {
         throw new UnsupportedTypeDefsError(
@@ -1394,11 +1707,14 @@ export function readTypeDefs(typeDefs: string): V7Model {
         elementRequired: t.elementRequired,
         description: f.description?.value,
         deprecated: deprecationReason(f.directives),
+        config,
       });
     }
     const nodeDir = directive(o.directives, "node");
     const labels = listArg(nodeDir, "labels") ?? [name];
     const pluralDir = directive(o.directives, "plural");
+    const typeQuery = directive(o.directives, "query");
+    const typeMutation = directive(o.directives, "mutation");
     const plural = entityPlural(name, stringArg(pluralDir, "value"));
     return {
       name,
@@ -1418,6 +1734,11 @@ export function readTypeDefs(typeDefs: string): V7Model {
         directive(o.directives, "subscriptionsAuthorization"),
         attributes,
       ),
+      query: typeQuery ? readQueryConfig(`type ${name}`, typeQuery) : (schemaQuery ?? ALL_QUERIES),
+      mutation: typeMutation
+        ? readMutationConfig(`type ${name}`, typeMutation)
+        : (schemaMutation ?? ALL_MUTATIONS),
+      limit: readLimit(`type ${name}`, directive(o.directives, "limit")),
     };
   });
 
@@ -1428,8 +1749,9 @@ export function readTypeDefs(typeDefs: string): V7Model {
   const mutation = root("Mutation");
   const generated = new Set<string>();
   for (const n of byName0.values()) {
-    generated.add(n.plural);
-    generated.add(`${n.plural}Connection`);
+    // Root fields hidden by `@query` can be defined by the application instead (as in v7).
+    if (n.query.read) generated.add(n.plural);
+    if (n.query.connection || n.query.aggregate) generated.add(`${n.plural}Connection`);
     for (const ft of n.fulltext) {
       if (generated.has(ft.queryName)) {
         throw new UnsupportedTypeDefsError(
@@ -1440,6 +1762,7 @@ export function readTypeDefs(typeDefs: string): V7Model {
     }
   }
   for (const u of unions.values()) {
+    if (!u.read) continue;
     if (generated.has(u.plural)) {
       throw new UnsupportedTypeDefsError(
         `union ${u.name}: its root query ${u.plural} conflicts with another generated Query field.`,
@@ -1456,7 +1779,9 @@ export function readTypeDefs(typeDefs: string): V7Model {
   }
   const generatedMutations = new Set(
     [...byName0.values()].flatMap((n) =>
-      ["create", "update", "delete"].map((k) => `${k}${n.pascalPlural}`),
+      (["create", "update", "delete"] as const)
+        .filter((k) => n.mutation[k])
+        .map((k) => `${k}${n.pascalPlural}`),
     ),
   );
   for (const f of [...mutation.fields, ...mutation.resolved]) {

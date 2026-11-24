@@ -1,0 +1,19 @@
+# features: config.limit, connection.pagination, sort
+# ordered
+query {
+  volumesConnection(sort: [{ id: ASC }]) {
+    totalCount
+    pageInfo {
+      hasNextPage
+      hasPreviousPage
+      startCursor
+      endCursor
+    }
+    edges {
+      cursor
+      node {
+        id
+      }
+    }
+  }
+}

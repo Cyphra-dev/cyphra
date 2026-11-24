@@ -1,0 +1,6 @@
+# features: config.filterable
+query {
+  movies(where: { actorsConnection: { some: { edge: { year: { eq: 1999 } } } } }) {
+    id
+  }
+}

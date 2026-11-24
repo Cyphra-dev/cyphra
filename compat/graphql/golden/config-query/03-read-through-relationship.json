@@ -1,0 +1,42 @@
+{
+  "data": {
+    "owners": [
+      {
+        "id": "o1",
+        "secrets": [
+          {
+            "id": "s1",
+            "value": "alpha"
+          },
+          {
+            "id": "s2",
+            "value": "beta"
+          }
+        ],
+        "secretsConnection": {
+          "totalCount": 2,
+          "edges": [
+            {
+              "node": {
+                "id": "s1"
+              }
+            },
+            {
+              "node": {
+                "id": "s2"
+              }
+            }
+          ]
+        },
+        "items": [
+          {
+            "id": "l2"
+          },
+          {
+            "id": "r1"
+          }
+        ]
+      }
+    ]
+  }
+}

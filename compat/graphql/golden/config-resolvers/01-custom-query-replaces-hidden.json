@@ -1,0 +1,16 @@
+{
+  "data": {
+    "accounts": [
+      {
+        "id": "a1",
+        "role": "admin",
+        "displayName": "ADA"
+      },
+      {
+        "id": "a2",
+        "role": "member",
+        "displayName": "BOB"
+      }
+    ]
+  }
+}

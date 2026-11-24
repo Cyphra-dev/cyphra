@@ -1,0 +1,7 @@
+{
+  "errors": [
+    {
+      "message": "Field \"studio\" is not defined by type \"MovieCreateInput\"."
+    }
+  ]
+}

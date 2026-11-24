@@ -101,16 +101,18 @@ GraphQL](/guides/migrate-from-neo4j-graphql#using-the-typed-client-alongside-gra
 ## What `@neo4j/graphql` does that Cyphra does not
 
 `@cyphra/graphql` serves the v7 API for queries, aggregations, mutations, `@authentication` /
-`@authorization`, `@cypher` fields, custom resolvers, `@fulltext` queries, unions and CDC
-subscriptions. Its compatibility suite runs 169 operations on 12 apps, with expected results
-recorded from `@neo4j/graphql` 7.6.8, and 179 of the 181 checks pass, the two others on purpose ([report](https://github.com/Cyphra-dev/cyphra/blob/main/compat/graphql/REPORT.md)). What it
+`@authorization`, `@cypher` fields, custom resolvers, `@fulltext` queries, unions, CDC
+subscriptions and the schema configuration directives. Its compatibility suite runs 253 operations
+on 18 apps, with expected results recorded from `@neo4j/graphql` 7.6.8, and 268 of the 271 checks
+pass, the three others on purpose ([report](https://github.com/Cyphra-dev/cyphra/blob/main/compat/graphql/REPORT.md)). What it
 does not have yet:
 
 - The **Apollo Federation** integration.
 - **Interfaces**, `@cypher` fields returning unions, **`@vector`** queries, and the `Time`, `LocalTime`, `LocalDateTime`,
   `Duration`, `Point` and `CartesianPoint` scalars.
-- `@populatedBy`, `@relayId`, and the schema configuration directives (`@query`, `@mutation`, `@selectable`,
-  `@settable`, `@filterable`, `@sortable`, `@limit`).
+- `@populatedBy`, `@relayId` and `@coalesce`. The schema configuration directives (`@query`,
+  `@mutation`, `@selectable`, `@settable`, `@filterable`, `@sortable`, `@limit`)
+  [work](/graphql#schema-configuration).
 - **Versions before 7.** `@cyphra/graphql` reproduces the v7 API only; the 5.x LTS API differs.
 
 For these, `makeSchema` throws an `UnsupportedTypeDefsError` instead of serving a different API. A

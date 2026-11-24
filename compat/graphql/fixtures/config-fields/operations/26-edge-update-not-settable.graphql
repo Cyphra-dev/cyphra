@@ -1,0 +1,8 @@
+# features: config.settable
+mutation {
+  updateMovies(update: { actors: [{ update: { edge: { role: { set: "x" } } } }] }) {
+    movies {
+      id
+    }
+  }
+}

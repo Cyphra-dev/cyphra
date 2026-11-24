@@ -1,0 +1,10 @@
+{
+  "data": {
+    "createAccounts": {
+      "id": "new",
+      "email": "eve@example.test",
+      "role": "member",
+      "displayName": "EVE"
+    }
+  }
+}

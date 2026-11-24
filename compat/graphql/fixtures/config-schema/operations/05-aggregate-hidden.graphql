@@ -1,0 +1,10 @@
+# features: config.schema, config.query, aggregate
+query {
+  membersConnection {
+    aggregate {
+      count {
+        nodes
+      }
+    }
+  }
+}

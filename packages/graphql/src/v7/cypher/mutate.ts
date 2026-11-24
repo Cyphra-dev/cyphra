@@ -40,10 +40,11 @@
  */
 
 import { GraphQLError, type FieldNode } from "graphql";
-import { isInt } from "neo4j-driver";
+import neo4j, { isInt } from "neo4j-driver";
 import { checkAuthentication, type AuthContext } from "../auth/context.js";
 import type { AuthRules } from "../auth/rules.js";
 import {
+  DEFAULT_FIELD_CONFIG,
   isUnionRelationship,
   unionMembers,
   type Attribute,
@@ -54,7 +55,13 @@ import {
   type V7Model,
 } from "../model.js";
 import { labels, q, type CypherContext } from "./context.js";
-import { collectFields, subSelections, SelectionCompiler, type SelectionInfo } from "./select.js";
+import {
+  collectFields,
+  pageLimit,
+  subSelections,
+  SelectionCompiler,
+  type SelectionInfo,
+} from "./select.js";
 import { castValue, encodeValue, relationshipPattern, valueExpr, WhereCompiler } from "./where.js";
 
 type AnyRecord = Record<string, unknown>;
@@ -296,7 +303,8 @@ export class MutationCompiler {
     const sets: string[] = [];
     if (!isPlainObject(input)) return sets;
     for (const [key, value] of Object.entries(input)) {
-      if (value === undefined || relationships.some((r) => r.name === key)) continue;
+      if (value === undefined || key === EMPTY_INPUT || relationships.some((r) => r.name === key))
+        continue;
       const a = attributes.find((x) => x.name === key);
       if (!a) throw new Error(`Unknown field ${owner}CreateInput.${key}`);
       sets.push(`${variable}.${q(a.property)} = ${valueExpr(this.ctx, a, value, a.type.list)}`);
@@ -319,7 +327,8 @@ export class MutationCompiler {
       { keys: string[]; ops: [op: string, label: string, value: unknown][] }
     >();
     for (const [key, value] of Object.entries(input)) {
-      if (value === undefined || relationships.some((r) => r.name === key)) continue;
+      if (value === undefined || key === EMPTY_INPUT || relationships.some((r) => r.name === key))
+        continue;
       let attr = attributes.find((a) => a.name === key);
       let ops: [string, string, unknown][];
       if (attr) {
@@ -848,9 +857,15 @@ export class MutationCompiler {
           ? `CASE WHEN ${auth.failure} THEN ${this.select.forbiddenMap()} ELSE ${proj.expr} END`
           : proj.expr;
         const filter = auth.filter ? `\n  WITH ${v} WHERE ${auth.filter}` : "";
+        // v7 applies `@limit(default ?? max)` to the returned nodes as well.
+        const limit = pageLimit(node, undefined);
+        const page =
+          typeof limit === "number"
+            ? `\n  WITH ${v} LIMIT ${this.ctx.param(neo4j.int(limit))}`
+            : "";
         const clauses = scope.map((c) => `\n${indent([c])}`).join("");
         block.add(
-          `CALL (${list}) {\n  UNWIND ${list} AS ${v}${filter}${clauses}\n  RETURN collect(${value}) AS ${d}\n}`,
+          `CALL (${list}) {\n  UNWIND ${list} AS ${v}${filter}${page}${clauses}\n  RETURN collect(${value}) AS ${d}\n}`,
         );
         entries.push(`${q(key)}: ${d}`);
         decoders.push([
@@ -944,7 +959,8 @@ export class MutationCompiler {
     const keys = new Set<string>();
     for (const input of inputs) {
       if (!isPlainObject(input)) continue;
-      for (const [k, v] of Object.entries(input)) if (v !== undefined) keys.add(k);
+      for (const [k, v] of Object.entries(input))
+        if (v !== undefined && k !== EMPTY_INPUT) keys.add(k);
     }
     const attrs = [...keys].map((k) => {
       const a = node.attributes.find((x) => x.name === k);
@@ -1094,6 +1110,9 @@ function orParts(parts: readonly (string | undefined)[]): string | undefined {
   return ps.map((p) => `(${p})`).join(" OR ");
 }
 
+/** The placeholder field v7 adds to inputs that would be empty; ignored, like v7. */
+const EMPTY_INPUT = "_emptyInput";
+
 const intAttribute: Attribute = {
   name: "pop",
   property: "pop",
@@ -1101,4 +1120,5 @@ const intAttribute: Attribute = {
   kind: "scalar",
   id: false,
   args: [],
+  config: DEFAULT_FIELD_CONFIG,
 };

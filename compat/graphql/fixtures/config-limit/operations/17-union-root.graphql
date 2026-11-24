@@ -1,0 +1,11 @@
+# features: config.limit, union
+query {
+  shelves {
+    ... on Volume {
+      id
+    }
+    ... on Note {
+      id
+    }
+  }
+}

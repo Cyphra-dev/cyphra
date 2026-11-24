@@ -1,0 +1,8 @@
+# features: config.settable, mutation.create
+mutation {
+  createCounters(input: [{ _emptyInput: true }]) {
+    counters {
+      hits
+    }
+  }
+}

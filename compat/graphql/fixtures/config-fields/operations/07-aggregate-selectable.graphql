@@ -1,0 +1,21 @@
+# features: config.selectable, aggregate
+query {
+  moviesConnection {
+    aggregate {
+      count {
+        nodes
+      }
+      node {
+        internalScore {
+          sum
+        }
+        budget {
+          max
+        }
+        released {
+          min
+        }
+      }
+    }
+  }
+}

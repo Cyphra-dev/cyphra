@@ -1,0 +1,7 @@
+{
+  "errors": [
+    {
+      "message": "Cannot query field \"deleteUsers\" on type \"Mutation\". Did you mean \"deleteTags\"?"
+    }
+  ]
+}

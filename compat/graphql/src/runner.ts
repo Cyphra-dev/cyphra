@@ -4,6 +4,7 @@ import {
   parse,
   printSchema,
   subscribe,
+  validate,
   type ExecutionResult,
   type GraphQLSchema,
 } from "graphql";
@@ -80,12 +81,18 @@ export async function runOperation(
   driver: Driver,
 ): Promise<string> {
   await resetAndSeed(driver, fixture.seed);
-  const result = await execute({
-    schema,
-    document: parse(op.document),
-    variableValues: op.variables,
-    contextValue: await impl.contextFor(op),
-  });
+  const document = parse(op.document);
+  // Validated first, like a GraphQL server: an operation using a field or argument the schema
+  // does not have (e.g. a mutation hidden by `@mutation`) gets the validation errors.
+  const errors = validate(schema, document);
+  const result: ExecutionResult = errors.length
+    ? { errors }
+    : await execute({
+        schema,
+        document,
+        variableValues: op.variables,
+        contextValue: await impl.contextFor(op),
+      });
   return stringifyResult(normalizeResult(result, { ordered: op.ordered }));
 }
 

@@ -1,0 +1,8 @@
+# features: config.settable
+mutation {
+  createMovies(input: [{ id: "m9", title: "New", createdBy: "me" }]) {
+    movies {
+      id
+    }
+  }
+}

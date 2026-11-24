@@ -1,0 +1,7 @@
+# features: config.limit, sort
+# ordered
+query {
+  volumes(limit: 1, offset: 2, sort: [{ id: ASC }]) {
+    id
+  }
+}

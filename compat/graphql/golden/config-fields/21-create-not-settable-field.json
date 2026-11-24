@@ -1,0 +1,7 @@
+{
+  "errors": [
+    {
+      "message": "Field \"createdBy\" is not defined by type \"MovieCreateInput\"."
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+# @mutation(operations) hides root create / update / delete mutations of a type. Nested writes
+# through relationships of other types are still generated (v7 behavior).
+type User @node @mutation(operations: []) {
+  id: ID!
+  name: String!
+  posts: [Post!]! @relationship(type: "WROTE", direction: OUT)
+}
+
+type Post @node @mutation(operations: [CREATE, UPDATE]) {
+  id: ID!
+  title: String!
+  author: User @relationship(type: "WROTE", direction: IN)
+  tags: [Tag!]! @relationship(type: "TAGGED", direction: OUT)
+}
+
+type Tag @node @mutation(operations: [DELETE]) {
+  name: String!
+}
+
+type Comment @node @mutation {
+  id: ID!
+  text: String
+}

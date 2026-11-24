@@ -1,0 +1,790 @@
+type Comment {
+  id: ID!
+  text: String
+}
+
+type CommentAggregate {
+  count: Count!
+  node: CommentAggregateNode!
+}
+
+type CommentAggregateNode {
+  text: StringAggregateSelection!
+}
+
+input CommentCreateInput {
+  id: ID!
+  text: String
+}
+
+type CommentEdge {
+  cursor: String!
+  node: Comment!
+}
+
+"""
+Fields to sort Comments by. The order in which sorts are applied is not guaranteed when specifying many fields in one CommentSort object.
+"""
+input CommentSort {
+  id: SortDirection
+  text: SortDirection
+}
+
+input CommentUpdateInput {
+  id: IDScalarMutations
+  id_SET: ID @deprecated(reason: "Please use the generic mutation 'id: { set: ... } }' instead.")
+  text: StringScalarMutations
+  text_SET: String @deprecated(reason: "Please use the generic mutation 'text: { set: ... } }' instead.")
+}
+
+input CommentWhere {
+  AND: [CommentWhere!]
+  NOT: CommentWhere
+  OR: [CommentWhere!]
+  id: IDScalarFilters
+  id_CONTAINS: ID @deprecated(reason: "Please use the relevant generic filter id: { contains: ... }")
+  id_ENDS_WITH: ID @deprecated(reason: "Please use the relevant generic filter id: { endsWith: ... }")
+  id_EQ: ID @deprecated(reason: "Please use the relevant generic filter id: { eq: ... }")
+  id_IN: [ID!] @deprecated(reason: "Please use the relevant generic filter id: { in: ... }")
+  id_STARTS_WITH: ID @deprecated(reason: "Please use the relevant generic filter id: { startsWith: ... }")
+  text: StringScalarFilters
+  text_CONTAINS: String @deprecated(reason: "Please use the relevant generic filter text: { contains: ... }")
+  text_ENDS_WITH: String @deprecated(reason: "Please use the relevant generic filter text: { endsWith: ... }")
+  text_EQ: String @deprecated(reason: "Please use the relevant generic filter text: { eq: ... }")
+  text_IN: [String] @deprecated(reason: "Please use the relevant generic filter text: { in: ... }")
+  text_STARTS_WITH: String @deprecated(reason: "Please use the relevant generic filter text: { startsWith: ... }")
+}
+
+type CommentsConnection {
+  aggregate: CommentAggregate!
+  edges: [CommentEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+input ConnectionAggregationCountFilterInput {
+  edges: IntScalarFilters
+  nodes: IntScalarFilters
+}
+
+type Count {
+  nodes: Int!
+}
+
+type CountConnection {
+  edges: Int!
+  nodes: Int!
+}
+
+type CreateCommentsMutationResponse {
+  comments: [Comment!]!
+  info: CreateInfo!
+}
+
+"""
+Information about the number of nodes and relationships created during a create mutation
+"""
+type CreateInfo {
+  nodesCreated: Int!
+  relationshipsCreated: Int!
+}
+
+type CreatePostsMutationResponse {
+  info: CreateInfo!
+  posts: [Post!]!
+}
+
+"""
+Information about the number of nodes and relationships deleted during a delete mutation
+"""
+type DeleteInfo {
+  nodesDeleted: Int!
+  relationshipsDeleted: Int!
+}
+
+"""Float filters"""
+input FloatScalarFilters {
+  eq: Float
+  gt: Float
+  gte: Float
+  in: [Float!]
+  lt: Float
+  lte: Float
+}
+
+"""ID filters"""
+input IDScalarFilters {
+  contains: ID
+  endsWith: ID
+  eq: ID
+  in: [ID!]
+  startsWith: ID
+}
+
+"""ID mutations"""
+input IDScalarMutations {
+  set: ID
+}
+
+"""Int filters"""
+input IntScalarFilters {
+  eq: Int
+  gt: Int
+  gte: Int
+  in: [Int!]
+  lt: Int
+  lte: Int
+}
+
+type Mutation {
+  createComments(input: [CommentCreateInput!]!): CreateCommentsMutationResponse!
+  createPosts(input: [PostCreateInput!]!): CreatePostsMutationResponse!
+  deleteComments(where: CommentWhere): DeleteInfo!
+  deleteTags(where: TagWhere): DeleteInfo!
+  updateComments(update: CommentUpdateInput, where: CommentWhere): UpdateCommentsMutationResponse!
+  updatePosts(update: PostUpdateInput, where: PostWhere): UpdatePostsMutationResponse!
+}
+
+"""Pagination information (Relay)"""
+type PageInfo {
+  endCursor: String
+  hasNextPage: Boolean!
+  hasPreviousPage: Boolean!
+  startCursor: String
+}
+
+type Post {
+  author: User
+  authorConnection: PostAuthorConnection!
+  id: ID!
+  tags(limit: Int, offset: Int, sort: [TagSort!], where: TagWhere): [Tag!]!
+  tagsConnection(after: String, first: Int, sort: [PostTagsConnectionSort!], where: PostTagsConnectionWhere): PostTagsConnection!
+  title: String!
+}
+
+type PostAggregate {
+  count: Count!
+  node: PostAggregateNode!
+}
+
+type PostAggregateNode {
+  title: StringAggregateSelection!
+}
+
+type PostAuthorConnection {
+  edges: [PostAuthorRelationship!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+input PostAuthorConnectionWhere {
+  AND: [PostAuthorConnectionWhere!]
+  NOT: PostAuthorConnectionWhere
+  OR: [PostAuthorConnectionWhere!]
+  node: UserWhere
+}
+
+input PostAuthorCreateFieldInput {
+  node: UserCreateInput!
+}
+
+input PostAuthorFieldInput {
+  create: PostAuthorCreateFieldInput
+}
+
+type PostAuthorRelationship {
+  cursor: String!
+  node: User!
+}
+
+input PostConnectInput {
+  tags: [PostTagsConnectFieldInput!]
+}
+
+input PostConnectWhere {
+  node: PostWhere!
+}
+
+input PostCreateInput {
+  author: PostAuthorFieldInput
+  id: ID!
+  tags: PostTagsFieldInput
+  title: String!
+}
+
+type PostEdge {
+  cursor: String!
+  node: Post!
+}
+
+input PostRelationshipFilters {
+  """Filter type where all of the related Posts match this filter"""
+  all: PostWhere
+
+  """Filter type where none of the related Posts match this filter"""
+  none: PostWhere
+
+  """Filter type where one of the related Posts match this filter"""
+  single: PostWhere
+
+  """Filter type where some of the related Posts match this filter"""
+  some: PostWhere
+}
+
+"""
+Fields to sort Posts by. The order in which sorts are applied is not guaranteed when specifying many fields in one PostSort object.
+"""
+input PostSort {
+  id: SortDirection
+  title: SortDirection
+}
+
+type PostTagTagsAggregateSelection {
+  count: CountConnection!
+  node: PostTagTagsNodeAggregateSelection
+}
+
+type PostTagTagsNodeAggregateSelection {
+  name: StringAggregateSelection!
+}
+
+input PostTagsAggregateInput {
+  AND: [PostTagsAggregateInput!]
+  NOT: PostTagsAggregateInput
+  OR: [PostTagsAggregateInput!]
+  count: IntScalarFilters
+  count_EQ: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { eq: ... } } }' instead.")
+  count_GT: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { gt: ... } } }' instead.")
+  count_GTE: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { gte: ... } } }' instead.")
+  count_LT: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { lt: ... } } }' instead.")
+  count_LTE: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { lte: ... } } }' instead.")
+  node: PostTagsNodeAggregationWhereInput
+}
+
+input PostTagsConnectFieldInput {
+  where: TagConnectWhere
+}
+
+type PostTagsConnection {
+  aggregate: PostTagTagsAggregateSelection!
+  edges: [PostTagsRelationship!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+input PostTagsConnectionAggregateInput {
+  AND: [PostTagsConnectionAggregateInput!]
+  NOT: PostTagsConnectionAggregateInput
+  OR: [PostTagsConnectionAggregateInput!]
+  count: ConnectionAggregationCountFilterInput
+  node: PostTagsNodeAggregationWhereInput
+}
+
+input PostTagsConnectionFilters {
+  """Filter Posts by aggregating results on related PostTagsConnections"""
+  aggregate: PostTagsConnectionAggregateInput
+
+  """
+  Return Posts where all of the related PostTagsConnections match this filter
+  """
+  all: PostTagsConnectionWhere
+
+  """
+  Return Posts where none of the related PostTagsConnections match this filter
+  """
+  none: PostTagsConnectionWhere
+
+  """
+  Return Posts where one of the related PostTagsConnections match this filter
+  """
+  single: PostTagsConnectionWhere
+
+  """
+  Return Posts where some of the related PostTagsConnections match this filter
+  """
+  some: PostTagsConnectionWhere
+}
+
+input PostTagsConnectionSort {
+  node: TagSort
+}
+
+input PostTagsConnectionWhere {
+  AND: [PostTagsConnectionWhere!]
+  NOT: PostTagsConnectionWhere
+  OR: [PostTagsConnectionWhere!]
+  node: TagWhere
+}
+
+input PostTagsCreateFieldInput {
+  node: TagCreateInput!
+}
+
+input PostTagsDeleteFieldInput {
+  where: PostTagsConnectionWhere
+}
+
+input PostTagsDisconnectFieldInput {
+  where: PostTagsConnectionWhere
+}
+
+input PostTagsFieldInput {
+  connect: [PostTagsConnectFieldInput!]
+  create: [PostTagsCreateFieldInput!]
+}
+
+input PostTagsNodeAggregationWhereInput {
+  AND: [PostTagsNodeAggregationWhereInput!]
+  NOT: PostTagsNodeAggregationWhereInput
+  OR: [PostTagsNodeAggregationWhereInput!]
+  name: StringScalarAggregationFilters
+  name_AVERAGE_LENGTH_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { eq: ... } } }' instead.")
+  name_AVERAGE_LENGTH_GT: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { gt: ... } } }' instead.")
+  name_AVERAGE_LENGTH_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { gte: ... } } }' instead.")
+  name_AVERAGE_LENGTH_LT: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { lt: ... } } }' instead.")
+  name_AVERAGE_LENGTH_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { lte: ... } } }' instead.")
+  name_LONGEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { eq: ... } } }' instead.")
+  name_LONGEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { gt: ... } } }' instead.")
+  name_LONGEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { gte: ... } } }' instead.")
+  name_LONGEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { lt: ... } } }' instead.")
+  name_LONGEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { lte: ... } } }' instead.")
+  name_SHORTEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { eq: ... } } }' instead.")
+  name_SHORTEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { gt: ... } } }' instead.")
+  name_SHORTEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { gte: ... } } }' instead.")
+  name_SHORTEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { lt: ... } } }' instead.")
+  name_SHORTEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { lte: ... } } }' instead.")
+}
+
+type PostTagsRelationship {
+  cursor: String!
+  node: Tag!
+}
+
+input PostTagsUpdateConnectionInput {
+  node: TagUpdateInput
+  where: PostTagsConnectionWhere
+}
+
+input PostTagsUpdateFieldInput {
+  connect: [PostTagsConnectFieldInput!]
+  create: [PostTagsCreateFieldInput!]
+  delete: [PostTagsDeleteFieldInput!]
+  disconnect: [PostTagsDisconnectFieldInput!]
+  update: PostTagsUpdateConnectionInput
+}
+
+input PostUpdateInput {
+  id: IDScalarMutations
+  id_SET: ID @deprecated(reason: "Please use the generic mutation 'id: { set: ... } }' instead.")
+  tags: [PostTagsUpdateFieldInput!]
+  title: StringScalarMutations
+  title_SET: String @deprecated(reason: "Please use the generic mutation 'title: { set: ... } }' instead.")
+}
+
+input PostWhere {
+  AND: [PostWhere!]
+  NOT: PostWhere
+  OR: [PostWhere!]
+  author: UserWhere
+  authorConnection: PostAuthorConnectionWhere
+  id: IDScalarFilters
+  id_CONTAINS: ID @deprecated(reason: "Please use the relevant generic filter id: { contains: ... }")
+  id_ENDS_WITH: ID @deprecated(reason: "Please use the relevant generic filter id: { endsWith: ... }")
+  id_EQ: ID @deprecated(reason: "Please use the relevant generic filter id: { eq: ... }")
+  id_IN: [ID!] @deprecated(reason: "Please use the relevant generic filter id: { in: ... }")
+  id_STARTS_WITH: ID @deprecated(reason: "Please use the relevant generic filter id: { startsWith: ... }")
+  tags: TagRelationshipFilters
+  tagsAggregate: PostTagsAggregateInput @deprecated(reason: "Aggregate filters are moved inside the tagsConnection filter, please use { tagsConnection: { aggregate: {...} } } instead")
+  tagsConnection: PostTagsConnectionFilters
+
+  """
+  Return Posts where all of the related PostTagsConnections match this filter
+  """
+  tagsConnection_ALL: PostTagsConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'tagsConnection: { all: { node: ... } } }' instead.")
+
+  """
+  Return Posts where none of the related PostTagsConnections match this filter
+  """
+  tagsConnection_NONE: PostTagsConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'tagsConnection: { none: { node: ... } } }' instead.")
+
+  """
+  Return Posts where one of the related PostTagsConnections match this filter
+  """
+  tagsConnection_SINGLE: PostTagsConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'tagsConnection: { single: { node: ... } } }' instead.")
+
+  """
+  Return Posts where some of the related PostTagsConnections match this filter
+  """
+  tagsConnection_SOME: PostTagsConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'tagsConnection: { some: { node: ... } } }' instead.")
+
+  """Return Posts where all of the related Tags match this filter"""
+  tags_ALL: TagWhere @deprecated(reason: "Please use the relevant generic filter 'tags: { all: ... }' instead.")
+
+  """Return Posts where none of the related Tags match this filter"""
+  tags_NONE: TagWhere @deprecated(reason: "Please use the relevant generic filter 'tags: { none: ... }' instead.")
+
+  """Return Posts where one of the related Tags match this filter"""
+  tags_SINGLE: TagWhere @deprecated(reason: "Please use the relevant generic filter 'tags: {  single: ... }' instead.")
+
+  """Return Posts where some of the related Tags match this filter"""
+  tags_SOME: TagWhere @deprecated(reason: "Please use the relevant generic filter 'tags: {  some: ... }' instead.")
+  title: StringScalarFilters
+  title_CONTAINS: String @deprecated(reason: "Please use the relevant generic filter title: { contains: ... }")
+  title_ENDS_WITH: String @deprecated(reason: "Please use the relevant generic filter title: { endsWith: ... }")
+  title_EQ: String @deprecated(reason: "Please use the relevant generic filter title: { eq: ... }")
+  title_IN: [String!] @deprecated(reason: "Please use the relevant generic filter title: { in: ... }")
+  title_STARTS_WITH: String @deprecated(reason: "Please use the relevant generic filter title: { startsWith: ... }")
+}
+
+type PostsConnection {
+  aggregate: PostAggregate!
+  edges: [PostEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+type Query {
+  comments(limit: Int, offset: Int, sort: [CommentSort!], where: CommentWhere): [Comment!]!
+  commentsConnection(after: String, first: Int, sort: [CommentSort!], where: CommentWhere): CommentsConnection!
+  posts(limit: Int, offset: Int, sort: [PostSort!], where: PostWhere): [Post!]!
+  postsConnection(after: String, first: Int, sort: [PostSort!], where: PostWhere): PostsConnection!
+  tags(limit: Int, offset: Int, sort: [TagSort!], where: TagWhere): [Tag!]!
+  tagsConnection(after: String, first: Int, sort: [TagSort!], where: TagWhere): TagsConnection!
+  users(limit: Int, offset: Int, sort: [UserSort!], where: UserWhere): [User!]!
+  usersConnection(after: String, first: Int, sort: [UserSort!], where: UserWhere): UsersConnection!
+}
+
+"""An enum for sorting in either ascending or descending order."""
+enum SortDirection {
+  """Sort by field values in ascending order."""
+  ASC
+
+  """Sort by field values in descending order."""
+  DESC
+}
+
+type StringAggregateSelection {
+  longest: String
+  shortest: String
+}
+
+"""Filters for an aggregation of a string field"""
+input StringScalarAggregationFilters {
+  averageLength: FloatScalarFilters
+  longestLength: IntScalarFilters
+  shortestLength: IntScalarFilters
+}
+
+"""String filters"""
+input StringScalarFilters {
+  contains: String
+  endsWith: String
+  eq: String
+  in: [String!]
+  startsWith: String
+}
+
+"""String mutations"""
+input StringScalarMutations {
+  set: String
+}
+
+type Tag {
+  name: String!
+}
+
+type TagAggregate {
+  count: Count!
+  node: TagAggregateNode!
+}
+
+type TagAggregateNode {
+  name: StringAggregateSelection!
+}
+
+input TagConnectWhere {
+  node: TagWhere!
+}
+
+input TagCreateInput {
+  name: String!
+}
+
+type TagEdge {
+  cursor: String!
+  node: Tag!
+}
+
+input TagRelationshipFilters {
+  """Filter type where all of the related Tags match this filter"""
+  all: TagWhere
+
+  """Filter type where none of the related Tags match this filter"""
+  none: TagWhere
+
+  """Filter type where one of the related Tags match this filter"""
+  single: TagWhere
+
+  """Filter type where some of the related Tags match this filter"""
+  some: TagWhere
+}
+
+"""
+Fields to sort Tags by. The order in which sorts are applied is not guaranteed when specifying many fields in one TagSort object.
+"""
+input TagSort {
+  name: SortDirection
+}
+
+input TagUpdateInput {
+  name: StringScalarMutations
+  name_SET: String @deprecated(reason: "Please use the generic mutation 'name: { set: ... } }' instead.")
+}
+
+input TagWhere {
+  AND: [TagWhere!]
+  NOT: TagWhere
+  OR: [TagWhere!]
+  name: StringScalarFilters
+  name_CONTAINS: String @deprecated(reason: "Please use the relevant generic filter name: { contains: ... }")
+  name_ENDS_WITH: String @deprecated(reason: "Please use the relevant generic filter name: { endsWith: ... }")
+  name_EQ: String @deprecated(reason: "Please use the relevant generic filter name: { eq: ... }")
+  name_IN: [String!] @deprecated(reason: "Please use the relevant generic filter name: { in: ... }")
+  name_STARTS_WITH: String @deprecated(reason: "Please use the relevant generic filter name: { startsWith: ... }")
+}
+
+type TagsConnection {
+  aggregate: TagAggregate!
+  edges: [TagEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+type UpdateCommentsMutationResponse {
+  comments: [Comment!]!
+  info: UpdateInfo!
+}
+
+"""
+Information about the number of nodes and relationships created and deleted during an update mutation
+"""
+type UpdateInfo {
+  nodesCreated: Int!
+  nodesDeleted: Int!
+  relationshipsCreated: Int!
+  relationshipsDeleted: Int!
+}
+
+type UpdatePostsMutationResponse {
+  info: UpdateInfo!
+  posts: [Post!]!
+}
+
+type User {
+  id: ID!
+  name: String!
+  posts(limit: Int, offset: Int, sort: [PostSort!], where: PostWhere): [Post!]!
+  postsConnection(after: String, first: Int, sort: [UserPostsConnectionSort!], where: UserPostsConnectionWhere): UserPostsConnection!
+}
+
+type UserAggregate {
+  count: Count!
+  node: UserAggregateNode!
+}
+
+type UserAggregateNode {
+  name: StringAggregateSelection!
+}
+
+input UserCreateInput {
+  id: ID!
+  name: String!
+  posts: UserPostsFieldInput
+}
+
+type UserEdge {
+  cursor: String!
+  node: User!
+}
+
+type UserPostPostsAggregateSelection {
+  count: CountConnection!
+  node: UserPostPostsNodeAggregateSelection
+}
+
+type UserPostPostsNodeAggregateSelection {
+  title: StringAggregateSelection!
+}
+
+input UserPostsAggregateInput {
+  AND: [UserPostsAggregateInput!]
+  NOT: UserPostsAggregateInput
+  OR: [UserPostsAggregateInput!]
+  count: IntScalarFilters
+  count_EQ: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { eq: ... } } }' instead.")
+  count_GT: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { gt: ... } } }' instead.")
+  count_GTE: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { gte: ... } } }' instead.")
+  count_LT: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { lt: ... } } }' instead.")
+  count_LTE: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { lte: ... } } }' instead.")
+  node: UserPostsNodeAggregationWhereInput
+}
+
+input UserPostsConnectFieldInput {
+  connect: [PostConnectInput!]
+  where: PostConnectWhere
+}
+
+type UserPostsConnection {
+  aggregate: UserPostPostsAggregateSelection!
+  edges: [UserPostsRelationship!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+input UserPostsConnectionAggregateInput {
+  AND: [UserPostsConnectionAggregateInput!]
+  NOT: UserPostsConnectionAggregateInput
+  OR: [UserPostsConnectionAggregateInput!]
+  count: ConnectionAggregationCountFilterInput
+  node: UserPostsNodeAggregationWhereInput
+}
+
+input UserPostsConnectionFilters {
+  """Filter Users by aggregating results on related UserPostsConnections"""
+  aggregate: UserPostsConnectionAggregateInput
+
+  """
+  Return Users where all of the related UserPostsConnections match this filter
+  """
+  all: UserPostsConnectionWhere
+
+  """
+  Return Users where none of the related UserPostsConnections match this filter
+  """
+  none: UserPostsConnectionWhere
+
+  """
+  Return Users where one of the related UserPostsConnections match this filter
+  """
+  single: UserPostsConnectionWhere
+
+  """
+  Return Users where some of the related UserPostsConnections match this filter
+  """
+  some: UserPostsConnectionWhere
+}
+
+input UserPostsConnectionSort {
+  node: PostSort
+}
+
+input UserPostsConnectionWhere {
+  AND: [UserPostsConnectionWhere!]
+  NOT: UserPostsConnectionWhere
+  OR: [UserPostsConnectionWhere!]
+  node: PostWhere
+}
+
+input UserPostsCreateFieldInput {
+  node: PostCreateInput!
+}
+
+input UserPostsFieldInput {
+  connect: [UserPostsConnectFieldInput!]
+  create: [UserPostsCreateFieldInput!]
+}
+
+input UserPostsNodeAggregationWhereInput {
+  AND: [UserPostsNodeAggregationWhereInput!]
+  NOT: UserPostsNodeAggregationWhereInput
+  OR: [UserPostsNodeAggregationWhereInput!]
+  title: StringScalarAggregationFilters
+  title_AVERAGE_LENGTH_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'title: { averageLength: { eq: ... } } }' instead.")
+  title_AVERAGE_LENGTH_GT: Float @deprecated(reason: "Please use the relevant generic filter 'title: { averageLength: { gt: ... } } }' instead.")
+  title_AVERAGE_LENGTH_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'title: { averageLength: { gte: ... } } }' instead.")
+  title_AVERAGE_LENGTH_LT: Float @deprecated(reason: "Please use the relevant generic filter 'title: { averageLength: { lt: ... } } }' instead.")
+  title_AVERAGE_LENGTH_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'title: { averageLength: { lte: ... } } }' instead.")
+  title_LONGEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'title: { longestLength: { eq: ... } } }' instead.")
+  title_LONGEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'title: { longestLength: { gt: ... } } }' instead.")
+  title_LONGEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'title: { longestLength: { gte: ... } } }' instead.")
+  title_LONGEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'title: { longestLength: { lt: ... } } }' instead.")
+  title_LONGEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'title: { longestLength: { lte: ... } } }' instead.")
+  title_SHORTEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'title: { shortestLength: { eq: ... } } }' instead.")
+  title_SHORTEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'title: { shortestLength: { gt: ... } } }' instead.")
+  title_SHORTEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'title: { shortestLength: { gte: ... } } }' instead.")
+  title_SHORTEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'title: { shortestLength: { lt: ... } } }' instead.")
+  title_SHORTEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'title: { shortestLength: { lte: ... } } }' instead.")
+}
+
+type UserPostsRelationship {
+  cursor: String!
+  node: Post!
+}
+
+"""
+Fields to sort Users by. The order in which sorts are applied is not guaranteed when specifying many fields in one UserSort object.
+"""
+input UserSort {
+  id: SortDirection
+  name: SortDirection
+}
+
+input UserWhere {
+  AND: [UserWhere!]
+  NOT: UserWhere
+  OR: [UserWhere!]
+  id: IDScalarFilters
+  id_CONTAINS: ID @deprecated(reason: "Please use the relevant generic filter id: { contains: ... }")
+  id_ENDS_WITH: ID @deprecated(reason: "Please use the relevant generic filter id: { endsWith: ... }")
+  id_EQ: ID @deprecated(reason: "Please use the relevant generic filter id: { eq: ... }")
+  id_IN: [ID!] @deprecated(reason: "Please use the relevant generic filter id: { in: ... }")
+  id_STARTS_WITH: ID @deprecated(reason: "Please use the relevant generic filter id: { startsWith: ... }")
+  name: StringScalarFilters
+  name_CONTAINS: String @deprecated(reason: "Please use the relevant generic filter name: { contains: ... }")
+  name_ENDS_WITH: String @deprecated(reason: "Please use the relevant generic filter name: { endsWith: ... }")
+  name_EQ: String @deprecated(reason: "Please use the relevant generic filter name: { eq: ... }")
+  name_IN: [String!] @deprecated(reason: "Please use the relevant generic filter name: { in: ... }")
+  name_STARTS_WITH: String @deprecated(reason: "Please use the relevant generic filter name: { startsWith: ... }")
+  posts: PostRelationshipFilters
+  postsAggregate: UserPostsAggregateInput @deprecated(reason: "Aggregate filters are moved inside the postsConnection filter, please use { postsConnection: { aggregate: {...} } } instead")
+  postsConnection: UserPostsConnectionFilters
+
+  """
+  Return Users where all of the related UserPostsConnections match this filter
+  """
+  postsConnection_ALL: UserPostsConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'postsConnection: { all: { node: ... } } }' instead.")
+
+  """
+  Return Users where none of the related UserPostsConnections match this filter
+  """
+  postsConnection_NONE: UserPostsConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'postsConnection: { none: { node: ... } } }' instead.")
+
+  """
+  Return Users where one of the related UserPostsConnections match this filter
+  """
+  postsConnection_SINGLE: UserPostsConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'postsConnection: { single: { node: ... } } }' instead.")
+
+  """
+  Return Users where some of the related UserPostsConnections match this filter
+  """
+  postsConnection_SOME: UserPostsConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'postsConnection: { some: { node: ... } } }' instead.")
+
+  """Return Users where all of the related Posts match this filter"""
+  posts_ALL: PostWhere @deprecated(reason: "Please use the relevant generic filter 'posts: { all: ... }' instead.")
+
+  """Return Users where none of the related Posts match this filter"""
+  posts_NONE: PostWhere @deprecated(reason: "Please use the relevant generic filter 'posts: { none: ... }' instead.")
+
+  """Return Users where one of the related Posts match this filter"""
+  posts_SINGLE: PostWhere @deprecated(reason: "Please use the relevant generic filter 'posts: {  single: ... }' instead.")
+
+  """Return Users where some of the related Posts match this filter"""
+  posts_SOME: PostWhere @deprecated(reason: "Please use the relevant generic filter 'posts: {  some: ... }' instead.")
+}
+
+type UsersConnection {
+  aggregate: UserAggregate!
+  edges: [UserEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}

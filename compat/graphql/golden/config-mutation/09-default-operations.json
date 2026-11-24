@@ -1,0 +1,20 @@
+{
+  "data": {
+    "createComments": {
+      "comments": [
+        {
+          "id": "c2",
+          "text": "Second"
+        }
+      ]
+    },
+    "updateComments": {
+      "comments": [
+        {
+          "id": "c1",
+          "text": "Edited"
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "errors": [
+    {
+      "message": "Field \"actors\" is not defined by type \"MovieCreateInput\"."
+    }
+  ]
+}

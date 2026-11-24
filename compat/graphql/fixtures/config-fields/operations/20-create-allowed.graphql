@@ -1,0 +1,15 @@
+# features: config.settable, mutation.create
+mutation {
+  createMovies(
+    input: [{ id: "m9", title: "New", plain: "x", reviews: { create: [{ node: { score: 1 } }] } }]
+  ) {
+    movies {
+      id
+      title
+      createdBy
+      reviews {
+        score
+      }
+    }
+  }
+}

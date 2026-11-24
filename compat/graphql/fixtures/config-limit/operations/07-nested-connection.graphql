@@ -1,0 +1,24 @@
+# features: config.limit, connection, sort
+# ordered
+query {
+  authors {
+    volumesConnection(sort: [{ node: { id: ASC } }]) {
+      totalCount
+      pageInfo {
+        hasNextPage
+      }
+      edges {
+        node {
+          id
+        }
+      }
+    }
+    capped: volumesConnection(first: 4, sort: [{ node: { id: DESC } }]) {
+      edges {
+        node {
+          id
+        }
+      }
+    }
+  }
+}

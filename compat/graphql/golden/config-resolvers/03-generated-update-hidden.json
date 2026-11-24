@@ -1,0 +1,7 @@
+{
+  "errors": [
+    {
+      "message": "Cannot query field \"updateAccounts\" on type \"Mutation\". Did you mean \"createAccounts\" or \"deleteAccounts\"?"
+    }
+  ]
+}

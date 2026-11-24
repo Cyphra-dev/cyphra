@@ -1,0 +1,14 @@
+# features: config.limit, sort
+# ordered
+query {
+  volumes(limit: 0, sort: [{ id: ASC }]) {
+    id
+  }
+  volumesConnection(first: 0, sort: [{ id: ASC }]) {
+    edges {
+      node {
+        id
+      }
+    }
+  }
+}

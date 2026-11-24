@@ -1,0 +1,24 @@
+{
+  "data": {
+    "createPosts": {
+      "posts": [
+        {
+          "id": "p3",
+          "title": "Nested",
+          "author": {
+            "id": "u3",
+            "name": "Cy"
+          },
+          "tags": [
+            {
+              "name": "neo4j"
+            },
+            {
+              "name": "new"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "data": {
+    "movies": [
+      {
+        "actorsConnection": {
+          "edges": [
+            {
+              "properties": {
+                "screenTime": 120
+              }
+            },
+            {
+              "properties": {
+                "screenTime": 80
+              }
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

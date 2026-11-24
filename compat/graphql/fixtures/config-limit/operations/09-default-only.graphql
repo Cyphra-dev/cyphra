@@ -1,0 +1,10 @@
+# features: config.limit, sort
+# ordered
+query {
+  tags(sort: [{ id: ASC }]) {
+    id
+  }
+  three: tags(limit: 3, sort: [{ id: ASC }]) {
+    id
+  }
+}

@@ -57,7 +57,8 @@ export const schema = compat.v7.makeSchema({ typeDefs, driver });
 
 `makeSchema` throws an `UnsupportedTypeDefsError` when the type definitions use something it cannot
 serve yet (interfaces, `Point`, `Duration`, custom scalars, …). It never serves an API that
-differs from v7 without telling you.
+differs from v7 without telling you: a directive or argument it does not implement is rejected, never
+ignored.
 
 ## Serve it from a Next.js route
 
@@ -520,7 +521,7 @@ One difference: v7 7.6.8 ignores `where` and `edge` when a union field is connec
 disconnected inside another `connect` / `disconnect` (`fans: { connect: [{ where, connect: {
 favorites: { Book: [{ where }] } } }] }`): it connects every node of every member, or deletes
 every relationship of the field. `@cyphra/graphql` applies `where` and `edge` there too. These are
-the two checks of the compatibility suite that differ on purpose. `@cypher` fields returning a
+two of the three checks of the compatibility suite that differ on purpose. `@cypher` fields returning a
 union are not supported yet.
 
 ## Subscriptions
@@ -680,14 +681,80 @@ the events from the moment it reconnects, not the ones it missed.
 - A subscription can also authenticate with `context.token` (useful over SSE); `close()` ends the
   open subscriptions, and the engine only polls while one is open.
 
+## Schema configuration
+
+The v7 schema configuration directives work as in v7: same generated schema, same behaviour.
+
+| Directive                                                  | Where                                      | Effect                                                                                                                                             |
+| ---------------------------------------------------------- | ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `@mutation(operations: [CREATE, UPDATE, DELETE])`          | type, or `extend schema`                   | Only the listed root mutations (`createUsers`, …) exist. `[]` removes all three; without root mutation left, there is no `Mutation` type.          |
+| `@query(read: true, connection: <read>, aggregate: false)` | type, union, or `extend schema`            | `read`: the root list query (`users`). `connection`: `edges` / `totalCount` / `pageInfo` of `usersConnection`. `aggregate`: its `aggregate` field. |
+| `@selectable(onRead: true, onAggregate: false)`            | field, relationship, relationship property | `onRead`: the field is in the object type and in subscription payloads. `onAggregate`: the field is in aggregate selections.                       |
+| `@settable(onCreate: true, onUpdate: true)`                | field, relationship, relationship property | The field is in the create / update inputs (root and nested).                                                                                      |
+| `@filterable(byValue: true, byAggregate: false)`           | field, relationship, relationship property | `byValue`: the field is in `where` inputs. `byAggregate`: it is in aggregation filters.                                                            |
+| `@sortable(byValue: true)`                                 | field                                      | The field is in `sort` inputs. A type with no sortable field has no `sort` argument at all.                                                        |
+| `@limit(default, max)`                                     | type                                       | Page size of every read of the type when no `limit` / `first` is given (`default`, else `max`), and its upper bound (`max`).                       |
+
+v7 details you get as well:
+
+- The defaults apply once a directive is written: `@query` alone turns `aggregate` off, `@selectable`
+  alone turns `onAggregate` off and `@filterable` alone turns aggregation filters off.
+- `@query` / `@mutation` go either on the schema or on types, not both (`makeSchema` throws, like v7).
+  `@query(read: false)` on a type also removes its connection, unless `connection: true`.
+- A list relationship with `@selectable(onRead: false)` keeps its `…Connection` field with only
+  `aggregate`. On to-one relationships, `@filterable` has no effect (v7 always generates their
+  filters). `@sortable` has no effect on relationship properties: v7 lists every property in the
+  edge `sort` input.
+- A type with nothing settable gets `_emptyInput: Boolean` in its create / update input.
+- A root field hidden by `@query` / `@mutation` can be defined in `type Query` / `type Mutation`
+  and served by your [resolvers](#custom-resolvers), e.g. a `createUsers` that sets the role on the
+  server. Only the generated fields get the generated resolvers.
+- `@selectable(onRead: false)` also hides a field returning a type without `@node`. It cannot be
+  combined with `@customResolver`, nor can the other configuration directives (`makeSchema`
+  throws, like v7).
+- `@limit` applies to root and nested lists and connections, `@cypher` fields returning a list of
+  the type, full-text queries and the nodes returned by `create` / `update` mutations. It does not
+  apply to union queries or `aggregate`. With `@limit`, `pageInfo.hasNextPage` is computed from the
+  requested `first` (it is `false` when `first` is not given), like v7.
+
+<Callout type="warning">
+These directives shape the API; they are **not access control**. As in v7:
+
+- `@mutation(operations: [])` removes `createUsers`, `updateUsers` and `deleteUsers`, but a user
+  can still be created, updated, connected or deleted through the nested inputs of another type
+  (`createPosts(input: [{ author: { create: { node: { … } } } }])`). Use `@authorization(validate:
+[{ operations: [CREATE, …] }])` or `@authentication(operations: [CREATE, …])` on the type, or
+  `@settable(onCreate: false, onUpdate: false)` on the relationship fields that reach it.
+- `@query(read: false)` removes the root queries only: the type stays readable through
+  relationships and in mutation responses. Use `@authorization(filter)` for data users must not see.
+- A field with `@selectable(onRead: false)` can still be filtered and sorted on, which reveals its
+  value. Add `@filterable(byValue: false, byAggregate: false) @sortable(byValue: false)` or an
+  `@authorization` rule on the field.
+
+Never remove these directives to get past an `UnsupportedTypeDefsError`: the API would expose what
+v7 hides.
+
+</Callout>
+
+Differences from v7, on purpose:
+
+- With `@limit`, `limit: 0` / `first: 0` counts as "not given" (the `default`, capped by `max`). v7
+  ignores `0` after applying `@limit` and returns every node, which bypasses `max`. This is the one
+  check of the compatibility suite that differs for `@limit`.
+- `@selectable(onRead: false)` on a to-one relationship is rejected: v7 generates a connection
+  type without fields for it, which makes the whole schema invalid.
+- Every argument is checked: an unknown argument, a `null` where v7 expects a Boolean, an invalid
+  `@limit` or an unknown `@mutation` operation make `makeSchema` throw.
+
 ## What works today
 
-Compatibility is checked by a suite of 12 apps and 169 operations. Its expected results come from
-the real `@neo4j/graphql` 7.6.8. Today 179 of its 181 checks pass: the printed schema of the 12
-apps and 167 operations (queries, aggregations, mutations, authorization, `@cypher` fields, custom
-resolvers, full-text queries, unions, to-one relationships, and subscription events on Neo4j
-Enterprise with CDC). The two others are the nested union `connect` / `disconnect` where v7 ignores
-`where` ([unions](#unions)). The full report is [`compat/graphql/REPORT.md`](https://github.com/Cyphra-dev/cyphra/blob/main/compat/graphql/REPORT.md).
+Compatibility is checked by a suite of 18 apps and 253 operations. Its expected results come from
+the real `@neo4j/graphql` 7.6.8. Today 268 of its 271 checks pass: the printed schema of the 18
+apps and 250 operations (queries, aggregations, mutations, authorization, `@cypher` fields, custom
+resolvers, full-text queries, unions, to-one relationships, schema configuration directives, and
+subscription events on Neo4j Enterprise with CDC). The three others differ on purpose: the nested
+union `connect` / `disconnect` where v7 ignores `where` ([unions](#unions)), and `limit: 0` on a
+type with `@limit` ([schema configuration](#schema-configuration)). The full report is [`compat/graphql/REPORT.md`](https://github.com/Cyphra-dev/cyphra/blob/main/compat/graphql/REPORT.md).
 
 | Feature                                                                                                                                                                        | Status                                                  |
 | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------- |
@@ -709,8 +776,9 @@ Enterprise with CDC). The two others are the nested union `connect` / `disconnec
 | Unions: root query, relationships to unions with edge properties, member-keyed `where` and nested writes. `cyphra import graphql` maps them to [Cyphra unions](/schema#unions) | Works ([details](#unions))                              |
 | Subscriptions on CDC: `@subscription`, `@subscriptionsAuthorization`, `where`, `@authentication(SUBSCRIBE)` (Neo4j Enterprise / Aura)                                          | Works ([details](#subscriptions))                       |
 | Custom resolvers: the `resolvers` option, `Query` / `Mutation` fields without `@cypher`, types without `@node`, `@customResolver(requires)`                                    | Works ([details](#custom-resolvers))                    |
+| `@query`, `@mutation`, `@selectable`, `@settable`, `@filterable`, `@sortable`, `@limit` (type, field and schema level)                                                         | Works ([details](#schema-configuration))                |
 | Interfaces, `@vector`, `Point`, `Duration` and custom scalars                                                                                                                  | Not yet: `makeSchema` throws `UnsupportedTypeDefsError` |
-| `@populatedBy`, `@relayId`, `@query`, `@mutation`, `@selectable`, `@settable`, `@filterable`, `@sortable`, `@limit`                                                            | Not yet: `makeSchema` throws `UnsupportedTypeDefsError` |
+| `@populatedBy`, `@relayId`, `@coalesce`, `@relationship(nestedOperations, aggregate, queryDirection)`                                                                          | Not yet: `makeSchema` throws `UnsupportedTypeDefsError` |
 
 ### v7 behaviour you get as well
 

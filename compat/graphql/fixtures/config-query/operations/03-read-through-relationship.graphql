@@ -1,0 +1,26 @@
+# features: config.query
+query {
+  owners {
+    id
+    secrets {
+      id
+      value
+    }
+    secretsConnection {
+      totalCount
+      edges {
+        node {
+          id
+        }
+      }
+    }
+    items {
+      ... on Report {
+        id
+      }
+      ... on Log {
+        id
+      }
+    }
+  }
+}

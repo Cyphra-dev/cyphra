@@ -1,0 +1,10 @@
+# features: config.query, resolvers
+query {
+  teams {
+    name
+    accounts {
+      id
+      displayName
+    }
+  }
+}

@@ -1,0 +1,32 @@
+# Schema configuration directives with custom resolvers (#224): the application replaces root
+# fields hidden by @query / @mutation, plain-type fields honor @selectable, and @customResolver
+# fields stay readable through relationships of a type without root queries.
+type Account @node @mutation(operations: [DELETE]) @query(read: false) {
+  id: ID!
+  email: String!
+  role: String!
+  displayName: String! @customResolver(requires: "email")
+  settings: AccountSettings @selectable(onRead: false)
+  team: Team @relationship(type: "MEMBER_OF", direction: OUT)
+}
+
+type Team @node {
+  id: ID!
+  name: String!
+  accounts: [Account!]! @relationship(type: "MEMBER_OF", direction: IN) @settable(onCreate: false)
+}
+
+"Computed by the application"
+type AccountSettings {
+  theme: String!
+}
+
+type Query {
+  "Replaces the generated `accounts` query hidden by @query(read: false)"
+  accounts: [Account!]!
+}
+
+type Mutation {
+  "Replaces the generated `createAccounts`: the role is set by the server"
+  createAccounts(email: String!): Account!
+}

@@ -1,0 +1,8 @@
+# features: config.mutation
+mutation {
+  createUsers(input: [{ id: "u9", name: "Mallory" }]) {
+    users {
+      id
+    }
+  }
+}

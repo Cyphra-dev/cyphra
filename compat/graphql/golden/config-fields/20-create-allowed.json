@@ -1,0 +1,18 @@
+{
+  "data": {
+    "createMovies": {
+      "movies": [
+        {
+          "id": "m9",
+          "title": "New",
+          "createdBy": null,
+          "reviews": [
+            {
+              "score": 1
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

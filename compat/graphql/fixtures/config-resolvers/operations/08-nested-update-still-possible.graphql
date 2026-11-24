@@ -1,0 +1,18 @@
+# features: config.mutation, mutation.nested
+mutation {
+  updateTeams(
+    where: { id: { eq: "t1" } }
+    update: {
+      accounts: [
+        { update: { where: { node: { id: { eq: "a2" } } }, node: { role: { set: "admin" } } } }
+      ]
+    }
+  ) {
+    teams {
+      accounts {
+        id
+        role
+      }
+    }
+  }
+}

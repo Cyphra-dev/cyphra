@@ -1,0 +1,9 @@
+# features: config.query, resolvers
+# ordered
+query {
+  accounts {
+    id
+    role
+    displayName
+  }
+}

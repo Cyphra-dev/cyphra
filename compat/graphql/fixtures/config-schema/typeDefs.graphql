@@ -1,0 +1,15 @@
+# Schema-level @mutation / @query apply to every type (and @query to unions).
+extend schema @mutation(operations: [CREATE]) @query(read: true, aggregate: false)
+
+type Team @node {
+  id: ID!
+  name: String!
+  members: [Member!]! @relationship(type: "HAS_MEMBER", direction: OUT)
+}
+
+type Member @node {
+  id: ID!
+  age: Int
+}
+
+union Entity = Team | Member

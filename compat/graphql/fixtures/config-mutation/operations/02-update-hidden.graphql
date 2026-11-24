@@ -1,0 +1,8 @@
+# features: config.mutation
+mutation {
+  updateUsers(where: { id: { eq: "u1" } }, update: { name: { set: "Eve" } }) {
+    users {
+      id
+    }
+  }
+}

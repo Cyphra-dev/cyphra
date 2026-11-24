@@ -1,0 +1,24 @@
+{
+  "data": {
+    "allVolumes": [
+      {
+        "id": "v1"
+      },
+      {
+        "id": "v2"
+      }
+    ],
+    "authors": [
+      {
+        "topVolumes": [
+          {
+            "id": "v5"
+          },
+          {
+            "id": "v4"
+          }
+        ]
+      }
+    ]
+  }
+}

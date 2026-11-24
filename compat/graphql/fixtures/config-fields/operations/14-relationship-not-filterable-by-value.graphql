@@ -1,0 +1,6 @@
+# features: config.filterable
+query {
+  movies(where: { reviews: { some: { score: { eq: 5 } } } }) {
+    id
+  }
+}

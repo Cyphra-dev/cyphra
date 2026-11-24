@@ -1,0 +1,6 @@
+# features: config.mutation
+mutation {
+  deleteUsers(where: { id: { eq: "u1" } }) {
+    nodesDeleted
+  }
+}

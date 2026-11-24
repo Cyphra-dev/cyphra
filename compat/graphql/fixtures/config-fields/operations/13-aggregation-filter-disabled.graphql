@@ -1,0 +1,8 @@
+# features: config.filterable, filter.aggregate
+query {
+  actors(
+    where: { moviesConnection: { aggregate: { node: { tagline: { longestLength: { gt: 1 } } } } } }
+  ) {
+    name
+  }
+}

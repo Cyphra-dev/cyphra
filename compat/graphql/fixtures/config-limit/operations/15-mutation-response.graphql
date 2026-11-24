@@ -1,0 +1,15 @@
+# features: config.limit, mutation.create
+mutation {
+  createVolumes(
+    input: [
+      { id: "v6", title: "Same" }
+      { id: "v7", title: "Same" }
+      { id: "v8", title: "Same" }
+      { id: "v9", title: "Same" }
+    ]
+  ) {
+    volumes {
+      title
+    }
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "errors": [
+    {
+      "message": "Field \"budget\" is not defined by type \"MovieWhere\"."
+    }
+  ]
+}

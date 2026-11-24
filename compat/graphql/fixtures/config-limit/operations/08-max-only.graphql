@@ -1,0 +1,10 @@
+# features: config.limit, sort
+# ordered
+query {
+  notes(sort: [{ id: ASC }]) {
+    id
+  }
+  one: notes(limit: 1, sort: [{ id: DESC }]) {
+    id
+  }
+}

@@ -1,0 +1,6 @@
+# features: config.filterable, filter.aggregate
+query {
+  movies(where: { actorsConnection: { aggregate: { count: { nodes: { gt: 1 } } } } }) {
+    id
+  }
+}

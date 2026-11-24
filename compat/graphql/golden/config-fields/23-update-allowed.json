@@ -1,0 +1,28 @@
+{
+  "data": {
+    "updateMovies": {
+      "movies": [
+        {
+          "id": "m1",
+          "createdBy": "me",
+          "actorsConnection": {
+            "edges": [
+              {
+                "properties": {
+                  "role": "Neo",
+                  "screenTime": 120
+                }
+              },
+              {
+                "properties": {
+                  "role": "Trinity",
+                  "screenTime": 1
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

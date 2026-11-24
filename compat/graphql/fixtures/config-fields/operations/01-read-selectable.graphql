@@ -1,0 +1,36 @@
+# features: config.selectable, connection.edge-properties
+query {
+  movies(sort: [{ released: ASC }]) {
+    id
+    title
+    rating
+    budget
+    tagline
+    released
+    createdBy
+    plain
+    computed
+    actors(sort: [{ name: ASC }]) {
+      name
+      age
+    }
+    actorsConnection(sort: [{ node: { name: ASC } }]) {
+      edges {
+        properties {
+          role
+          screenTime
+          year
+        }
+        node {
+          name
+        }
+      }
+    }
+    reviews {
+      score
+    }
+    studio {
+      name
+    }
+  }
+}

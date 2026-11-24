@@ -1,0 +1,508 @@
+type Account {
+  displayName: String!
+  email: String!
+  id: ID!
+  role: String!
+  team: Team
+  teamConnection: AccountTeamConnection!
+}
+
+input AccountConnectWhere {
+  node: AccountWhere!
+}
+
+input AccountCreateInput {
+  email: String!
+  id: ID!
+  role: String!
+  team: AccountTeamFieldInput
+}
+
+input AccountDeleteInput {
+  team: AccountTeamDeleteFieldInput
+}
+
+input AccountRelationshipFilters {
+  """Filter type where all of the related Accounts match this filter"""
+  all: AccountWhere
+
+  """Filter type where none of the related Accounts match this filter"""
+  none: AccountWhere
+
+  """Filter type where one of the related Accounts match this filter"""
+  single: AccountWhere
+
+  """Filter type where some of the related Accounts match this filter"""
+  some: AccountWhere
+}
+
+"""
+Fields to sort Accounts by. The order in which sorts are applied is not guaranteed when specifying many fields in one AccountSort object.
+"""
+input AccountSort {
+  email: SortDirection
+  id: SortDirection
+  role: SortDirection
+}
+
+type AccountTeamConnection {
+  edges: [AccountTeamRelationship!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+input AccountTeamConnectionWhere {
+  AND: [AccountTeamConnectionWhere!]
+  NOT: AccountTeamConnectionWhere
+  OR: [AccountTeamConnectionWhere!]
+  node: TeamWhere
+}
+
+input AccountTeamCreateFieldInput {
+  node: TeamCreateInput!
+}
+
+input AccountTeamDeleteFieldInput {
+  delete: TeamDeleteInput
+  where: AccountTeamConnectionWhere
+}
+
+input AccountTeamFieldInput {
+  create: AccountTeamCreateFieldInput
+}
+
+type AccountTeamRelationship {
+  cursor: String!
+  node: Team!
+}
+
+input AccountUpdateInput {
+  email: StringScalarMutations
+  email_SET: String @deprecated(reason: "Please use the generic mutation 'email: { set: ... } }' instead.")
+  id: IDScalarMutations
+  id_SET: ID @deprecated(reason: "Please use the generic mutation 'id: { set: ... } }' instead.")
+  role: StringScalarMutations
+  role_SET: String @deprecated(reason: "Please use the generic mutation 'role: { set: ... } }' instead.")
+}
+
+input AccountWhere {
+  AND: [AccountWhere!]
+  NOT: AccountWhere
+  OR: [AccountWhere!]
+  email: StringScalarFilters
+  email_CONTAINS: String @deprecated(reason: "Please use the relevant generic filter email: { contains: ... }")
+  email_ENDS_WITH: String @deprecated(reason: "Please use the relevant generic filter email: { endsWith: ... }")
+  email_EQ: String @deprecated(reason: "Please use the relevant generic filter email: { eq: ... }")
+  email_IN: [String!] @deprecated(reason: "Please use the relevant generic filter email: { in: ... }")
+  email_STARTS_WITH: String @deprecated(reason: "Please use the relevant generic filter email: { startsWith: ... }")
+  id: IDScalarFilters
+  id_CONTAINS: ID @deprecated(reason: "Please use the relevant generic filter id: { contains: ... }")
+  id_ENDS_WITH: ID @deprecated(reason: "Please use the relevant generic filter id: { endsWith: ... }")
+  id_EQ: ID @deprecated(reason: "Please use the relevant generic filter id: { eq: ... }")
+  id_IN: [ID!] @deprecated(reason: "Please use the relevant generic filter id: { in: ... }")
+  id_STARTS_WITH: ID @deprecated(reason: "Please use the relevant generic filter id: { startsWith: ... }")
+  role: StringScalarFilters
+  role_CONTAINS: String @deprecated(reason: "Please use the relevant generic filter role: { contains: ... }")
+  role_ENDS_WITH: String @deprecated(reason: "Please use the relevant generic filter role: { endsWith: ... }")
+  role_EQ: String @deprecated(reason: "Please use the relevant generic filter role: { eq: ... }")
+  role_IN: [String!] @deprecated(reason: "Please use the relevant generic filter role: { in: ... }")
+  role_STARTS_WITH: String @deprecated(reason: "Please use the relevant generic filter role: { startsWith: ... }")
+  team: TeamWhere
+  teamConnection: AccountTeamConnectionWhere
+}
+
+input ConnectionAggregationCountFilterInput {
+  edges: IntScalarFilters
+  nodes: IntScalarFilters
+}
+
+type Count {
+  nodes: Int!
+}
+
+type CountConnection {
+  edges: Int!
+  nodes: Int!
+}
+
+"""
+Information about the number of nodes and relationships created during a create mutation
+"""
+type CreateInfo {
+  nodesCreated: Int!
+  relationshipsCreated: Int!
+}
+
+type CreateTeamsMutationResponse {
+  info: CreateInfo!
+  teams: [Team!]!
+}
+
+"""
+Information about the number of nodes and relationships deleted during a delete mutation
+"""
+type DeleteInfo {
+  nodesDeleted: Int!
+  relationshipsDeleted: Int!
+}
+
+"""Float filters"""
+input FloatScalarFilters {
+  eq: Float
+  gt: Float
+  gte: Float
+  in: [Float!]
+  lt: Float
+  lte: Float
+}
+
+"""ID filters"""
+input IDScalarFilters {
+  contains: ID
+  endsWith: ID
+  eq: ID
+  in: [ID!]
+  startsWith: ID
+}
+
+"""ID mutations"""
+input IDScalarMutations {
+  set: ID
+}
+
+"""Int filters"""
+input IntScalarFilters {
+  eq: Int
+  gt: Int
+  gte: Int
+  in: [Int!]
+  lt: Int
+  lte: Int
+}
+
+type Mutation {
+  """Replaces the generated `createAccounts`: the role is set by the server"""
+  createAccounts(email: String!): Account!
+  createTeams(input: [TeamCreateInput!]!): CreateTeamsMutationResponse!
+  deleteAccounts(delete: AccountDeleteInput, where: AccountWhere): DeleteInfo!
+  deleteTeams(delete: TeamDeleteInput, where: TeamWhere): DeleteInfo!
+  updateTeams(update: TeamUpdateInput, where: TeamWhere): UpdateTeamsMutationResponse!
+}
+
+"""Pagination information (Relay)"""
+type PageInfo {
+  endCursor: String
+  hasNextPage: Boolean!
+  hasPreviousPage: Boolean!
+  startCursor: String
+}
+
+type Query {
+  """Replaces the generated `accounts` query hidden by @query(read: false)"""
+  accounts: [Account!]!
+  teams(limit: Int, offset: Int, sort: [TeamSort!], where: TeamWhere): [Team!]!
+  teamsConnection(after: String, first: Int, sort: [TeamSort!], where: TeamWhere): TeamsConnection!
+}
+
+"""An enum for sorting in either ascending or descending order."""
+enum SortDirection {
+  """Sort by field values in ascending order."""
+  ASC
+
+  """Sort by field values in descending order."""
+  DESC
+}
+
+type StringAggregateSelection {
+  longest: String
+  shortest: String
+}
+
+"""Filters for an aggregation of a string field"""
+input StringScalarAggregationFilters {
+  averageLength: FloatScalarFilters
+  longestLength: IntScalarFilters
+  shortestLength: IntScalarFilters
+}
+
+"""String filters"""
+input StringScalarFilters {
+  contains: String
+  endsWith: String
+  eq: String
+  in: [String!]
+  startsWith: String
+}
+
+"""String mutations"""
+input StringScalarMutations {
+  set: String
+}
+
+type Team {
+  accounts(limit: Int, offset: Int, sort: [AccountSort!], where: AccountWhere): [Account!]!
+  accountsConnection(after: String, first: Int, sort: [TeamAccountsConnectionSort!], where: TeamAccountsConnectionWhere): TeamAccountsConnection!
+  id: ID!
+  name: String!
+}
+
+type TeamAccountAccountsAggregateSelection {
+  count: CountConnection!
+  node: TeamAccountAccountsNodeAggregateSelection
+}
+
+type TeamAccountAccountsNodeAggregateSelection {
+  email: StringAggregateSelection!
+  role: StringAggregateSelection!
+}
+
+input TeamAccountsAggregateInput {
+  AND: [TeamAccountsAggregateInput!]
+  NOT: TeamAccountsAggregateInput
+  OR: [TeamAccountsAggregateInput!]
+  count: IntScalarFilters
+  count_EQ: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { eq: ... } } }' instead.")
+  count_GT: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { gt: ... } } }' instead.")
+  count_GTE: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { gte: ... } } }' instead.")
+  count_LT: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { lt: ... } } }' instead.")
+  count_LTE: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { lte: ... } } }' instead.")
+  node: TeamAccountsNodeAggregationWhereInput
+}
+
+input TeamAccountsConnectFieldInput {
+  where: AccountConnectWhere
+}
+
+type TeamAccountsConnection {
+  aggregate: TeamAccountAccountsAggregateSelection!
+  edges: [TeamAccountsRelationship!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+input TeamAccountsConnectionAggregateInput {
+  AND: [TeamAccountsConnectionAggregateInput!]
+  NOT: TeamAccountsConnectionAggregateInput
+  OR: [TeamAccountsConnectionAggregateInput!]
+  count: ConnectionAggregationCountFilterInput
+  node: TeamAccountsNodeAggregationWhereInput
+}
+
+input TeamAccountsConnectionFilters {
+  """Filter Teams by aggregating results on related TeamAccountsConnections"""
+  aggregate: TeamAccountsConnectionAggregateInput
+
+  """
+  Return Teams where all of the related TeamAccountsConnections match this filter
+  """
+  all: TeamAccountsConnectionWhere
+
+  """
+  Return Teams where none of the related TeamAccountsConnections match this filter
+  """
+  none: TeamAccountsConnectionWhere
+
+  """
+  Return Teams where one of the related TeamAccountsConnections match this filter
+  """
+  single: TeamAccountsConnectionWhere
+
+  """
+  Return Teams where some of the related TeamAccountsConnections match this filter
+  """
+  some: TeamAccountsConnectionWhere
+}
+
+input TeamAccountsConnectionSort {
+  node: AccountSort
+}
+
+input TeamAccountsConnectionWhere {
+  AND: [TeamAccountsConnectionWhere!]
+  NOT: TeamAccountsConnectionWhere
+  OR: [TeamAccountsConnectionWhere!]
+  node: AccountWhere
+}
+
+input TeamAccountsCreateFieldInput {
+  node: AccountCreateInput!
+}
+
+input TeamAccountsDeleteFieldInput {
+  delete: AccountDeleteInput
+  where: TeamAccountsConnectionWhere
+}
+
+input TeamAccountsDisconnectFieldInput {
+  where: TeamAccountsConnectionWhere
+}
+
+input TeamAccountsNodeAggregationWhereInput {
+  AND: [TeamAccountsNodeAggregationWhereInput!]
+  NOT: TeamAccountsNodeAggregationWhereInput
+  OR: [TeamAccountsNodeAggregationWhereInput!]
+  email: StringScalarAggregationFilters
+  email_AVERAGE_LENGTH_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'email: { averageLength: { eq: ... } } }' instead.")
+  email_AVERAGE_LENGTH_GT: Float @deprecated(reason: "Please use the relevant generic filter 'email: { averageLength: { gt: ... } } }' instead.")
+  email_AVERAGE_LENGTH_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'email: { averageLength: { gte: ... } } }' instead.")
+  email_AVERAGE_LENGTH_LT: Float @deprecated(reason: "Please use the relevant generic filter 'email: { averageLength: { lt: ... } } }' instead.")
+  email_AVERAGE_LENGTH_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'email: { averageLength: { lte: ... } } }' instead.")
+  email_LONGEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'email: { longestLength: { eq: ... } } }' instead.")
+  email_LONGEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'email: { longestLength: { gt: ... } } }' instead.")
+  email_LONGEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'email: { longestLength: { gte: ... } } }' instead.")
+  email_LONGEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'email: { longestLength: { lt: ... } } }' instead.")
+  email_LONGEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'email: { longestLength: { lte: ... } } }' instead.")
+  email_SHORTEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'email: { shortestLength: { eq: ... } } }' instead.")
+  email_SHORTEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'email: { shortestLength: { gt: ... } } }' instead.")
+  email_SHORTEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'email: { shortestLength: { gte: ... } } }' instead.")
+  email_SHORTEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'email: { shortestLength: { lt: ... } } }' instead.")
+  email_SHORTEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'email: { shortestLength: { lte: ... } } }' instead.")
+  role: StringScalarAggregationFilters
+  role_AVERAGE_LENGTH_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'role: { averageLength: { eq: ... } } }' instead.")
+  role_AVERAGE_LENGTH_GT: Float @deprecated(reason: "Please use the relevant generic filter 'role: { averageLength: { gt: ... } } }' instead.")
+  role_AVERAGE_LENGTH_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'role: { averageLength: { gte: ... } } }' instead.")
+  role_AVERAGE_LENGTH_LT: Float @deprecated(reason: "Please use the relevant generic filter 'role: { averageLength: { lt: ... } } }' instead.")
+  role_AVERAGE_LENGTH_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'role: { averageLength: { lte: ... } } }' instead.")
+  role_LONGEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'role: { longestLength: { eq: ... } } }' instead.")
+  role_LONGEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'role: { longestLength: { gt: ... } } }' instead.")
+  role_LONGEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'role: { longestLength: { gte: ... } } }' instead.")
+  role_LONGEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'role: { longestLength: { lt: ... } } }' instead.")
+  role_LONGEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'role: { longestLength: { lte: ... } } }' instead.")
+  role_SHORTEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'role: { shortestLength: { eq: ... } } }' instead.")
+  role_SHORTEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'role: { shortestLength: { gt: ... } } }' instead.")
+  role_SHORTEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'role: { shortestLength: { gte: ... } } }' instead.")
+  role_SHORTEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'role: { shortestLength: { lt: ... } } }' instead.")
+  role_SHORTEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'role: { shortestLength: { lte: ... } } }' instead.")
+}
+
+type TeamAccountsRelationship {
+  cursor: String!
+  node: Account!
+}
+
+input TeamAccountsUpdateConnectionInput {
+  node: AccountUpdateInput
+  where: TeamAccountsConnectionWhere
+}
+
+input TeamAccountsUpdateFieldInput {
+  connect: [TeamAccountsConnectFieldInput!]
+  create: [TeamAccountsCreateFieldInput!]
+  delete: [TeamAccountsDeleteFieldInput!]
+  disconnect: [TeamAccountsDisconnectFieldInput!]
+  update: TeamAccountsUpdateConnectionInput
+}
+
+type TeamAggregate {
+  count: Count!
+  node: TeamAggregateNode!
+}
+
+type TeamAggregateNode {
+  name: StringAggregateSelection!
+}
+
+input TeamCreateInput {
+  id: ID!
+  name: String!
+}
+
+input TeamDeleteInput {
+  accounts: [TeamAccountsDeleteFieldInput!]
+}
+
+type TeamEdge {
+  cursor: String!
+  node: Team!
+}
+
+"""
+Fields to sort Teams by. The order in which sorts are applied is not guaranteed when specifying many fields in one TeamSort object.
+"""
+input TeamSort {
+  id: SortDirection
+  name: SortDirection
+}
+
+input TeamUpdateInput {
+  accounts: [TeamAccountsUpdateFieldInput!]
+  id: IDScalarMutations
+  id_SET: ID @deprecated(reason: "Please use the generic mutation 'id: { set: ... } }' instead.")
+  name: StringScalarMutations
+  name_SET: String @deprecated(reason: "Please use the generic mutation 'name: { set: ... } }' instead.")
+}
+
+input TeamWhere {
+  AND: [TeamWhere!]
+  NOT: TeamWhere
+  OR: [TeamWhere!]
+  accounts: AccountRelationshipFilters
+  accountsAggregate: TeamAccountsAggregateInput @deprecated(reason: "Aggregate filters are moved inside the accountsConnection filter, please use { accountsConnection: { aggregate: {...} } } instead")
+  accountsConnection: TeamAccountsConnectionFilters
+
+  """
+  Return Teams where all of the related TeamAccountsConnections match this filter
+  """
+  accountsConnection_ALL: TeamAccountsConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'accountsConnection: { all: { node: ... } } }' instead.")
+
+  """
+  Return Teams where none of the related TeamAccountsConnections match this filter
+  """
+  accountsConnection_NONE: TeamAccountsConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'accountsConnection: { none: { node: ... } } }' instead.")
+
+  """
+  Return Teams where one of the related TeamAccountsConnections match this filter
+  """
+  accountsConnection_SINGLE: TeamAccountsConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'accountsConnection: { single: { node: ... } } }' instead.")
+
+  """
+  Return Teams where some of the related TeamAccountsConnections match this filter
+  """
+  accountsConnection_SOME: TeamAccountsConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'accountsConnection: { some: { node: ... } } }' instead.")
+
+  """Return Teams where all of the related Accounts match this filter"""
+  accounts_ALL: AccountWhere @deprecated(reason: "Please use the relevant generic filter 'accounts: { all: ... }' instead.")
+
+  """Return Teams where none of the related Accounts match this filter"""
+  accounts_NONE: AccountWhere @deprecated(reason: "Please use the relevant generic filter 'accounts: { none: ... }' instead.")
+
+  """Return Teams where one of the related Accounts match this filter"""
+  accounts_SINGLE: AccountWhere @deprecated(reason: "Please use the relevant generic filter 'accounts: {  single: ... }' instead.")
+
+  """Return Teams where some of the related Accounts match this filter"""
+  accounts_SOME: AccountWhere @deprecated(reason: "Please use the relevant generic filter 'accounts: {  some: ... }' instead.")
+  id: IDScalarFilters
+  id_CONTAINS: ID @deprecated(reason: "Please use the relevant generic filter id: { contains: ... }")
+  id_ENDS_WITH: ID @deprecated(reason: "Please use the relevant generic filter id: { endsWith: ... }")
+  id_EQ: ID @deprecated(reason: "Please use the relevant generic filter id: { eq: ... }")
+  id_IN: [ID!] @deprecated(reason: "Please use the relevant generic filter id: { in: ... }")
+  id_STARTS_WITH: ID @deprecated(reason: "Please use the relevant generic filter id: { startsWith: ... }")
+  name: StringScalarFilters
+  name_CONTAINS: String @deprecated(reason: "Please use the relevant generic filter name: { contains: ... }")
+  name_ENDS_WITH: String @deprecated(reason: "Please use the relevant generic filter name: { endsWith: ... }")
+  name_EQ: String @deprecated(reason: "Please use the relevant generic filter name: { eq: ... }")
+  name_IN: [String!] @deprecated(reason: "Please use the relevant generic filter name: { in: ... }")
+  name_STARTS_WITH: String @deprecated(reason: "Please use the relevant generic filter name: { startsWith: ... }")
+}
+
+type TeamsConnection {
+  aggregate: TeamAggregate!
+  edges: [TeamEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+"""
+Information about the number of nodes and relationships created and deleted during an update mutation
+"""
+type UpdateInfo {
+  nodesCreated: Int!
+  nodesDeleted: Int!
+  relationshipsCreated: Int!
+  relationshipsDeleted: Int!
+}
+
+type UpdateTeamsMutationResponse {
+  info: UpdateInfo!
+  teams: [Team!]!
+}

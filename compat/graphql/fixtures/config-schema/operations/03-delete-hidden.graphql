@@ -1,0 +1,6 @@
+# features: config.schema, config.mutation
+mutation {
+  deleteMembers(where: { id: { eq: "m1" } }) {
+    nodesDeleted
+  }
+}

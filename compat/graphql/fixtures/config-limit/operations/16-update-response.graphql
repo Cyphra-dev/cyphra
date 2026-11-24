@@ -1,0 +1,8 @@
+# features: config.limit, mutation.update
+mutation {
+  updateVolumes(update: { pages: { set: 7 } }) {
+    volumes {
+      pages
+    }
+  }
+}

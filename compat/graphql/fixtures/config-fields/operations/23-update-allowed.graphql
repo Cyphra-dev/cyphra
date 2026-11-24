@@ -1,0 +1,27 @@
+# features: config.settable, mutation.update
+mutation {
+  updateMovies(
+    where: { id: { eq: "m1" } }
+    update: {
+      createdBy: { set: "me" }
+      actors: [
+        {
+          update: { where: { node: { name: { eq: "Carrie" } } }, edge: { screenTime: { set: 1 } } }
+        }
+      ]
+    }
+  ) {
+    movies {
+      id
+      createdBy
+      actorsConnection(sort: [{ node: { name: ASC } }]) {
+        edges {
+          properties {
+            role
+            screenTime
+          }
+        }
+      }
+    }
+  }
+}

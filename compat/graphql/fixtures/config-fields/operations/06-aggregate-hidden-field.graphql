@@ -1,0 +1,12 @@
+# features: config.selectable, aggregate
+query {
+  moviesConnection {
+    aggregate {
+      node {
+        rating {
+          max
+        }
+      }
+    }
+  }
+}

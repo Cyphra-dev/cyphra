@@ -6,8 +6,11 @@ mutation {
       favorites: {
         Movie: [
           {
-            where: { node: { title: { eq: "Arrival" } } }
-            update: { edge: { rating: { set: 1 } }, node: { year: { set: 2017 } } }
+            update: {
+              where: { node: { title: { eq: "Arrival" } } }
+              edge: { rating: { set: 1 } }
+              node: { year: { set: 2017 } }
+            }
           }
         ]
         Book: [
