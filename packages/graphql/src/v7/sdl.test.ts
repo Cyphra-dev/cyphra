@@ -1,7 +1,14 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { lexicographicSortSchema, printSchema, printType, type GraphQLNamedType } from "graphql";
+import {
+  isSpecifiedScalarType,
+  lexicographicSortSchema,
+  printSchema,
+  printType,
+  type GraphQLInputObjectType,
+  type GraphQLNamedType,
+} from "graphql";
 import { describe, expect, it } from "vitest";
 import { readTypeDefs, UnsupportedTypeDefsError } from "./model.js";
 import { buildV7Schema } from "./sdl.js";
@@ -60,6 +67,25 @@ describe("SDL: printed schema is identical to @neo4j/graphql 7.6.8", () => {
   }
 });
 
+describe("SDL: unsorted print is byte-identical to @neo4j/graphql 7.6.8 (v7 order)", () => {
+  const fixtures = existsSync(path.join(COMPAT, "fixtures"))
+    ? readdirSync(path.join(COMPAT, "fixtures"))
+    : [];
+  for (const fixture of fixtures) {
+    it(fixture, () => {
+      const typeDefs = readFileSync(
+        path.join(COMPAT, "fixtures", fixture, "typeDefs.graphql"),
+        "utf8",
+      );
+      const golden = readFileSync(
+        path.join(COMPAT, "golden", fixture, "schema.print.graphql"),
+        "utf8",
+      );
+      expect(`${printSchema(schemaOf(typeDefs))}\n`).toBe(golden);
+    });
+  }
+});
+
 describe("SDL pieces", () => {
   it("root fields: list and connection queries, plural names, no options argument", () => {
     const query = printed(MOVIES, "Query");
@@ -70,6 +96,34 @@ describe("SDL pieces", () => {
       "peopleConnection(after: String, first: Int, sort: [PersonSort!], where: PersonWhere): PeopleConnection!",
     );
     expect(query).not.toContain("options");
+  });
+
+  it("v7 order: root types first, connection before list, v7 argument order", () => {
+    const schema = schemaOf(MOVIES);
+    const names = Object.values(schema.getTypeMap())
+      .filter((t) => !t.name.startsWith("__") && !isSpecifiedScalarType(t))
+      .map((t) => t.name);
+    expect(names.slice(0, 3)).toEqual(["Query", "Mutation", "SortDirection"]);
+    expect(printType(schema.getQueryType()!)).toBe(
+      [
+        "type Query {",
+        "  moviesConnection(first: Int, after: String, where: MovieWhere, sort: [MovieSort!]): MoviesConnection!",
+        "  movies(where: MovieWhere, limit: Int, offset: Int, sort: [MovieSort!]): [Movie!]!",
+        "  peopleConnection(first: Int, after: String, where: PersonWhere, sort: [PersonSort!]): PeopleConnection!",
+        "  people(where: PersonWhere, limit: Int, offset: Int, sort: [PersonSort!]): [Person!]!",
+        "}",
+      ].join("\n"),
+    );
+    const where = Object.keys(
+      (schema.getType("PersonWhere") as GraphQLInputObjectType).getFields(),
+    );
+    expect(where.indexOf("born_GTE") + 1).toBe(where.indexOf("OR"));
+    expect(where.slice(where.indexOf("OR"), where.indexOf("OR") + 4)).toEqual([
+      "OR",
+      "AND",
+      "NOT",
+      "movies",
+    ]);
   });
 
   it("where: generic filters plus deprecated field_OPERATOR fields; _IN follows nullability", () => {

@@ -1,0 +1,3480 @@
+type Query {
+  mediaConnection(first: Int, after: String, where: AssetWhere, sort: [AssetSort!]): MediaConnection!
+  media(where: AssetWhere, limit: Int, offset: Int, sort: [AssetSort!]): [Asset!]!
+  imagesConnection(first: Int, after: String, where: ImageWhere, sort: [ImageSort!]): ImagesConnection!
+  images(where: ImageWhere, limit: Int, offset: Int, sort: [ImageSort!]): [Image!]!
+  documentsConnection(first: Int, after: String, where: DocumentWhere, sort: [DocumentSort!]): DocumentsConnection!
+  documents(where: DocumentWhere, limit: Int, offset: Int, sort: [DocumentSort!]): [Document!]!
+  soundsConnection(first: Int, after: String, where: SoundWhere, sort: [SoundSort!]): SoundsConnection!
+  sounds(where: SoundWhere, limit: Int, offset: Int, sort: [SoundSort!]): [Sound!]!
+  ownersConnection(first: Int, after: String, where: OwnerWhere, sort: [OwnerSort!]): OwnersConnection!
+  owners(where: OwnerWhere, limit: Int, offset: Int, sort: [OwnerSort!]): [Owner!]!
+  foldersConnection(first: Int, after: String, where: FolderWhere, sort: [FolderSort!]): FoldersConnection!
+  folders(where: FolderWhere, limit: Int, offset: Int, sort: [FolderSort!]): [Folder!]!
+}
+
+type Mutation {
+  createImages(input: [ImageCreateInput!]!): CreateImagesMutationResponse!
+  deleteImages(where: ImageWhere, delete: ImageDeleteInput): DeleteInfo!
+  updateImages(where: ImageWhere, update: ImageUpdateInput): UpdateImagesMutationResponse!
+  createDocuments(input: [DocumentCreateInput!]!): CreateDocumentsMutationResponse!
+  deleteDocuments(where: DocumentWhere, delete: DocumentDeleteInput): DeleteInfo!
+  updateDocuments(where: DocumentWhere, update: DocumentUpdateInput): UpdateDocumentsMutationResponse!
+  createSounds(input: [SoundCreateInput!]!): CreateSoundsMutationResponse!
+  deleteSounds(where: SoundWhere, delete: SoundDeleteInput): DeleteInfo!
+  updateSounds(where: SoundWhere, update: SoundUpdateInput): UpdateSoundsMutationResponse!
+  createOwners(input: [OwnerCreateInput!]!): CreateOwnersMutationResponse!
+  deleteOwners(where: OwnerWhere, delete: OwnerDeleteInput): DeleteInfo!
+  updateOwners(where: OwnerWhere, update: OwnerUpdateInput): UpdateOwnersMutationResponse!
+  createFolders(input: [FolderCreateInput!]!): CreateFoldersMutationResponse!
+  deleteFolders(where: FolderWhere, delete: FolderDeleteInput): DeleteInfo!
+  updateFolders(where: FolderWhere, update: FolderUpdateInput): UpdateFoldersMutationResponse!
+}
+
+enum AssetImplementation {
+  Image
+  Document
+  Sound
+}
+
+"""An enum for sorting in either ascending or descending order."""
+enum SortDirection {
+  """Sort by field values in ascending order."""
+  ASC
+
+  """Sort by field values in descending order."""
+  DESC
+}
+
+enum TaggableImplementation {
+  Image
+  Sound
+}
+
+union AssetOwnersRelationshipProperties = Ownership | DocOwnership
+
+interface Asset {
+  id: ID!
+  name: String!
+  size: Int
+  label: String
+  owners(where: OwnerWhere, limit: Int, offset: Int, sort: [OwnerSort!]): [Owner!]!
+  ownersConnection(where: AssetOwnersConnectionWhere, first: Int, after: String, sort: [AssetOwnersConnectionSort!]): AssetOwnersConnection!
+  folder: Folder
+  folderConnection: AssetFolderConnection!
+  related(where: AssetWhere, limit: Int, offset: Int, sort: [AssetSort!]): [Asset!]!
+  relatedConnection(where: AssetRelatedConnectionWhere, first: Int, after: String, sort: [AssetRelatedConnectionSort!]): AssetRelatedConnection!
+}
+
+interface Taggable {
+  tag: String
+}
+
+type AssetAggregate {
+  count: Count!
+  node: AssetAggregateNode!
+}
+
+type AssetAggregateNode {
+  name: StringAggregateSelection!
+  size: IntAggregateSelection!
+  label: StringAggregateSelection!
+}
+
+type AssetEdge {
+  cursor: String!
+  node: Asset!
+}
+
+type AssetFolderConnection {
+  edges: [AssetFolderRelationship!]!
+  totalCount: Int!
+  pageInfo: PageInfo!
+}
+
+type AssetFolderRelationship {
+  cursor: String!
+  node: Folder!
+}
+
+type AssetOwnersConnection {
+  edges: [AssetOwnersRelationship!]!
+  totalCount: Int!
+  pageInfo: PageInfo!
+}
+
+type AssetOwnersRelationship {
+  cursor: String!
+  node: Owner!
+  properties: AssetOwnersRelationshipProperties!
+}
+
+type AssetRelatedConnection {
+  edges: [AssetRelatedRelationship!]!
+  totalCount: Int!
+  pageInfo: PageInfo!
+}
+
+type AssetRelatedRelationship {
+  cursor: String!
+  node: Asset!
+}
+
+type Count {
+  nodes: Int!
+}
+
+type CountConnection {
+  nodes: Int!
+  edges: Int!
+}
+
+type CreateDocumentsMutationResponse {
+  info: CreateInfo!
+  documents: [Document!]!
+}
+
+type CreateFoldersMutationResponse {
+  info: CreateInfo!
+  folders: [Folder!]!
+}
+
+type CreateImagesMutationResponse {
+  info: CreateInfo!
+  images: [Image!]!
+}
+
+"""
+Information about the number of nodes and relationships created during a create mutation
+"""
+type CreateInfo {
+  nodesCreated: Int!
+  relationshipsCreated: Int!
+}
+
+type CreateOwnersMutationResponse {
+  info: CreateInfo!
+  owners: [Owner!]!
+}
+
+type CreateSoundsMutationResponse {
+  info: CreateInfo!
+  sounds: [Sound!]!
+}
+
+"""
+Information about the number of nodes and relationships deleted during a delete mutation
+"""
+type DeleteInfo {
+  nodesDeleted: Int!
+  relationshipsDeleted: Int!
+}
+
+"""
+The edge properties for the following fields:
+* Document.owners
+"""
+type DocOwnership {
+  role: String!
+}
+
+"""
+Documents over 10000 bytes are rejected, whichever input creates or updates them.
+"""
+type Document implements Asset {
+  id: ID!
+  name: String!
+  size: Int
+  secret: String
+  label: String
+  pages: Int
+  owners(where: OwnerWhere, limit: Int, offset: Int, sort: [OwnerSort!]): [Owner!]!
+  ownersConnection(where: AssetOwnersConnectionWhere, first: Int, after: String, sort: [AssetOwnersConnectionSort!]): AssetOwnersConnection!
+  folder: Folder
+  folderConnection: AssetFolderConnection!
+  related(where: AssetWhere, limit: Int, offset: Int, sort: [AssetSort!]): [Asset!]!
+  relatedConnection(where: AssetRelatedConnectionWhere, first: Int, after: String, sort: [AssetRelatedConnectionSort!]): AssetRelatedConnection!
+}
+
+type DocumentAggregate {
+  count: Count!
+  node: DocumentAggregateNode!
+}
+
+type DocumentAggregateNode {
+  name: StringAggregateSelection!
+  size: IntAggregateSelection!
+  secret: StringAggregateSelection!
+  label: StringAggregateSelection!
+  pages: IntAggregateSelection!
+}
+
+type DocumentEdge {
+  cursor: String!
+  node: Document!
+}
+
+type DocumentsConnection {
+  edges: [DocumentEdge!]!
+  totalCount: Int!
+  pageInfo: PageInfo!
+  aggregate: DocumentAggregate!
+}
+
+type Folder {
+  id: ID!
+  name: String!
+  assets(where: AssetWhere, limit: Int, offset: Int, sort: [AssetSort!]): [Asset!]!
+  assetsConnection(where: FolderAssetsConnectionWhere, first: Int, after: String, sort: [FolderAssetsConnectionSort!]): FolderAssetsConnection!
+  tagged(where: TaggableWhere, limit: Int, offset: Int, sort: [TaggableSort!]): [Taggable!]!
+  taggedConnection(where: FolderTaggedConnectionWhere, first: Int, after: String, sort: [FolderTaggedConnectionSort!]): FolderTaggedConnection!
+}
+
+type FolderAggregate {
+  count: Count!
+  node: FolderAggregateNode!
+}
+
+type FolderAggregateNode {
+  name: StringAggregateSelection!
+}
+
+type FolderAssetAssetsAggregateSelection {
+  count: CountConnection!
+  node: FolderAssetAssetsNodeAggregateSelection
+}
+
+type FolderAssetAssetsNodeAggregateSelection {
+  name: StringAggregateSelection!
+  size: IntAggregateSelection!
+  label: StringAggregateSelection!
+}
+
+type FolderAssetsConnection {
+  edges: [FolderAssetsRelationship!]!
+  totalCount: Int!
+  pageInfo: PageInfo!
+  aggregate: FolderAssetAssetsAggregateSelection!
+}
+
+type FolderAssetsRelationship {
+  cursor: String!
+  node: Asset!
+}
+
+type FolderEdge {
+  cursor: String!
+  node: Folder!
+}
+
+type FoldersConnection {
+  edges: [FolderEdge!]!
+  totalCount: Int!
+  pageInfo: PageInfo!
+  aggregate: FolderAggregate!
+}
+
+type FolderTaggableTaggedAggregateSelection {
+  count: CountConnection!
+  node: FolderTaggableTaggedNodeAggregateSelection
+}
+
+type FolderTaggableTaggedNodeAggregateSelection {
+  tag: StringAggregateSelection!
+}
+
+type FolderTaggedConnection {
+  edges: [FolderTaggedRelationship!]!
+  totalCount: Int!
+  pageInfo: PageInfo!
+  aggregate: FolderTaggableTaggedAggregateSelection!
+}
+
+type FolderTaggedRelationship {
+  cursor: String!
+  node: Taggable!
+}
+
+type Image implements Asset & Taggable {
+  id: ID!
+  name: String!
+  size: Int
+  secret: String
+  label: String
+  tag: String
+  width: Int
+  owners(where: OwnerWhere, limit: Int, offset: Int, sort: [OwnerSort!]): [Owner!]!
+  ownersConnection(where: AssetOwnersConnectionWhere, first: Int, after: String, sort: [AssetOwnersConnectionSort!]): AssetOwnersConnection!
+  folder: Folder
+  folderConnection: AssetFolderConnection!
+  related(where: AssetWhere, limit: Int, offset: Int, sort: [AssetSort!]): [Asset!]!
+  relatedConnection(where: AssetRelatedConnectionWhere, first: Int, after: String, sort: [AssetRelatedConnectionSort!]): AssetRelatedConnection!
+}
+
+type ImageAggregate {
+  count: Count!
+  node: ImageAggregateNode!
+}
+
+type ImageAggregateNode {
+  name: StringAggregateSelection!
+  size: IntAggregateSelection!
+  secret: StringAggregateSelection!
+  label: StringAggregateSelection!
+  tag: StringAggregateSelection!
+  width: IntAggregateSelection!
+}
+
+type ImageEdge {
+  cursor: String!
+  node: Image!
+}
+
+type ImagesConnection {
+  edges: [ImageEdge!]!
+  totalCount: Int!
+  pageInfo: PageInfo!
+  aggregate: ImageAggregate!
+}
+
+type IntAggregateSelection {
+  max: Int
+  min: Int
+  average: Float
+  sum: Int
+}
+
+type MediaConnection {
+  edges: [AssetEdge!]!
+  totalCount: Int!
+  pageInfo: PageInfo!
+  aggregate: AssetAggregate!
+}
+
+type Owner {
+  id: ID!
+  name: String!
+  images(where: ImageWhere, limit: Int, offset: Int, sort: [ImageSort!]): [Image!]!
+  imagesConnection(where: OwnerImagesConnectionWhere, first: Int, after: String, sort: [OwnerImagesConnectionSort!]): OwnerImagesConnection!
+  assets(where: AssetWhere, limit: Int, offset: Int, sort: [AssetSort!]): [Asset!]!
+  assetsConnection(where: OwnerAssetsConnectionWhere, first: Int, after: String, sort: [OwnerAssetsConnectionSort!]): OwnerAssetsConnection!
+}
+
+type OwnerAggregate {
+  count: Count!
+  node: OwnerAggregateNode!
+}
+
+type OwnerAggregateNode {
+  name: StringAggregateSelection!
+}
+
+type OwnerAssetAssetsAggregateSelection {
+  count: CountConnection!
+  node: OwnerAssetAssetsNodeAggregateSelection
+}
+
+type OwnerAssetAssetsNodeAggregateSelection {
+  name: StringAggregateSelection!
+  size: IntAggregateSelection!
+  label: StringAggregateSelection!
+}
+
+type OwnerAssetsConnection {
+  edges: [OwnerAssetsRelationship!]!
+  totalCount: Int!
+  pageInfo: PageInfo!
+  aggregate: OwnerAssetAssetsAggregateSelection!
+}
+
+type OwnerAssetsRelationship {
+  cursor: String!
+  node: Asset!
+}
+
+type OwnerEdge {
+  cursor: String!
+  node: Owner!
+}
+
+type OwnerImageImagesAggregateSelection {
+  count: CountConnection!
+  node: OwnerImageImagesNodeAggregateSelection
+  edge: OwnerImageImagesEdgeAggregateSelection
+}
+
+type OwnerImageImagesEdgeAggregateSelection {
+  since: IntAggregateSelection!
+}
+
+type OwnerImageImagesNodeAggregateSelection {
+  name: StringAggregateSelection!
+  size: IntAggregateSelection!
+  secret: StringAggregateSelection!
+  label: StringAggregateSelection!
+  tag: StringAggregateSelection!
+  width: IntAggregateSelection!
+}
+
+type OwnerImagesConnection {
+  edges: [OwnerImagesRelationship!]!
+  totalCount: Int!
+  pageInfo: PageInfo!
+  aggregate: OwnerImageImagesAggregateSelection!
+}
+
+type OwnerImagesRelationship {
+  cursor: String!
+  node: Image!
+  properties: Ownership!
+}
+
+type OwnersConnection {
+  edges: [OwnerEdge!]!
+  totalCount: Int!
+  pageInfo: PageInfo!
+  aggregate: OwnerAggregate!
+}
+
+"""
+The edge properties for the following fields:
+* Image.owners
+* Owner.images
+"""
+type Ownership {
+  since: Int
+}
+
+"""Pagination information (Relay)"""
+type PageInfo {
+  hasNextPage: Boolean!
+  hasPreviousPage: Boolean!
+  startCursor: String
+  endCursor: String
+}
+
+type Sound implements Asset & Taggable {
+  id: ID!
+  name: String!
+  size: Int
+  secret: String
+  label: String
+  tag: String
+  seconds: Int
+  owners(where: OwnerWhere, limit: Int, offset: Int, sort: [OwnerSort!]): [Owner!]!
+  ownersConnection(where: AssetOwnersConnectionWhere, first: Int, after: String, sort: [AssetOwnersConnectionSort!]): AssetOwnersConnection!
+  folder: Folder
+  folderConnection: AssetFolderConnection!
+  related(where: AssetWhere, limit: Int, offset: Int, sort: [AssetSort!]): [Asset!]!
+  relatedConnection(where: AssetRelatedConnectionWhere, first: Int, after: String, sort: [AssetRelatedConnectionSort!]): AssetRelatedConnection!
+}
+
+type SoundAggregate {
+  count: Count!
+  node: SoundAggregateNode!
+}
+
+type SoundAggregateNode {
+  name: StringAggregateSelection!
+  size: IntAggregateSelection!
+  secret: StringAggregateSelection!
+  label: StringAggregateSelection!
+  tag: StringAggregateSelection!
+  seconds: IntAggregateSelection!
+}
+
+type SoundEdge {
+  cursor: String!
+  node: Sound!
+}
+
+type SoundsConnection {
+  edges: [SoundEdge!]!
+  totalCount: Int!
+  pageInfo: PageInfo!
+  aggregate: SoundAggregate!
+}
+
+type StringAggregateSelection {
+  shortest: String
+  longest: String
+}
+
+type UpdateDocumentsMutationResponse {
+  info: UpdateInfo!
+  documents: [Document!]!
+}
+
+type UpdateFoldersMutationResponse {
+  info: UpdateInfo!
+  folders: [Folder!]!
+}
+
+type UpdateImagesMutationResponse {
+  info: UpdateInfo!
+  images: [Image!]!
+}
+
+"""
+Information about the number of nodes and relationships created and deleted during an update mutation
+"""
+type UpdateInfo {
+  nodesCreated: Int!
+  nodesDeleted: Int!
+  relationshipsCreated: Int!
+  relationshipsDeleted: Int!
+}
+
+type UpdateOwnersMutationResponse {
+  info: UpdateInfo!
+  owners: [Owner!]!
+}
+
+type UpdateSoundsMutationResponse {
+  info: UpdateInfo!
+  sounds: [Sound!]!
+}
+
+input AssetConnectInput {
+  owners: [AssetOwnersConnectFieldInput!]
+  related: [AssetRelatedConnectFieldInput!]
+}
+
+input AssetConnectWhere {
+  node: AssetWhere!
+}
+
+input AssetCreateInput {
+  Image: ImageCreateInput
+  Document: DocumentCreateInput
+  Sound: SoundCreateInput
+}
+
+input AssetDeleteInput {
+  owners: [AssetOwnersDeleteFieldInput!]
+  folder: AssetFolderDeleteFieldInput
+  related: [AssetRelatedDeleteFieldInput!]
+}
+
+input AssetDisconnectInput {
+  owners: [AssetOwnersDisconnectFieldInput!]
+  related: [AssetRelatedDisconnectFieldInput!]
+}
+
+input AssetFolderConnectionWhere {
+  AND: [AssetFolderConnectionWhere!]
+  OR: [AssetFolderConnectionWhere!]
+  NOT: AssetFolderConnectionWhere
+  node: FolderWhere
+}
+
+input AssetFolderDeleteFieldInput {
+  where: AssetFolderConnectionWhere
+  delete: FolderDeleteInput
+}
+
+input AssetOwnersAggregateInput {
+  count_EQ: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { eq: ... } } }' instead.")
+  count_LT: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { lt: ... } } }' instead.")
+  count_LTE: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { lte: ... } } }' instead.")
+  count_GT: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { gt: ... } } }' instead.")
+  count_GTE: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { gte: ... } } }' instead.")
+  count: IntScalarFilters
+  AND: [AssetOwnersAggregateInput!]
+  OR: [AssetOwnersAggregateInput!]
+  NOT: AssetOwnersAggregateInput
+  node: AssetOwnersNodeAggregationWhereInput
+  edge: AssetOwnersEdgeAggregationWhereInput
+}
+
+input AssetOwnersConnectFieldInput {
+  edge: AssetOwnersEdgeCreateInput!
+  where: OwnerConnectWhere
+  connect: [OwnerConnectInput!]
+}
+
+input AssetOwnersConnectionAggregateInput {
+  count: ConnectionAggregationCountFilterInput
+  AND: [AssetOwnersConnectionAggregateInput!]
+  OR: [AssetOwnersConnectionAggregateInput!]
+  NOT: AssetOwnersConnectionAggregateInput
+  node: AssetOwnersNodeAggregationWhereInput
+  edge: AssetOwnersEdgeAggregationWhereInput
+}
+
+input AssetOwnersConnectionFilters {
+  """
+  Return Assets where all of the related AssetOwnersConnections match this filter
+  """
+  all: AssetOwnersConnectionWhere
+
+  """
+  Return Assets where none of the related AssetOwnersConnections match this filter
+  """
+  none: AssetOwnersConnectionWhere
+
+  """
+  Return Assets where one of the related AssetOwnersConnections match this filter
+  """
+  single: AssetOwnersConnectionWhere
+
+  """
+  Return Assets where some of the related AssetOwnersConnections match this filter
+  """
+  some: AssetOwnersConnectionWhere
+
+  """Filter Assets by aggregating results on related AssetOwnersConnections"""
+  aggregate: AssetOwnersConnectionAggregateInput
+}
+
+input AssetOwnersConnectionSort {
+  node: OwnerSort
+  edge: AssetOwnersEdgeSort
+}
+
+input AssetOwnersConnectionWhere {
+  AND: [AssetOwnersConnectionWhere!]
+  OR: [AssetOwnersConnectionWhere!]
+  NOT: AssetOwnersConnectionWhere
+  node: OwnerWhere
+  edge: AssetOwnersEdgeWhere
+}
+
+input AssetOwnersCreateFieldInput {
+  edge: AssetOwnersEdgeCreateInput!
+  node: OwnerCreateInput!
+}
+
+input AssetOwnersDeleteFieldInput {
+  where: AssetOwnersConnectionWhere
+  delete: OwnerDeleteInput
+}
+
+input AssetOwnersDisconnectFieldInput {
+  where: AssetOwnersConnectionWhere
+  disconnect: OwnerDisconnectInput
+}
+
+input AssetOwnersEdgeAggregationWhereInput {
+  """
+  Relationship properties when source node is of type:
+  * Image
+  """
+  Ownership: OwnershipAggregationWhereInput
+
+  """
+  Relationship properties when source node is of type:
+  * Document
+  """
+  DocOwnership: DocOwnershipAggregationWhereInput
+}
+
+input AssetOwnersEdgeCreateInput {
+  """
+  Relationship properties when source node is of type:
+  * Image
+  """
+  Ownership: OwnershipCreateInput
+
+  """
+  Relationship properties when source node is of type:
+  * Document
+  """
+  DocOwnership: DocOwnershipCreateInput!
+}
+
+input AssetOwnersEdgeSort {
+  """
+  Relationship properties when source node is of type:
+  * Image
+  """
+  Ownership: OwnershipSort
+
+  """
+  Relationship properties when source node is of type:
+  * Document
+  """
+  DocOwnership: DocOwnershipSort
+}
+
+input AssetOwnersEdgeUpdateInput {
+  """
+  Relationship properties when source node is of type:
+  * Image
+  """
+  Ownership: OwnershipUpdateInput
+
+  """
+  Relationship properties when source node is of type:
+  * Document
+  """
+  DocOwnership: DocOwnershipUpdateInput
+}
+
+input AssetOwnersEdgeWhere {
+  """
+  Relationship properties when source node is of type:
+  * Image
+  """
+  Ownership: OwnershipWhere
+
+  """
+  Relationship properties when source node is of type:
+  * Document
+  """
+  DocOwnership: DocOwnershipWhere
+}
+
+input AssetOwnersNodeAggregationWhereInput {
+  AND: [AssetOwnersNodeAggregationWhereInput!]
+  OR: [AssetOwnersNodeAggregationWhereInput!]
+  NOT: AssetOwnersNodeAggregationWhereInput
+  name_AVERAGE_LENGTH_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { eq: ... } } }' instead.")
+  name_LONGEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { eq: ... } } }' instead.")
+  name_SHORTEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { eq: ... } } }' instead.")
+  name_AVERAGE_LENGTH_GT: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { gt: ... } } }' instead.")
+  name_LONGEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { gt: ... } } }' instead.")
+  name_SHORTEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { gt: ... } } }' instead.")
+  name_AVERAGE_LENGTH_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { gte: ... } } }' instead.")
+  name_LONGEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { gte: ... } } }' instead.")
+  name_SHORTEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { gte: ... } } }' instead.")
+  name_AVERAGE_LENGTH_LT: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { lt: ... } } }' instead.")
+  name_LONGEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { lt: ... } } }' instead.")
+  name_SHORTEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { lt: ... } } }' instead.")
+  name_AVERAGE_LENGTH_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { lte: ... } } }' instead.")
+  name_LONGEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { lte: ... } } }' instead.")
+  name_SHORTEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { lte: ... } } }' instead.")
+  name: StringScalarAggregationFilters
+}
+
+input AssetOwnersUpdateConnectionInput {
+  node: OwnerUpdateInput
+  where: AssetOwnersConnectionWhere
+  edge: AssetOwnersEdgeUpdateInput
+}
+
+input AssetOwnersUpdateFieldInput {
+  connect: [AssetOwnersConnectFieldInput!]
+  disconnect: [AssetOwnersDisconnectFieldInput!]
+  create: [AssetOwnersCreateFieldInput!]
+  update: AssetOwnersUpdateConnectionInput
+  delete: [AssetOwnersDeleteFieldInput!]
+}
+
+input AssetRelatedAggregateInput {
+  count_EQ: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { eq: ... } } }' instead.")
+  count_LT: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { lt: ... } } }' instead.")
+  count_LTE: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { lte: ... } } }' instead.")
+  count_GT: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { gt: ... } } }' instead.")
+  count_GTE: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { gte: ... } } }' instead.")
+  count: IntScalarFilters
+  AND: [AssetRelatedAggregateInput!]
+  OR: [AssetRelatedAggregateInput!]
+  NOT: AssetRelatedAggregateInput
+  node: AssetRelatedNodeAggregationWhereInput
+}
+
+input AssetRelatedConnectFieldInput {
+  where: AssetConnectWhere
+  connect: AssetConnectInput
+}
+
+input AssetRelatedConnectionAggregateInput {
+  count: ConnectionAggregationCountFilterInput
+  AND: [AssetRelatedConnectionAggregateInput!]
+  OR: [AssetRelatedConnectionAggregateInput!]
+  NOT: AssetRelatedConnectionAggregateInput
+  node: AssetRelatedNodeAggregationWhereInput
+}
+
+input AssetRelatedConnectionFilters {
+  """
+  Return Assets where all of the related AssetRelatedConnections match this filter
+  """
+  all: AssetRelatedConnectionWhere
+
+  """
+  Return Assets where none of the related AssetRelatedConnections match this filter
+  """
+  none: AssetRelatedConnectionWhere
+
+  """
+  Return Assets where one of the related AssetRelatedConnections match this filter
+  """
+  single: AssetRelatedConnectionWhere
+
+  """
+  Return Assets where some of the related AssetRelatedConnections match this filter
+  """
+  some: AssetRelatedConnectionWhere
+
+  """
+  Filter Assets by aggregating results on related AssetRelatedConnections
+  """
+  aggregate: AssetRelatedConnectionAggregateInput
+}
+
+input AssetRelatedConnectionSort {
+  node: AssetSort
+}
+
+input AssetRelatedConnectionWhere {
+  AND: [AssetRelatedConnectionWhere!]
+  OR: [AssetRelatedConnectionWhere!]
+  NOT: AssetRelatedConnectionWhere
+  node: AssetWhere
+}
+
+input AssetRelatedCreateFieldInput {
+  node: AssetCreateInput!
+}
+
+input AssetRelatedDeleteFieldInput {
+  where: AssetRelatedConnectionWhere
+  delete: AssetDeleteInput
+}
+
+input AssetRelatedDisconnectFieldInput {
+  where: AssetRelatedConnectionWhere
+  disconnect: AssetDisconnectInput
+}
+
+input AssetRelatedNodeAggregationWhereInput {
+  AND: [AssetRelatedNodeAggregationWhereInput!]
+  OR: [AssetRelatedNodeAggregationWhereInput!]
+  NOT: AssetRelatedNodeAggregationWhereInput
+  name_AVERAGE_LENGTH_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { eq: ... } } }' instead.")
+  name_LONGEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { eq: ... } } }' instead.")
+  name_SHORTEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { eq: ... } } }' instead.")
+  name_AVERAGE_LENGTH_GT: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { gt: ... } } }' instead.")
+  name_LONGEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { gt: ... } } }' instead.")
+  name_SHORTEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { gt: ... } } }' instead.")
+  name_AVERAGE_LENGTH_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { gte: ... } } }' instead.")
+  name_LONGEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { gte: ... } } }' instead.")
+  name_SHORTEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { gte: ... } } }' instead.")
+  name_AVERAGE_LENGTH_LT: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { lt: ... } } }' instead.")
+  name_LONGEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { lt: ... } } }' instead.")
+  name_SHORTEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { lt: ... } } }' instead.")
+  name_AVERAGE_LENGTH_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { lte: ... } } }' instead.")
+  name_LONGEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { lte: ... } } }' instead.")
+  name_SHORTEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { lte: ... } } }' instead.")
+  name: StringScalarAggregationFilters
+  size_MIN_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'size: { min: { eq: ... } } }' instead.")
+  size_MAX_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'size: { max: { eq: ... } } }' instead.")
+  size_SUM_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'size: { sum: { eq: ... } } }' instead.")
+  size_AVERAGE_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'size: { average: { eq: ... } } }' instead.")
+  size_MIN_GT: Int @deprecated(reason: "Please use the relevant generic filter 'size: { min: { gt: ... } } }' instead.")
+  size_MAX_GT: Int @deprecated(reason: "Please use the relevant generic filter 'size: { max: { gt: ... } } }' instead.")
+  size_SUM_GT: Int @deprecated(reason: "Please use the relevant generic filter 'size: { sum: { gt: ... } } }' instead.")
+  size_AVERAGE_GT: Float @deprecated(reason: "Please use the relevant generic filter 'size: { average: { gt: ... } } }' instead.")
+  size_MIN_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'size: { min: { gte: ... } } }' instead.")
+  size_MAX_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'size: { max: { gte: ... } } }' instead.")
+  size_SUM_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'size: { sum: { gte: ... } } }' instead.")
+  size_AVERAGE_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'size: { average: { gte: ... } } }' instead.")
+  size_MIN_LT: Int @deprecated(reason: "Please use the relevant generic filter 'size: { min: { lt: ... } } }' instead.")
+  size_MAX_LT: Int @deprecated(reason: "Please use the relevant generic filter 'size: { max: { lt: ... } } }' instead.")
+  size_SUM_LT: Int @deprecated(reason: "Please use the relevant generic filter 'size: { sum: { lt: ... } } }' instead.")
+  size_AVERAGE_LT: Float @deprecated(reason: "Please use the relevant generic filter 'size: { average: { lt: ... } } }' instead.")
+  size_MIN_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'size: { min: { lte: ... } } }' instead.")
+  size_MAX_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'size: { max: { lte: ... } } }' instead.")
+  size_SUM_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'size: { sum: { lte: ... } } }' instead.")
+  size_AVERAGE_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'size: { average: { lte: ... } } }' instead.")
+  size: IntScalarAggregationFilters
+  secret_AVERAGE_LENGTH_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'secret: { averageLength: { eq: ... } } }' instead.")
+  secret_LONGEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'secret: { longestLength: { eq: ... } } }' instead.")
+  secret_SHORTEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'secret: { shortestLength: { eq: ... } } }' instead.")
+  secret_AVERAGE_LENGTH_GT: Float @deprecated(reason: "Please use the relevant generic filter 'secret: { averageLength: { gt: ... } } }' instead.")
+  secret_LONGEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'secret: { longestLength: { gt: ... } } }' instead.")
+  secret_SHORTEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'secret: { shortestLength: { gt: ... } } }' instead.")
+  secret_AVERAGE_LENGTH_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'secret: { averageLength: { gte: ... } } }' instead.")
+  secret_LONGEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'secret: { longestLength: { gte: ... } } }' instead.")
+  secret_SHORTEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'secret: { shortestLength: { gte: ... } } }' instead.")
+  secret_AVERAGE_LENGTH_LT: Float @deprecated(reason: "Please use the relevant generic filter 'secret: { averageLength: { lt: ... } } }' instead.")
+  secret_LONGEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'secret: { longestLength: { lt: ... } } }' instead.")
+  secret_SHORTEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'secret: { shortestLength: { lt: ... } } }' instead.")
+  secret_AVERAGE_LENGTH_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'secret: { averageLength: { lte: ... } } }' instead.")
+  secret_LONGEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'secret: { longestLength: { lte: ... } } }' instead.")
+  secret_SHORTEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'secret: { shortestLength: { lte: ... } } }' instead.")
+  secret: StringScalarAggregationFilters
+}
+
+input AssetRelatedUpdateConnectionInput {
+  node: AssetUpdateInput
+  where: AssetRelatedConnectionWhere
+}
+
+input AssetRelatedUpdateFieldInput {
+  connect: [AssetRelatedConnectFieldInput!]
+  disconnect: [AssetRelatedDisconnectFieldInput!]
+  create: [AssetRelatedCreateFieldInput!]
+  update: AssetRelatedUpdateConnectionInput
+  delete: [AssetRelatedDeleteFieldInput!]
+}
+
+input AssetRelationshipFilters {
+  """Filter type where all of the related Assets match this filter"""
+  all: AssetWhere
+
+  """Filter type where none of the related Assets match this filter"""
+  none: AssetWhere
+
+  """Filter type where one of the related Assets match this filter"""
+  single: AssetWhere
+
+  """Filter type where some of the related Assets match this filter"""
+  some: AssetWhere
+}
+
+"""
+Fields to sort Media by. The order in which sorts are applied is not guaranteed when specifying many fields in one AssetSort object.
+"""
+input AssetSort {
+  id: SortDirection
+  name: SortDirection
+  secret: SortDirection
+  label: SortDirection
+}
+
+input AssetUpdateInput {
+  id: IDScalarMutations
+  id_SET: ID @deprecated(reason: "Please use the generic mutation 'id: { set: ... } }' instead.")
+  name: StringScalarMutations
+  name_SET: String @deprecated(reason: "Please use the generic mutation 'name: { set: ... } }' instead.")
+  size: IntScalarMutations
+  size_SET: Int @deprecated(reason: "Please use the generic mutation 'size: { set: ... } }' instead.")
+  size_INCREMENT: Int @deprecated(reason: "Please use the relevant generic mutation 'size: { increment: ... } }' instead.")
+  size_DECREMENT: Int @deprecated(reason: "Please use the relevant generic mutation 'size: { decrement: ... } }' instead.")
+  secret: StringScalarMutations
+  secret_SET: String @deprecated(reason: "Please use the generic mutation 'secret: { set: ... } }' instead.")
+  owners: [AssetOwnersUpdateFieldInput!]
+  related: [AssetRelatedUpdateFieldInput!]
+}
+
+input AssetWhere {
+  id: IDScalarFilters
+  id_EQ: ID @deprecated(reason: "Please use the relevant generic filter id: { eq: ... }")
+  id_IN: [ID!] @deprecated(reason: "Please use the relevant generic filter id: { in: ... }")
+  id_CONTAINS: ID @deprecated(reason: "Please use the relevant generic filter id: { contains: ... }")
+  id_STARTS_WITH: ID @deprecated(reason: "Please use the relevant generic filter id: { startsWith: ... }")
+  id_ENDS_WITH: ID @deprecated(reason: "Please use the relevant generic filter id: { endsWith: ... }")
+  name: StringScalarFilters
+  name_EQ: String @deprecated(reason: "Please use the relevant generic filter name: { eq: ... }")
+  name_IN: [String!] @deprecated(reason: "Please use the relevant generic filter name: { in: ... }")
+  name_CONTAINS: String @deprecated(reason: "Please use the relevant generic filter name: { contains: ... }")
+  name_STARTS_WITH: String @deprecated(reason: "Please use the relevant generic filter name: { startsWith: ... }")
+  name_ENDS_WITH: String @deprecated(reason: "Please use the relevant generic filter name: { endsWith: ... }")
+  size: IntScalarFilters
+  size_EQ: Int @deprecated(reason: "Please use the relevant generic filter size: { eq: ... }")
+  size_IN: [Int] @deprecated(reason: "Please use the relevant generic filter size: { in: ... }")
+  size_LT: Int @deprecated(reason: "Please use the relevant generic filter size: { lt: ... }")
+  size_LTE: Int @deprecated(reason: "Please use the relevant generic filter size: { lte: ... }")
+  size_GT: Int @deprecated(reason: "Please use the relevant generic filter size: { gt: ... }")
+  size_GTE: Int @deprecated(reason: "Please use the relevant generic filter size: { gte: ... }")
+  secret: StringScalarFilters
+  secret_EQ: String @deprecated(reason: "Please use the relevant generic filter secret: { eq: ... }")
+  secret_IN: [String] @deprecated(reason: "Please use the relevant generic filter secret: { in: ... }")
+  secret_CONTAINS: String @deprecated(reason: "Please use the relevant generic filter secret: { contains: ... }")
+  secret_STARTS_WITH: String @deprecated(reason: "Please use the relevant generic filter secret: { startsWith: ... }")
+  secret_ENDS_WITH: String @deprecated(reason: "Please use the relevant generic filter secret: { endsWith: ... }")
+  OR: [AssetWhere!]
+  AND: [AssetWhere!]
+  NOT: AssetWhere
+  typename: [AssetImplementation!]
+  owners: OwnerRelationshipFilters
+
+  """Return Assets where all of the related Owners match this filter"""
+  owners_ALL: OwnerWhere @deprecated(reason: "Please use the relevant generic filter 'owners: { all: ... }' instead.")
+
+  """Return Assets where none of the related Owners match this filter"""
+  owners_NONE: OwnerWhere @deprecated(reason: "Please use the relevant generic filter 'owners: { none: ... }' instead.")
+
+  """Return Assets where one of the related Owners match this filter"""
+  owners_SINGLE: OwnerWhere @deprecated(reason: "Please use the relevant generic filter 'owners: {  single: ... }' instead.")
+
+  """Return Assets where some of the related Owners match this filter"""
+  owners_SOME: OwnerWhere @deprecated(reason: "Please use the relevant generic filter 'owners: {  some: ... }' instead.")
+
+  """
+  Return Assets where all of the related AssetOwnersConnections match this filter
+  """
+  ownersConnection_ALL: AssetOwnersConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'ownersConnection: { all: { node: ... } } }' instead.")
+
+  """
+  Return Assets where none of the related AssetOwnersConnections match this filter
+  """
+  ownersConnection_NONE: AssetOwnersConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'ownersConnection: { none: { node: ... } } }' instead.")
+
+  """
+  Return Assets where one of the related AssetOwnersConnections match this filter
+  """
+  ownersConnection_SINGLE: AssetOwnersConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'ownersConnection: { single: { node: ... } } }' instead.")
+
+  """
+  Return Assets where some of the related AssetOwnersConnections match this filter
+  """
+  ownersConnection_SOME: AssetOwnersConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'ownersConnection: { some: { node: ... } } }' instead.")
+  ownersConnection: AssetOwnersConnectionFilters
+  ownersAggregate: AssetOwnersAggregateInput @deprecated(reason: "Aggregate filters are moved inside the ownersConnection filter, please use { ownersConnection: { aggregate: {...} } } instead")
+  folder: FolderWhere
+  folderConnection: AssetFolderConnectionWhere
+  related: AssetRelationshipFilters
+
+  """Return Assets where all of the related Assets match this filter"""
+  related_ALL: AssetWhere @deprecated(reason: "Please use the relevant generic filter 'related: { all: ... }' instead.")
+
+  """Return Assets where none of the related Assets match this filter"""
+  related_NONE: AssetWhere @deprecated(reason: "Please use the relevant generic filter 'related: { none: ... }' instead.")
+
+  """Return Assets where one of the related Assets match this filter"""
+  related_SINGLE: AssetWhere @deprecated(reason: "Please use the relevant generic filter 'related: {  single: ... }' instead.")
+
+  """Return Assets where some of the related Assets match this filter"""
+  related_SOME: AssetWhere @deprecated(reason: "Please use the relevant generic filter 'related: {  some: ... }' instead.")
+
+  """
+  Return Assets where all of the related AssetRelatedConnections match this filter
+  """
+  relatedConnection_ALL: AssetRelatedConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'relatedConnection: { all: { node: ... } } }' instead.")
+
+  """
+  Return Assets where none of the related AssetRelatedConnections match this filter
+  """
+  relatedConnection_NONE: AssetRelatedConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'relatedConnection: { none: { node: ... } } }' instead.")
+
+  """
+  Return Assets where one of the related AssetRelatedConnections match this filter
+  """
+  relatedConnection_SINGLE: AssetRelatedConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'relatedConnection: { single: { node: ... } } }' instead.")
+
+  """
+  Return Assets where some of the related AssetRelatedConnections match this filter
+  """
+  relatedConnection_SOME: AssetRelatedConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'relatedConnection: { some: { node: ... } } }' instead.")
+  relatedConnection: AssetRelatedConnectionFilters
+  relatedAggregate: AssetRelatedAggregateInput @deprecated(reason: "Aggregate filters are moved inside the relatedConnection filter, please use { relatedConnection: { aggregate: {...} } } instead")
+}
+
+input ConnectionAggregationCountFilterInput {
+  nodes: IntScalarFilters
+  edges: IntScalarFilters
+}
+
+input DocOwnershipAggregationWhereInput {
+  AND: [DocOwnershipAggregationWhereInput!]
+  OR: [DocOwnershipAggregationWhereInput!]
+  NOT: DocOwnershipAggregationWhereInput
+  role_AVERAGE_LENGTH_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'role: { averageLength: { eq: ... } } }' instead.")
+  role_LONGEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'role: { longestLength: { eq: ... } } }' instead.")
+  role_SHORTEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'role: { shortestLength: { eq: ... } } }' instead.")
+  role_AVERAGE_LENGTH_GT: Float @deprecated(reason: "Please use the relevant generic filter 'role: { averageLength: { gt: ... } } }' instead.")
+  role_LONGEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'role: { longestLength: { gt: ... } } }' instead.")
+  role_SHORTEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'role: { shortestLength: { gt: ... } } }' instead.")
+  role_AVERAGE_LENGTH_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'role: { averageLength: { gte: ... } } }' instead.")
+  role_LONGEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'role: { longestLength: { gte: ... } } }' instead.")
+  role_SHORTEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'role: { shortestLength: { gte: ... } } }' instead.")
+  role_AVERAGE_LENGTH_LT: Float @deprecated(reason: "Please use the relevant generic filter 'role: { averageLength: { lt: ... } } }' instead.")
+  role_LONGEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'role: { longestLength: { lt: ... } } }' instead.")
+  role_SHORTEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'role: { shortestLength: { lt: ... } } }' instead.")
+  role_AVERAGE_LENGTH_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'role: { averageLength: { lte: ... } } }' instead.")
+  role_LONGEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'role: { longestLength: { lte: ... } } }' instead.")
+  role_SHORTEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'role: { shortestLength: { lte: ... } } }' instead.")
+  role: StringScalarAggregationFilters
+}
+
+input DocOwnershipCreateInput {
+  role: String!
+}
+
+input DocOwnershipSort {
+  role: SortDirection
+}
+
+input DocOwnershipUpdateInput {
+  role: StringScalarMutations
+  role_SET: String @deprecated(reason: "Please use the generic mutation 'role: { set: ... } }' instead.")
+}
+
+input DocOwnershipWhere {
+  role: StringScalarFilters
+  role_EQ: String @deprecated(reason: "Please use the relevant generic filter role: { eq: ... }")
+  role_IN: [String!] @deprecated(reason: "Please use the relevant generic filter role: { in: ... }")
+  role_CONTAINS: String @deprecated(reason: "Please use the relevant generic filter role: { contains: ... }")
+  role_STARTS_WITH: String @deprecated(reason: "Please use the relevant generic filter role: { startsWith: ... }")
+  role_ENDS_WITH: String @deprecated(reason: "Please use the relevant generic filter role: { endsWith: ... }")
+  OR: [DocOwnershipWhere!]
+  AND: [DocOwnershipWhere!]
+  NOT: DocOwnershipWhere
+}
+
+input DocumentCreateInput {
+  id: ID!
+  name: String!
+  size: Int
+  secret: String
+  label: String
+  pages: Int
+  owners: DocumentOwnersFieldInput
+  folder: DocumentFolderFieldInput
+  related: DocumentRelatedFieldInput
+}
+
+input DocumentDeleteInput {
+  owners: [AssetOwnersDeleteFieldInput!]
+  folder: AssetFolderDeleteFieldInput
+  related: [DocumentRelatedDeleteFieldInput!]
+}
+
+input DocumentFolderCreateFieldInput {
+  node: FolderCreateInput!
+}
+
+input DocumentFolderFieldInput {
+  create: DocumentFolderCreateFieldInput
+}
+
+input DocumentOwnersAggregateInput {
+  count_EQ: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { eq: ... } } }' instead.")
+  count_LT: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { lt: ... } } }' instead.")
+  count_LTE: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { lte: ... } } }' instead.")
+  count_GT: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { gt: ... } } }' instead.")
+  count_GTE: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { gte: ... } } }' instead.")
+  count: IntScalarFilters
+  AND: [DocumentOwnersAggregateInput!]
+  OR: [DocumentOwnersAggregateInput!]
+  NOT: DocumentOwnersAggregateInput
+  node: DocumentOwnersNodeAggregationWhereInput
+  edge: DocOwnershipAggregationWhereInput
+}
+
+input DocumentOwnersConnectFieldInput {
+  edge: DocOwnershipCreateInput!
+  where: OwnerConnectWhere
+  connect: [OwnerConnectInput!]
+}
+
+input DocumentOwnersConnectionAggregateInput {
+  count: ConnectionAggregationCountFilterInput
+  AND: [DocumentOwnersConnectionAggregateInput!]
+  OR: [DocumentOwnersConnectionAggregateInput!]
+  NOT: DocumentOwnersConnectionAggregateInput
+  node: DocumentOwnersNodeAggregationWhereInput
+  edge: DocOwnershipAggregationWhereInput
+}
+
+input DocumentOwnersConnectionFilters {
+  """
+  Return Documents where all of the related AssetOwnersConnections match this filter
+  """
+  all: AssetOwnersConnectionWhere
+
+  """
+  Return Documents where none of the related AssetOwnersConnections match this filter
+  """
+  none: AssetOwnersConnectionWhere
+
+  """
+  Return Documents where one of the related AssetOwnersConnections match this filter
+  """
+  single: AssetOwnersConnectionWhere
+
+  """
+  Return Documents where some of the related AssetOwnersConnections match this filter
+  """
+  some: AssetOwnersConnectionWhere
+
+  """
+  Filter Documents by aggregating results on related AssetOwnersConnections
+  """
+  aggregate: DocumentOwnersConnectionAggregateInput
+}
+
+input DocumentOwnersCreateFieldInput {
+  edge: DocOwnershipCreateInput!
+  node: OwnerCreateInput!
+}
+
+input DocumentOwnersFieldInput {
+  connect: [DocumentOwnersConnectFieldInput!]
+  create: [DocumentOwnersCreateFieldInput!]
+}
+
+input DocumentOwnersNodeAggregationWhereInput {
+  AND: [DocumentOwnersNodeAggregationWhereInput!]
+  OR: [DocumentOwnersNodeAggregationWhereInput!]
+  NOT: DocumentOwnersNodeAggregationWhereInput
+  name_AVERAGE_LENGTH_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { eq: ... } } }' instead.")
+  name_LONGEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { eq: ... } } }' instead.")
+  name_SHORTEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { eq: ... } } }' instead.")
+  name_AVERAGE_LENGTH_GT: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { gt: ... } } }' instead.")
+  name_LONGEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { gt: ... } } }' instead.")
+  name_SHORTEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { gt: ... } } }' instead.")
+  name_AVERAGE_LENGTH_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { gte: ... } } }' instead.")
+  name_LONGEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { gte: ... } } }' instead.")
+  name_SHORTEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { gte: ... } } }' instead.")
+  name_AVERAGE_LENGTH_LT: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { lt: ... } } }' instead.")
+  name_LONGEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { lt: ... } } }' instead.")
+  name_SHORTEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { lt: ... } } }' instead.")
+  name_AVERAGE_LENGTH_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { lte: ... } } }' instead.")
+  name_LONGEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { lte: ... } } }' instead.")
+  name_SHORTEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { lte: ... } } }' instead.")
+  name: StringScalarAggregationFilters
+}
+
+input DocumentOwnersUpdateConnectionInput {
+  node: OwnerUpdateInput
+  where: AssetOwnersConnectionWhere
+  edge: DocOwnershipUpdateInput
+}
+
+input DocumentOwnersUpdateFieldInput {
+  connect: [DocumentOwnersConnectFieldInput!]
+  disconnect: [AssetOwnersDisconnectFieldInput!]
+  create: [DocumentOwnersCreateFieldInput!]
+  update: DocumentOwnersUpdateConnectionInput
+  delete: [AssetOwnersDeleteFieldInput!]
+}
+
+input DocumentRelatedAggregateInput {
+  count_EQ: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { eq: ... } } }' instead.")
+  count_LT: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { lt: ... } } }' instead.")
+  count_LTE: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { lte: ... } } }' instead.")
+  count_GT: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { gt: ... } } }' instead.")
+  count_GTE: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { gte: ... } } }' instead.")
+  count: IntScalarFilters
+  AND: [DocumentRelatedAggregateInput!]
+  OR: [DocumentRelatedAggregateInput!]
+  NOT: DocumentRelatedAggregateInput
+  node: DocumentRelatedNodeAggregationWhereInput
+}
+
+input DocumentRelatedConnectFieldInput {
+  where: AssetConnectWhere
+  connect: AssetConnectInput
+}
+
+input DocumentRelatedConnectionAggregateInput {
+  count: ConnectionAggregationCountFilterInput
+  AND: [DocumentRelatedConnectionAggregateInput!]
+  OR: [DocumentRelatedConnectionAggregateInput!]
+  NOT: DocumentRelatedConnectionAggregateInput
+  node: DocumentRelatedNodeAggregationWhereInput
+}
+
+input DocumentRelatedConnectionFilters {
+  """
+  Return Documents where all of the related AssetRelatedConnections match this filter
+  """
+  all: AssetRelatedConnectionWhere
+
+  """
+  Return Documents where none of the related AssetRelatedConnections match this filter
+  """
+  none: AssetRelatedConnectionWhere
+
+  """
+  Return Documents where one of the related AssetRelatedConnections match this filter
+  """
+  single: AssetRelatedConnectionWhere
+
+  """
+  Return Documents where some of the related AssetRelatedConnections match this filter
+  """
+  some: AssetRelatedConnectionWhere
+
+  """
+  Filter Documents by aggregating results on related AssetRelatedConnections
+  """
+  aggregate: DocumentRelatedConnectionAggregateInput
+}
+
+input DocumentRelatedCreateFieldInput {
+  node: AssetCreateInput!
+}
+
+input DocumentRelatedDeleteFieldInput {
+  where: AssetRelatedConnectionWhere
+  delete: AssetDeleteInput
+}
+
+input DocumentRelatedDisconnectFieldInput {
+  where: AssetRelatedConnectionWhere
+  disconnect: AssetDisconnectInput
+}
+
+input DocumentRelatedFieldInput {
+  connect: [DocumentRelatedConnectFieldInput!]
+  create: [DocumentRelatedCreateFieldInput!]
+}
+
+input DocumentRelatedNodeAggregationWhereInput {
+  AND: [DocumentRelatedNodeAggregationWhereInput!]
+  OR: [DocumentRelatedNodeAggregationWhereInput!]
+  NOT: DocumentRelatedNodeAggregationWhereInput
+  name_AVERAGE_LENGTH_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { eq: ... } } }' instead.")
+  name_LONGEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { eq: ... } } }' instead.")
+  name_SHORTEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { eq: ... } } }' instead.")
+  name_AVERAGE_LENGTH_GT: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { gt: ... } } }' instead.")
+  name_LONGEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { gt: ... } } }' instead.")
+  name_SHORTEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { gt: ... } } }' instead.")
+  name_AVERAGE_LENGTH_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { gte: ... } } }' instead.")
+  name_LONGEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { gte: ... } } }' instead.")
+  name_SHORTEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { gte: ... } } }' instead.")
+  name_AVERAGE_LENGTH_LT: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { lt: ... } } }' instead.")
+  name_LONGEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { lt: ... } } }' instead.")
+  name_SHORTEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { lt: ... } } }' instead.")
+  name_AVERAGE_LENGTH_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { lte: ... } } }' instead.")
+  name_LONGEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { lte: ... } } }' instead.")
+  name_SHORTEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { lte: ... } } }' instead.")
+  name: StringScalarAggregationFilters
+  size_MIN_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'size: { min: { eq: ... } } }' instead.")
+  size_MAX_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'size: { max: { eq: ... } } }' instead.")
+  size_SUM_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'size: { sum: { eq: ... } } }' instead.")
+  size_AVERAGE_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'size: { average: { eq: ... } } }' instead.")
+  size_MIN_GT: Int @deprecated(reason: "Please use the relevant generic filter 'size: { min: { gt: ... } } }' instead.")
+  size_MAX_GT: Int @deprecated(reason: "Please use the relevant generic filter 'size: { max: { gt: ... } } }' instead.")
+  size_SUM_GT: Int @deprecated(reason: "Please use the relevant generic filter 'size: { sum: { gt: ... } } }' instead.")
+  size_AVERAGE_GT: Float @deprecated(reason: "Please use the relevant generic filter 'size: { average: { gt: ... } } }' instead.")
+  size_MIN_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'size: { min: { gte: ... } } }' instead.")
+  size_MAX_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'size: { max: { gte: ... } } }' instead.")
+  size_SUM_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'size: { sum: { gte: ... } } }' instead.")
+  size_AVERAGE_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'size: { average: { gte: ... } } }' instead.")
+  size_MIN_LT: Int @deprecated(reason: "Please use the relevant generic filter 'size: { min: { lt: ... } } }' instead.")
+  size_MAX_LT: Int @deprecated(reason: "Please use the relevant generic filter 'size: { max: { lt: ... } } }' instead.")
+  size_SUM_LT: Int @deprecated(reason: "Please use the relevant generic filter 'size: { sum: { lt: ... } } }' instead.")
+  size_AVERAGE_LT: Float @deprecated(reason: "Please use the relevant generic filter 'size: { average: { lt: ... } } }' instead.")
+  size_MIN_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'size: { min: { lte: ... } } }' instead.")
+  size_MAX_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'size: { max: { lte: ... } } }' instead.")
+  size_SUM_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'size: { sum: { lte: ... } } }' instead.")
+  size_AVERAGE_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'size: { average: { lte: ... } } }' instead.")
+  size: IntScalarAggregationFilters
+  secret_AVERAGE_LENGTH_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'secret: { averageLength: { eq: ... } } }' instead.")
+  secret_LONGEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'secret: { longestLength: { eq: ... } } }' instead.")
+  secret_SHORTEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'secret: { shortestLength: { eq: ... } } }' instead.")
+  secret_AVERAGE_LENGTH_GT: Float @deprecated(reason: "Please use the relevant generic filter 'secret: { averageLength: { gt: ... } } }' instead.")
+  secret_LONGEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'secret: { longestLength: { gt: ... } } }' instead.")
+  secret_SHORTEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'secret: { shortestLength: { gt: ... } } }' instead.")
+  secret_AVERAGE_LENGTH_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'secret: { averageLength: { gte: ... } } }' instead.")
+  secret_LONGEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'secret: { longestLength: { gte: ... } } }' instead.")
+  secret_SHORTEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'secret: { shortestLength: { gte: ... } } }' instead.")
+  secret_AVERAGE_LENGTH_LT: Float @deprecated(reason: "Please use the relevant generic filter 'secret: { averageLength: { lt: ... } } }' instead.")
+  secret_LONGEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'secret: { longestLength: { lt: ... } } }' instead.")
+  secret_SHORTEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'secret: { shortestLength: { lt: ... } } }' instead.")
+  secret_AVERAGE_LENGTH_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'secret: { averageLength: { lte: ... } } }' instead.")
+  secret_LONGEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'secret: { longestLength: { lte: ... } } }' instead.")
+  secret_SHORTEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'secret: { shortestLength: { lte: ... } } }' instead.")
+  secret: StringScalarAggregationFilters
+}
+
+input DocumentRelatedUpdateConnectionInput {
+  node: AssetUpdateInput
+  where: AssetRelatedConnectionWhere
+}
+
+input DocumentRelatedUpdateFieldInput {
+  connect: [DocumentRelatedConnectFieldInput!]
+  disconnect: [DocumentRelatedDisconnectFieldInput!]
+  create: [DocumentRelatedCreateFieldInput!]
+  update: DocumentRelatedUpdateConnectionInput
+  delete: [DocumentRelatedDeleteFieldInput!]
+}
+
+"""
+Fields to sort Documents by. The order in which sorts are applied is not guaranteed when specifying many fields in one DocumentSort object.
+"""
+input DocumentSort {
+  id: SortDirection
+  name: SortDirection
+  size: SortDirection
+  secret: SortDirection
+  label: SortDirection
+  pages: SortDirection
+}
+
+input DocumentUpdateInput {
+  id: IDScalarMutations
+  id_SET: ID @deprecated(reason: "Please use the generic mutation 'id: { set: ... } }' instead.")
+  name: StringScalarMutations
+  name_SET: String @deprecated(reason: "Please use the generic mutation 'name: { set: ... } }' instead.")
+  size: IntScalarMutations
+  size_SET: Int @deprecated(reason: "Please use the generic mutation 'size: { set: ... } }' instead.")
+  size_INCREMENT: Int @deprecated(reason: "Please use the relevant generic mutation 'size: { increment: ... } }' instead.")
+  size_DECREMENT: Int @deprecated(reason: "Please use the relevant generic mutation 'size: { decrement: ... } }' instead.")
+  secret: StringScalarMutations
+  secret_SET: String @deprecated(reason: "Please use the generic mutation 'secret: { set: ... } }' instead.")
+  label: StringScalarMutations
+  label_SET: String @deprecated(reason: "Please use the generic mutation 'label: { set: ... } }' instead.")
+  pages: IntScalarMutations
+  pages_SET: Int @deprecated(reason: "Please use the generic mutation 'pages: { set: ... } }' instead.")
+  pages_INCREMENT: Int @deprecated(reason: "Please use the relevant generic mutation 'pages: { increment: ... } }' instead.")
+  pages_DECREMENT: Int @deprecated(reason: "Please use the relevant generic mutation 'pages: { decrement: ... } }' instead.")
+  owners: [DocumentOwnersUpdateFieldInput!]
+  related: [DocumentRelatedUpdateFieldInput!]
+}
+
+input DocumentWhere {
+  id: IDScalarFilters
+  id_EQ: ID @deprecated(reason: "Please use the relevant generic filter id: { eq: ... }")
+  id_IN: [ID!] @deprecated(reason: "Please use the relevant generic filter id: { in: ... }")
+  id_CONTAINS: ID @deprecated(reason: "Please use the relevant generic filter id: { contains: ... }")
+  id_STARTS_WITH: ID @deprecated(reason: "Please use the relevant generic filter id: { startsWith: ... }")
+  id_ENDS_WITH: ID @deprecated(reason: "Please use the relevant generic filter id: { endsWith: ... }")
+  name: StringScalarFilters
+  name_EQ: String @deprecated(reason: "Please use the relevant generic filter name: { eq: ... }")
+  name_IN: [String!] @deprecated(reason: "Please use the relevant generic filter name: { in: ... }")
+  name_CONTAINS: String @deprecated(reason: "Please use the relevant generic filter name: { contains: ... }")
+  name_STARTS_WITH: String @deprecated(reason: "Please use the relevant generic filter name: { startsWith: ... }")
+  name_ENDS_WITH: String @deprecated(reason: "Please use the relevant generic filter name: { endsWith: ... }")
+  size: IntScalarFilters
+  size_EQ: Int @deprecated(reason: "Please use the relevant generic filter size: { eq: ... }")
+  size_IN: [Int] @deprecated(reason: "Please use the relevant generic filter size: { in: ... }")
+  size_LT: Int @deprecated(reason: "Please use the relevant generic filter size: { lt: ... }")
+  size_LTE: Int @deprecated(reason: "Please use the relevant generic filter size: { lte: ... }")
+  size_GT: Int @deprecated(reason: "Please use the relevant generic filter size: { gt: ... }")
+  size_GTE: Int @deprecated(reason: "Please use the relevant generic filter size: { gte: ... }")
+  secret: StringScalarFilters
+  secret_EQ: String @deprecated(reason: "Please use the relevant generic filter secret: { eq: ... }")
+  secret_IN: [String] @deprecated(reason: "Please use the relevant generic filter secret: { in: ... }")
+  secret_CONTAINS: String @deprecated(reason: "Please use the relevant generic filter secret: { contains: ... }")
+  secret_STARTS_WITH: String @deprecated(reason: "Please use the relevant generic filter secret: { startsWith: ... }")
+  secret_ENDS_WITH: String @deprecated(reason: "Please use the relevant generic filter secret: { endsWith: ... }")
+  label: StringScalarFilters
+  label_EQ: String @deprecated(reason: "Please use the relevant generic filter label: { eq: ... }")
+  label_IN: [String] @deprecated(reason: "Please use the relevant generic filter label: { in: ... }")
+  label_CONTAINS: String @deprecated(reason: "Please use the relevant generic filter label: { contains: ... }")
+  label_STARTS_WITH: String @deprecated(reason: "Please use the relevant generic filter label: { startsWith: ... }")
+  label_ENDS_WITH: String @deprecated(reason: "Please use the relevant generic filter label: { endsWith: ... }")
+  pages: IntScalarFilters
+  pages_EQ: Int @deprecated(reason: "Please use the relevant generic filter pages: { eq: ... }")
+  pages_IN: [Int] @deprecated(reason: "Please use the relevant generic filter pages: { in: ... }")
+  pages_LT: Int @deprecated(reason: "Please use the relevant generic filter pages: { lt: ... }")
+  pages_LTE: Int @deprecated(reason: "Please use the relevant generic filter pages: { lte: ... }")
+  pages_GT: Int @deprecated(reason: "Please use the relevant generic filter pages: { gt: ... }")
+  pages_GTE: Int @deprecated(reason: "Please use the relevant generic filter pages: { gte: ... }")
+  OR: [DocumentWhere!]
+  AND: [DocumentWhere!]
+  NOT: DocumentWhere
+  owners: OwnerRelationshipFilters
+
+  """Return Documents where all of the related Owners match this filter"""
+  owners_ALL: OwnerWhere @deprecated(reason: "Please use the relevant generic filter 'owners: { all: ... }' instead.")
+
+  """Return Documents where none of the related Owners match this filter"""
+  owners_NONE: OwnerWhere @deprecated(reason: "Please use the relevant generic filter 'owners: { none: ... }' instead.")
+
+  """Return Documents where one of the related Owners match this filter"""
+  owners_SINGLE: OwnerWhere @deprecated(reason: "Please use the relevant generic filter 'owners: {  single: ... }' instead.")
+
+  """Return Documents where some of the related Owners match this filter"""
+  owners_SOME: OwnerWhere @deprecated(reason: "Please use the relevant generic filter 'owners: {  some: ... }' instead.")
+
+  """
+  Return Documents where all of the related AssetOwnersConnections match this filter
+  """
+  ownersConnection_ALL: AssetOwnersConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'ownersConnection: { all: { node: ... } } }' instead.")
+
+  """
+  Return Documents where none of the related AssetOwnersConnections match this filter
+  """
+  ownersConnection_NONE: AssetOwnersConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'ownersConnection: { none: { node: ... } } }' instead.")
+
+  """
+  Return Documents where one of the related AssetOwnersConnections match this filter
+  """
+  ownersConnection_SINGLE: AssetOwnersConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'ownersConnection: { single: { node: ... } } }' instead.")
+
+  """
+  Return Documents where some of the related AssetOwnersConnections match this filter
+  """
+  ownersConnection_SOME: AssetOwnersConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'ownersConnection: { some: { node: ... } } }' instead.")
+  ownersConnection: DocumentOwnersConnectionFilters
+  ownersAggregate: DocumentOwnersAggregateInput @deprecated(reason: "Aggregate filters are moved inside the ownersConnection filter, please use { ownersConnection: { aggregate: {...} } } instead")
+  folder: FolderWhere
+  folderConnection: AssetFolderConnectionWhere
+  related: AssetRelationshipFilters
+
+  """Return Documents where all of the related Assets match this filter"""
+  related_ALL: AssetWhere @deprecated(reason: "Please use the relevant generic filter 'related: { all: ... }' instead.")
+
+  """Return Documents where none of the related Assets match this filter"""
+  related_NONE: AssetWhere @deprecated(reason: "Please use the relevant generic filter 'related: { none: ... }' instead.")
+
+  """Return Documents where one of the related Assets match this filter"""
+  related_SINGLE: AssetWhere @deprecated(reason: "Please use the relevant generic filter 'related: {  single: ... }' instead.")
+
+  """Return Documents where some of the related Assets match this filter"""
+  related_SOME: AssetWhere @deprecated(reason: "Please use the relevant generic filter 'related: {  some: ... }' instead.")
+
+  """
+  Return Documents where all of the related AssetRelatedConnections match this filter
+  """
+  relatedConnection_ALL: AssetRelatedConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'relatedConnection: { all: { node: ... } } }' instead.")
+
+  """
+  Return Documents where none of the related AssetRelatedConnections match this filter
+  """
+  relatedConnection_NONE: AssetRelatedConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'relatedConnection: { none: { node: ... } } }' instead.")
+
+  """
+  Return Documents where one of the related AssetRelatedConnections match this filter
+  """
+  relatedConnection_SINGLE: AssetRelatedConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'relatedConnection: { single: { node: ... } } }' instead.")
+
+  """
+  Return Documents where some of the related AssetRelatedConnections match this filter
+  """
+  relatedConnection_SOME: AssetRelatedConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'relatedConnection: { some: { node: ... } } }' instead.")
+  relatedConnection: DocumentRelatedConnectionFilters
+  relatedAggregate: DocumentRelatedAggregateInput @deprecated(reason: "Aggregate filters are moved inside the relatedConnection filter, please use { relatedConnection: { aggregate: {...} } } instead")
+}
+
+"""Float filters"""
+input FloatScalarFilters {
+  eq: Float
+  gt: Float
+  gte: Float
+  in: [Float!]
+  lt: Float
+  lte: Float
+}
+
+input FolderAssetsAggregateInput {
+  count_EQ: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { eq: ... } } }' instead.")
+  count_LT: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { lt: ... } } }' instead.")
+  count_LTE: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { lte: ... } } }' instead.")
+  count_GT: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { gt: ... } } }' instead.")
+  count_GTE: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { gte: ... } } }' instead.")
+  count: IntScalarFilters
+  AND: [FolderAssetsAggregateInput!]
+  OR: [FolderAssetsAggregateInput!]
+  NOT: FolderAssetsAggregateInput
+  node: FolderAssetsNodeAggregationWhereInput
+}
+
+input FolderAssetsConnectFieldInput {
+  where: AssetConnectWhere
+  connect: AssetConnectInput
+}
+
+input FolderAssetsConnectionAggregateInput {
+  count: ConnectionAggregationCountFilterInput
+  AND: [FolderAssetsConnectionAggregateInput!]
+  OR: [FolderAssetsConnectionAggregateInput!]
+  NOT: FolderAssetsConnectionAggregateInput
+  node: FolderAssetsNodeAggregationWhereInput
+}
+
+input FolderAssetsConnectionFilters {
+  """
+  Return Folders where all of the related FolderAssetsConnections match this filter
+  """
+  all: FolderAssetsConnectionWhere
+
+  """
+  Return Folders where none of the related FolderAssetsConnections match this filter
+  """
+  none: FolderAssetsConnectionWhere
+
+  """
+  Return Folders where one of the related FolderAssetsConnections match this filter
+  """
+  single: FolderAssetsConnectionWhere
+
+  """
+  Return Folders where some of the related FolderAssetsConnections match this filter
+  """
+  some: FolderAssetsConnectionWhere
+
+  """
+  Filter Folders by aggregating results on related FolderAssetsConnections
+  """
+  aggregate: FolderAssetsConnectionAggregateInput
+}
+
+input FolderAssetsConnectionSort {
+  node: AssetSort
+}
+
+input FolderAssetsConnectionWhere {
+  AND: [FolderAssetsConnectionWhere!]
+  OR: [FolderAssetsConnectionWhere!]
+  NOT: FolderAssetsConnectionWhere
+  node: AssetWhere
+}
+
+input FolderAssetsCreateFieldInput {
+  node: AssetCreateInput!
+}
+
+input FolderAssetsDeleteFieldInput {
+  where: FolderAssetsConnectionWhere
+  delete: AssetDeleteInput
+}
+
+input FolderAssetsDisconnectFieldInput {
+  where: FolderAssetsConnectionWhere
+  disconnect: AssetDisconnectInput
+}
+
+input FolderAssetsFieldInput {
+  connect: [FolderAssetsConnectFieldInput!]
+  create: [FolderAssetsCreateFieldInput!]
+}
+
+input FolderAssetsNodeAggregationWhereInput {
+  AND: [FolderAssetsNodeAggregationWhereInput!]
+  OR: [FolderAssetsNodeAggregationWhereInput!]
+  NOT: FolderAssetsNodeAggregationWhereInput
+  name_AVERAGE_LENGTH_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { eq: ... } } }' instead.")
+  name_LONGEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { eq: ... } } }' instead.")
+  name_SHORTEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { eq: ... } } }' instead.")
+  name_AVERAGE_LENGTH_GT: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { gt: ... } } }' instead.")
+  name_LONGEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { gt: ... } } }' instead.")
+  name_SHORTEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { gt: ... } } }' instead.")
+  name_AVERAGE_LENGTH_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { gte: ... } } }' instead.")
+  name_LONGEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { gte: ... } } }' instead.")
+  name_SHORTEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { gte: ... } } }' instead.")
+  name_AVERAGE_LENGTH_LT: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { lt: ... } } }' instead.")
+  name_LONGEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { lt: ... } } }' instead.")
+  name_SHORTEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { lt: ... } } }' instead.")
+  name_AVERAGE_LENGTH_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { lte: ... } } }' instead.")
+  name_LONGEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { lte: ... } } }' instead.")
+  name_SHORTEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { lte: ... } } }' instead.")
+  name: StringScalarAggregationFilters
+  size_MIN_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'size: { min: { eq: ... } } }' instead.")
+  size_MAX_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'size: { max: { eq: ... } } }' instead.")
+  size_SUM_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'size: { sum: { eq: ... } } }' instead.")
+  size_AVERAGE_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'size: { average: { eq: ... } } }' instead.")
+  size_MIN_GT: Int @deprecated(reason: "Please use the relevant generic filter 'size: { min: { gt: ... } } }' instead.")
+  size_MAX_GT: Int @deprecated(reason: "Please use the relevant generic filter 'size: { max: { gt: ... } } }' instead.")
+  size_SUM_GT: Int @deprecated(reason: "Please use the relevant generic filter 'size: { sum: { gt: ... } } }' instead.")
+  size_AVERAGE_GT: Float @deprecated(reason: "Please use the relevant generic filter 'size: { average: { gt: ... } } }' instead.")
+  size_MIN_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'size: { min: { gte: ... } } }' instead.")
+  size_MAX_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'size: { max: { gte: ... } } }' instead.")
+  size_SUM_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'size: { sum: { gte: ... } } }' instead.")
+  size_AVERAGE_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'size: { average: { gte: ... } } }' instead.")
+  size_MIN_LT: Int @deprecated(reason: "Please use the relevant generic filter 'size: { min: { lt: ... } } }' instead.")
+  size_MAX_LT: Int @deprecated(reason: "Please use the relevant generic filter 'size: { max: { lt: ... } } }' instead.")
+  size_SUM_LT: Int @deprecated(reason: "Please use the relevant generic filter 'size: { sum: { lt: ... } } }' instead.")
+  size_AVERAGE_LT: Float @deprecated(reason: "Please use the relevant generic filter 'size: { average: { lt: ... } } }' instead.")
+  size_MIN_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'size: { min: { lte: ... } } }' instead.")
+  size_MAX_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'size: { max: { lte: ... } } }' instead.")
+  size_SUM_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'size: { sum: { lte: ... } } }' instead.")
+  size_AVERAGE_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'size: { average: { lte: ... } } }' instead.")
+  size: IntScalarAggregationFilters
+  secret_AVERAGE_LENGTH_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'secret: { averageLength: { eq: ... } } }' instead.")
+  secret_LONGEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'secret: { longestLength: { eq: ... } } }' instead.")
+  secret_SHORTEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'secret: { shortestLength: { eq: ... } } }' instead.")
+  secret_AVERAGE_LENGTH_GT: Float @deprecated(reason: "Please use the relevant generic filter 'secret: { averageLength: { gt: ... } } }' instead.")
+  secret_LONGEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'secret: { longestLength: { gt: ... } } }' instead.")
+  secret_SHORTEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'secret: { shortestLength: { gt: ... } } }' instead.")
+  secret_AVERAGE_LENGTH_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'secret: { averageLength: { gte: ... } } }' instead.")
+  secret_LONGEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'secret: { longestLength: { gte: ... } } }' instead.")
+  secret_SHORTEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'secret: { shortestLength: { gte: ... } } }' instead.")
+  secret_AVERAGE_LENGTH_LT: Float @deprecated(reason: "Please use the relevant generic filter 'secret: { averageLength: { lt: ... } } }' instead.")
+  secret_LONGEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'secret: { longestLength: { lt: ... } } }' instead.")
+  secret_SHORTEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'secret: { shortestLength: { lt: ... } } }' instead.")
+  secret_AVERAGE_LENGTH_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'secret: { averageLength: { lte: ... } } }' instead.")
+  secret_LONGEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'secret: { longestLength: { lte: ... } } }' instead.")
+  secret_SHORTEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'secret: { shortestLength: { lte: ... } } }' instead.")
+  secret: StringScalarAggregationFilters
+}
+
+input FolderAssetsUpdateConnectionInput {
+  node: AssetUpdateInput
+  where: FolderAssetsConnectionWhere
+}
+
+input FolderAssetsUpdateFieldInput {
+  connect: [FolderAssetsConnectFieldInput!]
+  disconnect: [FolderAssetsDisconnectFieldInput!]
+  create: [FolderAssetsCreateFieldInput!]
+  update: FolderAssetsUpdateConnectionInput
+  delete: [FolderAssetsDeleteFieldInput!]
+}
+
+input FolderCreateInput {
+  id: ID!
+  name: String!
+  assets: FolderAssetsFieldInput
+  tagged: FolderTaggedFieldInput
+}
+
+input FolderDeleteInput {
+  assets: [FolderAssetsDeleteFieldInput!]
+  tagged: [FolderTaggedDeleteFieldInput!]
+}
+
+"""
+Fields to sort Folders by. The order in which sorts are applied is not guaranteed when specifying many fields in one FolderSort object.
+"""
+input FolderSort {
+  id: SortDirection
+  name: SortDirection
+}
+
+input FolderTaggedAggregateInput {
+  count_EQ: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { eq: ... } } }' instead.")
+  count_LT: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { lt: ... } } }' instead.")
+  count_LTE: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { lte: ... } } }' instead.")
+  count_GT: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { gt: ... } } }' instead.")
+  count_GTE: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { gte: ... } } }' instead.")
+  count: IntScalarFilters
+  AND: [FolderTaggedAggregateInput!]
+  OR: [FolderTaggedAggregateInput!]
+  NOT: FolderTaggedAggregateInput
+  node: FolderTaggedNodeAggregationWhereInput
+}
+
+input FolderTaggedConnectFieldInput {
+  where: TaggableConnectWhere
+}
+
+input FolderTaggedConnectionAggregateInput {
+  count: ConnectionAggregationCountFilterInput
+  AND: [FolderTaggedConnectionAggregateInput!]
+  OR: [FolderTaggedConnectionAggregateInput!]
+  NOT: FolderTaggedConnectionAggregateInput
+  node: FolderTaggedNodeAggregationWhereInput
+}
+
+input FolderTaggedConnectionFilters {
+  """
+  Return Folders where all of the related FolderTaggedConnections match this filter
+  """
+  all: FolderTaggedConnectionWhere
+
+  """
+  Return Folders where none of the related FolderTaggedConnections match this filter
+  """
+  none: FolderTaggedConnectionWhere
+
+  """
+  Return Folders where one of the related FolderTaggedConnections match this filter
+  """
+  single: FolderTaggedConnectionWhere
+
+  """
+  Return Folders where some of the related FolderTaggedConnections match this filter
+  """
+  some: FolderTaggedConnectionWhere
+
+  """
+  Filter Folders by aggregating results on related FolderTaggedConnections
+  """
+  aggregate: FolderTaggedConnectionAggregateInput
+}
+
+input FolderTaggedConnectionSort {
+  node: TaggableSort
+}
+
+input FolderTaggedConnectionWhere {
+  AND: [FolderTaggedConnectionWhere!]
+  OR: [FolderTaggedConnectionWhere!]
+  NOT: FolderTaggedConnectionWhere
+  node: TaggableWhere
+}
+
+input FolderTaggedCreateFieldInput {
+  node: TaggableCreateInput!
+}
+
+input FolderTaggedDeleteFieldInput {
+  where: FolderTaggedConnectionWhere
+}
+
+input FolderTaggedDisconnectFieldInput {
+  where: FolderTaggedConnectionWhere
+}
+
+input FolderTaggedFieldInput {
+  connect: [FolderTaggedConnectFieldInput!]
+  create: [FolderTaggedCreateFieldInput!]
+}
+
+input FolderTaggedNodeAggregationWhereInput {
+  AND: [FolderTaggedNodeAggregationWhereInput!]
+  OR: [FolderTaggedNodeAggregationWhereInput!]
+  NOT: FolderTaggedNodeAggregationWhereInput
+  tag_AVERAGE_LENGTH_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'tag: { averageLength: { eq: ... } } }' instead.")
+  tag_LONGEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'tag: { longestLength: { eq: ... } } }' instead.")
+  tag_SHORTEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'tag: { shortestLength: { eq: ... } } }' instead.")
+  tag_AVERAGE_LENGTH_GT: Float @deprecated(reason: "Please use the relevant generic filter 'tag: { averageLength: { gt: ... } } }' instead.")
+  tag_LONGEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'tag: { longestLength: { gt: ... } } }' instead.")
+  tag_SHORTEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'tag: { shortestLength: { gt: ... } } }' instead.")
+  tag_AVERAGE_LENGTH_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'tag: { averageLength: { gte: ... } } }' instead.")
+  tag_LONGEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'tag: { longestLength: { gte: ... } } }' instead.")
+  tag_SHORTEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'tag: { shortestLength: { gte: ... } } }' instead.")
+  tag_AVERAGE_LENGTH_LT: Float @deprecated(reason: "Please use the relevant generic filter 'tag: { averageLength: { lt: ... } } }' instead.")
+  tag_LONGEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'tag: { longestLength: { lt: ... } } }' instead.")
+  tag_SHORTEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'tag: { shortestLength: { lt: ... } } }' instead.")
+  tag_AVERAGE_LENGTH_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'tag: { averageLength: { lte: ... } } }' instead.")
+  tag_LONGEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'tag: { longestLength: { lte: ... } } }' instead.")
+  tag_SHORTEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'tag: { shortestLength: { lte: ... } } }' instead.")
+  tag: StringScalarAggregationFilters
+}
+
+input FolderTaggedUpdateConnectionInput {
+  node: TaggableUpdateInput
+  where: FolderTaggedConnectionWhere
+}
+
+input FolderTaggedUpdateFieldInput {
+  connect: [FolderTaggedConnectFieldInput!]
+  disconnect: [FolderTaggedDisconnectFieldInput!]
+  create: [FolderTaggedCreateFieldInput!]
+  update: FolderTaggedUpdateConnectionInput
+  delete: [FolderTaggedDeleteFieldInput!]
+}
+
+input FolderUpdateInput {
+  id: IDScalarMutations
+  id_SET: ID @deprecated(reason: "Please use the generic mutation 'id: { set: ... } }' instead.")
+  name: StringScalarMutations
+  name_SET: String @deprecated(reason: "Please use the generic mutation 'name: { set: ... } }' instead.")
+  assets: [FolderAssetsUpdateFieldInput!]
+  tagged: [FolderTaggedUpdateFieldInput!]
+}
+
+input FolderWhere {
+  id: IDScalarFilters
+  id_EQ: ID @deprecated(reason: "Please use the relevant generic filter id: { eq: ... }")
+  id_IN: [ID!] @deprecated(reason: "Please use the relevant generic filter id: { in: ... }")
+  id_CONTAINS: ID @deprecated(reason: "Please use the relevant generic filter id: { contains: ... }")
+  id_STARTS_WITH: ID @deprecated(reason: "Please use the relevant generic filter id: { startsWith: ... }")
+  id_ENDS_WITH: ID @deprecated(reason: "Please use the relevant generic filter id: { endsWith: ... }")
+  name: StringScalarFilters
+  name_EQ: String @deprecated(reason: "Please use the relevant generic filter name: { eq: ... }")
+  name_IN: [String!] @deprecated(reason: "Please use the relevant generic filter name: { in: ... }")
+  name_CONTAINS: String @deprecated(reason: "Please use the relevant generic filter name: { contains: ... }")
+  name_STARTS_WITH: String @deprecated(reason: "Please use the relevant generic filter name: { startsWith: ... }")
+  name_ENDS_WITH: String @deprecated(reason: "Please use the relevant generic filter name: { endsWith: ... }")
+  OR: [FolderWhere!]
+  AND: [FolderWhere!]
+  NOT: FolderWhere
+  assets: AssetRelationshipFilters
+
+  """Return Folders where all of the related Assets match this filter"""
+  assets_ALL: AssetWhere @deprecated(reason: "Please use the relevant generic filter 'assets: { all: ... }' instead.")
+
+  """Return Folders where none of the related Assets match this filter"""
+  assets_NONE: AssetWhere @deprecated(reason: "Please use the relevant generic filter 'assets: { none: ... }' instead.")
+
+  """Return Folders where one of the related Assets match this filter"""
+  assets_SINGLE: AssetWhere @deprecated(reason: "Please use the relevant generic filter 'assets: {  single: ... }' instead.")
+
+  """Return Folders where some of the related Assets match this filter"""
+  assets_SOME: AssetWhere @deprecated(reason: "Please use the relevant generic filter 'assets: {  some: ... }' instead.")
+
+  """
+  Return Folders where all of the related FolderAssetsConnections match this filter
+  """
+  assetsConnection_ALL: FolderAssetsConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'assetsConnection: { all: { node: ... } } }' instead.")
+
+  """
+  Return Folders where none of the related FolderAssetsConnections match this filter
+  """
+  assetsConnection_NONE: FolderAssetsConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'assetsConnection: { none: { node: ... } } }' instead.")
+
+  """
+  Return Folders where one of the related FolderAssetsConnections match this filter
+  """
+  assetsConnection_SINGLE: FolderAssetsConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'assetsConnection: { single: { node: ... } } }' instead.")
+
+  """
+  Return Folders where some of the related FolderAssetsConnections match this filter
+  """
+  assetsConnection_SOME: FolderAssetsConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'assetsConnection: { some: { node: ... } } }' instead.")
+  assetsConnection: FolderAssetsConnectionFilters
+  assetsAggregate: FolderAssetsAggregateInput @deprecated(reason: "Aggregate filters are moved inside the assetsConnection filter, please use { assetsConnection: { aggregate: {...} } } instead")
+  tagged: TaggableRelationshipFilters
+
+  """Return Folders where all of the related Taggables match this filter"""
+  tagged_ALL: TaggableWhere @deprecated(reason: "Please use the relevant generic filter 'tagged: { all: ... }' instead.")
+
+  """Return Folders where none of the related Taggables match this filter"""
+  tagged_NONE: TaggableWhere @deprecated(reason: "Please use the relevant generic filter 'tagged: { none: ... }' instead.")
+
+  """Return Folders where one of the related Taggables match this filter"""
+  tagged_SINGLE: TaggableWhere @deprecated(reason: "Please use the relevant generic filter 'tagged: {  single: ... }' instead.")
+
+  """Return Folders where some of the related Taggables match this filter"""
+  tagged_SOME: TaggableWhere @deprecated(reason: "Please use the relevant generic filter 'tagged: {  some: ... }' instead.")
+
+  """
+  Return Folders where all of the related FolderTaggedConnections match this filter
+  """
+  taggedConnection_ALL: FolderTaggedConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'taggedConnection: { all: { node: ... } } }' instead.")
+
+  """
+  Return Folders where none of the related FolderTaggedConnections match this filter
+  """
+  taggedConnection_NONE: FolderTaggedConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'taggedConnection: { none: { node: ... } } }' instead.")
+
+  """
+  Return Folders where one of the related FolderTaggedConnections match this filter
+  """
+  taggedConnection_SINGLE: FolderTaggedConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'taggedConnection: { single: { node: ... } } }' instead.")
+
+  """
+  Return Folders where some of the related FolderTaggedConnections match this filter
+  """
+  taggedConnection_SOME: FolderTaggedConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'taggedConnection: { some: { node: ... } } }' instead.")
+  taggedConnection: FolderTaggedConnectionFilters
+  taggedAggregate: FolderTaggedAggregateInput @deprecated(reason: "Aggregate filters are moved inside the taggedConnection filter, please use { taggedConnection: { aggregate: {...} } } instead")
+}
+
+"""ID filters"""
+input IDScalarFilters {
+  eq: ID
+  in: [ID!]
+  contains: ID
+  endsWith: ID
+  startsWith: ID
+}
+
+"""ID mutations"""
+input IDScalarMutations {
+  set: ID
+}
+
+input ImageConnectInput {
+  owners: [ImageOwnersConnectFieldInput!]
+  related: [ImageRelatedConnectFieldInput!]
+}
+
+input ImageConnectWhere {
+  node: ImageWhere!
+}
+
+input ImageCreateInput {
+  id: ID!
+  name: String!
+  size: Int
+  secret: String
+  label: String
+  tag: String
+  width: Int
+  owners: ImageOwnersFieldInput
+  folder: ImageFolderFieldInput
+  related: ImageRelatedFieldInput
+}
+
+input ImageDeleteInput {
+  owners: [AssetOwnersDeleteFieldInput!]
+  folder: AssetFolderDeleteFieldInput
+  related: [ImageRelatedDeleteFieldInput!]
+}
+
+input ImageDisconnectInput {
+  owners: [AssetOwnersDisconnectFieldInput!]
+  related: [ImageRelatedDisconnectFieldInput!]
+}
+
+input ImageFolderCreateFieldInput {
+  node: FolderCreateInput!
+}
+
+input ImageFolderFieldInput {
+  create: ImageFolderCreateFieldInput
+}
+
+input ImageOwnersAggregateInput {
+  count_EQ: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { eq: ... } } }' instead.")
+  count_LT: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { lt: ... } } }' instead.")
+  count_LTE: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { lte: ... } } }' instead.")
+  count_GT: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { gt: ... } } }' instead.")
+  count_GTE: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { gte: ... } } }' instead.")
+  count: IntScalarFilters
+  AND: [ImageOwnersAggregateInput!]
+  OR: [ImageOwnersAggregateInput!]
+  NOT: ImageOwnersAggregateInput
+  node: ImageOwnersNodeAggregationWhereInput
+  edge: OwnershipAggregationWhereInput
+}
+
+input ImageOwnersConnectFieldInput {
+  edge: OwnershipCreateInput
+  where: OwnerConnectWhere
+  connect: [OwnerConnectInput!]
+}
+
+input ImageOwnersConnectionAggregateInput {
+  count: ConnectionAggregationCountFilterInput
+  AND: [ImageOwnersConnectionAggregateInput!]
+  OR: [ImageOwnersConnectionAggregateInput!]
+  NOT: ImageOwnersConnectionAggregateInput
+  node: ImageOwnersNodeAggregationWhereInput
+  edge: OwnershipAggregationWhereInput
+}
+
+input ImageOwnersConnectionFilters {
+  """
+  Return Images where all of the related AssetOwnersConnections match this filter
+  """
+  all: AssetOwnersConnectionWhere
+
+  """
+  Return Images where none of the related AssetOwnersConnections match this filter
+  """
+  none: AssetOwnersConnectionWhere
+
+  """
+  Return Images where one of the related AssetOwnersConnections match this filter
+  """
+  single: AssetOwnersConnectionWhere
+
+  """
+  Return Images where some of the related AssetOwnersConnections match this filter
+  """
+  some: AssetOwnersConnectionWhere
+
+  """Filter Images by aggregating results on related AssetOwnersConnections"""
+  aggregate: ImageOwnersConnectionAggregateInput
+}
+
+input ImageOwnersCreateFieldInput {
+  edge: OwnershipCreateInput
+  node: OwnerCreateInput!
+}
+
+input ImageOwnersFieldInput {
+  connect: [ImageOwnersConnectFieldInput!]
+  create: [ImageOwnersCreateFieldInput!]
+}
+
+input ImageOwnersNodeAggregationWhereInput {
+  AND: [ImageOwnersNodeAggregationWhereInput!]
+  OR: [ImageOwnersNodeAggregationWhereInput!]
+  NOT: ImageOwnersNodeAggregationWhereInput
+  name_AVERAGE_LENGTH_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { eq: ... } } }' instead.")
+  name_LONGEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { eq: ... } } }' instead.")
+  name_SHORTEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { eq: ... } } }' instead.")
+  name_AVERAGE_LENGTH_GT: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { gt: ... } } }' instead.")
+  name_LONGEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { gt: ... } } }' instead.")
+  name_SHORTEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { gt: ... } } }' instead.")
+  name_AVERAGE_LENGTH_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { gte: ... } } }' instead.")
+  name_LONGEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { gte: ... } } }' instead.")
+  name_SHORTEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { gte: ... } } }' instead.")
+  name_AVERAGE_LENGTH_LT: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { lt: ... } } }' instead.")
+  name_LONGEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { lt: ... } } }' instead.")
+  name_SHORTEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { lt: ... } } }' instead.")
+  name_AVERAGE_LENGTH_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { lte: ... } } }' instead.")
+  name_LONGEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { lte: ... } } }' instead.")
+  name_SHORTEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { lte: ... } } }' instead.")
+  name: StringScalarAggregationFilters
+}
+
+input ImageOwnersUpdateConnectionInput {
+  node: OwnerUpdateInput
+  where: AssetOwnersConnectionWhere
+  edge: OwnershipUpdateInput
+}
+
+input ImageOwnersUpdateFieldInput {
+  connect: [ImageOwnersConnectFieldInput!]
+  disconnect: [AssetOwnersDisconnectFieldInput!]
+  create: [ImageOwnersCreateFieldInput!]
+  update: ImageOwnersUpdateConnectionInput
+  delete: [AssetOwnersDeleteFieldInput!]
+}
+
+input ImageRelatedAggregateInput {
+  count_EQ: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { eq: ... } } }' instead.")
+  count_LT: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { lt: ... } } }' instead.")
+  count_LTE: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { lte: ... } } }' instead.")
+  count_GT: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { gt: ... } } }' instead.")
+  count_GTE: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { gte: ... } } }' instead.")
+  count: IntScalarFilters
+  AND: [ImageRelatedAggregateInput!]
+  OR: [ImageRelatedAggregateInput!]
+  NOT: ImageRelatedAggregateInput
+  node: ImageRelatedNodeAggregationWhereInput
+}
+
+input ImageRelatedConnectFieldInput {
+  where: AssetConnectWhere
+  connect: AssetConnectInput
+}
+
+input ImageRelatedConnectionAggregateInput {
+  count: ConnectionAggregationCountFilterInput
+  AND: [ImageRelatedConnectionAggregateInput!]
+  OR: [ImageRelatedConnectionAggregateInput!]
+  NOT: ImageRelatedConnectionAggregateInput
+  node: ImageRelatedNodeAggregationWhereInput
+}
+
+input ImageRelatedConnectionFilters {
+  """
+  Return Images where all of the related AssetRelatedConnections match this filter
+  """
+  all: AssetRelatedConnectionWhere
+
+  """
+  Return Images where none of the related AssetRelatedConnections match this filter
+  """
+  none: AssetRelatedConnectionWhere
+
+  """
+  Return Images where one of the related AssetRelatedConnections match this filter
+  """
+  single: AssetRelatedConnectionWhere
+
+  """
+  Return Images where some of the related AssetRelatedConnections match this filter
+  """
+  some: AssetRelatedConnectionWhere
+
+  """
+  Filter Images by aggregating results on related AssetRelatedConnections
+  """
+  aggregate: ImageRelatedConnectionAggregateInput
+}
+
+input ImageRelatedCreateFieldInput {
+  node: AssetCreateInput!
+}
+
+input ImageRelatedDeleteFieldInput {
+  where: AssetRelatedConnectionWhere
+  delete: AssetDeleteInput
+}
+
+input ImageRelatedDisconnectFieldInput {
+  where: AssetRelatedConnectionWhere
+  disconnect: AssetDisconnectInput
+}
+
+input ImageRelatedFieldInput {
+  connect: [ImageRelatedConnectFieldInput!]
+  create: [ImageRelatedCreateFieldInput!]
+}
+
+input ImageRelatedNodeAggregationWhereInput {
+  AND: [ImageRelatedNodeAggregationWhereInput!]
+  OR: [ImageRelatedNodeAggregationWhereInput!]
+  NOT: ImageRelatedNodeAggregationWhereInput
+  name_AVERAGE_LENGTH_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { eq: ... } } }' instead.")
+  name_LONGEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { eq: ... } } }' instead.")
+  name_SHORTEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { eq: ... } } }' instead.")
+  name_AVERAGE_LENGTH_GT: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { gt: ... } } }' instead.")
+  name_LONGEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { gt: ... } } }' instead.")
+  name_SHORTEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { gt: ... } } }' instead.")
+  name_AVERAGE_LENGTH_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { gte: ... } } }' instead.")
+  name_LONGEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { gte: ... } } }' instead.")
+  name_SHORTEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { gte: ... } } }' instead.")
+  name_AVERAGE_LENGTH_LT: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { lt: ... } } }' instead.")
+  name_LONGEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { lt: ... } } }' instead.")
+  name_SHORTEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { lt: ... } } }' instead.")
+  name_AVERAGE_LENGTH_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { lte: ... } } }' instead.")
+  name_LONGEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { lte: ... } } }' instead.")
+  name_SHORTEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { lte: ... } } }' instead.")
+  name: StringScalarAggregationFilters
+  size_MIN_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'size: { min: { eq: ... } } }' instead.")
+  size_MAX_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'size: { max: { eq: ... } } }' instead.")
+  size_SUM_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'size: { sum: { eq: ... } } }' instead.")
+  size_AVERAGE_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'size: { average: { eq: ... } } }' instead.")
+  size_MIN_GT: Int @deprecated(reason: "Please use the relevant generic filter 'size: { min: { gt: ... } } }' instead.")
+  size_MAX_GT: Int @deprecated(reason: "Please use the relevant generic filter 'size: { max: { gt: ... } } }' instead.")
+  size_SUM_GT: Int @deprecated(reason: "Please use the relevant generic filter 'size: { sum: { gt: ... } } }' instead.")
+  size_AVERAGE_GT: Float @deprecated(reason: "Please use the relevant generic filter 'size: { average: { gt: ... } } }' instead.")
+  size_MIN_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'size: { min: { gte: ... } } }' instead.")
+  size_MAX_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'size: { max: { gte: ... } } }' instead.")
+  size_SUM_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'size: { sum: { gte: ... } } }' instead.")
+  size_AVERAGE_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'size: { average: { gte: ... } } }' instead.")
+  size_MIN_LT: Int @deprecated(reason: "Please use the relevant generic filter 'size: { min: { lt: ... } } }' instead.")
+  size_MAX_LT: Int @deprecated(reason: "Please use the relevant generic filter 'size: { max: { lt: ... } } }' instead.")
+  size_SUM_LT: Int @deprecated(reason: "Please use the relevant generic filter 'size: { sum: { lt: ... } } }' instead.")
+  size_AVERAGE_LT: Float @deprecated(reason: "Please use the relevant generic filter 'size: { average: { lt: ... } } }' instead.")
+  size_MIN_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'size: { min: { lte: ... } } }' instead.")
+  size_MAX_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'size: { max: { lte: ... } } }' instead.")
+  size_SUM_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'size: { sum: { lte: ... } } }' instead.")
+  size_AVERAGE_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'size: { average: { lte: ... } } }' instead.")
+  size: IntScalarAggregationFilters
+  secret_AVERAGE_LENGTH_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'secret: { averageLength: { eq: ... } } }' instead.")
+  secret_LONGEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'secret: { longestLength: { eq: ... } } }' instead.")
+  secret_SHORTEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'secret: { shortestLength: { eq: ... } } }' instead.")
+  secret_AVERAGE_LENGTH_GT: Float @deprecated(reason: "Please use the relevant generic filter 'secret: { averageLength: { gt: ... } } }' instead.")
+  secret_LONGEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'secret: { longestLength: { gt: ... } } }' instead.")
+  secret_SHORTEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'secret: { shortestLength: { gt: ... } } }' instead.")
+  secret_AVERAGE_LENGTH_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'secret: { averageLength: { gte: ... } } }' instead.")
+  secret_LONGEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'secret: { longestLength: { gte: ... } } }' instead.")
+  secret_SHORTEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'secret: { shortestLength: { gte: ... } } }' instead.")
+  secret_AVERAGE_LENGTH_LT: Float @deprecated(reason: "Please use the relevant generic filter 'secret: { averageLength: { lt: ... } } }' instead.")
+  secret_LONGEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'secret: { longestLength: { lt: ... } } }' instead.")
+  secret_SHORTEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'secret: { shortestLength: { lt: ... } } }' instead.")
+  secret_AVERAGE_LENGTH_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'secret: { averageLength: { lte: ... } } }' instead.")
+  secret_LONGEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'secret: { longestLength: { lte: ... } } }' instead.")
+  secret_SHORTEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'secret: { shortestLength: { lte: ... } } }' instead.")
+  secret: StringScalarAggregationFilters
+}
+
+input ImageRelatedUpdateConnectionInput {
+  node: AssetUpdateInput
+  where: AssetRelatedConnectionWhere
+}
+
+input ImageRelatedUpdateFieldInput {
+  connect: [ImageRelatedConnectFieldInput!]
+  disconnect: [ImageRelatedDisconnectFieldInput!]
+  create: [ImageRelatedCreateFieldInput!]
+  update: ImageRelatedUpdateConnectionInput
+  delete: [ImageRelatedDeleteFieldInput!]
+}
+
+input ImageRelationshipFilters {
+  """Filter type where all of the related Images match this filter"""
+  all: ImageWhere
+
+  """Filter type where none of the related Images match this filter"""
+  none: ImageWhere
+
+  """Filter type where one of the related Images match this filter"""
+  single: ImageWhere
+
+  """Filter type where some of the related Images match this filter"""
+  some: ImageWhere
+}
+
+"""
+Fields to sort Images by. The order in which sorts are applied is not guaranteed when specifying many fields in one ImageSort object.
+"""
+input ImageSort {
+  id: SortDirection
+  name: SortDirection
+  size: SortDirection
+  secret: SortDirection
+  label: SortDirection
+  tag: SortDirection
+  width: SortDirection
+}
+
+input ImageUpdateInput {
+  id: IDScalarMutations
+  id_SET: ID @deprecated(reason: "Please use the generic mutation 'id: { set: ... } }' instead.")
+  name: StringScalarMutations
+  name_SET: String @deprecated(reason: "Please use the generic mutation 'name: { set: ... } }' instead.")
+  size: IntScalarMutations
+  size_SET: Int @deprecated(reason: "Please use the generic mutation 'size: { set: ... } }' instead.")
+  size_INCREMENT: Int @deprecated(reason: "Please use the relevant generic mutation 'size: { increment: ... } }' instead.")
+  size_DECREMENT: Int @deprecated(reason: "Please use the relevant generic mutation 'size: { decrement: ... } }' instead.")
+  secret: StringScalarMutations
+  secret_SET: String @deprecated(reason: "Please use the generic mutation 'secret: { set: ... } }' instead.")
+  label: StringScalarMutations
+  label_SET: String @deprecated(reason: "Please use the generic mutation 'label: { set: ... } }' instead.")
+  tag: StringScalarMutations
+  tag_SET: String @deprecated(reason: "Please use the generic mutation 'tag: { set: ... } }' instead.")
+  width: IntScalarMutations
+  width_SET: Int @deprecated(reason: "Please use the generic mutation 'width: { set: ... } }' instead.")
+  width_INCREMENT: Int @deprecated(reason: "Please use the relevant generic mutation 'width: { increment: ... } }' instead.")
+  width_DECREMENT: Int @deprecated(reason: "Please use the relevant generic mutation 'width: { decrement: ... } }' instead.")
+  owners: [ImageOwnersUpdateFieldInput!]
+  related: [ImageRelatedUpdateFieldInput!]
+}
+
+input ImageWhere {
+  id: IDScalarFilters
+  id_EQ: ID @deprecated(reason: "Please use the relevant generic filter id: { eq: ... }")
+  id_IN: [ID!] @deprecated(reason: "Please use the relevant generic filter id: { in: ... }")
+  id_CONTAINS: ID @deprecated(reason: "Please use the relevant generic filter id: { contains: ... }")
+  id_STARTS_WITH: ID @deprecated(reason: "Please use the relevant generic filter id: { startsWith: ... }")
+  id_ENDS_WITH: ID @deprecated(reason: "Please use the relevant generic filter id: { endsWith: ... }")
+  name: StringScalarFilters
+  name_EQ: String @deprecated(reason: "Please use the relevant generic filter name: { eq: ... }")
+  name_IN: [String!] @deprecated(reason: "Please use the relevant generic filter name: { in: ... }")
+  name_CONTAINS: String @deprecated(reason: "Please use the relevant generic filter name: { contains: ... }")
+  name_STARTS_WITH: String @deprecated(reason: "Please use the relevant generic filter name: { startsWith: ... }")
+  name_ENDS_WITH: String @deprecated(reason: "Please use the relevant generic filter name: { endsWith: ... }")
+  size: IntScalarFilters
+  size_EQ: Int @deprecated(reason: "Please use the relevant generic filter size: { eq: ... }")
+  size_IN: [Int] @deprecated(reason: "Please use the relevant generic filter size: { in: ... }")
+  size_LT: Int @deprecated(reason: "Please use the relevant generic filter size: { lt: ... }")
+  size_LTE: Int @deprecated(reason: "Please use the relevant generic filter size: { lte: ... }")
+  size_GT: Int @deprecated(reason: "Please use the relevant generic filter size: { gt: ... }")
+  size_GTE: Int @deprecated(reason: "Please use the relevant generic filter size: { gte: ... }")
+  secret: StringScalarFilters
+  secret_EQ: String @deprecated(reason: "Please use the relevant generic filter secret: { eq: ... }")
+  secret_IN: [String] @deprecated(reason: "Please use the relevant generic filter secret: { in: ... }")
+  secret_CONTAINS: String @deprecated(reason: "Please use the relevant generic filter secret: { contains: ... }")
+  secret_STARTS_WITH: String @deprecated(reason: "Please use the relevant generic filter secret: { startsWith: ... }")
+  secret_ENDS_WITH: String @deprecated(reason: "Please use the relevant generic filter secret: { endsWith: ... }")
+  label: StringScalarFilters
+  label_EQ: String @deprecated(reason: "Please use the relevant generic filter label: { eq: ... }")
+  label_IN: [String] @deprecated(reason: "Please use the relevant generic filter label: { in: ... }")
+  label_CONTAINS: String @deprecated(reason: "Please use the relevant generic filter label: { contains: ... }")
+  label_STARTS_WITH: String @deprecated(reason: "Please use the relevant generic filter label: { startsWith: ... }")
+  label_ENDS_WITH: String @deprecated(reason: "Please use the relevant generic filter label: { endsWith: ... }")
+  tag: StringScalarFilters
+  tag_EQ: String @deprecated(reason: "Please use the relevant generic filter tag: { eq: ... }")
+  tag_IN: [String] @deprecated(reason: "Please use the relevant generic filter tag: { in: ... }")
+  tag_CONTAINS: String @deprecated(reason: "Please use the relevant generic filter tag: { contains: ... }")
+  tag_STARTS_WITH: String @deprecated(reason: "Please use the relevant generic filter tag: { startsWith: ... }")
+  tag_ENDS_WITH: String @deprecated(reason: "Please use the relevant generic filter tag: { endsWith: ... }")
+  width: IntScalarFilters
+  width_EQ: Int @deprecated(reason: "Please use the relevant generic filter width: { eq: ... }")
+  width_IN: [Int] @deprecated(reason: "Please use the relevant generic filter width: { in: ... }")
+  width_LT: Int @deprecated(reason: "Please use the relevant generic filter width: { lt: ... }")
+  width_LTE: Int @deprecated(reason: "Please use the relevant generic filter width: { lte: ... }")
+  width_GT: Int @deprecated(reason: "Please use the relevant generic filter width: { gt: ... }")
+  width_GTE: Int @deprecated(reason: "Please use the relevant generic filter width: { gte: ... }")
+  OR: [ImageWhere!]
+  AND: [ImageWhere!]
+  NOT: ImageWhere
+  owners: OwnerRelationshipFilters
+
+  """Return Images where all of the related Owners match this filter"""
+  owners_ALL: OwnerWhere @deprecated(reason: "Please use the relevant generic filter 'owners: { all: ... }' instead.")
+
+  """Return Images where none of the related Owners match this filter"""
+  owners_NONE: OwnerWhere @deprecated(reason: "Please use the relevant generic filter 'owners: { none: ... }' instead.")
+
+  """Return Images where one of the related Owners match this filter"""
+  owners_SINGLE: OwnerWhere @deprecated(reason: "Please use the relevant generic filter 'owners: {  single: ... }' instead.")
+
+  """Return Images where some of the related Owners match this filter"""
+  owners_SOME: OwnerWhere @deprecated(reason: "Please use the relevant generic filter 'owners: {  some: ... }' instead.")
+
+  """
+  Return Images where all of the related AssetOwnersConnections match this filter
+  """
+  ownersConnection_ALL: AssetOwnersConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'ownersConnection: { all: { node: ... } } }' instead.")
+
+  """
+  Return Images where none of the related AssetOwnersConnections match this filter
+  """
+  ownersConnection_NONE: AssetOwnersConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'ownersConnection: { none: { node: ... } } }' instead.")
+
+  """
+  Return Images where one of the related AssetOwnersConnections match this filter
+  """
+  ownersConnection_SINGLE: AssetOwnersConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'ownersConnection: { single: { node: ... } } }' instead.")
+
+  """
+  Return Images where some of the related AssetOwnersConnections match this filter
+  """
+  ownersConnection_SOME: AssetOwnersConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'ownersConnection: { some: { node: ... } } }' instead.")
+  ownersConnection: ImageOwnersConnectionFilters
+  ownersAggregate: ImageOwnersAggregateInput @deprecated(reason: "Aggregate filters are moved inside the ownersConnection filter, please use { ownersConnection: { aggregate: {...} } } instead")
+  folder: FolderWhere
+  folderConnection: AssetFolderConnectionWhere
+  related: AssetRelationshipFilters
+
+  """Return Images where all of the related Assets match this filter"""
+  related_ALL: AssetWhere @deprecated(reason: "Please use the relevant generic filter 'related: { all: ... }' instead.")
+
+  """Return Images where none of the related Assets match this filter"""
+  related_NONE: AssetWhere @deprecated(reason: "Please use the relevant generic filter 'related: { none: ... }' instead.")
+
+  """Return Images where one of the related Assets match this filter"""
+  related_SINGLE: AssetWhere @deprecated(reason: "Please use the relevant generic filter 'related: {  single: ... }' instead.")
+
+  """Return Images where some of the related Assets match this filter"""
+  related_SOME: AssetWhere @deprecated(reason: "Please use the relevant generic filter 'related: {  some: ... }' instead.")
+
+  """
+  Return Images where all of the related AssetRelatedConnections match this filter
+  """
+  relatedConnection_ALL: AssetRelatedConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'relatedConnection: { all: { node: ... } } }' instead.")
+
+  """
+  Return Images where none of the related AssetRelatedConnections match this filter
+  """
+  relatedConnection_NONE: AssetRelatedConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'relatedConnection: { none: { node: ... } } }' instead.")
+
+  """
+  Return Images where one of the related AssetRelatedConnections match this filter
+  """
+  relatedConnection_SINGLE: AssetRelatedConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'relatedConnection: { single: { node: ... } } }' instead.")
+
+  """
+  Return Images where some of the related AssetRelatedConnections match this filter
+  """
+  relatedConnection_SOME: AssetRelatedConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'relatedConnection: { some: { node: ... } } }' instead.")
+  relatedConnection: ImageRelatedConnectionFilters
+  relatedAggregate: ImageRelatedAggregateInput @deprecated(reason: "Aggregate filters are moved inside the relatedConnection filter, please use { relatedConnection: { aggregate: {...} } } instead")
+}
+
+"""Filters for an aggregation of an int field"""
+input IntScalarAggregationFilters {
+  average: FloatScalarFilters
+  max: IntScalarFilters
+  min: IntScalarFilters
+  sum: IntScalarFilters
+}
+
+"""Int filters"""
+input IntScalarFilters {
+  eq: Int
+  gt: Int
+  gte: Int
+  in: [Int!]
+  lt: Int
+  lte: Int
+}
+
+"""Int mutations"""
+input IntScalarMutations {
+  set: Int
+  add: Int
+  subtract: Int
+}
+
+input OwnerAssetsAggregateInput {
+  count_EQ: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { eq: ... } } }' instead.")
+  count_LT: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { lt: ... } } }' instead.")
+  count_LTE: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { lte: ... } } }' instead.")
+  count_GT: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { gt: ... } } }' instead.")
+  count_GTE: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { gte: ... } } }' instead.")
+  count: IntScalarFilters
+  AND: [OwnerAssetsAggregateInput!]
+  OR: [OwnerAssetsAggregateInput!]
+  NOT: OwnerAssetsAggregateInput
+  node: OwnerAssetsNodeAggregationWhereInput
+}
+
+input OwnerAssetsConnectFieldInput {
+  where: AssetConnectWhere
+  connect: AssetConnectInput
+}
+
+input OwnerAssetsConnectionAggregateInput {
+  count: ConnectionAggregationCountFilterInput
+  AND: [OwnerAssetsConnectionAggregateInput!]
+  OR: [OwnerAssetsConnectionAggregateInput!]
+  NOT: OwnerAssetsConnectionAggregateInput
+  node: OwnerAssetsNodeAggregationWhereInput
+}
+
+input OwnerAssetsConnectionFilters {
+  """
+  Return Owners where all of the related OwnerAssetsConnections match this filter
+  """
+  all: OwnerAssetsConnectionWhere
+
+  """
+  Return Owners where none of the related OwnerAssetsConnections match this filter
+  """
+  none: OwnerAssetsConnectionWhere
+
+  """
+  Return Owners where one of the related OwnerAssetsConnections match this filter
+  """
+  single: OwnerAssetsConnectionWhere
+
+  """
+  Return Owners where some of the related OwnerAssetsConnections match this filter
+  """
+  some: OwnerAssetsConnectionWhere
+
+  """Filter Owners by aggregating results on related OwnerAssetsConnections"""
+  aggregate: OwnerAssetsConnectionAggregateInput
+}
+
+input OwnerAssetsConnectionSort {
+  node: AssetSort
+}
+
+input OwnerAssetsConnectionWhere {
+  AND: [OwnerAssetsConnectionWhere!]
+  OR: [OwnerAssetsConnectionWhere!]
+  NOT: OwnerAssetsConnectionWhere
+  node: AssetWhere
+}
+
+input OwnerAssetsCreateFieldInput {
+  node: AssetCreateInput!
+}
+
+input OwnerAssetsDeleteFieldInput {
+  where: OwnerAssetsConnectionWhere
+  delete: AssetDeleteInput
+}
+
+input OwnerAssetsDisconnectFieldInput {
+  where: OwnerAssetsConnectionWhere
+  disconnect: AssetDisconnectInput
+}
+
+input OwnerAssetsFieldInput {
+  connect: [OwnerAssetsConnectFieldInput!]
+  create: [OwnerAssetsCreateFieldInput!]
+}
+
+input OwnerAssetsNodeAggregationWhereInput {
+  AND: [OwnerAssetsNodeAggregationWhereInput!]
+  OR: [OwnerAssetsNodeAggregationWhereInput!]
+  NOT: OwnerAssetsNodeAggregationWhereInput
+  name_AVERAGE_LENGTH_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { eq: ... } } }' instead.")
+  name_LONGEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { eq: ... } } }' instead.")
+  name_SHORTEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { eq: ... } } }' instead.")
+  name_AVERAGE_LENGTH_GT: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { gt: ... } } }' instead.")
+  name_LONGEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { gt: ... } } }' instead.")
+  name_SHORTEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { gt: ... } } }' instead.")
+  name_AVERAGE_LENGTH_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { gte: ... } } }' instead.")
+  name_LONGEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { gte: ... } } }' instead.")
+  name_SHORTEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { gte: ... } } }' instead.")
+  name_AVERAGE_LENGTH_LT: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { lt: ... } } }' instead.")
+  name_LONGEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { lt: ... } } }' instead.")
+  name_SHORTEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { lt: ... } } }' instead.")
+  name_AVERAGE_LENGTH_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { lte: ... } } }' instead.")
+  name_LONGEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { lte: ... } } }' instead.")
+  name_SHORTEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { lte: ... } } }' instead.")
+  name: StringScalarAggregationFilters
+  size_MIN_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'size: { min: { eq: ... } } }' instead.")
+  size_MAX_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'size: { max: { eq: ... } } }' instead.")
+  size_SUM_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'size: { sum: { eq: ... } } }' instead.")
+  size_AVERAGE_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'size: { average: { eq: ... } } }' instead.")
+  size_MIN_GT: Int @deprecated(reason: "Please use the relevant generic filter 'size: { min: { gt: ... } } }' instead.")
+  size_MAX_GT: Int @deprecated(reason: "Please use the relevant generic filter 'size: { max: { gt: ... } } }' instead.")
+  size_SUM_GT: Int @deprecated(reason: "Please use the relevant generic filter 'size: { sum: { gt: ... } } }' instead.")
+  size_AVERAGE_GT: Float @deprecated(reason: "Please use the relevant generic filter 'size: { average: { gt: ... } } }' instead.")
+  size_MIN_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'size: { min: { gte: ... } } }' instead.")
+  size_MAX_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'size: { max: { gte: ... } } }' instead.")
+  size_SUM_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'size: { sum: { gte: ... } } }' instead.")
+  size_AVERAGE_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'size: { average: { gte: ... } } }' instead.")
+  size_MIN_LT: Int @deprecated(reason: "Please use the relevant generic filter 'size: { min: { lt: ... } } }' instead.")
+  size_MAX_LT: Int @deprecated(reason: "Please use the relevant generic filter 'size: { max: { lt: ... } } }' instead.")
+  size_SUM_LT: Int @deprecated(reason: "Please use the relevant generic filter 'size: { sum: { lt: ... } } }' instead.")
+  size_AVERAGE_LT: Float @deprecated(reason: "Please use the relevant generic filter 'size: { average: { lt: ... } } }' instead.")
+  size_MIN_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'size: { min: { lte: ... } } }' instead.")
+  size_MAX_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'size: { max: { lte: ... } } }' instead.")
+  size_SUM_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'size: { sum: { lte: ... } } }' instead.")
+  size_AVERAGE_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'size: { average: { lte: ... } } }' instead.")
+  size: IntScalarAggregationFilters
+  secret_AVERAGE_LENGTH_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'secret: { averageLength: { eq: ... } } }' instead.")
+  secret_LONGEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'secret: { longestLength: { eq: ... } } }' instead.")
+  secret_SHORTEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'secret: { shortestLength: { eq: ... } } }' instead.")
+  secret_AVERAGE_LENGTH_GT: Float @deprecated(reason: "Please use the relevant generic filter 'secret: { averageLength: { gt: ... } } }' instead.")
+  secret_LONGEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'secret: { longestLength: { gt: ... } } }' instead.")
+  secret_SHORTEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'secret: { shortestLength: { gt: ... } } }' instead.")
+  secret_AVERAGE_LENGTH_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'secret: { averageLength: { gte: ... } } }' instead.")
+  secret_LONGEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'secret: { longestLength: { gte: ... } } }' instead.")
+  secret_SHORTEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'secret: { shortestLength: { gte: ... } } }' instead.")
+  secret_AVERAGE_LENGTH_LT: Float @deprecated(reason: "Please use the relevant generic filter 'secret: { averageLength: { lt: ... } } }' instead.")
+  secret_LONGEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'secret: { longestLength: { lt: ... } } }' instead.")
+  secret_SHORTEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'secret: { shortestLength: { lt: ... } } }' instead.")
+  secret_AVERAGE_LENGTH_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'secret: { averageLength: { lte: ... } } }' instead.")
+  secret_LONGEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'secret: { longestLength: { lte: ... } } }' instead.")
+  secret_SHORTEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'secret: { shortestLength: { lte: ... } } }' instead.")
+  secret: StringScalarAggregationFilters
+}
+
+input OwnerAssetsUpdateConnectionInput {
+  node: AssetUpdateInput
+  where: OwnerAssetsConnectionWhere
+}
+
+input OwnerAssetsUpdateFieldInput {
+  connect: [OwnerAssetsConnectFieldInput!]
+  disconnect: [OwnerAssetsDisconnectFieldInput!]
+  create: [OwnerAssetsCreateFieldInput!]
+  update: OwnerAssetsUpdateConnectionInput
+  delete: [OwnerAssetsDeleteFieldInput!]
+}
+
+input OwnerConnectInput {
+  images: [OwnerImagesConnectFieldInput!]
+  assets: [OwnerAssetsConnectFieldInput!]
+}
+
+input OwnerConnectWhere {
+  node: OwnerWhere!
+}
+
+input OwnerCreateInput {
+  id: ID!
+  name: String!
+  images: OwnerImagesFieldInput
+  assets: OwnerAssetsFieldInput
+}
+
+input OwnerDeleteInput {
+  images: [OwnerImagesDeleteFieldInput!]
+  assets: [OwnerAssetsDeleteFieldInput!]
+}
+
+input OwnerDisconnectInput {
+  images: [OwnerImagesDisconnectFieldInput!]
+  assets: [OwnerAssetsDisconnectFieldInput!]
+}
+
+input OwnerImagesAggregateInput {
+  count_EQ: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { eq: ... } } }' instead.")
+  count_LT: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { lt: ... } } }' instead.")
+  count_LTE: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { lte: ... } } }' instead.")
+  count_GT: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { gt: ... } } }' instead.")
+  count_GTE: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { gte: ... } } }' instead.")
+  count: IntScalarFilters
+  AND: [OwnerImagesAggregateInput!]
+  OR: [OwnerImagesAggregateInput!]
+  NOT: OwnerImagesAggregateInput
+  node: OwnerImagesNodeAggregationWhereInput
+  edge: OwnershipAggregationWhereInput
+}
+
+input OwnerImagesConnectFieldInput {
+  edge: OwnershipCreateInput
+  where: ImageConnectWhere
+  connect: [ImageConnectInput!]
+}
+
+input OwnerImagesConnectionAggregateInput {
+  count: ConnectionAggregationCountFilterInput
+  AND: [OwnerImagesConnectionAggregateInput!]
+  OR: [OwnerImagesConnectionAggregateInput!]
+  NOT: OwnerImagesConnectionAggregateInput
+  node: OwnerImagesNodeAggregationWhereInput
+  edge: OwnershipAggregationWhereInput
+}
+
+input OwnerImagesConnectionFilters {
+  """
+  Return Owners where all of the related OwnerImagesConnections match this filter
+  """
+  all: OwnerImagesConnectionWhere
+
+  """
+  Return Owners where none of the related OwnerImagesConnections match this filter
+  """
+  none: OwnerImagesConnectionWhere
+
+  """
+  Return Owners where one of the related OwnerImagesConnections match this filter
+  """
+  single: OwnerImagesConnectionWhere
+
+  """
+  Return Owners where some of the related OwnerImagesConnections match this filter
+  """
+  some: OwnerImagesConnectionWhere
+
+  """Filter Owners by aggregating results on related OwnerImagesConnections"""
+  aggregate: OwnerImagesConnectionAggregateInput
+}
+
+input OwnerImagesConnectionSort {
+  node: ImageSort
+  edge: OwnershipSort
+}
+
+input OwnerImagesConnectionWhere {
+  AND: [OwnerImagesConnectionWhere!]
+  OR: [OwnerImagesConnectionWhere!]
+  NOT: OwnerImagesConnectionWhere
+  node: ImageWhere
+  edge: OwnershipWhere
+}
+
+input OwnerImagesCreateFieldInput {
+  edge: OwnershipCreateInput
+  node: ImageCreateInput!
+}
+
+input OwnerImagesDeleteFieldInput {
+  where: OwnerImagesConnectionWhere
+  delete: ImageDeleteInput
+}
+
+input OwnerImagesDisconnectFieldInput {
+  where: OwnerImagesConnectionWhere
+  disconnect: ImageDisconnectInput
+}
+
+input OwnerImagesFieldInput {
+  connect: [OwnerImagesConnectFieldInput!]
+  create: [OwnerImagesCreateFieldInput!]
+}
+
+input OwnerImagesNodeAggregationWhereInput {
+  AND: [OwnerImagesNodeAggregationWhereInput!]
+  OR: [OwnerImagesNodeAggregationWhereInput!]
+  NOT: OwnerImagesNodeAggregationWhereInput
+  name_AVERAGE_LENGTH_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { eq: ... } } }' instead.")
+  name_LONGEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { eq: ... } } }' instead.")
+  name_SHORTEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { eq: ... } } }' instead.")
+  name_AVERAGE_LENGTH_GT: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { gt: ... } } }' instead.")
+  name_LONGEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { gt: ... } } }' instead.")
+  name_SHORTEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { gt: ... } } }' instead.")
+  name_AVERAGE_LENGTH_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { gte: ... } } }' instead.")
+  name_LONGEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { gte: ... } } }' instead.")
+  name_SHORTEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { gte: ... } } }' instead.")
+  name_AVERAGE_LENGTH_LT: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { lt: ... } } }' instead.")
+  name_LONGEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { lt: ... } } }' instead.")
+  name_SHORTEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { lt: ... } } }' instead.")
+  name_AVERAGE_LENGTH_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { lte: ... } } }' instead.")
+  name_LONGEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { lte: ... } } }' instead.")
+  name_SHORTEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { lte: ... } } }' instead.")
+  name: StringScalarAggregationFilters
+  size_MIN_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'size: { min: { eq: ... } } }' instead.")
+  size_MAX_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'size: { max: { eq: ... } } }' instead.")
+  size_SUM_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'size: { sum: { eq: ... } } }' instead.")
+  size_AVERAGE_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'size: { average: { eq: ... } } }' instead.")
+  size_MIN_GT: Int @deprecated(reason: "Please use the relevant generic filter 'size: { min: { gt: ... } } }' instead.")
+  size_MAX_GT: Int @deprecated(reason: "Please use the relevant generic filter 'size: { max: { gt: ... } } }' instead.")
+  size_SUM_GT: Int @deprecated(reason: "Please use the relevant generic filter 'size: { sum: { gt: ... } } }' instead.")
+  size_AVERAGE_GT: Float @deprecated(reason: "Please use the relevant generic filter 'size: { average: { gt: ... } } }' instead.")
+  size_MIN_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'size: { min: { gte: ... } } }' instead.")
+  size_MAX_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'size: { max: { gte: ... } } }' instead.")
+  size_SUM_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'size: { sum: { gte: ... } } }' instead.")
+  size_AVERAGE_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'size: { average: { gte: ... } } }' instead.")
+  size_MIN_LT: Int @deprecated(reason: "Please use the relevant generic filter 'size: { min: { lt: ... } } }' instead.")
+  size_MAX_LT: Int @deprecated(reason: "Please use the relevant generic filter 'size: { max: { lt: ... } } }' instead.")
+  size_SUM_LT: Int @deprecated(reason: "Please use the relevant generic filter 'size: { sum: { lt: ... } } }' instead.")
+  size_AVERAGE_LT: Float @deprecated(reason: "Please use the relevant generic filter 'size: { average: { lt: ... } } }' instead.")
+  size_MIN_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'size: { min: { lte: ... } } }' instead.")
+  size_MAX_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'size: { max: { lte: ... } } }' instead.")
+  size_SUM_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'size: { sum: { lte: ... } } }' instead.")
+  size_AVERAGE_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'size: { average: { lte: ... } } }' instead.")
+  size: IntScalarAggregationFilters
+  secret_AVERAGE_LENGTH_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'secret: { averageLength: { eq: ... } } }' instead.")
+  secret_LONGEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'secret: { longestLength: { eq: ... } } }' instead.")
+  secret_SHORTEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'secret: { shortestLength: { eq: ... } } }' instead.")
+  secret_AVERAGE_LENGTH_GT: Float @deprecated(reason: "Please use the relevant generic filter 'secret: { averageLength: { gt: ... } } }' instead.")
+  secret_LONGEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'secret: { longestLength: { gt: ... } } }' instead.")
+  secret_SHORTEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'secret: { shortestLength: { gt: ... } } }' instead.")
+  secret_AVERAGE_LENGTH_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'secret: { averageLength: { gte: ... } } }' instead.")
+  secret_LONGEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'secret: { longestLength: { gte: ... } } }' instead.")
+  secret_SHORTEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'secret: { shortestLength: { gte: ... } } }' instead.")
+  secret_AVERAGE_LENGTH_LT: Float @deprecated(reason: "Please use the relevant generic filter 'secret: { averageLength: { lt: ... } } }' instead.")
+  secret_LONGEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'secret: { longestLength: { lt: ... } } }' instead.")
+  secret_SHORTEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'secret: { shortestLength: { lt: ... } } }' instead.")
+  secret_AVERAGE_LENGTH_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'secret: { averageLength: { lte: ... } } }' instead.")
+  secret_LONGEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'secret: { longestLength: { lte: ... } } }' instead.")
+  secret_SHORTEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'secret: { shortestLength: { lte: ... } } }' instead.")
+  secret: StringScalarAggregationFilters
+  label_AVERAGE_LENGTH_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'label: { averageLength: { eq: ... } } }' instead.")
+  label_LONGEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'label: { longestLength: { eq: ... } } }' instead.")
+  label_SHORTEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'label: { shortestLength: { eq: ... } } }' instead.")
+  label_AVERAGE_LENGTH_GT: Float @deprecated(reason: "Please use the relevant generic filter 'label: { averageLength: { gt: ... } } }' instead.")
+  label_LONGEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'label: { longestLength: { gt: ... } } }' instead.")
+  label_SHORTEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'label: { shortestLength: { gt: ... } } }' instead.")
+  label_AVERAGE_LENGTH_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'label: { averageLength: { gte: ... } } }' instead.")
+  label_LONGEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'label: { longestLength: { gte: ... } } }' instead.")
+  label_SHORTEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'label: { shortestLength: { gte: ... } } }' instead.")
+  label_AVERAGE_LENGTH_LT: Float @deprecated(reason: "Please use the relevant generic filter 'label: { averageLength: { lt: ... } } }' instead.")
+  label_LONGEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'label: { longestLength: { lt: ... } } }' instead.")
+  label_SHORTEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'label: { shortestLength: { lt: ... } } }' instead.")
+  label_AVERAGE_LENGTH_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'label: { averageLength: { lte: ... } } }' instead.")
+  label_LONGEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'label: { longestLength: { lte: ... } } }' instead.")
+  label_SHORTEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'label: { shortestLength: { lte: ... } } }' instead.")
+  label: StringScalarAggregationFilters
+  tag_AVERAGE_LENGTH_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'tag: { averageLength: { eq: ... } } }' instead.")
+  tag_LONGEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'tag: { longestLength: { eq: ... } } }' instead.")
+  tag_SHORTEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'tag: { shortestLength: { eq: ... } } }' instead.")
+  tag_AVERAGE_LENGTH_GT: Float @deprecated(reason: "Please use the relevant generic filter 'tag: { averageLength: { gt: ... } } }' instead.")
+  tag_LONGEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'tag: { longestLength: { gt: ... } } }' instead.")
+  tag_SHORTEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'tag: { shortestLength: { gt: ... } } }' instead.")
+  tag_AVERAGE_LENGTH_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'tag: { averageLength: { gte: ... } } }' instead.")
+  tag_LONGEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'tag: { longestLength: { gte: ... } } }' instead.")
+  tag_SHORTEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'tag: { shortestLength: { gte: ... } } }' instead.")
+  tag_AVERAGE_LENGTH_LT: Float @deprecated(reason: "Please use the relevant generic filter 'tag: { averageLength: { lt: ... } } }' instead.")
+  tag_LONGEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'tag: { longestLength: { lt: ... } } }' instead.")
+  tag_SHORTEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'tag: { shortestLength: { lt: ... } } }' instead.")
+  tag_AVERAGE_LENGTH_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'tag: { averageLength: { lte: ... } } }' instead.")
+  tag_LONGEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'tag: { longestLength: { lte: ... } } }' instead.")
+  tag_SHORTEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'tag: { shortestLength: { lte: ... } } }' instead.")
+  tag: StringScalarAggregationFilters
+  width_MIN_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'width: { min: { eq: ... } } }' instead.")
+  width_MAX_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'width: { max: { eq: ... } } }' instead.")
+  width_SUM_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'width: { sum: { eq: ... } } }' instead.")
+  width_AVERAGE_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'width: { average: { eq: ... } } }' instead.")
+  width_MIN_GT: Int @deprecated(reason: "Please use the relevant generic filter 'width: { min: { gt: ... } } }' instead.")
+  width_MAX_GT: Int @deprecated(reason: "Please use the relevant generic filter 'width: { max: { gt: ... } } }' instead.")
+  width_SUM_GT: Int @deprecated(reason: "Please use the relevant generic filter 'width: { sum: { gt: ... } } }' instead.")
+  width_AVERAGE_GT: Float @deprecated(reason: "Please use the relevant generic filter 'width: { average: { gt: ... } } }' instead.")
+  width_MIN_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'width: { min: { gte: ... } } }' instead.")
+  width_MAX_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'width: { max: { gte: ... } } }' instead.")
+  width_SUM_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'width: { sum: { gte: ... } } }' instead.")
+  width_AVERAGE_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'width: { average: { gte: ... } } }' instead.")
+  width_MIN_LT: Int @deprecated(reason: "Please use the relevant generic filter 'width: { min: { lt: ... } } }' instead.")
+  width_MAX_LT: Int @deprecated(reason: "Please use the relevant generic filter 'width: { max: { lt: ... } } }' instead.")
+  width_SUM_LT: Int @deprecated(reason: "Please use the relevant generic filter 'width: { sum: { lt: ... } } }' instead.")
+  width_AVERAGE_LT: Float @deprecated(reason: "Please use the relevant generic filter 'width: { average: { lt: ... } } }' instead.")
+  width_MIN_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'width: { min: { lte: ... } } }' instead.")
+  width_MAX_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'width: { max: { lte: ... } } }' instead.")
+  width_SUM_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'width: { sum: { lte: ... } } }' instead.")
+  width_AVERAGE_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'width: { average: { lte: ... } } }' instead.")
+  width: IntScalarAggregationFilters
+}
+
+input OwnerImagesUpdateConnectionInput {
+  node: ImageUpdateInput
+  where: OwnerImagesConnectionWhere
+  edge: OwnershipUpdateInput
+}
+
+input OwnerImagesUpdateFieldInput {
+  connect: [OwnerImagesConnectFieldInput!]
+  disconnect: [OwnerImagesDisconnectFieldInput!]
+  create: [OwnerImagesCreateFieldInput!]
+  update: OwnerImagesUpdateConnectionInput
+  delete: [OwnerImagesDeleteFieldInput!]
+}
+
+input OwnerRelationshipFilters {
+  """Filter type where all of the related Owners match this filter"""
+  all: OwnerWhere
+
+  """Filter type where none of the related Owners match this filter"""
+  none: OwnerWhere
+
+  """Filter type where one of the related Owners match this filter"""
+  single: OwnerWhere
+
+  """Filter type where some of the related Owners match this filter"""
+  some: OwnerWhere
+}
+
+input OwnershipAggregationWhereInput {
+  AND: [OwnershipAggregationWhereInput!]
+  OR: [OwnershipAggregationWhereInput!]
+  NOT: OwnershipAggregationWhereInput
+  since_MIN_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'since: { min: { eq: ... } } }' instead.")
+  since_MAX_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'since: { max: { eq: ... } } }' instead.")
+  since_SUM_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'since: { sum: { eq: ... } } }' instead.")
+  since_AVERAGE_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'since: { average: { eq: ... } } }' instead.")
+  since_MIN_GT: Int @deprecated(reason: "Please use the relevant generic filter 'since: { min: { gt: ... } } }' instead.")
+  since_MAX_GT: Int @deprecated(reason: "Please use the relevant generic filter 'since: { max: { gt: ... } } }' instead.")
+  since_SUM_GT: Int @deprecated(reason: "Please use the relevant generic filter 'since: { sum: { gt: ... } } }' instead.")
+  since_AVERAGE_GT: Float @deprecated(reason: "Please use the relevant generic filter 'since: { average: { gt: ... } } }' instead.")
+  since_MIN_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'since: { min: { gte: ... } } }' instead.")
+  since_MAX_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'since: { max: { gte: ... } } }' instead.")
+  since_SUM_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'since: { sum: { gte: ... } } }' instead.")
+  since_AVERAGE_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'since: { average: { gte: ... } } }' instead.")
+  since_MIN_LT: Int @deprecated(reason: "Please use the relevant generic filter 'since: { min: { lt: ... } } }' instead.")
+  since_MAX_LT: Int @deprecated(reason: "Please use the relevant generic filter 'since: { max: { lt: ... } } }' instead.")
+  since_SUM_LT: Int @deprecated(reason: "Please use the relevant generic filter 'since: { sum: { lt: ... } } }' instead.")
+  since_AVERAGE_LT: Float @deprecated(reason: "Please use the relevant generic filter 'since: { average: { lt: ... } } }' instead.")
+  since_MIN_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'since: { min: { lte: ... } } }' instead.")
+  since_MAX_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'since: { max: { lte: ... } } }' instead.")
+  since_SUM_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'since: { sum: { lte: ... } } }' instead.")
+  since_AVERAGE_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'since: { average: { lte: ... } } }' instead.")
+  since: IntScalarAggregationFilters
+}
+
+input OwnershipCreateInput {
+  since: Int
+}
+
+input OwnershipSort {
+  since: SortDirection
+}
+
+input OwnershipUpdateInput {
+  since: IntScalarMutations
+  since_SET: Int @deprecated(reason: "Please use the generic mutation 'since: { set: ... } }' instead.")
+  since_INCREMENT: Int @deprecated(reason: "Please use the relevant generic mutation 'since: { increment: ... } }' instead.")
+  since_DECREMENT: Int @deprecated(reason: "Please use the relevant generic mutation 'since: { decrement: ... } }' instead.")
+}
+
+input OwnershipWhere {
+  since: IntScalarFilters
+  since_EQ: Int @deprecated(reason: "Please use the relevant generic filter since: { eq: ... }")
+  since_IN: [Int] @deprecated(reason: "Please use the relevant generic filter since: { in: ... }")
+  since_LT: Int @deprecated(reason: "Please use the relevant generic filter since: { lt: ... }")
+  since_LTE: Int @deprecated(reason: "Please use the relevant generic filter since: { lte: ... }")
+  since_GT: Int @deprecated(reason: "Please use the relevant generic filter since: { gt: ... }")
+  since_GTE: Int @deprecated(reason: "Please use the relevant generic filter since: { gte: ... }")
+  OR: [OwnershipWhere!]
+  AND: [OwnershipWhere!]
+  NOT: OwnershipWhere
+}
+
+"""
+Fields to sort Owners by. The order in which sorts are applied is not guaranteed when specifying many fields in one OwnerSort object.
+"""
+input OwnerSort {
+  id: SortDirection
+  name: SortDirection
+}
+
+input OwnerUpdateInput {
+  id: IDScalarMutations
+  id_SET: ID @deprecated(reason: "Please use the generic mutation 'id: { set: ... } }' instead.")
+  name: StringScalarMutations
+  name_SET: String @deprecated(reason: "Please use the generic mutation 'name: { set: ... } }' instead.")
+  images: [OwnerImagesUpdateFieldInput!]
+  assets: [OwnerAssetsUpdateFieldInput!]
+}
+
+input OwnerWhere {
+  id: IDScalarFilters
+  id_EQ: ID @deprecated(reason: "Please use the relevant generic filter id: { eq: ... }")
+  id_IN: [ID!] @deprecated(reason: "Please use the relevant generic filter id: { in: ... }")
+  id_CONTAINS: ID @deprecated(reason: "Please use the relevant generic filter id: { contains: ... }")
+  id_STARTS_WITH: ID @deprecated(reason: "Please use the relevant generic filter id: { startsWith: ... }")
+  id_ENDS_WITH: ID @deprecated(reason: "Please use the relevant generic filter id: { endsWith: ... }")
+  name: StringScalarFilters
+  name_EQ: String @deprecated(reason: "Please use the relevant generic filter name: { eq: ... }")
+  name_IN: [String!] @deprecated(reason: "Please use the relevant generic filter name: { in: ... }")
+  name_CONTAINS: String @deprecated(reason: "Please use the relevant generic filter name: { contains: ... }")
+  name_STARTS_WITH: String @deprecated(reason: "Please use the relevant generic filter name: { startsWith: ... }")
+  name_ENDS_WITH: String @deprecated(reason: "Please use the relevant generic filter name: { endsWith: ... }")
+  OR: [OwnerWhere!]
+  AND: [OwnerWhere!]
+  NOT: OwnerWhere
+  images: ImageRelationshipFilters
+
+  """Return Owners where all of the related Images match this filter"""
+  images_ALL: ImageWhere @deprecated(reason: "Please use the relevant generic filter 'images: { all: ... }' instead.")
+
+  """Return Owners where none of the related Images match this filter"""
+  images_NONE: ImageWhere @deprecated(reason: "Please use the relevant generic filter 'images: { none: ... }' instead.")
+
+  """Return Owners where one of the related Images match this filter"""
+  images_SINGLE: ImageWhere @deprecated(reason: "Please use the relevant generic filter 'images: {  single: ... }' instead.")
+
+  """Return Owners where some of the related Images match this filter"""
+  images_SOME: ImageWhere @deprecated(reason: "Please use the relevant generic filter 'images: {  some: ... }' instead.")
+
+  """
+  Return Owners where all of the related OwnerImagesConnections match this filter
+  """
+  imagesConnection_ALL: OwnerImagesConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'imagesConnection: { all: { node: ... } } }' instead.")
+
+  """
+  Return Owners where none of the related OwnerImagesConnections match this filter
+  """
+  imagesConnection_NONE: OwnerImagesConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'imagesConnection: { none: { node: ... } } }' instead.")
+
+  """
+  Return Owners where one of the related OwnerImagesConnections match this filter
+  """
+  imagesConnection_SINGLE: OwnerImagesConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'imagesConnection: { single: { node: ... } } }' instead.")
+
+  """
+  Return Owners where some of the related OwnerImagesConnections match this filter
+  """
+  imagesConnection_SOME: OwnerImagesConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'imagesConnection: { some: { node: ... } } }' instead.")
+  imagesConnection: OwnerImagesConnectionFilters
+  imagesAggregate: OwnerImagesAggregateInput @deprecated(reason: "Aggregate filters are moved inside the imagesConnection filter, please use { imagesConnection: { aggregate: {...} } } instead")
+  assets: AssetRelationshipFilters
+
+  """Return Owners where all of the related Assets match this filter"""
+  assets_ALL: AssetWhere @deprecated(reason: "Please use the relevant generic filter 'assets: { all: ... }' instead.")
+
+  """Return Owners where none of the related Assets match this filter"""
+  assets_NONE: AssetWhere @deprecated(reason: "Please use the relevant generic filter 'assets: { none: ... }' instead.")
+
+  """Return Owners where one of the related Assets match this filter"""
+  assets_SINGLE: AssetWhere @deprecated(reason: "Please use the relevant generic filter 'assets: {  single: ... }' instead.")
+
+  """Return Owners where some of the related Assets match this filter"""
+  assets_SOME: AssetWhere @deprecated(reason: "Please use the relevant generic filter 'assets: {  some: ... }' instead.")
+
+  """
+  Return Owners where all of the related OwnerAssetsConnections match this filter
+  """
+  assetsConnection_ALL: OwnerAssetsConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'assetsConnection: { all: { node: ... } } }' instead.")
+
+  """
+  Return Owners where none of the related OwnerAssetsConnections match this filter
+  """
+  assetsConnection_NONE: OwnerAssetsConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'assetsConnection: { none: { node: ... } } }' instead.")
+
+  """
+  Return Owners where one of the related OwnerAssetsConnections match this filter
+  """
+  assetsConnection_SINGLE: OwnerAssetsConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'assetsConnection: { single: { node: ... } } }' instead.")
+
+  """
+  Return Owners where some of the related OwnerAssetsConnections match this filter
+  """
+  assetsConnection_SOME: OwnerAssetsConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'assetsConnection: { some: { node: ... } } }' instead.")
+  assetsConnection: OwnerAssetsConnectionFilters
+  assetsAggregate: OwnerAssetsAggregateInput @deprecated(reason: "Aggregate filters are moved inside the assetsConnection filter, please use { assetsConnection: { aggregate: {...} } } instead")
+}
+
+input SoundCreateInput {
+  id: ID!
+  name: String!
+  size: Int
+  secret: String
+  label: String
+  tag: String
+  seconds: Int
+  owners: SoundOwnersFieldInput
+  folder: SoundFolderFieldInput
+  related: SoundRelatedFieldInput
+}
+
+input SoundDeleteInput {
+  owners: [AssetOwnersDeleteFieldInput!]
+  folder: AssetFolderDeleteFieldInput
+  related: [SoundRelatedDeleteFieldInput!]
+}
+
+input SoundFolderCreateFieldInput {
+  node: FolderCreateInput!
+}
+
+input SoundFolderFieldInput {
+  create: SoundFolderCreateFieldInput
+}
+
+input SoundOwnersAggregateInput {
+  count_EQ: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { eq: ... } } }' instead.")
+  count_LT: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { lt: ... } } }' instead.")
+  count_LTE: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { lte: ... } } }' instead.")
+  count_GT: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { gt: ... } } }' instead.")
+  count_GTE: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { gte: ... } } }' instead.")
+  count: IntScalarFilters
+  AND: [SoundOwnersAggregateInput!]
+  OR: [SoundOwnersAggregateInput!]
+  NOT: SoundOwnersAggregateInput
+  node: SoundOwnersNodeAggregationWhereInput
+}
+
+input SoundOwnersConnectFieldInput {
+  where: OwnerConnectWhere
+  connect: [OwnerConnectInput!]
+}
+
+input SoundOwnersConnectionAggregateInput {
+  count: ConnectionAggregationCountFilterInput
+  AND: [SoundOwnersConnectionAggregateInput!]
+  OR: [SoundOwnersConnectionAggregateInput!]
+  NOT: SoundOwnersConnectionAggregateInput
+  node: SoundOwnersNodeAggregationWhereInput
+}
+
+input SoundOwnersConnectionFilters {
+  """
+  Return Sounds where all of the related AssetOwnersConnections match this filter
+  """
+  all: AssetOwnersConnectionWhere
+
+  """
+  Return Sounds where none of the related AssetOwnersConnections match this filter
+  """
+  none: AssetOwnersConnectionWhere
+
+  """
+  Return Sounds where one of the related AssetOwnersConnections match this filter
+  """
+  single: AssetOwnersConnectionWhere
+
+  """
+  Return Sounds where some of the related AssetOwnersConnections match this filter
+  """
+  some: AssetOwnersConnectionWhere
+
+  """Filter Sounds by aggregating results on related AssetOwnersConnections"""
+  aggregate: SoundOwnersConnectionAggregateInput
+}
+
+input SoundOwnersCreateFieldInput {
+  node: OwnerCreateInput!
+}
+
+input SoundOwnersFieldInput {
+  connect: [SoundOwnersConnectFieldInput!]
+  create: [SoundOwnersCreateFieldInput!]
+}
+
+input SoundOwnersNodeAggregationWhereInput {
+  AND: [SoundOwnersNodeAggregationWhereInput!]
+  OR: [SoundOwnersNodeAggregationWhereInput!]
+  NOT: SoundOwnersNodeAggregationWhereInput
+  name_AVERAGE_LENGTH_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { eq: ... } } }' instead.")
+  name_LONGEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { eq: ... } } }' instead.")
+  name_SHORTEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { eq: ... } } }' instead.")
+  name_AVERAGE_LENGTH_GT: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { gt: ... } } }' instead.")
+  name_LONGEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { gt: ... } } }' instead.")
+  name_SHORTEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { gt: ... } } }' instead.")
+  name_AVERAGE_LENGTH_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { gte: ... } } }' instead.")
+  name_LONGEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { gte: ... } } }' instead.")
+  name_SHORTEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { gte: ... } } }' instead.")
+  name_AVERAGE_LENGTH_LT: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { lt: ... } } }' instead.")
+  name_LONGEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { lt: ... } } }' instead.")
+  name_SHORTEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { lt: ... } } }' instead.")
+  name_AVERAGE_LENGTH_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { lte: ... } } }' instead.")
+  name_LONGEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { lte: ... } } }' instead.")
+  name_SHORTEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { lte: ... } } }' instead.")
+  name: StringScalarAggregationFilters
+}
+
+input SoundOwnersUpdateConnectionInput {
+  node: OwnerUpdateInput
+  where: AssetOwnersConnectionWhere
+}
+
+input SoundOwnersUpdateFieldInput {
+  connect: [SoundOwnersConnectFieldInput!]
+  disconnect: [AssetOwnersDisconnectFieldInput!]
+  create: [SoundOwnersCreateFieldInput!]
+  update: SoundOwnersUpdateConnectionInput
+  delete: [AssetOwnersDeleteFieldInput!]
+}
+
+input SoundRelatedAggregateInput {
+  count_EQ: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { eq: ... } } }' instead.")
+  count_LT: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { lt: ... } } }' instead.")
+  count_LTE: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { lte: ... } } }' instead.")
+  count_GT: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { gt: ... } } }' instead.")
+  count_GTE: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { gte: ... } } }' instead.")
+  count: IntScalarFilters
+  AND: [SoundRelatedAggregateInput!]
+  OR: [SoundRelatedAggregateInput!]
+  NOT: SoundRelatedAggregateInput
+  node: SoundRelatedNodeAggregationWhereInput
+}
+
+input SoundRelatedConnectFieldInput {
+  where: AssetConnectWhere
+  connect: AssetConnectInput
+}
+
+input SoundRelatedConnectionAggregateInput {
+  count: ConnectionAggregationCountFilterInput
+  AND: [SoundRelatedConnectionAggregateInput!]
+  OR: [SoundRelatedConnectionAggregateInput!]
+  NOT: SoundRelatedConnectionAggregateInput
+  node: SoundRelatedNodeAggregationWhereInput
+}
+
+input SoundRelatedConnectionFilters {
+  """
+  Return Sounds where all of the related AssetRelatedConnections match this filter
+  """
+  all: AssetRelatedConnectionWhere
+
+  """
+  Return Sounds where none of the related AssetRelatedConnections match this filter
+  """
+  none: AssetRelatedConnectionWhere
+
+  """
+  Return Sounds where one of the related AssetRelatedConnections match this filter
+  """
+  single: AssetRelatedConnectionWhere
+
+  """
+  Return Sounds where some of the related AssetRelatedConnections match this filter
+  """
+  some: AssetRelatedConnectionWhere
+
+  """
+  Filter Sounds by aggregating results on related AssetRelatedConnections
+  """
+  aggregate: SoundRelatedConnectionAggregateInput
+}
+
+input SoundRelatedCreateFieldInput {
+  node: AssetCreateInput!
+}
+
+input SoundRelatedDeleteFieldInput {
+  where: AssetRelatedConnectionWhere
+  delete: AssetDeleteInput
+}
+
+input SoundRelatedDisconnectFieldInput {
+  where: AssetRelatedConnectionWhere
+  disconnect: AssetDisconnectInput
+}
+
+input SoundRelatedFieldInput {
+  connect: [SoundRelatedConnectFieldInput!]
+  create: [SoundRelatedCreateFieldInput!]
+}
+
+input SoundRelatedNodeAggregationWhereInput {
+  AND: [SoundRelatedNodeAggregationWhereInput!]
+  OR: [SoundRelatedNodeAggregationWhereInput!]
+  NOT: SoundRelatedNodeAggregationWhereInput
+  name_AVERAGE_LENGTH_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { eq: ... } } }' instead.")
+  name_LONGEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { eq: ... } } }' instead.")
+  name_SHORTEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { eq: ... } } }' instead.")
+  name_AVERAGE_LENGTH_GT: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { gt: ... } } }' instead.")
+  name_LONGEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { gt: ... } } }' instead.")
+  name_SHORTEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { gt: ... } } }' instead.")
+  name_AVERAGE_LENGTH_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { gte: ... } } }' instead.")
+  name_LONGEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { gte: ... } } }' instead.")
+  name_SHORTEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { gte: ... } } }' instead.")
+  name_AVERAGE_LENGTH_LT: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { lt: ... } } }' instead.")
+  name_LONGEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { lt: ... } } }' instead.")
+  name_SHORTEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { lt: ... } } }' instead.")
+  name_AVERAGE_LENGTH_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { lte: ... } } }' instead.")
+  name_LONGEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { lte: ... } } }' instead.")
+  name_SHORTEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { lte: ... } } }' instead.")
+  name: StringScalarAggregationFilters
+  size_MIN_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'size: { min: { eq: ... } } }' instead.")
+  size_MAX_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'size: { max: { eq: ... } } }' instead.")
+  size_SUM_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'size: { sum: { eq: ... } } }' instead.")
+  size_AVERAGE_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'size: { average: { eq: ... } } }' instead.")
+  size_MIN_GT: Int @deprecated(reason: "Please use the relevant generic filter 'size: { min: { gt: ... } } }' instead.")
+  size_MAX_GT: Int @deprecated(reason: "Please use the relevant generic filter 'size: { max: { gt: ... } } }' instead.")
+  size_SUM_GT: Int @deprecated(reason: "Please use the relevant generic filter 'size: { sum: { gt: ... } } }' instead.")
+  size_AVERAGE_GT: Float @deprecated(reason: "Please use the relevant generic filter 'size: { average: { gt: ... } } }' instead.")
+  size_MIN_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'size: { min: { gte: ... } } }' instead.")
+  size_MAX_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'size: { max: { gte: ... } } }' instead.")
+  size_SUM_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'size: { sum: { gte: ... } } }' instead.")
+  size_AVERAGE_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'size: { average: { gte: ... } } }' instead.")
+  size_MIN_LT: Int @deprecated(reason: "Please use the relevant generic filter 'size: { min: { lt: ... } } }' instead.")
+  size_MAX_LT: Int @deprecated(reason: "Please use the relevant generic filter 'size: { max: { lt: ... } } }' instead.")
+  size_SUM_LT: Int @deprecated(reason: "Please use the relevant generic filter 'size: { sum: { lt: ... } } }' instead.")
+  size_AVERAGE_LT: Float @deprecated(reason: "Please use the relevant generic filter 'size: { average: { lt: ... } } }' instead.")
+  size_MIN_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'size: { min: { lte: ... } } }' instead.")
+  size_MAX_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'size: { max: { lte: ... } } }' instead.")
+  size_SUM_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'size: { sum: { lte: ... } } }' instead.")
+  size_AVERAGE_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'size: { average: { lte: ... } } }' instead.")
+  size: IntScalarAggregationFilters
+  secret_AVERAGE_LENGTH_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'secret: { averageLength: { eq: ... } } }' instead.")
+  secret_LONGEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'secret: { longestLength: { eq: ... } } }' instead.")
+  secret_SHORTEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'secret: { shortestLength: { eq: ... } } }' instead.")
+  secret_AVERAGE_LENGTH_GT: Float @deprecated(reason: "Please use the relevant generic filter 'secret: { averageLength: { gt: ... } } }' instead.")
+  secret_LONGEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'secret: { longestLength: { gt: ... } } }' instead.")
+  secret_SHORTEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'secret: { shortestLength: { gt: ... } } }' instead.")
+  secret_AVERAGE_LENGTH_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'secret: { averageLength: { gte: ... } } }' instead.")
+  secret_LONGEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'secret: { longestLength: { gte: ... } } }' instead.")
+  secret_SHORTEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'secret: { shortestLength: { gte: ... } } }' instead.")
+  secret_AVERAGE_LENGTH_LT: Float @deprecated(reason: "Please use the relevant generic filter 'secret: { averageLength: { lt: ... } } }' instead.")
+  secret_LONGEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'secret: { longestLength: { lt: ... } } }' instead.")
+  secret_SHORTEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'secret: { shortestLength: { lt: ... } } }' instead.")
+  secret_AVERAGE_LENGTH_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'secret: { averageLength: { lte: ... } } }' instead.")
+  secret_LONGEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'secret: { longestLength: { lte: ... } } }' instead.")
+  secret_SHORTEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'secret: { shortestLength: { lte: ... } } }' instead.")
+  secret: StringScalarAggregationFilters
+}
+
+input SoundRelatedUpdateConnectionInput {
+  node: AssetUpdateInput
+  where: AssetRelatedConnectionWhere
+}
+
+input SoundRelatedUpdateFieldInput {
+  connect: [SoundRelatedConnectFieldInput!]
+  disconnect: [SoundRelatedDisconnectFieldInput!]
+  create: [SoundRelatedCreateFieldInput!]
+  update: SoundRelatedUpdateConnectionInput
+  delete: [SoundRelatedDeleteFieldInput!]
+}
+
+"""
+Fields to sort Sounds by. The order in which sorts are applied is not guaranteed when specifying many fields in one SoundSort object.
+"""
+input SoundSort {
+  id: SortDirection
+  name: SortDirection
+  size: SortDirection
+  secret: SortDirection
+  label: SortDirection
+  tag: SortDirection
+  seconds: SortDirection
+}
+
+input SoundUpdateInput {
+  id: IDScalarMutations
+  id_SET: ID @deprecated(reason: "Please use the generic mutation 'id: { set: ... } }' instead.")
+  name: StringScalarMutations
+  name_SET: String @deprecated(reason: "Please use the generic mutation 'name: { set: ... } }' instead.")
+  size: IntScalarMutations
+  size_SET: Int @deprecated(reason: "Please use the generic mutation 'size: { set: ... } }' instead.")
+  size_INCREMENT: Int @deprecated(reason: "Please use the relevant generic mutation 'size: { increment: ... } }' instead.")
+  size_DECREMENT: Int @deprecated(reason: "Please use the relevant generic mutation 'size: { decrement: ... } }' instead.")
+  secret: StringScalarMutations
+  secret_SET: String @deprecated(reason: "Please use the generic mutation 'secret: { set: ... } }' instead.")
+  label: StringScalarMutations
+  label_SET: String @deprecated(reason: "Please use the generic mutation 'label: { set: ... } }' instead.")
+  tag: StringScalarMutations
+  tag_SET: String @deprecated(reason: "Please use the generic mutation 'tag: { set: ... } }' instead.")
+  seconds: IntScalarMutations
+  seconds_SET: Int @deprecated(reason: "Please use the generic mutation 'seconds: { set: ... } }' instead.")
+  seconds_INCREMENT: Int @deprecated(reason: "Please use the relevant generic mutation 'seconds: { increment: ... } }' instead.")
+  seconds_DECREMENT: Int @deprecated(reason: "Please use the relevant generic mutation 'seconds: { decrement: ... } }' instead.")
+  owners: [SoundOwnersUpdateFieldInput!]
+  related: [SoundRelatedUpdateFieldInput!]
+}
+
+input SoundWhere {
+  id: IDScalarFilters
+  id_EQ: ID @deprecated(reason: "Please use the relevant generic filter id: { eq: ... }")
+  id_IN: [ID!] @deprecated(reason: "Please use the relevant generic filter id: { in: ... }")
+  id_CONTAINS: ID @deprecated(reason: "Please use the relevant generic filter id: { contains: ... }")
+  id_STARTS_WITH: ID @deprecated(reason: "Please use the relevant generic filter id: { startsWith: ... }")
+  id_ENDS_WITH: ID @deprecated(reason: "Please use the relevant generic filter id: { endsWith: ... }")
+  name: StringScalarFilters
+  name_EQ: String @deprecated(reason: "Please use the relevant generic filter name: { eq: ... }")
+  name_IN: [String!] @deprecated(reason: "Please use the relevant generic filter name: { in: ... }")
+  name_CONTAINS: String @deprecated(reason: "Please use the relevant generic filter name: { contains: ... }")
+  name_STARTS_WITH: String @deprecated(reason: "Please use the relevant generic filter name: { startsWith: ... }")
+  name_ENDS_WITH: String @deprecated(reason: "Please use the relevant generic filter name: { endsWith: ... }")
+  size: IntScalarFilters
+  size_EQ: Int @deprecated(reason: "Please use the relevant generic filter size: { eq: ... }")
+  size_IN: [Int] @deprecated(reason: "Please use the relevant generic filter size: { in: ... }")
+  size_LT: Int @deprecated(reason: "Please use the relevant generic filter size: { lt: ... }")
+  size_LTE: Int @deprecated(reason: "Please use the relevant generic filter size: { lte: ... }")
+  size_GT: Int @deprecated(reason: "Please use the relevant generic filter size: { gt: ... }")
+  size_GTE: Int @deprecated(reason: "Please use the relevant generic filter size: { gte: ... }")
+  secret: StringScalarFilters
+  secret_EQ: String @deprecated(reason: "Please use the relevant generic filter secret: { eq: ... }")
+  secret_IN: [String] @deprecated(reason: "Please use the relevant generic filter secret: { in: ... }")
+  secret_CONTAINS: String @deprecated(reason: "Please use the relevant generic filter secret: { contains: ... }")
+  secret_STARTS_WITH: String @deprecated(reason: "Please use the relevant generic filter secret: { startsWith: ... }")
+  secret_ENDS_WITH: String @deprecated(reason: "Please use the relevant generic filter secret: { endsWith: ... }")
+  label: StringScalarFilters
+  label_EQ: String @deprecated(reason: "Please use the relevant generic filter label: { eq: ... }")
+  label_IN: [String] @deprecated(reason: "Please use the relevant generic filter label: { in: ... }")
+  label_CONTAINS: String @deprecated(reason: "Please use the relevant generic filter label: { contains: ... }")
+  label_STARTS_WITH: String @deprecated(reason: "Please use the relevant generic filter label: { startsWith: ... }")
+  label_ENDS_WITH: String @deprecated(reason: "Please use the relevant generic filter label: { endsWith: ... }")
+  tag: StringScalarFilters
+  tag_EQ: String @deprecated(reason: "Please use the relevant generic filter tag: { eq: ... }")
+  tag_IN: [String] @deprecated(reason: "Please use the relevant generic filter tag: { in: ... }")
+  tag_CONTAINS: String @deprecated(reason: "Please use the relevant generic filter tag: { contains: ... }")
+  tag_STARTS_WITH: String @deprecated(reason: "Please use the relevant generic filter tag: { startsWith: ... }")
+  tag_ENDS_WITH: String @deprecated(reason: "Please use the relevant generic filter tag: { endsWith: ... }")
+  seconds: IntScalarFilters
+  seconds_EQ: Int @deprecated(reason: "Please use the relevant generic filter seconds: { eq: ... }")
+  seconds_IN: [Int] @deprecated(reason: "Please use the relevant generic filter seconds: { in: ... }")
+  seconds_LT: Int @deprecated(reason: "Please use the relevant generic filter seconds: { lt: ... }")
+  seconds_LTE: Int @deprecated(reason: "Please use the relevant generic filter seconds: { lte: ... }")
+  seconds_GT: Int @deprecated(reason: "Please use the relevant generic filter seconds: { gt: ... }")
+  seconds_GTE: Int @deprecated(reason: "Please use the relevant generic filter seconds: { gte: ... }")
+  OR: [SoundWhere!]
+  AND: [SoundWhere!]
+  NOT: SoundWhere
+  owners: OwnerRelationshipFilters
+
+  """Return Sounds where all of the related Owners match this filter"""
+  owners_ALL: OwnerWhere @deprecated(reason: "Please use the relevant generic filter 'owners: { all: ... }' instead.")
+
+  """Return Sounds where none of the related Owners match this filter"""
+  owners_NONE: OwnerWhere @deprecated(reason: "Please use the relevant generic filter 'owners: { none: ... }' instead.")
+
+  """Return Sounds where one of the related Owners match this filter"""
+  owners_SINGLE: OwnerWhere @deprecated(reason: "Please use the relevant generic filter 'owners: {  single: ... }' instead.")
+
+  """Return Sounds where some of the related Owners match this filter"""
+  owners_SOME: OwnerWhere @deprecated(reason: "Please use the relevant generic filter 'owners: {  some: ... }' instead.")
+
+  """
+  Return Sounds where all of the related AssetOwnersConnections match this filter
+  """
+  ownersConnection_ALL: AssetOwnersConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'ownersConnection: { all: { node: ... } } }' instead.")
+
+  """
+  Return Sounds where none of the related AssetOwnersConnections match this filter
+  """
+  ownersConnection_NONE: AssetOwnersConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'ownersConnection: { none: { node: ... } } }' instead.")
+
+  """
+  Return Sounds where one of the related AssetOwnersConnections match this filter
+  """
+  ownersConnection_SINGLE: AssetOwnersConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'ownersConnection: { single: { node: ... } } }' instead.")
+
+  """
+  Return Sounds where some of the related AssetOwnersConnections match this filter
+  """
+  ownersConnection_SOME: AssetOwnersConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'ownersConnection: { some: { node: ... } } }' instead.")
+  ownersConnection: SoundOwnersConnectionFilters
+  ownersAggregate: SoundOwnersAggregateInput @deprecated(reason: "Aggregate filters are moved inside the ownersConnection filter, please use { ownersConnection: { aggregate: {...} } } instead")
+  folder: FolderWhere
+  folderConnection: AssetFolderConnectionWhere
+  related: AssetRelationshipFilters
+
+  """Return Sounds where all of the related Assets match this filter"""
+  related_ALL: AssetWhere @deprecated(reason: "Please use the relevant generic filter 'related: { all: ... }' instead.")
+
+  """Return Sounds where none of the related Assets match this filter"""
+  related_NONE: AssetWhere @deprecated(reason: "Please use the relevant generic filter 'related: { none: ... }' instead.")
+
+  """Return Sounds where one of the related Assets match this filter"""
+  related_SINGLE: AssetWhere @deprecated(reason: "Please use the relevant generic filter 'related: {  single: ... }' instead.")
+
+  """Return Sounds where some of the related Assets match this filter"""
+  related_SOME: AssetWhere @deprecated(reason: "Please use the relevant generic filter 'related: {  some: ... }' instead.")
+
+  """
+  Return Sounds where all of the related AssetRelatedConnections match this filter
+  """
+  relatedConnection_ALL: AssetRelatedConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'relatedConnection: { all: { node: ... } } }' instead.")
+
+  """
+  Return Sounds where none of the related AssetRelatedConnections match this filter
+  """
+  relatedConnection_NONE: AssetRelatedConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'relatedConnection: { none: { node: ... } } }' instead.")
+
+  """
+  Return Sounds where one of the related AssetRelatedConnections match this filter
+  """
+  relatedConnection_SINGLE: AssetRelatedConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'relatedConnection: { single: { node: ... } } }' instead.")
+
+  """
+  Return Sounds where some of the related AssetRelatedConnections match this filter
+  """
+  relatedConnection_SOME: AssetRelatedConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'relatedConnection: { some: { node: ... } } }' instead.")
+  relatedConnection: SoundRelatedConnectionFilters
+  relatedAggregate: SoundRelatedAggregateInput @deprecated(reason: "Aggregate filters are moved inside the relatedConnection filter, please use { relatedConnection: { aggregate: {...} } } instead")
+}
+
+"""Filters for an aggregation of a string field"""
+input StringScalarAggregationFilters {
+  averageLength: FloatScalarFilters
+  shortestLength: IntScalarFilters
+  longestLength: IntScalarFilters
+}
+
+"""String filters"""
+input StringScalarFilters {
+  eq: String
+  in: [String!]
+  contains: String
+  endsWith: String
+  startsWith: String
+}
+
+"""String mutations"""
+input StringScalarMutations {
+  set: String
+}
+
+input TaggableConnectWhere {
+  node: TaggableWhere!
+}
+
+input TaggableCreateInput {
+  Image: ImageCreateInput
+  Sound: SoundCreateInput
+}
+
+input TaggableRelationshipFilters {
+  """Filter type where all of the related Taggables match this filter"""
+  all: TaggableWhere
+
+  """Filter type where none of the related Taggables match this filter"""
+  none: TaggableWhere
+
+  """Filter type where one of the related Taggables match this filter"""
+  single: TaggableWhere
+
+  """Filter type where some of the related Taggables match this filter"""
+  some: TaggableWhere
+}
+
+"""
+Fields to sort Taggables by. The order in which sorts are applied is not guaranteed when specifying many fields in one TaggableSort object.
+"""
+input TaggableSort {
+  tag: SortDirection
+}
+
+input TaggableUpdateInput {
+  tag: StringScalarMutations
+  tag_SET: String @deprecated(reason: "Please use the generic mutation 'tag: { set: ... } }' instead.")
+}
+
+input TaggableWhere {
+  tag: StringScalarFilters
+  tag_EQ: String @deprecated(reason: "Please use the relevant generic filter tag: { eq: ... }")
+  tag_IN: [String] @deprecated(reason: "Please use the relevant generic filter tag: { in: ... }")
+  tag_CONTAINS: String @deprecated(reason: "Please use the relevant generic filter tag: { contains: ... }")
+  tag_STARTS_WITH: String @deprecated(reason: "Please use the relevant generic filter tag: { startsWith: ... }")
+  tag_ENDS_WITH: String @deprecated(reason: "Please use the relevant generic filter tag: { endsWith: ... }")
+  OR: [TaggableWhere!]
+  AND: [TaggableWhere!]
+  NOT: TaggableWhere
+  typename: [TaggableImplementation!]
+}

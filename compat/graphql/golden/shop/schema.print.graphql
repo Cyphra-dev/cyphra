@@ -1,0 +1,2081 @@
+type Query {
+  customersConnection(first: Int, after: String, where: CustomerWhere, sort: [CustomerSort!]): CustomersConnection!
+  customers(where: CustomerWhere, limit: Int, offset: Int, sort: [CustomerSort!]): [Customer!]!
+  ordersConnection(first: Int, after: String, where: OrderWhere, sort: [OrderSort!]): OrdersConnection!
+  orders(where: OrderWhere, limit: Int, offset: Int, sort: [OrderSort!]): [Order!]!
+  productsConnection(first: Int, after: String, where: ProductWhere, sort: [ProductSort!]): ProductsConnection!
+  products(where: ProductWhere, limit: Int, offset: Int, sort: [ProductSort!]): [Product!]!
+  categoriesConnection(first: Int, after: String, where: CategoryWhere, sort: [CategorySort!]): CategoriesConnection!
+  categories(where: CategoryWhere, limit: Int, offset: Int, sort: [CategorySort!]): [Category!]!
+}
+
+type Mutation {
+  createCustomers(input: [CustomerCreateInput!]!): CreateCustomersMutationResponse!
+  deleteCustomers(where: CustomerWhere, delete: CustomerDeleteInput): DeleteInfo!
+  updateCustomers(where: CustomerWhere, update: CustomerUpdateInput): UpdateCustomersMutationResponse!
+  createOrders(input: [OrderCreateInput!]!): CreateOrdersMutationResponse!
+  deleteOrders(where: OrderWhere, delete: OrderDeleteInput): DeleteInfo!
+  updateOrders(where: OrderWhere, update: OrderUpdateInput): UpdateOrdersMutationResponse!
+  createProducts(input: [ProductCreateInput!]!): CreateProductsMutationResponse!
+  deleteProducts(where: ProductWhere, delete: ProductDeleteInput): DeleteInfo!
+  updateProducts(where: ProductWhere, update: ProductUpdateInput): UpdateProductsMutationResponse!
+  createCategories(input: [CategoryCreateInput!]!): CreateCategoriesMutationResponse!
+  deleteCategories(where: CategoryWhere, delete: CategoryDeleteInput): DeleteInfo!
+  updateCategories(where: CategoryWhere, update: CategoryUpdateInput): UpdateCategoriesMutationResponse!
+}
+
+"""A date and time, represented as an ISO-8601 string"""
+scalar DateTime
+
+enum OrderStatus {
+  PENDING
+  PAID
+  SHIPPED
+  CANCELLED
+}
+
+"""An enum for sorting in either ascending or descending order."""
+enum SortDirection {
+  """Sort by field values in ascending order."""
+  ASC
+
+  """Sort by field values in descending order."""
+  DESC
+}
+
+type CategoriesConnection {
+  edges: [CategoryEdge!]!
+  totalCount: Int!
+  pageInfo: PageInfo!
+  aggregate: CategoryAggregate!
+}
+
+type Category {
+  name: String!
+  products(where: ProductWhere, limit: Int, offset: Int, sort: [ProductSort!]): [Product!]!
+  productsConnection(where: CategoryProductsConnectionWhere, first: Int, after: String, sort: [CategoryProductsConnectionSort!]): CategoryProductsConnection!
+}
+
+type CategoryAggregate {
+  count: Count!
+  node: CategoryAggregateNode!
+}
+
+type CategoryAggregateNode {
+  name: StringAggregateSelection!
+}
+
+type CategoryEdge {
+  cursor: String!
+  node: Category!
+}
+
+type CategoryProductProductsAggregateSelection {
+  count: CountConnection!
+  node: CategoryProductProductsNodeAggregateSelection
+}
+
+type CategoryProductProductsNodeAggregateSelection {
+  sku: StringAggregateSelection!
+  name: StringAggregateSelection!
+  price: FloatAggregateSelection!
+  stock: IntAggregateSelection!
+}
+
+type CategoryProductsConnection {
+  edges: [CategoryProductsRelationship!]!
+  totalCount: Int!
+  pageInfo: PageInfo!
+  aggregate: CategoryProductProductsAggregateSelection!
+}
+
+type CategoryProductsRelationship {
+  cursor: String!
+  node: Product!
+}
+
+type Count {
+  nodes: Int!
+}
+
+type CountConnection {
+  nodes: Int!
+  edges: Int!
+}
+
+type CreateCategoriesMutationResponse {
+  info: CreateInfo!
+  categories: [Category!]!
+}
+
+type CreateCustomersMutationResponse {
+  info: CreateInfo!
+  customers: [Customer!]!
+}
+
+"""
+Information about the number of nodes and relationships created during a create mutation
+"""
+type CreateInfo {
+  nodesCreated: Int!
+  relationshipsCreated: Int!
+}
+
+type CreateOrdersMutationResponse {
+  info: CreateInfo!
+  orders: [Order!]!
+}
+
+type CreateProductsMutationResponse {
+  info: CreateInfo!
+  products: [Product!]!
+}
+
+type Customer {
+  id: ID!
+  email: String!
+  name: String!
+  orders(where: OrderWhere, limit: Int, offset: Int, sort: [OrderSort!]): [Order!]!
+  ordersConnection(where: CustomerOrdersConnectionWhere, first: Int, after: String, sort: [CustomerOrdersConnectionSort!]): CustomerOrdersConnection!
+}
+
+type CustomerAggregate {
+  count: Count!
+  node: CustomerAggregateNode!
+}
+
+type CustomerAggregateNode {
+  email: StringAggregateSelection!
+  name: StringAggregateSelection!
+}
+
+type CustomerEdge {
+  cursor: String!
+  node: Customer!
+}
+
+type CustomerOrderOrdersAggregateSelection {
+  count: CountConnection!
+  node: CustomerOrderOrdersNodeAggregateSelection
+}
+
+type CustomerOrderOrdersNodeAggregateSelection {
+  number: StringAggregateSelection!
+  placedAt: DateTimeAggregateSelection!
+}
+
+type CustomerOrdersConnection {
+  edges: [CustomerOrdersRelationship!]!
+  totalCount: Int!
+  pageInfo: PageInfo!
+  aggregate: CustomerOrderOrdersAggregateSelection!
+}
+
+type CustomerOrdersRelationship {
+  cursor: String!
+  node: Order!
+}
+
+type CustomersConnection {
+  edges: [CustomerEdge!]!
+  totalCount: Int!
+  pageInfo: PageInfo!
+  aggregate: CustomerAggregate!
+}
+
+type DateTimeAggregateSelection {
+  min: DateTime
+  max: DateTime
+}
+
+"""
+Information about the number of nodes and relationships deleted during a delete mutation
+"""
+type DeleteInfo {
+  nodesDeleted: Int!
+  relationshipsDeleted: Int!
+}
+
+type FloatAggregateSelection {
+  max: Float
+  min: Float
+  average: Float
+  sum: Float
+}
+
+type IntAggregateSelection {
+  max: Int
+  min: Int
+  average: Float
+  sum: Int
+}
+
+type Order {
+  id: ID!
+  number: String!
+  status: OrderStatus!
+  placedAt: DateTime!
+  customer(where: CustomerWhere, limit: Int, offset: Int, sort: [CustomerSort!]): [Customer!]!
+  customerConnection(where: OrderCustomerConnectionWhere, first: Int, after: String, sort: [OrderCustomerConnectionSort!]): OrderCustomerConnection!
+  lines(where: ProductWhere, limit: Int, offset: Int, sort: [ProductSort!]): [Product!]!
+  linesConnection(where: OrderLinesConnectionWhere, first: Int, after: String, sort: [OrderLinesConnectionSort!]): OrderLinesConnection!
+}
+
+type OrderAggregate {
+  count: Count!
+  node: OrderAggregateNode!
+}
+
+type OrderAggregateNode {
+  number: StringAggregateSelection!
+  placedAt: DateTimeAggregateSelection!
+}
+
+type OrderCustomerConnection {
+  edges: [OrderCustomerRelationship!]!
+  totalCount: Int!
+  pageInfo: PageInfo!
+  aggregate: OrderCustomerCustomerAggregateSelection!
+}
+
+type OrderCustomerCustomerAggregateSelection {
+  count: CountConnection!
+  node: OrderCustomerCustomerNodeAggregateSelection
+}
+
+type OrderCustomerCustomerNodeAggregateSelection {
+  email: StringAggregateSelection!
+  name: StringAggregateSelection!
+}
+
+type OrderCustomerRelationship {
+  cursor: String!
+  node: Customer!
+}
+
+type OrderEdge {
+  cursor: String!
+  node: Order!
+}
+
+"""
+The edge properties for the following fields:
+* Order.lines
+* Product.orders
+"""
+type OrderLine {
+  quantity: Int!
+  unitPrice: Float!
+}
+
+type OrderLinesConnection {
+  edges: [OrderLinesRelationship!]!
+  totalCount: Int!
+  pageInfo: PageInfo!
+  aggregate: OrderProductLinesAggregateSelection!
+}
+
+type OrderLinesRelationship {
+  cursor: String!
+  node: Product!
+  properties: OrderLine!
+}
+
+type OrderProductLinesAggregateSelection {
+  count: CountConnection!
+  node: OrderProductLinesNodeAggregateSelection
+  edge: OrderProductLinesEdgeAggregateSelection
+}
+
+type OrderProductLinesEdgeAggregateSelection {
+  quantity: IntAggregateSelection!
+  unitPrice: FloatAggregateSelection!
+}
+
+type OrderProductLinesNodeAggregateSelection {
+  sku: StringAggregateSelection!
+  name: StringAggregateSelection!
+  price: FloatAggregateSelection!
+  stock: IntAggregateSelection!
+}
+
+type OrdersConnection {
+  edges: [OrderEdge!]!
+  totalCount: Int!
+  pageInfo: PageInfo!
+  aggregate: OrderAggregate!
+}
+
+"""Pagination information (Relay)"""
+type PageInfo {
+  hasNextPage: Boolean!
+  hasPreviousPage: Boolean!
+  startCursor: String
+  endCursor: String
+}
+
+type Product {
+  sku: String!
+  name: String!
+  price: Float!
+  stock: Int!
+  tags: [String!]!
+  category(where: CategoryWhere, limit: Int, offset: Int, sort: [CategorySort!]): [Category!]!
+  categoryConnection(where: ProductCategoryConnectionWhere, first: Int, after: String, sort: [ProductCategoryConnectionSort!]): ProductCategoryConnection!
+  orders(where: OrderWhere, limit: Int, offset: Int, sort: [OrderSort!]): [Order!]!
+  ordersConnection(where: ProductOrdersConnectionWhere, first: Int, after: String, sort: [ProductOrdersConnectionSort!]): ProductOrdersConnection!
+}
+
+type ProductAggregate {
+  count: Count!
+  node: ProductAggregateNode!
+}
+
+type ProductAggregateNode {
+  sku: StringAggregateSelection!
+  name: StringAggregateSelection!
+  price: FloatAggregateSelection!
+  stock: IntAggregateSelection!
+}
+
+type ProductCategoryCategoryAggregateSelection {
+  count: CountConnection!
+  node: ProductCategoryCategoryNodeAggregateSelection
+}
+
+type ProductCategoryCategoryNodeAggregateSelection {
+  name: StringAggregateSelection!
+}
+
+type ProductCategoryConnection {
+  edges: [ProductCategoryRelationship!]!
+  totalCount: Int!
+  pageInfo: PageInfo!
+  aggregate: ProductCategoryCategoryAggregateSelection!
+}
+
+type ProductCategoryRelationship {
+  cursor: String!
+  node: Category!
+}
+
+type ProductEdge {
+  cursor: String!
+  node: Product!
+}
+
+type ProductOrderOrdersAggregateSelection {
+  count: CountConnection!
+  node: ProductOrderOrdersNodeAggregateSelection
+  edge: ProductOrderOrdersEdgeAggregateSelection
+}
+
+type ProductOrderOrdersEdgeAggregateSelection {
+  quantity: IntAggregateSelection!
+  unitPrice: FloatAggregateSelection!
+}
+
+type ProductOrderOrdersNodeAggregateSelection {
+  number: StringAggregateSelection!
+  placedAt: DateTimeAggregateSelection!
+}
+
+type ProductOrdersConnection {
+  edges: [ProductOrdersRelationship!]!
+  totalCount: Int!
+  pageInfo: PageInfo!
+  aggregate: ProductOrderOrdersAggregateSelection!
+}
+
+type ProductOrdersRelationship {
+  cursor: String!
+  node: Order!
+  properties: OrderLine!
+}
+
+type ProductsConnection {
+  edges: [ProductEdge!]!
+  totalCount: Int!
+  pageInfo: PageInfo!
+  aggregate: ProductAggregate!
+}
+
+type StringAggregateSelection {
+  shortest: String
+  longest: String
+}
+
+type UpdateCategoriesMutationResponse {
+  info: UpdateInfo!
+  categories: [Category!]!
+}
+
+type UpdateCustomersMutationResponse {
+  info: UpdateInfo!
+  customers: [Customer!]!
+}
+
+"""
+Information about the number of nodes and relationships created and deleted during an update mutation
+"""
+type UpdateInfo {
+  nodesCreated: Int!
+  nodesDeleted: Int!
+  relationshipsCreated: Int!
+  relationshipsDeleted: Int!
+}
+
+type UpdateOrdersMutationResponse {
+  info: UpdateInfo!
+  orders: [Order!]!
+}
+
+type UpdateProductsMutationResponse {
+  info: UpdateInfo!
+  products: [Product!]!
+}
+
+input CategoryConnectInput {
+  products: [CategoryProductsConnectFieldInput!]
+}
+
+input CategoryConnectWhere {
+  node: CategoryWhere!
+}
+
+input CategoryCreateInput {
+  name: String!
+  products: CategoryProductsFieldInput
+}
+
+input CategoryDeleteInput {
+  products: [CategoryProductsDeleteFieldInput!]
+}
+
+input CategoryDisconnectInput {
+  products: [CategoryProductsDisconnectFieldInput!]
+}
+
+input CategoryProductsAggregateInput {
+  count_EQ: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { eq: ... } } }' instead.")
+  count_LT: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { lt: ... } } }' instead.")
+  count_LTE: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { lte: ... } } }' instead.")
+  count_GT: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { gt: ... } } }' instead.")
+  count_GTE: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { gte: ... } } }' instead.")
+  count: IntScalarFilters
+  AND: [CategoryProductsAggregateInput!]
+  OR: [CategoryProductsAggregateInput!]
+  NOT: CategoryProductsAggregateInput
+  node: CategoryProductsNodeAggregationWhereInput
+}
+
+input CategoryProductsConnectFieldInput {
+  where: ProductConnectWhere
+  connect: [ProductConnectInput!]
+}
+
+input CategoryProductsConnectionAggregateInput {
+  count: ConnectionAggregationCountFilterInput
+  AND: [CategoryProductsConnectionAggregateInput!]
+  OR: [CategoryProductsConnectionAggregateInput!]
+  NOT: CategoryProductsConnectionAggregateInput
+  node: CategoryProductsNodeAggregationWhereInput
+}
+
+input CategoryProductsConnectionFilters {
+  """
+  Return Categories where all of the related CategoryProductsConnections match this filter
+  """
+  all: CategoryProductsConnectionWhere
+
+  """
+  Return Categories where none of the related CategoryProductsConnections match this filter
+  """
+  none: CategoryProductsConnectionWhere
+
+  """
+  Return Categories where one of the related CategoryProductsConnections match this filter
+  """
+  single: CategoryProductsConnectionWhere
+
+  """
+  Return Categories where some of the related CategoryProductsConnections match this filter
+  """
+  some: CategoryProductsConnectionWhere
+
+  """
+  Filter Categories by aggregating results on related CategoryProductsConnections
+  """
+  aggregate: CategoryProductsConnectionAggregateInput
+}
+
+input CategoryProductsConnectionSort {
+  node: ProductSort
+}
+
+input CategoryProductsConnectionWhere {
+  AND: [CategoryProductsConnectionWhere!]
+  OR: [CategoryProductsConnectionWhere!]
+  NOT: CategoryProductsConnectionWhere
+  node: ProductWhere
+}
+
+input CategoryProductsCreateFieldInput {
+  node: ProductCreateInput!
+}
+
+input CategoryProductsDeleteFieldInput {
+  where: CategoryProductsConnectionWhere
+  delete: ProductDeleteInput
+}
+
+input CategoryProductsDisconnectFieldInput {
+  where: CategoryProductsConnectionWhere
+  disconnect: ProductDisconnectInput
+}
+
+input CategoryProductsFieldInput {
+  connect: [CategoryProductsConnectFieldInput!]
+  create: [CategoryProductsCreateFieldInput!]
+}
+
+input CategoryProductsNodeAggregationWhereInput {
+  AND: [CategoryProductsNodeAggregationWhereInput!]
+  OR: [CategoryProductsNodeAggregationWhereInput!]
+  NOT: CategoryProductsNodeAggregationWhereInput
+  sku_AVERAGE_LENGTH_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'sku: { averageLength: { eq: ... } } }' instead.")
+  sku_LONGEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'sku: { longestLength: { eq: ... } } }' instead.")
+  sku_SHORTEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'sku: { shortestLength: { eq: ... } } }' instead.")
+  sku_AVERAGE_LENGTH_GT: Float @deprecated(reason: "Please use the relevant generic filter 'sku: { averageLength: { gt: ... } } }' instead.")
+  sku_LONGEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'sku: { longestLength: { gt: ... } } }' instead.")
+  sku_SHORTEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'sku: { shortestLength: { gt: ... } } }' instead.")
+  sku_AVERAGE_LENGTH_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'sku: { averageLength: { gte: ... } } }' instead.")
+  sku_LONGEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'sku: { longestLength: { gte: ... } } }' instead.")
+  sku_SHORTEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'sku: { shortestLength: { gte: ... } } }' instead.")
+  sku_AVERAGE_LENGTH_LT: Float @deprecated(reason: "Please use the relevant generic filter 'sku: { averageLength: { lt: ... } } }' instead.")
+  sku_LONGEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'sku: { longestLength: { lt: ... } } }' instead.")
+  sku_SHORTEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'sku: { shortestLength: { lt: ... } } }' instead.")
+  sku_AVERAGE_LENGTH_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'sku: { averageLength: { lte: ... } } }' instead.")
+  sku_LONGEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'sku: { longestLength: { lte: ... } } }' instead.")
+  sku_SHORTEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'sku: { shortestLength: { lte: ... } } }' instead.")
+  sku: StringScalarAggregationFilters
+  name_AVERAGE_LENGTH_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { eq: ... } } }' instead.")
+  name_LONGEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { eq: ... } } }' instead.")
+  name_SHORTEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { eq: ... } } }' instead.")
+  name_AVERAGE_LENGTH_GT: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { gt: ... } } }' instead.")
+  name_LONGEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { gt: ... } } }' instead.")
+  name_SHORTEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { gt: ... } } }' instead.")
+  name_AVERAGE_LENGTH_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { gte: ... } } }' instead.")
+  name_LONGEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { gte: ... } } }' instead.")
+  name_SHORTEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { gte: ... } } }' instead.")
+  name_AVERAGE_LENGTH_LT: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { lt: ... } } }' instead.")
+  name_LONGEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { lt: ... } } }' instead.")
+  name_SHORTEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { lt: ... } } }' instead.")
+  name_AVERAGE_LENGTH_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { lte: ... } } }' instead.")
+  name_LONGEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { lte: ... } } }' instead.")
+  name_SHORTEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { lte: ... } } }' instead.")
+  name: StringScalarAggregationFilters
+  price_MIN_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'price: { min: { eq: ... } } }' instead.")
+  price_MAX_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'price: { max: { eq: ... } } }' instead.")
+  price_SUM_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'price: { sum: { eq: ... } } }' instead.")
+  price_AVERAGE_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'price: { average: { eq: ... } } }' instead.")
+  price_MIN_GT: Float @deprecated(reason: "Please use the relevant generic filter 'price: { min: { gt: ... } } }' instead.")
+  price_MAX_GT: Float @deprecated(reason: "Please use the relevant generic filter 'price: { max: { gt: ... } } }' instead.")
+  price_SUM_GT: Float @deprecated(reason: "Please use the relevant generic filter 'price: { sum: { gt: ... } } }' instead.")
+  price_AVERAGE_GT: Float @deprecated(reason: "Please use the relevant generic filter 'price: { average: { gt: ... } } }' instead.")
+  price_MIN_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'price: { min: { gte: ... } } }' instead.")
+  price_MAX_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'price: { max: { gte: ... } } }' instead.")
+  price_SUM_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'price: { sum: { gte: ... } } }' instead.")
+  price_AVERAGE_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'price: { average: { gte: ... } } }' instead.")
+  price_MIN_LT: Float @deprecated(reason: "Please use the relevant generic filter 'price: { min: { lt: ... } } }' instead.")
+  price_MAX_LT: Float @deprecated(reason: "Please use the relevant generic filter 'price: { max: { lt: ... } } }' instead.")
+  price_SUM_LT: Float @deprecated(reason: "Please use the relevant generic filter 'price: { sum: { lt: ... } } }' instead.")
+  price_AVERAGE_LT: Float @deprecated(reason: "Please use the relevant generic filter 'price: { average: { lt: ... } } }' instead.")
+  price_MIN_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'price: { min: { lte: ... } } }' instead.")
+  price_MAX_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'price: { max: { lte: ... } } }' instead.")
+  price_SUM_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'price: { sum: { lte: ... } } }' instead.")
+  price_AVERAGE_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'price: { average: { lte: ... } } }' instead.")
+  price: FloatScalarAggregationFilters
+  stock_MIN_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'stock: { min: { eq: ... } } }' instead.")
+  stock_MAX_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'stock: { max: { eq: ... } } }' instead.")
+  stock_SUM_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'stock: { sum: { eq: ... } } }' instead.")
+  stock_AVERAGE_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'stock: { average: { eq: ... } } }' instead.")
+  stock_MIN_GT: Int @deprecated(reason: "Please use the relevant generic filter 'stock: { min: { gt: ... } } }' instead.")
+  stock_MAX_GT: Int @deprecated(reason: "Please use the relevant generic filter 'stock: { max: { gt: ... } } }' instead.")
+  stock_SUM_GT: Int @deprecated(reason: "Please use the relevant generic filter 'stock: { sum: { gt: ... } } }' instead.")
+  stock_AVERAGE_GT: Float @deprecated(reason: "Please use the relevant generic filter 'stock: { average: { gt: ... } } }' instead.")
+  stock_MIN_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'stock: { min: { gte: ... } } }' instead.")
+  stock_MAX_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'stock: { max: { gte: ... } } }' instead.")
+  stock_SUM_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'stock: { sum: { gte: ... } } }' instead.")
+  stock_AVERAGE_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'stock: { average: { gte: ... } } }' instead.")
+  stock_MIN_LT: Int @deprecated(reason: "Please use the relevant generic filter 'stock: { min: { lt: ... } } }' instead.")
+  stock_MAX_LT: Int @deprecated(reason: "Please use the relevant generic filter 'stock: { max: { lt: ... } } }' instead.")
+  stock_SUM_LT: Int @deprecated(reason: "Please use the relevant generic filter 'stock: { sum: { lt: ... } } }' instead.")
+  stock_AVERAGE_LT: Float @deprecated(reason: "Please use the relevant generic filter 'stock: { average: { lt: ... } } }' instead.")
+  stock_MIN_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'stock: { min: { lte: ... } } }' instead.")
+  stock_MAX_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'stock: { max: { lte: ... } } }' instead.")
+  stock_SUM_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'stock: { sum: { lte: ... } } }' instead.")
+  stock_AVERAGE_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'stock: { average: { lte: ... } } }' instead.")
+  stock: IntScalarAggregationFilters
+}
+
+input CategoryProductsUpdateConnectionInput {
+  node: ProductUpdateInput
+  where: CategoryProductsConnectionWhere
+}
+
+input CategoryProductsUpdateFieldInput {
+  connect: [CategoryProductsConnectFieldInput!]
+  disconnect: [CategoryProductsDisconnectFieldInput!]
+  create: [CategoryProductsCreateFieldInput!]
+  update: CategoryProductsUpdateConnectionInput
+  delete: [CategoryProductsDeleteFieldInput!]
+}
+
+input CategoryRelationshipFilters {
+  """Filter type where all of the related Categories match this filter"""
+  all: CategoryWhere
+
+  """Filter type where none of the related Categories match this filter"""
+  none: CategoryWhere
+
+  """Filter type where one of the related Categories match this filter"""
+  single: CategoryWhere
+
+  """Filter type where some of the related Categories match this filter"""
+  some: CategoryWhere
+}
+
+"""
+Fields to sort Categories by. The order in which sorts are applied is not guaranteed when specifying many fields in one CategorySort object.
+"""
+input CategorySort {
+  name: SortDirection
+}
+
+input CategoryUpdateInput {
+  name: StringScalarMutations
+  name_SET: String @deprecated(reason: "Please use the generic mutation 'name: { set: ... } }' instead.")
+  products: [CategoryProductsUpdateFieldInput!]
+}
+
+input CategoryWhere {
+  name: StringScalarFilters
+  name_EQ: String @deprecated(reason: "Please use the relevant generic filter name: { eq: ... }")
+  name_IN: [String!] @deprecated(reason: "Please use the relevant generic filter name: { in: ... }")
+  name_CONTAINS: String @deprecated(reason: "Please use the relevant generic filter name: { contains: ... }")
+  name_STARTS_WITH: String @deprecated(reason: "Please use the relevant generic filter name: { startsWith: ... }")
+  name_ENDS_WITH: String @deprecated(reason: "Please use the relevant generic filter name: { endsWith: ... }")
+  OR: [CategoryWhere!]
+  AND: [CategoryWhere!]
+  NOT: CategoryWhere
+  products: ProductRelationshipFilters
+
+  """Return Categories where all of the related Products match this filter"""
+  products_ALL: ProductWhere @deprecated(reason: "Please use the relevant generic filter 'products: { all: ... }' instead.")
+
+  """Return Categories where none of the related Products match this filter"""
+  products_NONE: ProductWhere @deprecated(reason: "Please use the relevant generic filter 'products: { none: ... }' instead.")
+
+  """Return Categories where one of the related Products match this filter"""
+  products_SINGLE: ProductWhere @deprecated(reason: "Please use the relevant generic filter 'products: {  single: ... }' instead.")
+
+  """Return Categories where some of the related Products match this filter"""
+  products_SOME: ProductWhere @deprecated(reason: "Please use the relevant generic filter 'products: {  some: ... }' instead.")
+
+  """
+  Return Categories where all of the related CategoryProductsConnections match this filter
+  """
+  productsConnection_ALL: CategoryProductsConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'productsConnection: { all: { node: ... } } }' instead.")
+
+  """
+  Return Categories where none of the related CategoryProductsConnections match this filter
+  """
+  productsConnection_NONE: CategoryProductsConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'productsConnection: { none: { node: ... } } }' instead.")
+
+  """
+  Return Categories where one of the related CategoryProductsConnections match this filter
+  """
+  productsConnection_SINGLE: CategoryProductsConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'productsConnection: { single: { node: ... } } }' instead.")
+
+  """
+  Return Categories where some of the related CategoryProductsConnections match this filter
+  """
+  productsConnection_SOME: CategoryProductsConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'productsConnection: { some: { node: ... } } }' instead.")
+  productsConnection: CategoryProductsConnectionFilters
+  productsAggregate: CategoryProductsAggregateInput @deprecated(reason: "Aggregate filters are moved inside the productsConnection filter, please use { productsConnection: { aggregate: {...} } } instead")
+}
+
+input ConnectionAggregationCountFilterInput {
+  nodes: IntScalarFilters
+  edges: IntScalarFilters
+}
+
+input CustomerConnectInput {
+  orders: [CustomerOrdersConnectFieldInput!]
+}
+
+input CustomerConnectWhere {
+  node: CustomerWhere!
+}
+
+input CustomerCreateInput {
+  email: String!
+  name: String!
+  orders: CustomerOrdersFieldInput
+}
+
+input CustomerDeleteInput {
+  orders: [CustomerOrdersDeleteFieldInput!]
+}
+
+input CustomerDisconnectInput {
+  orders: [CustomerOrdersDisconnectFieldInput!]
+}
+
+input CustomerOrdersAggregateInput {
+  count_EQ: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { eq: ... } } }' instead.")
+  count_LT: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { lt: ... } } }' instead.")
+  count_LTE: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { lte: ... } } }' instead.")
+  count_GT: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { gt: ... } } }' instead.")
+  count_GTE: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { gte: ... } } }' instead.")
+  count: IntScalarFilters
+  AND: [CustomerOrdersAggregateInput!]
+  OR: [CustomerOrdersAggregateInput!]
+  NOT: CustomerOrdersAggregateInput
+  node: CustomerOrdersNodeAggregationWhereInput
+}
+
+input CustomerOrdersConnectFieldInput {
+  where: OrderConnectWhere
+  connect: [OrderConnectInput!]
+}
+
+input CustomerOrdersConnectionAggregateInput {
+  count: ConnectionAggregationCountFilterInput
+  AND: [CustomerOrdersConnectionAggregateInput!]
+  OR: [CustomerOrdersConnectionAggregateInput!]
+  NOT: CustomerOrdersConnectionAggregateInput
+  node: CustomerOrdersNodeAggregationWhereInput
+}
+
+input CustomerOrdersConnectionFilters {
+  """
+  Return Customers where all of the related CustomerOrdersConnections match this filter
+  """
+  all: CustomerOrdersConnectionWhere
+
+  """
+  Return Customers where none of the related CustomerOrdersConnections match this filter
+  """
+  none: CustomerOrdersConnectionWhere
+
+  """
+  Return Customers where one of the related CustomerOrdersConnections match this filter
+  """
+  single: CustomerOrdersConnectionWhere
+
+  """
+  Return Customers where some of the related CustomerOrdersConnections match this filter
+  """
+  some: CustomerOrdersConnectionWhere
+
+  """
+  Filter Customers by aggregating results on related CustomerOrdersConnections
+  """
+  aggregate: CustomerOrdersConnectionAggregateInput
+}
+
+input CustomerOrdersConnectionSort {
+  node: OrderSort
+}
+
+input CustomerOrdersConnectionWhere {
+  AND: [CustomerOrdersConnectionWhere!]
+  OR: [CustomerOrdersConnectionWhere!]
+  NOT: CustomerOrdersConnectionWhere
+  node: OrderWhere
+}
+
+input CustomerOrdersCreateFieldInput {
+  node: OrderCreateInput!
+}
+
+input CustomerOrdersDeleteFieldInput {
+  where: CustomerOrdersConnectionWhere
+  delete: OrderDeleteInput
+}
+
+input CustomerOrdersDisconnectFieldInput {
+  where: CustomerOrdersConnectionWhere
+  disconnect: OrderDisconnectInput
+}
+
+input CustomerOrdersFieldInput {
+  connect: [CustomerOrdersConnectFieldInput!]
+  create: [CustomerOrdersCreateFieldInput!]
+}
+
+input CustomerOrdersNodeAggregationWhereInput {
+  AND: [CustomerOrdersNodeAggregationWhereInput!]
+  OR: [CustomerOrdersNodeAggregationWhereInput!]
+  NOT: CustomerOrdersNodeAggregationWhereInput
+  number_AVERAGE_LENGTH_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'number: { averageLength: { eq: ... } } }' instead.")
+  number_LONGEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'number: { longestLength: { eq: ... } } }' instead.")
+  number_SHORTEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'number: { shortestLength: { eq: ... } } }' instead.")
+  number_AVERAGE_LENGTH_GT: Float @deprecated(reason: "Please use the relevant generic filter 'number: { averageLength: { gt: ... } } }' instead.")
+  number_LONGEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'number: { longestLength: { gt: ... } } }' instead.")
+  number_SHORTEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'number: { shortestLength: { gt: ... } } }' instead.")
+  number_AVERAGE_LENGTH_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'number: { averageLength: { gte: ... } } }' instead.")
+  number_LONGEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'number: { longestLength: { gte: ... } } }' instead.")
+  number_SHORTEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'number: { shortestLength: { gte: ... } } }' instead.")
+  number_AVERAGE_LENGTH_LT: Float @deprecated(reason: "Please use the relevant generic filter 'number: { averageLength: { lt: ... } } }' instead.")
+  number_LONGEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'number: { longestLength: { lt: ... } } }' instead.")
+  number_SHORTEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'number: { shortestLength: { lt: ... } } }' instead.")
+  number_AVERAGE_LENGTH_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'number: { averageLength: { lte: ... } } }' instead.")
+  number_LONGEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'number: { longestLength: { lte: ... } } }' instead.")
+  number_SHORTEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'number: { shortestLength: { lte: ... } } }' instead.")
+  number: StringScalarAggregationFilters
+  placedAt_MIN_EQUAL: DateTime @deprecated(reason: "Please use the relevant generic filter 'placedAt: { min: { eq: ... } } }' instead.")
+  placedAt_MAX_EQUAL: DateTime @deprecated(reason: "Please use the relevant generic filter 'placedAt: { max: { eq: ... } } }' instead.")
+  placedAt_MIN_GT: DateTime @deprecated(reason: "Please use the relevant generic filter 'placedAt: { min: { gt: ... } } }' instead.")
+  placedAt_MAX_GT: DateTime @deprecated(reason: "Please use the relevant generic filter 'placedAt: { max: { gt: ... } } }' instead.")
+  placedAt_MIN_GTE: DateTime @deprecated(reason: "Please use the relevant generic filter 'placedAt: { min: { gte: ... } } }' instead.")
+  placedAt_MAX_GTE: DateTime @deprecated(reason: "Please use the relevant generic filter 'placedAt: { max: { gte: ... } } }' instead.")
+  placedAt_MIN_LT: DateTime @deprecated(reason: "Please use the relevant generic filter 'placedAt: { min: { lt: ... } } }' instead.")
+  placedAt_MAX_LT: DateTime @deprecated(reason: "Please use the relevant generic filter 'placedAt: { max: { lt: ... } } }' instead.")
+  placedAt_MIN_LTE: DateTime @deprecated(reason: "Please use the relevant generic filter 'placedAt: { min: { lte: ... } } }' instead.")
+  placedAt_MAX_LTE: DateTime @deprecated(reason: "Please use the relevant generic filter 'placedAt: { max: { lte: ... } } }' instead.")
+  placedAt: DateTimeScalarAggregationFilters
+}
+
+input CustomerOrdersUpdateConnectionInput {
+  node: OrderUpdateInput
+  where: CustomerOrdersConnectionWhere
+}
+
+input CustomerOrdersUpdateFieldInput {
+  connect: [CustomerOrdersConnectFieldInput!]
+  disconnect: [CustomerOrdersDisconnectFieldInput!]
+  create: [CustomerOrdersCreateFieldInput!]
+  update: CustomerOrdersUpdateConnectionInput
+  delete: [CustomerOrdersDeleteFieldInput!]
+}
+
+input CustomerRelationshipFilters {
+  """Filter type where all of the related Customers match this filter"""
+  all: CustomerWhere
+
+  """Filter type where none of the related Customers match this filter"""
+  none: CustomerWhere
+
+  """Filter type where one of the related Customers match this filter"""
+  single: CustomerWhere
+
+  """Filter type where some of the related Customers match this filter"""
+  some: CustomerWhere
+}
+
+"""
+Fields to sort Customers by. The order in which sorts are applied is not guaranteed when specifying many fields in one CustomerSort object.
+"""
+input CustomerSort {
+  id: SortDirection
+  email: SortDirection
+  name: SortDirection
+}
+
+input CustomerUpdateInput {
+  email: StringScalarMutations
+  email_SET: String @deprecated(reason: "Please use the generic mutation 'email: { set: ... } }' instead.")
+  name: StringScalarMutations
+  name_SET: String @deprecated(reason: "Please use the generic mutation 'name: { set: ... } }' instead.")
+  orders: [CustomerOrdersUpdateFieldInput!]
+}
+
+input CustomerWhere {
+  id: IDScalarFilters
+  id_EQ: ID @deprecated(reason: "Please use the relevant generic filter id: { eq: ... }")
+  id_IN: [ID!] @deprecated(reason: "Please use the relevant generic filter id: { in: ... }")
+  id_CONTAINS: ID @deprecated(reason: "Please use the relevant generic filter id: { contains: ... }")
+  id_STARTS_WITH: ID @deprecated(reason: "Please use the relevant generic filter id: { startsWith: ... }")
+  id_ENDS_WITH: ID @deprecated(reason: "Please use the relevant generic filter id: { endsWith: ... }")
+  email: StringScalarFilters
+  email_EQ: String @deprecated(reason: "Please use the relevant generic filter email: { eq: ... }")
+  email_IN: [String!] @deprecated(reason: "Please use the relevant generic filter email: { in: ... }")
+  email_CONTAINS: String @deprecated(reason: "Please use the relevant generic filter email: { contains: ... }")
+  email_STARTS_WITH: String @deprecated(reason: "Please use the relevant generic filter email: { startsWith: ... }")
+  email_ENDS_WITH: String @deprecated(reason: "Please use the relevant generic filter email: { endsWith: ... }")
+  name: StringScalarFilters
+  name_EQ: String @deprecated(reason: "Please use the relevant generic filter name: { eq: ... }")
+  name_IN: [String!] @deprecated(reason: "Please use the relevant generic filter name: { in: ... }")
+  name_CONTAINS: String @deprecated(reason: "Please use the relevant generic filter name: { contains: ... }")
+  name_STARTS_WITH: String @deprecated(reason: "Please use the relevant generic filter name: { startsWith: ... }")
+  name_ENDS_WITH: String @deprecated(reason: "Please use the relevant generic filter name: { endsWith: ... }")
+  OR: [CustomerWhere!]
+  AND: [CustomerWhere!]
+  NOT: CustomerWhere
+  orders: OrderRelationshipFilters
+
+  """Return Customers where all of the related Orders match this filter"""
+  orders_ALL: OrderWhere @deprecated(reason: "Please use the relevant generic filter 'orders: { all: ... }' instead.")
+
+  """Return Customers where none of the related Orders match this filter"""
+  orders_NONE: OrderWhere @deprecated(reason: "Please use the relevant generic filter 'orders: { none: ... }' instead.")
+
+  """Return Customers where one of the related Orders match this filter"""
+  orders_SINGLE: OrderWhere @deprecated(reason: "Please use the relevant generic filter 'orders: {  single: ... }' instead.")
+
+  """Return Customers where some of the related Orders match this filter"""
+  orders_SOME: OrderWhere @deprecated(reason: "Please use the relevant generic filter 'orders: {  some: ... }' instead.")
+
+  """
+  Return Customers where all of the related CustomerOrdersConnections match this filter
+  """
+  ordersConnection_ALL: CustomerOrdersConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'ordersConnection: { all: { node: ... } } }' instead.")
+
+  """
+  Return Customers where none of the related CustomerOrdersConnections match this filter
+  """
+  ordersConnection_NONE: CustomerOrdersConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'ordersConnection: { none: { node: ... } } }' instead.")
+
+  """
+  Return Customers where one of the related CustomerOrdersConnections match this filter
+  """
+  ordersConnection_SINGLE: CustomerOrdersConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'ordersConnection: { single: { node: ... } } }' instead.")
+
+  """
+  Return Customers where some of the related CustomerOrdersConnections match this filter
+  """
+  ordersConnection_SOME: CustomerOrdersConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'ordersConnection: { some: { node: ... } } }' instead.")
+  ordersConnection: CustomerOrdersConnectionFilters
+  ordersAggregate: CustomerOrdersAggregateInput @deprecated(reason: "Aggregate filters are moved inside the ordersConnection filter, please use { ordersConnection: { aggregate: {...} } } instead")
+}
+
+"""Filters for an aggregation of an DateTime input field"""
+input DateTimeScalarAggregationFilters {
+  max: DateTimeScalarFilters
+  min: DateTimeScalarFilters
+}
+
+"""DateTime filters"""
+input DateTimeScalarFilters {
+  eq: DateTime
+  gt: DateTime
+  gte: DateTime
+  in: [DateTime!]
+  lt: DateTime
+  lte: DateTime
+}
+
+"""DateTime mutations"""
+input DateTimeScalarMutations {
+  set: DateTime
+}
+
+"""Filters for an aggregation of a float field"""
+input FloatScalarAggregationFilters {
+  average: FloatScalarFilters
+  max: FloatScalarFilters
+  min: FloatScalarFilters
+  sum: FloatScalarFilters
+}
+
+"""Float filters"""
+input FloatScalarFilters {
+  eq: Float
+  gt: Float
+  gte: Float
+  in: [Float!]
+  lt: Float
+  lte: Float
+}
+
+"""Float mutations"""
+input FloatScalarMutations {
+  set: Float
+  add: Float
+  subtract: Float
+  multiply: Float
+  divide: Float
+}
+
+"""ID filters"""
+input IDScalarFilters {
+  eq: ID
+  in: [ID!]
+  contains: ID
+  endsWith: ID
+  startsWith: ID
+}
+
+"""Filters for an aggregation of an int field"""
+input IntScalarAggregationFilters {
+  average: FloatScalarFilters
+  max: IntScalarFilters
+  min: IntScalarFilters
+  sum: IntScalarFilters
+}
+
+"""Int filters"""
+input IntScalarFilters {
+  eq: Int
+  gt: Int
+  gte: Int
+  in: [Int!]
+  lt: Int
+  lte: Int
+}
+
+"""Int mutations"""
+input IntScalarMutations {
+  set: Int
+  add: Int
+  subtract: Int
+}
+
+"""Mutations for a list for String"""
+input ListStringMutations {
+  set: [String!]
+  push: [String!]
+  pop: Int
+}
+
+input OrderConnectInput {
+  customer: [OrderCustomerConnectFieldInput!]
+  lines: [OrderLinesConnectFieldInput!]
+}
+
+input OrderConnectWhere {
+  node: OrderWhere!
+}
+
+input OrderCreateInput {
+  number: String!
+  status: OrderStatus! = PENDING
+  placedAt: DateTime!
+  customer: OrderCustomerFieldInput
+  lines: OrderLinesFieldInput
+}
+
+input OrderCustomerAggregateInput {
+  count_EQ: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { eq: ... } } }' instead.")
+  count_LT: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { lt: ... } } }' instead.")
+  count_LTE: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { lte: ... } } }' instead.")
+  count_GT: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { gt: ... } } }' instead.")
+  count_GTE: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { gte: ... } } }' instead.")
+  count: IntScalarFilters
+  AND: [OrderCustomerAggregateInput!]
+  OR: [OrderCustomerAggregateInput!]
+  NOT: OrderCustomerAggregateInput
+  node: OrderCustomerNodeAggregationWhereInput
+}
+
+input OrderCustomerConnectFieldInput {
+  where: CustomerConnectWhere
+  connect: [CustomerConnectInput!]
+}
+
+input OrderCustomerConnectionAggregateInput {
+  count: ConnectionAggregationCountFilterInput
+  AND: [OrderCustomerConnectionAggregateInput!]
+  OR: [OrderCustomerConnectionAggregateInput!]
+  NOT: OrderCustomerConnectionAggregateInput
+  node: OrderCustomerNodeAggregationWhereInput
+}
+
+input OrderCustomerConnectionFilters {
+  """
+  Return Orders where all of the related OrderCustomerConnections match this filter
+  """
+  all: OrderCustomerConnectionWhere
+
+  """
+  Return Orders where none of the related OrderCustomerConnections match this filter
+  """
+  none: OrderCustomerConnectionWhere
+
+  """
+  Return Orders where one of the related OrderCustomerConnections match this filter
+  """
+  single: OrderCustomerConnectionWhere
+
+  """
+  Return Orders where some of the related OrderCustomerConnections match this filter
+  """
+  some: OrderCustomerConnectionWhere
+
+  """
+  Filter Orders by aggregating results on related OrderCustomerConnections
+  """
+  aggregate: OrderCustomerConnectionAggregateInput
+}
+
+input OrderCustomerConnectionSort {
+  node: CustomerSort
+}
+
+input OrderCustomerConnectionWhere {
+  AND: [OrderCustomerConnectionWhere!]
+  OR: [OrderCustomerConnectionWhere!]
+  NOT: OrderCustomerConnectionWhere
+  node: CustomerWhere
+}
+
+input OrderCustomerCreateFieldInput {
+  node: CustomerCreateInput!
+}
+
+input OrderCustomerDeleteFieldInput {
+  where: OrderCustomerConnectionWhere
+  delete: CustomerDeleteInput
+}
+
+input OrderCustomerDisconnectFieldInput {
+  where: OrderCustomerConnectionWhere
+  disconnect: CustomerDisconnectInput
+}
+
+input OrderCustomerFieldInput {
+  connect: [OrderCustomerConnectFieldInput!]
+  create: [OrderCustomerCreateFieldInput!]
+}
+
+input OrderCustomerNodeAggregationWhereInput {
+  AND: [OrderCustomerNodeAggregationWhereInput!]
+  OR: [OrderCustomerNodeAggregationWhereInput!]
+  NOT: OrderCustomerNodeAggregationWhereInput
+  email_AVERAGE_LENGTH_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'email: { averageLength: { eq: ... } } }' instead.")
+  email_LONGEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'email: { longestLength: { eq: ... } } }' instead.")
+  email_SHORTEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'email: { shortestLength: { eq: ... } } }' instead.")
+  email_AVERAGE_LENGTH_GT: Float @deprecated(reason: "Please use the relevant generic filter 'email: { averageLength: { gt: ... } } }' instead.")
+  email_LONGEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'email: { longestLength: { gt: ... } } }' instead.")
+  email_SHORTEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'email: { shortestLength: { gt: ... } } }' instead.")
+  email_AVERAGE_LENGTH_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'email: { averageLength: { gte: ... } } }' instead.")
+  email_LONGEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'email: { longestLength: { gte: ... } } }' instead.")
+  email_SHORTEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'email: { shortestLength: { gte: ... } } }' instead.")
+  email_AVERAGE_LENGTH_LT: Float @deprecated(reason: "Please use the relevant generic filter 'email: { averageLength: { lt: ... } } }' instead.")
+  email_LONGEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'email: { longestLength: { lt: ... } } }' instead.")
+  email_SHORTEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'email: { shortestLength: { lt: ... } } }' instead.")
+  email_AVERAGE_LENGTH_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'email: { averageLength: { lte: ... } } }' instead.")
+  email_LONGEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'email: { longestLength: { lte: ... } } }' instead.")
+  email_SHORTEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'email: { shortestLength: { lte: ... } } }' instead.")
+  email: StringScalarAggregationFilters
+  name_AVERAGE_LENGTH_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { eq: ... } } }' instead.")
+  name_LONGEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { eq: ... } } }' instead.")
+  name_SHORTEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { eq: ... } } }' instead.")
+  name_AVERAGE_LENGTH_GT: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { gt: ... } } }' instead.")
+  name_LONGEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { gt: ... } } }' instead.")
+  name_SHORTEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { gt: ... } } }' instead.")
+  name_AVERAGE_LENGTH_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { gte: ... } } }' instead.")
+  name_LONGEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { gte: ... } } }' instead.")
+  name_SHORTEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { gte: ... } } }' instead.")
+  name_AVERAGE_LENGTH_LT: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { lt: ... } } }' instead.")
+  name_LONGEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { lt: ... } } }' instead.")
+  name_SHORTEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { lt: ... } } }' instead.")
+  name_AVERAGE_LENGTH_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { lte: ... } } }' instead.")
+  name_LONGEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { lte: ... } } }' instead.")
+  name_SHORTEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { lte: ... } } }' instead.")
+  name: StringScalarAggregationFilters
+}
+
+input OrderCustomerUpdateConnectionInput {
+  node: CustomerUpdateInput
+  where: OrderCustomerConnectionWhere
+}
+
+input OrderCustomerUpdateFieldInput {
+  connect: [OrderCustomerConnectFieldInput!]
+  disconnect: [OrderCustomerDisconnectFieldInput!]
+  create: [OrderCustomerCreateFieldInput!]
+  update: OrderCustomerUpdateConnectionInput
+  delete: [OrderCustomerDeleteFieldInput!]
+}
+
+input OrderDeleteInput {
+  customer: [OrderCustomerDeleteFieldInput!]
+  lines: [OrderLinesDeleteFieldInput!]
+}
+
+input OrderDisconnectInput {
+  customer: [OrderCustomerDisconnectFieldInput!]
+  lines: [OrderLinesDisconnectFieldInput!]
+}
+
+input OrderLineAggregationWhereInput {
+  AND: [OrderLineAggregationWhereInput!]
+  OR: [OrderLineAggregationWhereInput!]
+  NOT: OrderLineAggregationWhereInput
+  quantity_MIN_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'quantity: { min: { eq: ... } } }' instead.")
+  quantity_MAX_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'quantity: { max: { eq: ... } } }' instead.")
+  quantity_SUM_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'quantity: { sum: { eq: ... } } }' instead.")
+  quantity_AVERAGE_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'quantity: { average: { eq: ... } } }' instead.")
+  quantity_MIN_GT: Int @deprecated(reason: "Please use the relevant generic filter 'quantity: { min: { gt: ... } } }' instead.")
+  quantity_MAX_GT: Int @deprecated(reason: "Please use the relevant generic filter 'quantity: { max: { gt: ... } } }' instead.")
+  quantity_SUM_GT: Int @deprecated(reason: "Please use the relevant generic filter 'quantity: { sum: { gt: ... } } }' instead.")
+  quantity_AVERAGE_GT: Float @deprecated(reason: "Please use the relevant generic filter 'quantity: { average: { gt: ... } } }' instead.")
+  quantity_MIN_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'quantity: { min: { gte: ... } } }' instead.")
+  quantity_MAX_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'quantity: { max: { gte: ... } } }' instead.")
+  quantity_SUM_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'quantity: { sum: { gte: ... } } }' instead.")
+  quantity_AVERAGE_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'quantity: { average: { gte: ... } } }' instead.")
+  quantity_MIN_LT: Int @deprecated(reason: "Please use the relevant generic filter 'quantity: { min: { lt: ... } } }' instead.")
+  quantity_MAX_LT: Int @deprecated(reason: "Please use the relevant generic filter 'quantity: { max: { lt: ... } } }' instead.")
+  quantity_SUM_LT: Int @deprecated(reason: "Please use the relevant generic filter 'quantity: { sum: { lt: ... } } }' instead.")
+  quantity_AVERAGE_LT: Float @deprecated(reason: "Please use the relevant generic filter 'quantity: { average: { lt: ... } } }' instead.")
+  quantity_MIN_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'quantity: { min: { lte: ... } } }' instead.")
+  quantity_MAX_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'quantity: { max: { lte: ... } } }' instead.")
+  quantity_SUM_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'quantity: { sum: { lte: ... } } }' instead.")
+  quantity_AVERAGE_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'quantity: { average: { lte: ... } } }' instead.")
+  quantity: IntScalarAggregationFilters
+  unitPrice_MIN_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'unitPrice: { min: { eq: ... } } }' instead.")
+  unitPrice_MAX_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'unitPrice: { max: { eq: ... } } }' instead.")
+  unitPrice_SUM_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'unitPrice: { sum: { eq: ... } } }' instead.")
+  unitPrice_AVERAGE_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'unitPrice: { average: { eq: ... } } }' instead.")
+  unitPrice_MIN_GT: Float @deprecated(reason: "Please use the relevant generic filter 'unitPrice: { min: { gt: ... } } }' instead.")
+  unitPrice_MAX_GT: Float @deprecated(reason: "Please use the relevant generic filter 'unitPrice: { max: { gt: ... } } }' instead.")
+  unitPrice_SUM_GT: Float @deprecated(reason: "Please use the relevant generic filter 'unitPrice: { sum: { gt: ... } } }' instead.")
+  unitPrice_AVERAGE_GT: Float @deprecated(reason: "Please use the relevant generic filter 'unitPrice: { average: { gt: ... } } }' instead.")
+  unitPrice_MIN_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'unitPrice: { min: { gte: ... } } }' instead.")
+  unitPrice_MAX_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'unitPrice: { max: { gte: ... } } }' instead.")
+  unitPrice_SUM_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'unitPrice: { sum: { gte: ... } } }' instead.")
+  unitPrice_AVERAGE_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'unitPrice: { average: { gte: ... } } }' instead.")
+  unitPrice_MIN_LT: Float @deprecated(reason: "Please use the relevant generic filter 'unitPrice: { min: { lt: ... } } }' instead.")
+  unitPrice_MAX_LT: Float @deprecated(reason: "Please use the relevant generic filter 'unitPrice: { max: { lt: ... } } }' instead.")
+  unitPrice_SUM_LT: Float @deprecated(reason: "Please use the relevant generic filter 'unitPrice: { sum: { lt: ... } } }' instead.")
+  unitPrice_AVERAGE_LT: Float @deprecated(reason: "Please use the relevant generic filter 'unitPrice: { average: { lt: ... } } }' instead.")
+  unitPrice_MIN_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'unitPrice: { min: { lte: ... } } }' instead.")
+  unitPrice_MAX_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'unitPrice: { max: { lte: ... } } }' instead.")
+  unitPrice_SUM_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'unitPrice: { sum: { lte: ... } } }' instead.")
+  unitPrice_AVERAGE_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'unitPrice: { average: { lte: ... } } }' instead.")
+  unitPrice: FloatScalarAggregationFilters
+}
+
+input OrderLineCreateInput {
+  quantity: Int!
+  unitPrice: Float!
+}
+
+input OrderLinesAggregateInput {
+  count_EQ: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { eq: ... } } }' instead.")
+  count_LT: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { lt: ... } } }' instead.")
+  count_LTE: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { lte: ... } } }' instead.")
+  count_GT: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { gt: ... } } }' instead.")
+  count_GTE: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { gte: ... } } }' instead.")
+  count: IntScalarFilters
+  AND: [OrderLinesAggregateInput!]
+  OR: [OrderLinesAggregateInput!]
+  NOT: OrderLinesAggregateInput
+  node: OrderLinesNodeAggregationWhereInput
+  edge: OrderLineAggregationWhereInput
+}
+
+input OrderLinesConnectFieldInput {
+  edge: OrderLineCreateInput!
+  where: ProductConnectWhere
+  connect: [ProductConnectInput!]
+}
+
+input OrderLinesConnectionAggregateInput {
+  count: ConnectionAggregationCountFilterInput
+  AND: [OrderLinesConnectionAggregateInput!]
+  OR: [OrderLinesConnectionAggregateInput!]
+  NOT: OrderLinesConnectionAggregateInput
+  node: OrderLinesNodeAggregationWhereInput
+  edge: OrderLineAggregationWhereInput
+}
+
+input OrderLinesConnectionFilters {
+  """
+  Return Orders where all of the related OrderLinesConnections match this filter
+  """
+  all: OrderLinesConnectionWhere
+
+  """
+  Return Orders where none of the related OrderLinesConnections match this filter
+  """
+  none: OrderLinesConnectionWhere
+
+  """
+  Return Orders where one of the related OrderLinesConnections match this filter
+  """
+  single: OrderLinesConnectionWhere
+
+  """
+  Return Orders where some of the related OrderLinesConnections match this filter
+  """
+  some: OrderLinesConnectionWhere
+
+  """Filter Orders by aggregating results on related OrderLinesConnections"""
+  aggregate: OrderLinesConnectionAggregateInput
+}
+
+input OrderLinesConnectionSort {
+  node: ProductSort
+  edge: OrderLineSort
+}
+
+input OrderLinesConnectionWhere {
+  AND: [OrderLinesConnectionWhere!]
+  OR: [OrderLinesConnectionWhere!]
+  NOT: OrderLinesConnectionWhere
+  node: ProductWhere
+  edge: OrderLineWhere
+}
+
+input OrderLinesCreateFieldInput {
+  edge: OrderLineCreateInput!
+  node: ProductCreateInput!
+}
+
+input OrderLinesDeleteFieldInput {
+  where: OrderLinesConnectionWhere
+  delete: ProductDeleteInput
+}
+
+input OrderLinesDisconnectFieldInput {
+  where: OrderLinesConnectionWhere
+  disconnect: ProductDisconnectInput
+}
+
+input OrderLinesFieldInput {
+  connect: [OrderLinesConnectFieldInput!]
+  create: [OrderLinesCreateFieldInput!]
+}
+
+input OrderLinesNodeAggregationWhereInput {
+  AND: [OrderLinesNodeAggregationWhereInput!]
+  OR: [OrderLinesNodeAggregationWhereInput!]
+  NOT: OrderLinesNodeAggregationWhereInput
+  sku_AVERAGE_LENGTH_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'sku: { averageLength: { eq: ... } } }' instead.")
+  sku_LONGEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'sku: { longestLength: { eq: ... } } }' instead.")
+  sku_SHORTEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'sku: { shortestLength: { eq: ... } } }' instead.")
+  sku_AVERAGE_LENGTH_GT: Float @deprecated(reason: "Please use the relevant generic filter 'sku: { averageLength: { gt: ... } } }' instead.")
+  sku_LONGEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'sku: { longestLength: { gt: ... } } }' instead.")
+  sku_SHORTEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'sku: { shortestLength: { gt: ... } } }' instead.")
+  sku_AVERAGE_LENGTH_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'sku: { averageLength: { gte: ... } } }' instead.")
+  sku_LONGEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'sku: { longestLength: { gte: ... } } }' instead.")
+  sku_SHORTEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'sku: { shortestLength: { gte: ... } } }' instead.")
+  sku_AVERAGE_LENGTH_LT: Float @deprecated(reason: "Please use the relevant generic filter 'sku: { averageLength: { lt: ... } } }' instead.")
+  sku_LONGEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'sku: { longestLength: { lt: ... } } }' instead.")
+  sku_SHORTEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'sku: { shortestLength: { lt: ... } } }' instead.")
+  sku_AVERAGE_LENGTH_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'sku: { averageLength: { lte: ... } } }' instead.")
+  sku_LONGEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'sku: { longestLength: { lte: ... } } }' instead.")
+  sku_SHORTEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'sku: { shortestLength: { lte: ... } } }' instead.")
+  sku: StringScalarAggregationFilters
+  name_AVERAGE_LENGTH_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { eq: ... } } }' instead.")
+  name_LONGEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { eq: ... } } }' instead.")
+  name_SHORTEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { eq: ... } } }' instead.")
+  name_AVERAGE_LENGTH_GT: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { gt: ... } } }' instead.")
+  name_LONGEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { gt: ... } } }' instead.")
+  name_SHORTEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { gt: ... } } }' instead.")
+  name_AVERAGE_LENGTH_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { gte: ... } } }' instead.")
+  name_LONGEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { gte: ... } } }' instead.")
+  name_SHORTEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { gte: ... } } }' instead.")
+  name_AVERAGE_LENGTH_LT: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { lt: ... } } }' instead.")
+  name_LONGEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { lt: ... } } }' instead.")
+  name_SHORTEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { lt: ... } } }' instead.")
+  name_AVERAGE_LENGTH_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { lte: ... } } }' instead.")
+  name_LONGEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { lte: ... } } }' instead.")
+  name_SHORTEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { lte: ... } } }' instead.")
+  name: StringScalarAggregationFilters
+  price_MIN_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'price: { min: { eq: ... } } }' instead.")
+  price_MAX_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'price: { max: { eq: ... } } }' instead.")
+  price_SUM_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'price: { sum: { eq: ... } } }' instead.")
+  price_AVERAGE_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'price: { average: { eq: ... } } }' instead.")
+  price_MIN_GT: Float @deprecated(reason: "Please use the relevant generic filter 'price: { min: { gt: ... } } }' instead.")
+  price_MAX_GT: Float @deprecated(reason: "Please use the relevant generic filter 'price: { max: { gt: ... } } }' instead.")
+  price_SUM_GT: Float @deprecated(reason: "Please use the relevant generic filter 'price: { sum: { gt: ... } } }' instead.")
+  price_AVERAGE_GT: Float @deprecated(reason: "Please use the relevant generic filter 'price: { average: { gt: ... } } }' instead.")
+  price_MIN_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'price: { min: { gte: ... } } }' instead.")
+  price_MAX_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'price: { max: { gte: ... } } }' instead.")
+  price_SUM_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'price: { sum: { gte: ... } } }' instead.")
+  price_AVERAGE_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'price: { average: { gte: ... } } }' instead.")
+  price_MIN_LT: Float @deprecated(reason: "Please use the relevant generic filter 'price: { min: { lt: ... } } }' instead.")
+  price_MAX_LT: Float @deprecated(reason: "Please use the relevant generic filter 'price: { max: { lt: ... } } }' instead.")
+  price_SUM_LT: Float @deprecated(reason: "Please use the relevant generic filter 'price: { sum: { lt: ... } } }' instead.")
+  price_AVERAGE_LT: Float @deprecated(reason: "Please use the relevant generic filter 'price: { average: { lt: ... } } }' instead.")
+  price_MIN_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'price: { min: { lte: ... } } }' instead.")
+  price_MAX_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'price: { max: { lte: ... } } }' instead.")
+  price_SUM_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'price: { sum: { lte: ... } } }' instead.")
+  price_AVERAGE_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'price: { average: { lte: ... } } }' instead.")
+  price: FloatScalarAggregationFilters
+  stock_MIN_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'stock: { min: { eq: ... } } }' instead.")
+  stock_MAX_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'stock: { max: { eq: ... } } }' instead.")
+  stock_SUM_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'stock: { sum: { eq: ... } } }' instead.")
+  stock_AVERAGE_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'stock: { average: { eq: ... } } }' instead.")
+  stock_MIN_GT: Int @deprecated(reason: "Please use the relevant generic filter 'stock: { min: { gt: ... } } }' instead.")
+  stock_MAX_GT: Int @deprecated(reason: "Please use the relevant generic filter 'stock: { max: { gt: ... } } }' instead.")
+  stock_SUM_GT: Int @deprecated(reason: "Please use the relevant generic filter 'stock: { sum: { gt: ... } } }' instead.")
+  stock_AVERAGE_GT: Float @deprecated(reason: "Please use the relevant generic filter 'stock: { average: { gt: ... } } }' instead.")
+  stock_MIN_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'stock: { min: { gte: ... } } }' instead.")
+  stock_MAX_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'stock: { max: { gte: ... } } }' instead.")
+  stock_SUM_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'stock: { sum: { gte: ... } } }' instead.")
+  stock_AVERAGE_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'stock: { average: { gte: ... } } }' instead.")
+  stock_MIN_LT: Int @deprecated(reason: "Please use the relevant generic filter 'stock: { min: { lt: ... } } }' instead.")
+  stock_MAX_LT: Int @deprecated(reason: "Please use the relevant generic filter 'stock: { max: { lt: ... } } }' instead.")
+  stock_SUM_LT: Int @deprecated(reason: "Please use the relevant generic filter 'stock: { sum: { lt: ... } } }' instead.")
+  stock_AVERAGE_LT: Float @deprecated(reason: "Please use the relevant generic filter 'stock: { average: { lt: ... } } }' instead.")
+  stock_MIN_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'stock: { min: { lte: ... } } }' instead.")
+  stock_MAX_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'stock: { max: { lte: ... } } }' instead.")
+  stock_SUM_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'stock: { sum: { lte: ... } } }' instead.")
+  stock_AVERAGE_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'stock: { average: { lte: ... } } }' instead.")
+  stock: IntScalarAggregationFilters
+}
+
+input OrderLineSort {
+  quantity: SortDirection
+  unitPrice: SortDirection
+}
+
+input OrderLinesUpdateConnectionInput {
+  node: ProductUpdateInput
+  where: OrderLinesConnectionWhere
+  edge: OrderLineUpdateInput
+}
+
+input OrderLinesUpdateFieldInput {
+  connect: [OrderLinesConnectFieldInput!]
+  disconnect: [OrderLinesDisconnectFieldInput!]
+  create: [OrderLinesCreateFieldInput!]
+  update: OrderLinesUpdateConnectionInput
+  delete: [OrderLinesDeleteFieldInput!]
+}
+
+input OrderLineUpdateInput {
+  quantity: IntScalarMutations
+  quantity_SET: Int @deprecated(reason: "Please use the generic mutation 'quantity: { set: ... } }' instead.")
+  quantity_INCREMENT: Int @deprecated(reason: "Please use the relevant generic mutation 'quantity: { increment: ... } }' instead.")
+  quantity_DECREMENT: Int @deprecated(reason: "Please use the relevant generic mutation 'quantity: { decrement: ... } }' instead.")
+  unitPrice: FloatScalarMutations
+  unitPrice_SET: Float @deprecated(reason: "Please use the generic mutation 'unitPrice: { set: ... } }' instead.")
+  unitPrice_ADD: Float @deprecated(reason: "Please use the relevant generic mutation 'unitPrice: { add: ... } }' instead.")
+  unitPrice_SUBTRACT: Float @deprecated(reason: "Please use the relevant generic mutation 'unitPrice: { subtract: ... } }' instead.")
+  unitPrice_MULTIPLY: Float @deprecated(reason: "Please use the relevant generic mutation 'unitPrice: { multiply: ... } }' instead.")
+  unitPrice_DIVIDE: Float @deprecated(reason: "Please use the relevant generic mutation 'unitPrice: { divide: ... } }' instead.")
+}
+
+input OrderLineWhere {
+  quantity: IntScalarFilters
+  quantity_EQ: Int @deprecated(reason: "Please use the relevant generic filter quantity: { eq: ... }")
+  quantity_IN: [Int!] @deprecated(reason: "Please use the relevant generic filter quantity: { in: ... }")
+  quantity_LT: Int @deprecated(reason: "Please use the relevant generic filter quantity: { lt: ... }")
+  quantity_LTE: Int @deprecated(reason: "Please use the relevant generic filter quantity: { lte: ... }")
+  quantity_GT: Int @deprecated(reason: "Please use the relevant generic filter quantity: { gt: ... }")
+  quantity_GTE: Int @deprecated(reason: "Please use the relevant generic filter quantity: { gte: ... }")
+  unitPrice: FloatScalarFilters
+  unitPrice_EQ: Float @deprecated(reason: "Please use the relevant generic filter unitPrice: { eq: ... }")
+  unitPrice_IN: [Float!] @deprecated(reason: "Please use the relevant generic filter unitPrice: { in: ... }")
+  unitPrice_LT: Float @deprecated(reason: "Please use the relevant generic filter unitPrice: { lt: ... }")
+  unitPrice_LTE: Float @deprecated(reason: "Please use the relevant generic filter unitPrice: { lte: ... }")
+  unitPrice_GT: Float @deprecated(reason: "Please use the relevant generic filter unitPrice: { gt: ... }")
+  unitPrice_GTE: Float @deprecated(reason: "Please use the relevant generic filter unitPrice: { gte: ... }")
+  OR: [OrderLineWhere!]
+  AND: [OrderLineWhere!]
+  NOT: OrderLineWhere
+}
+
+input OrderRelationshipFilters {
+  """Filter type where all of the related Orders match this filter"""
+  all: OrderWhere
+
+  """Filter type where none of the related Orders match this filter"""
+  none: OrderWhere
+
+  """Filter type where one of the related Orders match this filter"""
+  single: OrderWhere
+
+  """Filter type where some of the related Orders match this filter"""
+  some: OrderWhere
+}
+
+"""
+Fields to sort Orders by. The order in which sorts are applied is not guaranteed when specifying many fields in one OrderSort object.
+"""
+input OrderSort {
+  id: SortDirection
+  number: SortDirection
+  status: SortDirection
+  placedAt: SortDirection
+}
+
+"""OrderStatus filters"""
+input OrderStatusEnumScalarFilters {
+  eq: OrderStatus
+  in: [OrderStatus!]
+}
+
+"""OrderStatus mutations"""
+input OrderStatusEnumScalarMutations {
+  set: OrderStatus
+}
+
+input OrderUpdateInput {
+  number: StringScalarMutations
+  number_SET: String @deprecated(reason: "Please use the generic mutation 'number: { set: ... } }' instead.")
+  status: OrderStatusEnumScalarMutations
+  status_SET: OrderStatus @deprecated(reason: "Please use the generic mutation 'status: { set: ... } }' instead.")
+  placedAt: DateTimeScalarMutations
+  placedAt_SET: DateTime @deprecated(reason: "Please use the generic mutation 'placedAt: { set: ... } }' instead.")
+  customer: [OrderCustomerUpdateFieldInput!]
+  lines: [OrderLinesUpdateFieldInput!]
+}
+
+input OrderWhere {
+  id: IDScalarFilters
+  id_EQ: ID @deprecated(reason: "Please use the relevant generic filter id: { eq: ... }")
+  id_IN: [ID!] @deprecated(reason: "Please use the relevant generic filter id: { in: ... }")
+  id_CONTAINS: ID @deprecated(reason: "Please use the relevant generic filter id: { contains: ... }")
+  id_STARTS_WITH: ID @deprecated(reason: "Please use the relevant generic filter id: { startsWith: ... }")
+  id_ENDS_WITH: ID @deprecated(reason: "Please use the relevant generic filter id: { endsWith: ... }")
+  number: StringScalarFilters
+  number_EQ: String @deprecated(reason: "Please use the relevant generic filter number: { eq: ... }")
+  number_IN: [String!] @deprecated(reason: "Please use the relevant generic filter number: { in: ... }")
+  number_CONTAINS: String @deprecated(reason: "Please use the relevant generic filter number: { contains: ... }")
+  number_STARTS_WITH: String @deprecated(reason: "Please use the relevant generic filter number: { startsWith: ... }")
+  number_ENDS_WITH: String @deprecated(reason: "Please use the relevant generic filter number: { endsWith: ... }")
+  status: OrderStatusEnumScalarFilters
+  status_EQ: OrderStatus @deprecated(reason: "Please use the relevant generic filter status: { eq: ... }")
+  status_IN: [OrderStatus!] @deprecated(reason: "Please use the relevant generic filter status: { in: ... }")
+  placedAt: DateTimeScalarFilters
+  placedAt_EQ: DateTime @deprecated(reason: "Please use the relevant generic filter placedAt: { eq: ... }")
+  placedAt_IN: [DateTime!] @deprecated(reason: "Please use the relevant generic filter placedAt: { in: ... }")
+  placedAt_LT: DateTime @deprecated(reason: "Please use the relevant generic filter placedAt: { lt: ... }")
+  placedAt_LTE: DateTime @deprecated(reason: "Please use the relevant generic filter placedAt: { lte: ... }")
+  placedAt_GT: DateTime @deprecated(reason: "Please use the relevant generic filter placedAt: { gt: ... }")
+  placedAt_GTE: DateTime @deprecated(reason: "Please use the relevant generic filter placedAt: { gte: ... }")
+  OR: [OrderWhere!]
+  AND: [OrderWhere!]
+  NOT: OrderWhere
+  customer: CustomerRelationshipFilters
+
+  """Return Orders where all of the related Customers match this filter"""
+  customer_ALL: CustomerWhere @deprecated(reason: "Please use the relevant generic filter 'customer: { all: ... }' instead.")
+
+  """Return Orders where none of the related Customers match this filter"""
+  customer_NONE: CustomerWhere @deprecated(reason: "Please use the relevant generic filter 'customer: { none: ... }' instead.")
+
+  """Return Orders where one of the related Customers match this filter"""
+  customer_SINGLE: CustomerWhere @deprecated(reason: "Please use the relevant generic filter 'customer: {  single: ... }' instead.")
+
+  """Return Orders where some of the related Customers match this filter"""
+  customer_SOME: CustomerWhere @deprecated(reason: "Please use the relevant generic filter 'customer: {  some: ... }' instead.")
+
+  """
+  Return Orders where all of the related OrderCustomerConnections match this filter
+  """
+  customerConnection_ALL: OrderCustomerConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'customerConnection: { all: { node: ... } } }' instead.")
+
+  """
+  Return Orders where none of the related OrderCustomerConnections match this filter
+  """
+  customerConnection_NONE: OrderCustomerConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'customerConnection: { none: { node: ... } } }' instead.")
+
+  """
+  Return Orders where one of the related OrderCustomerConnections match this filter
+  """
+  customerConnection_SINGLE: OrderCustomerConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'customerConnection: { single: { node: ... } } }' instead.")
+
+  """
+  Return Orders where some of the related OrderCustomerConnections match this filter
+  """
+  customerConnection_SOME: OrderCustomerConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'customerConnection: { some: { node: ... } } }' instead.")
+  customerConnection: OrderCustomerConnectionFilters
+  customerAggregate: OrderCustomerAggregateInput @deprecated(reason: "Aggregate filters are moved inside the customerConnection filter, please use { customerConnection: { aggregate: {...} } } instead")
+  lines: ProductRelationshipFilters
+
+  """Return Orders where all of the related Products match this filter"""
+  lines_ALL: ProductWhere @deprecated(reason: "Please use the relevant generic filter 'lines: { all: ... }' instead.")
+
+  """Return Orders where none of the related Products match this filter"""
+  lines_NONE: ProductWhere @deprecated(reason: "Please use the relevant generic filter 'lines: { none: ... }' instead.")
+
+  """Return Orders where one of the related Products match this filter"""
+  lines_SINGLE: ProductWhere @deprecated(reason: "Please use the relevant generic filter 'lines: {  single: ... }' instead.")
+
+  """Return Orders where some of the related Products match this filter"""
+  lines_SOME: ProductWhere @deprecated(reason: "Please use the relevant generic filter 'lines: {  some: ... }' instead.")
+
+  """
+  Return Orders where all of the related OrderLinesConnections match this filter
+  """
+  linesConnection_ALL: OrderLinesConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'linesConnection: { all: { node: ... } } }' instead.")
+
+  """
+  Return Orders where none of the related OrderLinesConnections match this filter
+  """
+  linesConnection_NONE: OrderLinesConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'linesConnection: { none: { node: ... } } }' instead.")
+
+  """
+  Return Orders where one of the related OrderLinesConnections match this filter
+  """
+  linesConnection_SINGLE: OrderLinesConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'linesConnection: { single: { node: ... } } }' instead.")
+
+  """
+  Return Orders where some of the related OrderLinesConnections match this filter
+  """
+  linesConnection_SOME: OrderLinesConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'linesConnection: { some: { node: ... } } }' instead.")
+  linesConnection: OrderLinesConnectionFilters
+  linesAggregate: OrderLinesAggregateInput @deprecated(reason: "Aggregate filters are moved inside the linesConnection filter, please use { linesConnection: { aggregate: {...} } } instead")
+}
+
+input ProductCategoryAggregateInput {
+  count_EQ: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { eq: ... } } }' instead.")
+  count_LT: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { lt: ... } } }' instead.")
+  count_LTE: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { lte: ... } } }' instead.")
+  count_GT: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { gt: ... } } }' instead.")
+  count_GTE: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { gte: ... } } }' instead.")
+  count: IntScalarFilters
+  AND: [ProductCategoryAggregateInput!]
+  OR: [ProductCategoryAggregateInput!]
+  NOT: ProductCategoryAggregateInput
+  node: ProductCategoryNodeAggregationWhereInput
+}
+
+input ProductCategoryConnectFieldInput {
+  where: CategoryConnectWhere
+  connect: [CategoryConnectInput!]
+}
+
+input ProductCategoryConnectionAggregateInput {
+  count: ConnectionAggregationCountFilterInput
+  AND: [ProductCategoryConnectionAggregateInput!]
+  OR: [ProductCategoryConnectionAggregateInput!]
+  NOT: ProductCategoryConnectionAggregateInput
+  node: ProductCategoryNodeAggregationWhereInput
+}
+
+input ProductCategoryConnectionFilters {
+  """
+  Return Products where all of the related ProductCategoryConnections match this filter
+  """
+  all: ProductCategoryConnectionWhere
+
+  """
+  Return Products where none of the related ProductCategoryConnections match this filter
+  """
+  none: ProductCategoryConnectionWhere
+
+  """
+  Return Products where one of the related ProductCategoryConnections match this filter
+  """
+  single: ProductCategoryConnectionWhere
+
+  """
+  Return Products where some of the related ProductCategoryConnections match this filter
+  """
+  some: ProductCategoryConnectionWhere
+
+  """
+  Filter Products by aggregating results on related ProductCategoryConnections
+  """
+  aggregate: ProductCategoryConnectionAggregateInput
+}
+
+input ProductCategoryConnectionSort {
+  node: CategorySort
+}
+
+input ProductCategoryConnectionWhere {
+  AND: [ProductCategoryConnectionWhere!]
+  OR: [ProductCategoryConnectionWhere!]
+  NOT: ProductCategoryConnectionWhere
+  node: CategoryWhere
+}
+
+input ProductCategoryCreateFieldInput {
+  node: CategoryCreateInput!
+}
+
+input ProductCategoryDeleteFieldInput {
+  where: ProductCategoryConnectionWhere
+  delete: CategoryDeleteInput
+}
+
+input ProductCategoryDisconnectFieldInput {
+  where: ProductCategoryConnectionWhere
+  disconnect: CategoryDisconnectInput
+}
+
+input ProductCategoryFieldInput {
+  connect: [ProductCategoryConnectFieldInput!]
+  create: [ProductCategoryCreateFieldInput!]
+}
+
+input ProductCategoryNodeAggregationWhereInput {
+  AND: [ProductCategoryNodeAggregationWhereInput!]
+  OR: [ProductCategoryNodeAggregationWhereInput!]
+  NOT: ProductCategoryNodeAggregationWhereInput
+  name_AVERAGE_LENGTH_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { eq: ... } } }' instead.")
+  name_LONGEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { eq: ... } } }' instead.")
+  name_SHORTEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { eq: ... } } }' instead.")
+  name_AVERAGE_LENGTH_GT: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { gt: ... } } }' instead.")
+  name_LONGEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { gt: ... } } }' instead.")
+  name_SHORTEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { gt: ... } } }' instead.")
+  name_AVERAGE_LENGTH_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { gte: ... } } }' instead.")
+  name_LONGEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { gte: ... } } }' instead.")
+  name_SHORTEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { gte: ... } } }' instead.")
+  name_AVERAGE_LENGTH_LT: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { lt: ... } } }' instead.")
+  name_LONGEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { lt: ... } } }' instead.")
+  name_SHORTEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { lt: ... } } }' instead.")
+  name_AVERAGE_LENGTH_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { lte: ... } } }' instead.")
+  name_LONGEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { lte: ... } } }' instead.")
+  name_SHORTEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { lte: ... } } }' instead.")
+  name: StringScalarAggregationFilters
+}
+
+input ProductCategoryUpdateConnectionInput {
+  node: CategoryUpdateInput
+  where: ProductCategoryConnectionWhere
+}
+
+input ProductCategoryUpdateFieldInput {
+  connect: [ProductCategoryConnectFieldInput!]
+  disconnect: [ProductCategoryDisconnectFieldInput!]
+  create: [ProductCategoryCreateFieldInput!]
+  update: ProductCategoryUpdateConnectionInput
+  delete: [ProductCategoryDeleteFieldInput!]
+}
+
+input ProductConnectInput {
+  category: [ProductCategoryConnectFieldInput!]
+  orders: [ProductOrdersConnectFieldInput!]
+}
+
+input ProductConnectWhere {
+  node: ProductWhere!
+}
+
+input ProductCreateInput {
+  sku: String!
+  name: String!
+  price: Float!
+  stock: Int! = 0
+  tags: [String!]!
+  category: ProductCategoryFieldInput
+  orders: ProductOrdersFieldInput
+}
+
+input ProductDeleteInput {
+  category: [ProductCategoryDeleteFieldInput!]
+  orders: [ProductOrdersDeleteFieldInput!]
+}
+
+input ProductDisconnectInput {
+  category: [ProductCategoryDisconnectFieldInput!]
+  orders: [ProductOrdersDisconnectFieldInput!]
+}
+
+input ProductOrdersAggregateInput {
+  count_EQ: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { eq: ... } } }' instead.")
+  count_LT: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { lt: ... } } }' instead.")
+  count_LTE: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { lte: ... } } }' instead.")
+  count_GT: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { gt: ... } } }' instead.")
+  count_GTE: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { gte: ... } } }' instead.")
+  count: IntScalarFilters
+  AND: [ProductOrdersAggregateInput!]
+  OR: [ProductOrdersAggregateInput!]
+  NOT: ProductOrdersAggregateInput
+  node: ProductOrdersNodeAggregationWhereInput
+  edge: OrderLineAggregationWhereInput
+}
+
+input ProductOrdersConnectFieldInput {
+  edge: OrderLineCreateInput!
+  where: OrderConnectWhere
+  connect: [OrderConnectInput!]
+}
+
+input ProductOrdersConnectionAggregateInput {
+  count: ConnectionAggregationCountFilterInput
+  AND: [ProductOrdersConnectionAggregateInput!]
+  OR: [ProductOrdersConnectionAggregateInput!]
+  NOT: ProductOrdersConnectionAggregateInput
+  node: ProductOrdersNodeAggregationWhereInput
+  edge: OrderLineAggregationWhereInput
+}
+
+input ProductOrdersConnectionFilters {
+  """
+  Return Products where all of the related ProductOrdersConnections match this filter
+  """
+  all: ProductOrdersConnectionWhere
+
+  """
+  Return Products where none of the related ProductOrdersConnections match this filter
+  """
+  none: ProductOrdersConnectionWhere
+
+  """
+  Return Products where one of the related ProductOrdersConnections match this filter
+  """
+  single: ProductOrdersConnectionWhere
+
+  """
+  Return Products where some of the related ProductOrdersConnections match this filter
+  """
+  some: ProductOrdersConnectionWhere
+
+  """
+  Filter Products by aggregating results on related ProductOrdersConnections
+  """
+  aggregate: ProductOrdersConnectionAggregateInput
+}
+
+input ProductOrdersConnectionSort {
+  node: OrderSort
+  edge: OrderLineSort
+}
+
+input ProductOrdersConnectionWhere {
+  AND: [ProductOrdersConnectionWhere!]
+  OR: [ProductOrdersConnectionWhere!]
+  NOT: ProductOrdersConnectionWhere
+  node: OrderWhere
+  edge: OrderLineWhere
+}
+
+input ProductOrdersCreateFieldInput {
+  edge: OrderLineCreateInput!
+  node: OrderCreateInput!
+}
+
+input ProductOrdersDeleteFieldInput {
+  where: ProductOrdersConnectionWhere
+  delete: OrderDeleteInput
+}
+
+input ProductOrdersDisconnectFieldInput {
+  where: ProductOrdersConnectionWhere
+  disconnect: OrderDisconnectInput
+}
+
+input ProductOrdersFieldInput {
+  connect: [ProductOrdersConnectFieldInput!]
+  create: [ProductOrdersCreateFieldInput!]
+}
+
+input ProductOrdersNodeAggregationWhereInput {
+  AND: [ProductOrdersNodeAggregationWhereInput!]
+  OR: [ProductOrdersNodeAggregationWhereInput!]
+  NOT: ProductOrdersNodeAggregationWhereInput
+  number_AVERAGE_LENGTH_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'number: { averageLength: { eq: ... } } }' instead.")
+  number_LONGEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'number: { longestLength: { eq: ... } } }' instead.")
+  number_SHORTEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'number: { shortestLength: { eq: ... } } }' instead.")
+  number_AVERAGE_LENGTH_GT: Float @deprecated(reason: "Please use the relevant generic filter 'number: { averageLength: { gt: ... } } }' instead.")
+  number_LONGEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'number: { longestLength: { gt: ... } } }' instead.")
+  number_SHORTEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'number: { shortestLength: { gt: ... } } }' instead.")
+  number_AVERAGE_LENGTH_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'number: { averageLength: { gte: ... } } }' instead.")
+  number_LONGEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'number: { longestLength: { gte: ... } } }' instead.")
+  number_SHORTEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'number: { shortestLength: { gte: ... } } }' instead.")
+  number_AVERAGE_LENGTH_LT: Float @deprecated(reason: "Please use the relevant generic filter 'number: { averageLength: { lt: ... } } }' instead.")
+  number_LONGEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'number: { longestLength: { lt: ... } } }' instead.")
+  number_SHORTEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'number: { shortestLength: { lt: ... } } }' instead.")
+  number_AVERAGE_LENGTH_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'number: { averageLength: { lte: ... } } }' instead.")
+  number_LONGEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'number: { longestLength: { lte: ... } } }' instead.")
+  number_SHORTEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'number: { shortestLength: { lte: ... } } }' instead.")
+  number: StringScalarAggregationFilters
+  placedAt_MIN_EQUAL: DateTime @deprecated(reason: "Please use the relevant generic filter 'placedAt: { min: { eq: ... } } }' instead.")
+  placedAt_MAX_EQUAL: DateTime @deprecated(reason: "Please use the relevant generic filter 'placedAt: { max: { eq: ... } } }' instead.")
+  placedAt_MIN_GT: DateTime @deprecated(reason: "Please use the relevant generic filter 'placedAt: { min: { gt: ... } } }' instead.")
+  placedAt_MAX_GT: DateTime @deprecated(reason: "Please use the relevant generic filter 'placedAt: { max: { gt: ... } } }' instead.")
+  placedAt_MIN_GTE: DateTime @deprecated(reason: "Please use the relevant generic filter 'placedAt: { min: { gte: ... } } }' instead.")
+  placedAt_MAX_GTE: DateTime @deprecated(reason: "Please use the relevant generic filter 'placedAt: { max: { gte: ... } } }' instead.")
+  placedAt_MIN_LT: DateTime @deprecated(reason: "Please use the relevant generic filter 'placedAt: { min: { lt: ... } } }' instead.")
+  placedAt_MAX_LT: DateTime @deprecated(reason: "Please use the relevant generic filter 'placedAt: { max: { lt: ... } } }' instead.")
+  placedAt_MIN_LTE: DateTime @deprecated(reason: "Please use the relevant generic filter 'placedAt: { min: { lte: ... } } }' instead.")
+  placedAt_MAX_LTE: DateTime @deprecated(reason: "Please use the relevant generic filter 'placedAt: { max: { lte: ... } } }' instead.")
+  placedAt: DateTimeScalarAggregationFilters
+}
+
+input ProductOrdersUpdateConnectionInput {
+  node: OrderUpdateInput
+  where: ProductOrdersConnectionWhere
+  edge: OrderLineUpdateInput
+}
+
+input ProductOrdersUpdateFieldInput {
+  connect: [ProductOrdersConnectFieldInput!]
+  disconnect: [ProductOrdersDisconnectFieldInput!]
+  create: [ProductOrdersCreateFieldInput!]
+  update: ProductOrdersUpdateConnectionInput
+  delete: [ProductOrdersDeleteFieldInput!]
+}
+
+input ProductRelationshipFilters {
+  """Filter type where all of the related Products match this filter"""
+  all: ProductWhere
+
+  """Filter type where none of the related Products match this filter"""
+  none: ProductWhere
+
+  """Filter type where one of the related Products match this filter"""
+  single: ProductWhere
+
+  """Filter type where some of the related Products match this filter"""
+  some: ProductWhere
+}
+
+"""
+Fields to sort Products by. The order in which sorts are applied is not guaranteed when specifying many fields in one ProductSort object.
+"""
+input ProductSort {
+  sku: SortDirection
+  name: SortDirection
+  price: SortDirection
+  stock: SortDirection
+}
+
+input ProductUpdateInput {
+  sku: StringScalarMutations
+  sku_SET: String @deprecated(reason: "Please use the generic mutation 'sku: { set: ... } }' instead.")
+  name: StringScalarMutations
+  name_SET: String @deprecated(reason: "Please use the generic mutation 'name: { set: ... } }' instead.")
+  price: FloatScalarMutations
+  price_SET: Float @deprecated(reason: "Please use the generic mutation 'price: { set: ... } }' instead.")
+  price_ADD: Float @deprecated(reason: "Please use the relevant generic mutation 'price: { add: ... } }' instead.")
+  price_SUBTRACT: Float @deprecated(reason: "Please use the relevant generic mutation 'price: { subtract: ... } }' instead.")
+  price_MULTIPLY: Float @deprecated(reason: "Please use the relevant generic mutation 'price: { multiply: ... } }' instead.")
+  price_DIVIDE: Float @deprecated(reason: "Please use the relevant generic mutation 'price: { divide: ... } }' instead.")
+  stock: IntScalarMutations
+  stock_SET: Int @deprecated(reason: "Please use the generic mutation 'stock: { set: ... } }' instead.")
+  stock_INCREMENT: Int @deprecated(reason: "Please use the relevant generic mutation 'stock: { increment: ... } }' instead.")
+  stock_DECREMENT: Int @deprecated(reason: "Please use the relevant generic mutation 'stock: { decrement: ... } }' instead.")
+  tags: ListStringMutations
+  tags_SET: [String!] @deprecated(reason: "Please use the generic mutation 'tags: { set: ... } }' instead.")
+  tags_POP: Int @deprecated(reason: "Please use the generic mutation 'tags: { pop: ... } }' instead.")
+  tags_PUSH: [String!] @deprecated(reason: "Please use the generic mutation 'tags: { push: ... } }' instead.")
+  category: [ProductCategoryUpdateFieldInput!]
+  orders: [ProductOrdersUpdateFieldInput!]
+}
+
+input ProductWhere {
+  sku: StringScalarFilters
+  sku_EQ: String @deprecated(reason: "Please use the relevant generic filter sku: { eq: ... }")
+  sku_IN: [String!] @deprecated(reason: "Please use the relevant generic filter sku: { in: ... }")
+  sku_CONTAINS: String @deprecated(reason: "Please use the relevant generic filter sku: { contains: ... }")
+  sku_STARTS_WITH: String @deprecated(reason: "Please use the relevant generic filter sku: { startsWith: ... }")
+  sku_ENDS_WITH: String @deprecated(reason: "Please use the relevant generic filter sku: { endsWith: ... }")
+  name: StringScalarFilters
+  name_EQ: String @deprecated(reason: "Please use the relevant generic filter name: { eq: ... }")
+  name_IN: [String!] @deprecated(reason: "Please use the relevant generic filter name: { in: ... }")
+  name_CONTAINS: String @deprecated(reason: "Please use the relevant generic filter name: { contains: ... }")
+  name_STARTS_WITH: String @deprecated(reason: "Please use the relevant generic filter name: { startsWith: ... }")
+  name_ENDS_WITH: String @deprecated(reason: "Please use the relevant generic filter name: { endsWith: ... }")
+  price: FloatScalarFilters
+  price_EQ: Float @deprecated(reason: "Please use the relevant generic filter price: { eq: ... }")
+  price_IN: [Float!] @deprecated(reason: "Please use the relevant generic filter price: { in: ... }")
+  price_LT: Float @deprecated(reason: "Please use the relevant generic filter price: { lt: ... }")
+  price_LTE: Float @deprecated(reason: "Please use the relevant generic filter price: { lte: ... }")
+  price_GT: Float @deprecated(reason: "Please use the relevant generic filter price: { gt: ... }")
+  price_GTE: Float @deprecated(reason: "Please use the relevant generic filter price: { gte: ... }")
+  stock: IntScalarFilters
+  stock_EQ: Int @deprecated(reason: "Please use the relevant generic filter stock: { eq: ... }")
+  stock_IN: [Int!] @deprecated(reason: "Please use the relevant generic filter stock: { in: ... }")
+  stock_LT: Int @deprecated(reason: "Please use the relevant generic filter stock: { lt: ... }")
+  stock_LTE: Int @deprecated(reason: "Please use the relevant generic filter stock: { lte: ... }")
+  stock_GT: Int @deprecated(reason: "Please use the relevant generic filter stock: { gt: ... }")
+  stock_GTE: Int @deprecated(reason: "Please use the relevant generic filter stock: { gte: ... }")
+  tags: StringListFilters
+  tags_EQ: [String!] @deprecated(reason: "Please use the relevant generic filter tags: { eq: ... }")
+  tags_INCLUDES: String @deprecated(reason: "Please use the relevant generic filter tags: { includes: ... }")
+  OR: [ProductWhere!]
+  AND: [ProductWhere!]
+  NOT: ProductWhere
+  category: CategoryRelationshipFilters
+
+  """Return Products where all of the related Categories match this filter"""
+  category_ALL: CategoryWhere @deprecated(reason: "Please use the relevant generic filter 'category: { all: ... }' instead.")
+
+  """Return Products where none of the related Categories match this filter"""
+  category_NONE: CategoryWhere @deprecated(reason: "Please use the relevant generic filter 'category: { none: ... }' instead.")
+
+  """Return Products where one of the related Categories match this filter"""
+  category_SINGLE: CategoryWhere @deprecated(reason: "Please use the relevant generic filter 'category: {  single: ... }' instead.")
+
+  """Return Products where some of the related Categories match this filter"""
+  category_SOME: CategoryWhere @deprecated(reason: "Please use the relevant generic filter 'category: {  some: ... }' instead.")
+
+  """
+  Return Products where all of the related ProductCategoryConnections match this filter
+  """
+  categoryConnection_ALL: ProductCategoryConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'categoryConnection: { all: { node: ... } } }' instead.")
+
+  """
+  Return Products where none of the related ProductCategoryConnections match this filter
+  """
+  categoryConnection_NONE: ProductCategoryConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'categoryConnection: { none: { node: ... } } }' instead.")
+
+  """
+  Return Products where one of the related ProductCategoryConnections match this filter
+  """
+  categoryConnection_SINGLE: ProductCategoryConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'categoryConnection: { single: { node: ... } } }' instead.")
+
+  """
+  Return Products where some of the related ProductCategoryConnections match this filter
+  """
+  categoryConnection_SOME: ProductCategoryConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'categoryConnection: { some: { node: ... } } }' instead.")
+  categoryConnection: ProductCategoryConnectionFilters
+  categoryAggregate: ProductCategoryAggregateInput @deprecated(reason: "Aggregate filters are moved inside the categoryConnection filter, please use { categoryConnection: { aggregate: {...} } } instead")
+  orders: OrderRelationshipFilters
+
+  """Return Products where all of the related Orders match this filter"""
+  orders_ALL: OrderWhere @deprecated(reason: "Please use the relevant generic filter 'orders: { all: ... }' instead.")
+
+  """Return Products where none of the related Orders match this filter"""
+  orders_NONE: OrderWhere @deprecated(reason: "Please use the relevant generic filter 'orders: { none: ... }' instead.")
+
+  """Return Products where one of the related Orders match this filter"""
+  orders_SINGLE: OrderWhere @deprecated(reason: "Please use the relevant generic filter 'orders: {  single: ... }' instead.")
+
+  """Return Products where some of the related Orders match this filter"""
+  orders_SOME: OrderWhere @deprecated(reason: "Please use the relevant generic filter 'orders: {  some: ... }' instead.")
+
+  """
+  Return Products where all of the related ProductOrdersConnections match this filter
+  """
+  ordersConnection_ALL: ProductOrdersConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'ordersConnection: { all: { node: ... } } }' instead.")
+
+  """
+  Return Products where none of the related ProductOrdersConnections match this filter
+  """
+  ordersConnection_NONE: ProductOrdersConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'ordersConnection: { none: { node: ... } } }' instead.")
+
+  """
+  Return Products where one of the related ProductOrdersConnections match this filter
+  """
+  ordersConnection_SINGLE: ProductOrdersConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'ordersConnection: { single: { node: ... } } }' instead.")
+
+  """
+  Return Products where some of the related ProductOrdersConnections match this filter
+  """
+  ordersConnection_SOME: ProductOrdersConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'ordersConnection: { some: { node: ... } } }' instead.")
+  ordersConnection: ProductOrdersConnectionFilters
+  ordersAggregate: ProductOrdersAggregateInput @deprecated(reason: "Aggregate filters are moved inside the ordersConnection filter, please use { ordersConnection: { aggregate: {...} } } instead")
+}
+
+"""String list filters"""
+input StringListFilters {
+  eq: [String!]
+  includes: String
+}
+
+"""Filters for an aggregation of a string field"""
+input StringScalarAggregationFilters {
+  averageLength: FloatScalarFilters
+  shortestLength: IntScalarFilters
+  longestLength: IntScalarFilters
+}
+
+"""String filters"""
+input StringScalarFilters {
+  eq: String
+  in: [String!]
+  contains: String
+  endsWith: String
+  startsWith: String
+}
+
+"""String mutations"""
+input StringScalarMutations {
+  set: String
+}

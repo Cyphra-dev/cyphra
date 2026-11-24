@@ -1,0 +1,1742 @@
+type Query {
+  moviesConnection(first: Int, after: String, where: MovieWhere, sort: [MovieSort!]): MoviesConnection!
+  movies(where: MovieWhere, limit: Int, offset: Int, sort: [MovieSort!]): [Movie!]!
+  actorsConnection(first: Int, after: String, where: ActorWhere, sort: [ActorSort!]): ActorsConnection!
+  actors(where: ActorWhere, limit: Int, offset: Int, sort: [ActorSort!]): [Actor!]!
+  reviewsConnection(first: Int, after: String, where: ReviewWhere): ReviewsConnection!
+  reviews(where: ReviewWhere, limit: Int, offset: Int): [Review!]!
+  studiosConnection(first: Int, after: String, where: StudioWhere, sort: [StudioSort!]): StudiosConnection!
+  studios(where: StudioWhere, limit: Int, offset: Int, sort: [StudioSort!]): [Studio!]!
+  countersConnection(first: Int, after: String, where: CounterWhere, sort: [CounterSort!]): CountersConnection!
+  counters(where: CounterWhere, limit: Int, offset: Int, sort: [CounterSort!]): [Counter!]!
+}
+
+type Mutation {
+  createMovies(input: [MovieCreateInput!]!): CreateMoviesMutationResponse!
+  deleteMovies(where: MovieWhere, delete: MovieDeleteInput): DeleteInfo!
+  updateMovies(where: MovieWhere, update: MovieUpdateInput): UpdateMoviesMutationResponse!
+  createActors(input: [ActorCreateInput!]!): CreateActorsMutationResponse!
+  deleteActors(where: ActorWhere, delete: ActorDeleteInput): DeleteInfo!
+  updateActors(where: ActorWhere, update: ActorUpdateInput): UpdateActorsMutationResponse!
+  createReviews(input: [ReviewCreateInput!]!): CreateReviewsMutationResponse!
+  deleteReviews(where: ReviewWhere): DeleteInfo!
+  updateReviews(where: ReviewWhere, update: ReviewUpdateInput): UpdateReviewsMutationResponse!
+  createStudios(input: [StudioCreateInput!]!): CreateStudiosMutationResponse!
+  deleteStudios(where: StudioWhere, delete: StudioDeleteInput): DeleteInfo!
+  updateStudios(where: StudioWhere, update: StudioUpdateInput): UpdateStudiosMutationResponse!
+  createCounters(input: [CounterCreateInput!]!): CreateCountersMutationResponse!
+  deleteCounters(where: CounterWhere): DeleteInfo!
+  updateCounters(where: CounterWhere, update: CounterUpdateInput): UpdateCountersMutationResponse!
+}
+
+type Subscription {
+  movieCreated(where: MovieSubscriptionWhere): MovieCreatedEvent!
+}
+
+enum EventType {
+  CREATE
+  DELETE
+  UPDATE
+  CREATE_RELATIONSHIP
+  DELETE_RELATIONSHIP
+}
+
+"""An enum for sorting in either ascending or descending order."""
+enum SortDirection {
+  """Sort by field values in ascending order."""
+  ASC
+
+  """Sort by field values in descending order."""
+  DESC
+}
+
+"""
+The edge properties for the following fields:
+* Movie.actors
+* Actor.movies
+"""
+type ActedIn {
+  role: String
+  screenTime: Int
+  year: Int
+}
+
+type Actor {
+  name: String!
+  age: Int
+  moviesConnection(where: ActorMoviesConnectionWhere, first: Int, after: String, sort: [ActorMoviesConnectionSort!]): ActorMoviesConnection!
+}
+
+type ActorAggregate {
+  count: Count!
+  node: ActorAggregateNode!
+}
+
+type ActorAggregateNode {
+  name: StringAggregateSelection!
+  age: IntAggregateSelection!
+}
+
+type ActorEdge {
+  cursor: String!
+  node: Actor!
+}
+
+type ActorMovieMoviesAggregateSelection {
+  count: CountConnection!
+  node: ActorMovieMoviesNodeAggregateSelection
+  edge: ActorMovieMoviesEdgeAggregateSelection
+}
+
+type ActorMovieMoviesEdgeAggregateSelection {
+  role: StringAggregateSelection!
+  year: IntAggregateSelection!
+}
+
+type ActorMovieMoviesNodeAggregateSelection {
+  title: StringAggregateSelection!
+  internalScore: IntAggregateSelection!
+  budget: FloatAggregateSelection!
+  tagline: StringAggregateSelection!
+  released: IntAggregateSelection!
+  createdBy: StringAggregateSelection!
+}
+
+type ActorMoviesConnection {
+  aggregate: ActorMovieMoviesAggregateSelection!
+}
+
+type ActorsConnection {
+  edges: [ActorEdge!]!
+  totalCount: Int!
+  pageInfo: PageInfo!
+  aggregate: ActorAggregate!
+}
+
+type Count {
+  nodes: Int!
+}
+
+type CountConnection {
+  nodes: Int!
+  edges: Int!
+}
+
+type Counter {
+  hits: Int
+}
+
+type CounterAggregate {
+  count: Count!
+  node: CounterAggregateNode!
+}
+
+type CounterAggregateNode {
+  hits: IntAggregateSelection!
+}
+
+type CounterEdge {
+  cursor: String!
+  node: Counter!
+}
+
+type CountersConnection {
+  edges: [CounterEdge!]!
+  totalCount: Int!
+  pageInfo: PageInfo!
+  aggregate: CounterAggregate!
+}
+
+type CreateActorsMutationResponse {
+  info: CreateInfo!
+  actors: [Actor!]!
+}
+
+type CreateCountersMutationResponse {
+  info: CreateInfo!
+  counters: [Counter!]!
+}
+
+"""
+Information about the number of nodes and relationships created during a create mutation
+"""
+type CreateInfo {
+  nodesCreated: Int!
+  relationshipsCreated: Int!
+}
+
+type CreateMoviesMutationResponse {
+  info: CreateInfo!
+  movies: [Movie!]!
+}
+
+type CreateReviewsMutationResponse {
+  info: CreateInfo!
+  reviews: [Review!]!
+}
+
+type CreateStudiosMutationResponse {
+  info: CreateInfo!
+  studios: [Studio!]!
+}
+
+"""
+Information about the number of nodes and relationships deleted during a delete mutation
+"""
+type DeleteInfo {
+  nodesDeleted: Int!
+  relationshipsDeleted: Int!
+}
+
+type FloatAggregateSelection {
+  max: Float
+  min: Float
+  average: Float
+  sum: Float
+}
+
+type IntAggregateSelection {
+  max: Int
+  min: Int
+  average: Float
+  sum: Int
+}
+
+type Movie {
+  id: ID!
+  title: String!
+  rating: Int
+  budget: Float
+  tagline: String
+  released: Int
+  createdBy: String
+  plain: String
+  computed: String
+  actors(where: ActorWhere, limit: Int, offset: Int, sort: [ActorSort!]): [Actor!]!
+  actorsConnection(where: MovieActorsConnectionWhere, first: Int, after: String, sort: [MovieActorsConnectionSort!]): MovieActorsConnection!
+  reviews(where: ReviewWhere, limit: Int, offset: Int): [Review!]!
+  reviewsConnection(where: MovieReviewsConnectionWhere, first: Int, after: String): MovieReviewsConnection!
+  studio: Studio
+  studioConnection: MovieStudioConnection!
+}
+
+type MovieActorActorsAggregateSelection {
+  count: CountConnection!
+  node: MovieActorActorsNodeAggregateSelection
+  edge: MovieActorActorsEdgeAggregateSelection
+}
+
+type MovieActorActorsEdgeAggregateSelection {
+  role: StringAggregateSelection!
+  year: IntAggregateSelection!
+}
+
+type MovieActorActorsNodeAggregateSelection {
+  name: StringAggregateSelection!
+  age: IntAggregateSelection!
+}
+
+type MovieActorsConnection {
+  edges: [MovieActorsRelationship!]!
+  totalCount: Int!
+  pageInfo: PageInfo!
+  aggregate: MovieActorActorsAggregateSelection!
+}
+
+type MovieActorsRelationship {
+  cursor: String!
+  node: Actor!
+  properties: ActedIn!
+}
+
+type MovieAggregate {
+  count: Count!
+  node: MovieAggregateNode!
+}
+
+type MovieAggregateNode {
+  title: StringAggregateSelection!
+  internalScore: IntAggregateSelection!
+  budget: FloatAggregateSelection!
+  tagline: StringAggregateSelection!
+  released: IntAggregateSelection!
+  createdBy: StringAggregateSelection!
+}
+
+type MovieCreatedEvent {
+  event: EventType!
+  timestamp: Float!
+  createdMovie: MovieEventPayload!
+}
+
+type MovieEdge {
+  cursor: String!
+  node: Movie!
+}
+
+type MovieEventPayload {
+  id: ID!
+  title: String!
+  rating: Int
+  budget: Float
+  tagline: String
+  released: Int
+  createdBy: String
+  plain: String
+  computed: String
+}
+
+type MovieReviewReviewsAggregateSelection {
+  count: CountConnection!
+  node: MovieReviewReviewsNodeAggregateSelection
+}
+
+type MovieReviewReviewsNodeAggregateSelection {
+  score: IntAggregateSelection!
+  text: StringAggregateSelection!
+}
+
+type MovieReviewsConnection {
+  edges: [MovieReviewsRelationship!]!
+  totalCount: Int!
+  pageInfo: PageInfo!
+  aggregate: MovieReviewReviewsAggregateSelection!
+}
+
+type MovieReviewsRelationship {
+  cursor: String!
+  node: Review!
+}
+
+type MoviesConnection {
+  edges: [MovieEdge!]!
+  totalCount: Int!
+  pageInfo: PageInfo!
+  aggregate: MovieAggregate!
+}
+
+type MovieStudioConnection {
+  edges: [MovieStudioRelationship!]!
+  totalCount: Int!
+  pageInfo: PageInfo!
+}
+
+type MovieStudioRelationship {
+  cursor: String!
+  node: Studio!
+}
+
+"""Pagination information (Relay)"""
+type PageInfo {
+  hasNextPage: Boolean!
+  hasPreviousPage: Boolean!
+  startCursor: String
+  endCursor: String
+}
+
+type Review {
+  score: Int
+  text: String
+}
+
+type ReviewAggregate {
+  count: Count!
+  node: ReviewAggregateNode!
+}
+
+type ReviewAggregateNode {
+  score: IntAggregateSelection!
+  text: StringAggregateSelection!
+}
+
+type ReviewEdge {
+  cursor: String!
+  node: Review!
+}
+
+type ReviewsConnection {
+  edges: [ReviewEdge!]!
+  totalCount: Int!
+  pageInfo: PageInfo!
+  aggregate: ReviewAggregate!
+}
+
+type StringAggregateSelection {
+  shortest: String
+  longest: String
+}
+
+type Studio {
+  name: String
+  movies(where: MovieWhere, limit: Int, offset: Int, sort: [MovieSort!]): [Movie!]!
+  moviesConnection(where: StudioMoviesConnectionWhere, first: Int, after: String, sort: [StudioMoviesConnectionSort!]): StudioMoviesConnection!
+}
+
+type StudioAggregate {
+  count: Count!
+  node: StudioAggregateNode!
+}
+
+type StudioAggregateNode {
+  name: StringAggregateSelection!
+}
+
+type StudioEdge {
+  cursor: String!
+  node: Studio!
+}
+
+type StudioMovieMoviesAggregateSelection {
+  count: CountConnection!
+  node: StudioMovieMoviesNodeAggregateSelection
+}
+
+type StudioMovieMoviesNodeAggregateSelection {
+  title: StringAggregateSelection!
+  internalScore: IntAggregateSelection!
+  budget: FloatAggregateSelection!
+  tagline: StringAggregateSelection!
+  released: IntAggregateSelection!
+  createdBy: StringAggregateSelection!
+}
+
+type StudioMoviesConnection {
+  edges: [StudioMoviesRelationship!]!
+  totalCount: Int!
+  pageInfo: PageInfo!
+  aggregate: StudioMovieMoviesAggregateSelection!
+}
+
+type StudioMoviesRelationship {
+  cursor: String!
+  node: Movie!
+}
+
+type StudiosConnection {
+  edges: [StudioEdge!]!
+  totalCount: Int!
+  pageInfo: PageInfo!
+  aggregate: StudioAggregate!
+}
+
+type UpdateActorsMutationResponse {
+  info: UpdateInfo!
+  actors: [Actor!]!
+}
+
+type UpdateCountersMutationResponse {
+  info: UpdateInfo!
+  counters: [Counter!]!
+}
+
+"""
+Information about the number of nodes and relationships created and deleted during an update mutation
+"""
+type UpdateInfo {
+  nodesCreated: Int!
+  nodesDeleted: Int!
+  relationshipsCreated: Int!
+  relationshipsDeleted: Int!
+}
+
+type UpdateMoviesMutationResponse {
+  info: UpdateInfo!
+  movies: [Movie!]!
+}
+
+type UpdateReviewsMutationResponse {
+  info: UpdateInfo!
+  reviews: [Review!]!
+}
+
+type UpdateStudiosMutationResponse {
+  info: UpdateInfo!
+  studios: [Studio!]!
+}
+
+input ActedInAggregationWhereInput {
+  AND: [ActedInAggregationWhereInput!]
+  OR: [ActedInAggregationWhereInput!]
+  NOT: ActedInAggregationWhereInput
+  role_AVERAGE_LENGTH_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'role: { averageLength: { eq: ... } } }' instead.")
+  role_LONGEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'role: { longestLength: { eq: ... } } }' instead.")
+  role_SHORTEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'role: { shortestLength: { eq: ... } } }' instead.")
+  role_AVERAGE_LENGTH_GT: Float @deprecated(reason: "Please use the relevant generic filter 'role: { averageLength: { gt: ... } } }' instead.")
+  role_LONGEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'role: { longestLength: { gt: ... } } }' instead.")
+  role_SHORTEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'role: { shortestLength: { gt: ... } } }' instead.")
+  role_AVERAGE_LENGTH_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'role: { averageLength: { gte: ... } } }' instead.")
+  role_LONGEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'role: { longestLength: { gte: ... } } }' instead.")
+  role_SHORTEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'role: { shortestLength: { gte: ... } } }' instead.")
+  role_AVERAGE_LENGTH_LT: Float @deprecated(reason: "Please use the relevant generic filter 'role: { averageLength: { lt: ... } } }' instead.")
+  role_LONGEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'role: { longestLength: { lt: ... } } }' instead.")
+  role_SHORTEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'role: { shortestLength: { lt: ... } } }' instead.")
+  role_AVERAGE_LENGTH_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'role: { averageLength: { lte: ... } } }' instead.")
+  role_LONGEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'role: { longestLength: { lte: ... } } }' instead.")
+  role_SHORTEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'role: { shortestLength: { lte: ... } } }' instead.")
+  role: StringScalarAggregationFilters
+  year_MIN_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'year: { min: { eq: ... } } }' instead.")
+  year_MAX_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'year: { max: { eq: ... } } }' instead.")
+  year_SUM_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'year: { sum: { eq: ... } } }' instead.")
+  year_AVERAGE_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'year: { average: { eq: ... } } }' instead.")
+  year_MIN_GT: Int @deprecated(reason: "Please use the relevant generic filter 'year: { min: { gt: ... } } }' instead.")
+  year_MAX_GT: Int @deprecated(reason: "Please use the relevant generic filter 'year: { max: { gt: ... } } }' instead.")
+  year_SUM_GT: Int @deprecated(reason: "Please use the relevant generic filter 'year: { sum: { gt: ... } } }' instead.")
+  year_AVERAGE_GT: Float @deprecated(reason: "Please use the relevant generic filter 'year: { average: { gt: ... } } }' instead.")
+  year_MIN_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'year: { min: { gte: ... } } }' instead.")
+  year_MAX_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'year: { max: { gte: ... } } }' instead.")
+  year_SUM_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'year: { sum: { gte: ... } } }' instead.")
+  year_AVERAGE_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'year: { average: { gte: ... } } }' instead.")
+  year_MIN_LT: Int @deprecated(reason: "Please use the relevant generic filter 'year: { min: { lt: ... } } }' instead.")
+  year_MAX_LT: Int @deprecated(reason: "Please use the relevant generic filter 'year: { max: { lt: ... } } }' instead.")
+  year_SUM_LT: Int @deprecated(reason: "Please use the relevant generic filter 'year: { sum: { lt: ... } } }' instead.")
+  year_AVERAGE_LT: Float @deprecated(reason: "Please use the relevant generic filter 'year: { average: { lt: ... } } }' instead.")
+  year_MIN_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'year: { min: { lte: ... } } }' instead.")
+  year_MAX_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'year: { max: { lte: ... } } }' instead.")
+  year_SUM_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'year: { sum: { lte: ... } } }' instead.")
+  year_AVERAGE_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'year: { average: { lte: ... } } }' instead.")
+  year: IntScalarAggregationFilters
+}
+
+input ActedInCreateInput {
+  role: String
+  screenTime: Int
+  year: Int
+}
+
+input ActedInSort {
+  role: SortDirection
+  screenTime: SortDirection
+  year: SortDirection
+}
+
+input ActedInUpdateInput {
+  screenTime: IntScalarMutations
+  screenTime_SET: Int @deprecated(reason: "Please use the generic mutation 'screenTime: { set: ... } }' instead.")
+  screenTime_INCREMENT: Int @deprecated(reason: "Please use the relevant generic mutation 'screenTime: { increment: ... } }' instead.")
+  screenTime_DECREMENT: Int @deprecated(reason: "Please use the relevant generic mutation 'screenTime: { decrement: ... } }' instead.")
+  year: IntScalarMutations
+  year_SET: Int @deprecated(reason: "Please use the generic mutation 'year: { set: ... } }' instead.")
+  year_INCREMENT: Int @deprecated(reason: "Please use the relevant generic mutation 'year: { increment: ... } }' instead.")
+  year_DECREMENT: Int @deprecated(reason: "Please use the relevant generic mutation 'year: { decrement: ... } }' instead.")
+}
+
+input ActedInWhere {
+  role: StringScalarFilters
+  role_EQ: String @deprecated(reason: "Please use the relevant generic filter role: { eq: ... }")
+  role_IN: [String] @deprecated(reason: "Please use the relevant generic filter role: { in: ... }")
+  role_CONTAINS: String @deprecated(reason: "Please use the relevant generic filter role: { contains: ... }")
+  role_STARTS_WITH: String @deprecated(reason: "Please use the relevant generic filter role: { startsWith: ... }")
+  role_ENDS_WITH: String @deprecated(reason: "Please use the relevant generic filter role: { endsWith: ... }")
+  screenTime: IntScalarFilters
+  screenTime_EQ: Int @deprecated(reason: "Please use the relevant generic filter screenTime: { eq: ... }")
+  screenTime_IN: [Int] @deprecated(reason: "Please use the relevant generic filter screenTime: { in: ... }")
+  screenTime_LT: Int @deprecated(reason: "Please use the relevant generic filter screenTime: { lt: ... }")
+  screenTime_LTE: Int @deprecated(reason: "Please use the relevant generic filter screenTime: { lte: ... }")
+  screenTime_GT: Int @deprecated(reason: "Please use the relevant generic filter screenTime: { gt: ... }")
+  screenTime_GTE: Int @deprecated(reason: "Please use the relevant generic filter screenTime: { gte: ... }")
+  OR: [ActedInWhere!]
+  AND: [ActedInWhere!]
+  NOT: ActedInWhere
+}
+
+input ActorConnectInput {
+  movies: [ActorMoviesConnectFieldInput!]
+}
+
+input ActorConnectWhere {
+  node: ActorWhere!
+}
+
+input ActorCreateInput {
+  name: String!
+  age: Int
+  movies: ActorMoviesFieldInput
+}
+
+input ActorDeleteInput {
+  movies: [ActorMoviesDeleteFieldInput!]
+}
+
+input ActorDisconnectInput {
+  movies: [ActorMoviesDisconnectFieldInput!]
+}
+
+input ActorMoviesAggregateInput {
+  count_EQ: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { eq: ... } } }' instead.")
+  count_LT: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { lt: ... } } }' instead.")
+  count_LTE: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { lte: ... } } }' instead.")
+  count_GT: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { gt: ... } } }' instead.")
+  count_GTE: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { gte: ... } } }' instead.")
+  count: IntScalarFilters
+  AND: [ActorMoviesAggregateInput!]
+  OR: [ActorMoviesAggregateInput!]
+  NOT: ActorMoviesAggregateInput
+  node: ActorMoviesNodeAggregationWhereInput
+  edge: ActedInAggregationWhereInput
+}
+
+input ActorMoviesConnectFieldInput {
+  edge: ActedInCreateInput
+  where: MovieConnectWhere
+  connect: [MovieConnectInput!]
+}
+
+input ActorMoviesConnectionAggregateInput {
+  count: ConnectionAggregationCountFilterInput
+  AND: [ActorMoviesConnectionAggregateInput!]
+  OR: [ActorMoviesConnectionAggregateInput!]
+  NOT: ActorMoviesConnectionAggregateInput
+  node: ActorMoviesNodeAggregationWhereInput
+  edge: ActedInAggregationWhereInput
+}
+
+input ActorMoviesConnectionFilters {
+  """
+  Return Actors where all of the related ActorMoviesConnections match this filter
+  """
+  all: ActorMoviesConnectionWhere
+
+  """
+  Return Actors where none of the related ActorMoviesConnections match this filter
+  """
+  none: ActorMoviesConnectionWhere
+
+  """
+  Return Actors where one of the related ActorMoviesConnections match this filter
+  """
+  single: ActorMoviesConnectionWhere
+
+  """
+  Return Actors where some of the related ActorMoviesConnections match this filter
+  """
+  some: ActorMoviesConnectionWhere
+
+  """Filter Actors by aggregating results on related ActorMoviesConnections"""
+  aggregate: ActorMoviesConnectionAggregateInput
+}
+
+input ActorMoviesConnectionSort {
+  node: MovieSort
+  edge: ActedInSort
+}
+
+input ActorMoviesConnectionWhere {
+  AND: [ActorMoviesConnectionWhere!]
+  OR: [ActorMoviesConnectionWhere!]
+  NOT: ActorMoviesConnectionWhere
+  node: MovieWhere
+  edge: ActedInWhere
+}
+
+input ActorMoviesCreateFieldInput {
+  edge: ActedInCreateInput
+  node: MovieCreateInput!
+}
+
+input ActorMoviesDeleteFieldInput {
+  where: ActorMoviesConnectionWhere
+  delete: MovieDeleteInput
+}
+
+input ActorMoviesDisconnectFieldInput {
+  where: ActorMoviesConnectionWhere
+  disconnect: MovieDisconnectInput
+}
+
+input ActorMoviesFieldInput {
+  connect: [ActorMoviesConnectFieldInput!]
+  create: [ActorMoviesCreateFieldInput!]
+}
+
+input ActorMoviesNodeAggregationWhereInput {
+  AND: [ActorMoviesNodeAggregationWhereInput!]
+  OR: [ActorMoviesNodeAggregationWhereInput!]
+  NOT: ActorMoviesNodeAggregationWhereInput
+  title_AVERAGE_LENGTH_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'title: { averageLength: { eq: ... } } }' instead.")
+  title_LONGEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'title: { longestLength: { eq: ... } } }' instead.")
+  title_SHORTEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'title: { shortestLength: { eq: ... } } }' instead.")
+  title_AVERAGE_LENGTH_GT: Float @deprecated(reason: "Please use the relevant generic filter 'title: { averageLength: { gt: ... } } }' instead.")
+  title_LONGEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'title: { longestLength: { gt: ... } } }' instead.")
+  title_SHORTEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'title: { shortestLength: { gt: ... } } }' instead.")
+  title_AVERAGE_LENGTH_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'title: { averageLength: { gte: ... } } }' instead.")
+  title_LONGEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'title: { longestLength: { gte: ... } } }' instead.")
+  title_SHORTEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'title: { shortestLength: { gte: ... } } }' instead.")
+  title_AVERAGE_LENGTH_LT: Float @deprecated(reason: "Please use the relevant generic filter 'title: { averageLength: { lt: ... } } }' instead.")
+  title_LONGEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'title: { longestLength: { lt: ... } } }' instead.")
+  title_SHORTEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'title: { shortestLength: { lt: ... } } }' instead.")
+  title_AVERAGE_LENGTH_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'title: { averageLength: { lte: ... } } }' instead.")
+  title_LONGEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'title: { longestLength: { lte: ... } } }' instead.")
+  title_SHORTEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'title: { shortestLength: { lte: ... } } }' instead.")
+  title: StringScalarAggregationFilters
+  secretNote_AVERAGE_LENGTH_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'secretNote: { averageLength: { eq: ... } } }' instead.")
+  secretNote_LONGEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'secretNote: { longestLength: { eq: ... } } }' instead.")
+  secretNote_SHORTEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'secretNote: { shortestLength: { eq: ... } } }' instead.")
+  secretNote_AVERAGE_LENGTH_GT: Float @deprecated(reason: "Please use the relevant generic filter 'secretNote: { averageLength: { gt: ... } } }' instead.")
+  secretNote_LONGEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'secretNote: { longestLength: { gt: ... } } }' instead.")
+  secretNote_SHORTEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'secretNote: { shortestLength: { gt: ... } } }' instead.")
+  secretNote_AVERAGE_LENGTH_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'secretNote: { averageLength: { gte: ... } } }' instead.")
+  secretNote_LONGEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'secretNote: { longestLength: { gte: ... } } }' instead.")
+  secretNote_SHORTEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'secretNote: { shortestLength: { gte: ... } } }' instead.")
+  secretNote_AVERAGE_LENGTH_LT: Float @deprecated(reason: "Please use the relevant generic filter 'secretNote: { averageLength: { lt: ... } } }' instead.")
+  secretNote_LONGEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'secretNote: { longestLength: { lt: ... } } }' instead.")
+  secretNote_SHORTEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'secretNote: { shortestLength: { lt: ... } } }' instead.")
+  secretNote_AVERAGE_LENGTH_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'secretNote: { averageLength: { lte: ... } } }' instead.")
+  secretNote_LONGEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'secretNote: { longestLength: { lte: ... } } }' instead.")
+  secretNote_SHORTEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'secretNote: { shortestLength: { lte: ... } } }' instead.")
+  secretNote: StringScalarAggregationFilters
+  internalScore_MIN_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'internalScore: { min: { eq: ... } } }' instead.")
+  internalScore_MAX_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'internalScore: { max: { eq: ... } } }' instead.")
+  internalScore_SUM_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'internalScore: { sum: { eq: ... } } }' instead.")
+  internalScore_AVERAGE_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'internalScore: { average: { eq: ... } } }' instead.")
+  internalScore_MIN_GT: Int @deprecated(reason: "Please use the relevant generic filter 'internalScore: { min: { gt: ... } } }' instead.")
+  internalScore_MAX_GT: Int @deprecated(reason: "Please use the relevant generic filter 'internalScore: { max: { gt: ... } } }' instead.")
+  internalScore_SUM_GT: Int @deprecated(reason: "Please use the relevant generic filter 'internalScore: { sum: { gt: ... } } }' instead.")
+  internalScore_AVERAGE_GT: Float @deprecated(reason: "Please use the relevant generic filter 'internalScore: { average: { gt: ... } } }' instead.")
+  internalScore_MIN_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'internalScore: { min: { gte: ... } } }' instead.")
+  internalScore_MAX_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'internalScore: { max: { gte: ... } } }' instead.")
+  internalScore_SUM_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'internalScore: { sum: { gte: ... } } }' instead.")
+  internalScore_AVERAGE_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'internalScore: { average: { gte: ... } } }' instead.")
+  internalScore_MIN_LT: Int @deprecated(reason: "Please use the relevant generic filter 'internalScore: { min: { lt: ... } } }' instead.")
+  internalScore_MAX_LT: Int @deprecated(reason: "Please use the relevant generic filter 'internalScore: { max: { lt: ... } } }' instead.")
+  internalScore_SUM_LT: Int @deprecated(reason: "Please use the relevant generic filter 'internalScore: { sum: { lt: ... } } }' instead.")
+  internalScore_AVERAGE_LT: Float @deprecated(reason: "Please use the relevant generic filter 'internalScore: { average: { lt: ... } } }' instead.")
+  internalScore_MIN_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'internalScore: { min: { lte: ... } } }' instead.")
+  internalScore_MAX_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'internalScore: { max: { lte: ... } } }' instead.")
+  internalScore_SUM_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'internalScore: { sum: { lte: ... } } }' instead.")
+  internalScore_AVERAGE_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'internalScore: { average: { lte: ... } } }' instead.")
+  internalScore: IntScalarAggregationFilters
+  rating_MIN_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'rating: { min: { eq: ... } } }' instead.")
+  rating_MAX_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'rating: { max: { eq: ... } } }' instead.")
+  rating_SUM_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'rating: { sum: { eq: ... } } }' instead.")
+  rating_AVERAGE_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'rating: { average: { eq: ... } } }' instead.")
+  rating_MIN_GT: Int @deprecated(reason: "Please use the relevant generic filter 'rating: { min: { gt: ... } } }' instead.")
+  rating_MAX_GT: Int @deprecated(reason: "Please use the relevant generic filter 'rating: { max: { gt: ... } } }' instead.")
+  rating_SUM_GT: Int @deprecated(reason: "Please use the relevant generic filter 'rating: { sum: { gt: ... } } }' instead.")
+  rating_AVERAGE_GT: Float @deprecated(reason: "Please use the relevant generic filter 'rating: { average: { gt: ... } } }' instead.")
+  rating_MIN_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'rating: { min: { gte: ... } } }' instead.")
+  rating_MAX_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'rating: { max: { gte: ... } } }' instead.")
+  rating_SUM_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'rating: { sum: { gte: ... } } }' instead.")
+  rating_AVERAGE_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'rating: { average: { gte: ... } } }' instead.")
+  rating_MIN_LT: Int @deprecated(reason: "Please use the relevant generic filter 'rating: { min: { lt: ... } } }' instead.")
+  rating_MAX_LT: Int @deprecated(reason: "Please use the relevant generic filter 'rating: { max: { lt: ... } } }' instead.")
+  rating_SUM_LT: Int @deprecated(reason: "Please use the relevant generic filter 'rating: { sum: { lt: ... } } }' instead.")
+  rating_AVERAGE_LT: Float @deprecated(reason: "Please use the relevant generic filter 'rating: { average: { lt: ... } } }' instead.")
+  rating_MIN_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'rating: { min: { lte: ... } } }' instead.")
+  rating_MAX_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'rating: { max: { lte: ... } } }' instead.")
+  rating_SUM_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'rating: { sum: { lte: ... } } }' instead.")
+  rating_AVERAGE_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'rating: { average: { lte: ... } } }' instead.")
+  rating: IntScalarAggregationFilters
+  budget_MIN_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'budget: { min: { eq: ... } } }' instead.")
+  budget_MAX_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'budget: { max: { eq: ... } } }' instead.")
+  budget_SUM_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'budget: { sum: { eq: ... } } }' instead.")
+  budget_AVERAGE_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'budget: { average: { eq: ... } } }' instead.")
+  budget_MIN_GT: Float @deprecated(reason: "Please use the relevant generic filter 'budget: { min: { gt: ... } } }' instead.")
+  budget_MAX_GT: Float @deprecated(reason: "Please use the relevant generic filter 'budget: { max: { gt: ... } } }' instead.")
+  budget_SUM_GT: Float @deprecated(reason: "Please use the relevant generic filter 'budget: { sum: { gt: ... } } }' instead.")
+  budget_AVERAGE_GT: Float @deprecated(reason: "Please use the relevant generic filter 'budget: { average: { gt: ... } } }' instead.")
+  budget_MIN_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'budget: { min: { gte: ... } } }' instead.")
+  budget_MAX_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'budget: { max: { gte: ... } } }' instead.")
+  budget_SUM_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'budget: { sum: { gte: ... } } }' instead.")
+  budget_AVERAGE_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'budget: { average: { gte: ... } } }' instead.")
+  budget_MIN_LT: Float @deprecated(reason: "Please use the relevant generic filter 'budget: { min: { lt: ... } } }' instead.")
+  budget_MAX_LT: Float @deprecated(reason: "Please use the relevant generic filter 'budget: { max: { lt: ... } } }' instead.")
+  budget_SUM_LT: Float @deprecated(reason: "Please use the relevant generic filter 'budget: { sum: { lt: ... } } }' instead.")
+  budget_AVERAGE_LT: Float @deprecated(reason: "Please use the relevant generic filter 'budget: { average: { lt: ... } } }' instead.")
+  budget_MIN_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'budget: { min: { lte: ... } } }' instead.")
+  budget_MAX_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'budget: { max: { lte: ... } } }' instead.")
+  budget_SUM_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'budget: { sum: { lte: ... } } }' instead.")
+  budget_AVERAGE_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'budget: { average: { lte: ... } } }' instead.")
+  budget: FloatScalarAggregationFilters
+  createdBy_AVERAGE_LENGTH_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'createdBy: { averageLength: { eq: ... } } }' instead.")
+  createdBy_LONGEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'createdBy: { longestLength: { eq: ... } } }' instead.")
+  createdBy_SHORTEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'createdBy: { shortestLength: { eq: ... } } }' instead.")
+  createdBy_AVERAGE_LENGTH_GT: Float @deprecated(reason: "Please use the relevant generic filter 'createdBy: { averageLength: { gt: ... } } }' instead.")
+  createdBy_LONGEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'createdBy: { longestLength: { gt: ... } } }' instead.")
+  createdBy_SHORTEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'createdBy: { shortestLength: { gt: ... } } }' instead.")
+  createdBy_AVERAGE_LENGTH_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'createdBy: { averageLength: { gte: ... } } }' instead.")
+  createdBy_LONGEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'createdBy: { longestLength: { gte: ... } } }' instead.")
+  createdBy_SHORTEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'createdBy: { shortestLength: { gte: ... } } }' instead.")
+  createdBy_AVERAGE_LENGTH_LT: Float @deprecated(reason: "Please use the relevant generic filter 'createdBy: { averageLength: { lt: ... } } }' instead.")
+  createdBy_LONGEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'createdBy: { longestLength: { lt: ... } } }' instead.")
+  createdBy_SHORTEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'createdBy: { shortestLength: { lt: ... } } }' instead.")
+  createdBy_AVERAGE_LENGTH_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'createdBy: { averageLength: { lte: ... } } }' instead.")
+  createdBy_LONGEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'createdBy: { longestLength: { lte: ... } } }' instead.")
+  createdBy_SHORTEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'createdBy: { shortestLength: { lte: ... } } }' instead.")
+  createdBy: StringScalarAggregationFilters
+}
+
+input ActorMoviesUpdateConnectionInput {
+  node: MovieUpdateInput
+  where: ActorMoviesConnectionWhere
+  edge: ActedInUpdateInput
+}
+
+input ActorMoviesUpdateFieldInput {
+  connect: [ActorMoviesConnectFieldInput!]
+  disconnect: [ActorMoviesDisconnectFieldInput!]
+  create: [ActorMoviesCreateFieldInput!]
+  update: ActorMoviesUpdateConnectionInput
+  delete: [ActorMoviesDeleteFieldInput!]
+}
+
+input ActorRelationshipFilters {
+  """Filter type where all of the related Actors match this filter"""
+  all: ActorWhere
+
+  """Filter type where none of the related Actors match this filter"""
+  none: ActorWhere
+
+  """Filter type where one of the related Actors match this filter"""
+  single: ActorWhere
+
+  """Filter type where some of the related Actors match this filter"""
+  some: ActorWhere
+}
+
+"""
+Fields to sort Actors by. The order in which sorts are applied is not guaranteed when specifying many fields in one ActorSort object.
+"""
+input ActorSort {
+  name: SortDirection
+  age: SortDirection
+}
+
+input ActorUpdateInput {
+  name: StringScalarMutations
+  name_SET: String @deprecated(reason: "Please use the generic mutation 'name: { set: ... } }' instead.")
+  age: IntScalarMutations
+  age_SET: Int @deprecated(reason: "Please use the generic mutation 'age: { set: ... } }' instead.")
+  age_INCREMENT: Int @deprecated(reason: "Please use the relevant generic mutation 'age: { increment: ... } }' instead.")
+  age_DECREMENT: Int @deprecated(reason: "Please use the relevant generic mutation 'age: { decrement: ... } }' instead.")
+  movies: [ActorMoviesUpdateFieldInput!]
+}
+
+input ActorWhere {
+  name: StringScalarFilters
+  name_EQ: String @deprecated(reason: "Please use the relevant generic filter name: { eq: ... }")
+  name_IN: [String!] @deprecated(reason: "Please use the relevant generic filter name: { in: ... }")
+  name_CONTAINS: String @deprecated(reason: "Please use the relevant generic filter name: { contains: ... }")
+  name_STARTS_WITH: String @deprecated(reason: "Please use the relevant generic filter name: { startsWith: ... }")
+  name_ENDS_WITH: String @deprecated(reason: "Please use the relevant generic filter name: { endsWith: ... }")
+  age: IntScalarFilters
+  age_EQ: Int @deprecated(reason: "Please use the relevant generic filter age: { eq: ... }")
+  age_IN: [Int] @deprecated(reason: "Please use the relevant generic filter age: { in: ... }")
+  age_LT: Int @deprecated(reason: "Please use the relevant generic filter age: { lt: ... }")
+  age_LTE: Int @deprecated(reason: "Please use the relevant generic filter age: { lte: ... }")
+  age_GT: Int @deprecated(reason: "Please use the relevant generic filter age: { gt: ... }")
+  age_GTE: Int @deprecated(reason: "Please use the relevant generic filter age: { gte: ... }")
+  OR: [ActorWhere!]
+  AND: [ActorWhere!]
+  NOT: ActorWhere
+  movies: MovieRelationshipFilters
+
+  """Return Actors where all of the related Movies match this filter"""
+  movies_ALL: MovieWhere @deprecated(reason: "Please use the relevant generic filter 'movies: { all: ... }' instead.")
+
+  """Return Actors where none of the related Movies match this filter"""
+  movies_NONE: MovieWhere @deprecated(reason: "Please use the relevant generic filter 'movies: { none: ... }' instead.")
+
+  """Return Actors where one of the related Movies match this filter"""
+  movies_SINGLE: MovieWhere @deprecated(reason: "Please use the relevant generic filter 'movies: {  single: ... }' instead.")
+
+  """Return Actors where some of the related Movies match this filter"""
+  movies_SOME: MovieWhere @deprecated(reason: "Please use the relevant generic filter 'movies: {  some: ... }' instead.")
+
+  """
+  Return Actors where all of the related ActorMoviesConnections match this filter
+  """
+  moviesConnection_ALL: ActorMoviesConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'moviesConnection: { all: { node: ... } } }' instead.")
+
+  """
+  Return Actors where none of the related ActorMoviesConnections match this filter
+  """
+  moviesConnection_NONE: ActorMoviesConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'moviesConnection: { none: { node: ... } } }' instead.")
+
+  """
+  Return Actors where one of the related ActorMoviesConnections match this filter
+  """
+  moviesConnection_SINGLE: ActorMoviesConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'moviesConnection: { single: { node: ... } } }' instead.")
+
+  """
+  Return Actors where some of the related ActorMoviesConnections match this filter
+  """
+  moviesConnection_SOME: ActorMoviesConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'moviesConnection: { some: { node: ... } } }' instead.")
+  moviesConnection: ActorMoviesConnectionFilters
+  moviesAggregate: ActorMoviesAggregateInput @deprecated(reason: "Aggregate filters are moved inside the moviesConnection filter, please use { moviesConnection: { aggregate: {...} } } instead")
+}
+
+input ConnectionAggregationCountFilterInput {
+  nodes: IntScalarFilters
+  edges: IntScalarFilters
+}
+
+input CounterCreateInput {
+  """
+  Appears because this input type would be empty otherwise because this type is composed of just generated and/or relationship properties. See https://neo4j.com/docs/graphql-manual/current/troubleshooting/faqs/
+  """
+  _emptyInput: Boolean
+}
+
+"""
+Fields to sort Counters by. The order in which sorts are applied is not guaranteed when specifying many fields in one CounterSort object.
+"""
+input CounterSort {
+  hits: SortDirection
+}
+
+input CounterUpdateInput {
+  """
+  Appears because this input type would be empty otherwise because this type is composed of just generated and/or relationship properties. See https://neo4j.com/docs/graphql-manual/current/troubleshooting/faqs/
+  """
+  _emptyInput: Boolean
+}
+
+input CounterWhere {
+  hits: IntScalarFilters
+  hits_EQ: Int @deprecated(reason: "Please use the relevant generic filter hits: { eq: ... }")
+  hits_IN: [Int] @deprecated(reason: "Please use the relevant generic filter hits: { in: ... }")
+  hits_LT: Int @deprecated(reason: "Please use the relevant generic filter hits: { lt: ... }")
+  hits_LTE: Int @deprecated(reason: "Please use the relevant generic filter hits: { lte: ... }")
+  hits_GT: Int @deprecated(reason: "Please use the relevant generic filter hits: { gt: ... }")
+  hits_GTE: Int @deprecated(reason: "Please use the relevant generic filter hits: { gte: ... }")
+  OR: [CounterWhere!]
+  AND: [CounterWhere!]
+  NOT: CounterWhere
+}
+
+"""Filters for an aggregation of a float field"""
+input FloatScalarAggregationFilters {
+  average: FloatScalarFilters
+  max: FloatScalarFilters
+  min: FloatScalarFilters
+  sum: FloatScalarFilters
+}
+
+"""Float filters"""
+input FloatScalarFilters {
+  eq: Float
+  gt: Float
+  gte: Float
+  in: [Float!]
+  lt: Float
+  lte: Float
+}
+
+"""Float mutations"""
+input FloatScalarMutations {
+  set: Float
+  add: Float
+  subtract: Float
+  multiply: Float
+  divide: Float
+}
+
+"""ID filters"""
+input IDScalarFilters {
+  eq: ID
+  in: [ID!]
+  contains: ID
+  endsWith: ID
+  startsWith: ID
+}
+
+"""Filters for an aggregation of an int field"""
+input IntScalarAggregationFilters {
+  average: FloatScalarFilters
+  max: IntScalarFilters
+  min: IntScalarFilters
+  sum: IntScalarFilters
+}
+
+"""Int filters"""
+input IntScalarFilters {
+  eq: Int
+  gt: Int
+  gte: Int
+  in: [Int!]
+  lt: Int
+  lte: Int
+}
+
+"""Int mutations"""
+input IntScalarMutations {
+  set: Int
+  add: Int
+  subtract: Int
+}
+
+input MovieActorsConnectFieldInput {
+  edge: ActedInCreateInput
+  where: ActorConnectWhere
+  connect: [ActorConnectInput!]
+}
+
+input MovieActorsConnectionFilters {
+  """
+  Return Movies where all of the related MovieActorsConnections match this filter
+  """
+  all: MovieActorsConnectionWhere
+
+  """
+  Return Movies where none of the related MovieActorsConnections match this filter
+  """
+  none: MovieActorsConnectionWhere
+
+  """
+  Return Movies where one of the related MovieActorsConnections match this filter
+  """
+  single: MovieActorsConnectionWhere
+
+  """
+  Return Movies where some of the related MovieActorsConnections match this filter
+  """
+  some: MovieActorsConnectionWhere
+}
+
+input MovieActorsConnectionSort {
+  node: ActorSort
+  edge: ActedInSort
+}
+
+input MovieActorsConnectionWhere {
+  AND: [MovieActorsConnectionWhere!]
+  OR: [MovieActorsConnectionWhere!]
+  NOT: MovieActorsConnectionWhere
+  node: ActorWhere
+  edge: ActedInWhere
+}
+
+input MovieActorsCreateFieldInput {
+  edge: ActedInCreateInput
+  node: ActorCreateInput!
+}
+
+input MovieActorsDeleteFieldInput {
+  where: MovieActorsConnectionWhere
+  delete: ActorDeleteInput
+}
+
+input MovieActorsDisconnectFieldInput {
+  where: MovieActorsConnectionWhere
+  disconnect: ActorDisconnectInput
+}
+
+input MovieActorsUpdateConnectionInput {
+  node: ActorUpdateInput
+  where: MovieActorsConnectionWhere
+  edge: ActedInUpdateInput
+}
+
+input MovieActorsUpdateFieldInput {
+  connect: [MovieActorsConnectFieldInput!]
+  disconnect: [MovieActorsDisconnectFieldInput!]
+  create: [MovieActorsCreateFieldInput!]
+  update: MovieActorsUpdateConnectionInput
+  delete: [MovieActorsDeleteFieldInput!]
+}
+
+input MovieConnectInput {
+  actors: [MovieActorsConnectFieldInput!]
+  reviews: [MovieReviewsConnectFieldInput!]
+}
+
+input MovieConnectWhere {
+  node: MovieWhere!
+}
+
+input MovieCreateInput {
+  id: ID!
+  title: String!
+  secretNote: String
+  internalScore: Int
+  rating: Int
+  budget: Float
+  tagline: String
+  released: Int
+  plain: String
+  reviews: MovieReviewsFieldInput
+}
+
+input MovieDeleteInput {
+  actors: [MovieActorsDeleteFieldInput!]
+  reviews: [MovieReviewsDeleteFieldInput!]
+  studio: MovieStudioDeleteFieldInput
+}
+
+input MovieDisconnectInput {
+  actors: [MovieActorsDisconnectFieldInput!]
+  reviews: [MovieReviewsDisconnectFieldInput!]
+}
+
+input MovieRelationshipFilters {
+  """Filter type where all of the related Movies match this filter"""
+  all: MovieWhere
+
+  """Filter type where none of the related Movies match this filter"""
+  none: MovieWhere
+
+  """Filter type where one of the related Movies match this filter"""
+  single: MovieWhere
+
+  """Filter type where some of the related Movies match this filter"""
+  some: MovieWhere
+}
+
+input MovieReviewsAggregateInput {
+  count_EQ: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { eq: ... } } }' instead.")
+  count_LT: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { lt: ... } } }' instead.")
+  count_LTE: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { lte: ... } } }' instead.")
+  count_GT: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { gt: ... } } }' instead.")
+  count_GTE: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { gte: ... } } }' instead.")
+  count: IntScalarFilters
+  AND: [MovieReviewsAggregateInput!]
+  OR: [MovieReviewsAggregateInput!]
+  NOT: MovieReviewsAggregateInput
+  node: MovieReviewsNodeAggregationWhereInput
+}
+
+input MovieReviewsConnectFieldInput {
+  where: ReviewConnectWhere
+}
+
+input MovieReviewsConnectionAggregateInput {
+  count: ConnectionAggregationCountFilterInput
+  AND: [MovieReviewsConnectionAggregateInput!]
+  OR: [MovieReviewsConnectionAggregateInput!]
+  NOT: MovieReviewsConnectionAggregateInput
+  node: MovieReviewsNodeAggregationWhereInput
+}
+
+input MovieReviewsConnectionFilters {
+  """
+  Filter Movies by aggregating results on related MovieReviewsConnections
+  """
+  aggregate: MovieReviewsConnectionAggregateInput
+}
+
+input MovieReviewsConnectionWhere {
+  AND: [MovieReviewsConnectionWhere!]
+  OR: [MovieReviewsConnectionWhere!]
+  NOT: MovieReviewsConnectionWhere
+  node: ReviewWhere
+}
+
+input MovieReviewsCreateFieldInput {
+  node: ReviewCreateInput!
+}
+
+input MovieReviewsDeleteFieldInput {
+  where: MovieReviewsConnectionWhere
+}
+
+input MovieReviewsDisconnectFieldInput {
+  where: MovieReviewsConnectionWhere
+}
+
+input MovieReviewsFieldInput {
+  connect: [MovieReviewsConnectFieldInput!]
+  create: [MovieReviewsCreateFieldInput!]
+}
+
+input MovieReviewsNodeAggregationWhereInput {
+  AND: [MovieReviewsNodeAggregationWhereInput!]
+  OR: [MovieReviewsNodeAggregationWhereInput!]
+  NOT: MovieReviewsNodeAggregationWhereInput
+  score_MIN_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'score: { min: { eq: ... } } }' instead.")
+  score_MAX_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'score: { max: { eq: ... } } }' instead.")
+  score_SUM_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'score: { sum: { eq: ... } } }' instead.")
+  score_AVERAGE_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'score: { average: { eq: ... } } }' instead.")
+  score_MIN_GT: Int @deprecated(reason: "Please use the relevant generic filter 'score: { min: { gt: ... } } }' instead.")
+  score_MAX_GT: Int @deprecated(reason: "Please use the relevant generic filter 'score: { max: { gt: ... } } }' instead.")
+  score_SUM_GT: Int @deprecated(reason: "Please use the relevant generic filter 'score: { sum: { gt: ... } } }' instead.")
+  score_AVERAGE_GT: Float @deprecated(reason: "Please use the relevant generic filter 'score: { average: { gt: ... } } }' instead.")
+  score_MIN_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'score: { min: { gte: ... } } }' instead.")
+  score_MAX_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'score: { max: { gte: ... } } }' instead.")
+  score_SUM_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'score: { sum: { gte: ... } } }' instead.")
+  score_AVERAGE_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'score: { average: { gte: ... } } }' instead.")
+  score_MIN_LT: Int @deprecated(reason: "Please use the relevant generic filter 'score: { min: { lt: ... } } }' instead.")
+  score_MAX_LT: Int @deprecated(reason: "Please use the relevant generic filter 'score: { max: { lt: ... } } }' instead.")
+  score_SUM_LT: Int @deprecated(reason: "Please use the relevant generic filter 'score: { sum: { lt: ... } } }' instead.")
+  score_AVERAGE_LT: Float @deprecated(reason: "Please use the relevant generic filter 'score: { average: { lt: ... } } }' instead.")
+  score_MIN_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'score: { min: { lte: ... } } }' instead.")
+  score_MAX_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'score: { max: { lte: ... } } }' instead.")
+  score_SUM_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'score: { sum: { lte: ... } } }' instead.")
+  score_AVERAGE_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'score: { average: { lte: ... } } }' instead.")
+  score: IntScalarAggregationFilters
+  text_AVERAGE_LENGTH_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'text: { averageLength: { eq: ... } } }' instead.")
+  text_LONGEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'text: { longestLength: { eq: ... } } }' instead.")
+  text_SHORTEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'text: { shortestLength: { eq: ... } } }' instead.")
+  text_AVERAGE_LENGTH_GT: Float @deprecated(reason: "Please use the relevant generic filter 'text: { averageLength: { gt: ... } } }' instead.")
+  text_LONGEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'text: { longestLength: { gt: ... } } }' instead.")
+  text_SHORTEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'text: { shortestLength: { gt: ... } } }' instead.")
+  text_AVERAGE_LENGTH_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'text: { averageLength: { gte: ... } } }' instead.")
+  text_LONGEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'text: { longestLength: { gte: ... } } }' instead.")
+  text_SHORTEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'text: { shortestLength: { gte: ... } } }' instead.")
+  text_AVERAGE_LENGTH_LT: Float @deprecated(reason: "Please use the relevant generic filter 'text: { averageLength: { lt: ... } } }' instead.")
+  text_LONGEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'text: { longestLength: { lt: ... } } }' instead.")
+  text_SHORTEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'text: { shortestLength: { lt: ... } } }' instead.")
+  text_AVERAGE_LENGTH_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'text: { averageLength: { lte: ... } } }' instead.")
+  text_LONGEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'text: { longestLength: { lte: ... } } }' instead.")
+  text_SHORTEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'text: { shortestLength: { lte: ... } } }' instead.")
+  text: StringScalarAggregationFilters
+}
+
+"""
+Fields to sort Movies by. The order in which sorts are applied is not guaranteed when specifying many fields in one MovieSort object.
+"""
+input MovieSort {
+  id: SortDirection
+  secretNote: SortDirection
+  internalScore: SortDirection
+  rating: SortDirection
+  budget: SortDirection
+  tagline: SortDirection
+  released: SortDirection
+  createdBy: SortDirection
+  plain: SortDirection
+}
+
+input MovieStudioConnectionWhere {
+  AND: [MovieStudioConnectionWhere!]
+  OR: [MovieStudioConnectionWhere!]
+  NOT: MovieStudioConnectionWhere
+  node: StudioWhere
+}
+
+input MovieStudioDeleteFieldInput {
+  where: MovieStudioConnectionWhere
+  delete: StudioDeleteInput
+}
+
+input MovieSubscriptionWhere {
+  id: IDScalarFilters
+  id_EQ: ID @deprecated(reason: "Please use the relevant generic filter id: { eq: ... }")
+  id_IN: [ID!] @deprecated(reason: "Please use the relevant generic filter id: { in: ... }")
+  id_CONTAINS: ID @deprecated(reason: "Please use the relevant generic filter id: { contains: ... }")
+  id_STARTS_WITH: ID @deprecated(reason: "Please use the relevant generic filter id: { startsWith: ... }")
+  id_ENDS_WITH: ID @deprecated(reason: "Please use the relevant generic filter id: { endsWith: ... }")
+  title: StringScalarFilters
+  title_EQ: String @deprecated(reason: "Please use the relevant generic filter title: { eq: ... }")
+  title_IN: [String!] @deprecated(reason: "Please use the relevant generic filter title: { in: ... }")
+  title_CONTAINS: String @deprecated(reason: "Please use the relevant generic filter title: { contains: ... }")
+  title_STARTS_WITH: String @deprecated(reason: "Please use the relevant generic filter title: { startsWith: ... }")
+  title_ENDS_WITH: String @deprecated(reason: "Please use the relevant generic filter title: { endsWith: ... }")
+  secretNote: StringScalarFilters
+  secretNote_EQ: String @deprecated(reason: "Please use the relevant generic filter secretNote: { eq: ... }")
+  secretNote_IN: [String] @deprecated(reason: "Please use the relevant generic filter secretNote: { in: ... }")
+  secretNote_CONTAINS: String @deprecated(reason: "Please use the relevant generic filter secretNote: { contains: ... }")
+  secretNote_STARTS_WITH: String @deprecated(reason: "Please use the relevant generic filter secretNote: { startsWith: ... }")
+  secretNote_ENDS_WITH: String @deprecated(reason: "Please use the relevant generic filter secretNote: { endsWith: ... }")
+  internalScore: IntScalarFilters
+  internalScore_EQ: Int @deprecated(reason: "Please use the relevant generic filter internalScore: { eq: ... }")
+  internalScore_IN: [Int] @deprecated(reason: "Please use the relevant generic filter internalScore: { in: ... }")
+  internalScore_LT: Int @deprecated(reason: "Please use the relevant generic filter internalScore: { lt: ... }")
+  internalScore_LTE: Int @deprecated(reason: "Please use the relevant generic filter internalScore: { lte: ... }")
+  internalScore_GT: Int @deprecated(reason: "Please use the relevant generic filter internalScore: { gt: ... }")
+  internalScore_GTE: Int @deprecated(reason: "Please use the relevant generic filter internalScore: { gte: ... }")
+  rating: IntScalarFilters
+  rating_EQ: Int @deprecated(reason: "Please use the relevant generic filter rating: { eq: ... }")
+  rating_IN: [Int] @deprecated(reason: "Please use the relevant generic filter rating: { in: ... }")
+  rating_LT: Int @deprecated(reason: "Please use the relevant generic filter rating: { lt: ... }")
+  rating_LTE: Int @deprecated(reason: "Please use the relevant generic filter rating: { lte: ... }")
+  rating_GT: Int @deprecated(reason: "Please use the relevant generic filter rating: { gt: ... }")
+  rating_GTE: Int @deprecated(reason: "Please use the relevant generic filter rating: { gte: ... }")
+  tagline: StringScalarFilters
+  tagline_EQ: String @deprecated(reason: "Please use the relevant generic filter tagline: { eq: ... }")
+  tagline_IN: [String] @deprecated(reason: "Please use the relevant generic filter tagline: { in: ... }")
+  tagline_CONTAINS: String @deprecated(reason: "Please use the relevant generic filter tagline: { contains: ... }")
+  tagline_STARTS_WITH: String @deprecated(reason: "Please use the relevant generic filter tagline: { startsWith: ... }")
+  tagline_ENDS_WITH: String @deprecated(reason: "Please use the relevant generic filter tagline: { endsWith: ... }")
+  released: IntScalarFilters
+  released_EQ: Int @deprecated(reason: "Please use the relevant generic filter released: { eq: ... }")
+  released_IN: [Int] @deprecated(reason: "Please use the relevant generic filter released: { in: ... }")
+  released_LT: Int @deprecated(reason: "Please use the relevant generic filter released: { lt: ... }")
+  released_LTE: Int @deprecated(reason: "Please use the relevant generic filter released: { lte: ... }")
+  released_GT: Int @deprecated(reason: "Please use the relevant generic filter released: { gt: ... }")
+  released_GTE: Int @deprecated(reason: "Please use the relevant generic filter released: { gte: ... }")
+  createdBy: StringScalarFilters
+  createdBy_EQ: String @deprecated(reason: "Please use the relevant generic filter createdBy: { eq: ... }")
+  createdBy_IN: [String] @deprecated(reason: "Please use the relevant generic filter createdBy: { in: ... }")
+  createdBy_CONTAINS: String @deprecated(reason: "Please use the relevant generic filter createdBy: { contains: ... }")
+  createdBy_STARTS_WITH: String @deprecated(reason: "Please use the relevant generic filter createdBy: { startsWith: ... }")
+  createdBy_ENDS_WITH: String @deprecated(reason: "Please use the relevant generic filter createdBy: { endsWith: ... }")
+  plain: StringScalarFilters
+  plain_EQ: String @deprecated(reason: "Please use the relevant generic filter plain: { eq: ... }")
+  plain_IN: [String] @deprecated(reason: "Please use the relevant generic filter plain: { in: ... }")
+  plain_CONTAINS: String @deprecated(reason: "Please use the relevant generic filter plain: { contains: ... }")
+  plain_STARTS_WITH: String @deprecated(reason: "Please use the relevant generic filter plain: { startsWith: ... }")
+  plain_ENDS_WITH: String @deprecated(reason: "Please use the relevant generic filter plain: { endsWith: ... }")
+  OR: [MovieSubscriptionWhere!]
+  AND: [MovieSubscriptionWhere!]
+  NOT: MovieSubscriptionWhere
+}
+
+input MovieUpdateInput {
+  title: StringScalarMutations
+  title_SET: String @deprecated(reason: "Please use the generic mutation 'title: { set: ... } }' instead.")
+  secretNote: StringScalarMutations
+  secretNote_SET: String @deprecated(reason: "Please use the generic mutation 'secretNote: { set: ... } }' instead.")
+  internalScore: IntScalarMutations
+  internalScore_SET: Int @deprecated(reason: "Please use the generic mutation 'internalScore: { set: ... } }' instead.")
+  internalScore_INCREMENT: Int @deprecated(reason: "Please use the relevant generic mutation 'internalScore: { increment: ... } }' instead.")
+  internalScore_DECREMENT: Int @deprecated(reason: "Please use the relevant generic mutation 'internalScore: { decrement: ... } }' instead.")
+  rating: IntScalarMutations
+  rating_SET: Int @deprecated(reason: "Please use the generic mutation 'rating: { set: ... } }' instead.")
+  rating_INCREMENT: Int @deprecated(reason: "Please use the relevant generic mutation 'rating: { increment: ... } }' instead.")
+  rating_DECREMENT: Int @deprecated(reason: "Please use the relevant generic mutation 'rating: { decrement: ... } }' instead.")
+  budget: FloatScalarMutations
+  budget_SET: Float @deprecated(reason: "Please use the generic mutation 'budget: { set: ... } }' instead.")
+  budget_ADD: Float @deprecated(reason: "Please use the relevant generic mutation 'budget: { add: ... } }' instead.")
+  budget_SUBTRACT: Float @deprecated(reason: "Please use the relevant generic mutation 'budget: { subtract: ... } }' instead.")
+  budget_MULTIPLY: Float @deprecated(reason: "Please use the relevant generic mutation 'budget: { multiply: ... } }' instead.")
+  budget_DIVIDE: Float @deprecated(reason: "Please use the relevant generic mutation 'budget: { divide: ... } }' instead.")
+  tagline: StringScalarMutations
+  tagline_SET: String @deprecated(reason: "Please use the generic mutation 'tagline: { set: ... } }' instead.")
+  released: IntScalarMutations
+  released_SET: Int @deprecated(reason: "Please use the generic mutation 'released: { set: ... } }' instead.")
+  released_INCREMENT: Int @deprecated(reason: "Please use the relevant generic mutation 'released: { increment: ... } }' instead.")
+  released_DECREMENT: Int @deprecated(reason: "Please use the relevant generic mutation 'released: { decrement: ... } }' instead.")
+  createdBy: StringScalarMutations
+  createdBy_SET: String @deprecated(reason: "Please use the generic mutation 'createdBy: { set: ... } }' instead.")
+  plain: StringScalarMutations
+  plain_SET: String @deprecated(reason: "Please use the generic mutation 'plain: { set: ... } }' instead.")
+  actors: [MovieActorsUpdateFieldInput!]
+}
+
+input MovieWhere {
+  id: IDScalarFilters
+  id_EQ: ID @deprecated(reason: "Please use the relevant generic filter id: { eq: ... }")
+  id_IN: [ID!] @deprecated(reason: "Please use the relevant generic filter id: { in: ... }")
+  id_CONTAINS: ID @deprecated(reason: "Please use the relevant generic filter id: { contains: ... }")
+  id_STARTS_WITH: ID @deprecated(reason: "Please use the relevant generic filter id: { startsWith: ... }")
+  id_ENDS_WITH: ID @deprecated(reason: "Please use the relevant generic filter id: { endsWith: ... }")
+  title: StringScalarFilters
+  title_EQ: String @deprecated(reason: "Please use the relevant generic filter title: { eq: ... }")
+  title_IN: [String!] @deprecated(reason: "Please use the relevant generic filter title: { in: ... }")
+  title_CONTAINS: String @deprecated(reason: "Please use the relevant generic filter title: { contains: ... }")
+  title_STARTS_WITH: String @deprecated(reason: "Please use the relevant generic filter title: { startsWith: ... }")
+  title_ENDS_WITH: String @deprecated(reason: "Please use the relevant generic filter title: { endsWith: ... }")
+  secretNote: StringScalarFilters
+  secretNote_EQ: String @deprecated(reason: "Please use the relevant generic filter secretNote: { eq: ... }")
+  secretNote_IN: [String] @deprecated(reason: "Please use the relevant generic filter secretNote: { in: ... }")
+  secretNote_CONTAINS: String @deprecated(reason: "Please use the relevant generic filter secretNote: { contains: ... }")
+  secretNote_STARTS_WITH: String @deprecated(reason: "Please use the relevant generic filter secretNote: { startsWith: ... }")
+  secretNote_ENDS_WITH: String @deprecated(reason: "Please use the relevant generic filter secretNote: { endsWith: ... }")
+  internalScore: IntScalarFilters
+  internalScore_EQ: Int @deprecated(reason: "Please use the relevant generic filter internalScore: { eq: ... }")
+  internalScore_IN: [Int] @deprecated(reason: "Please use the relevant generic filter internalScore: { in: ... }")
+  internalScore_LT: Int @deprecated(reason: "Please use the relevant generic filter internalScore: { lt: ... }")
+  internalScore_LTE: Int @deprecated(reason: "Please use the relevant generic filter internalScore: { lte: ... }")
+  internalScore_GT: Int @deprecated(reason: "Please use the relevant generic filter internalScore: { gt: ... }")
+  internalScore_GTE: Int @deprecated(reason: "Please use the relevant generic filter internalScore: { gte: ... }")
+  rating: IntScalarFilters
+  rating_EQ: Int @deprecated(reason: "Please use the relevant generic filter rating: { eq: ... }")
+  rating_IN: [Int] @deprecated(reason: "Please use the relevant generic filter rating: { in: ... }")
+  rating_LT: Int @deprecated(reason: "Please use the relevant generic filter rating: { lt: ... }")
+  rating_LTE: Int @deprecated(reason: "Please use the relevant generic filter rating: { lte: ... }")
+  rating_GT: Int @deprecated(reason: "Please use the relevant generic filter rating: { gt: ... }")
+  rating_GTE: Int @deprecated(reason: "Please use the relevant generic filter rating: { gte: ... }")
+  tagline: StringScalarFilters
+  tagline_EQ: String @deprecated(reason: "Please use the relevant generic filter tagline: { eq: ... }")
+  tagline_IN: [String] @deprecated(reason: "Please use the relevant generic filter tagline: { in: ... }")
+  tagline_CONTAINS: String @deprecated(reason: "Please use the relevant generic filter tagline: { contains: ... }")
+  tagline_STARTS_WITH: String @deprecated(reason: "Please use the relevant generic filter tagline: { startsWith: ... }")
+  tagline_ENDS_WITH: String @deprecated(reason: "Please use the relevant generic filter tagline: { endsWith: ... }")
+  released: IntScalarFilters
+  released_EQ: Int @deprecated(reason: "Please use the relevant generic filter released: { eq: ... }")
+  released_IN: [Int] @deprecated(reason: "Please use the relevant generic filter released: { in: ... }")
+  released_LT: Int @deprecated(reason: "Please use the relevant generic filter released: { lt: ... }")
+  released_LTE: Int @deprecated(reason: "Please use the relevant generic filter released: { lte: ... }")
+  released_GT: Int @deprecated(reason: "Please use the relevant generic filter released: { gt: ... }")
+  released_GTE: Int @deprecated(reason: "Please use the relevant generic filter released: { gte: ... }")
+  createdBy: StringScalarFilters
+  createdBy_EQ: String @deprecated(reason: "Please use the relevant generic filter createdBy: { eq: ... }")
+  createdBy_IN: [String] @deprecated(reason: "Please use the relevant generic filter createdBy: { in: ... }")
+  createdBy_CONTAINS: String @deprecated(reason: "Please use the relevant generic filter createdBy: { contains: ... }")
+  createdBy_STARTS_WITH: String @deprecated(reason: "Please use the relevant generic filter createdBy: { startsWith: ... }")
+  createdBy_ENDS_WITH: String @deprecated(reason: "Please use the relevant generic filter createdBy: { endsWith: ... }")
+  plain: StringScalarFilters
+  plain_EQ: String @deprecated(reason: "Please use the relevant generic filter plain: { eq: ... }")
+  plain_IN: [String] @deprecated(reason: "Please use the relevant generic filter plain: { in: ... }")
+  plain_CONTAINS: String @deprecated(reason: "Please use the relevant generic filter plain: { contains: ... }")
+  plain_STARTS_WITH: String @deprecated(reason: "Please use the relevant generic filter plain: { startsWith: ... }")
+  plain_ENDS_WITH: String @deprecated(reason: "Please use the relevant generic filter plain: { endsWith: ... }")
+  OR: [MovieWhere!]
+  AND: [MovieWhere!]
+  NOT: MovieWhere
+  actors: ActorRelationshipFilters
+
+  """Return Movies where all of the related Actors match this filter"""
+  actors_ALL: ActorWhere @deprecated(reason: "Please use the relevant generic filter 'actors: { all: ... }' instead.")
+
+  """Return Movies where none of the related Actors match this filter"""
+  actors_NONE: ActorWhere @deprecated(reason: "Please use the relevant generic filter 'actors: { none: ... }' instead.")
+
+  """Return Movies where one of the related Actors match this filter"""
+  actors_SINGLE: ActorWhere @deprecated(reason: "Please use the relevant generic filter 'actors: {  single: ... }' instead.")
+
+  """Return Movies where some of the related Actors match this filter"""
+  actors_SOME: ActorWhere @deprecated(reason: "Please use the relevant generic filter 'actors: {  some: ... }' instead.")
+
+  """
+  Return Movies where all of the related MovieActorsConnections match this filter
+  """
+  actorsConnection_ALL: MovieActorsConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'actorsConnection: { all: { node: ... } } }' instead.")
+
+  """
+  Return Movies where none of the related MovieActorsConnections match this filter
+  """
+  actorsConnection_NONE: MovieActorsConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'actorsConnection: { none: { node: ... } } }' instead.")
+
+  """
+  Return Movies where one of the related MovieActorsConnections match this filter
+  """
+  actorsConnection_SINGLE: MovieActorsConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'actorsConnection: { single: { node: ... } } }' instead.")
+
+  """
+  Return Movies where some of the related MovieActorsConnections match this filter
+  """
+  actorsConnection_SOME: MovieActorsConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'actorsConnection: { some: { node: ... } } }' instead.")
+  actorsConnection: MovieActorsConnectionFilters
+  reviewsConnection: MovieReviewsConnectionFilters
+  reviewsAggregate: MovieReviewsAggregateInput @deprecated(reason: "Aggregate filters are moved inside the reviewsConnection filter, please use { reviewsConnection: { aggregate: {...} } } instead")
+  studio: StudioWhere
+  studioConnection: MovieStudioConnectionWhere
+}
+
+input ReviewConnectWhere {
+  node: ReviewWhere!
+}
+
+input ReviewCreateInput {
+  score: Int
+  text: String
+}
+
+input ReviewUpdateInput {
+  score: IntScalarMutations
+  score_SET: Int @deprecated(reason: "Please use the generic mutation 'score: { set: ... } }' instead.")
+  score_INCREMENT: Int @deprecated(reason: "Please use the relevant generic mutation 'score: { increment: ... } }' instead.")
+  score_DECREMENT: Int @deprecated(reason: "Please use the relevant generic mutation 'score: { decrement: ... } }' instead.")
+  text: StringScalarMutations
+  text_SET: String @deprecated(reason: "Please use the generic mutation 'text: { set: ... } }' instead.")
+}
+
+input ReviewWhere {
+  score: IntScalarFilters
+  score_EQ: Int @deprecated(reason: "Please use the relevant generic filter score: { eq: ... }")
+  score_IN: [Int] @deprecated(reason: "Please use the relevant generic filter score: { in: ... }")
+  score_LT: Int @deprecated(reason: "Please use the relevant generic filter score: { lt: ... }")
+  score_LTE: Int @deprecated(reason: "Please use the relevant generic filter score: { lte: ... }")
+  score_GT: Int @deprecated(reason: "Please use the relevant generic filter score: { gt: ... }")
+  score_GTE: Int @deprecated(reason: "Please use the relevant generic filter score: { gte: ... }")
+  text: StringScalarFilters
+  text_EQ: String @deprecated(reason: "Please use the relevant generic filter text: { eq: ... }")
+  text_IN: [String] @deprecated(reason: "Please use the relevant generic filter text: { in: ... }")
+  text_CONTAINS: String @deprecated(reason: "Please use the relevant generic filter text: { contains: ... }")
+  text_STARTS_WITH: String @deprecated(reason: "Please use the relevant generic filter text: { startsWith: ... }")
+  text_ENDS_WITH: String @deprecated(reason: "Please use the relevant generic filter text: { endsWith: ... }")
+  OR: [ReviewWhere!]
+  AND: [ReviewWhere!]
+  NOT: ReviewWhere
+}
+
+"""Filters for an aggregation of a string field"""
+input StringScalarAggregationFilters {
+  averageLength: FloatScalarFilters
+  shortestLength: IntScalarFilters
+  longestLength: IntScalarFilters
+}
+
+"""String filters"""
+input StringScalarFilters {
+  eq: String
+  in: [String!]
+  contains: String
+  endsWith: String
+  startsWith: String
+}
+
+"""String mutations"""
+input StringScalarMutations {
+  set: String
+}
+
+input StudioCreateInput {
+  movies: StudioMoviesFieldInput
+}
+
+input StudioDeleteInput {
+  movies: [StudioMoviesDeleteFieldInput!]
+}
+
+input StudioMoviesAggregateInput {
+  count_EQ: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { eq: ... } } }' instead.")
+  count_LT: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { lt: ... } } }' instead.")
+  count_LTE: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { lte: ... } } }' instead.")
+  count_GT: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { gt: ... } } }' instead.")
+  count_GTE: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { gte: ... } } }' instead.")
+  count: IntScalarFilters
+  AND: [StudioMoviesAggregateInput!]
+  OR: [StudioMoviesAggregateInput!]
+  NOT: StudioMoviesAggregateInput
+  node: StudioMoviesNodeAggregationWhereInput
+}
+
+input StudioMoviesConnectFieldInput {
+  where: MovieConnectWhere
+  connect: [MovieConnectInput!]
+}
+
+input StudioMoviesConnectionAggregateInput {
+  count: ConnectionAggregationCountFilterInput
+  AND: [StudioMoviesConnectionAggregateInput!]
+  OR: [StudioMoviesConnectionAggregateInput!]
+  NOT: StudioMoviesConnectionAggregateInput
+  node: StudioMoviesNodeAggregationWhereInput
+}
+
+input StudioMoviesConnectionFilters {
+  """
+  Return Studios where all of the related StudioMoviesConnections match this filter
+  """
+  all: StudioMoviesConnectionWhere
+
+  """
+  Return Studios where none of the related StudioMoviesConnections match this filter
+  """
+  none: StudioMoviesConnectionWhere
+
+  """
+  Return Studios where one of the related StudioMoviesConnections match this filter
+  """
+  single: StudioMoviesConnectionWhere
+
+  """
+  Return Studios where some of the related StudioMoviesConnections match this filter
+  """
+  some: StudioMoviesConnectionWhere
+
+  """
+  Filter Studios by aggregating results on related StudioMoviesConnections
+  """
+  aggregate: StudioMoviesConnectionAggregateInput
+}
+
+input StudioMoviesConnectionSort {
+  node: MovieSort
+}
+
+input StudioMoviesConnectionWhere {
+  AND: [StudioMoviesConnectionWhere!]
+  OR: [StudioMoviesConnectionWhere!]
+  NOT: StudioMoviesConnectionWhere
+  node: MovieWhere
+}
+
+input StudioMoviesCreateFieldInput {
+  node: MovieCreateInput!
+}
+
+input StudioMoviesDeleteFieldInput {
+  where: StudioMoviesConnectionWhere
+  delete: MovieDeleteInput
+}
+
+input StudioMoviesDisconnectFieldInput {
+  where: StudioMoviesConnectionWhere
+  disconnect: MovieDisconnectInput
+}
+
+input StudioMoviesFieldInput {
+  connect: [StudioMoviesConnectFieldInput!]
+  create: [StudioMoviesCreateFieldInput!]
+}
+
+input StudioMoviesNodeAggregationWhereInput {
+  AND: [StudioMoviesNodeAggregationWhereInput!]
+  OR: [StudioMoviesNodeAggregationWhereInput!]
+  NOT: StudioMoviesNodeAggregationWhereInput
+  title_AVERAGE_LENGTH_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'title: { averageLength: { eq: ... } } }' instead.")
+  title_LONGEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'title: { longestLength: { eq: ... } } }' instead.")
+  title_SHORTEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'title: { shortestLength: { eq: ... } } }' instead.")
+  title_AVERAGE_LENGTH_GT: Float @deprecated(reason: "Please use the relevant generic filter 'title: { averageLength: { gt: ... } } }' instead.")
+  title_LONGEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'title: { longestLength: { gt: ... } } }' instead.")
+  title_SHORTEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'title: { shortestLength: { gt: ... } } }' instead.")
+  title_AVERAGE_LENGTH_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'title: { averageLength: { gte: ... } } }' instead.")
+  title_LONGEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'title: { longestLength: { gte: ... } } }' instead.")
+  title_SHORTEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'title: { shortestLength: { gte: ... } } }' instead.")
+  title_AVERAGE_LENGTH_LT: Float @deprecated(reason: "Please use the relevant generic filter 'title: { averageLength: { lt: ... } } }' instead.")
+  title_LONGEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'title: { longestLength: { lt: ... } } }' instead.")
+  title_SHORTEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'title: { shortestLength: { lt: ... } } }' instead.")
+  title_AVERAGE_LENGTH_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'title: { averageLength: { lte: ... } } }' instead.")
+  title_LONGEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'title: { longestLength: { lte: ... } } }' instead.")
+  title_SHORTEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'title: { shortestLength: { lte: ... } } }' instead.")
+  title: StringScalarAggregationFilters
+  secretNote_AVERAGE_LENGTH_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'secretNote: { averageLength: { eq: ... } } }' instead.")
+  secretNote_LONGEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'secretNote: { longestLength: { eq: ... } } }' instead.")
+  secretNote_SHORTEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'secretNote: { shortestLength: { eq: ... } } }' instead.")
+  secretNote_AVERAGE_LENGTH_GT: Float @deprecated(reason: "Please use the relevant generic filter 'secretNote: { averageLength: { gt: ... } } }' instead.")
+  secretNote_LONGEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'secretNote: { longestLength: { gt: ... } } }' instead.")
+  secretNote_SHORTEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'secretNote: { shortestLength: { gt: ... } } }' instead.")
+  secretNote_AVERAGE_LENGTH_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'secretNote: { averageLength: { gte: ... } } }' instead.")
+  secretNote_LONGEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'secretNote: { longestLength: { gte: ... } } }' instead.")
+  secretNote_SHORTEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'secretNote: { shortestLength: { gte: ... } } }' instead.")
+  secretNote_AVERAGE_LENGTH_LT: Float @deprecated(reason: "Please use the relevant generic filter 'secretNote: { averageLength: { lt: ... } } }' instead.")
+  secretNote_LONGEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'secretNote: { longestLength: { lt: ... } } }' instead.")
+  secretNote_SHORTEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'secretNote: { shortestLength: { lt: ... } } }' instead.")
+  secretNote_AVERAGE_LENGTH_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'secretNote: { averageLength: { lte: ... } } }' instead.")
+  secretNote_LONGEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'secretNote: { longestLength: { lte: ... } } }' instead.")
+  secretNote_SHORTEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'secretNote: { shortestLength: { lte: ... } } }' instead.")
+  secretNote: StringScalarAggregationFilters
+  internalScore_MIN_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'internalScore: { min: { eq: ... } } }' instead.")
+  internalScore_MAX_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'internalScore: { max: { eq: ... } } }' instead.")
+  internalScore_SUM_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'internalScore: { sum: { eq: ... } } }' instead.")
+  internalScore_AVERAGE_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'internalScore: { average: { eq: ... } } }' instead.")
+  internalScore_MIN_GT: Int @deprecated(reason: "Please use the relevant generic filter 'internalScore: { min: { gt: ... } } }' instead.")
+  internalScore_MAX_GT: Int @deprecated(reason: "Please use the relevant generic filter 'internalScore: { max: { gt: ... } } }' instead.")
+  internalScore_SUM_GT: Int @deprecated(reason: "Please use the relevant generic filter 'internalScore: { sum: { gt: ... } } }' instead.")
+  internalScore_AVERAGE_GT: Float @deprecated(reason: "Please use the relevant generic filter 'internalScore: { average: { gt: ... } } }' instead.")
+  internalScore_MIN_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'internalScore: { min: { gte: ... } } }' instead.")
+  internalScore_MAX_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'internalScore: { max: { gte: ... } } }' instead.")
+  internalScore_SUM_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'internalScore: { sum: { gte: ... } } }' instead.")
+  internalScore_AVERAGE_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'internalScore: { average: { gte: ... } } }' instead.")
+  internalScore_MIN_LT: Int @deprecated(reason: "Please use the relevant generic filter 'internalScore: { min: { lt: ... } } }' instead.")
+  internalScore_MAX_LT: Int @deprecated(reason: "Please use the relevant generic filter 'internalScore: { max: { lt: ... } } }' instead.")
+  internalScore_SUM_LT: Int @deprecated(reason: "Please use the relevant generic filter 'internalScore: { sum: { lt: ... } } }' instead.")
+  internalScore_AVERAGE_LT: Float @deprecated(reason: "Please use the relevant generic filter 'internalScore: { average: { lt: ... } } }' instead.")
+  internalScore_MIN_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'internalScore: { min: { lte: ... } } }' instead.")
+  internalScore_MAX_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'internalScore: { max: { lte: ... } } }' instead.")
+  internalScore_SUM_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'internalScore: { sum: { lte: ... } } }' instead.")
+  internalScore_AVERAGE_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'internalScore: { average: { lte: ... } } }' instead.")
+  internalScore: IntScalarAggregationFilters
+  rating_MIN_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'rating: { min: { eq: ... } } }' instead.")
+  rating_MAX_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'rating: { max: { eq: ... } } }' instead.")
+  rating_SUM_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'rating: { sum: { eq: ... } } }' instead.")
+  rating_AVERAGE_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'rating: { average: { eq: ... } } }' instead.")
+  rating_MIN_GT: Int @deprecated(reason: "Please use the relevant generic filter 'rating: { min: { gt: ... } } }' instead.")
+  rating_MAX_GT: Int @deprecated(reason: "Please use the relevant generic filter 'rating: { max: { gt: ... } } }' instead.")
+  rating_SUM_GT: Int @deprecated(reason: "Please use the relevant generic filter 'rating: { sum: { gt: ... } } }' instead.")
+  rating_AVERAGE_GT: Float @deprecated(reason: "Please use the relevant generic filter 'rating: { average: { gt: ... } } }' instead.")
+  rating_MIN_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'rating: { min: { gte: ... } } }' instead.")
+  rating_MAX_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'rating: { max: { gte: ... } } }' instead.")
+  rating_SUM_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'rating: { sum: { gte: ... } } }' instead.")
+  rating_AVERAGE_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'rating: { average: { gte: ... } } }' instead.")
+  rating_MIN_LT: Int @deprecated(reason: "Please use the relevant generic filter 'rating: { min: { lt: ... } } }' instead.")
+  rating_MAX_LT: Int @deprecated(reason: "Please use the relevant generic filter 'rating: { max: { lt: ... } } }' instead.")
+  rating_SUM_LT: Int @deprecated(reason: "Please use the relevant generic filter 'rating: { sum: { lt: ... } } }' instead.")
+  rating_AVERAGE_LT: Float @deprecated(reason: "Please use the relevant generic filter 'rating: { average: { lt: ... } } }' instead.")
+  rating_MIN_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'rating: { min: { lte: ... } } }' instead.")
+  rating_MAX_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'rating: { max: { lte: ... } } }' instead.")
+  rating_SUM_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'rating: { sum: { lte: ... } } }' instead.")
+  rating_AVERAGE_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'rating: { average: { lte: ... } } }' instead.")
+  rating: IntScalarAggregationFilters
+  budget_MIN_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'budget: { min: { eq: ... } } }' instead.")
+  budget_MAX_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'budget: { max: { eq: ... } } }' instead.")
+  budget_SUM_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'budget: { sum: { eq: ... } } }' instead.")
+  budget_AVERAGE_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'budget: { average: { eq: ... } } }' instead.")
+  budget_MIN_GT: Float @deprecated(reason: "Please use the relevant generic filter 'budget: { min: { gt: ... } } }' instead.")
+  budget_MAX_GT: Float @deprecated(reason: "Please use the relevant generic filter 'budget: { max: { gt: ... } } }' instead.")
+  budget_SUM_GT: Float @deprecated(reason: "Please use the relevant generic filter 'budget: { sum: { gt: ... } } }' instead.")
+  budget_AVERAGE_GT: Float @deprecated(reason: "Please use the relevant generic filter 'budget: { average: { gt: ... } } }' instead.")
+  budget_MIN_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'budget: { min: { gte: ... } } }' instead.")
+  budget_MAX_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'budget: { max: { gte: ... } } }' instead.")
+  budget_SUM_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'budget: { sum: { gte: ... } } }' instead.")
+  budget_AVERAGE_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'budget: { average: { gte: ... } } }' instead.")
+  budget_MIN_LT: Float @deprecated(reason: "Please use the relevant generic filter 'budget: { min: { lt: ... } } }' instead.")
+  budget_MAX_LT: Float @deprecated(reason: "Please use the relevant generic filter 'budget: { max: { lt: ... } } }' instead.")
+  budget_SUM_LT: Float @deprecated(reason: "Please use the relevant generic filter 'budget: { sum: { lt: ... } } }' instead.")
+  budget_AVERAGE_LT: Float @deprecated(reason: "Please use the relevant generic filter 'budget: { average: { lt: ... } } }' instead.")
+  budget_MIN_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'budget: { min: { lte: ... } } }' instead.")
+  budget_MAX_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'budget: { max: { lte: ... } } }' instead.")
+  budget_SUM_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'budget: { sum: { lte: ... } } }' instead.")
+  budget_AVERAGE_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'budget: { average: { lte: ... } } }' instead.")
+  budget: FloatScalarAggregationFilters
+  createdBy_AVERAGE_LENGTH_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'createdBy: { averageLength: { eq: ... } } }' instead.")
+  createdBy_LONGEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'createdBy: { longestLength: { eq: ... } } }' instead.")
+  createdBy_SHORTEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'createdBy: { shortestLength: { eq: ... } } }' instead.")
+  createdBy_AVERAGE_LENGTH_GT: Float @deprecated(reason: "Please use the relevant generic filter 'createdBy: { averageLength: { gt: ... } } }' instead.")
+  createdBy_LONGEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'createdBy: { longestLength: { gt: ... } } }' instead.")
+  createdBy_SHORTEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'createdBy: { shortestLength: { gt: ... } } }' instead.")
+  createdBy_AVERAGE_LENGTH_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'createdBy: { averageLength: { gte: ... } } }' instead.")
+  createdBy_LONGEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'createdBy: { longestLength: { gte: ... } } }' instead.")
+  createdBy_SHORTEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'createdBy: { shortestLength: { gte: ... } } }' instead.")
+  createdBy_AVERAGE_LENGTH_LT: Float @deprecated(reason: "Please use the relevant generic filter 'createdBy: { averageLength: { lt: ... } } }' instead.")
+  createdBy_LONGEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'createdBy: { longestLength: { lt: ... } } }' instead.")
+  createdBy_SHORTEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'createdBy: { shortestLength: { lt: ... } } }' instead.")
+  createdBy_AVERAGE_LENGTH_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'createdBy: { averageLength: { lte: ... } } }' instead.")
+  createdBy_LONGEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'createdBy: { longestLength: { lte: ... } } }' instead.")
+  createdBy_SHORTEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'createdBy: { shortestLength: { lte: ... } } }' instead.")
+  createdBy: StringScalarAggregationFilters
+}
+
+input StudioMoviesUpdateConnectionInput {
+  node: MovieUpdateInput
+  where: StudioMoviesConnectionWhere
+}
+
+input StudioMoviesUpdateFieldInput {
+  connect: [StudioMoviesConnectFieldInput!]
+  disconnect: [StudioMoviesDisconnectFieldInput!]
+  create: [StudioMoviesCreateFieldInput!]
+  update: StudioMoviesUpdateConnectionInput
+  delete: [StudioMoviesDeleteFieldInput!]
+}
+
+"""
+Fields to sort Studios by. The order in which sorts are applied is not guaranteed when specifying many fields in one StudioSort object.
+"""
+input StudioSort {
+  name: SortDirection
+}
+
+input StudioUpdateInput {
+  movies: [StudioMoviesUpdateFieldInput!]
+}
+
+input StudioWhere {
+  name: StringScalarFilters
+  name_EQ: String @deprecated(reason: "Please use the relevant generic filter name: { eq: ... }")
+  name_IN: [String] @deprecated(reason: "Please use the relevant generic filter name: { in: ... }")
+  name_CONTAINS: String @deprecated(reason: "Please use the relevant generic filter name: { contains: ... }")
+  name_STARTS_WITH: String @deprecated(reason: "Please use the relevant generic filter name: { startsWith: ... }")
+  name_ENDS_WITH: String @deprecated(reason: "Please use the relevant generic filter name: { endsWith: ... }")
+  OR: [StudioWhere!]
+  AND: [StudioWhere!]
+  NOT: StudioWhere
+  movies: MovieRelationshipFilters
+
+  """Return Studios where all of the related Movies match this filter"""
+  movies_ALL: MovieWhere @deprecated(reason: "Please use the relevant generic filter 'movies: { all: ... }' instead.")
+
+  """Return Studios where none of the related Movies match this filter"""
+  movies_NONE: MovieWhere @deprecated(reason: "Please use the relevant generic filter 'movies: { none: ... }' instead.")
+
+  """Return Studios where one of the related Movies match this filter"""
+  movies_SINGLE: MovieWhere @deprecated(reason: "Please use the relevant generic filter 'movies: {  single: ... }' instead.")
+
+  """Return Studios where some of the related Movies match this filter"""
+  movies_SOME: MovieWhere @deprecated(reason: "Please use the relevant generic filter 'movies: {  some: ... }' instead.")
+
+  """
+  Return Studios where all of the related StudioMoviesConnections match this filter
+  """
+  moviesConnection_ALL: StudioMoviesConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'moviesConnection: { all: { node: ... } } }' instead.")
+
+  """
+  Return Studios where none of the related StudioMoviesConnections match this filter
+  """
+  moviesConnection_NONE: StudioMoviesConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'moviesConnection: { none: { node: ... } } }' instead.")
+
+  """
+  Return Studios where one of the related StudioMoviesConnections match this filter
+  """
+  moviesConnection_SINGLE: StudioMoviesConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'moviesConnection: { single: { node: ... } } }' instead.")
+
+  """
+  Return Studios where some of the related StudioMoviesConnections match this filter
+  """
+  moviesConnection_SOME: StudioMoviesConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'moviesConnection: { some: { node: ... } } }' instead.")
+  moviesConnection: StudioMoviesConnectionFilters
+  moviesAggregate: StudioMoviesAggregateInput @deprecated(reason: "Aggregate filters are moved inside the moviesConnection filter, please use { moviesConnection: { aggregate: {...} } } instead")
+}

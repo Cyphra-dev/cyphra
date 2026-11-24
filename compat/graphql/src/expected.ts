@@ -6,8 +6,9 @@ import { reference, type GraphQLImplementation } from "./implementations.js";
 
 /**
  * Progress mode for implementations other than the reference: `cyphra-expected.json` lists the
- * checks (`<fixture>/schema` or `<fixture>/<operation>`) that must pass. A listed check that fails
- * is a regression; a check that passes without being listed must be added, so the list stays honest.
+ * checks (`<fixture>/schema`, `<fixture>/schema-print` or `<fixture>/<operation>`) that must pass.
+ * A listed check that fails is a regression; a check that passes without being listed must be
+ * added, so the list stays honest.
  */
 export const EXPECTED_PATH = path.join(COMPAT_ROOT, "cyphra-expected.json");
 

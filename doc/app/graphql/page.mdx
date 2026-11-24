@@ -78,6 +78,12 @@ for (const issue of compat.v7.checkTypeDefs(typeDefs)) {
 `checkTypeDefs` also takes several files, `[{ name, body }]`, checked together: each issue's
 `location.source` is then its file.
 
+`printSchema(schema)` prints the schema exactly as v7 does, byte for byte: types, fields, arguments,
+input fields and enum values come in v7's order (`moviesConnection` before `movies`,
+`movies(where, limit, offset, sort)`, `moviesConnection(first, after, where, sort)`, your own types
+and fields where v7 puts them). If you commit the printed schema as a contract and diff it in CI,
+switching from `new Neo4jGraphQL(...)` leaves that file unchanged.
+
 ## Serve it from a Next.js route
 
 With GraphQL Yoga:
@@ -845,7 +851,7 @@ type with `@limit` ([schema configuration](#schema-configuration)). The full rep
 
 | Feature                                                                                                                                                                        | Status                                                  |
 | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------- |
-| Generated schema: queries, connections, every `where` / `sort` / mutation input, aggregate types, deprecated `field_OPERATOR` fields                                           | Works: the printed SDL is identical to v7               |
+| Generated schema: queries, connections, every `where` / `sort` / mutation input, aggregate types, deprecated `field_OPERATOR` fields                                           | Works: the printed SDL is identical to v7, in its order |
 | List queries: `movies(where, sort, limit, offset)`, pluralization like v7, `@plural`                                                                                           | Works                                                   |
 | Filters on `String`, `ID`, `Int`, `Float`, `BigInt`, `Boolean`, `Date`, `DateTime`, enums and lists, with `AND` / `OR` / `NOT`                                                 | Works                                                   |
 | Relationship filters `some` / `all` / `none` / `single`, connection filters on `node` and `edge`                                                                               | Works                                                   |

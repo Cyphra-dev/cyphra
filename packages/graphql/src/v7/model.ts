@@ -379,6 +379,8 @@ export type NodeType = {
   readonly cypherNodes: readonly CypherNodeField[];
   /** Fields served by the application's resolvers (`@customResolver`, non-`@node` types). */
   readonly userFields: readonly UserField[];
+  /** Every field name in definition order (v7 prints and generates fields in this order). */
+  readonly fieldOrder: readonly string[];
   /** `@fulltext` indexes. */
   readonly fulltext: readonly FulltextIndex[];
   readonly auth: AuthAnnotations;
@@ -1950,6 +1952,7 @@ function readInterfaces(
       relationships,
       cypherNodes: [],
       userFields: [],
+      fieldOrder: (def.fields ?? []).map((f) => f.name.value),
       fulltext: [],
       auth: {},
       query: typeQuery
@@ -2417,6 +2420,7 @@ function readDocument(definitions: readonly DefinitionNode[]): V7Model {
       relationships,
       cypherNodes,
       userFields,
+      fieldOrder: (o.fields ?? []).map((f) => f.name.value),
       fulltext:
         typeDirective("fulltext", () =>
           readFulltext(name, directive(o.directives, "fulltext"), attributes),

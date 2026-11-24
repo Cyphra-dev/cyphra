@@ -1,0 +1,1522 @@
+type Query {
+  booksByTitle(phrase: String!, where: BookIndexWhere, sort: [BookIndexSort!], first: Int, after: String): BooksIndexConnection!
+  searchBooks(phrase: String!, where: BookIndexWhere, sort: [BookIndexSort!], first: Int, after: String): BooksIndexConnection!
+  booksConnection(first: Int, after: String, where: BookWhere, sort: [BookSort!]): BooksConnection!
+  books(where: BookWhere, limit: Int, offset: Int, sort: [BookSort!]): [Book!]!
+  authorsConnection(first: Int, after: String, where: AuthorWhere, sort: [AuthorSort!]): AuthorsConnection!
+  authors(where: AuthorWhere, limit: Int, offset: Int, sort: [AuthorSort!]): [Author!]!
+  reviewsConnection(first: Int, after: String, where: ReviewWhere, sort: [ReviewSort!]): ReviewsConnection!
+  reviews(where: ReviewWhere, limit: Int, offset: Int, sort: [ReviewSort!]): [Review!]!
+  bookTotal: Int!
+  booksSince(year: Int!): [Book!]!
+  titlesStartingWith(prefix: String!): [String!]!
+  oldestAuthor: Author
+}
+
+type Mutation {
+  createBooks(input: [BookCreateInput!]!): CreateBooksMutationResponse!
+  deleteBooks(where: BookWhere, delete: BookDeleteInput): DeleteInfo!
+  updateBooks(where: BookWhere, update: BookUpdateInput): UpdateBooksMutationResponse!
+  createAuthors(input: [AuthorCreateInput!]!): CreateAuthorsMutationResponse!
+  deleteAuthors(where: AuthorWhere, delete: AuthorDeleteInput): DeleteInfo!
+  updateAuthors(where: AuthorWhere, update: AuthorUpdateInput): UpdateAuthorsMutationResponse!
+  createReviews(input: [ReviewCreateInput!]!): CreateReviewsMutationResponse!
+  deleteReviews(where: ReviewWhere, delete: ReviewDeleteInput): DeleteInfo!
+  updateReviews(where: ReviewWhere, update: ReviewUpdateInput): UpdateReviewsMutationResponse!
+  rateBook(isbn: ID!, rating: Int!): Book
+}
+
+"""An enum for sorting in either ascending or descending order."""
+enum SortDirection {
+  """Sort by field values in ascending order."""
+  ASC
+
+  """Sort by field values in descending order."""
+  DESC
+}
+
+type Author {
+  name: String!
+  born: Int
+  bookCount: Int!
+  books(where: BookWhere, limit: Int, offset: Int, sort: [BookSort!]): [Book!]!
+  booksConnection(where: AuthorBooksConnectionWhere, first: Int, after: String, sort: [AuthorBooksConnectionSort!]): AuthorBooksConnection!
+}
+
+type AuthorAggregate {
+  count: Count!
+  node: AuthorAggregateNode!
+}
+
+type AuthorAggregateNode {
+  name: StringAggregateSelection!
+  born: IntAggregateSelection!
+}
+
+type AuthorBookBooksAggregateSelection {
+  count: CountConnection!
+  node: AuthorBookBooksNodeAggregateSelection
+  edge: AuthorBookBooksEdgeAggregateSelection
+}
+
+type AuthorBookBooksEdgeAggregateSelection {
+  position: IntAggregateSelection!
+}
+
+type AuthorBookBooksNodeAggregateSelection {
+  title: StringAggregateSelection!
+  summary: StringAggregateSelection!
+  year: IntAggregateSelection!
+}
+
+type AuthorBooksConnection {
+  edges: [AuthorBooksRelationship!]!
+  totalCount: Int!
+  pageInfo: PageInfo!
+  aggregate: AuthorBookBooksAggregateSelection!
+}
+
+type AuthorBooksRelationship {
+  cursor: String!
+  node: Book!
+  properties: Wrote!
+}
+
+type AuthorEdge {
+  cursor: String!
+  node: Author!
+}
+
+type AuthorsConnection {
+  edges: [AuthorEdge!]!
+  totalCount: Int!
+  pageInfo: PageInfo!
+  aggregate: AuthorAggregate!
+}
+
+type Book {
+  isbn: ID!
+  title: String!
+  summary: String
+  year: Int!
+  reviewCount: Int!
+  averageRating: Float
+
+  """First words of the title, in alphabetical order"""
+  keywords(limit: Int = 2): [String!]!
+
+  """Books sharing at least minShared authors"""
+  related(minShared: Int = 1): [Book!]!
+  firstAuthor: Author
+  writers: [Author!]!
+  reviewedByViewer: Boolean!
+  authors(where: AuthorWhere, limit: Int, offset: Int, sort: [AuthorSort!]): [Author!]!
+  authorsConnection(where: BookAuthorsConnectionWhere, first: Int, after: String, sort: [BookAuthorsConnectionSort!]): BookAuthorsConnection!
+  reviews(where: ReviewWhere, limit: Int, offset: Int, sort: [ReviewSort!]): [Review!]!
+  reviewsConnection(where: BookReviewsConnectionWhere, first: Int, after: String, sort: [BookReviewsConnectionSort!]): BookReviewsConnection!
+}
+
+type BookAggregate {
+  count: Count!
+  node: BookAggregateNode!
+}
+
+type BookAggregateNode {
+  title: StringAggregateSelection!
+  summary: StringAggregateSelection!
+  year: IntAggregateSelection!
+}
+
+type BookAuthorAuthorsAggregateSelection {
+  count: CountConnection!
+  node: BookAuthorAuthorsNodeAggregateSelection
+  edge: BookAuthorAuthorsEdgeAggregateSelection
+}
+
+type BookAuthorAuthorsEdgeAggregateSelection {
+  position: IntAggregateSelection!
+}
+
+type BookAuthorAuthorsNodeAggregateSelection {
+  name: StringAggregateSelection!
+  born: IntAggregateSelection!
+}
+
+type BookAuthorsConnection {
+  edges: [BookAuthorsRelationship!]!
+  totalCount: Int!
+  pageInfo: PageInfo!
+  aggregate: BookAuthorAuthorsAggregateSelection!
+}
+
+type BookAuthorsRelationship {
+  cursor: String!
+  node: Author!
+  properties: Wrote!
+}
+
+type BookEdge {
+  cursor: String!
+  node: Book!
+}
+
+type BookIndexEdge {
+  cursor: String!
+  node: Book!
+  score: Float!
+}
+
+type BookReviewReviewsAggregateSelection {
+  count: CountConnection!
+  node: BookReviewReviewsNodeAggregateSelection
+}
+
+type BookReviewReviewsNodeAggregateSelection {
+  rating: IntAggregateSelection!
+  by: StringAggregateSelection!
+}
+
+type BookReviewsConnection {
+  edges: [BookReviewsRelationship!]!
+  totalCount: Int!
+  pageInfo: PageInfo!
+  aggregate: BookReviewReviewsAggregateSelection!
+}
+
+type BookReviewsRelationship {
+  cursor: String!
+  node: Review!
+}
+
+type BooksConnection {
+  edges: [BookEdge!]!
+  totalCount: Int!
+  pageInfo: PageInfo!
+  aggregate: BookAggregate!
+}
+
+type BooksIndexConnection {
+  totalCount: Int!
+  pageInfo: PageInfo!
+  edges: [BookIndexEdge!]!
+}
+
+type Count {
+  nodes: Int!
+}
+
+type CountConnection {
+  nodes: Int!
+  edges: Int!
+}
+
+type CreateAuthorsMutationResponse {
+  info: CreateInfo!
+  authors: [Author!]!
+}
+
+type CreateBooksMutationResponse {
+  info: CreateInfo!
+  books: [Book!]!
+}
+
+"""
+Information about the number of nodes and relationships created during a create mutation
+"""
+type CreateInfo {
+  nodesCreated: Int!
+  relationshipsCreated: Int!
+}
+
+type CreateReviewsMutationResponse {
+  info: CreateInfo!
+  reviews: [Review!]!
+}
+
+"""
+Information about the number of nodes and relationships deleted during a delete mutation
+"""
+type DeleteInfo {
+  nodesDeleted: Int!
+  relationshipsDeleted: Int!
+}
+
+type IntAggregateSelection {
+  max: Int
+  min: Int
+  average: Float
+  sum: Int
+}
+
+"""Pagination information (Relay)"""
+type PageInfo {
+  hasNextPage: Boolean!
+  hasPreviousPage: Boolean!
+  startCursor: String
+  endCursor: String
+}
+
+type Review {
+  rating: Int!
+  by: String!
+  book(where: BookWhere, limit: Int, offset: Int, sort: [BookSort!]): [Book!]!
+  bookConnection(where: ReviewBookConnectionWhere, first: Int, after: String, sort: [ReviewBookConnectionSort!]): ReviewBookConnection!
+}
+
+type ReviewAggregate {
+  count: Count!
+  node: ReviewAggregateNode!
+}
+
+type ReviewAggregateNode {
+  rating: IntAggregateSelection!
+  by: StringAggregateSelection!
+}
+
+type ReviewBookBookAggregateSelection {
+  count: CountConnection!
+  node: ReviewBookBookNodeAggregateSelection
+}
+
+type ReviewBookBookNodeAggregateSelection {
+  title: StringAggregateSelection!
+  summary: StringAggregateSelection!
+  year: IntAggregateSelection!
+}
+
+type ReviewBookConnection {
+  edges: [ReviewBookRelationship!]!
+  totalCount: Int!
+  pageInfo: PageInfo!
+  aggregate: ReviewBookBookAggregateSelection!
+}
+
+type ReviewBookRelationship {
+  cursor: String!
+  node: Book!
+}
+
+type ReviewEdge {
+  cursor: String!
+  node: Review!
+}
+
+type ReviewsConnection {
+  edges: [ReviewEdge!]!
+  totalCount: Int!
+  pageInfo: PageInfo!
+  aggregate: ReviewAggregate!
+}
+
+type StringAggregateSelection {
+  shortest: String
+  longest: String
+}
+
+type UpdateAuthorsMutationResponse {
+  info: UpdateInfo!
+  authors: [Author!]!
+}
+
+type UpdateBooksMutationResponse {
+  info: UpdateInfo!
+  books: [Book!]!
+}
+
+"""
+Information about the number of nodes and relationships created and deleted during an update mutation
+"""
+type UpdateInfo {
+  nodesCreated: Int!
+  nodesDeleted: Int!
+  relationshipsCreated: Int!
+  relationshipsDeleted: Int!
+}
+
+type UpdateReviewsMutationResponse {
+  info: UpdateInfo!
+  reviews: [Review!]!
+}
+
+"""
+The edge properties for the following fields:
+* Book.authors
+* Author.books
+"""
+type Wrote {
+  position: Int!
+  credit: String
+}
+
+input AuthorBooksAggregateInput {
+  count_EQ: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { eq: ... } } }' instead.")
+  count_LT: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { lt: ... } } }' instead.")
+  count_LTE: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { lte: ... } } }' instead.")
+  count_GT: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { gt: ... } } }' instead.")
+  count_GTE: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { gte: ... } } }' instead.")
+  count: IntScalarFilters
+  AND: [AuthorBooksAggregateInput!]
+  OR: [AuthorBooksAggregateInput!]
+  NOT: AuthorBooksAggregateInput
+  node: AuthorBooksNodeAggregationWhereInput
+  edge: WroteAggregationWhereInput
+}
+
+input AuthorBooksConnectFieldInput {
+  edge: WroteCreateInput!
+  where: BookConnectWhere
+  connect: [BookConnectInput!]
+}
+
+input AuthorBooksConnectionAggregateInput {
+  count: ConnectionAggregationCountFilterInput
+  AND: [AuthorBooksConnectionAggregateInput!]
+  OR: [AuthorBooksConnectionAggregateInput!]
+  NOT: AuthorBooksConnectionAggregateInput
+  node: AuthorBooksNodeAggregationWhereInput
+  edge: WroteAggregationWhereInput
+}
+
+input AuthorBooksConnectionFilters {
+  """
+  Return Authors where all of the related AuthorBooksConnections match this filter
+  """
+  all: AuthorBooksConnectionWhere
+
+  """
+  Return Authors where none of the related AuthorBooksConnections match this filter
+  """
+  none: AuthorBooksConnectionWhere
+
+  """
+  Return Authors where one of the related AuthorBooksConnections match this filter
+  """
+  single: AuthorBooksConnectionWhere
+
+  """
+  Return Authors where some of the related AuthorBooksConnections match this filter
+  """
+  some: AuthorBooksConnectionWhere
+
+  """
+  Filter Authors by aggregating results on related AuthorBooksConnections
+  """
+  aggregate: AuthorBooksConnectionAggregateInput
+}
+
+input AuthorBooksConnectionSort {
+  node: BookSort
+  edge: WroteSort
+}
+
+input AuthorBooksConnectionWhere {
+  AND: [AuthorBooksConnectionWhere!]
+  OR: [AuthorBooksConnectionWhere!]
+  NOT: AuthorBooksConnectionWhere
+  node: BookWhere
+  edge: WroteWhere
+}
+
+input AuthorBooksCreateFieldInput {
+  edge: WroteCreateInput!
+  node: BookCreateInput!
+}
+
+input AuthorBooksDeleteFieldInput {
+  where: AuthorBooksConnectionWhere
+  delete: BookDeleteInput
+}
+
+input AuthorBooksDisconnectFieldInput {
+  where: AuthorBooksConnectionWhere
+  disconnect: BookDisconnectInput
+}
+
+input AuthorBooksFieldInput {
+  connect: [AuthorBooksConnectFieldInput!]
+  create: [AuthorBooksCreateFieldInput!]
+}
+
+input AuthorBooksNodeAggregationWhereInput {
+  AND: [AuthorBooksNodeAggregationWhereInput!]
+  OR: [AuthorBooksNodeAggregationWhereInput!]
+  NOT: AuthorBooksNodeAggregationWhereInput
+  title_AVERAGE_LENGTH_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'title: { averageLength: { eq: ... } } }' instead.")
+  title_LONGEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'title: { longestLength: { eq: ... } } }' instead.")
+  title_SHORTEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'title: { shortestLength: { eq: ... } } }' instead.")
+  title_AVERAGE_LENGTH_GT: Float @deprecated(reason: "Please use the relevant generic filter 'title: { averageLength: { gt: ... } } }' instead.")
+  title_LONGEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'title: { longestLength: { gt: ... } } }' instead.")
+  title_SHORTEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'title: { shortestLength: { gt: ... } } }' instead.")
+  title_AVERAGE_LENGTH_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'title: { averageLength: { gte: ... } } }' instead.")
+  title_LONGEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'title: { longestLength: { gte: ... } } }' instead.")
+  title_SHORTEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'title: { shortestLength: { gte: ... } } }' instead.")
+  title_AVERAGE_LENGTH_LT: Float @deprecated(reason: "Please use the relevant generic filter 'title: { averageLength: { lt: ... } } }' instead.")
+  title_LONGEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'title: { longestLength: { lt: ... } } }' instead.")
+  title_SHORTEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'title: { shortestLength: { lt: ... } } }' instead.")
+  title_AVERAGE_LENGTH_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'title: { averageLength: { lte: ... } } }' instead.")
+  title_LONGEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'title: { longestLength: { lte: ... } } }' instead.")
+  title_SHORTEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'title: { shortestLength: { lte: ... } } }' instead.")
+  title: StringScalarAggregationFilters
+  summary_AVERAGE_LENGTH_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'summary: { averageLength: { eq: ... } } }' instead.")
+  summary_LONGEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'summary: { longestLength: { eq: ... } } }' instead.")
+  summary_SHORTEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'summary: { shortestLength: { eq: ... } } }' instead.")
+  summary_AVERAGE_LENGTH_GT: Float @deprecated(reason: "Please use the relevant generic filter 'summary: { averageLength: { gt: ... } } }' instead.")
+  summary_LONGEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'summary: { longestLength: { gt: ... } } }' instead.")
+  summary_SHORTEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'summary: { shortestLength: { gt: ... } } }' instead.")
+  summary_AVERAGE_LENGTH_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'summary: { averageLength: { gte: ... } } }' instead.")
+  summary_LONGEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'summary: { longestLength: { gte: ... } } }' instead.")
+  summary_SHORTEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'summary: { shortestLength: { gte: ... } } }' instead.")
+  summary_AVERAGE_LENGTH_LT: Float @deprecated(reason: "Please use the relevant generic filter 'summary: { averageLength: { lt: ... } } }' instead.")
+  summary_LONGEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'summary: { longestLength: { lt: ... } } }' instead.")
+  summary_SHORTEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'summary: { shortestLength: { lt: ... } } }' instead.")
+  summary_AVERAGE_LENGTH_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'summary: { averageLength: { lte: ... } } }' instead.")
+  summary_LONGEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'summary: { longestLength: { lte: ... } } }' instead.")
+  summary_SHORTEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'summary: { shortestLength: { lte: ... } } }' instead.")
+  summary: StringScalarAggregationFilters
+  year_MIN_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'year: { min: { eq: ... } } }' instead.")
+  year_MAX_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'year: { max: { eq: ... } } }' instead.")
+  year_SUM_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'year: { sum: { eq: ... } } }' instead.")
+  year_AVERAGE_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'year: { average: { eq: ... } } }' instead.")
+  year_MIN_GT: Int @deprecated(reason: "Please use the relevant generic filter 'year: { min: { gt: ... } } }' instead.")
+  year_MAX_GT: Int @deprecated(reason: "Please use the relevant generic filter 'year: { max: { gt: ... } } }' instead.")
+  year_SUM_GT: Int @deprecated(reason: "Please use the relevant generic filter 'year: { sum: { gt: ... } } }' instead.")
+  year_AVERAGE_GT: Float @deprecated(reason: "Please use the relevant generic filter 'year: { average: { gt: ... } } }' instead.")
+  year_MIN_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'year: { min: { gte: ... } } }' instead.")
+  year_MAX_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'year: { max: { gte: ... } } }' instead.")
+  year_SUM_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'year: { sum: { gte: ... } } }' instead.")
+  year_AVERAGE_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'year: { average: { gte: ... } } }' instead.")
+  year_MIN_LT: Int @deprecated(reason: "Please use the relevant generic filter 'year: { min: { lt: ... } } }' instead.")
+  year_MAX_LT: Int @deprecated(reason: "Please use the relevant generic filter 'year: { max: { lt: ... } } }' instead.")
+  year_SUM_LT: Int @deprecated(reason: "Please use the relevant generic filter 'year: { sum: { lt: ... } } }' instead.")
+  year_AVERAGE_LT: Float @deprecated(reason: "Please use the relevant generic filter 'year: { average: { lt: ... } } }' instead.")
+  year_MIN_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'year: { min: { lte: ... } } }' instead.")
+  year_MAX_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'year: { max: { lte: ... } } }' instead.")
+  year_SUM_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'year: { sum: { lte: ... } } }' instead.")
+  year_AVERAGE_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'year: { average: { lte: ... } } }' instead.")
+  year: IntScalarAggregationFilters
+}
+
+input AuthorBooksUpdateConnectionInput {
+  node: BookUpdateInput
+  where: AuthorBooksConnectionWhere
+  edge: WroteUpdateInput
+}
+
+input AuthorBooksUpdateFieldInput {
+  connect: [AuthorBooksConnectFieldInput!]
+  disconnect: [AuthorBooksDisconnectFieldInput!]
+  create: [AuthorBooksCreateFieldInput!]
+  update: AuthorBooksUpdateConnectionInput
+  delete: [AuthorBooksDeleteFieldInput!]
+}
+
+input AuthorConnectInput {
+  books: [AuthorBooksConnectFieldInput!]
+}
+
+input AuthorConnectWhere {
+  node: AuthorWhere!
+}
+
+input AuthorCreateInput {
+  name: String!
+  born: Int
+  books: AuthorBooksFieldInput
+}
+
+input AuthorDeleteInput {
+  books: [AuthorBooksDeleteFieldInput!]
+}
+
+input AuthorDisconnectInput {
+  books: [AuthorBooksDisconnectFieldInput!]
+}
+
+input AuthorRelationshipFilters {
+  """Filter type where all of the related Authors match this filter"""
+  all: AuthorWhere
+
+  """Filter type where none of the related Authors match this filter"""
+  none: AuthorWhere
+
+  """Filter type where one of the related Authors match this filter"""
+  single: AuthorWhere
+
+  """Filter type where some of the related Authors match this filter"""
+  some: AuthorWhere
+}
+
+"""
+Fields to sort Authors by. The order in which sorts are applied is not guaranteed when specifying many fields in one AuthorSort object.
+"""
+input AuthorSort {
+  name: SortDirection
+  born: SortDirection
+  bookCount: SortDirection
+}
+
+input AuthorUpdateInput {
+  name: StringScalarMutations
+  name_SET: String @deprecated(reason: "Please use the generic mutation 'name: { set: ... } }' instead.")
+  born: IntScalarMutations
+  born_SET: Int @deprecated(reason: "Please use the generic mutation 'born: { set: ... } }' instead.")
+  born_INCREMENT: Int @deprecated(reason: "Please use the relevant generic mutation 'born: { increment: ... } }' instead.")
+  born_DECREMENT: Int @deprecated(reason: "Please use the relevant generic mutation 'born: { decrement: ... } }' instead.")
+  books: [AuthorBooksUpdateFieldInput!]
+}
+
+input AuthorWhere {
+  name: StringScalarFilters
+  name_EQ: String @deprecated(reason: "Please use the relevant generic filter name: { eq: ... }")
+  name_IN: [String!] @deprecated(reason: "Please use the relevant generic filter name: { in: ... }")
+  name_CONTAINS: String @deprecated(reason: "Please use the relevant generic filter name: { contains: ... }")
+  name_STARTS_WITH: String @deprecated(reason: "Please use the relevant generic filter name: { startsWith: ... }")
+  name_ENDS_WITH: String @deprecated(reason: "Please use the relevant generic filter name: { endsWith: ... }")
+  born: IntScalarFilters
+  born_EQ: Int @deprecated(reason: "Please use the relevant generic filter born: { eq: ... }")
+  born_IN: [Int] @deprecated(reason: "Please use the relevant generic filter born: { in: ... }")
+  born_LT: Int @deprecated(reason: "Please use the relevant generic filter born: { lt: ... }")
+  born_LTE: Int @deprecated(reason: "Please use the relevant generic filter born: { lte: ... }")
+  born_GT: Int @deprecated(reason: "Please use the relevant generic filter born: { gt: ... }")
+  born_GTE: Int @deprecated(reason: "Please use the relevant generic filter born: { gte: ... }")
+  bookCount: IntScalarFilters
+  bookCount_EQ: Int @deprecated(reason: "Please use the relevant generic filter bookCount: { eq: ... }")
+  bookCount_IN: [Int!] @deprecated(reason: "Please use the relevant generic filter bookCount: { in: ... }")
+  bookCount_LT: Int @deprecated(reason: "Please use the relevant generic filter bookCount: { lt: ... }")
+  bookCount_LTE: Int @deprecated(reason: "Please use the relevant generic filter bookCount: { lte: ... }")
+  bookCount_GT: Int @deprecated(reason: "Please use the relevant generic filter bookCount: { gt: ... }")
+  bookCount_GTE: Int @deprecated(reason: "Please use the relevant generic filter bookCount: { gte: ... }")
+  OR: [AuthorWhere!]
+  AND: [AuthorWhere!]
+  NOT: AuthorWhere
+  books: BookRelationshipFilters
+
+  """Return Authors where all of the related Books match this filter"""
+  books_ALL: BookWhere @deprecated(reason: "Please use the relevant generic filter 'books: { all: ... }' instead.")
+
+  """Return Authors where none of the related Books match this filter"""
+  books_NONE: BookWhere @deprecated(reason: "Please use the relevant generic filter 'books: { none: ... }' instead.")
+
+  """Return Authors where one of the related Books match this filter"""
+  books_SINGLE: BookWhere @deprecated(reason: "Please use the relevant generic filter 'books: {  single: ... }' instead.")
+
+  """Return Authors where some of the related Books match this filter"""
+  books_SOME: BookWhere @deprecated(reason: "Please use the relevant generic filter 'books: {  some: ... }' instead.")
+
+  """
+  Return Authors where all of the related AuthorBooksConnections match this filter
+  """
+  booksConnection_ALL: AuthorBooksConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'booksConnection: { all: { node: ... } } }' instead.")
+
+  """
+  Return Authors where none of the related AuthorBooksConnections match this filter
+  """
+  booksConnection_NONE: AuthorBooksConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'booksConnection: { none: { node: ... } } }' instead.")
+
+  """
+  Return Authors where one of the related AuthorBooksConnections match this filter
+  """
+  booksConnection_SINGLE: AuthorBooksConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'booksConnection: { single: { node: ... } } }' instead.")
+
+  """
+  Return Authors where some of the related AuthorBooksConnections match this filter
+  """
+  booksConnection_SOME: AuthorBooksConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'booksConnection: { some: { node: ... } } }' instead.")
+  booksConnection: AuthorBooksConnectionFilters
+  booksAggregate: AuthorBooksAggregateInput @deprecated(reason: "Aggregate filters are moved inside the booksConnection filter, please use { booksConnection: { aggregate: {...} } } instead")
+}
+
+input BookAuthorsAggregateInput {
+  count_EQ: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { eq: ... } } }' instead.")
+  count_LT: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { lt: ... } } }' instead.")
+  count_LTE: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { lte: ... } } }' instead.")
+  count_GT: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { gt: ... } } }' instead.")
+  count_GTE: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { gte: ... } } }' instead.")
+  count: IntScalarFilters
+  AND: [BookAuthorsAggregateInput!]
+  OR: [BookAuthorsAggregateInput!]
+  NOT: BookAuthorsAggregateInput
+  node: BookAuthorsNodeAggregationWhereInput
+  edge: WroteAggregationWhereInput
+}
+
+input BookAuthorsConnectFieldInput {
+  edge: WroteCreateInput!
+  where: AuthorConnectWhere
+  connect: [AuthorConnectInput!]
+}
+
+input BookAuthorsConnectionAggregateInput {
+  count: ConnectionAggregationCountFilterInput
+  AND: [BookAuthorsConnectionAggregateInput!]
+  OR: [BookAuthorsConnectionAggregateInput!]
+  NOT: BookAuthorsConnectionAggregateInput
+  node: BookAuthorsNodeAggregationWhereInput
+  edge: WroteAggregationWhereInput
+}
+
+input BookAuthorsConnectionFilters {
+  """
+  Return Books where all of the related BookAuthorsConnections match this filter
+  """
+  all: BookAuthorsConnectionWhere
+
+  """
+  Return Books where none of the related BookAuthorsConnections match this filter
+  """
+  none: BookAuthorsConnectionWhere
+
+  """
+  Return Books where one of the related BookAuthorsConnections match this filter
+  """
+  single: BookAuthorsConnectionWhere
+
+  """
+  Return Books where some of the related BookAuthorsConnections match this filter
+  """
+  some: BookAuthorsConnectionWhere
+
+  """Filter Books by aggregating results on related BookAuthorsConnections"""
+  aggregate: BookAuthorsConnectionAggregateInput
+}
+
+input BookAuthorsConnectionSort {
+  node: AuthorSort
+  edge: WroteSort
+}
+
+input BookAuthorsConnectionWhere {
+  AND: [BookAuthorsConnectionWhere!]
+  OR: [BookAuthorsConnectionWhere!]
+  NOT: BookAuthorsConnectionWhere
+  node: AuthorWhere
+  edge: WroteWhere
+}
+
+input BookAuthorsCreateFieldInput {
+  edge: WroteCreateInput!
+  node: AuthorCreateInput!
+}
+
+input BookAuthorsDeleteFieldInput {
+  where: BookAuthorsConnectionWhere
+  delete: AuthorDeleteInput
+}
+
+input BookAuthorsDisconnectFieldInput {
+  where: BookAuthorsConnectionWhere
+  disconnect: AuthorDisconnectInput
+}
+
+input BookAuthorsFieldInput {
+  connect: [BookAuthorsConnectFieldInput!]
+  create: [BookAuthorsCreateFieldInput!]
+}
+
+input BookAuthorsNodeAggregationWhereInput {
+  AND: [BookAuthorsNodeAggregationWhereInput!]
+  OR: [BookAuthorsNodeAggregationWhereInput!]
+  NOT: BookAuthorsNodeAggregationWhereInput
+  name_AVERAGE_LENGTH_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { eq: ... } } }' instead.")
+  name_LONGEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { eq: ... } } }' instead.")
+  name_SHORTEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { eq: ... } } }' instead.")
+  name_AVERAGE_LENGTH_GT: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { gt: ... } } }' instead.")
+  name_LONGEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { gt: ... } } }' instead.")
+  name_SHORTEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { gt: ... } } }' instead.")
+  name_AVERAGE_LENGTH_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { gte: ... } } }' instead.")
+  name_LONGEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { gte: ... } } }' instead.")
+  name_SHORTEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { gte: ... } } }' instead.")
+  name_AVERAGE_LENGTH_LT: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { lt: ... } } }' instead.")
+  name_LONGEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { lt: ... } } }' instead.")
+  name_SHORTEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { lt: ... } } }' instead.")
+  name_AVERAGE_LENGTH_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { lte: ... } } }' instead.")
+  name_LONGEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { lte: ... } } }' instead.")
+  name_SHORTEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { lte: ... } } }' instead.")
+  name: StringScalarAggregationFilters
+  born_MIN_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'born: { min: { eq: ... } } }' instead.")
+  born_MAX_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'born: { max: { eq: ... } } }' instead.")
+  born_SUM_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'born: { sum: { eq: ... } } }' instead.")
+  born_AVERAGE_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'born: { average: { eq: ... } } }' instead.")
+  born_MIN_GT: Int @deprecated(reason: "Please use the relevant generic filter 'born: { min: { gt: ... } } }' instead.")
+  born_MAX_GT: Int @deprecated(reason: "Please use the relevant generic filter 'born: { max: { gt: ... } } }' instead.")
+  born_SUM_GT: Int @deprecated(reason: "Please use the relevant generic filter 'born: { sum: { gt: ... } } }' instead.")
+  born_AVERAGE_GT: Float @deprecated(reason: "Please use the relevant generic filter 'born: { average: { gt: ... } } }' instead.")
+  born_MIN_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'born: { min: { gte: ... } } }' instead.")
+  born_MAX_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'born: { max: { gte: ... } } }' instead.")
+  born_SUM_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'born: { sum: { gte: ... } } }' instead.")
+  born_AVERAGE_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'born: { average: { gte: ... } } }' instead.")
+  born_MIN_LT: Int @deprecated(reason: "Please use the relevant generic filter 'born: { min: { lt: ... } } }' instead.")
+  born_MAX_LT: Int @deprecated(reason: "Please use the relevant generic filter 'born: { max: { lt: ... } } }' instead.")
+  born_SUM_LT: Int @deprecated(reason: "Please use the relevant generic filter 'born: { sum: { lt: ... } } }' instead.")
+  born_AVERAGE_LT: Float @deprecated(reason: "Please use the relevant generic filter 'born: { average: { lt: ... } } }' instead.")
+  born_MIN_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'born: { min: { lte: ... } } }' instead.")
+  born_MAX_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'born: { max: { lte: ... } } }' instead.")
+  born_SUM_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'born: { sum: { lte: ... } } }' instead.")
+  born_AVERAGE_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'born: { average: { lte: ... } } }' instead.")
+  born: IntScalarAggregationFilters
+}
+
+input BookAuthorsUpdateConnectionInput {
+  node: AuthorUpdateInput
+  where: BookAuthorsConnectionWhere
+  edge: WroteUpdateInput
+}
+
+input BookAuthorsUpdateFieldInput {
+  connect: [BookAuthorsConnectFieldInput!]
+  disconnect: [BookAuthorsDisconnectFieldInput!]
+  create: [BookAuthorsCreateFieldInput!]
+  update: BookAuthorsUpdateConnectionInput
+  delete: [BookAuthorsDeleteFieldInput!]
+}
+
+input BookConnectInput {
+  authors: [BookAuthorsConnectFieldInput!]
+  reviews: [BookReviewsConnectFieldInput!]
+}
+
+input BookConnectWhere {
+  node: BookWhere!
+}
+
+input BookCreateInput {
+  isbn: ID!
+  title: String!
+  summary: String
+  year: Int!
+  authors: BookAuthorsFieldInput
+  reviews: BookReviewsFieldInput
+}
+
+input BookDeleteInput {
+  authors: [BookAuthorsDeleteFieldInput!]
+  reviews: [BookReviewsDeleteFieldInput!]
+}
+
+input BookDisconnectInput {
+  authors: [BookAuthorsDisconnectFieldInput!]
+  reviews: [BookReviewsDisconnectFieldInput!]
+}
+
+"""The input for sorting a Fulltext query on an index of Book"""
+input BookIndexSort {
+  score: SortDirection
+  node: BookSort
+}
+
+"""The input for filtering a full-text query on an index of Book"""
+input BookIndexWhere {
+  score: FloatWhere
+  node: BookWhere
+}
+
+input BookRelationshipFilters {
+  """Filter type where all of the related Books match this filter"""
+  all: BookWhere
+
+  """Filter type where none of the related Books match this filter"""
+  none: BookWhere
+
+  """Filter type where one of the related Books match this filter"""
+  single: BookWhere
+
+  """Filter type where some of the related Books match this filter"""
+  some: BookWhere
+}
+
+input BookReviewsAggregateInput {
+  count_EQ: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { eq: ... } } }' instead.")
+  count_LT: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { lt: ... } } }' instead.")
+  count_LTE: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { lte: ... } } }' instead.")
+  count_GT: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { gt: ... } } }' instead.")
+  count_GTE: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { gte: ... } } }' instead.")
+  count: IntScalarFilters
+  AND: [BookReviewsAggregateInput!]
+  OR: [BookReviewsAggregateInput!]
+  NOT: BookReviewsAggregateInput
+  node: BookReviewsNodeAggregationWhereInput
+}
+
+input BookReviewsConnectFieldInput {
+  where: ReviewConnectWhere
+  connect: [ReviewConnectInput!]
+}
+
+input BookReviewsConnectionAggregateInput {
+  count: ConnectionAggregationCountFilterInput
+  AND: [BookReviewsConnectionAggregateInput!]
+  OR: [BookReviewsConnectionAggregateInput!]
+  NOT: BookReviewsConnectionAggregateInput
+  node: BookReviewsNodeAggregationWhereInput
+}
+
+input BookReviewsConnectionFilters {
+  """
+  Return Books where all of the related BookReviewsConnections match this filter
+  """
+  all: BookReviewsConnectionWhere
+
+  """
+  Return Books where none of the related BookReviewsConnections match this filter
+  """
+  none: BookReviewsConnectionWhere
+
+  """
+  Return Books where one of the related BookReviewsConnections match this filter
+  """
+  single: BookReviewsConnectionWhere
+
+  """
+  Return Books where some of the related BookReviewsConnections match this filter
+  """
+  some: BookReviewsConnectionWhere
+
+  """Filter Books by aggregating results on related BookReviewsConnections"""
+  aggregate: BookReviewsConnectionAggregateInput
+}
+
+input BookReviewsConnectionSort {
+  node: ReviewSort
+}
+
+input BookReviewsConnectionWhere {
+  AND: [BookReviewsConnectionWhere!]
+  OR: [BookReviewsConnectionWhere!]
+  NOT: BookReviewsConnectionWhere
+  node: ReviewWhere
+}
+
+input BookReviewsCreateFieldInput {
+  node: ReviewCreateInput!
+}
+
+input BookReviewsDeleteFieldInput {
+  where: BookReviewsConnectionWhere
+  delete: ReviewDeleteInput
+}
+
+input BookReviewsDisconnectFieldInput {
+  where: BookReviewsConnectionWhere
+  disconnect: ReviewDisconnectInput
+}
+
+input BookReviewsFieldInput {
+  connect: [BookReviewsConnectFieldInput!]
+  create: [BookReviewsCreateFieldInput!]
+}
+
+input BookReviewsNodeAggregationWhereInput {
+  AND: [BookReviewsNodeAggregationWhereInput!]
+  OR: [BookReviewsNodeAggregationWhereInput!]
+  NOT: BookReviewsNodeAggregationWhereInput
+  rating_MIN_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'rating: { min: { eq: ... } } }' instead.")
+  rating_MAX_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'rating: { max: { eq: ... } } }' instead.")
+  rating_SUM_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'rating: { sum: { eq: ... } } }' instead.")
+  rating_AVERAGE_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'rating: { average: { eq: ... } } }' instead.")
+  rating_MIN_GT: Int @deprecated(reason: "Please use the relevant generic filter 'rating: { min: { gt: ... } } }' instead.")
+  rating_MAX_GT: Int @deprecated(reason: "Please use the relevant generic filter 'rating: { max: { gt: ... } } }' instead.")
+  rating_SUM_GT: Int @deprecated(reason: "Please use the relevant generic filter 'rating: { sum: { gt: ... } } }' instead.")
+  rating_AVERAGE_GT: Float @deprecated(reason: "Please use the relevant generic filter 'rating: { average: { gt: ... } } }' instead.")
+  rating_MIN_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'rating: { min: { gte: ... } } }' instead.")
+  rating_MAX_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'rating: { max: { gte: ... } } }' instead.")
+  rating_SUM_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'rating: { sum: { gte: ... } } }' instead.")
+  rating_AVERAGE_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'rating: { average: { gte: ... } } }' instead.")
+  rating_MIN_LT: Int @deprecated(reason: "Please use the relevant generic filter 'rating: { min: { lt: ... } } }' instead.")
+  rating_MAX_LT: Int @deprecated(reason: "Please use the relevant generic filter 'rating: { max: { lt: ... } } }' instead.")
+  rating_SUM_LT: Int @deprecated(reason: "Please use the relevant generic filter 'rating: { sum: { lt: ... } } }' instead.")
+  rating_AVERAGE_LT: Float @deprecated(reason: "Please use the relevant generic filter 'rating: { average: { lt: ... } } }' instead.")
+  rating_MIN_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'rating: { min: { lte: ... } } }' instead.")
+  rating_MAX_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'rating: { max: { lte: ... } } }' instead.")
+  rating_SUM_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'rating: { sum: { lte: ... } } }' instead.")
+  rating_AVERAGE_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'rating: { average: { lte: ... } } }' instead.")
+  rating: IntScalarAggregationFilters
+  by_AVERAGE_LENGTH_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'by: { averageLength: { eq: ... } } }' instead.")
+  by_LONGEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'by: { longestLength: { eq: ... } } }' instead.")
+  by_SHORTEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'by: { shortestLength: { eq: ... } } }' instead.")
+  by_AVERAGE_LENGTH_GT: Float @deprecated(reason: "Please use the relevant generic filter 'by: { averageLength: { gt: ... } } }' instead.")
+  by_LONGEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'by: { longestLength: { gt: ... } } }' instead.")
+  by_SHORTEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'by: { shortestLength: { gt: ... } } }' instead.")
+  by_AVERAGE_LENGTH_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'by: { averageLength: { gte: ... } } }' instead.")
+  by_LONGEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'by: { longestLength: { gte: ... } } }' instead.")
+  by_SHORTEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'by: { shortestLength: { gte: ... } } }' instead.")
+  by_AVERAGE_LENGTH_LT: Float @deprecated(reason: "Please use the relevant generic filter 'by: { averageLength: { lt: ... } } }' instead.")
+  by_LONGEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'by: { longestLength: { lt: ... } } }' instead.")
+  by_SHORTEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'by: { shortestLength: { lt: ... } } }' instead.")
+  by_AVERAGE_LENGTH_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'by: { averageLength: { lte: ... } } }' instead.")
+  by_LONGEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'by: { longestLength: { lte: ... } } }' instead.")
+  by_SHORTEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'by: { shortestLength: { lte: ... } } }' instead.")
+  by: StringScalarAggregationFilters
+}
+
+input BookReviewsUpdateConnectionInput {
+  node: ReviewUpdateInput
+  where: BookReviewsConnectionWhere
+}
+
+input BookReviewsUpdateFieldInput {
+  connect: [BookReviewsConnectFieldInput!]
+  disconnect: [BookReviewsDisconnectFieldInput!]
+  create: [BookReviewsCreateFieldInput!]
+  update: BookReviewsUpdateConnectionInput
+  delete: [BookReviewsDeleteFieldInput!]
+}
+
+"""
+Fields to sort Books by. The order in which sorts are applied is not guaranteed when specifying many fields in one BookSort object.
+"""
+input BookSort {
+  isbn: SortDirection
+  title: SortDirection
+  summary: SortDirection
+  year: SortDirection
+  reviewCount: SortDirection
+  averageRating: SortDirection
+  reviewedByViewer: SortDirection
+}
+
+input BookUpdateInput {
+  isbn: IDScalarMutations
+  isbn_SET: ID @deprecated(reason: "Please use the generic mutation 'isbn: { set: ... } }' instead.")
+  title: StringScalarMutations
+  title_SET: String @deprecated(reason: "Please use the generic mutation 'title: { set: ... } }' instead.")
+  summary: StringScalarMutations
+  summary_SET: String @deprecated(reason: "Please use the generic mutation 'summary: { set: ... } }' instead.")
+  year: IntScalarMutations
+  year_SET: Int @deprecated(reason: "Please use the generic mutation 'year: { set: ... } }' instead.")
+  year_INCREMENT: Int @deprecated(reason: "Please use the relevant generic mutation 'year: { increment: ... } }' instead.")
+  year_DECREMENT: Int @deprecated(reason: "Please use the relevant generic mutation 'year: { decrement: ... } }' instead.")
+  authors: [BookAuthorsUpdateFieldInput!]
+  reviews: [BookReviewsUpdateFieldInput!]
+}
+
+input BookWhere {
+  isbn: IDScalarFilters
+  isbn_EQ: ID @deprecated(reason: "Please use the relevant generic filter isbn: { eq: ... }")
+  isbn_IN: [ID!] @deprecated(reason: "Please use the relevant generic filter isbn: { in: ... }")
+  isbn_CONTAINS: ID @deprecated(reason: "Please use the relevant generic filter isbn: { contains: ... }")
+  isbn_STARTS_WITH: ID @deprecated(reason: "Please use the relevant generic filter isbn: { startsWith: ... }")
+  isbn_ENDS_WITH: ID @deprecated(reason: "Please use the relevant generic filter isbn: { endsWith: ... }")
+  title: StringScalarFilters
+  title_EQ: String @deprecated(reason: "Please use the relevant generic filter title: { eq: ... }")
+  title_IN: [String!] @deprecated(reason: "Please use the relevant generic filter title: { in: ... }")
+  title_CONTAINS: String @deprecated(reason: "Please use the relevant generic filter title: { contains: ... }")
+  title_STARTS_WITH: String @deprecated(reason: "Please use the relevant generic filter title: { startsWith: ... }")
+  title_ENDS_WITH: String @deprecated(reason: "Please use the relevant generic filter title: { endsWith: ... }")
+  summary: StringScalarFilters
+  summary_EQ: String @deprecated(reason: "Please use the relevant generic filter summary: { eq: ... }")
+  summary_IN: [String] @deprecated(reason: "Please use the relevant generic filter summary: { in: ... }")
+  summary_CONTAINS: String @deprecated(reason: "Please use the relevant generic filter summary: { contains: ... }")
+  summary_STARTS_WITH: String @deprecated(reason: "Please use the relevant generic filter summary: { startsWith: ... }")
+  summary_ENDS_WITH: String @deprecated(reason: "Please use the relevant generic filter summary: { endsWith: ... }")
+  year: IntScalarFilters
+  year_EQ: Int @deprecated(reason: "Please use the relevant generic filter year: { eq: ... }")
+  year_IN: [Int!] @deprecated(reason: "Please use the relevant generic filter year: { in: ... }")
+  year_LT: Int @deprecated(reason: "Please use the relevant generic filter year: { lt: ... }")
+  year_LTE: Int @deprecated(reason: "Please use the relevant generic filter year: { lte: ... }")
+  year_GT: Int @deprecated(reason: "Please use the relevant generic filter year: { gt: ... }")
+  year_GTE: Int @deprecated(reason: "Please use the relevant generic filter year: { gte: ... }")
+  reviewCount: IntScalarFilters
+  reviewCount_EQ: Int @deprecated(reason: "Please use the relevant generic filter reviewCount: { eq: ... }")
+  reviewCount_IN: [Int!] @deprecated(reason: "Please use the relevant generic filter reviewCount: { in: ... }")
+  reviewCount_LT: Int @deprecated(reason: "Please use the relevant generic filter reviewCount: { lt: ... }")
+  reviewCount_LTE: Int @deprecated(reason: "Please use the relevant generic filter reviewCount: { lte: ... }")
+  reviewCount_GT: Int @deprecated(reason: "Please use the relevant generic filter reviewCount: { gt: ... }")
+  reviewCount_GTE: Int @deprecated(reason: "Please use the relevant generic filter reviewCount: { gte: ... }")
+  averageRating: FloatScalarFilters
+  averageRating_EQ: Float @deprecated(reason: "Please use the relevant generic filter averageRating: { eq: ... }")
+  averageRating_IN: [Float] @deprecated(reason: "Please use the relevant generic filter averageRating: { in: ... }")
+  averageRating_LT: Float @deprecated(reason: "Please use the relevant generic filter averageRating: { lt: ... }")
+  averageRating_LTE: Float @deprecated(reason: "Please use the relevant generic filter averageRating: { lte: ... }")
+  averageRating_GT: Float @deprecated(reason: "Please use the relevant generic filter averageRating: { gt: ... }")
+  averageRating_GTE: Float @deprecated(reason: "Please use the relevant generic filter averageRating: { gte: ... }")
+  firstAuthor: AuthorWhere
+  writers_ALL: AuthorWhere
+  writers_NONE: AuthorWhere
+  writers_SINGLE: AuthorWhere
+  writers_SOME: AuthorWhere
+  writers: AuthorRelationshipFilters
+  reviewedByViewer: BooleanScalarFilters
+  reviewedByViewer_EQ: Boolean @deprecated(reason: "Please use the relevant generic filter reviewedByViewer: { eq: ... }")
+  OR: [BookWhere!]
+  AND: [BookWhere!]
+  NOT: BookWhere
+  authors: AuthorRelationshipFilters
+
+  """Return Books where all of the related Authors match this filter"""
+  authors_ALL: AuthorWhere @deprecated(reason: "Please use the relevant generic filter 'authors: { all: ... }' instead.")
+
+  """Return Books where none of the related Authors match this filter"""
+  authors_NONE: AuthorWhere @deprecated(reason: "Please use the relevant generic filter 'authors: { none: ... }' instead.")
+
+  """Return Books where one of the related Authors match this filter"""
+  authors_SINGLE: AuthorWhere @deprecated(reason: "Please use the relevant generic filter 'authors: {  single: ... }' instead.")
+
+  """Return Books where some of the related Authors match this filter"""
+  authors_SOME: AuthorWhere @deprecated(reason: "Please use the relevant generic filter 'authors: {  some: ... }' instead.")
+
+  """
+  Return Books where all of the related BookAuthorsConnections match this filter
+  """
+  authorsConnection_ALL: BookAuthorsConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'authorsConnection: { all: { node: ... } } }' instead.")
+
+  """
+  Return Books where none of the related BookAuthorsConnections match this filter
+  """
+  authorsConnection_NONE: BookAuthorsConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'authorsConnection: { none: { node: ... } } }' instead.")
+
+  """
+  Return Books where one of the related BookAuthorsConnections match this filter
+  """
+  authorsConnection_SINGLE: BookAuthorsConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'authorsConnection: { single: { node: ... } } }' instead.")
+
+  """
+  Return Books where some of the related BookAuthorsConnections match this filter
+  """
+  authorsConnection_SOME: BookAuthorsConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'authorsConnection: { some: { node: ... } } }' instead.")
+  authorsConnection: BookAuthorsConnectionFilters
+  authorsAggregate: BookAuthorsAggregateInput @deprecated(reason: "Aggregate filters are moved inside the authorsConnection filter, please use { authorsConnection: { aggregate: {...} } } instead")
+  reviews: ReviewRelationshipFilters
+
+  """Return Books where all of the related Reviews match this filter"""
+  reviews_ALL: ReviewWhere @deprecated(reason: "Please use the relevant generic filter 'reviews: { all: ... }' instead.")
+
+  """Return Books where none of the related Reviews match this filter"""
+  reviews_NONE: ReviewWhere @deprecated(reason: "Please use the relevant generic filter 'reviews: { none: ... }' instead.")
+
+  """Return Books where one of the related Reviews match this filter"""
+  reviews_SINGLE: ReviewWhere @deprecated(reason: "Please use the relevant generic filter 'reviews: {  single: ... }' instead.")
+
+  """Return Books where some of the related Reviews match this filter"""
+  reviews_SOME: ReviewWhere @deprecated(reason: "Please use the relevant generic filter 'reviews: {  some: ... }' instead.")
+
+  """
+  Return Books where all of the related BookReviewsConnections match this filter
+  """
+  reviewsConnection_ALL: BookReviewsConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'reviewsConnection: { all: { node: ... } } }' instead.")
+
+  """
+  Return Books where none of the related BookReviewsConnections match this filter
+  """
+  reviewsConnection_NONE: BookReviewsConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'reviewsConnection: { none: { node: ... } } }' instead.")
+
+  """
+  Return Books where one of the related BookReviewsConnections match this filter
+  """
+  reviewsConnection_SINGLE: BookReviewsConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'reviewsConnection: { single: { node: ... } } }' instead.")
+
+  """
+  Return Books where some of the related BookReviewsConnections match this filter
+  """
+  reviewsConnection_SOME: BookReviewsConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'reviewsConnection: { some: { node: ... } } }' instead.")
+  reviewsConnection: BookReviewsConnectionFilters
+  reviewsAggregate: BookReviewsAggregateInput @deprecated(reason: "Aggregate filters are moved inside the reviewsConnection filter, please use { reviewsConnection: { aggregate: {...} } } instead")
+}
+
+"""Boolean filters"""
+input BooleanScalarFilters {
+  eq: Boolean
+}
+
+input ConnectionAggregationCountFilterInput {
+  nodes: IntScalarFilters
+  edges: IntScalarFilters
+}
+
+"""Float filters"""
+input FloatScalarFilters {
+  eq: Float
+  gt: Float
+  gte: Float
+  in: [Float!]
+  lt: Float
+  lte: Float
+}
+
+"""The input for filtering a float"""
+input FloatWhere {
+  min: Float
+  max: Float
+}
+
+"""ID filters"""
+input IDScalarFilters {
+  eq: ID
+  in: [ID!]
+  contains: ID
+  endsWith: ID
+  startsWith: ID
+}
+
+"""ID mutations"""
+input IDScalarMutations {
+  set: ID
+}
+
+"""Filters for an aggregation of an int field"""
+input IntScalarAggregationFilters {
+  average: FloatScalarFilters
+  max: IntScalarFilters
+  min: IntScalarFilters
+  sum: IntScalarFilters
+}
+
+"""Int filters"""
+input IntScalarFilters {
+  eq: Int
+  gt: Int
+  gte: Int
+  in: [Int!]
+  lt: Int
+  lte: Int
+}
+
+"""Int mutations"""
+input IntScalarMutations {
+  set: Int
+  add: Int
+  subtract: Int
+}
+
+input ReviewBookAggregateInput {
+  count_EQ: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { eq: ... } } }' instead.")
+  count_LT: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { lt: ... } } }' instead.")
+  count_LTE: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { lte: ... } } }' instead.")
+  count_GT: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { gt: ... } } }' instead.")
+  count_GTE: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { gte: ... } } }' instead.")
+  count: IntScalarFilters
+  AND: [ReviewBookAggregateInput!]
+  OR: [ReviewBookAggregateInput!]
+  NOT: ReviewBookAggregateInput
+  node: ReviewBookNodeAggregationWhereInput
+}
+
+input ReviewBookConnectFieldInput {
+  where: BookConnectWhere
+  connect: [BookConnectInput!]
+}
+
+input ReviewBookConnectionAggregateInput {
+  count: ConnectionAggregationCountFilterInput
+  AND: [ReviewBookConnectionAggregateInput!]
+  OR: [ReviewBookConnectionAggregateInput!]
+  NOT: ReviewBookConnectionAggregateInput
+  node: ReviewBookNodeAggregationWhereInput
+}
+
+input ReviewBookConnectionFilters {
+  """
+  Return Reviews where all of the related ReviewBookConnections match this filter
+  """
+  all: ReviewBookConnectionWhere
+
+  """
+  Return Reviews where none of the related ReviewBookConnections match this filter
+  """
+  none: ReviewBookConnectionWhere
+
+  """
+  Return Reviews where one of the related ReviewBookConnections match this filter
+  """
+  single: ReviewBookConnectionWhere
+
+  """
+  Return Reviews where some of the related ReviewBookConnections match this filter
+  """
+  some: ReviewBookConnectionWhere
+
+  """Filter Reviews by aggregating results on related ReviewBookConnections"""
+  aggregate: ReviewBookConnectionAggregateInput
+}
+
+input ReviewBookConnectionSort {
+  node: BookSort
+}
+
+input ReviewBookConnectionWhere {
+  AND: [ReviewBookConnectionWhere!]
+  OR: [ReviewBookConnectionWhere!]
+  NOT: ReviewBookConnectionWhere
+  node: BookWhere
+}
+
+input ReviewBookCreateFieldInput {
+  node: BookCreateInput!
+}
+
+input ReviewBookDeleteFieldInput {
+  where: ReviewBookConnectionWhere
+  delete: BookDeleteInput
+}
+
+input ReviewBookDisconnectFieldInput {
+  where: ReviewBookConnectionWhere
+  disconnect: BookDisconnectInput
+}
+
+input ReviewBookFieldInput {
+  connect: [ReviewBookConnectFieldInput!]
+  create: [ReviewBookCreateFieldInput!]
+}
+
+input ReviewBookNodeAggregationWhereInput {
+  AND: [ReviewBookNodeAggregationWhereInput!]
+  OR: [ReviewBookNodeAggregationWhereInput!]
+  NOT: ReviewBookNodeAggregationWhereInput
+  title_AVERAGE_LENGTH_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'title: { averageLength: { eq: ... } } }' instead.")
+  title_LONGEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'title: { longestLength: { eq: ... } } }' instead.")
+  title_SHORTEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'title: { shortestLength: { eq: ... } } }' instead.")
+  title_AVERAGE_LENGTH_GT: Float @deprecated(reason: "Please use the relevant generic filter 'title: { averageLength: { gt: ... } } }' instead.")
+  title_LONGEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'title: { longestLength: { gt: ... } } }' instead.")
+  title_SHORTEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'title: { shortestLength: { gt: ... } } }' instead.")
+  title_AVERAGE_LENGTH_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'title: { averageLength: { gte: ... } } }' instead.")
+  title_LONGEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'title: { longestLength: { gte: ... } } }' instead.")
+  title_SHORTEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'title: { shortestLength: { gte: ... } } }' instead.")
+  title_AVERAGE_LENGTH_LT: Float @deprecated(reason: "Please use the relevant generic filter 'title: { averageLength: { lt: ... } } }' instead.")
+  title_LONGEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'title: { longestLength: { lt: ... } } }' instead.")
+  title_SHORTEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'title: { shortestLength: { lt: ... } } }' instead.")
+  title_AVERAGE_LENGTH_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'title: { averageLength: { lte: ... } } }' instead.")
+  title_LONGEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'title: { longestLength: { lte: ... } } }' instead.")
+  title_SHORTEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'title: { shortestLength: { lte: ... } } }' instead.")
+  title: StringScalarAggregationFilters
+  summary_AVERAGE_LENGTH_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'summary: { averageLength: { eq: ... } } }' instead.")
+  summary_LONGEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'summary: { longestLength: { eq: ... } } }' instead.")
+  summary_SHORTEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'summary: { shortestLength: { eq: ... } } }' instead.")
+  summary_AVERAGE_LENGTH_GT: Float @deprecated(reason: "Please use the relevant generic filter 'summary: { averageLength: { gt: ... } } }' instead.")
+  summary_LONGEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'summary: { longestLength: { gt: ... } } }' instead.")
+  summary_SHORTEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'summary: { shortestLength: { gt: ... } } }' instead.")
+  summary_AVERAGE_LENGTH_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'summary: { averageLength: { gte: ... } } }' instead.")
+  summary_LONGEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'summary: { longestLength: { gte: ... } } }' instead.")
+  summary_SHORTEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'summary: { shortestLength: { gte: ... } } }' instead.")
+  summary_AVERAGE_LENGTH_LT: Float @deprecated(reason: "Please use the relevant generic filter 'summary: { averageLength: { lt: ... } } }' instead.")
+  summary_LONGEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'summary: { longestLength: { lt: ... } } }' instead.")
+  summary_SHORTEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'summary: { shortestLength: { lt: ... } } }' instead.")
+  summary_AVERAGE_LENGTH_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'summary: { averageLength: { lte: ... } } }' instead.")
+  summary_LONGEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'summary: { longestLength: { lte: ... } } }' instead.")
+  summary_SHORTEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'summary: { shortestLength: { lte: ... } } }' instead.")
+  summary: StringScalarAggregationFilters
+  year_MIN_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'year: { min: { eq: ... } } }' instead.")
+  year_MAX_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'year: { max: { eq: ... } } }' instead.")
+  year_SUM_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'year: { sum: { eq: ... } } }' instead.")
+  year_AVERAGE_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'year: { average: { eq: ... } } }' instead.")
+  year_MIN_GT: Int @deprecated(reason: "Please use the relevant generic filter 'year: { min: { gt: ... } } }' instead.")
+  year_MAX_GT: Int @deprecated(reason: "Please use the relevant generic filter 'year: { max: { gt: ... } } }' instead.")
+  year_SUM_GT: Int @deprecated(reason: "Please use the relevant generic filter 'year: { sum: { gt: ... } } }' instead.")
+  year_AVERAGE_GT: Float @deprecated(reason: "Please use the relevant generic filter 'year: { average: { gt: ... } } }' instead.")
+  year_MIN_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'year: { min: { gte: ... } } }' instead.")
+  year_MAX_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'year: { max: { gte: ... } } }' instead.")
+  year_SUM_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'year: { sum: { gte: ... } } }' instead.")
+  year_AVERAGE_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'year: { average: { gte: ... } } }' instead.")
+  year_MIN_LT: Int @deprecated(reason: "Please use the relevant generic filter 'year: { min: { lt: ... } } }' instead.")
+  year_MAX_LT: Int @deprecated(reason: "Please use the relevant generic filter 'year: { max: { lt: ... } } }' instead.")
+  year_SUM_LT: Int @deprecated(reason: "Please use the relevant generic filter 'year: { sum: { lt: ... } } }' instead.")
+  year_AVERAGE_LT: Float @deprecated(reason: "Please use the relevant generic filter 'year: { average: { lt: ... } } }' instead.")
+  year_MIN_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'year: { min: { lte: ... } } }' instead.")
+  year_MAX_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'year: { max: { lte: ... } } }' instead.")
+  year_SUM_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'year: { sum: { lte: ... } } }' instead.")
+  year_AVERAGE_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'year: { average: { lte: ... } } }' instead.")
+  year: IntScalarAggregationFilters
+}
+
+input ReviewBookUpdateConnectionInput {
+  node: BookUpdateInput
+  where: ReviewBookConnectionWhere
+}
+
+input ReviewBookUpdateFieldInput {
+  connect: [ReviewBookConnectFieldInput!]
+  disconnect: [ReviewBookDisconnectFieldInput!]
+  create: [ReviewBookCreateFieldInput!]
+  update: ReviewBookUpdateConnectionInput
+  delete: [ReviewBookDeleteFieldInput!]
+}
+
+input ReviewConnectInput {
+  book: [ReviewBookConnectFieldInput!]
+}
+
+input ReviewConnectWhere {
+  node: ReviewWhere!
+}
+
+input ReviewCreateInput {
+  rating: Int!
+  by: String!
+  book: ReviewBookFieldInput
+}
+
+input ReviewDeleteInput {
+  book: [ReviewBookDeleteFieldInput!]
+}
+
+input ReviewDisconnectInput {
+  book: [ReviewBookDisconnectFieldInput!]
+}
+
+input ReviewRelationshipFilters {
+  """Filter type where all of the related Reviews match this filter"""
+  all: ReviewWhere
+
+  """Filter type where none of the related Reviews match this filter"""
+  none: ReviewWhere
+
+  """Filter type where one of the related Reviews match this filter"""
+  single: ReviewWhere
+
+  """Filter type where some of the related Reviews match this filter"""
+  some: ReviewWhere
+}
+
+"""
+Fields to sort Reviews by. The order in which sorts are applied is not guaranteed when specifying many fields in one ReviewSort object.
+"""
+input ReviewSort {
+  rating: SortDirection
+  by: SortDirection
+}
+
+input ReviewUpdateInput {
+  rating: IntScalarMutations
+  rating_SET: Int @deprecated(reason: "Please use the generic mutation 'rating: { set: ... } }' instead.")
+  rating_INCREMENT: Int @deprecated(reason: "Please use the relevant generic mutation 'rating: { increment: ... } }' instead.")
+  rating_DECREMENT: Int @deprecated(reason: "Please use the relevant generic mutation 'rating: { decrement: ... } }' instead.")
+  by: StringScalarMutations
+  by_SET: String @deprecated(reason: "Please use the generic mutation 'by: { set: ... } }' instead.")
+  book: [ReviewBookUpdateFieldInput!]
+}
+
+input ReviewWhere {
+  rating: IntScalarFilters
+  rating_EQ: Int @deprecated(reason: "Please use the relevant generic filter rating: { eq: ... }")
+  rating_IN: [Int!] @deprecated(reason: "Please use the relevant generic filter rating: { in: ... }")
+  rating_LT: Int @deprecated(reason: "Please use the relevant generic filter rating: { lt: ... }")
+  rating_LTE: Int @deprecated(reason: "Please use the relevant generic filter rating: { lte: ... }")
+  rating_GT: Int @deprecated(reason: "Please use the relevant generic filter rating: { gt: ... }")
+  rating_GTE: Int @deprecated(reason: "Please use the relevant generic filter rating: { gte: ... }")
+  by: StringScalarFilters
+  by_EQ: String @deprecated(reason: "Please use the relevant generic filter by: { eq: ... }")
+  by_IN: [String!] @deprecated(reason: "Please use the relevant generic filter by: { in: ... }")
+  by_CONTAINS: String @deprecated(reason: "Please use the relevant generic filter by: { contains: ... }")
+  by_STARTS_WITH: String @deprecated(reason: "Please use the relevant generic filter by: { startsWith: ... }")
+  by_ENDS_WITH: String @deprecated(reason: "Please use the relevant generic filter by: { endsWith: ... }")
+  OR: [ReviewWhere!]
+  AND: [ReviewWhere!]
+  NOT: ReviewWhere
+  book: BookRelationshipFilters
+
+  """Return Reviews where all of the related Books match this filter"""
+  book_ALL: BookWhere @deprecated(reason: "Please use the relevant generic filter 'book: { all: ... }' instead.")
+
+  """Return Reviews where none of the related Books match this filter"""
+  book_NONE: BookWhere @deprecated(reason: "Please use the relevant generic filter 'book: { none: ... }' instead.")
+
+  """Return Reviews where one of the related Books match this filter"""
+  book_SINGLE: BookWhere @deprecated(reason: "Please use the relevant generic filter 'book: {  single: ... }' instead.")
+
+  """Return Reviews where some of the related Books match this filter"""
+  book_SOME: BookWhere @deprecated(reason: "Please use the relevant generic filter 'book: {  some: ... }' instead.")
+
+  """
+  Return Reviews where all of the related ReviewBookConnections match this filter
+  """
+  bookConnection_ALL: ReviewBookConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'bookConnection: { all: { node: ... } } }' instead.")
+
+  """
+  Return Reviews where none of the related ReviewBookConnections match this filter
+  """
+  bookConnection_NONE: ReviewBookConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'bookConnection: { none: { node: ... } } }' instead.")
+
+  """
+  Return Reviews where one of the related ReviewBookConnections match this filter
+  """
+  bookConnection_SINGLE: ReviewBookConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'bookConnection: { single: { node: ... } } }' instead.")
+
+  """
+  Return Reviews where some of the related ReviewBookConnections match this filter
+  """
+  bookConnection_SOME: ReviewBookConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'bookConnection: { some: { node: ... } } }' instead.")
+  bookConnection: ReviewBookConnectionFilters
+  bookAggregate: ReviewBookAggregateInput @deprecated(reason: "Aggregate filters are moved inside the bookConnection filter, please use { bookConnection: { aggregate: {...} } } instead")
+}
+
+"""Filters for an aggregation of a string field"""
+input StringScalarAggregationFilters {
+  averageLength: FloatScalarFilters
+  shortestLength: IntScalarFilters
+  longestLength: IntScalarFilters
+}
+
+"""String filters"""
+input StringScalarFilters {
+  eq: String
+  in: [String!]
+  contains: String
+  endsWith: String
+  startsWith: String
+}
+
+"""String mutations"""
+input StringScalarMutations {
+  set: String
+}
+
+input WroteAggregationWhereInput {
+  AND: [WroteAggregationWhereInput!]
+  OR: [WroteAggregationWhereInput!]
+  NOT: WroteAggregationWhereInput
+  position_MIN_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'position: { min: { eq: ... } } }' instead.")
+  position_MAX_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'position: { max: { eq: ... } } }' instead.")
+  position_SUM_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'position: { sum: { eq: ... } } }' instead.")
+  position_AVERAGE_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'position: { average: { eq: ... } } }' instead.")
+  position_MIN_GT: Int @deprecated(reason: "Please use the relevant generic filter 'position: { min: { gt: ... } } }' instead.")
+  position_MAX_GT: Int @deprecated(reason: "Please use the relevant generic filter 'position: { max: { gt: ... } } }' instead.")
+  position_SUM_GT: Int @deprecated(reason: "Please use the relevant generic filter 'position: { sum: { gt: ... } } }' instead.")
+  position_AVERAGE_GT: Float @deprecated(reason: "Please use the relevant generic filter 'position: { average: { gt: ... } } }' instead.")
+  position_MIN_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'position: { min: { gte: ... } } }' instead.")
+  position_MAX_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'position: { max: { gte: ... } } }' instead.")
+  position_SUM_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'position: { sum: { gte: ... } } }' instead.")
+  position_AVERAGE_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'position: { average: { gte: ... } } }' instead.")
+  position_MIN_LT: Int @deprecated(reason: "Please use the relevant generic filter 'position: { min: { lt: ... } } }' instead.")
+  position_MAX_LT: Int @deprecated(reason: "Please use the relevant generic filter 'position: { max: { lt: ... } } }' instead.")
+  position_SUM_LT: Int @deprecated(reason: "Please use the relevant generic filter 'position: { sum: { lt: ... } } }' instead.")
+  position_AVERAGE_LT: Float @deprecated(reason: "Please use the relevant generic filter 'position: { average: { lt: ... } } }' instead.")
+  position_MIN_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'position: { min: { lte: ... } } }' instead.")
+  position_MAX_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'position: { max: { lte: ... } } }' instead.")
+  position_SUM_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'position: { sum: { lte: ... } } }' instead.")
+  position_AVERAGE_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'position: { average: { lte: ... } } }' instead.")
+  position: IntScalarAggregationFilters
+}
+
+input WroteCreateInput {
+  position: Int!
+}
+
+input WroteSort {
+  position: SortDirection
+  credit: SortDirection
+}
+
+input WroteUpdateInput {
+  position: IntScalarMutations
+  position_SET: Int @deprecated(reason: "Please use the generic mutation 'position: { set: ... } }' instead.")
+  position_INCREMENT: Int @deprecated(reason: "Please use the relevant generic mutation 'position: { increment: ... } }' instead.")
+  position_DECREMENT: Int @deprecated(reason: "Please use the relevant generic mutation 'position: { decrement: ... } }' instead.")
+}
+
+input WroteWhere {
+  position: IntScalarFilters
+  position_EQ: Int @deprecated(reason: "Please use the relevant generic filter position: { eq: ... }")
+  position_IN: [Int!] @deprecated(reason: "Please use the relevant generic filter position: { in: ... }")
+  position_LT: Int @deprecated(reason: "Please use the relevant generic filter position: { lt: ... }")
+  position_LTE: Int @deprecated(reason: "Please use the relevant generic filter position: { lte: ... }")
+  position_GT: Int @deprecated(reason: "Please use the relevant generic filter position: { gt: ... }")
+  position_GTE: Int @deprecated(reason: "Please use the relevant generic filter position: { gte: ... }")
+  credit: StringScalarFilters
+  credit_EQ: String @deprecated(reason: "Please use the relevant generic filter credit: { eq: ... }")
+  credit_IN: [String] @deprecated(reason: "Please use the relevant generic filter credit: { in: ... }")
+  credit_CONTAINS: String @deprecated(reason: "Please use the relevant generic filter credit: { contains: ... }")
+  credit_STARTS_WITH: String @deprecated(reason: "Please use the relevant generic filter credit: { startsWith: ... }")
+  credit_ENDS_WITH: String @deprecated(reason: "Please use the relevant generic filter credit: { endsWith: ... }")
+  OR: [WroteWhere!]
+  AND: [WroteWhere!]
+  NOT: WroteWhere
+}

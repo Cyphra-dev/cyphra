@@ -1,0 +1,1181 @@
+type Query {
+  ownersConnection(first: Int, after: String, where: OwnerWhere, sort: [OwnerSort!]): OwnersConnection!
+  owners(where: OwnerWhere, limit: Int, offset: Int, sort: [OwnerSort!]): [Owner!]!
+  reportsConnection(first: Int, after: String, where: ReportWhere, sort: [ReportSort!]): ReportsConnection!
+  reports(where: ReportWhere, limit: Int, offset: Int, sort: [ReportSort!]): [Report!]!
+  logsConnection(first: Int, after: String, where: LogWhere, sort: [LogSort!]): LogsConnection!
+  logs(where: LogWhere, limit: Int, offset: Int, sort: [LogSort!]): [Log!]!
+  auditsConnection(first: Int, after: String, where: AuditWhere, sort: [AuditSort!]): AuditsConnection!
+  draftsConnection(first: Int, after: String, where: DraftWhere, sort: [DraftSort!]): DraftsConnection!
+  drafts(where: DraftWhere, limit: Int, offset: Int, sort: [DraftSort!]): [Draft!]!
+}
+
+type Mutation {
+  createOwners(input: [OwnerCreateInput!]!): CreateOwnersMutationResponse!
+  deleteOwners(where: OwnerWhere, delete: OwnerDeleteInput): DeleteInfo!
+  updateOwners(where: OwnerWhere, update: OwnerUpdateInput): UpdateOwnersMutationResponse!
+  createSecrets(input: [SecretCreateInput!]!): CreateSecretsMutationResponse!
+  deleteSecrets(where: SecretWhere): DeleteInfo!
+  updateSecrets(where: SecretWhere, update: SecretUpdateInput): UpdateSecretsMutationResponse!
+  createReports(input: [ReportCreateInput!]!): CreateReportsMutationResponse!
+  deleteReports(where: ReportWhere): DeleteInfo!
+  updateReports(where: ReportWhere, update: ReportUpdateInput): UpdateReportsMutationResponse!
+  createLogs(input: [LogCreateInput!]!): CreateLogsMutationResponse!
+  deleteLogs(where: LogWhere): DeleteInfo!
+  updateLogs(where: LogWhere, update: LogUpdateInput): UpdateLogsMutationResponse!
+  createAudits(input: [AuditCreateInput!]!): CreateAuditsMutationResponse!
+  deleteAudits(where: AuditWhere): DeleteInfo!
+  updateAudits(where: AuditWhere, update: AuditUpdateInput): UpdateAuditsMutationResponse!
+  createDrafts(input: [DraftCreateInput!]!): CreateDraftsMutationResponse!
+  deleteDrafts(where: DraftWhere): DeleteInfo!
+  updateDrafts(where: DraftWhere, update: DraftUpdateInput): UpdateDraftsMutationResponse!
+}
+
+"""An enum for sorting in either ascending or descending order."""
+enum SortDirection {
+  """Sort by field values in ascending order."""
+  ASC
+
+  """Sort by field values in descending order."""
+  DESC
+}
+
+union Item = Report | Log
+
+type Audit {
+  id: ID!
+  size: Int
+}
+
+type AuditAggregate {
+  count: Count!
+  node: AuditAggregateNode!
+}
+
+type AuditAggregateNode {
+  size: IntAggregateSelection!
+}
+
+type AuditEdge {
+  cursor: String!
+  node: Audit!
+}
+
+type AuditsConnection {
+  edges: [AuditEdge!]!
+  totalCount: Int!
+  pageInfo: PageInfo!
+  aggregate: AuditAggregate!
+}
+
+type Count {
+  nodes: Int!
+}
+
+type CountConnection {
+  nodes: Int!
+  edges: Int!
+}
+
+type CreateAuditsMutationResponse {
+  info: CreateInfo!
+  audits: [Audit!]!
+}
+
+type CreateDraftsMutationResponse {
+  info: CreateInfo!
+  drafts: [Draft!]!
+}
+
+"""
+Information about the number of nodes and relationships created during a create mutation
+"""
+type CreateInfo {
+  nodesCreated: Int!
+  relationshipsCreated: Int!
+}
+
+type CreateLogsMutationResponse {
+  info: CreateInfo!
+  logs: [Log!]!
+}
+
+type CreateOwnersMutationResponse {
+  info: CreateInfo!
+  owners: [Owner!]!
+}
+
+type CreateReportsMutationResponse {
+  info: CreateInfo!
+  reports: [Report!]!
+}
+
+type CreateSecretsMutationResponse {
+  info: CreateInfo!
+  secrets: [Secret!]!
+}
+
+"""
+Information about the number of nodes and relationships deleted during a delete mutation
+"""
+type DeleteInfo {
+  nodesDeleted: Int!
+  relationshipsDeleted: Int!
+}
+
+type Draft {
+  id: ID!
+  words: Int
+}
+
+type DraftEdge {
+  cursor: String!
+  node: Draft!
+}
+
+type DraftsConnection {
+  edges: [DraftEdge!]!
+  totalCount: Int!
+  pageInfo: PageInfo!
+}
+
+type IntAggregateSelection {
+  max: Int
+  min: Int
+  average: Float
+  sum: Int
+}
+
+type Log {
+  id: ID!
+  level: Int
+}
+
+type LogEdge {
+  cursor: String!
+  node: Log!
+}
+
+type LogsConnection {
+  edges: [LogEdge!]!
+  totalCount: Int!
+  pageInfo: PageInfo!
+}
+
+type Owner {
+  id: ID!
+  name: String!
+  secrets(where: SecretWhere, limit: Int, offset: Int, sort: [SecretSort!]): [Secret!]!
+  secretsConnection(where: OwnerSecretsConnectionWhere, first: Int, after: String, sort: [OwnerSecretsConnectionSort!]): OwnerSecretsConnection!
+  reports(where: ReportWhere, limit: Int, offset: Int, sort: [ReportSort!]): [Report!]!
+  reportsConnection(where: OwnerReportsConnectionWhere, first: Int, after: String, sort: [OwnerReportsConnectionSort!]): OwnerReportsConnection!
+  items(where: ItemWhere, limit: Int, offset: Int): [Item!]!
+  itemsConnection(where: OwnerItemsConnectionWhere, first: Int, after: String): OwnerItemsConnection!
+}
+
+type OwnerAggregate {
+  count: Count!
+  node: OwnerAggregateNode!
+}
+
+type OwnerAggregateNode {
+  name: StringAggregateSelection!
+}
+
+type OwnerEdge {
+  cursor: String!
+  node: Owner!
+}
+
+type OwnerItemsConnection {
+  edges: [OwnerItemsRelationship!]!
+  totalCount: Int!
+  pageInfo: PageInfo!
+}
+
+type OwnerItemsRelationship {
+  cursor: String!
+  node: Item!
+}
+
+type OwnerReportReportsAggregateSelection {
+  count: CountConnection!
+  node: OwnerReportReportsNodeAggregateSelection
+}
+
+type OwnerReportReportsNodeAggregateSelection {
+  pages: IntAggregateSelection!
+}
+
+type OwnerReportsConnection {
+  edges: [OwnerReportsRelationship!]!
+  totalCount: Int!
+  pageInfo: PageInfo!
+  aggregate: OwnerReportReportsAggregateSelection!
+}
+
+type OwnerReportsRelationship {
+  cursor: String!
+  node: Report!
+}
+
+type OwnersConnection {
+  edges: [OwnerEdge!]!
+  totalCount: Int!
+  pageInfo: PageInfo!
+  aggregate: OwnerAggregate!
+}
+
+type OwnerSecretsConnection {
+  edges: [OwnerSecretsRelationship!]!
+  totalCount: Int!
+  pageInfo: PageInfo!
+  aggregate: OwnerSecretSecretsAggregateSelection!
+}
+
+type OwnerSecretSecretsAggregateSelection {
+  count: CountConnection!
+  node: OwnerSecretSecretsNodeAggregateSelection
+}
+
+type OwnerSecretSecretsNodeAggregateSelection {
+  value: StringAggregateSelection!
+}
+
+type OwnerSecretsRelationship {
+  cursor: String!
+  node: Secret!
+}
+
+"""Pagination information (Relay)"""
+type PageInfo {
+  hasNextPage: Boolean!
+  hasPreviousPage: Boolean!
+  startCursor: String
+  endCursor: String
+}
+
+type Report {
+  id: ID!
+  pages: Int
+}
+
+type ReportAggregate {
+  count: Count!
+  node: ReportAggregateNode!
+}
+
+type ReportAggregateNode {
+  pages: IntAggregateSelection!
+}
+
+type ReportEdge {
+  cursor: String!
+  node: Report!
+}
+
+type ReportsConnection {
+  edges: [ReportEdge!]!
+  totalCount: Int!
+  pageInfo: PageInfo!
+  aggregate: ReportAggregate!
+}
+
+type Secret {
+  id: ID!
+  value: String
+}
+
+type StringAggregateSelection {
+  shortest: String
+  longest: String
+}
+
+type UpdateAuditsMutationResponse {
+  info: UpdateInfo!
+  audits: [Audit!]!
+}
+
+type UpdateDraftsMutationResponse {
+  info: UpdateInfo!
+  drafts: [Draft!]!
+}
+
+"""
+Information about the number of nodes and relationships created and deleted during an update mutation
+"""
+type UpdateInfo {
+  nodesCreated: Int!
+  nodesDeleted: Int!
+  relationshipsCreated: Int!
+  relationshipsDeleted: Int!
+}
+
+type UpdateLogsMutationResponse {
+  info: UpdateInfo!
+  logs: [Log!]!
+}
+
+type UpdateOwnersMutationResponse {
+  info: UpdateInfo!
+  owners: [Owner!]!
+}
+
+type UpdateReportsMutationResponse {
+  info: UpdateInfo!
+  reports: [Report!]!
+}
+
+type UpdateSecretsMutationResponse {
+  info: UpdateInfo!
+  secrets: [Secret!]!
+}
+
+input AuditCreateInput {
+  id: ID!
+  size: Int
+}
+
+"""
+Fields to sort Audits by. The order in which sorts are applied is not guaranteed when specifying many fields in one AuditSort object.
+"""
+input AuditSort {
+  id: SortDirection
+  size: SortDirection
+}
+
+input AuditUpdateInput {
+  id: IDScalarMutations
+  id_SET: ID @deprecated(reason: "Please use the generic mutation 'id: { set: ... } }' instead.")
+  size: IntScalarMutations
+  size_SET: Int @deprecated(reason: "Please use the generic mutation 'size: { set: ... } }' instead.")
+  size_INCREMENT: Int @deprecated(reason: "Please use the relevant generic mutation 'size: { increment: ... } }' instead.")
+  size_DECREMENT: Int @deprecated(reason: "Please use the relevant generic mutation 'size: { decrement: ... } }' instead.")
+}
+
+input AuditWhere {
+  id: IDScalarFilters
+  id_EQ: ID @deprecated(reason: "Please use the relevant generic filter id: { eq: ... }")
+  id_IN: [ID!] @deprecated(reason: "Please use the relevant generic filter id: { in: ... }")
+  id_CONTAINS: ID @deprecated(reason: "Please use the relevant generic filter id: { contains: ... }")
+  id_STARTS_WITH: ID @deprecated(reason: "Please use the relevant generic filter id: { startsWith: ... }")
+  id_ENDS_WITH: ID @deprecated(reason: "Please use the relevant generic filter id: { endsWith: ... }")
+  size: IntScalarFilters
+  size_EQ: Int @deprecated(reason: "Please use the relevant generic filter size: { eq: ... }")
+  size_IN: [Int] @deprecated(reason: "Please use the relevant generic filter size: { in: ... }")
+  size_LT: Int @deprecated(reason: "Please use the relevant generic filter size: { lt: ... }")
+  size_LTE: Int @deprecated(reason: "Please use the relevant generic filter size: { lte: ... }")
+  size_GT: Int @deprecated(reason: "Please use the relevant generic filter size: { gt: ... }")
+  size_GTE: Int @deprecated(reason: "Please use the relevant generic filter size: { gte: ... }")
+  OR: [AuditWhere!]
+  AND: [AuditWhere!]
+  NOT: AuditWhere
+}
+
+input ConnectionAggregationCountFilterInput {
+  nodes: IntScalarFilters
+  edges: IntScalarFilters
+}
+
+input DraftCreateInput {
+  id: ID!
+  words: Int
+}
+
+"""
+Fields to sort Drafts by. The order in which sorts are applied is not guaranteed when specifying many fields in one DraftSort object.
+"""
+input DraftSort {
+  id: SortDirection
+  words: SortDirection
+}
+
+input DraftUpdateInput {
+  id: IDScalarMutations
+  id_SET: ID @deprecated(reason: "Please use the generic mutation 'id: { set: ... } }' instead.")
+  words: IntScalarMutations
+  words_SET: Int @deprecated(reason: "Please use the generic mutation 'words: { set: ... } }' instead.")
+  words_INCREMENT: Int @deprecated(reason: "Please use the relevant generic mutation 'words: { increment: ... } }' instead.")
+  words_DECREMENT: Int @deprecated(reason: "Please use the relevant generic mutation 'words: { decrement: ... } }' instead.")
+}
+
+input DraftWhere {
+  id: IDScalarFilters
+  id_EQ: ID @deprecated(reason: "Please use the relevant generic filter id: { eq: ... }")
+  id_IN: [ID!] @deprecated(reason: "Please use the relevant generic filter id: { in: ... }")
+  id_CONTAINS: ID @deprecated(reason: "Please use the relevant generic filter id: { contains: ... }")
+  id_STARTS_WITH: ID @deprecated(reason: "Please use the relevant generic filter id: { startsWith: ... }")
+  id_ENDS_WITH: ID @deprecated(reason: "Please use the relevant generic filter id: { endsWith: ... }")
+  words: IntScalarFilters
+  words_EQ: Int @deprecated(reason: "Please use the relevant generic filter words: { eq: ... }")
+  words_IN: [Int] @deprecated(reason: "Please use the relevant generic filter words: { in: ... }")
+  words_LT: Int @deprecated(reason: "Please use the relevant generic filter words: { lt: ... }")
+  words_LTE: Int @deprecated(reason: "Please use the relevant generic filter words: { lte: ... }")
+  words_GT: Int @deprecated(reason: "Please use the relevant generic filter words: { gt: ... }")
+  words_GTE: Int @deprecated(reason: "Please use the relevant generic filter words: { gte: ... }")
+  OR: [DraftWhere!]
+  AND: [DraftWhere!]
+  NOT: DraftWhere
+}
+
+"""Float filters"""
+input FloatScalarFilters {
+  eq: Float
+  gt: Float
+  gte: Float
+  in: [Float!]
+  lt: Float
+  lte: Float
+}
+
+"""ID filters"""
+input IDScalarFilters {
+  eq: ID
+  in: [ID!]
+  contains: ID
+  endsWith: ID
+  startsWith: ID
+}
+
+"""ID mutations"""
+input IDScalarMutations {
+  set: ID
+}
+
+"""Filters for an aggregation of an int field"""
+input IntScalarAggregationFilters {
+  average: FloatScalarFilters
+  max: IntScalarFilters
+  min: IntScalarFilters
+  sum: IntScalarFilters
+}
+
+"""Int filters"""
+input IntScalarFilters {
+  eq: Int
+  gt: Int
+  gte: Int
+  in: [Int!]
+  lt: Int
+  lte: Int
+}
+
+"""Int mutations"""
+input IntScalarMutations {
+  set: Int
+  add: Int
+  subtract: Int
+}
+
+input ItemRelationshipFilters {
+  """Filter type where all of the related Items match this filter"""
+  all: ItemWhere
+
+  """Filter type where none of the related Items match this filter"""
+  none: ItemWhere
+
+  """Filter type where one of the related Items match this filter"""
+  single: ItemWhere
+
+  """Filter type where some of the related Items match this filter"""
+  some: ItemWhere
+}
+
+input ItemWhere {
+  Report: ReportWhere
+  Log: LogWhere
+}
+
+input LogConnectWhere {
+  node: LogWhere!
+}
+
+input LogCreateInput {
+  id: ID!
+  level: Int
+}
+
+"""
+Fields to sort Logs by. The order in which sorts are applied is not guaranteed when specifying many fields in one LogSort object.
+"""
+input LogSort {
+  id: SortDirection
+  level: SortDirection
+}
+
+input LogUpdateInput {
+  id: IDScalarMutations
+  id_SET: ID @deprecated(reason: "Please use the generic mutation 'id: { set: ... } }' instead.")
+  level: IntScalarMutations
+  level_SET: Int @deprecated(reason: "Please use the generic mutation 'level: { set: ... } }' instead.")
+  level_INCREMENT: Int @deprecated(reason: "Please use the relevant generic mutation 'level: { increment: ... } }' instead.")
+  level_DECREMENT: Int @deprecated(reason: "Please use the relevant generic mutation 'level: { decrement: ... } }' instead.")
+}
+
+input LogWhere {
+  id: IDScalarFilters
+  id_EQ: ID @deprecated(reason: "Please use the relevant generic filter id: { eq: ... }")
+  id_IN: [ID!] @deprecated(reason: "Please use the relevant generic filter id: { in: ... }")
+  id_CONTAINS: ID @deprecated(reason: "Please use the relevant generic filter id: { contains: ... }")
+  id_STARTS_WITH: ID @deprecated(reason: "Please use the relevant generic filter id: { startsWith: ... }")
+  id_ENDS_WITH: ID @deprecated(reason: "Please use the relevant generic filter id: { endsWith: ... }")
+  level: IntScalarFilters
+  level_EQ: Int @deprecated(reason: "Please use the relevant generic filter level: { eq: ... }")
+  level_IN: [Int] @deprecated(reason: "Please use the relevant generic filter level: { in: ... }")
+  level_LT: Int @deprecated(reason: "Please use the relevant generic filter level: { lt: ... }")
+  level_LTE: Int @deprecated(reason: "Please use the relevant generic filter level: { lte: ... }")
+  level_GT: Int @deprecated(reason: "Please use the relevant generic filter level: { gt: ... }")
+  level_GTE: Int @deprecated(reason: "Please use the relevant generic filter level: { gte: ... }")
+  OR: [LogWhere!]
+  AND: [LogWhere!]
+  NOT: LogWhere
+}
+
+input OwnerCreateInput {
+  id: ID!
+  name: String!
+  secrets: OwnerSecretsFieldInput
+  reports: OwnerReportsFieldInput
+  items: OwnerItemsCreateInput
+}
+
+input OwnerDeleteInput {
+  secrets: [OwnerSecretsDeleteFieldInput!]
+  reports: [OwnerReportsDeleteFieldInput!]
+  items: OwnerItemsDeleteInput
+}
+
+input OwnerItemsConnectionFilters {
+  """
+  Return Owners where all of the related OwnerItemsConnections match this filter
+  """
+  all: OwnerItemsConnectionWhere
+
+  """
+  Return Owners where none of the related OwnerItemsConnections match this filter
+  """
+  none: OwnerItemsConnectionWhere
+
+  """
+  Return Owners where one of the related OwnerItemsConnections match this filter
+  """
+  single: OwnerItemsConnectionWhere
+
+  """
+  Return Owners where some of the related OwnerItemsConnections match this filter
+  """
+  some: OwnerItemsConnectionWhere
+}
+
+input OwnerItemsConnectionWhere {
+  Report: OwnerItemsReportConnectionWhere
+  Log: OwnerItemsLogConnectionWhere
+}
+
+input OwnerItemsCreateInput {
+  Report: OwnerItemsReportFieldInput
+  Log: OwnerItemsLogFieldInput
+}
+
+input OwnerItemsDeleteInput {
+  Report: [OwnerItemsReportDeleteFieldInput!]
+  Log: [OwnerItemsLogDeleteFieldInput!]
+}
+
+input OwnerItemsLogConnectFieldInput {
+  where: LogConnectWhere
+}
+
+input OwnerItemsLogConnectionWhere {
+  AND: [OwnerItemsLogConnectionWhere!]
+  OR: [OwnerItemsLogConnectionWhere!]
+  NOT: OwnerItemsLogConnectionWhere
+  node: LogWhere
+}
+
+input OwnerItemsLogCreateFieldInput {
+  node: LogCreateInput!
+}
+
+input OwnerItemsLogDeleteFieldInput {
+  where: OwnerItemsLogConnectionWhere
+}
+
+input OwnerItemsLogDisconnectFieldInput {
+  where: OwnerItemsLogConnectionWhere
+}
+
+input OwnerItemsLogFieldInput {
+  connect: [OwnerItemsLogConnectFieldInput!]
+  create: [OwnerItemsLogCreateFieldInput!]
+}
+
+input OwnerItemsLogUpdateConnectionInput {
+  node: LogUpdateInput
+  where: OwnerItemsLogConnectionWhere
+}
+
+input OwnerItemsLogUpdateFieldInput {
+  connect: [OwnerItemsLogConnectFieldInput!]
+  disconnect: [OwnerItemsLogDisconnectFieldInput!]
+  create: [OwnerItemsLogCreateFieldInput!]
+  update: OwnerItemsLogUpdateConnectionInput
+  delete: [OwnerItemsLogDeleteFieldInput!]
+}
+
+input OwnerItemsReportConnectFieldInput {
+  where: ReportConnectWhere
+}
+
+input OwnerItemsReportConnectionWhere {
+  AND: [OwnerItemsReportConnectionWhere!]
+  OR: [OwnerItemsReportConnectionWhere!]
+  NOT: OwnerItemsReportConnectionWhere
+  node: ReportWhere
+}
+
+input OwnerItemsReportCreateFieldInput {
+  node: ReportCreateInput!
+}
+
+input OwnerItemsReportDeleteFieldInput {
+  where: OwnerItemsReportConnectionWhere
+}
+
+input OwnerItemsReportDisconnectFieldInput {
+  where: OwnerItemsReportConnectionWhere
+}
+
+input OwnerItemsReportFieldInput {
+  connect: [OwnerItemsReportConnectFieldInput!]
+  create: [OwnerItemsReportCreateFieldInput!]
+}
+
+input OwnerItemsReportUpdateConnectionInput {
+  node: ReportUpdateInput
+  where: OwnerItemsReportConnectionWhere
+}
+
+input OwnerItemsReportUpdateFieldInput {
+  connect: [OwnerItemsReportConnectFieldInput!]
+  disconnect: [OwnerItemsReportDisconnectFieldInput!]
+  create: [OwnerItemsReportCreateFieldInput!]
+  update: OwnerItemsReportUpdateConnectionInput
+  delete: [OwnerItemsReportDeleteFieldInput!]
+}
+
+input OwnerItemsUpdateInput {
+  Report: [OwnerItemsReportUpdateFieldInput!]
+  Log: [OwnerItemsLogUpdateFieldInput!]
+}
+
+input OwnerReportsAggregateInput {
+  count_EQ: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { eq: ... } } }' instead.")
+  count_LT: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { lt: ... } } }' instead.")
+  count_LTE: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { lte: ... } } }' instead.")
+  count_GT: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { gt: ... } } }' instead.")
+  count_GTE: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { gte: ... } } }' instead.")
+  count: IntScalarFilters
+  AND: [OwnerReportsAggregateInput!]
+  OR: [OwnerReportsAggregateInput!]
+  NOT: OwnerReportsAggregateInput
+  node: OwnerReportsNodeAggregationWhereInput
+}
+
+input OwnerReportsConnectFieldInput {
+  where: ReportConnectWhere
+}
+
+input OwnerReportsConnectionAggregateInput {
+  count: ConnectionAggregationCountFilterInput
+  AND: [OwnerReportsConnectionAggregateInput!]
+  OR: [OwnerReportsConnectionAggregateInput!]
+  NOT: OwnerReportsConnectionAggregateInput
+  node: OwnerReportsNodeAggregationWhereInput
+}
+
+input OwnerReportsConnectionFilters {
+  """
+  Return Owners where all of the related OwnerReportsConnections match this filter
+  """
+  all: OwnerReportsConnectionWhere
+
+  """
+  Return Owners where none of the related OwnerReportsConnections match this filter
+  """
+  none: OwnerReportsConnectionWhere
+
+  """
+  Return Owners where one of the related OwnerReportsConnections match this filter
+  """
+  single: OwnerReportsConnectionWhere
+
+  """
+  Return Owners where some of the related OwnerReportsConnections match this filter
+  """
+  some: OwnerReportsConnectionWhere
+
+  """
+  Filter Owners by aggregating results on related OwnerReportsConnections
+  """
+  aggregate: OwnerReportsConnectionAggregateInput
+}
+
+input OwnerReportsConnectionSort {
+  node: ReportSort
+}
+
+input OwnerReportsConnectionWhere {
+  AND: [OwnerReportsConnectionWhere!]
+  OR: [OwnerReportsConnectionWhere!]
+  NOT: OwnerReportsConnectionWhere
+  node: ReportWhere
+}
+
+input OwnerReportsCreateFieldInput {
+  node: ReportCreateInput!
+}
+
+input OwnerReportsDeleteFieldInput {
+  where: OwnerReportsConnectionWhere
+}
+
+input OwnerReportsDisconnectFieldInput {
+  where: OwnerReportsConnectionWhere
+}
+
+input OwnerReportsFieldInput {
+  connect: [OwnerReportsConnectFieldInput!]
+  create: [OwnerReportsCreateFieldInput!]
+}
+
+input OwnerReportsNodeAggregationWhereInput {
+  AND: [OwnerReportsNodeAggregationWhereInput!]
+  OR: [OwnerReportsNodeAggregationWhereInput!]
+  NOT: OwnerReportsNodeAggregationWhereInput
+  pages_MIN_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'pages: { min: { eq: ... } } }' instead.")
+  pages_MAX_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'pages: { max: { eq: ... } } }' instead.")
+  pages_SUM_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'pages: { sum: { eq: ... } } }' instead.")
+  pages_AVERAGE_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'pages: { average: { eq: ... } } }' instead.")
+  pages_MIN_GT: Int @deprecated(reason: "Please use the relevant generic filter 'pages: { min: { gt: ... } } }' instead.")
+  pages_MAX_GT: Int @deprecated(reason: "Please use the relevant generic filter 'pages: { max: { gt: ... } } }' instead.")
+  pages_SUM_GT: Int @deprecated(reason: "Please use the relevant generic filter 'pages: { sum: { gt: ... } } }' instead.")
+  pages_AVERAGE_GT: Float @deprecated(reason: "Please use the relevant generic filter 'pages: { average: { gt: ... } } }' instead.")
+  pages_MIN_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'pages: { min: { gte: ... } } }' instead.")
+  pages_MAX_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'pages: { max: { gte: ... } } }' instead.")
+  pages_SUM_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'pages: { sum: { gte: ... } } }' instead.")
+  pages_AVERAGE_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'pages: { average: { gte: ... } } }' instead.")
+  pages_MIN_LT: Int @deprecated(reason: "Please use the relevant generic filter 'pages: { min: { lt: ... } } }' instead.")
+  pages_MAX_LT: Int @deprecated(reason: "Please use the relevant generic filter 'pages: { max: { lt: ... } } }' instead.")
+  pages_SUM_LT: Int @deprecated(reason: "Please use the relevant generic filter 'pages: { sum: { lt: ... } } }' instead.")
+  pages_AVERAGE_LT: Float @deprecated(reason: "Please use the relevant generic filter 'pages: { average: { lt: ... } } }' instead.")
+  pages_MIN_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'pages: { min: { lte: ... } } }' instead.")
+  pages_MAX_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'pages: { max: { lte: ... } } }' instead.")
+  pages_SUM_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'pages: { sum: { lte: ... } } }' instead.")
+  pages_AVERAGE_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'pages: { average: { lte: ... } } }' instead.")
+  pages: IntScalarAggregationFilters
+}
+
+input OwnerReportsUpdateConnectionInput {
+  node: ReportUpdateInput
+  where: OwnerReportsConnectionWhere
+}
+
+input OwnerReportsUpdateFieldInput {
+  connect: [OwnerReportsConnectFieldInput!]
+  disconnect: [OwnerReportsDisconnectFieldInput!]
+  create: [OwnerReportsCreateFieldInput!]
+  update: OwnerReportsUpdateConnectionInput
+  delete: [OwnerReportsDeleteFieldInput!]
+}
+
+input OwnerSecretsAggregateInput {
+  count_EQ: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { eq: ... } } }' instead.")
+  count_LT: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { lt: ... } } }' instead.")
+  count_LTE: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { lte: ... } } }' instead.")
+  count_GT: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { gt: ... } } }' instead.")
+  count_GTE: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { gte: ... } } }' instead.")
+  count: IntScalarFilters
+  AND: [OwnerSecretsAggregateInput!]
+  OR: [OwnerSecretsAggregateInput!]
+  NOT: OwnerSecretsAggregateInput
+  node: OwnerSecretsNodeAggregationWhereInput
+}
+
+input OwnerSecretsConnectFieldInput {
+  where: SecretConnectWhere
+}
+
+input OwnerSecretsConnectionAggregateInput {
+  count: ConnectionAggregationCountFilterInput
+  AND: [OwnerSecretsConnectionAggregateInput!]
+  OR: [OwnerSecretsConnectionAggregateInput!]
+  NOT: OwnerSecretsConnectionAggregateInput
+  node: OwnerSecretsNodeAggregationWhereInput
+}
+
+input OwnerSecretsConnectionFilters {
+  """
+  Return Owners where all of the related OwnerSecretsConnections match this filter
+  """
+  all: OwnerSecretsConnectionWhere
+
+  """
+  Return Owners where none of the related OwnerSecretsConnections match this filter
+  """
+  none: OwnerSecretsConnectionWhere
+
+  """
+  Return Owners where one of the related OwnerSecretsConnections match this filter
+  """
+  single: OwnerSecretsConnectionWhere
+
+  """
+  Return Owners where some of the related OwnerSecretsConnections match this filter
+  """
+  some: OwnerSecretsConnectionWhere
+
+  """
+  Filter Owners by aggregating results on related OwnerSecretsConnections
+  """
+  aggregate: OwnerSecretsConnectionAggregateInput
+}
+
+input OwnerSecretsConnectionSort {
+  node: SecretSort
+}
+
+input OwnerSecretsConnectionWhere {
+  AND: [OwnerSecretsConnectionWhere!]
+  OR: [OwnerSecretsConnectionWhere!]
+  NOT: OwnerSecretsConnectionWhere
+  node: SecretWhere
+}
+
+input OwnerSecretsCreateFieldInput {
+  node: SecretCreateInput!
+}
+
+input OwnerSecretsDeleteFieldInput {
+  where: OwnerSecretsConnectionWhere
+}
+
+input OwnerSecretsDisconnectFieldInput {
+  where: OwnerSecretsConnectionWhere
+}
+
+input OwnerSecretsFieldInput {
+  connect: [OwnerSecretsConnectFieldInput!]
+  create: [OwnerSecretsCreateFieldInput!]
+}
+
+input OwnerSecretsNodeAggregationWhereInput {
+  AND: [OwnerSecretsNodeAggregationWhereInput!]
+  OR: [OwnerSecretsNodeAggregationWhereInput!]
+  NOT: OwnerSecretsNodeAggregationWhereInput
+  value_AVERAGE_LENGTH_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'value: { averageLength: { eq: ... } } }' instead.")
+  value_LONGEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'value: { longestLength: { eq: ... } } }' instead.")
+  value_SHORTEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'value: { shortestLength: { eq: ... } } }' instead.")
+  value_AVERAGE_LENGTH_GT: Float @deprecated(reason: "Please use the relevant generic filter 'value: { averageLength: { gt: ... } } }' instead.")
+  value_LONGEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'value: { longestLength: { gt: ... } } }' instead.")
+  value_SHORTEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'value: { shortestLength: { gt: ... } } }' instead.")
+  value_AVERAGE_LENGTH_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'value: { averageLength: { gte: ... } } }' instead.")
+  value_LONGEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'value: { longestLength: { gte: ... } } }' instead.")
+  value_SHORTEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'value: { shortestLength: { gte: ... } } }' instead.")
+  value_AVERAGE_LENGTH_LT: Float @deprecated(reason: "Please use the relevant generic filter 'value: { averageLength: { lt: ... } } }' instead.")
+  value_LONGEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'value: { longestLength: { lt: ... } } }' instead.")
+  value_SHORTEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'value: { shortestLength: { lt: ... } } }' instead.")
+  value_AVERAGE_LENGTH_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'value: { averageLength: { lte: ... } } }' instead.")
+  value_LONGEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'value: { longestLength: { lte: ... } } }' instead.")
+  value_SHORTEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'value: { shortestLength: { lte: ... } } }' instead.")
+  value: StringScalarAggregationFilters
+}
+
+input OwnerSecretsUpdateConnectionInput {
+  node: SecretUpdateInput
+  where: OwnerSecretsConnectionWhere
+}
+
+input OwnerSecretsUpdateFieldInput {
+  connect: [OwnerSecretsConnectFieldInput!]
+  disconnect: [OwnerSecretsDisconnectFieldInput!]
+  create: [OwnerSecretsCreateFieldInput!]
+  update: OwnerSecretsUpdateConnectionInput
+  delete: [OwnerSecretsDeleteFieldInput!]
+}
+
+"""
+Fields to sort Owners by. The order in which sorts are applied is not guaranteed when specifying many fields in one OwnerSort object.
+"""
+input OwnerSort {
+  id: SortDirection
+  name: SortDirection
+}
+
+input OwnerUpdateInput {
+  id: IDScalarMutations
+  id_SET: ID @deprecated(reason: "Please use the generic mutation 'id: { set: ... } }' instead.")
+  name: StringScalarMutations
+  name_SET: String @deprecated(reason: "Please use the generic mutation 'name: { set: ... } }' instead.")
+  secrets: [OwnerSecretsUpdateFieldInput!]
+  reports: [OwnerReportsUpdateFieldInput!]
+  items: OwnerItemsUpdateInput
+}
+
+input OwnerWhere {
+  id: IDScalarFilters
+  id_EQ: ID @deprecated(reason: "Please use the relevant generic filter id: { eq: ... }")
+  id_IN: [ID!] @deprecated(reason: "Please use the relevant generic filter id: { in: ... }")
+  id_CONTAINS: ID @deprecated(reason: "Please use the relevant generic filter id: { contains: ... }")
+  id_STARTS_WITH: ID @deprecated(reason: "Please use the relevant generic filter id: { startsWith: ... }")
+  id_ENDS_WITH: ID @deprecated(reason: "Please use the relevant generic filter id: { endsWith: ... }")
+  name: StringScalarFilters
+  name_EQ: String @deprecated(reason: "Please use the relevant generic filter name: { eq: ... }")
+  name_IN: [String!] @deprecated(reason: "Please use the relevant generic filter name: { in: ... }")
+  name_CONTAINS: String @deprecated(reason: "Please use the relevant generic filter name: { contains: ... }")
+  name_STARTS_WITH: String @deprecated(reason: "Please use the relevant generic filter name: { startsWith: ... }")
+  name_ENDS_WITH: String @deprecated(reason: "Please use the relevant generic filter name: { endsWith: ... }")
+  OR: [OwnerWhere!]
+  AND: [OwnerWhere!]
+  NOT: OwnerWhere
+  secrets: SecretRelationshipFilters
+
+  """Return Owners where all of the related Secrets match this filter"""
+  secrets_ALL: SecretWhere @deprecated(reason: "Please use the relevant generic filter 'secrets: { all: ... }' instead.")
+
+  """Return Owners where none of the related Secrets match this filter"""
+  secrets_NONE: SecretWhere @deprecated(reason: "Please use the relevant generic filter 'secrets: { none: ... }' instead.")
+
+  """Return Owners where one of the related Secrets match this filter"""
+  secrets_SINGLE: SecretWhere @deprecated(reason: "Please use the relevant generic filter 'secrets: {  single: ... }' instead.")
+
+  """Return Owners where some of the related Secrets match this filter"""
+  secrets_SOME: SecretWhere @deprecated(reason: "Please use the relevant generic filter 'secrets: {  some: ... }' instead.")
+
+  """
+  Return Owners where all of the related OwnerSecretsConnections match this filter
+  """
+  secretsConnection_ALL: OwnerSecretsConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'secretsConnection: { all: { node: ... } } }' instead.")
+
+  """
+  Return Owners where none of the related OwnerSecretsConnections match this filter
+  """
+  secretsConnection_NONE: OwnerSecretsConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'secretsConnection: { none: { node: ... } } }' instead.")
+
+  """
+  Return Owners where one of the related OwnerSecretsConnections match this filter
+  """
+  secretsConnection_SINGLE: OwnerSecretsConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'secretsConnection: { single: { node: ... } } }' instead.")
+
+  """
+  Return Owners where some of the related OwnerSecretsConnections match this filter
+  """
+  secretsConnection_SOME: OwnerSecretsConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'secretsConnection: { some: { node: ... } } }' instead.")
+  secretsConnection: OwnerSecretsConnectionFilters
+  secretsAggregate: OwnerSecretsAggregateInput @deprecated(reason: "Aggregate filters are moved inside the secretsConnection filter, please use { secretsConnection: { aggregate: {...} } } instead")
+  reports: ReportRelationshipFilters
+
+  """Return Owners where all of the related Reports match this filter"""
+  reports_ALL: ReportWhere @deprecated(reason: "Please use the relevant generic filter 'reports: { all: ... }' instead.")
+
+  """Return Owners where none of the related Reports match this filter"""
+  reports_NONE: ReportWhere @deprecated(reason: "Please use the relevant generic filter 'reports: { none: ... }' instead.")
+
+  """Return Owners where one of the related Reports match this filter"""
+  reports_SINGLE: ReportWhere @deprecated(reason: "Please use the relevant generic filter 'reports: {  single: ... }' instead.")
+
+  """Return Owners where some of the related Reports match this filter"""
+  reports_SOME: ReportWhere @deprecated(reason: "Please use the relevant generic filter 'reports: {  some: ... }' instead.")
+
+  """
+  Return Owners where all of the related OwnerReportsConnections match this filter
+  """
+  reportsConnection_ALL: OwnerReportsConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'reportsConnection: { all: { node: ... } } }' instead.")
+
+  """
+  Return Owners where none of the related OwnerReportsConnections match this filter
+  """
+  reportsConnection_NONE: OwnerReportsConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'reportsConnection: { none: { node: ... } } }' instead.")
+
+  """
+  Return Owners where one of the related OwnerReportsConnections match this filter
+  """
+  reportsConnection_SINGLE: OwnerReportsConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'reportsConnection: { single: { node: ... } } }' instead.")
+
+  """
+  Return Owners where some of the related OwnerReportsConnections match this filter
+  """
+  reportsConnection_SOME: OwnerReportsConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'reportsConnection: { some: { node: ... } } }' instead.")
+  reportsConnection: OwnerReportsConnectionFilters
+  reportsAggregate: OwnerReportsAggregateInput @deprecated(reason: "Aggregate filters are moved inside the reportsConnection filter, please use { reportsConnection: { aggregate: {...} } } instead")
+  items: ItemRelationshipFilters
+
+  """Return Owners where all of the related Items match this filter"""
+  items_ALL: ItemWhere @deprecated(reason: "Please use the relevant generic filter 'items: { all: ... }' instead.")
+
+  """Return Owners where none of the related Items match this filter"""
+  items_NONE: ItemWhere @deprecated(reason: "Please use the relevant generic filter 'items: { none: ... }' instead.")
+
+  """Return Owners where one of the related Items match this filter"""
+  items_SINGLE: ItemWhere @deprecated(reason: "Please use the relevant generic filter 'items: {  single: ... }' instead.")
+
+  """Return Owners where some of the related Items match this filter"""
+  items_SOME: ItemWhere @deprecated(reason: "Please use the relevant generic filter 'items: {  some: ... }' instead.")
+
+  """
+  Return Owners where all of the related OwnerItemsConnections match this filter
+  """
+  itemsConnection_ALL: OwnerItemsConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'itemsConnection: { all: { node: ... } } }' instead.")
+
+  """
+  Return Owners where none of the related OwnerItemsConnections match this filter
+  """
+  itemsConnection_NONE: OwnerItemsConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'itemsConnection: { none: { node: ... } } }' instead.")
+
+  """
+  Return Owners where one of the related OwnerItemsConnections match this filter
+  """
+  itemsConnection_SINGLE: OwnerItemsConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'itemsConnection: { single: { node: ... } } }' instead.")
+
+  """
+  Return Owners where some of the related OwnerItemsConnections match this filter
+  """
+  itemsConnection_SOME: OwnerItemsConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'itemsConnection: { some: { node: ... } } }' instead.")
+  itemsConnection: OwnerItemsConnectionFilters
+}
+
+input ReportConnectWhere {
+  node: ReportWhere!
+}
+
+input ReportCreateInput {
+  id: ID!
+  pages: Int
+}
+
+input ReportRelationshipFilters {
+  """Filter type where all of the related Reports match this filter"""
+  all: ReportWhere
+
+  """Filter type where none of the related Reports match this filter"""
+  none: ReportWhere
+
+  """Filter type where one of the related Reports match this filter"""
+  single: ReportWhere
+
+  """Filter type where some of the related Reports match this filter"""
+  some: ReportWhere
+}
+
+"""
+Fields to sort Reports by. The order in which sorts are applied is not guaranteed when specifying many fields in one ReportSort object.
+"""
+input ReportSort {
+  id: SortDirection
+  pages: SortDirection
+}
+
+input ReportUpdateInput {
+  id: IDScalarMutations
+  id_SET: ID @deprecated(reason: "Please use the generic mutation 'id: { set: ... } }' instead.")
+  pages: IntScalarMutations
+  pages_SET: Int @deprecated(reason: "Please use the generic mutation 'pages: { set: ... } }' instead.")
+  pages_INCREMENT: Int @deprecated(reason: "Please use the relevant generic mutation 'pages: { increment: ... } }' instead.")
+  pages_DECREMENT: Int @deprecated(reason: "Please use the relevant generic mutation 'pages: { decrement: ... } }' instead.")
+}
+
+input ReportWhere {
+  id: IDScalarFilters
+  id_EQ: ID @deprecated(reason: "Please use the relevant generic filter id: { eq: ... }")
+  id_IN: [ID!] @deprecated(reason: "Please use the relevant generic filter id: { in: ... }")
+  id_CONTAINS: ID @deprecated(reason: "Please use the relevant generic filter id: { contains: ... }")
+  id_STARTS_WITH: ID @deprecated(reason: "Please use the relevant generic filter id: { startsWith: ... }")
+  id_ENDS_WITH: ID @deprecated(reason: "Please use the relevant generic filter id: { endsWith: ... }")
+  pages: IntScalarFilters
+  pages_EQ: Int @deprecated(reason: "Please use the relevant generic filter pages: { eq: ... }")
+  pages_IN: [Int] @deprecated(reason: "Please use the relevant generic filter pages: { in: ... }")
+  pages_LT: Int @deprecated(reason: "Please use the relevant generic filter pages: { lt: ... }")
+  pages_LTE: Int @deprecated(reason: "Please use the relevant generic filter pages: { lte: ... }")
+  pages_GT: Int @deprecated(reason: "Please use the relevant generic filter pages: { gt: ... }")
+  pages_GTE: Int @deprecated(reason: "Please use the relevant generic filter pages: { gte: ... }")
+  OR: [ReportWhere!]
+  AND: [ReportWhere!]
+  NOT: ReportWhere
+}
+
+input SecretConnectWhere {
+  node: SecretWhere!
+}
+
+input SecretCreateInput {
+  id: ID!
+  value: String
+}
+
+input SecretRelationshipFilters {
+  """Filter type where all of the related Secrets match this filter"""
+  all: SecretWhere
+
+  """Filter type where none of the related Secrets match this filter"""
+  none: SecretWhere
+
+  """Filter type where one of the related Secrets match this filter"""
+  single: SecretWhere
+
+  """Filter type where some of the related Secrets match this filter"""
+  some: SecretWhere
+}
+
+"""
+Fields to sort Secrets by. The order in which sorts are applied is not guaranteed when specifying many fields in one SecretSort object.
+"""
+input SecretSort {
+  id: SortDirection
+  value: SortDirection
+}
+
+input SecretUpdateInput {
+  id: IDScalarMutations
+  id_SET: ID @deprecated(reason: "Please use the generic mutation 'id: { set: ... } }' instead.")
+  value: StringScalarMutations
+  value_SET: String @deprecated(reason: "Please use the generic mutation 'value: { set: ... } }' instead.")
+}
+
+input SecretWhere {
+  id: IDScalarFilters
+  id_EQ: ID @deprecated(reason: "Please use the relevant generic filter id: { eq: ... }")
+  id_IN: [ID!] @deprecated(reason: "Please use the relevant generic filter id: { in: ... }")
+  id_CONTAINS: ID @deprecated(reason: "Please use the relevant generic filter id: { contains: ... }")
+  id_STARTS_WITH: ID @deprecated(reason: "Please use the relevant generic filter id: { startsWith: ... }")
+  id_ENDS_WITH: ID @deprecated(reason: "Please use the relevant generic filter id: { endsWith: ... }")
+  value: StringScalarFilters
+  value_EQ: String @deprecated(reason: "Please use the relevant generic filter value: { eq: ... }")
+  value_IN: [String] @deprecated(reason: "Please use the relevant generic filter value: { in: ... }")
+  value_CONTAINS: String @deprecated(reason: "Please use the relevant generic filter value: { contains: ... }")
+  value_STARTS_WITH: String @deprecated(reason: "Please use the relevant generic filter value: { startsWith: ... }")
+  value_ENDS_WITH: String @deprecated(reason: "Please use the relevant generic filter value: { endsWith: ... }")
+  OR: [SecretWhere!]
+  AND: [SecretWhere!]
+  NOT: SecretWhere
+}
+
+"""Filters for an aggregation of a string field"""
+input StringScalarAggregationFilters {
+  averageLength: FloatScalarFilters
+  shortestLength: IntScalarFilters
+  longestLength: IntScalarFilters
+}
+
+"""String filters"""
+input StringScalarFilters {
+  eq: String
+  in: [String!]
+  contains: String
+  endsWith: String
+  startsWith: String
+}
+
+"""String mutations"""
+input StringScalarMutations {
+  set: String
+}

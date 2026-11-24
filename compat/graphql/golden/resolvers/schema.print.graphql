@@ -1,0 +1,547 @@
+type Query {
+  adminNote: String
+
+  """Counts labs through context.executionContext"""
+  stats(level: Level): Stats!
+  whoAmI: Viewer
+  feed: [FeedItem!]!
+  labsConnection(first: Int, after: String, where: LabWhere, sort: [LabSort!]): LabsConnection!
+  labs(where: LabWhere, limit: Int, offset: Int, sort: [LabSort!]): [Lab!]!
+  usersConnection(first: Int, after: String, where: UserWhere, sort: [UserSort!]): UsersConnection!
+  users(where: UserWhere, limit: Int, offset: Int, sort: [UserSort!]): [User!]!
+}
+
+type Mutation {
+  recordProgress(input: ProgressInput!): ProgressRecord!
+  createLabs(input: [LabCreateInput!]!): CreateLabsMutationResponse!
+  deleteLabs(where: LabWhere, delete: LabDeleteInput): DeleteInfo!
+  updateLabs(where: LabWhere, update: LabUpdateInput): UpdateLabsMutationResponse!
+  createUsers(input: [UserCreateInput!]!): CreateUsersMutationResponse!
+  deleteUsers(where: UserWhere): DeleteInfo!
+  updateUsers(where: UserWhere, update: UserUpdateInput): UpdateUsersMutationResponse!
+}
+
+enum Level {
+  BEGINNER
+  ADVANCED
+}
+
+"""An enum for sorting in either ascending or descending order."""
+enum SortDirection {
+  """Sort by field values in ascending order."""
+  ASC
+
+  """Sort by field values in descending order."""
+  DESC
+}
+
+"""Union of types without @node, resolved with __resolveType"""
+union FeedItem = ProgressSummary | Viewer
+
+type Count {
+  nodes: Int!
+}
+
+type CountConnection {
+  nodes: Int!
+  edges: Int!
+}
+
+"""
+Information about the number of nodes and relationships created during a create mutation
+"""
+type CreateInfo {
+  nodesCreated: Int!
+  relationshipsCreated: Int!
+}
+
+type CreateLabsMutationResponse {
+  info: CreateInfo!
+  labs: [Lab!]!
+}
+
+type CreateUsersMutationResponse {
+  info: CreateInfo!
+  users: [User!]!
+}
+
+"""
+Information about the number of nodes and relationships deleted during a delete mutation
+"""
+type DeleteInfo {
+  nodesDeleted: Int!
+  relationshipsDeleted: Int!
+}
+
+type Lab {
+  id: ID!
+  title: String!
+  level: Level!
+
+  """Progress of the viewer (from context.jwt), computed by the application"""
+  myProgress: ProgressSummary
+  titleUpper: String!
+  authorNames: [String!]!
+  authors(where: UserWhere, limit: Int, offset: Int, sort: [UserSort!]): [User!]!
+  authorsConnection(where: LabAuthorsConnectionWhere, first: Int, after: String, sort: [LabAuthorsConnectionSort!]): LabAuthorsConnection!
+}
+
+type LabAggregate {
+  count: Count!
+  node: LabAggregateNode!
+}
+
+type LabAggregateNode {
+  title: StringAggregateSelection!
+}
+
+type LabAuthorsConnection {
+  edges: [LabAuthorsRelationship!]!
+  totalCount: Int!
+  pageInfo: PageInfo!
+  aggregate: LabUserAuthorsAggregateSelection!
+}
+
+type LabAuthorsRelationship {
+  cursor: String!
+  node: User!
+}
+
+type LabEdge {
+  cursor: String!
+  node: Lab!
+}
+
+type LabsConnection {
+  edges: [LabEdge!]!
+  totalCount: Int!
+  pageInfo: PageInfo!
+  aggregate: LabAggregate!
+}
+
+type LabUserAuthorsAggregateSelection {
+  count: CountConnection!
+  node: LabUserAuthorsNodeAggregateSelection
+}
+
+type LabUserAuthorsNodeAggregateSelection {
+  name: StringAggregateSelection!
+}
+
+"""Pagination information (Relay)"""
+type PageInfo {
+  hasNextPage: Boolean!
+  hasPreviousPage: Boolean!
+  startCursor: String
+  endCursor: String
+}
+
+type ProgressRecord {
+  labId: ID!
+  percent: Int!
+  note: String
+  by: String
+}
+
+"""Computed by the application, not stored"""
+type ProgressSummary {
+  labId: ID!
+  percent: Int!
+  viewer: String
+}
+
+type Stats {
+  labCount: Int!
+  level: Level
+  featured: Lab
+}
+
+type StringAggregateSelection {
+  shortest: String
+  longest: String
+}
+
+"""
+Information about the number of nodes and relationships created and deleted during an update mutation
+"""
+type UpdateInfo {
+  nodesCreated: Int!
+  nodesDeleted: Int!
+  relationshipsCreated: Int!
+  relationshipsDeleted: Int!
+}
+
+type UpdateLabsMutationResponse {
+  info: UpdateInfo!
+  labs: [Lab!]!
+}
+
+type UpdateUsersMutationResponse {
+  info: UpdateInfo!
+  users: [User!]!
+}
+
+type User {
+  id: ID!
+  name: String!
+}
+
+type UserAggregate {
+  count: Count!
+  node: UserAggregateNode!
+}
+
+type UserAggregateNode {
+  name: StringAggregateSelection!
+}
+
+type UserEdge {
+  cursor: String!
+  node: User!
+}
+
+type UsersConnection {
+  edges: [UserEdge!]!
+  totalCount: Int!
+  pageInfo: PageInfo!
+  aggregate: UserAggregate!
+}
+
+type Viewer {
+  sub: String
+  roles: [String!]!
+}
+
+input ConnectionAggregationCountFilterInput {
+  nodes: IntScalarFilters
+  edges: IntScalarFilters
+}
+
+"""Float filters"""
+input FloatScalarFilters {
+  eq: Float
+  gt: Float
+  gte: Float
+  in: [Float!]
+  lt: Float
+  lte: Float
+}
+
+"""ID filters"""
+input IDScalarFilters {
+  eq: ID
+  in: [ID!]
+  contains: ID
+  endsWith: ID
+  startsWith: ID
+}
+
+"""ID mutations"""
+input IDScalarMutations {
+  set: ID
+}
+
+"""Int filters"""
+input IntScalarFilters {
+  eq: Int
+  gt: Int
+  gte: Int
+  in: [Int!]
+  lt: Int
+  lte: Int
+}
+
+input LabAuthorsAggregateInput {
+  count_EQ: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { eq: ... } } }' instead.")
+  count_LT: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { lt: ... } } }' instead.")
+  count_LTE: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { lte: ... } } }' instead.")
+  count_GT: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { gt: ... } } }' instead.")
+  count_GTE: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { gte: ... } } }' instead.")
+  count: IntScalarFilters
+  AND: [LabAuthorsAggregateInput!]
+  OR: [LabAuthorsAggregateInput!]
+  NOT: LabAuthorsAggregateInput
+  node: LabAuthorsNodeAggregationWhereInput
+}
+
+input LabAuthorsConnectFieldInput {
+  where: UserConnectWhere
+}
+
+input LabAuthorsConnectionAggregateInput {
+  count: ConnectionAggregationCountFilterInput
+  AND: [LabAuthorsConnectionAggregateInput!]
+  OR: [LabAuthorsConnectionAggregateInput!]
+  NOT: LabAuthorsConnectionAggregateInput
+  node: LabAuthorsNodeAggregationWhereInput
+}
+
+input LabAuthorsConnectionFilters {
+  """
+  Return Labs where all of the related LabAuthorsConnections match this filter
+  """
+  all: LabAuthorsConnectionWhere
+
+  """
+  Return Labs where none of the related LabAuthorsConnections match this filter
+  """
+  none: LabAuthorsConnectionWhere
+
+  """
+  Return Labs where one of the related LabAuthorsConnections match this filter
+  """
+  single: LabAuthorsConnectionWhere
+
+  """
+  Return Labs where some of the related LabAuthorsConnections match this filter
+  """
+  some: LabAuthorsConnectionWhere
+
+  """Filter Labs by aggregating results on related LabAuthorsConnections"""
+  aggregate: LabAuthorsConnectionAggregateInput
+}
+
+input LabAuthorsConnectionSort {
+  node: UserSort
+}
+
+input LabAuthorsConnectionWhere {
+  AND: [LabAuthorsConnectionWhere!]
+  OR: [LabAuthorsConnectionWhere!]
+  NOT: LabAuthorsConnectionWhere
+  node: UserWhere
+}
+
+input LabAuthorsCreateFieldInput {
+  node: UserCreateInput!
+}
+
+input LabAuthorsDeleteFieldInput {
+  where: LabAuthorsConnectionWhere
+}
+
+input LabAuthorsDisconnectFieldInput {
+  where: LabAuthorsConnectionWhere
+}
+
+input LabAuthorsFieldInput {
+  connect: [LabAuthorsConnectFieldInput!]
+  create: [LabAuthorsCreateFieldInput!]
+}
+
+input LabAuthorsNodeAggregationWhereInput {
+  AND: [LabAuthorsNodeAggregationWhereInput!]
+  OR: [LabAuthorsNodeAggregationWhereInput!]
+  NOT: LabAuthorsNodeAggregationWhereInput
+  name_AVERAGE_LENGTH_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { eq: ... } } }' instead.")
+  name_LONGEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { eq: ... } } }' instead.")
+  name_SHORTEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { eq: ... } } }' instead.")
+  name_AVERAGE_LENGTH_GT: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { gt: ... } } }' instead.")
+  name_LONGEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { gt: ... } } }' instead.")
+  name_SHORTEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { gt: ... } } }' instead.")
+  name_AVERAGE_LENGTH_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { gte: ... } } }' instead.")
+  name_LONGEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { gte: ... } } }' instead.")
+  name_SHORTEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { gte: ... } } }' instead.")
+  name_AVERAGE_LENGTH_LT: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { lt: ... } } }' instead.")
+  name_LONGEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { lt: ... } } }' instead.")
+  name_SHORTEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { lt: ... } } }' instead.")
+  name_AVERAGE_LENGTH_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'name: { averageLength: { lte: ... } } }' instead.")
+  name_LONGEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { longestLength: { lte: ... } } }' instead.")
+  name_SHORTEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'name: { shortestLength: { lte: ... } } }' instead.")
+  name: StringScalarAggregationFilters
+}
+
+input LabAuthorsUpdateConnectionInput {
+  node: UserUpdateInput
+  where: LabAuthorsConnectionWhere
+}
+
+input LabAuthorsUpdateFieldInput {
+  connect: [LabAuthorsConnectFieldInput!]
+  disconnect: [LabAuthorsDisconnectFieldInput!]
+  create: [LabAuthorsCreateFieldInput!]
+  update: LabAuthorsUpdateConnectionInput
+  delete: [LabAuthorsDeleteFieldInput!]
+}
+
+input LabCreateInput {
+  id: ID!
+  title: String!
+  level: Level!
+  authors: LabAuthorsFieldInput
+}
+
+input LabDeleteInput {
+  authors: [LabAuthorsDeleteFieldInput!]
+}
+
+"""
+Fields to sort Labs by. The order in which sorts are applied is not guaranteed when specifying many fields in one LabSort object.
+"""
+input LabSort {
+  id: SortDirection
+  title: SortDirection
+  level: SortDirection
+}
+
+input LabUpdateInput {
+  id: IDScalarMutations
+  id_SET: ID @deprecated(reason: "Please use the generic mutation 'id: { set: ... } }' instead.")
+  title: StringScalarMutations
+  title_SET: String @deprecated(reason: "Please use the generic mutation 'title: { set: ... } }' instead.")
+  level: LevelEnumScalarMutations
+  level_SET: Level @deprecated(reason: "Please use the generic mutation 'level: { set: ... } }' instead.")
+  authors: [LabAuthorsUpdateFieldInput!]
+}
+
+input LabWhere {
+  id: IDScalarFilters
+  id_EQ: ID @deprecated(reason: "Please use the relevant generic filter id: { eq: ... }")
+  id_IN: [ID!] @deprecated(reason: "Please use the relevant generic filter id: { in: ... }")
+  id_CONTAINS: ID @deprecated(reason: "Please use the relevant generic filter id: { contains: ... }")
+  id_STARTS_WITH: ID @deprecated(reason: "Please use the relevant generic filter id: { startsWith: ... }")
+  id_ENDS_WITH: ID @deprecated(reason: "Please use the relevant generic filter id: { endsWith: ... }")
+  title: StringScalarFilters
+  title_EQ: String @deprecated(reason: "Please use the relevant generic filter title: { eq: ... }")
+  title_IN: [String!] @deprecated(reason: "Please use the relevant generic filter title: { in: ... }")
+  title_CONTAINS: String @deprecated(reason: "Please use the relevant generic filter title: { contains: ... }")
+  title_STARTS_WITH: String @deprecated(reason: "Please use the relevant generic filter title: { startsWith: ... }")
+  title_ENDS_WITH: String @deprecated(reason: "Please use the relevant generic filter title: { endsWith: ... }")
+  level: LevelEnumScalarFilters
+  level_EQ: Level @deprecated(reason: "Please use the relevant generic filter level: { eq: ... }")
+  level_IN: [Level!] @deprecated(reason: "Please use the relevant generic filter level: { in: ... }")
+  OR: [LabWhere!]
+  AND: [LabWhere!]
+  NOT: LabWhere
+  authors: UserRelationshipFilters
+
+  """Return Labs where all of the related Users match this filter"""
+  authors_ALL: UserWhere @deprecated(reason: "Please use the relevant generic filter 'authors: { all: ... }' instead.")
+
+  """Return Labs where none of the related Users match this filter"""
+  authors_NONE: UserWhere @deprecated(reason: "Please use the relevant generic filter 'authors: { none: ... }' instead.")
+
+  """Return Labs where one of the related Users match this filter"""
+  authors_SINGLE: UserWhere @deprecated(reason: "Please use the relevant generic filter 'authors: {  single: ... }' instead.")
+
+  """Return Labs where some of the related Users match this filter"""
+  authors_SOME: UserWhere @deprecated(reason: "Please use the relevant generic filter 'authors: {  some: ... }' instead.")
+
+  """
+  Return Labs where all of the related LabAuthorsConnections match this filter
+  """
+  authorsConnection_ALL: LabAuthorsConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'authorsConnection: { all: { node: ... } } }' instead.")
+
+  """
+  Return Labs where none of the related LabAuthorsConnections match this filter
+  """
+  authorsConnection_NONE: LabAuthorsConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'authorsConnection: { none: { node: ... } } }' instead.")
+
+  """
+  Return Labs where one of the related LabAuthorsConnections match this filter
+  """
+  authorsConnection_SINGLE: LabAuthorsConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'authorsConnection: { single: { node: ... } } }' instead.")
+
+  """
+  Return Labs where some of the related LabAuthorsConnections match this filter
+  """
+  authorsConnection_SOME: LabAuthorsConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'authorsConnection: { some: { node: ... } } }' instead.")
+  authorsConnection: LabAuthorsConnectionFilters
+  authorsAggregate: LabAuthorsAggregateInput @deprecated(reason: "Aggregate filters are moved inside the authorsConnection filter, please use { authorsConnection: { aggregate: {...} } } instead")
+}
+
+"""Level filters"""
+input LevelEnumScalarFilters {
+  eq: Level
+  in: [Level!]
+}
+
+"""Level mutations"""
+input LevelEnumScalarMutations {
+  set: Level
+}
+
+input ProgressInput {
+  labId: ID!
+  percent: Int! = 0
+
+  """Free text"""
+  note: String
+}
+
+"""Filters for an aggregation of a string field"""
+input StringScalarAggregationFilters {
+  averageLength: FloatScalarFilters
+  shortestLength: IntScalarFilters
+  longestLength: IntScalarFilters
+}
+
+"""String filters"""
+input StringScalarFilters {
+  eq: String
+  in: [String!]
+  contains: String
+  endsWith: String
+  startsWith: String
+}
+
+"""String mutations"""
+input StringScalarMutations {
+  set: String
+}
+
+input UserConnectWhere {
+  node: UserWhere!
+}
+
+input UserCreateInput {
+  id: ID!
+  name: String!
+}
+
+input UserRelationshipFilters {
+  """Filter type where all of the related Users match this filter"""
+  all: UserWhere
+
+  """Filter type where none of the related Users match this filter"""
+  none: UserWhere
+
+  """Filter type where one of the related Users match this filter"""
+  single: UserWhere
+
+  """Filter type where some of the related Users match this filter"""
+  some: UserWhere
+}
+
+"""
+Fields to sort Users by. The order in which sorts are applied is not guaranteed when specifying many fields in one UserSort object.
+"""
+input UserSort {
+  id: SortDirection
+  name: SortDirection
+}
+
+input UserUpdateInput {
+  id: IDScalarMutations
+  id_SET: ID @deprecated(reason: "Please use the generic mutation 'id: { set: ... } }' instead.")
+  name: StringScalarMutations
+  name_SET: String @deprecated(reason: "Please use the generic mutation 'name: { set: ... } }' instead.")
+}
+
+input UserWhere {
+  id: IDScalarFilters
+  id_EQ: ID @deprecated(reason: "Please use the relevant generic filter id: { eq: ... }")
+  id_IN: [ID!] @deprecated(reason: "Please use the relevant generic filter id: { in: ... }")
+  id_CONTAINS: ID @deprecated(reason: "Please use the relevant generic filter id: { contains: ... }")
+  id_STARTS_WITH: ID @deprecated(reason: "Please use the relevant generic filter id: { startsWith: ... }")
+  id_ENDS_WITH: ID @deprecated(reason: "Please use the relevant generic filter id: { endsWith: ... }")
+  name: StringScalarFilters
+  name_EQ: String @deprecated(reason: "Please use the relevant generic filter name: { eq: ... }")
+  name_IN: [String!] @deprecated(reason: "Please use the relevant generic filter name: { in: ... }")
+  name_CONTAINS: String @deprecated(reason: "Please use the relevant generic filter name: { contains: ... }")
+  name_STARTS_WITH: String @deprecated(reason: "Please use the relevant generic filter name: { startsWith: ... }")
+  name_ENDS_WITH: String @deprecated(reason: "Please use the relevant generic filter name: { endsWith: ... }")
+  OR: [UserWhere!]
+  AND: [UserWhere!]
+  NOT: UserWhere
+}

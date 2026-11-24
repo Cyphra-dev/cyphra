@@ -22,11 +22,17 @@ fixtures/<app>/
   operations/NN-name.script.cypher    for a `subscription` operation: statements run after
                                       subscribing (one transaction each, same format as the seed)
 golden/<app>/schema.graphql   lexicographicSortSchema + printSchema of the reference schema
+golden/<app>/schema.print.graphql   printSchema of the reference schema, unsorted (v7's order)
 golden/<app>/NN-name.json     normalized result of each operation
 src/implementations.ts        the GraphQLImplementation adapters (@neo4j/graphql, @cyphra/graphql)
 cyphra-expected.json          checks @cyphra/graphql must pass (progress mode, see below)
 REPORT.md                     generated compatibility report
 ```
+
+Two checks cover the schema of each fixture: `schema` compares the sorted SDL (same types, fields
+and arguments), and `schema-print` compares the unsorted `printSchema` output byte for byte (same
+order too). Applications commit the printed schema as a contract and diff it in CI, so switching
+must not change a single line of it.
 
 Every operation runs on a freshly reset database (everything deleted, fixture seed applied), so
 operations are independent and mutations can be compared. Operations are validated against the
@@ -122,8 +128,8 @@ checked against the same goldens (`resolvers` is the fixture's `resolvers.ts`, p
 ## Progress mode
 
 The reference must pass every check. Other implementations are measured against
-`cyphra-expected.json`, the list of checks (`<fixture>/schema` or `<fixture>/<operation>`) they must
-pass:
+`cyphra-expected.json`, the list of checks (`<fixture>/schema`, `<fixture>/schema-print` or
+`<fixture>/<operation>`) they must pass:
 
 - a listed check that fails is a regression: `test` fails;
 - a check that passes but is not listed also fails `test`, with a hint to add it, so the list always
@@ -136,5 +142,5 @@ After making more operations pass, run `report --update-expected` and commit the
 
 `REPORT.md` has a summary per implementation (pass / fail / skipped), a table per feature tag
 (`pass`, `partial` when some checks are skipped, `FAIL`), and a table per fixture listing the
-`schema` check and every operation. A failing check shows why (SDL or output differs from golden,
+`schema` check (sorted SDL), the `schema-print` check and every operation. A failing check shows why (SDL or output differs from golden,
 or the implementation threw); run `test` for the full diff.
