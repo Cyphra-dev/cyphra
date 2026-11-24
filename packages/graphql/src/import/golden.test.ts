@@ -22,9 +22,10 @@ const OPTIONS: Record<string, GraphQLImportOptions> = {
     ],
     idFields: ["Tag.id"],
   },
+  "mixed-ids": { idFields: ["Activity.id"] },
 };
 
-describe.each(["movies", "blog", "shop", "library", "search", "labels", "ids"])(
+describe.each(["movies", "blog", "shop", "library", "search", "labels", "ids", "mixed-ids"])(
   "golden: %s",
   (name) => {
     it("converts to the expected schema and report", async () => {

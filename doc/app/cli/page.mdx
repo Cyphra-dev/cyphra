@@ -435,6 +435,11 @@ node Quiz implements LearningActivity {
   way (type, nullability, directives). A `@unique` or `@id` that moves then covers every
   `:LearningActivity` node (one constraint on the shared label), and the report says so. A label on
   one type becomes an interface without fields.
+- **An id that only some types mark `@id`** (`id: ID! @id` on `Lab`, a plain `id: ID!` on `Quiz`)
+  still lines up: the interface declares `id String @id`, with `@default(uuid())` when one of the
+  types generated its ids. The `Quiz` ids must then be unique across `:LearningActivity` nodes, and
+  are generated too when you create one without an id (an inherited field has a single declaration);
+  the report says so.
 - **When the fields do not line up** (a common field declared `String!` on one type and `Int` on
   another), the label becomes [`@@labels([LearningActivity])`](/schema#dynamic-labels) on each type
   instead. Cyphra reads and filters on it, but does not add it on create: pass

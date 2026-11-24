@@ -240,3 +240,77 @@ describe("GraphQL interfaces", () => {
     );
   });
 });
+
+describe("identifiers only some implementations mark @id (#252)", () => {
+  const SDL = `
+    interface Activity { id: ID! title: String! }
+    type Lab implements Activity @node(labels: ["Lab", "Activity"]) { id: ID! @id title: String! }
+    type Step implements Activity @node(labels: ["Step", "Activity"]) { id: ID! title: String! }
+    type Course @node {
+      id: ID! @id
+      contains: [Activity!]! @relationship(type: "CONTAINS", direction: OUT)
+    }
+  `;
+
+  it("line up: the interface declares the @id, with the generated default", () => {
+    const { schema, model, issues } = convert(SDL);
+    expect(schema).toContain(
+      "interface Activity {\n  id String @id @default(uuid())\n  title String\n}",
+    );
+    expect(schema).toContain("node Step implements Activity {\n}");
+    // The relationship to the interface is kept.
+    expect(schema).toContain('contains Activity[] @relationship(type: "CONTAINS", direction: OUT)');
+    expect(model.nodes.find((n) => n.name === "Step")?.labels).toEqual(["Step", "Activity"]);
+    expect(issues.filter((i) => i.severity === "unsupported")).toEqual([]);
+    expect(issueAt(issues, "Activity")?.message).toMatch(
+      /id is @id on Lab but not on Step: the interface declares it @id @default\(uuid\(\)\), so the id values of Step must be unique across :Activity nodes too, and Step now gets a generated id/,
+    );
+  });
+
+  it("with --id-fields on the interface: the hint backs the interface's @id", () => {
+    const { schema, issues } = convert(SDL, { idFields: ["Activity.id"] });
+    expect(schema).toContain("interface Activity {\n  id String @id @default(uuid())");
+    expect(issueAt(issues, "Activity.id")).toMatchObject({
+      severity: "changed",
+      feature: "--id-fields",
+      message: "already @id; --id-fields backs it",
+    });
+    expect(issues.some((i) => /not an interface/.test(i.message))).toBe(false);
+  });
+
+  it("a hinted id lines up with a v7 @id on the node itself too", () => {
+    const { schema } = convert(SDL, { idFields: ["Step.id"] });
+    // A hint on the node's own label pins the field: it stays on each implementation.
+    expect(schema).toContain("interface Activity {\n  title String\n}");
+    expect(schema).toContain("node Lab implements Activity {\n  id String @id @default(uuid())\n}");
+    expect(schema).toContain("node Step implements Activity {\n  id String @id\n}");
+  });
+
+  it("no default when no implementation generated its ids", () => {
+    const { schema } = convert(
+      `
+      type A @node(labels: ["A", "Shared"]) { id: ID! name: String }
+      type B @node(labels: ["B", "Shared"]) { id: ID! name: String }
+    `,
+      { idFields: ["A.id"] },
+    );
+    // Not an id mismatch before the hints: the plain fields line up and the hint pins A.id.
+    expect(schema).toContain("node A implements Shared {\n  id String @id\n}");
+  });
+
+  it("do not line up when the ids differ otherwise, or a member has its @id elsewhere", () => {
+    const optional = convert(`
+      type Badge @node(labels: ["Badge", "Award"]) { id: ID! @id name: String! }
+      type Trophy @node(labels: ["Trophy", "Award"]) { id: ID name: String! }
+    `);
+    expect(optional.schema).not.toContain("interface");
+    expect(issueAt(optional.issues, "Badge")?.message).toMatch(/field "id" differs/);
+
+    const elsewhere = convert(`
+      type Lab @node(labels: ["Lab", "Activity"]) { key: ID! @id id: ID! @id title: String! }
+      type Step @node(labels: ["Step", "Activity"]) { id: ID! @id title: String! }
+    `);
+    expect(elsewhere.schema).not.toContain("interface");
+    expect(issueAt(elsewhere.issues, "Lab")?.message).toMatch(/field "id" differs/);
+  });
+});
