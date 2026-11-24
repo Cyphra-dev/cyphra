@@ -1,0 +1,13 @@
+# features: resolvers.root, resolvers.plain-type, union
+query {
+  feed {
+    __typename
+    ... on ProgressSummary {
+      labId
+      percent
+    }
+    ... on Viewer {
+      sub
+    }
+  }
+}

@@ -11,6 +11,8 @@ same results for the same operations on the same data. The goal is that teams ca
 fixtures/<app>/
   typeDefs.graphql            v7 type definitions (@node, @relationship, @cypher, @authorization, ...)
   seed.cypher                 data; statements end with `;` at end of line, `//` comment lines
+  resolvers.ts                optional: its default export is passed as `resolvers` to every
+                              implementation (custom resolvers, `@customResolver`)
   operations/NN-name.graphql  one operation per file (header comments, see below)
   operations/NN-name.variables.json   optional variables
   operations/NN-name.jwt.json         optional decoded JWT payload (passed as context `jwt`)
@@ -104,15 +106,16 @@ type GraphQLImplementation = {
   skipReason?: () => Promise<string | undefined>;
   buildSchema(
     typeDefs: string,
-    options: { driver: Driver; jwt: { key: string } },
+    options: { driver: Driver; jwt: { key: string }; resolvers?: FixtureResolvers },
   ): Promise<GraphQLSchema>;
   contextFor(op: Operation): Record<string, unknown> | Promise<Record<string, unknown>>;
 };
 ```
 
 `@cyphra/graphql` is registered with
-`compat.v7.makeSchema({ typeDefs, driver, features: { authorization: { key } } })` and checked
-against the same goldens. `skipReason` lets an adapter opt out (the check is then `skipped`).
+`compat.v7.makeSchema({ typeDefs, driver, resolvers, features: { authorization: { key } } })` and
+checked against the same goldens (`resolvers` is the fixture's `resolvers.ts`, passed to
+`new Neo4jGraphQL({ … resolvers })` for the reference too). `skipReason` lets an adapter opt out (the check is then `skipped`).
 
 ## Progress mode
 

@@ -1,0 +1,18 @@
+{
+  "data": {
+    "whoAmI": {
+      "sub": "user-cid"
+    },
+    "labs": [
+      {
+        "authorNames": [
+          "Ada",
+          "Bob"
+        ],
+        "myProgress": {
+          "viewer": "user-cid"
+        }
+      }
+    ]
+  }
+}

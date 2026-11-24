@@ -1,0 +1,6 @@
+# features: resolvers.root
+query {
+  whoAmI {
+    sub
+  }
+}

@@ -257,7 +257,15 @@ describe("unsupported type definitions fail loudly", () => {
     ],
     ["Duration", "type A @node { d: Duration }"],
     ["unknown directives", 'type A @node { x: Int @populatedBy(callback: "f") }'],
-    ["types without @node", "type A { x: Int }"],
+    [
+      "unions mixing @node types and other types",
+      "type A @node { x: Int } type B { y: Int } union U = A | B",
+    ],
+    [
+      "generated types in fields served by resolvers",
+      "type A @node { x: Int } type Query { a(where: AWhere): Int }",
+    ],
+    ["directives on types without @node", 'type B @plural(value: "bs") { y: Int }'],
   ])("%s", (_name, typeDefs) => {
     expect(() => readTypeDefs(typeDefs)).toThrow(UnsupportedTypeDefsError);
   });

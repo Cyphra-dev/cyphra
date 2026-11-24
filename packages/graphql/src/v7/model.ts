@@ -15,7 +15,9 @@ import {
   type ConstDirectiveNode,
   type ConstValueNode,
   type FieldDefinitionNode,
+  type InputObjectTypeDefinitionNode,
   type ObjectTypeDefinitionNode,
+  type SelectionSetNode,
   type TypeNode,
   type UnionTypeDefinitionNode,
 } from "graphql";
@@ -92,11 +94,42 @@ export type CypherRootField = {
   readonly authentication?: AuthenticationAnnotation;
 };
 
+/**
+ * A `Query` / `Mutation` field without `@cypher`: served by the application's `resolvers`, like v7
+ * custom resolvers (the schema-level, type-level and field `@authentication` still apply).
+ */
+export type UserRootField = {
+  readonly name: string;
+  /** The field as written in the type definitions (printed as-is, without library directives). */
+  readonly definition: FieldDefinitionNode;
+  /** Field-level `@authentication`. */
+  readonly authentication?: AuthenticationAnnotation;
+};
+
 /** The custom fields of `Query` or `Mutation`, with the type-level `@authentication`. */
 export type CypherRootType = {
   readonly fields: readonly CypherRootField[];
+  /** Fields without `@cypher`, served by the application's resolvers. */
+  readonly resolved: readonly UserRootField[];
   readonly authentication?: AuthenticationAnnotation;
 };
+
+/**
+ * A field of a `@node` type served by the application's resolvers: `@customResolver`, or a field
+ * returning a type without `@node` (v7 prints it on the object type only: never in filters,
+ * sorts, inputs, aggregations or subscription payloads, and never in the generated Cypher).
+ */
+export type UserField = {
+  readonly name: string;
+  /** The field as written in the type definitions. */
+  readonly definition: FieldDefinitionNode;
+  /** `@customResolver(requires)`: the selection always fetched for the resolver's parent. */
+  readonly requires?: SelectionSetNode;
+};
+
+/** Types without `@node` (object, input and union types), served as written. */
+export type UserTypeDefinition =
+  ObjectTypeDefinitionNode | InputObjectTypeDefinitionNode | UnionTypeDefinitionNode;
 
 /** One index of `@fulltext(indexes: [{ indexName, queryName, fields }])`. */
 export type FulltextIndex = {
@@ -246,6 +279,8 @@ export type NodeType = {
   readonly relationships: readonly Relationship[];
   /** `@cypher` fields returning nodes. */
   readonly cypherNodes: readonly CypherNodeField[];
+  /** Fields served by the application's resolvers (`@customResolver`, non-`@node` types). */
+  readonly userFields: readonly UserField[];
   /** `@fulltext` indexes. */
   readonly fulltext: readonly FulltextIndex[];
   readonly auth: AuthAnnotations;
@@ -287,7 +322,9 @@ export type V7Model = {
   readonly jwtClaims: ReadonlyMap<string, string>;
   readonly properties: ReadonlyMap<string, PropertiesType>;
   readonly enums: ReadonlyMap<string, EnumType>;
-  /** `@cypher` fields of `type Query` / `type Mutation`. */
+  /** Object, input and union types without `@node`, passed through to the schema as written. */
+  readonly userTypes: ReadonlyMap<string, UserTypeDefinition>;
+  /** Custom fields of `type Query` / `type Mutation` (`@cypher` or served by resolvers). */
   readonly query: CypherRootType;
   readonly mutation: CypherRootType;
   /** Schema-level `extend schema @subscription(events)`. */
@@ -866,7 +903,7 @@ function readRootType(
   nodes: ReadonlySet<string>,
   unions: ReadonlyMap<string, UnionType>,
 ): CypherRootType {
-  if (!o) return { fields: [] };
+  if (!o) return { fields: [], resolved: [] };
   const type = o.name.value;
   let authentication: AuthenticationAnnotation | undefined;
   for (const d of o.directives ?? []) {
@@ -877,7 +914,8 @@ function readRootType(
     }
     authentication = readAuthentication(`type ${type}`, d);
   }
-  const fields = (o.fields ?? []).map((f): CypherRootField => {
+  const resolved: UserRootField[] = [];
+  const fields = (o.fields ?? []).flatMap((f): CypherRootField[] => {
     const where = `${type}.${f.name.value}`;
     for (const d of f.directives ?? []) {
       if (!["cypher", "deprecated", "authentication"].includes(d.name.value)) {
@@ -888,9 +926,13 @@ function readRootType(
     }
     const cypher = readCypher(where, directive(f.directives, "cypher"));
     if (!cypher) {
-      throw new UnsupportedTypeDefsError(
-        `${where}: custom ${type} fields need @cypher (custom resolvers are not supported by @cyphra/graphql).`,
-      );
+      // v7: a root field without @cypher is served by the application's resolvers.
+      resolved.push({
+        name: f.name.value,
+        definition: f,
+        authentication: readAuthentication(where, directive(f.directives, "authentication")),
+      });
+      return [];
     }
     const t = typeRef(f.type);
     if (unions.has(t.name)) {
@@ -904,18 +946,20 @@ function readRootType(
         `${where}: type ${t.name} is not supported by @cyphra/graphql yet (@node types, scalars and enums only).`,
       );
     }
-    return {
-      name: f.name.value,
-      type: t,
-      kind,
-      cypher,
-      args: readArguments(where, f, enums),
-      description: f.description?.value,
-      deprecated: deprecationReason(f.directives),
-      authentication: readAuthentication(where, directive(f.directives, "authentication")),
-    };
+    return [
+      {
+        name: f.name.value,
+        type: t,
+        kind,
+        cypher,
+        args: readArguments(where, f, enums),
+        description: f.description?.value,
+        deprecated: deprecationReason(f.directives),
+        authentication: readAuthentication(where, directive(f.directives, "authentication")),
+      },
+    ];
   });
-  return { fields, authentication };
+  return { fields, resolved, authentication };
 }
 
 /** `union U = A | B`: members must be `@node` types; no directives. */
@@ -988,6 +1032,150 @@ function readFulltext(
   });
 }
 
+/** A field of a `@node` type served by the application's resolvers. */
+function readUserField(
+  owner: string,
+  f: FieldDefinitionNode,
+  custom: ConstDirectiveNode | undefined,
+): UserField {
+  const where = `${owner}.${f.name.value}`;
+  for (const d of f.directives ?? []) {
+    if (!["customResolver", "deprecated"].includes(d.name.value)) {
+      throw new UnsupportedTypeDefsError(
+        `${where}: @${d.name.value} on a field served by resolvers is not supported by @cyphra/graphql yet.`,
+      );
+    }
+  }
+  for (const a of custom?.arguments ?? []) {
+    if (a.name.value !== "requires") {
+      throw new UnsupportedTypeDefsError(
+        `${where}: @customResolver(${a.name.value}) is not supported.`,
+      );
+    }
+  }
+  const value = arg(custom, "requires");
+  if (value && value.kind !== Kind.STRING) {
+    throw new UnsupportedTypeDefsError("@customResolver requires expects a string");
+  }
+  let requires: SelectionSetNode | undefined;
+  if (value) {
+    try {
+      const doc = parse(`{ ${value.value} }`);
+      requires = (doc.definitions[0] as { selectionSet: SelectionSetNode }).selectionSet;
+    } catch (e) {
+      throw new UnsupportedTypeDefsError(
+        `Invalid selection set provided to @customResolver on ${owner}:\n${(e as Error).message}`,
+      );
+    }
+  }
+  return { name: f.name.value, definition: f, requires };
+}
+
+/**
+ * Object, input and union types without `@node` (v7 passes them through to the schema). A union is
+ * one when none of its members is a `@node` type; a union mixing both is not supported.
+ */
+function readUserTypes(
+  objects: readonly ObjectTypeDefinitionNode[],
+  inputs: readonly InputObjectTypeDefinitionNode[],
+  unions: readonly UnionTypeDefinitionNode[],
+  nodes: ReadonlySet<string>,
+): Map<string, UserTypeDefinition> {
+  const out = new Map<string, UserTypeDefinition>();
+  const add = (def: UserTypeDefinition, kind: string) => {
+    const name = def.name.value;
+    if (out.has(name))
+      throw new UnsupportedTypeDefsError(`${kind} ${name}: defined more than once.`);
+    for (const d of def.directives ?? []) {
+      throw new UnsupportedTypeDefsError(
+        `${kind} ${name}: @${d.name.value} is not supported by @cyphra/graphql yet.`,
+      );
+    }
+    out.set(name, def);
+  };
+  for (const o of objects) {
+    for (const f of o.fields ?? []) {
+      for (const d of f.directives ?? []) {
+        if (d.name.value !== "deprecated") {
+          throw new UnsupportedTypeDefsError(
+            `${o.name.value}.${f.name.value}: @${d.name.value} on a type without @node is not supported by @cyphra/graphql yet.`,
+          );
+        }
+      }
+    }
+    add(o, "type");
+  }
+  for (const i of inputs) add(i, "input");
+  const plain = new Set(objects.map((o) => o.name.value));
+  for (const u of unions) {
+    const members = (u.types ?? []).map((t) => t.name.value);
+    if (!members.length || !members.every((m) => plain.has(m))) {
+      if (members.some((m) => plain.has(m)) && members.some((m) => nodes.has(m))) {
+        throw new UnsupportedTypeDefsError(
+          `union ${u.name.value}: unions mixing @node types and types without @node are not supported by @cyphra/graphql yet.`,
+        );
+      }
+      continue;
+    }
+    add(u, "union");
+  }
+  return out;
+}
+
+function namedTypeOf(t: TypeNode): string {
+  return t.kind === Kind.NAMED_TYPE ? t.name.value : namedTypeOf(t.type);
+}
+
+/**
+ * The types fields served by resolvers (and types without `@node`) refer to must be in the schema:
+ * scalars, enums, `@node` types, unions and the types without `@node` of the type definitions
+ * (input positions take scalars, enums and input types only).
+ */
+function checkUserTypeReferences(opts: {
+  scalarsAndEnums: ReadonlySet<string>;
+  outputs: ReadonlySet<string>;
+  userTypes: ReadonlyMap<string, UserTypeDefinition>;
+  nodes: readonly NodeType[];
+  roots: Record<"Query" | "Mutation", CypherRootType>;
+}): void {
+  const { scalarsAndEnums, outputs, userTypes } = opts;
+  const isInput = (n: string) =>
+    scalarsAndEnums.has(n) || userTypes.get(n)?.kind === Kind.INPUT_OBJECT_TYPE_DEFINITION;
+  const isOutput = (n: string) =>
+    scalarsAndEnums.has(n) ||
+    outputs.has(n) ||
+    (userTypes.has(n) && userTypes.get(n)!.kind !== Kind.INPUT_OBJECT_TYPE_DEFINITION);
+  const fail = (where: string, name: string, input: boolean): never => {
+    throw new UnsupportedTypeDefsError(
+      `${where}: type ${name} is not supported by @cyphra/graphql yet (${input ? "scalars, enums and input types" : "scalars, enums, @node types, unions and object types"} of the type definitions only).`,
+    );
+  };
+  const checkField = (owner: string, f: FieldDefinitionNode) => {
+    const where = `${owner}.${f.name.value}`;
+    const out = namedTypeOf(f.type);
+    if (!isOutput(out)) fail(where, out, false);
+    for (const a of f.arguments ?? []) {
+      const t = namedTypeOf(a.type);
+      if (!isInput(t)) fail(`${where}(${a.name.value})`, t, true);
+    }
+  };
+  for (const def of userTypes.values()) {
+    const name = def.name.value;
+    if (def.kind === Kind.OBJECT_TYPE_DEFINITION) {
+      for (const f of def.fields ?? []) checkField(name, f);
+    } else if (def.kind === Kind.INPUT_OBJECT_TYPE_DEFINITION) {
+      for (const f of def.fields ?? []) {
+        const t = namedTypeOf(f.type);
+        if (!isInput(t)) fail(`${name}.${f.name.value}`, t, true);
+      }
+    }
+  }
+  for (const n of opts.nodes) for (const f of n.userFields) checkField(n.name, f.definition);
+  for (const [type, root] of Object.entries(opts.roots)) {
+    for (const f of root.resolved) checkField(type, f.definition);
+  }
+}
+
 /**
  * Read v7 type definitions. Throws {@link UnsupportedTypeDefsError} for features `@cyphra/graphql`
  * does not serve yet (interfaces, spatial and some temporal types, …), so the generated
@@ -997,6 +1185,7 @@ export function readTypeDefs(typeDefs: string): V7Model {
   const doc = parse(typeDefs);
   const objects: ObjectTypeDefinitionNode[] = [];
   const unionDefs: UnionTypeDefinitionNode[] = [];
+  const inputDefs: InputObjectTypeDefinitionNode[] = [];
   const enums = new Map<string, EnumType>();
   let schemaAuthentication: AuthenticationAnnotation | undefined;
   let schemaSubscription: ReadonlySet<SubscriptionEvent> | undefined;
@@ -1035,6 +1224,9 @@ export function readTypeDefs(typeDefs: string): V7Model {
       case Kind.UNION_TYPE_DEFINITION:
         unionDefs.push(def);
         break;
+      case Kind.INPUT_OBJECT_TYPE_DEFINITION:
+        inputDefs.push(def);
+        break;
       case Kind.ENUM_TYPE_DEFINITION:
         enums.set(def.name.value, {
           name: def.name.value,
@@ -1057,7 +1249,7 @@ export function readTypeDefs(typeDefs: string): V7Model {
         break;
       default:
         throw new UnsupportedTypeDefsError(
-          `${def.kind}${"name" in def && def.name ? ` ${def.name.value}` : ""}: not supported by @cyphra/graphql yet (only object types, unions, enums and relationship properties).`,
+          `${def.kind}${"name" in def && def.name ? ` ${def.name.value}` : ""}: not supported by @cyphra/graphql yet (only object, input, union and enum types).`,
         );
     }
   }
@@ -1065,6 +1257,7 @@ export function readTypeDefs(typeDefs: string): V7Model {
 
   const properties = new Map<string, PropertiesType>();
   const nodeDefs: ObjectTypeDefinitionNode[] = [];
+  const plainDefs: ObjectTypeDefinitionNode[] = [];
   const rootDefs = new Map<string, ObjectTypeDefinitionNode>();
   let jwtClaims: Map<string, string> | undefined;
   for (const o of objects) {
@@ -1115,23 +1308,35 @@ export function readTypeDefs(typeDefs: string): V7Model {
       continue;
     }
     if (!directive(o.directives, "node")) {
-      throw new UnsupportedTypeDefsError(
-        `type ${name}: object types without @node are not supported by @cyphra/graphql yet.`,
-      );
+      // v7: an object type without @node is a plain type, served by the application's resolvers.
+      plainDefs.push(o);
+      continue;
     }
     nodeDefs.push(o);
   }
   const nodeNames = new Set(nodeDefs.map((o) => o.name.value));
-  const unions = readUnions(unionDefs, nodeNames);
+  const userTypes = readUserTypes(plainDefs, inputDefs, unionDefs, nodeNames);
+  const unions = readUnions(
+    unionDefs.filter((u) => !userTypes.has(u.name.value)),
+    nodeNames,
+  );
+  const isUserOutput = (t: string) =>
+    userTypes.get(t)?.kind !== Kind.INPUT_OBJECT_TYPE_DEFINITION && userTypes.has(t);
 
   const nodes: NodeType[] = nodeDefs.map((o) => {
     const name = o.name.value;
     const attributes: Attribute[] = [];
     const relationships: Relationship[] = [];
     const cypherNodes: CypherNodeField[] = [];
+    const userFields: UserField[] = [];
     for (const f of o.fields ?? []) {
       const rel = directive(f.directives, "relationship");
       const cypher = directive(f.directives, "cypher");
+      const custom = directive(f.directives, "customResolver");
+      if (custom || (!rel && !cypher && isUserOutput(typeRef(f.type).name))) {
+        userFields.push(readUserField(name, f, custom));
+        continue;
+      }
       if (!rel && unions.has(typeRef(f.type).name)) {
         throw new UnsupportedTypeDefsError(
           `${name}.${f.name.value}: fields returning the union ${typeRef(f.type).name} need @relationship (@cypher fields returning unions are not supported by @cyphra/graphql yet).`,
@@ -1204,6 +1409,7 @@ export function readTypeDefs(typeDefs: string): V7Model {
       attributes,
       relationships,
       cypherNodes,
+      userFields,
       fulltext: readFulltext(name, directive(o.directives, "fulltext"), attributes),
       auth: readAuthAnnotations(`type ${name}`, o.directives) ?? {},
       subscription: readSubscription(`type ${name}`, directive(o.directives, "subscription")),
@@ -1241,7 +1447,7 @@ export function readTypeDefs(typeDefs: string): V7Model {
     }
     generated.add(u.plural);
   }
-  for (const f of query.fields) {
+  for (const f of [...query.fields, ...query.resolved]) {
     if (generated.has(f.name)) {
       throw new UnsupportedTypeDefsError(
         `Query.${f.name}: conflicts with a generated Query field.`,
@@ -1253,13 +1459,20 @@ export function readTypeDefs(typeDefs: string): V7Model {
       ["create", "update", "delete"].map((k) => `${k}${n.pascalPlural}`),
     ),
   );
-  for (const f of mutation.fields) {
+  for (const f of [...mutation.fields, ...mutation.resolved]) {
     if (generatedMutations.has(f.name)) {
       throw new UnsupportedTypeDefsError(
         `Mutation.${f.name}: conflicts with a generated Mutation field.`,
       );
     }
   }
+  checkUserTypeReferences({
+    scalarsAndEnums: new Set([...SUPPORTED_SCALARS, ...enumNames]),
+    outputs: new Set([...nodeNames, ...unions.keys()]),
+    userTypes,
+    nodes,
+    roots: { Query: query, Mutation: mutation },
+  });
 
   const byName = new Map(nodes.map((n) => [n.name, n]));
   return {
@@ -1269,6 +1482,7 @@ export function readTypeDefs(typeDefs: string): V7Model {
     jwtClaims: jwtClaims ?? new Map(),
     properties,
     enums,
+    userTypes,
     query,
     mutation,
     subscription: schemaSubscription,

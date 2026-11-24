@@ -1,0 +1,8 @@
+# features: resolvers.custom-field, relationship
+query {
+  labs {
+    id
+    titleUpper
+    authorNames
+  }
+}

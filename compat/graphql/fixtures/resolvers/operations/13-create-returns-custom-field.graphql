@@ -1,0 +1,12 @@
+# features: resolvers.custom-field, mutation.create
+mutation {
+  createLabs(input: [{ id: "l9", title: "New lab", level: BEGINNER }]) {
+    labs {
+      id
+      titleUpper
+      myProgress {
+        percent
+      }
+    }
+  }
+}

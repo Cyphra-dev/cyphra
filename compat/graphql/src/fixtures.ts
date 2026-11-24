@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { Kind, parse } from "graphql";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 // @neo4j/graphql parses Date/DateTime inputs in the process time zone: pin it so goldens
 // do not depend on the machine (the npm scripts also set TZ=UTC).
@@ -45,13 +45,27 @@ export type Operation = {
   script?: string;
 };
 
+/** Resolver map passed to every implementation as `resolvers` (`fixtures/<app>/resolvers.ts`). */
+export type FixtureResolvers = Record<string, Record<string, unknown>>;
+
 export type Fixture = {
   name: string;
   dir: string;
   typeDefs: string;
   seed: string;
+  /** `resolvers.ts` (its default export), when the fixture has one. */
+  resolversPath?: string;
   operations: Operation[];
 };
+
+/** The fixture's resolvers (default export of `resolvers.ts`), if any. */
+export async function loadResolvers(fixture: Fixture): Promise<FixtureResolvers | undefined> {
+  if (!fixture.resolversPath) return undefined;
+  const mod = (await import(pathToFileURL(fixture.resolversPath).href)) as {
+    default: FixtureResolvers;
+  };
+  return mod.default;
+}
 
 function readJson(file: string): Record<string, unknown> | undefined {
   if (!existsSync(file)) return undefined;
@@ -119,6 +133,9 @@ export function loadFixture(name: string): Fixture {
     dir,
     typeDefs: readFileSync(path.join(dir, "typeDefs.graphql"), "utf8"),
     seed: readFileSync(path.join(dir, "seed.cypher"), "utf8"),
+    resolversPath: existsSync(path.join(dir, "resolvers.ts"))
+      ? path.join(dir, "resolvers.ts")
+      : undefined,
     operations,
   };
 }

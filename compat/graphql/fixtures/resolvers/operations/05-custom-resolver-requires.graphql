@@ -1,0 +1,12 @@
+# features: resolvers.custom-field, resolvers.context-jwt
+# ordered
+query {
+  labs(sort: [{ title: ASC }]) {
+    title
+    myProgress {
+      labId
+      percent
+      viewer
+    }
+  }
+}

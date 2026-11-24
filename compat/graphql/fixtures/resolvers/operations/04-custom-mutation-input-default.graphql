@@ -1,0 +1,9 @@
+# features: resolvers.root, resolvers.input-type
+mutation Record($input: ProgressInput!) {
+  recordProgress(input: $input) {
+    labId
+    percent
+    note
+    by
+  }
+}

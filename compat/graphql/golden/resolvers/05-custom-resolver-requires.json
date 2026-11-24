@@ -1,0 +1,30 @@
+{
+  "data": {
+    "labs": [
+      {
+        "title": "Cypher deep dive",
+        "myProgress": {
+          "labId": "l2",
+          "percent": 95,
+          "viewer": "user-ann"
+        }
+      },
+      {
+        "title": "Graphs 101",
+        "myProgress": {
+          "labId": "l1",
+          "percent": 88,
+          "viewer": "user-ann"
+        }
+      },
+      {
+        "title": "Indexes",
+        "myProgress": {
+          "labId": "l3",
+          "percent": 2,
+          "viewer": "user-ann"
+        }
+      }
+    ]
+  }
+}

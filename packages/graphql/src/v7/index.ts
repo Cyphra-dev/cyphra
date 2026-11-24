@@ -6,11 +6,19 @@
 
 import {
   GraphQLError,
+  GraphQLSchema,
+  isEnumType,
+  isInterfaceType,
   isObjectType,
+  isScalarType,
+  isUnionType,
+  Kind,
+  validate,
+  type GraphQLField,
   type GraphQLFieldResolver,
   type GraphQLResolveInfo,
-  type GraphQLSchema,
 } from "graphql";
+import neo4j from "neo4j-driver";
 import { resolveSchema, type SchemaDocument, type SchemaModel } from "@cyphra/schema";
 import { convertGraphQLTypeDefs, type ImportIssue } from "../import/index.js";
 import { SelectionCompiler } from "./cypher/select.js";
@@ -22,7 +30,13 @@ import {
   type ReadExecutor,
   type WriteExecutor,
 } from "./execute.js";
-import { AUTH_OPERATIONS, readTypeDefs, UnsupportedTypeDefsError, type V7Model } from "./model.js";
+import {
+  AUTH_OPERATIONS,
+  readTypeDefs,
+  UnsupportedTypeDefsError,
+  type UserRootField,
+  type V7Model,
+} from "./model.js";
 import { buildV7Schema } from "./sdl.js";
 import {
   authContextFor,
@@ -47,15 +61,62 @@ export type MakeSchemaOptions = ExecutorOptions & {
    * decoded `context.jwt` (trusted as-is) authenticates requests.
    */
   features?: Features;
+  /**
+   * The application's resolvers, merged like `new Neo4jGraphQL({ typeDefs, resolvers })`: custom
+   * `Query` / `Mutation` fields without `@cypher`, fields of types without `@node`,
+   * `@customResolver` fields (called with the parent, which always has the `requires` selection),
+   * or overrides of generated resolvers. An array is merged in order (later entries win).
+   */
+  resolvers?: Resolvers | readonly Resolvers[];
 };
+
+/**
+ * Resolver map, as in `@graphql-tools/schema`: `{ TypeName: { field: resolver | { resolve } } }`,
+ * with `__resolveType` on unions and `__isTypeOf` on object types.
+ */
+export type Resolvers = Record<string, Record<string, unknown>>;
 
 type AnyRecord = Record<string, unknown>;
 
-/** Reads values by response key, so aliases (`paged: actorsConnection(...)`) resolve. */
-const byResponseKey: GraphQLFieldResolver<unknown, unknown> = (source, _args, _ctx, info) =>
-  source && typeof source === "object" ? (source as AnyRecord)[info.path.key as string] : undefined;
+/**
+ * v7's default field resolver: the value under the alias when the source has one (generated
+ * results are keyed by response key), else under the field name; a function is called with
+ * `(args, context, info)`. Neo4j integers become numbers on `Int`, `Float` and `ID` fields (v7
+ * `numericalResolver` / `idResolver`), for values returned by the application's resolvers.
+ */
+function defaultFieldResolver(numeric: boolean): GraphQLFieldResolver<unknown, unknown> {
+  return (source, args, ctx, info) => {
+    if ((typeof source !== "object" || source === null) && typeof source !== "function") {
+      return undefined;
+    }
+    const s = source as AnyRecord;
+    const alias = info.fieldNodes[0]?.alias?.value;
+    let value =
+      alias !== undefined && Object.prototype.hasOwnProperty.call(s, alias)
+        ? s[alias]
+        : s[info.fieldName];
+    if (typeof value === "function")
+      value = (value as (...a: unknown[]) => unknown)(args, ctx, info);
+    if (!numeric) return value;
+    return Array.isArray(value) ? value.map(toNumber) : toNumber(value);
+  };
+}
+
+function toNumber(value: unknown): unknown {
+  return neo4j.isInt(value) ? value.toNumber() : value;
+}
 
 type Auth = { model: V7Model; decoder?: JwtDecoder };
+
+/** The authorization context the root field wrapper computed (see {@link wrapRootField}). */
+const REQUEST_AUTH = Symbol("cyphra.v7.auth");
+
+/** The request's authorization context: the one of the root field wrapper, or computed. */
+function requestAuth(ctx: unknown, { model, decoder }: Auth): Promise<AuthContext> {
+  const known =
+    ctx && typeof ctx === "object" ? (ctx as AnyRecord)[REQUEST_AUTH as never] : undefined;
+  return known ? Promise.resolve(known as AuthContext) : authContextFor(ctx, model, decoder);
+}
 
 /**
  * v7 passes `context.cypherParams` as top-level parameters of every statement (`$name` in `@cypher`
@@ -85,14 +146,15 @@ function checked<T>(decode: (rows: readonly unknown[]) => T): (rows: readonly un
 }
 
 function rootReadResolver(
-  { model, decoder }: Auth,
+  a: Auth,
   execute: ReadExecutor,
   nodeName: string,
   kind: "list" | "connection",
 ): GraphQLFieldResolver<unknown, unknown> {
+  const { model } = a;
   return async (_source, args, ctx, info: GraphQLResolveInfo) => {
     const node = model.node(nodeName);
-    const auth = await authContextFor(ctx, model, decoder);
+    const auth = await requestAuth(ctx, a);
     const compiler = new SelectionCompiler(model, info, auth);
     const compiled =
       kind === "list"
@@ -106,13 +168,14 @@ function rootReadResolver(
 
 /** `contents(where, limit, offset)`: the root query of a union. */
 function rootUnionResolver(
-  { model, decoder }: Auth,
+  a: Auth,
   execute: ReadExecutor,
   unionName: string,
 ): GraphQLFieldResolver<unknown, unknown> {
+  const { model } = a;
   return async (_source, args, ctx, info: GraphQLResolveInfo) => {
     const union = model.unions.get(unionName)!;
-    const auth = await authContextFor(ctx, model, decoder);
+    const auth = await requestAuth(ctx, a);
     const compiled = new SelectionCompiler(model, info, auth).rootUnion(
       union,
       args as AnyRecord,
@@ -125,15 +188,16 @@ function rootUnionResolver(
 }
 
 function fulltextResolver(
-  { model, decoder }: Auth,
+  a: Auth,
   execute: ReadExecutor,
   nodeName: string,
   queryName: string,
 ): GraphQLFieldResolver<unknown, unknown> {
+  const { model } = a;
   return async (_source, args, ctx, info: GraphQLResolveInfo) => {
     const node = model.node(nodeName);
     const index = node.fulltext.find((f) => f.queryName === queryName)!;
-    const auth = await authContextFor(ctx, model, decoder);
+    const auth = await requestAuth(ctx, a);
     const compiled = new SelectionCompiler(model, info, auth).rootFulltext(
       node,
       index,
@@ -148,16 +212,17 @@ function fulltextResolver(
 
 /** `Query` fields run in a read transaction, `Mutation` fields in a write transaction. */
 function rootCypherResolver(
-  { model, decoder }: Auth,
+  a: Auth,
   executors: Executors,
   type: "Query" | "Mutation",
   fieldName: string,
 ): GraphQLFieldResolver<unknown, unknown> {
+  const { model } = a;
   return async (_source, args, ctx, info: GraphQLResolveInfo) => {
     const field = (type === "Query" ? model.query : model.mutation).fields.find(
       (f) => f.name === fieldName,
     )!;
-    const auth = await authContextFor(ctx, model, decoder);
+    const auth = await requestAuth(ctx, a);
     checkRootAuthentication(model, auth, type, field);
     const compiled = new SelectionCompiler(model, info, auth).rootCypher(
       field,
@@ -172,14 +237,15 @@ function rootCypherResolver(
 }
 
 function rootMutationResolver(
-  { model, decoder }: Auth,
+  opts: Auth,
   execute: WriteExecutor,
   nodeName: string,
   kind: "create" | "update" | "delete",
 ): GraphQLFieldResolver<unknown, unknown> {
+  const { model } = opts;
   return async (_source, args, ctx, info: GraphQLResolveInfo) => {
     const node = model.node(nodeName);
-    const auth = await authContextFor(ctx, model, decoder);
+    const auth = await requestAuth(ctx, opts);
     const compiler = new MutationCompiler(model, info, auth);
     const a = args as AnyRecord;
     const compiled =
@@ -234,16 +300,6 @@ function checkRules(model: V7Model): void {
 function attachResolvers(schema: GraphQLSchema, auth: Auth, executors: Executors): void {
   const model = auth.model;
   const execute = executors.read;
-  for (const type of Object.values(schema.getTypeMap())) {
-    if (!isObjectType(type) || type.name.startsWith("__")) continue;
-    if (
-      type === schema.getQueryType() ||
-      type === schema.getMutationType() ||
-      type === schema.getSubscriptionType()
-    )
-      continue;
-    for (const field of Object.values(type.getFields())) field.resolve = byResponseKey;
-  }
   const query = schema.getQueryType()!.getFields();
   for (const node of model.nodes) {
     query[node.plural]!.resolve = rootReadResolver(auth, execute, node.name, "list");
@@ -279,6 +335,165 @@ function attachResolvers(schema: GraphQLSchema, auth: Auth, executors: Executors
   }
 }
 
+/** `resolvers` merged in order, like `mergeResolvers` (later entries win, field by field). */
+function mergeResolvers(resolvers: MakeSchemaOptions["resolvers"]): Resolvers {
+  const list = resolvers === undefined ? [] : Array.isArray(resolvers) ? resolvers : [resolvers];
+  const merged: Resolvers = {};
+  for (const r of list as Resolvers[]) {
+    for (const [typeName, value] of Object.entries(r ?? {})) {
+      if (typeof value !== "object" || value === null) {
+        throw new Error(
+          `"${typeName}" defined in resolvers, but has invalid value "${String(value)}". The resolver's value must be of type object.`,
+        );
+      }
+      merged[typeName] = { ...merged[typeName], ...value };
+    }
+  }
+  return merged;
+}
+
+/**
+ * Adds the application's resolvers to the schema, as `addResolversToSchema` does in v7 (same
+ * errors for types and fields that are not in the schema). They replace generated resolvers.
+ */
+function addUserResolvers(schema: GraphQLSchema, resolvers: Resolvers): void {
+  for (const [typeName, value] of Object.entries(resolvers)) {
+    const type = schema.getType(typeName);
+    if (!type) throw new Error(`"${typeName}" defined in resolvers, but not in schema`);
+    if (isScalarType(type) || isEnumType(type)) {
+      throw new TypeError(
+        `resolvers.${typeName}: resolvers for ${isScalarType(type) ? "scalar" : "enum"} types are not supported by @cyphra/graphql yet.`,
+      );
+    }
+    if (isUnionType(type)) {
+      for (const [key, fn] of Object.entries(value)) {
+        if (!key.startsWith("__")) {
+          throw new Error(
+            `${typeName}.${key} was defined in resolvers, but ${typeName} is not an object or interface type`,
+          );
+        }
+        (type as unknown as AnyRecord)[key.slice(2)] = fn;
+      }
+      continue;
+    }
+    if (!isObjectType(type) && !isInterfaceType(type)) continue;
+    const fields = type.getFields();
+    for (const [key, resolver] of Object.entries(value)) {
+      if (key.startsWith("__")) {
+        (type as unknown as AnyRecord)[key.slice(2)] = resolver;
+        continue;
+      }
+      const field = fields[key];
+      if (!field) throw new Error(`${typeName}.${key} defined in resolvers, but not in schema`);
+      if (typeof resolver === "function") {
+        field.resolve = (resolver as GraphQLFieldResolver<unknown, unknown>).bind(value);
+      } else if (typeof resolver === "object" && resolver !== null) {
+        Object.assign(field, resolver);
+      } else {
+        throw new Error(`Resolver ${typeName}.${key} must be object or function`);
+      }
+    }
+  }
+}
+
+/**
+ * v7 wraps every `Query` / `Mutation` resolver (generated or not): `context.executionContext`
+ * defaults to the driver, and `context.jwt` to the payload of the verified `context.token`, so the
+ * application's resolvers (and nested ones) can read them. Fields served by the application's
+ * resolvers also get the schema-level, type-level and field `@authentication`.
+ */
+function wrapRootFields(schema: GraphQLSchema, auth: Auth, driver: unknown): void {
+  for (const type of ["Query", "Mutation"] as const) {
+    const root = type === "Query" ? schema.getQueryType() : schema.getMutationType();
+    const custom = type === "Query" ? auth.model.query : auth.model.mutation;
+    for (const field of Object.values(root?.getFields() ?? {})) {
+      if (!field.resolve) continue;
+      field.resolve = wrapRootField(
+        field,
+        auth,
+        driver,
+        type,
+        custom.resolved.find((f) => f.name === field.name),
+      );
+    }
+  }
+}
+
+function wrapRootField(
+  field: GraphQLField<unknown, unknown>,
+  auth: Auth,
+  driver: unknown,
+  type: "Query" | "Mutation",
+  custom: UserRootField | undefined,
+): GraphQLFieldResolver<unknown, unknown> {
+  const resolve = field.resolve!;
+  return async (source, args, ctx, info) => {
+    if (!ctx || typeof ctx !== "object") return resolve(source, args, ctx, info);
+    const context = ctx as AnyRecord;
+    if (!context.executionContext && driver) context.executionContext = driver;
+    const request = await authContextFor(context, auth.model, auth.decoder);
+    if (!context.jwt) context.jwt = request.jwt;
+    if (custom) checkRootAuthentication(auth.model, request, type, custom);
+    return resolve(source, args, { ...context, [REQUEST_AUTH]: request }, info);
+  };
+}
+
+/** v7 checks `@customResolver(requires)` against the type: the selection must be valid on it. */
+function checkRequires(schema: GraphQLSchema, model: V7Model): void {
+  for (const node of model.nodes) {
+    for (const f of node.userFields) {
+      if (!f.requires) continue;
+      const type = schema.getType(node.name);
+      if (!isObjectType(type)) continue;
+      const errors = validate(
+        new GraphQLSchema({ query: type, types: Object.values(schema.getTypeMap()) }),
+        {
+          kind: Kind.DOCUMENT,
+          definitions: [
+            {
+              kind: Kind.OPERATION_DEFINITION,
+              operation: "query" as never,
+              selectionSet: f.requires,
+            },
+          ],
+        },
+      );
+      if (errors.length) {
+        throw new UnsupportedTypeDefsError(
+          `Invalid selection set provided to @customResolver on ${node.name}:\n${errors.join("\n")}`,
+        );
+      }
+    }
+  }
+}
+
+/** v7 warns about `@customResolver` fields the resolvers do not serve. */
+function warnMissingCustomResolvers(model: V7Model, resolvers: Resolvers): void {
+  for (const node of model.nodes) {
+    for (const f of node.userFields) {
+      const custom = f.definition.directives?.some((d) => d.name.value === "customResolver");
+      if (custom && !resolvers[node.name]?.[f.name]) {
+        console.warn(`Custom resolver for ${f.name} has not been provided`);
+      }
+    }
+  }
+}
+
+/** v7's default resolvers on every field without one. */
+function addDefaultFieldResolvers(schema: GraphQLSchema): void {
+  const plain = defaultFieldResolver(false);
+  const numeric = defaultFieldResolver(true);
+  for (const type of Object.values(schema.getTypeMap())) {
+    if ((!isObjectType(type) && !isInterfaceType(type)) || type.name.startsWith("__")) continue;
+    for (const field of Object.values(type.getFields())) {
+      if (field.resolve) continue;
+      let t = field.type;
+      while ("ofType" in t) t = t.ofType;
+      field.resolve = ["Int", "Float", "ID"].includes(t.name) ? numeric : plain;
+    }
+  }
+}
+
 /**
  * Build the GraphQL schema `@neo4j/graphql` v7 generates for `typeDefs`, with resolvers that run on
  * Neo4j through `driver` or `client`. Drop-in for `new Neo4jGraphQL({ typeDefs, driver }).getSchema()`.
@@ -304,6 +519,9 @@ export function makeSchema(options: MakeSchemaOptions): GraphQLSchema {
   const model = readTypeDefs(options.typeDefs);
   checkRules(model);
   const schema = buildV7Schema(model);
+  checkRequires(schema, model);
+  const resolvers = mergeResolvers(options.resolvers);
+  warnMissingCustomResolvers(model, resolvers);
   const feature = options.features?.authorization;
   const decoder = feature ? new JwtDecoder(feature) : undefined;
   const engine = subscriptionsEngine(options);
@@ -313,6 +531,9 @@ export function makeSchema(options: MakeSchemaOptions): GraphQLSchema {
     warnUnfilteredAuthorization(model);
   }
   attachSubscriptionResolvers(schema, model, decoder, engine);
+  addUserResolvers(schema, resolvers);
+  wrapRootFields(schema, { model, decoder }, options.driver);
+  addDefaultFieldResolvers(schema);
   return schema;
 }
 

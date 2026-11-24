@@ -101,16 +101,15 @@ GraphQL](/guides/migrate-from-neo4j-graphql#using-the-typed-client-alongside-gra
 ## What `@neo4j/graphql` does that Cyphra does not
 
 `@cyphra/graphql` serves the v7 API for queries, aggregations, mutations, `@authentication` /
-`@authorization`, `@cypher` fields, `@fulltext` queries, unions and CDC subscriptions. Its
-compatibility suite runs 134 operations on 10 apps, with expected results recorded from
-`@neo4j/graphql` 7.6.8, and 142 of the 144 checks pass, the two others on purpose ([report](https://github.com/Cyphra-dev/cyphra/blob/main/compat/graphql/REPORT.md)). What it
+`@authorization`, `@cypher` fields, custom resolvers, `@fulltext` queries, unions and CDC
+subscriptions. Its compatibility suite runs 169 operations on 12 apps, with expected results
+recorded from `@neo4j/graphql` 7.6.8, and 179 of the 181 checks pass, the two others on purpose ([report](https://github.com/Cyphra-dev/cyphra/blob/main/compat/graphql/REPORT.md)). What it
 does not have yet:
 
 - The **Apollo Federation** integration.
 - **Interfaces**, `@cypher` fields returning unions, **`@vector`** queries, and the `Time`, `LocalTime`, `LocalDateTime`,
   `Duration`, `Point` and `CartesianPoint` scalars.
-- **Custom resolvers** (`@customResolver`, the `resolvers` option), `@populatedBy`, `@relayId`, and
-  the schema configuration directives (`@query`, `@mutation`, `@selectable`,
+- `@populatedBy`, `@relayId`, and the schema configuration directives (`@query`, `@mutation`, `@selectable`,
   `@settable`, `@filterable`, `@sortable`, `@limit`).
 - **Versions before 7.** `@cyphra/graphql` reproduces the v7 API only; the 5.x LTS API differs.
 
@@ -152,8 +151,7 @@ the type definitions and run `cyphra import graphql --merge`. The client does no
 
 ## When to choose `@neo4j/graphql` instead
 
-- You need Apollo Federation, interfaces, `@vector`, custom resolvers or
-  another feature from the list above.
+- You need Apollo Federation, interfaces, `@vector` or another feature from the list above.
 - You are on the 5.x LTS line and do not plan to move to version 7.
 - You want a library maintained by Neo4j, Inc. with a published versioning policy (current and LTS
   lines).
@@ -203,7 +201,7 @@ Checked on 2026-11-21.
   5.11.4 (2025-01-24), `lts` 5.12.17 (2026-11-10)
 - GitHub, [neo4j/graphql](https://github.com/neo4j/graphql): not archived, last push 2026-11-21
 - Cyphra, [`compat/graphql/REPORT.md`](https://github.com/Cyphra-dev/cyphra/blob/main/compat/graphql/REPORT.md):
-  142 of 144 checks pass against goldens from `@neo4j/graphql` 7.6.8 (the two others are nested
+  179 of 181 checks pass against goldens from `@neo4j/graphql` 7.6.8 (the two others are nested
   union writes where v7 ignores `where`). The unsupported directives
   were checked by calling `compat.v7.makeSchema` on each one.
 - The Cyphra snippets above were generated and run with the code of `cyphra` 0.7.0 against Neo4j 5.

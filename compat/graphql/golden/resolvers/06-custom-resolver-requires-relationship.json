@@ -1,0 +1,26 @@
+{
+  "data": {
+    "labs": [
+      {
+        "id": "l1",
+        "titleUpper": "GRAPHS 101",
+        "authorNames": [
+          "Ada",
+          "Bob"
+        ]
+      },
+      {
+        "id": "l2",
+        "titleUpper": "CYPHER DEEP DIVE",
+        "authorNames": [
+          "Bob"
+        ]
+      },
+      {
+        "id": "l3",
+        "titleUpper": "INDEXES",
+        "authorNames": []
+      }
+    ]
+  }
+}

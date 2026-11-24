@@ -1,0 +1,9 @@
+# features: resolvers.root, resolvers.input-type, resolvers.context-jwt
+mutation {
+  recordProgress(input: { labId: "l1", percent: 40, note: "halfway" }) {
+    labId
+    percent
+    note
+    by
+  }
+}

@@ -8,7 +8,7 @@ import {
   type GraphQLSchema,
 } from "graphql";
 import neo4j, { type Driver } from "neo4j-driver";
-import type { Fixture, Operation } from "./fixtures.js";
+import { loadResolvers, type Fixture, type Operation } from "./fixtures.js";
 import { JWT_KEY, type GraphQLImplementation } from "./implementations.js";
 import { normalizeResult, stringifyResult, type NormalizedResult } from "./normalize.js";
 
@@ -64,7 +64,11 @@ export async function buildFixtureSchema(
   fixture: Fixture,
   driver: Driver,
 ): Promise<GraphQLSchema> {
-  return impl.buildSchema(fixture.typeDefs, { driver, jwt: { key: JWT_KEY } });
+  return impl.buildSchema(fixture.typeDefs, {
+    driver,
+    jwt: { key: JWT_KEY },
+    resolvers: await loadResolvers(fixture),
+  });
 }
 
 /** Resets the database, applies the fixture seed, runs one operation and returns normalized JSON. */
@@ -134,6 +138,7 @@ export async function runSubscription(
   const { schema, close } = await impl.buildSubscriptionSchema(fixture.typeDefs, {
     driver,
     jwt: { key: JWT_KEY },
+    resolvers: await loadResolvers(fixture),
     pollTime: POLL_MS,
   });
   try {

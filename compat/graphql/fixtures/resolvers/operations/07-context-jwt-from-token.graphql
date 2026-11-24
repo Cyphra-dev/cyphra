@@ -1,0 +1,7 @@
+# features: resolvers.root, resolvers.context-jwt, auth.token
+query {
+  whoAmI {
+    sub
+    roles
+  }
+}

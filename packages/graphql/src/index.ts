@@ -17,6 +17,7 @@ export type {
   Features,
   JwtKey,
   MakeSchemaOptions,
+  Resolvers,
   SubscriptionsFeature,
 } from "./v7/index.js";
 export { CDCSubscriptionsEngine } from "./v7/index.js";
