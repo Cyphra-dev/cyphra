@@ -1,6 +1,6 @@
 {
   "name": "@cyphra/nestjs",
-  "version": "0.17.0",
+  "version": "0.18.0",
   "description": "NestJS module for Cyphra, the TypeScript ORM for Neo4j: injectable typed client, @Transactional() and a Terminus health indicator",
   "type": "module",
   "sideEffects": false,

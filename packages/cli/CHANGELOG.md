@@ -1,5 +1,16 @@
 # @cyphra/cli
 
+## 0.18.0
+
+### Patch Changes
+
+- Updated dependencies [f6baa35]
+- Updated dependencies [27bfd81]
+  - @cyphra/graphql@0.18.0
+  - @cyphra/runtime@0.18.0
+  - @cyphra/migrator@0.18.0
+  - @cyphra/schema@0.18.0
+
 ## 0.17.0
 
 ### Minor Changes
