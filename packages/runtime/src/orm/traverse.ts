@@ -22,6 +22,7 @@ import {
   compilePaging,
   compileProjection,
   compileWhere,
+  scopedWhere,
   decodeRow,
   q,
   relationField,
@@ -463,7 +464,7 @@ export function compileTraverse(
     throw new CyphraValidationError("returnPaths must be a boolean.");
   }
 
-  const from = compileWhere(ctx, model, "s", args.from);
+  const from = scopedWhere(ctx, model, "s", args.from);
   if (ctx.dialect === "falkordb") {
     return falkordbTraverse(ctx, model, args, maxDepth, from, distinct, returnPaths);
   }
@@ -562,7 +563,7 @@ export function compileTraverse(
   const reached = [
     min > 0 ? "n <> s" : null,
     unionPredicate("n", end),
-    compileWhere(ctx, end, "n", args.where),
+    scopedWhere(ctx, end, "n", args.where),
   ].filter((x): x is string => Boolean(x));
 
   let text = `MATCH (s:${labelExpr(model)})${from ? ` WHERE ${from}` : ""} `;

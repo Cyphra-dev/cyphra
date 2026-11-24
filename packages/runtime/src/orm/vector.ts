@@ -24,7 +24,7 @@ import type { ResolvedNodeModel, ResolvedScalarField } from "@cyphra/schema";
 import {
   QueryContext,
   compileProjection,
-  compileWhere,
+  scopedWhere,
   decodeRow,
   intParam,
   q,
@@ -120,7 +120,7 @@ export async function findSimilar(
   // An index inherited from an interface covers every implementation: keep this model's nodes.
   const where = and([
     field.inheritedFrom ? `n:${labelExpr(model)}` : null,
-    compileWhere(ctx, model, "n", args.where),
+    scopedWhere(ctx, model, "n", args.where),
   ]);
   const candidates =
     args.candidates === undefined

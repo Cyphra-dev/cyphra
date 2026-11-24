@@ -5,10 +5,11 @@
   "description": "Reproducible benchmarks: Cyphra vs the raw neo4j-driver and other Node.js Neo4j libraries",
   "scripts": {
     "generate": "cyphra generate",
-    "build": "cyphra generate && esbuild src/main.ts src/report.ts --bundle --platform=node --format=esm --target=node22 --packages=external --outdir=dist --log-level=warning",
+    "build": "cyphra generate && esbuild src/main.ts src/report.ts src/extends.ts --bundle --platform=node --format=esm --target=node22 --packages=external --outdir=dist --log-level=warning",
     "bench": "pnpm run build && node dist/main.js",
     "report": "pnpm run build && node dist/report.js",
-    "typecheck": "cyphra generate && tsc --noEmit"
+    "typecheck": "cyphra generate && tsc --noEmit",
+    "extends": "pnpm run build && node dist/extends.js"
   },
   "dependencies": {
     "@cyphra/graphql": "workspace:*",

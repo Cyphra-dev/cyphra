@@ -1200,12 +1200,17 @@ The native API never does what the client cannot, so some work lands in `@cyphra
 each useful on its own:
 
 1. **Keyset cursors** in `findMany` (`cursor: { after?, before? }`, opaque, tied to `orderBy`).
+   Landed (#239): `select: { $cursor: true }` returns each row's cursor.
 2. **Aliased relation loads** (internal engine entry, not public types) for GraphQL aliases.
+   Landed (#239): `select: { recent: { $relation: "posts", take: 3 } }`.
 3. **`select` on `createMany` / `updateMany` / `deleteMany`**, returning `{ count, nodes }`.
 4. **Rule injection**: an engine option that ANDs a per-model `where` into every match of that
    model in a statement (root, relation loads, relation filters, `_count`, aggregates, write
    targets). This is also what `ctx.cyphra` uses, and could become a public `$extends` feature
-   ("row-level rules") for TypeScript users.
+   ("row-level rules") for TypeScript users. Landed (#239) as `withEngineRules(client, rules)`
+   (internal): evaluated `read` / `update` / `delete` rules per model; the GraphQL layer evaluates
+   the context functions per request and passes the result. Per-request `$extends` costs about
+   2.5 µs on a 4-model schema and 45 µs on a 100-model one (`pnpm --filter cyphra-bench extends`).
 5. **Edge filters and ordering on relation loads** (`_edge` in `some` / `orderBy`) where the client
    does not have them yet.
 6. Later: nested `update` / `delete` / `upsert` / `connectOrCreate`; `_count` filters in `where`

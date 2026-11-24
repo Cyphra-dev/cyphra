@@ -51,6 +51,17 @@ describe("rewriteForFalkorDB", () => {
     );
   });
 
+  it("hoists subqueries of a WITH projection whose WHERE needs none", () => {
+    expect(
+      rewrite(
+        "MATCH (n:`Post`) WITH n, COUNT { MATCH (n)-->(m0) } AS k0 WHERE k0 > $p0 WITH n, k0 ORDER BY k0 ASC RETURN n",
+      ),
+    ).toBe(
+      "MATCH (n:`Post`) CALL { WITH * MATCH (n)-->(m0) RETURN count(*) AS __cyphra_n0 } " +
+        "WITH n, __cyphra_n0 AS k0 WHERE k0 > $p0 WITH n, k0 ORDER BY k0 ASC RETURN n",
+    );
+  });
+
   it("adds a WITH between an updating clause and a CALL", () => {
     expect(
       rewrite("CREATE (n:`A`) SET n.x = 1 RETURN n{`c`: COUNT { MATCH (n)-->(m) }} AS row"),

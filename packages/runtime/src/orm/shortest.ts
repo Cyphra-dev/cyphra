@@ -22,6 +22,7 @@ import {
   QueryContext,
   compileProjection,
   compileWhere,
+  scopedWhere,
   decodeRow,
   intParam,
   nonNegativeInt,
@@ -103,8 +104,8 @@ export function compileShortestPath(
   const rels = viaRelations(model, args.via, op);
 
   const label = q(model.label);
-  const from = compileWhere(ctx, model, "s", args.from);
-  const to = compileWhere(ctx, model, "t", args.to);
+  const from = scopedWhere(ctx, model, "s", args.from);
+  const to = scopedWhere(ctx, model, "t", args.to);
   if (ctx.dialect === "memgraph") {
     return memgraphShortestPath(ctx, model, args, max, all, { label, from, to, rels, op });
   }

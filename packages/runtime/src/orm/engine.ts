@@ -28,7 +28,6 @@ import {
   compilePaging,
   compileProjection,
   and,
-  compileWhere,
   decodeRow,
   labelExpr,
   nodeMatch,
@@ -38,7 +37,17 @@ import {
   scalarField,
   unionPredicate,
   memberNames,
+  scopedWhere,
 } from "./compile.js";
+import {
+  cursorSortKeys,
+  decodeCursor,
+  encodeCursor,
+  keysetPredicate,
+  orderFingerprint,
+  parseCursorArgs,
+} from "./cursor.js";
+import type { EngineRules } from "./scope.js";
 import { compileAggregate, compileGroupBy } from "./aggregate.js";
 import { DEFAULT_MAX_TRAVERSAL_DEPTH, compileTraverse } from "./traverse.js";
 import { compileShortestPath } from "./shortest.js";
@@ -181,7 +190,12 @@ export type EngineOptions = {
   readonly maxTraversalDepth?: number;
   /** The Cypher flavour to compile to (default `"neo4j"`). */
   readonly dialect?: CyphraDialect;
+  /** Rules ANDed into every statement (see {@link EngineRules}); every set applies. */
+  readonly rules?: readonly EngineRules[];
 };
+
+/** Column holding the sort keys of a row, for its `$cursor`. */
+const CURSOR_COLUMN = "__cursor";
 
 export class ModelEngine {
   constructor(
@@ -192,7 +206,7 @@ export class ModelEngine {
   ) {}
 
   private ctx(): QueryContext {
-    return new QueryContext(this.schema, this.options.dialect);
+    return new QueryContext(this.schema, this.options.dialect, this.options.rules);
   }
 
   private get label(): string {
@@ -204,8 +218,13 @@ export class ModelEngine {
   // -------------------------------------------------------------------------
 
   private async readMany(exec: Executor, args: AnyRecord): Promise<AnyRecord[]> {
+    const projected = this.withoutCursorSelect(args);
+    const cursor = parseCursorArgs(this.model, args.cursor);
+    if (cursor || projected.withCursor) {
+      return this.readPage(exec, projected.args, cursor ?? {}, projected.withCursor);
+    }
     const ctx = this.ctx();
-    const where = compileWhere(ctx, this.model, "n", args.where);
+    const where = scopedWhere(ctx, this.model, "n", args.where);
     const paging = compilePaging(ctx, this.model, "n", args);
     const { expr, shape } = compileProjection(ctx, this.model, "n", args);
     let text = `MATCH ${nodeMatch("n", this.model, where)}`;
@@ -216,6 +235,66 @@ export class ModelEngine {
     if (order) text += ` ORDER BY ${order}`;
     const rows = await exec(text, ctx.params);
     return rows.map((r) => decodeRow(shape, r.row)!);
+  }
+
+  /** `args` without `$cursor` in its `select` / `include`, and whether it asked for it. */
+  private withoutCursorSelect(args: AnyRecord): { args: AnyRecord; withCursor: boolean } {
+    for (const key of ["select", "include"] as const) {
+      const spec = args[key];
+      if (!isPlainObject(spec) || spec.$cursor === undefined) continue;
+      if (typeof spec.$cursor !== "boolean") {
+        throw new CyphraValidationError(`${this.model.name}.findMany: ${key}.$cursor takes true.`);
+      }
+      const { $cursor, ...rest } = spec;
+      return { args: { ...args, [key]: rest }, withCursor: $cursor };
+    }
+    return { args, withCursor: false };
+  }
+
+  /**
+   * `findMany` with keyset paging: the sort keys (`orderBy`, then the `@id`) are bound once per
+   * node, the nodes after / before the cursors kept, then ordered and paged. With only `before`,
+   * the page is the last `take` nodes before it: the order is reversed for paging, and restored
+   * for the result.
+   */
+  private async readPage(
+    exec: Executor,
+    args: AnyRecord,
+    cursor: { after?: string; before?: string },
+    withCursor: boolean,
+  ): Promise<AnyRecord[]> {
+    const ctx = this.ctx();
+    const where = scopedWhere(ctx, this.model, "n", args.where);
+    const keys = cursorSortKeys(ctx, this.model, "n", args.orderBy);
+    const vars = keys.map(() => ctx.variable("k"));
+    const print = orderFingerprint(this.model, args.orderBy);
+    const conditions = (["after", "before"] as const).flatMap((side) => {
+      const c = cursor[side];
+      if (c === undefined) return [];
+      const params = decodeCursor(ctx, this.model, print, keys, c, side);
+      return [keysetPredicate(keys, vars, params, side)];
+    });
+    const reverse = cursor.before !== undefined && cursor.after === undefined;
+    const order = (flip: boolean) =>
+      keys
+        .map((k, i) => `${vars[i]} ${flip ? (k.dir === "ASC" ? "DESC" : "ASC") : k.dir}`)
+        .join(", ");
+    const bound = keys.map((k, i) => `${k.expr} AS ${vars[i]}`).join(", ");
+    let text = `MATCH ${nodeMatch("n", this.model, where)} WITH n, ${bound}`;
+    const keep = and(conditions);
+    if (keep) text += ` WHERE ${keep}`;
+    text += ` WITH n, ${vars.join(", ")} ORDER BY ${order(reverse)}`;
+    text += compilePaging(ctx, this.model, "n", { skip: args.skip, take: args.take });
+    const { expr, shape } = compileProjection(ctx, this.model, "n", args);
+    text += ` RETURN ${expr} AS row`;
+    if (withCursor) text += `, [${vars.join(", ")}] AS ${CURSOR_COLUMN}`;
+    text += ` ORDER BY ${order(false)}`;
+    const rows = await exec(text, ctx.params);
+    return rows.map((r) => {
+      const row = decodeRow(shape, r.row)!;
+      if (withCursor) row.$cursor = encodeCursor(print, keys, r[CURSOR_COLUMN]);
+      return row;
+    });
   }
 
   /**
@@ -312,6 +391,7 @@ export class ModelEngine {
       take: 1,
       skip: undefined,
       orderBy: undefined,
+      cursor: undefined,
     });
     return rows[0] ?? null;
   }
@@ -327,7 +407,7 @@ export class ModelEngine {
   count(args: AnyRecord = {}): Promise<number> {
     return this.runner.read(async (exec) => {
       const ctx = this.ctx();
-      const w = compileWhere(ctx, this.model, "n", args.where);
+      const w = scopedWhere(ctx, this.model, "n", args.where);
       const rows = await exec(
         `MATCH ${nodeMatch("n", this.model, w)} RETURN count(n) AS c`,
         ctx.params,
@@ -728,7 +808,8 @@ export class ModelEngine {
       isPlainObject(updates.plain) ? { ...updates.plain, ...updates.base } : updates.plain,
     );
     const onMatch = this.explicitEdgeProps(rel, updates.plain);
-    const w = compileWhere(ctx, target, b, where);
+    // A node the rules hide cannot be connected.
+    const w = scopedWhere(ctx, target, b, where);
     let text = `MATCH (${b}:${labelExpr(target)})${w ? ` WHERE ${w}` : ""} WITH ${a}, ${b} LIMIT 1 `;
     // A to-one side can hold only one such edge: lock that node (so concurrent connects
     // serialize), then drop its edge to any other node before linking `a` and `b`.
@@ -865,7 +946,9 @@ export class ModelEngine {
     const ctx = plan.ctx;
     const target = this.node(rel.target);
     const [b, r, d] = [ctx.variable("b"), ctx.variable("r"), ctx.variable("d")];
-    const w = where ? compileWhere(ctx, target, b, where) : null;
+    // `disconnect` / `set` only see the nodes the rules show; replacing a to-one edge (no
+    // `where`) drops it whatever its target.
+    const w = where ? scopedWhere(ctx, target, b, where) : null;
     plan.call(
       [own],
       `MATCH ${relationMatch(ctx, own, rel, b, r, w)} DELETE ${r} RETURN count(*) AS ${d}`,
@@ -1158,7 +1241,7 @@ export class ModelEngine {
     const where = this.assertUnique(args.where, "update");
     const { scalars, relations, labels } = this.splitData(args.data, "update");
     const ctx = this.ctx();
-    const w = compileWhere(ctx, this.model, "n", where);
+    const w = scopedWhere(ctx, this.model, "n", where, "update");
     const { sets, checks, remove } = this.updateClauses(
       ctx,
       scalars,
@@ -1194,7 +1277,7 @@ export class ModelEngine {
       throw new CyphraValidationError("updateMany does not support relation writes.");
     }
     const ctx = this.ctx();
-    const w = compileWhere(ctx, this.model, "n", args.where);
+    const w = scopedWhere(ctx, this.model, "n", args.where, "update");
     const { sets, checks, remove } = this.updateClauses(
       ctx,
       scalars,
@@ -1270,7 +1353,8 @@ export class ModelEngine {
     const createdItem = labelItem("n", createdLabels);
     if (createdItem) onCreate.push(createdItem);
     const rest = Object.fromEntries(Object.entries(where).filter(([k]) => !keyFields.includes(k)));
-    const restWhere = compileWhere(ctx, this.model, "n", rest);
+    // The update rules restrict the node an upsert may update, like the rest of `where`.
+    const restWhere = scopedWhere(ctx, this.model, "n", rest, "update");
     const { sets, checks, remove } = this.updateClauses(
       ctx,
       update.scalars,
@@ -1371,7 +1455,7 @@ export class ModelEngine {
     this.assertNotUnion("delete");
     const where = this.assertUnique(args.where, "delete");
     const ctx = this.ctx();
-    const w = compileWhere(ctx, this.model, "n", where);
+    const w = scopedWhere(ctx, this.model, "n", where, "delete");
     const match = `MATCH (n:${this.label})${w ? ` WHERE ${w}` : ""}`;
     const { expr, shape } = compileProjection(ctx, this.model, "n", args);
     const missing = () =>
@@ -1415,7 +1499,7 @@ export class ModelEngine {
   async deleteMany(args: AnyRecord = {}): Promise<{ count: number }> {
     this.assertNotUnion("deleteMany");
     const ctx = this.ctx();
-    const w = compileWhere(ctx, this.model, "n", args.where);
+    const w = scopedWhere(ctx, this.model, "n", args.where, "delete");
     const match = `MATCH (n:${this.label})${w ? ` WHERE ${w}` : ""}`;
     if (!hasDeleteRules(this.schema, this.model)) {
       return this.runner.write(async (exec) => {

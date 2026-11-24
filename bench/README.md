@@ -25,6 +25,7 @@ pnpm bench --quick              # small data, a few iterations, writes nothing (
 pnpm bench --only find-unique,traverse
 pnpm bench --no-http            # skip the HTTP transport contenders
 pnpm --filter cyphra-bench report   # rebuild RESULTS.md from latest.json
+pnpm --filter cyphra-bench extends  # per-request $extends / withEngineRules cost (no database)
 
 docker rm -f cyphra-bench
 ```

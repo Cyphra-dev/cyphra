@@ -231,7 +231,8 @@ The left column uses the names from the Prisma ORM 7
 Some things do not map, and it is better to know before you start:
 
 - **No array form of `$transaction`.** Cyphra has the interactive form only.
-- **No cursor pagination** on the client yet: use `skip` / `take`, or a `where` on the last key.
+- **Cursors are opaque strings**, not a unique `where`: select `$cursor` and pass it as
+  `cursor: { after }` (keyset pagination, see [Cursor pagination](/client#cursor-pagination)).
 - **No down migrations.** Migrations are forward-only.
 - **Relations are relationships, not foreign keys.** There is no `userId` field to keep in sync:
   `connect` and `disconnect` create and delete edges (`connect` is idempotent: one edge per pair).

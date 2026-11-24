@@ -959,3 +959,33 @@ describe("point and temporal types", () => {
     await cdb.member.findUnique({ where: { email_tenantId: { tenantId: "t", email: "a" } } });
   });
 });
+
+describe("keyset cursor types", () => {
+  it("adds $cursor to findMany / findFirst rows that select it, and takes cursor strings", async () => {
+    const rows = await db.user.findMany({
+      orderBy: { createdAt: "desc" },
+      take: 10,
+      select: { id: true, $cursor: true },
+    });
+    expectTypeOf(rows[0]!).toEqualTypeOf<{ id: string; $cursor: string }>();
+    const included = await db.user.findMany({ include: { posts: true, $cursor: true } });
+    expectTypeOf(included[0]!.$cursor).toEqualTypeOf<string>();
+    expectTypeOf(included[0]!.posts[0]!.title).toEqualTypeOf<string>();
+    const next = await db.user.findMany({ cursor: { after: rows[0]!.$cursor } });
+    // @ts-expect-error — no $cursor without asking for it
+    void next[0]!.$cursor;
+    const first = await db.user.findFirst({
+      cursor: { before: "c" },
+      select: { email: true, $cursor: true },
+    });
+    expectTypeOf(first).toEqualTypeOf<{ email: string; $cursor: string } | null>();
+    // @ts-expect-error — cursors are strings
+    await db.user.findMany({ cursor: { after: 1 } });
+    // @ts-expect-error — not a cursor key
+    await db.user.findMany({ cursor: { id: "u1" } });
+    // @ts-expect-error — $cursor only in findMany / findFirst
+    await db.user.findUnique({ where: { id: "u1" }, select: { $cursor: true } });
+    // @ts-expect-error — nor in nested loads
+    await db.user.findMany({ select: { posts: { select: { $cursor: true } } } });
+  });
+});

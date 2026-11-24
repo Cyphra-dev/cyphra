@@ -164,11 +164,23 @@ export class ExtensionState {
   }
 }
 
+const delegateKeys = new WeakMap<SchemaModel, ReadonlyMap<string, ResolvedNodeModel>>();
+
+/** The models of `schema` by delegate key (cached: `$extends` per request stays cheap). */
+function delegatesOf(schema: SchemaModel): ReadonlyMap<string, ResolvedNodeModel> {
+  let map = delegateKeys.get(schema);
+  if (!map) {
+    map = new Map(schema.nodes.map((n) => [delegateKey(n.name), n]));
+    delegateKeys.set(schema, map);
+  }
+  return map;
+}
+
 function validateExtension(schema: SchemaModel, ext: ExtensionDef): void {
   if (!isPlainObject(ext))
     throw new CyphraValidationError("$extends takes an object or a function.");
   const label = ext.name ? `$extends (${ext.name})` : "$extends";
-  const byKey = new Map(schema.nodes.map((n) => [delegateKey(n.name), n]));
+  const byKey = delegatesOf(schema);
   for (const k of Object.keys(ext)) {
     if (!["name", "query", "result", "model", "client"].includes(k)) {
       throw new CyphraValidationError(
@@ -318,7 +330,9 @@ function prepare(
         out[key] = parts;
         continue;
       }
-      const target = relation(key);
+      // An aliased load (`{ $relation: "posts", … }`, internal) loads the relation it names.
+      const name = isPlainObject(v) && typeof v.$relation === "string" ? v.$relation : key;
+      const target = relation(name);
       if (!target) continue;
       const sub = prepare(state, schema, target, isPlainObject(v) ? v : {});
       if (isPlainObject(v)) out[key] = sub.args;

@@ -52,6 +52,55 @@ const total = await db.user.count({ where: { name: { not: null } } });
 `findUnique`, `update`, `upsert` and `delete` require at least one `@id` / `@unique` field or
 [composite unique key](#composite-unique-keys) in `where`, enforced by the types and at runtime.
 
+### Cursor pagination
+
+`skip` / `take` page by offset. For "load more" and infinite scroll, page by **cursor** instead:
+ask for `$cursor` in `select` (or `include`), and pass the last row's cursor as `cursor.after` of
+the next query, with the same `orderBy`:
+
+```ts
+const orderBy = [{ createdAt: "desc" }] as const;
+
+const page1 = await db.post.findMany({
+  where: { published: true },
+  orderBy,
+  take: 20,
+  select: { id: true, title: true, $cursor: true },
+});
+// { id: string; title: string; $cursor: string }[]
+
+const page2 = await db.post.findMany({
+  where: { published: true },
+  orderBy,
+  take: 20,
+  cursor: { after: page1.at(-1)?.$cursor },
+  select: { id: true, title: true, $cursor: true },
+});
+```
+
+These are **keyset** cursors: a cursor holds the `orderBy` values of its row plus the row's `@id`,
+and the next page is the nodes strictly after those values. The `@id` is always added as the last
+sort key, so nodes that tie on `orderBy` are never repeated or skipped at a page boundary, and a
+page does not shift when nodes are created or deleted before it (or when the cursor's own node is
+deleted), which offset pages do.
+
+- `cursor: { before }` pages backwards: with `take`, the last `take` nodes before the cursor, in
+  `orderBy` order. `after` and `before` together keep the nodes between the two.
+- `skip` still applies, after the cursor (`skip: 1` skips one node after it). `findFirst` takes
+  `cursor` too.
+- Any `orderBy` works: several keys in mixed directions, nullable fields (`null` sorts last
+  ascending and first descending, as in Cypher), a related node's field (`{ author: { name: "asc" } }`)
+  and relation counts (`{ posts: { _count: "desc" } }`).
+- Cursors are opaque strings, safe in a URL. A cursor is tied to its model and its `orderBy`: one
+  made for another model or another `orderBy`, or a malformed one, throws a `CyphraValidationError`
+  (it does not silently return the first page). `where` can change between pages.
+- A cursor carries the values of its row's sort keys in readable (base64) form: do not sort by a
+  field you would not show to whoever holds the cursor.
+- A model without `@id` (a union) uses the node's element id as the tie-breaker.
+
+The [pagination how-to](/cypher/pagination) shows the Cypher this compiles to and when an index
+makes it faster than `skip`.
+
 ### Composite unique keys
 
 A [`@@unique([a, b])`](/schema#composite-constraints-and-indexes) model attribute is a unique key
