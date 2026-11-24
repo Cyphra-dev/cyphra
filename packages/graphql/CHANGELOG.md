@@ -1,5 +1,46 @@
 # @cyphra/graphql
 
+## 0.20.0
+
+### Minor Changes
+
+- c102054: `compat.v7.makeSchema` now reports every unsupported construct and invalid usage of the type definitions at once: `UnsupportedTypeDefsError` lists them all and keeps them in `issues` (`code`: `UNSUPPORTED` or `INVALID`, `message`, `location`: type, field, line and column). With a single issue the message is unchanged. `UnsupportedTypeDefsError` now extends `CyphraError`. New `compat.v7.checkTypeDefs(typeDefs, opts)` returns the issues without building the schema (several files can be checked together), and the new `cyphra graphql check <files...>` command prints them (`--json`; exit code 1 when there are issues).
+- 2edf304: `compat.v7.makeSchema` serves interfaces with `@neo4j/graphql` 7 semantics: the exact v7 schema
+  (interface types, `${Interface}Implementation` and the `typename` filter, implementation-keyed
+  create inputs, the interface's connection types on `@declareRelationship` fields, edge inputs keyed
+  by properties type), root `learningActivities` / `learningActivitiesConnection` queries with sorting,
+  pagination and `aggregate`, relationships to interfaces, filters through them, nested `create`,
+  `connect`, `update`, `disconnect` and `delete`, and each implementation's `@authorization`. Like v7,
+  interfaces add no label: a node belongs to the interface when it has the labels of one
+  implementation. `@query`, `@plural`, `@limit` and the field configuration directives work on
+  interfaces. Queries v7 7.6.8 fails on (interface aggregates with `@authorization` rules,
+  `count { edges }` on interface connections, `typename` in nested filters) are served.
+- c719966: `cyphra import graphql` maps shared `@node` labels and constrained ids:
+
+  - A label after the first in `@node(labels: ["Lab", "LearningActivity"])` becomes a Cyphra
+    `interface LearningActivity` that the types carrying it implement, with the fields they declare
+    the same way. When their common fields do not line up, it becomes `@@labels([LearningActivity])`
+    instead. A GraphQL `interface` becomes a Cyphra interface (relationships to it included) when its
+    implementations carry its label, or with `--add-interface-labels` (the report gives the Cypher that
+    adds the label to existing nodes).
+  - `--url [uri]` reads the database's uniqueness constraints (read-only) and marks the fields they
+    cover: an `ID` field becomes `@id`, another field `@unique`, a constraint over several properties
+    `@@unique([…])`. `--id-fields Type.field,…` marks fields `@id` without a database. No default is
+    added.
+  - Every decision is listed in the report. `convertGraphQLTypeDefs` takes the same options
+    (`constraints`, `idFields`, `addInterfaceLabels`).
+
+### Patch Changes
+
+- 0cc28d2: `compat.v7.makeSchema` returns its schema in `@neo4j/graphql` 7's order, so `printSchema` output is
+  byte-identical to v7's: root types first, then scalars, enums, unions, interfaces, object types and
+  input types (each sorted by name, like v7), and every field, argument, input field and enum value
+  where v7 puts it (`moviesConnection(first, after, where, sort)` before
+  `movies(where, limit, offset, sort)`, `OR` / `AND` / `NOT` after the attribute filters, …). A
+  printed contract committed by a v7 application does not change when it switches.
+  - @cyphra/runtime@0.20.0
+  - @cyphra/schema@0.20.0
+
 ## 0.19.0
 
 ### Minor Changes
