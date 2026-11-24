@@ -1,6 +1,6 @@
 {
   "name": "@cyphra/schema",
-  "version": "0.18.0",
+  "version": "0.19.0",
   "description": "Cyphra schema DSL parser and AST for Neo4j graph models",
   "type": "module",
   "sideEffects": false,

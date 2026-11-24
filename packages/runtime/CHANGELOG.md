@@ -1,5 +1,12 @@
 # @cyphra/runtime
 
+## 0.19.0
+
+### Patch Changes
+
+- @cyphra/query@0.19.0
+- @cyphra/schema@0.19.0
+
 ## 0.18.0
 
 ### Minor Changes
