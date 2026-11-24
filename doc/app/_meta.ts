@@ -59,6 +59,8 @@ const meta: MetaRecord = {
   "--lower": { type: "separator", title: "Lower-level APIs" },
   queries: "Query builder",
   runtime: "Runtime",
+  "--project": { type: "separator", title: "Project" },
+  stability: "Stability policy",
   "--cloud": { type: "separator", title: "Managed hosting" },
   cloud: "Cyphra Cloud",
 };

@@ -4,6 +4,8 @@
 
 We support the latest published minor release line of Cyphra packages on npm.
 
+From 1.0, the previous major also gets high and critical security fixes for 6 months after the next major ships; see the [stability policy](./STABILITY.md) (draft for 1.0).
+
 ## Reporting a vulnerability
 
 Please report security issues **privately** via [GitHub Security Advisories](https://github.com/Cyphra-dev/cyphra/security/advisories/new) for this repository, or contact the maintainers with a clear subject line.
