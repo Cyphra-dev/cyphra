@@ -1,5 +1,36 @@
 # @cyphra/cli
 
+## 0.20.0
+
+### Minor Changes
+
+- c102054: `compat.v7.makeSchema` now reports every unsupported construct and invalid usage of the type definitions at once: `UnsupportedTypeDefsError` lists them all and keeps them in `issues` (`code`: `UNSUPPORTED` or `INVALID`, `message`, `location`: type, field, line and column). With a single issue the message is unchanged. `UnsupportedTypeDefsError` now extends `CyphraError`. New `compat.v7.checkTypeDefs(typeDefs, opts)` returns the issues without building the schema (several files can be checked together), and the new `cyphra graphql check <files...>` command prints them (`--json`; exit code 1 when there are issues).
+- c719966: `cyphra import graphql` maps shared `@node` labels and constrained ids:
+
+  - A label after the first in `@node(labels: ["Lab", "LearningActivity"])` becomes a Cyphra
+    `interface LearningActivity` that the types carrying it implement, with the fields they declare
+    the same way. When their common fields do not line up, it becomes `@@labels([LearningActivity])`
+    instead. A GraphQL `interface` becomes a Cyphra interface (relationships to it included) when its
+    implementations carry its label, or with `--add-interface-labels` (the report gives the Cypher that
+    adds the label to existing nodes).
+  - `--url [uri]` reads the database's uniqueness constraints (read-only) and marks the fields they
+    cover: an `ID` field becomes `@id`, another field `@unique`, a constraint over several properties
+    `@@unique([…])`. `--id-fields Type.field,…` marks fields `@id` without a database. No default is
+    added.
+  - Every decision is listed in the report. `convertGraphQLTypeDefs` takes the same options
+    (`constraints`, `idFields`, `addInterfaceLabels`).
+
+### Patch Changes
+
+- Updated dependencies [c102054]
+- Updated dependencies [2edf304]
+- Updated dependencies [0cc28d2]
+- Updated dependencies [c719966]
+  - @cyphra/graphql@0.20.0
+  - @cyphra/migrator@0.20.0
+  - @cyphra/runtime@0.20.0
+  - @cyphra/schema@0.20.0
+
 ## 0.19.0
 
 ### Patch Changes
