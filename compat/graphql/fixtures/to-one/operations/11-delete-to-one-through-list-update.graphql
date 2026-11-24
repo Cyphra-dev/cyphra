@@ -1,0 +1,29 @@
+# features: relationship.to-one, mutation.update, mutation.nested-delete, auth.filter
+mutation {
+  updateUsers(
+    where: { id: { eq: "u1" } }
+    update: {
+      labs: [
+        {
+          delete: [
+            {
+              where: { node: { id: { in: ["lab-1", "lab-2"] } } }
+              delete: { runtime: { where: {} } }
+            }
+          ]
+        }
+      ]
+    }
+  ) {
+    info {
+      nodesDeleted
+      relationshipsDeleted
+    }
+    users {
+      id
+      labs {
+        id
+      }
+    }
+  }
+}

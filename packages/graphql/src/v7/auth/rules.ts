@@ -109,7 +109,7 @@ export class AuthRules {
     private readonly ctx: CypherContext,
     readonly auth: AuthContext,
   ) {
-    this.where = new WhereCompiler(model, ctx);
+    this.where = new WhereCompiler(model, ctx, true);
   }
 
   /** `$pN` holding the "Forbidden" message (one parameter per statement). */

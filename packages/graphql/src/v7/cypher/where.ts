@@ -6,6 +6,10 @@
  * - `{ eq: null }` matches a missing property (`IS NULL`);
  * - relationship quantifiers: `some`, `none` and `single` with an empty filter (`{}`) are ignored
  *   (they match every node); `all` requires at least one related node and is not vacuously true;
+ * - to-one relationships (`lab: Lab`) take the target's `where` directly (`lab: { name: … }`, true
+ *   when the related node matches; `lab: null` when there is none) and a connection `where`
+ *   (`labConnection: { node, edge }`); in authorization rules, the connection form requires exactly
+ *   one matching relationship (v7 `single`);
  * - relationships to unions are filtered per member (`favorites: { some: { Movie: …, Book: … } }`,
  *   members left out are not tested), the member filters combined with `OR` (`some`), `XOR`
  *   (`single`) or `AND` (`all`, `none`);
@@ -375,6 +379,8 @@ export class WhereCompiler {
   constructor(
     private readonly model: V7Model,
     private readonly ctx: CypherContext,
+    /** Compiles the `node` part of `@authorization` rules (v7 builds those filters differently). */
+    private readonly authorization = false,
   ) {}
 
   /** Predicate for a `${Node}Where` input on `variable`, or `undefined` when it filters nothing. */
@@ -488,6 +494,7 @@ export class WhereCompiler {
     const find = (name: string) => node.relationships.find((r) => r.name === name);
     // `actors: { some: … }`
     let rel = find(key);
+    if (rel && !rel.list) return this.toOne(variable, rel, value);
     if (rel) {
       if (!isFilterObject(value, key)) return undefined;
       return and(
@@ -496,6 +503,10 @@ export class WhereCompiler {
     }
     // `actorsConnection: { some: … , aggregate: … }`
     if (key.endsWith("Connection") && (rel = find(key.slice(0, -"Connection".length)))) {
+      // To-one: `labConnection: { node, edge }` (v7: `some`, or `single` in authorization rules).
+      if (!rel.list) {
+        return this.relatedConnection(variable, rel, this.authorization ? "single" : "some", value);
+      }
       if (!isFilterObject(value, key)) return undefined;
       return and(
         Object.entries(value).map(([q, w]) => {
@@ -505,18 +516,53 @@ export class WhereCompiler {
       );
     }
     if (key.endsWith("Aggregate") && (rel = find(key.slice(0, -"Aggregate".length)))) {
+      if (!rel.list) throw new Error(`Unknown filter ${node.name}Where.${key}`);
       return this.aggregate(variable, rel, value, true);
     }
-    // Deprecated `actors_SOME` / `actorsConnection_SOME`.
+    // Deprecated `actors_SOME` / `actorsConnection_SOME` (not on to-one relationships).
     const m = /^(.+)_(ALL|NONE|SINGLE|SOME)$/.exec(key);
     if (m) {
       const quantifier = QUANTIFIER_KEYS[m[2]!]!;
-      if ((rel = find(m[1]!))) return this.related(variable, rel, quantifier, value);
-      if (m[1]!.endsWith("Connection") && (rel = find(m[1]!.slice(0, -"Connection".length)))) {
+      if ((rel = find(m[1]!)) && rel.list) return this.related(variable, rel, quantifier, value);
+      if (
+        m[1]!.endsWith("Connection") &&
+        (rel = find(m[1]!.slice(0, -"Connection".length))) &&
+        rel.list
+      ) {
         return this.relatedConnection(variable, rel, quantifier, value);
       }
     }
     throw new Error(`Unknown filter ${node.name}Where.${key}`);
+  }
+
+  /**
+   * `lab: { … }` on a to-one relationship (v7 7.6): `{}` filters nothing, `null` matches nodes
+   * without a related node (and filters nothing on a relationship to a union), anything else matches when the related node exists and matches (in an
+   * authorization rule, a filter without conditions filters nothing). To a union, the member keys
+   * select the members (any of them may match).
+   */
+  private toOne(variable: string, rel: Relationship, value: unknown): string | undefined {
+    if (value === undefined) return undefined;
+    const members = unionMembers(this.model, rel);
+    if (value === null) {
+      // v7 7.6: `null` on a to-one relationship to a union filters nothing.
+      if (isUnionRelationship(this.model, rel)) return undefined;
+      return `NOT EXISTS { MATCH ${relationshipPattern(this.model, variable, rel, "")} }`;
+    }
+    if (!isFilterObject(value, rel.name) || Object.keys(value).length === 0) return undefined;
+    const selected = isUnionRelationship(this.model, rel)
+      ? selectedMembers(members, value)
+      : [{ rel, where: value as unknown }];
+    return combineMembers(
+      "some",
+      selected.map(({ rel: m, where: w }) => {
+        const n = this.ctx.variable("n");
+        const pattern = relationshipPattern(this.model, variable, m, n);
+        const pred = this.node(n, this.model.node(m.target), w);
+        if (pred !== undefined) return `EXISTS { MATCH ${pattern} WHERE ${pred} }`;
+        return this.authorization ? undefined : `EXISTS { MATCH ${pattern} }`;
+      }),
+    );
   }
 
   private related(

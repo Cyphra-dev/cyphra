@@ -1,0 +1,16 @@
+{
+  "data": {
+    "updateUsers": {
+      "info": {
+        "nodesDeleted": 3,
+        "relationshipsDeleted": 7
+      },
+      "users": [
+        {
+          "id": "u1",
+          "labs": []
+        }
+      ]
+    }
+  }
+}

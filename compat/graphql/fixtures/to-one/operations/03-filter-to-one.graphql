@@ -1,0 +1,49 @@
+# features: relationship.to-one, filter.relationship
+query {
+  ownedByAda: labs(where: { owner: { name: { eq: "Ada" } } }) {
+    id
+  }
+  withoutOwner: labs(where: { owner: null }) {
+    id
+  }
+  emptyFilter: labs(where: { owner: {} }) {
+    id
+  }
+  notOwnedByAda: labs(where: { NOT: { owner: { name: { eq: "Ada" } } } }) {
+    id
+  }
+  ownerWithAnyField: labs(where: { owner: { name: { contains: "" } } }) {
+    id
+  }
+  twoLevels: labs(where: { owner: { profile: { bio: { startsWith: "Build" } } } }) {
+    id
+  }
+  throughList: profiles(where: { user: { labs: { some: { state: { eq: "DRAFT" } } } } }) {
+    id
+  }
+  ownerConnection: labs(where: { ownerConnection: { node: { name: { eq: "Bob" } } } }) {
+    id
+  }
+  runtimeEdge: labs(where: { runtimeConnection: { edge: { since: { gte: 2021 } } } }) {
+    id
+  }
+  runtimeConnectionEmpty: labs(where: { runtimeConnection: {} }) {
+    id
+  }
+  runtimeConnectionNot: labs(
+    where: { runtimeConnection: { NOT: { node: { image: { eq: "debian:12" } } } } }
+  ) {
+    id
+  }
+  runtimesWithoutLab: labRuntimes(where: { lab: null }) {
+    id
+  }
+  usersByProfile: users(where: { profile: { bio: { contains: "Math" } } }) {
+    id
+  }
+  sessionsOfPublished: profiles(
+    where: { user: { labs: { all: { state: { eq: "PUBLISHED" } } } } }
+  ) {
+    id
+  }
+}

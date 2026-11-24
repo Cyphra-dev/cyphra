@@ -1,0 +1,13 @@
+{
+  "data": {
+    "sessions": [],
+    "sessionsConnection": {
+      "totalCount": 0,
+      "aggregate": {
+        "count": {
+          "nodes": 0
+        }
+      }
+    }
+  }
+}

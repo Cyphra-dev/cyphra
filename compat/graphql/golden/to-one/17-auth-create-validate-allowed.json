@@ -1,0 +1,21 @@
+{
+  "data": {
+    "createSessions": {
+      "info": {
+        "nodesCreated": 3,
+        "relationshipsCreated": 2
+      },
+      "sessions": [
+        {
+          "id": "s9",
+          "lab": {
+            "id": "lab-9",
+            "owner": {
+              "id": "u9"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

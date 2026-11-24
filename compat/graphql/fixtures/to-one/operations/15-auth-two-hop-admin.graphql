@@ -1,0 +1,17 @@
+# features: relationship.to-one, auth.filter, auth.jwt
+query {
+  sessions(sort: [{ id: ASC }]) {
+    id
+    lab {
+      id
+    }
+  }
+  sessionsConnection {
+    totalCount
+    aggregate {
+      count {
+        nodes
+      }
+    }
+  }
+}

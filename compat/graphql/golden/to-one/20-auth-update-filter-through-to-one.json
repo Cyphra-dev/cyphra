@@ -1,0 +1,20 @@
+{
+  "data": {
+    "updateLabRuntimes": {
+      "labRuntimes": [
+        {
+          "id": "rt-1",
+          "memory": 1
+        },
+        {
+          "id": "rt-4a",
+          "memory": 1
+        },
+        {
+          "id": "rt-4b",
+          "memory": 1
+        }
+      ]
+    }
+  }
+}

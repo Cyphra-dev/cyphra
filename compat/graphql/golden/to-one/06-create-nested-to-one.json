@@ -1,0 +1,36 @@
+{
+  "data": {
+    "createLabs": {
+      "info": {
+        "nodesCreated": 4,
+        "relationshipsCreated": 3
+      },
+      "labs": [
+        {
+          "id": "lab-9",
+          "owner": {
+            "name": "Dee",
+            "profile": {
+              "bio": "Newcomer"
+            }
+          },
+          "runtime": {
+            "image": "nix",
+            "lab": {
+              "id": "lab-9"
+            }
+          },
+          "runtimeConnection": {
+            "edges": [
+              {
+                "properties": {
+                  "since": 2024
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

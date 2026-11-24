@@ -610,10 +610,11 @@ the events from the moment it reconnects, not the ones it missed.
 
 ## What works today
 
-Compatibility is checked by a suite of 10 apps and 134 operations. Its expected results come from
-the real `@neo4j/graphql` 7.6.8. Today 142 of its 144 checks pass: the printed schema of the 10
-apps and 132 operations (queries, aggregations, mutations, authorization, `@cypher` fields,
-full-text queries, unions, and subscription events on Neo4j Enterprise with CDC). The two others are the nested union `connect` / `disconnect` where v7 ignores
+Compatibility is checked by a suite of 11 apps and 154 operations. Its expected results come from
+the real `@neo4j/graphql` 7.6.8. Today 163 of its 165 checks pass: the printed schema of the 11
+apps and 152 operations (queries, aggregations, mutations, authorization, `@cypher` fields,
+full-text queries, unions, to-one relationships, and subscription events on Neo4j Enterprise with
+CDC). The two others are the nested union `connect` / `disconnect` where v7 ignores
 `where` ([unions](#unions)). The full report is [`compat/graphql/REPORT.md`](https://github.com/Cyphra-dev/cyphra/blob/main/compat/graphql/REPORT.md).
 
 | Feature                                                                                                                                                                        | Status                                                  |
@@ -624,6 +625,7 @@ full-text queries, unions, and subscription events on Neo4j Enterprise with CDC)
 | Relationship filters `some` / `all` / `none` / `single`, connection filters on `node` and `edge`                                                                               | Works                                                   |
 | Connections: `totalCount`, `pageInfo`, cursors with `first` / `after`, nested connections with edge `properties`, sort and filter on edges                                     | Works                                                   |
 | Nested relationship fields with `where`, `sort`, `limit`, `offset`                                                                                                             | Works                                                   |
+| To-one relationships (`lab: Lab @relationship(…)`): field, connection, `where`, nested `create` / `delete`, authorization rules through them                                   | Works ([details](#to-one-relationships))                |
 | Aggregations: `aggregate { count, node, edge }` on root and nested connections, aggregation filters (`aggregate` and deprecated `xAggregate`)                                  | Works                                                   |
 | Mutations: `create`, `update`, `delete` with `info` counters, and the response selection                                                                                       | Works                                                   |
 | Nested writes: `create`, `connect`, `disconnect`, `update`, `delete` (nested in each other), edge properties                                                                   | Works                                                   |
@@ -650,6 +652,27 @@ full-text queries, unions, and subscription events on Neo4j Enterprise with CDC)
   aggregates are `null`. An aggregation filter that compares a `null` aggregate matches nothing, even
   under `NOT`.
   As in v7, `Date` inputs are read in the time zone of the process: run the server with `TZ=UTC`.
+
+### To-one relationships
+
+A relationship field that is not a list (`lab: Lab @relationship(…)`) gets the API v7 7.6.8
+generates for it, which is smaller than the one of a list:
+
+- The field and its connection (`labConnection`) take no arguments; the connection has no
+  `aggregate`. The field returns the first related node, or `null`.
+- `where` takes the target's filter directly (`lab: { state: { eq: "PUBLISHED" } }`, true when the
+  related node matches; `lab: null` matches nodes without one) and a connection filter
+  (`labConnection: { node, edge }`). There are no `some` / `all` / … quantifiers and no aggregation
+  filters. Authorization rules use the same filters, for example
+  `{ node: { lab: { owner: { id: { eq: "$jwt.sub" } } } } }`; in a rule, `labConnection` requires
+  exactly one matching relationship.
+- Writes: nested `create` (one `{ node, edge }`) in a create input, and nested `delete` in the
+  `delete` argument of `deleteX`. As in v7 there is no `connect`, `disconnect` or `update` on a
+  to-one field, and it is not part of the update input.
+- The type must be nullable: like v7, `makeSchema` rejects `lab: Lab!`.
+- Nothing checks that the graph has at most one related node (v7 does not either): a node connected
+  from the other side twice has two, and the field returns one of them. A create input that names
+  two members of a to-one union fails, with the v7 message.
 
 ### Mutations, as in v7
 

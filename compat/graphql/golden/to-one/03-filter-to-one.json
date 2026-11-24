@@ -1,0 +1,109 @@
+{
+  "data": {
+    "ownedByAda": [
+      {
+        "id": "lab-1"
+      },
+      {
+        "id": "lab-2"
+      }
+    ],
+    "withoutOwner": [
+      {
+        "id": "lab-3"
+      }
+    ],
+    "emptyFilter": [
+      {
+        "id": "lab-1"
+      },
+      {
+        "id": "lab-2"
+      },
+      {
+        "id": "lab-3"
+      },
+      {
+        "id": "lab-4"
+      }
+    ],
+    "notOwnedByAda": [
+      {
+        "id": "lab-3"
+      },
+      {
+        "id": "lab-4"
+      }
+    ],
+    "ownerWithAnyField": [
+      {
+        "id": "lab-1"
+      },
+      {
+        "id": "lab-2"
+      },
+      {
+        "id": "lab-4"
+      }
+    ],
+    "twoLevels": [
+      {
+        "id": "lab-4"
+      }
+    ],
+    "throughList": [
+      {
+        "id": "p1"
+      }
+    ],
+    "ownerConnection": [
+      {
+        "id": "lab-4"
+      }
+    ],
+    "runtimeEdge": [
+      {
+        "id": "lab-2"
+      },
+      {
+        "id": "lab-4"
+      }
+    ],
+    "runtimeConnectionEmpty": [
+      {
+        "id": "lab-1"
+      },
+      {
+        "id": "lab-2"
+      },
+      {
+        "id": "lab-3"
+      },
+      {
+        "id": "lab-4"
+      }
+    ],
+    "runtimeConnectionNot": [
+      {
+        "id": "lab-1"
+      },
+      {
+        "id": "lab-2"
+      },
+      {
+        "id": "lab-4"
+      }
+    ],
+    "runtimesWithoutLab": [],
+    "usersByProfile": [
+      {
+        "id": "u1"
+      }
+    ],
+    "sessionsOfPublished": [
+      {
+        "id": "p2"
+      }
+    ]
+  }
+}

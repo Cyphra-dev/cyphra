@@ -1,0 +1,15 @@
+{
+  "data": {
+    "updateLabs": {
+      "labs": [
+        {
+          "id": "lab-2",
+          "state": "PUBLISHED",
+          "runtime": {
+            "id": "rt-2"
+          }
+        }
+      ]
+    }
+  }
+}

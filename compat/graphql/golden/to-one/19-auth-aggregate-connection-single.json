@@ -1,0 +1,27 @@
+{
+  "data": {
+    "labsConnection": {
+      "aggregate": {
+        "count": {
+          "nodes": 2
+        },
+        "node": {
+          "rating": {
+            "sum": 8
+          }
+        }
+      }
+    },
+    "users": [
+      {
+        "labsConnection": {
+          "aggregate": {
+            "count": {
+              "nodes": 0
+            }
+          }
+        }
+      }
+    ]
+  }
+}

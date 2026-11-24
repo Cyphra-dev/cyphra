@@ -36,6 +36,9 @@ Status (early release):
   scalar fields, filters on node results, the READ rules of returned nodes.
 - `@fulltext` queries (`score`, `where`, `sort`, `first` / `after`) on full-text indexes you
   create, as in v7.
+- To-one relationships (`lab: Lab @relationship(…)`) with the smaller API v7 generates for them
+  (no arguments, `lab: { … }` and `labConnection` filters, nested `create` and `delete` only), also
+  in authorization rules (`node: { lab: { state: { eq: "PUBLISHED" } } }`).
 - Unions of `@node` types: the root union query, relationships to unions (lists and connections,
   edge properties included), member-keyed `where` (`{ Movie: {…}, Book: {…} }`) and nested writes.
   One deliberate difference: a union `connect` / `disconnect` nested in another one applies its

@@ -1165,6 +1165,12 @@ export function readTypeDefs(typeDefs: string): V7Model {
           );
         }
       }
+      if (!t.list && t.required) {
+        // v7 rejects these type definitions (a to-one relationship cannot guarantee a node).
+        throw new UnsupportedTypeDefsError(
+          `${name}.${f.name.value}: Non-list relationship property "${f.name.value}" cannot have non-nullable type.`,
+        );
+      }
       const props = stringArg(rel, "properties");
       if (props && !properties.has(props)) {
         throw new UnsupportedTypeDefsError(

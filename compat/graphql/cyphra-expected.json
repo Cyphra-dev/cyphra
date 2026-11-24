@@ -143,7 +143,28 @@
       "subscriptions-schema/schema",
       "subscriptions-schema/01-schema-level-created",
       "subscriptions-schema/02-type-level-overrides",
-      "subscriptions-schema/03-query-still-works"
+      "subscriptions-schema/03-query-still-works",
+      "to-one/schema",
+      "to-one/01-read-to-one",
+      "to-one/02-to-one-connection",
+      "to-one/03-filter-to-one",
+      "to-one/04-filter-to-one-union",
+      "to-one/05-read-to-one-union",
+      "to-one/06-create-nested-to-one",
+      "to-one/07-create-to-one-union",
+      "to-one/08-create-to-one-union-multiple",
+      "to-one/09-connect-list-side-no-cardinality-check",
+      "to-one/10-delete-cascade-to-one",
+      "to-one/11-delete-to-one-through-list-update",
+      "to-one/12-update-response-to-one",
+      "to-one/13-auth-filter-through-to-one",
+      "to-one/14-auth-two-hop-owner",
+      "to-one/15-auth-two-hop-admin",
+      "to-one/16-auth-two-hop-anonymous",
+      "to-one/17-auth-create-validate-allowed",
+      "to-one/18-auth-create-validate-forbidden",
+      "to-one/19-auth-aggregate-connection-single",
+      "to-one/20-auth-update-filter-through-to-one"
     ]
   }
 }

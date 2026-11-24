@@ -1,0 +1,27 @@
+// Users, profiles, labs, runtimes and sessions with fixed ids. lab-3 has no owner and no runtime;
+// lab-4 (inconsistent data) has two runtimes.
+CREATE (:User {id: "u1", name: "Ada"}), (:User {id: "u2", name: "Bob"}), (:User {id: "u3", name: "Cy"});
+CREATE (:Profile {id: "p1", bio: "Mathematician"}), (:Profile {id: "p2", bio: "Builder"});
+MATCH (u:User {id: "u1"}), (p:Profile {id: "p1"}) CREATE (u)-[:HAS_PROFILE]->(p);
+MATCH (u:User {id: "u2"}), (p:Profile {id: "p2"}) CREATE (u)-[:HAS_PROFILE]->(p);
+CREATE (:Lab {id: "lab-1", name: "Intro", state: "PUBLISHED", rating: 5});
+CREATE (:Lab {id: "lab-2", name: "Draft", state: "DRAFT", rating: 3});
+CREATE (:Lab {id: "lab-3", name: "Orphan", state: "PUBLISHED"});
+CREATE (:Lab {id: "lab-4", name: "Twin", state: "PUBLISHED", rating: 4});
+MATCH (u:User {id: "u1"}), (l:Lab) WHERE l.id IN ["lab-1", "lab-2"] CREATE (u)-[:OWNS]->(l);
+MATCH (u:User {id: "u2"}), (l:Lab {id: "lab-4"}) CREATE (u)-[:OWNS]->(l);
+CREATE (:LabRuntime {id: "rt-1", image: "ubuntu:24.04", memory: 512});
+CREATE (:LabRuntime {id: "rt-2", image: "alpine:3", memory: 128});
+CREATE (:LabRuntime {id: "rt-4a", image: "debian:12", memory: 256});
+CREATE (:LabRuntime {id: "rt-4b", image: "fedora:40", memory: 1024});
+CREATE (:LabRuntime {id: "rt-x", image: "scratch"});
+MATCH (l:Lab {id: "lab-1"}), (r:LabRuntime {id: "rt-1"}) CREATE (l)-[:HAS_RUNTIME {since: 2020}]->(r);
+MATCH (l:Lab {id: "lab-2"}), (r:LabRuntime {id: "rt-2"}) CREATE (l)-[:HAS_RUNTIME {since: 2022}]->(r);
+MATCH (l:Lab {id: "lab-4"}), (r:LabRuntime {id: "rt-4a"}) CREATE (l)-[:HAS_RUNTIME {since: 2021}]->(r);
+MATCH (l:Lab {id: "lab-4"}), (r:LabRuntime {id: "rt-4b"}) CREATE (l)-[:HAS_RUNTIME {since: 2023}]->(r);
+CREATE (:Session {id: "s1", score: 10}), (:Session {id: "s2", score: 20}), (:Session {id: "s3", score: 30}), (:Session {id: "s4"});
+MATCH (s:Session {id: "s1"}), (l:Lab {id: "lab-1"}) CREATE (s)-[:OF_LAB]->(l);
+MATCH (s:Session {id: "s2"}), (l:Lab {id: "lab-2"}) CREATE (s)-[:OF_LAB]->(l);
+MATCH (s:Session {id: "s3"}), (l:Lab {id: "lab-4"}) CREATE (s)-[:OF_LAB]->(l);
+MATCH (u:User {id: "u1"}), (l:Lab {id: "lab-2"}) CREATE (u)-[:PINNED]->(l);
+MATCH (u:User {id: "u2"}), (p:Profile {id: "p2"}) CREATE (u)-[:PINNED]->(p);

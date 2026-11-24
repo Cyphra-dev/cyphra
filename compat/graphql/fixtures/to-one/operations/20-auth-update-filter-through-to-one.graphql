@@ -1,0 +1,9 @@
+# features: relationship.to-one, auth.filter, mutation.update
+mutation {
+  updateLabRuntimes(update: { memory: { set: 1 } }) {
+    labRuntimes {
+      id
+      memory
+    }
+  }
+}

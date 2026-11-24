@@ -1,0 +1,27 @@
+# features: relationship.to-one, union, mutation.create, mutation.nested-create
+mutation {
+  createUsers(
+    input: [
+      {
+        id: "u9"
+        name: "Eve"
+        pinned: { Profile: { create: { node: { id: "p9", bio: "Pinned" } } } }
+      }
+    ]
+  ) {
+    info {
+      nodesCreated
+      relationshipsCreated
+    }
+    users {
+      id
+      pinned {
+        __typename
+        ... on Profile {
+          id
+          bio
+        }
+      }
+    }
+  }
+}

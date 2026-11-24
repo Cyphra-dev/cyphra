@@ -1,0 +1,36 @@
+{
+  "data": {
+    "sessions": [
+      {
+        "id": "s1",
+        "lab": {
+          "id": "lab-1"
+        }
+      },
+      {
+        "id": "s2",
+        "lab": {
+          "id": "lab-2"
+        }
+      },
+      {
+        "id": "s3",
+        "lab": {
+          "id": "lab-4"
+        }
+      },
+      {
+        "id": "s4",
+        "lab": null
+      }
+    ],
+    "sessionsConnection": {
+      "totalCount": 4,
+      "aggregate": {
+        "count": {
+          "nodes": 4
+        }
+      }
+    }
+  }
+}

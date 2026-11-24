@@ -1,0 +1,32 @@
+# features: relationship.to-one, union
+# ordered
+query {
+  users(sort: [{ id: ASC }]) {
+    id
+    pinned {
+      __typename
+      ... on Lab {
+        id
+        state
+      }
+      ... on Profile {
+        id
+        bio
+      }
+    }
+    pinnedConnection {
+      totalCount
+      edges {
+        node {
+          __typename
+          ... on Lab {
+            name
+          }
+          ... on Profile {
+            bio
+          }
+        }
+      }
+    }
+  }
+}

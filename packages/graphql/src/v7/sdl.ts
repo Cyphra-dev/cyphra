@@ -670,6 +670,19 @@ class TypeRegistry {
           };
         }
         for (const r of n.relationships) {
+          if (!r.list) {
+            // v7: a to-one relationship and its connection take no arguments.
+            fields[r.name] = {
+              type: relationshipType(this, r),
+              description: r.description,
+              deprecationReason: r.deprecated,
+            };
+            fields[`${r.name}Connection`] = {
+              type: nn(this.relConnection(r)),
+              deprecationReason: r.deprecated,
+            };
+            continue;
+          }
           if (isUnionRelationship(this.model, r)) {
             const u = this.model.unions.get(r.target)!;
             const p = this.props(r);
@@ -822,6 +835,12 @@ class TypeRegistry {
         const target = union ?? this.model.node(r.target);
         const targetWhere = union ? this.unionWhere(union) : this.nodeWhere(target as NodeType);
         const connWhere = this.relConnectionWhere(r);
+        if (!r.list) {
+          // v7: `lab: LabWhere` and `labConnection: SessionLabConnectionWhere`, nothing else.
+          out[r.name] = { type: targetWhere };
+          out[`${r.name}Connection`] = { type: connWhere };
+          continue;
+        }
         const connPlural = pluralize(relConnectionName(r));
         out[r.name] = {
           type: union
@@ -1006,8 +1025,15 @@ class TypeRegistry {
       for (const r of n.relationships) {
         out[r.name] = {
           type: isUnionRelationship(this.model, r)
-            ? this.unionInput(r, "CreateInput", (m) => this.relFieldInput(m), false)
-            : this.relFieldInput(r),
+            ? this.unionInput(
+                r,
+                "CreateInput",
+                (m) => (r.list ? this.relFieldInput(m) : this.relSingleFieldInput(m)),
+                false,
+              )
+            : r.list
+              ? this.relFieldInput(r)
+              : this.relSingleFieldInput(r),
         };
       }
       return out;
@@ -1017,7 +1043,8 @@ class TypeRegistry {
   nodeUpdate(n: NodeType): GraphQLInputObjectType {
     return this.input(`${n.name}UpdateInput`, () => {
       const out = this.attributeUpdateFields(n.attributes);
-      for (const r of n.relationships) {
+      // v7: to-one relationships cannot be updated, connected or disconnected.
+      for (const r of n.relationships.filter((x) => x.list)) {
         out[r.name] = {
           type: isUnionRelationship(this.model, r)
             ? this.unionInput(r, "UpdateInput", (m) => this.relUpdateFieldInput(m))
@@ -1033,10 +1060,11 @@ class TypeRegistry {
   }
 
   nodeConnect(n: NodeType): GraphQLInputObjectType | undefined {
-    if (!n.relationships.length) return undefined;
+    const rels = n.relationships.filter((r) => r.list);
+    if (!rels.length) return undefined;
     return this.input(`${n.name}ConnectInput`, () =>
       Object.fromEntries(
-        n.relationships.map((r) => [
+        rels.map((r) => [
           r.name,
           {
             type: isUnionRelationship(this.model, r)
@@ -1049,10 +1077,11 @@ class TypeRegistry {
   }
 
   nodeDisconnect(n: NodeType): GraphQLInputObjectType | undefined {
-    if (!n.relationships.length) return undefined;
+    const rels = n.relationships.filter((r) => r.list);
+    if (!rels.length) return undefined;
     return this.input(`${n.name}DisconnectInput`, () =>
       Object.fromEntries(
-        n.relationships.map((r) => [
+        rels.map((r) => [
           r.name,
           {
             type: isUnionRelationship(this.model, r)
@@ -1072,8 +1101,10 @@ class TypeRegistry {
           r.name,
           {
             type: isUnionRelationship(this.model, r)
-              ? this.unionInput(r, "DeleteInput", (m) => this.relDeleteFieldInput(m))
-              : list(nn(this.relDeleteFieldInput(r))),
+              ? this.unionInput(r, "DeleteInput", (m) => this.relDeleteFieldInput(m), r.list)
+              : r.list
+                ? list(nn(this.relDeleteFieldInput(r)))
+                : this.relDeleteFieldInput(r),
           },
         ]),
       ),
@@ -1119,7 +1150,8 @@ class TypeRegistry {
     const union = isUnionRelationship(this.model, r);
     return this.object(relConnectionName(r), () => ({
       // v7: no aggregate on relationships to unions.
-      ...(union ? {} : { aggregate: { type: nn(this.relAggregateSelection(r)) } }),
+      // v7: no aggregate on relationships to unions or on to-one relationships.
+      ...(union || !r.list ? {} : { aggregate: { type: nn(this.relAggregateSelection(r)) } }),
       edges: { type: nn(list(nn(this.relRelationship(r)))) },
       pageInfo: { type: nn(this.pageInfo()) },
       totalCount: { type: nn(GraphQLInt) },
@@ -1283,6 +1315,13 @@ class TypeRegistry {
     }));
   }
 
+  /** `SessionLabFieldInput { create: SessionLabCreateFieldInput }`: v7 has no `connect` on to-one. */
+  relSingleFieldInput(r: Relationship): GraphQLInputObjectType {
+    return this.input(`${prefix(r)}FieldInput`, () => ({
+      create: { type: this.relCreateFieldInput(r) },
+    }));
+  }
+
   relConnectFieldInput(r: Relationship): GraphQLInputObjectType {
     return this.input(`${prefix(r)}ConnectFieldInput`, () => {
       const target = this.model.node(r.target);
@@ -1434,15 +1473,6 @@ function aggregateSelectionFields(
 /** Builds the v7 schema (without resolvers) for a model. */
 export function buildV7Schema(model: V7Model): GraphQLSchema {
   const reg = new TypeRegistry(model);
-  for (const n of model.nodes) {
-    for (const r of n.relationships) {
-      if (!r.list) {
-        throw new Error(
-          `${n.name}.${r.name}: non-list relationships are not supported by @cyphra/graphql yet.`,
-        );
-      }
-    }
-  }
   const query = new GraphQLObjectType({
     name: "Query",
     fields: () => {

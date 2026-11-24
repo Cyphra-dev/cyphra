@@ -437,7 +437,19 @@ export class MutationCompiler {
     afterCreate?.();
     if (isPlainObject(input)) {
       for (const rel of node.relationships) {
-        for (const [r, field] of this.elements(rel, input[rel.name])) {
+        const value = input[rel.name];
+        if (
+          !rel.list &&
+          isUnionRelationship(this.model, rel) &&
+          isPlainObject(value) &&
+          Object.keys(value).length > 1
+        ) {
+          // The one cardinality check of v7 7.6 (it does not check the graph itself).
+          throw new GraphQLError(
+            `Invalid input for relationship ${rel.name}. Expected single entity input for non-list relationship but received multiple.`,
+          );
+        }
+        for (const [r, field] of this.elements(rel, value)) {
           if (!isPlainObject(field)) continue;
           for (const el of asList(field.create)) this.nestedCreate(block, v, r, el);
           for (const el of asList(field.connect)) this.connect(block, v, r, el);

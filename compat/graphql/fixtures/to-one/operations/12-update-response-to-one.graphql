@@ -1,0 +1,12 @@
+# features: relationship.to-one, mutation.update, auth.filter
+mutation {
+  updateLabs(where: { id: { eq: "lab-2" } }, update: { state: { set: "PUBLISHED" } }) {
+    labs {
+      id
+      state
+      runtime {
+        id
+      }
+    }
+  }
+}

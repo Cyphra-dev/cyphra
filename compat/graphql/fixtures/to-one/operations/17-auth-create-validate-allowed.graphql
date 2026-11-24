@@ -1,0 +1,35 @@
+# features: relationship.to-one, auth.validate, auth.jwt, mutation.create
+mutation {
+  createSessions(
+    input: [
+      {
+        id: "s9"
+        score: 5
+        lab: {
+          create: {
+            node: {
+              id: "lab-9"
+              name: "Mine"
+              state: "DRAFT"
+              owner: { create: { node: { id: "u9", name: "Dee" } } }
+            }
+          }
+        }
+      }
+    ]
+  ) {
+    info {
+      nodesCreated
+      relationshipsCreated
+    }
+    sessions {
+      id
+      lab {
+        id
+        owner {
+          id
+        }
+      }
+    }
+  }
+}

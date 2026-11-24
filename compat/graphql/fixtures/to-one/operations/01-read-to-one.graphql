@@ -1,0 +1,31 @@
+# features: relationship.to-one, sort
+# ordered
+query {
+  labs(where: { id: { in: ["lab-1", "lab-2", "lab-3"] } }, sort: [{ id: ASC }]) {
+    id
+    name
+    owner {
+      id
+      name
+      profile {
+        bio
+        user {
+          id
+        }
+      }
+    }
+    runtime {
+      id
+      memory
+      lab {
+        id
+      }
+    }
+    sessions {
+      id
+      lab {
+        id
+      }
+    }
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "data": {
+    "updateUsers": {
+      "info": {
+        "relationshipsCreated": 1
+      },
+      "users": [
+        {
+          "id": "u2",
+          "labs": [
+            {
+              "id": "lab-1",
+              "ownerConnection": {
+                "totalCount": 2
+              }
+            },
+            {
+              "id": "lab-4",
+              "ownerConnection": {
+                "totalCount": 1
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

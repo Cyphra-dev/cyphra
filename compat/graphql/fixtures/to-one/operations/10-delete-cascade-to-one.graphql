@@ -1,0 +1,14 @@
+# features: relationship.to-one, mutation.delete, mutation.nested-delete
+mutation {
+  deleteLabs(
+    where: { id: { eq: "lab-1" } }
+    delete: {
+      owner: { where: { node: { name: { eq: "Ada" } } }, delete: { profile: { where: {} } } }
+      runtime: { where: { edge: { since: { eq: 2020 } } } }
+      sessions: [{ where: {} }]
+    }
+  ) {
+    nodesDeleted
+    relationshipsDeleted
+  }
+}
