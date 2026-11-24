@@ -226,8 +226,10 @@ describe("type definitions", () => {
     expect(bad("type A @node { name(x: Int): String }")).toThrow(UnsupportedTypeDefsError);
   });
 
-  it("Query and Mutation fields need @cypher", () => {
-    expect(bad("type A @node { name: String } type Query { a: String }")).toThrow(/need @cypher/);
+  it("Query and Mutation fields without @cypher are served by resolvers", () => {
+    const model = readTypeDefs("type A @node { name: String } type Query { a: String }");
+    expect(model.query.fields).toEqual([]);
+    expect(model.query.resolved.map((f) => f.name)).toEqual(["a"]);
   });
 
   it("@cypher needs a statement and a column", () => {

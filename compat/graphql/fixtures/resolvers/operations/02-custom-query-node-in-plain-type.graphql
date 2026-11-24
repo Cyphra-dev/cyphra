@@ -1,0 +1,11 @@
+# features: resolvers.root, resolvers.plain-type, resolvers.custom-field
+query {
+  stats {
+    labCount
+    featured {
+      id
+      name: title
+      titleUpper
+    }
+  }
+}

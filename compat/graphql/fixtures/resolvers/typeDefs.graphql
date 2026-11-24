@@ -1,0 +1,71 @@
+# Custom resolvers (#224): root fields without @cypher, types without @node, and
+# @customResolver fields on @node types. The resolvers are in resolvers.ts.
+type Lab @node {
+  id: ID!
+  title: String!
+  level: Level!
+  authors: [User!]! @relationship(type: "WROTE", direction: IN)
+  "Progress of the viewer (from context.jwt), computed by the application"
+  myProgress: ProgressSummary @customResolver(requires: "id")
+  titleUpper: String! @customResolver(requires: "title")
+  authorNames: [String!]! @customResolver(requires: "authors { name }")
+}
+
+type User @node {
+  id: ID!
+  name: String!
+}
+
+enum Level {
+  BEGINNER
+  ADVANCED
+}
+
+"Computed by the application, not stored"
+type ProgressSummary {
+  labId: ID!
+  percent: Int!
+  viewer: String
+}
+
+type Stats {
+  labCount: Int!
+  level: Level
+  featured: Lab
+}
+
+type Viewer {
+  sub: String
+  roles: [String!]!
+}
+
+input ProgressInput {
+  labId: ID!
+  percent: Int! = 0
+  "Free text"
+  note: String
+}
+
+"Union of types without @node, resolved with __resolveType"
+union FeedItem = ProgressSummary | Viewer
+
+type ProgressRecord {
+  labId: ID!
+  percent: Int!
+  note: String
+  by: String
+}
+
+# adminNote comes first: v7 7.6.8 applies @authentication only to the first two Query fields
+# served by resolvers (its resolver-composition glob drops the others); Cyphra applies it to all.
+type Query {
+  adminNote: String @authentication
+  "Counts labs through context.executionContext"
+  stats(level: Level): Stats!
+  whoAmI: Viewer
+  feed: [FeedItem!]!
+}
+
+type Mutation {
+  recordProgress(input: ProgressInput!): ProgressRecord!
+}

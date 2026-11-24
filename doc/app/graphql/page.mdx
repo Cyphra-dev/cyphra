@@ -339,6 +339,78 @@ As in v7:
 - A `Query` or `Mutation` field that is not a list returns the first row, or `null`.
 - `all` on a list of nodes is true when the statement returns no node.
 
+## Custom resolvers
+
+Pass your resolvers as `resolvers`, as you would to `new Neo4jGraphQL({ typeDefs, resolvers })`. They
+are merged with the generated ones (an array is merged in order) and serve:
+
+- `Query` and `Mutation` fields without `@cypher`;
+- object, input, enum and union types without `@node`, which are added to the schema as written;
+- `@customResolver` fields of `@node` types, and their fields that return a type without `@node`;
+- any generated field you want to replace.
+
+```graphql
+type Lab @node {
+  id: ID!
+  title: String!
+  myProgress: Progress @customResolver(requires: "id")
+}
+
+type Progress {
+  labId: ID!
+  percent: Int!
+}
+
+type Query {
+  stats: Stats!
+}
+```
+
+```ts
+const schema = compat.v7.makeSchema({
+  typeDefs,
+  driver,
+  features: { authorization: { key: process.env.JWT_SECRET! } },
+  resolvers: {
+    Lab: {
+      // `lab` always has `id` (the `requires` selection), even when the query does not select it.
+      myProgress: (lab, _args, context) => loadProgress(context.jwt?.sub, lab.id),
+    },
+    Query: {
+      stats: async (_root, _args, context) => {
+        const { records } = await context.executionContext.executeQuery(
+          "MATCH (l:Lab) RETURN count(l) AS n",
+        );
+        return { labCount: records[0].get("n") };
+      },
+    },
+  },
+});
+```
+
+As in v7:
+
+- A `@customResolver` field is left out of the generated Cypher and of every `where`, `sort`,
+  create and update input. The `requires` selection (fields, relationships and connections of the
+  type) is always fetched, and the resolver is called with the parent object.
+- Before a `Query` or `Mutation` resolver runs, `context.jwt` is set to the payload of the verified
+  `context.token` (unless you passed `jwt`) and `context.executionContext` to the driver (unless
+  you passed one), so your resolvers, nested ones included, can read them.
+- `@authentication` on `type Query` / `type Mutation`, on `extend schema` or on the field applies
+  to fields served by your resolvers.
+- `makeSchema` throws `"X" defined in resolvers, but not in schema` for a resolver of an unknown
+  type or field, and warns when a `@customResolver` field has no resolver.
+- `Int`, `Float` and `ID` fields convert Neo4j integers your resolvers return.
+
+Differences from v7:
+
+- `@authentication` applies to every `Query` / `Mutation` field served by your resolvers. v7
+  7.6.8 applies it to the first two only: the glob it builds to select them keeps a space before
+  the third name.
+- Fields served by resolvers can use the scalars, enums, `@node` types, unions and types without
+  `@node` of the type definitions, not generated types such as `LabWhere`. Resolvers for scalar or
+  enum types (internal enum values) and `type Subscription` fields are not supported yet.
+
 ## Full-text search
 
 `@fulltext` generates the v7 full-text query fields, which call
@@ -610,11 +682,11 @@ the events from the moment it reconnects, not the ones it missed.
 
 ## What works today
 
-Compatibility is checked by a suite of 11 apps and 154 operations. Its expected results come from
-the real `@neo4j/graphql` 7.6.8. Today 163 of its 165 checks pass: the printed schema of the 11
-apps and 152 operations (queries, aggregations, mutations, authorization, `@cypher` fields,
-full-text queries, unions, to-one relationships, and subscription events on Neo4j Enterprise with
-CDC). The two others are the nested union `connect` / `disconnect` where v7 ignores
+Compatibility is checked by a suite of 12 apps and 169 operations. Its expected results come from
+the real `@neo4j/graphql` 7.6.8. Today 179 of its 181 checks pass: the printed schema of the 12
+apps and 167 operations (queries, aggregations, mutations, authorization, `@cypher` fields, custom
+resolvers, full-text queries, unions, to-one relationships, and subscription events on Neo4j
+Enterprise with CDC). The two others are the nested union `connect` / `disconnect` where v7 ignores
 `where` ([unions](#unions)). The full report is [`compat/graphql/REPORT.md`](https://github.com/Cyphra-dev/cyphra/blob/main/compat/graphql/REPORT.md).
 
 | Feature                                                                                                                                                                        | Status                                                  |
@@ -636,7 +708,8 @@ CDC). The two others are the nested union `connect` / `disconnect` where v7 igno
 | `@fulltext` queries: `score`, `where`, `sort`, `first` / `after`                                                                                                               | Works ([details](#full-text-search))                    |
 | Unions: root query, relationships to unions with edge properties, member-keyed `where` and nested writes. `cyphra import graphql` maps them to [Cyphra unions](/schema#unions) | Works ([details](#unions))                              |
 | Subscriptions on CDC: `@subscription`, `@subscriptionsAuthorization`, `where`, `@authentication(SUBSCRIBE)` (Neo4j Enterprise / Aura)                                          | Works ([details](#subscriptions))                       |
-| Interfaces, `@vector`, `Point`, `Duration`, custom scalars and custom resolvers                                                                                                | Not yet: `makeSchema` throws `UnsupportedTypeDefsError` |
+| Custom resolvers: the `resolvers` option, `Query` / `Mutation` fields without `@cypher`, types without `@node`, `@customResolver(requires)`                                    | Works ([details](#custom-resolvers))                    |
+| Interfaces, `@vector`, `Point`, `Duration` and custom scalars                                                                                                                  | Not yet: `makeSchema` throws `UnsupportedTypeDefsError` |
 | `@populatedBy`, `@relayId`, `@query`, `@mutation`, `@selectable`, `@settable`, `@filterable`, `@sortable`, `@limit`                                                            | Not yet: `makeSchema` throws `UnsupportedTypeDefsError` |
 
 ### v7 behaviour you get as well

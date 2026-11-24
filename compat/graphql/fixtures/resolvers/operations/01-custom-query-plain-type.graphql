@@ -1,0 +1,7 @@
+# features: resolvers.root, resolvers.plain-type
+query {
+  stats(level: ADVANCED) {
+    labCount
+    level
+  }
+}

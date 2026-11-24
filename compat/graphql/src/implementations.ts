@@ -4,12 +4,14 @@ import { Neo4jGraphQL, Neo4jGraphQLSubscriptionsCDCEngine } from "@neo4j/graphql
 import type { GraphQLSchema } from "graphql";
 import { SignJWT } from "jose";
 import type { Driver } from "neo4j-driver";
-import type { Operation } from "./fixtures.js";
+import type { FixtureResolvers, Operation } from "./fixtures.js";
 
 export type BuildOptions = {
   driver: Driver;
   /** Symmetric key used by `@authentication` / `@authorization` to verify tokens. */
   jwt: { key: string };
+  /** The fixture's resolvers (`fixtures/<app>/resolvers.ts`), passed as `resolvers`. */
+  resolvers?: FixtureResolvers;
 };
 
 export type SubscriptionBuildOptions = BuildOptions & {
@@ -60,19 +62,21 @@ export async function operationContext(op: Operation): Promise<Record<string, un
 
 export const neo4jGraphQL: GraphQLImplementation = {
   name: "@neo4j/graphql",
-  async buildSchema(typeDefs, { driver, jwt }) {
+  async buildSchema(typeDefs, { driver, jwt, resolvers }) {
     const neoSchema = new Neo4jGraphQL({
       typeDefs,
       driver,
+      resolvers,
       features: { authorization: { key: jwt.key } },
     });
     return neoSchema.getSchema();
   },
-  async buildSubscriptionSchema(typeDefs, { driver, jwt, pollTime }) {
+  async buildSubscriptionSchema(typeDefs, { driver, jwt, pollTime, resolvers }) {
     const engine = new Neo4jGraphQLSubscriptionsCDCEngine({ driver, pollTime });
     const neoSchema = new Neo4jGraphQL({
       typeDefs,
       driver,
+      resolvers,
       features: { authorization: { key: jwt.key }, subscriptions: engine },
     });
     // getSchema() initializes the engine: it reads the current CDC position and starts polling.
@@ -87,18 +91,20 @@ export const neo4jGraphQL: GraphQLImplementation = {
 /** `@cyphra/graphql` (#71-#75): the same type definitions, served on the Cyphra runtime. */
 export const cyphraGraphQL: GraphQLImplementation = {
   name: "@cyphra/graphql",
-  async buildSchema(typeDefs, { driver, jwt }) {
+  async buildSchema(typeDefs, { driver, jwt, resolvers }) {
     return compat.v7.makeSchema({
       typeDefs,
       driver,
+      resolvers,
       features: { authorization: { key: jwt.key } },
     });
   },
-  async buildSubscriptionSchema(typeDefs, { driver, jwt, pollTime }) {
+  async buildSubscriptionSchema(typeDefs, { driver, jwt, pollTime, resolvers }) {
     const engine = new compat.v7.Neo4jGraphQLSubscriptionsCDCEngine({ driver, pollTime });
     const schema = compat.v7.makeSchema({
       typeDefs,
       driver,
+      resolvers,
       features: { authorization: { key: jwt.key }, subscriptions: engine },
     });
     return { schema, close: () => engine.close() };

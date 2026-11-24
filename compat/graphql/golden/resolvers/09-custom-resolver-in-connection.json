@@ -1,0 +1,27 @@
+{
+  "data": {
+    "labsConnection": {
+      "totalCount": 2,
+      "edges": [
+        {
+          "node": {
+            "t": "CYPHER DEEP DIVE",
+            "progress": {
+              "labId": "l2",
+              "percent": 0
+            }
+          }
+        },
+        {
+          "node": {
+            "t": "INDEXES",
+            "progress": {
+              "labId": "l3",
+              "percent": 0
+            }
+          }
+        }
+      ]
+    }
+  }
+}

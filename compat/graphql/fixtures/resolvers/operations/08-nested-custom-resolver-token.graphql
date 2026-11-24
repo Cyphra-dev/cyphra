@@ -1,0 +1,10 @@
+# features: resolvers.custom-field, resolvers.context-jwt, auth.token
+query {
+  labs(where: { id: { eq: "l3" } }) {
+    id
+    myProgress {
+      percent
+      viewer
+    }
+  }
+}

@@ -1,0 +1,15 @@
+# features: resolvers.custom-field, connection
+query {
+  labsConnection(where: { level: { eq: ADVANCED } }) {
+    totalCount
+    edges {
+      node {
+        t: titleUpper
+        progress: myProgress {
+          labId
+          percent
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,12 @@
+# features: resolvers.root, resolvers.custom-field, auth.token
+query {
+  whoAmI {
+    sub
+  }
+  labs(where: { id: { eq: "l1" } }) {
+    authorNames
+    myProgress {
+      viewer
+    }
+  }
+}

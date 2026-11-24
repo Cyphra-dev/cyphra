@@ -22,8 +22,14 @@ import {
   GraphQLObjectType,
   GraphQLSchema,
   GraphQLString,
+  GraphQLDeprecatedDirective,
   GraphQLUnionType,
+  getDirectiveValues,
+  Kind,
   valueFromAST,
+  type FieldDefinitionNode,
+  type InputValueDefinitionNode,
+  type TypeNode,
   type GraphQLFieldConfig,
   type GraphQLFieldConfigArgumentMap,
   type GraphQLFieldConfigMap,
@@ -48,6 +54,7 @@ import {
   type Relationship,
   type TypeRef,
   type UnionType,
+  type UserTypeDefinition,
   type V7Model,
 } from "./model.js";
 import { pluralize, subscriptionNames, upperFirst } from "./naming.js";
@@ -661,6 +668,7 @@ class TypeRegistry {
       n.name,
       () => {
         const fields = attributeOutputFields(this, n.attributes);
+        for (const f of n.userFields) fields[f.name] = this.fieldFromAST(f.definition);
         for (const c of n.cypherNodes) {
           fields[c.name] = {
             type: this.nodeRefType(c.type, c.target),
@@ -898,6 +906,90 @@ class TypeRegistry {
         ]),
       );
     });
+  }
+
+  // -------------------------------------------------------------------------
+  // Types and fields served by the application's resolvers (passed through as written)
+  // -------------------------------------------------------------------------
+
+  /** A named type a field served by resolvers refers to (see `checkUserTypeReferences`). */
+  private namedFromAST(name: string): GraphQLNamedType {
+    if (SCALARS[name] || this.model.enums.has(name)) return this.namedType(name);
+    const union = this.model.unions.get(name);
+    if (union) return this.union(union);
+    const user = this.model.userTypes.get(name);
+    if (user) return this.userType(user);
+    return this.node(this.model.node(name));
+  }
+
+  private typeFromAST(t: TypeNode): GraphQLType {
+    if (t.kind === Kind.NON_NULL_TYPE) return nn(this.typeFromAST(t.type) as GraphQLOutputType);
+    if (t.kind === Kind.LIST_TYPE) return list(this.typeFromAST(t.type));
+    return this.namedFromAST(t.name.value);
+  }
+
+  outputTypeFromAST(t: TypeNode): GraphQLOutputType {
+    return this.typeFromAST(t) as GraphQLOutputType;
+  }
+
+  inputTypeFromAST(t: TypeNode): GraphQLInputType {
+    return this.typeFromAST(t) as GraphQLInputType;
+  }
+
+  private inputValue(def: InputValueDefinitionNode): GraphQLInputFieldConfig {
+    const type = this.inputTypeFromAST(def.type);
+    return {
+      type,
+      description: def.description?.value,
+      defaultValue: def.defaultValue ? valueFromAST(def.defaultValue, type) : undefined,
+      deprecationReason: deprecationOf(def),
+    };
+  }
+
+  /** A field as written in the type definitions, with its arguments (no library directive). */
+  fieldFromAST(def: FieldDefinitionNode): GraphQLFieldConfig<unknown, unknown> {
+    const args = def.arguments?.length
+      ? Object.fromEntries(def.arguments.map((a) => [a.name.value, this.inputValue(a)]))
+      : undefined;
+    return {
+      type: this.outputTypeFromAST(def.type),
+      description: def.description?.value,
+      deprecationReason: deprecationOf(def),
+      args,
+    };
+  }
+
+  /** An object, input or union type without `@node`, as written. */
+  userType(def: UserTypeDefinition): GraphQLNamedType {
+    const name = def.name.value;
+    const description = def.description?.value;
+    switch (def.kind) {
+      case Kind.OBJECT_TYPE_DEFINITION:
+        return this.object(
+          name,
+          () =>
+            Object.fromEntries((def.fields ?? []).map((f) => [f.name.value, this.fieldFromAST(f)])),
+          description,
+        );
+      case Kind.INPUT_OBJECT_TYPE_DEFINITION:
+        return this.input(
+          name,
+          () =>
+            Object.fromEntries((def.fields ?? []).map((f) => [f.name.value, this.inputValue(f)])),
+          description,
+        );
+      default:
+        return this.get(
+          name,
+          () =>
+            new GraphQLUnionType({
+              name,
+              description,
+              types: () =>
+                (def.types ?? []).map((t) => this.namedFromAST(t.name.value) as GraphQLObjectType),
+            }),
+        );
+    }
   }
 
   /** `union Content = Book | Movie`; `__resolveType` reads the `__typename` of the decoded value. */
@@ -1387,6 +1479,10 @@ class TypeRegistry {
   }
 }
 
+function deprecationOf(def: FieldDefinitionNode | InputValueDefinitionNode): string | undefined {
+  return getDirectiveValues(GraphQLDeprecatedDirective, def)?.reason as string | undefined;
+}
+
 function scalarRef(name: string): TypeRef {
   return { name, list: false, required: false, elementRequired: false };
 }
@@ -1508,6 +1604,7 @@ export function buildV7Schema(model: V7Model): GraphQLSchema {
         };
       }
       for (const f of model.query.fields) fields[f.name] = rootField(reg, f);
+      for (const f of model.query.resolved) fields[f.name] = reg.fieldFromAST(f.definition);
       return fields;
     },
   });
@@ -1537,6 +1634,7 @@ export function buildV7Schema(model: V7Model): GraphQLSchema {
         };
       }
       for (const f of model.mutation.fields) fields[f.name] = rootField(reg, f);
+      for (const f of model.mutation.resolved) fields[f.name] = reg.fieldFromAST(f.definition);
       return fields;
     },
   });

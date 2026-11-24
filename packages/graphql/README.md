@@ -46,6 +46,12 @@ Status (early release):
 - Subscriptions (`@subscription`, `@subscriptionsAuthorization`, `where` on events) on Neo4j
   Change Data Capture, with `features.subscriptions` (Neo4j Enterprise or Aura with CDC enabled;
   run the server as a long-lived process, not a serverless function).
+- Custom resolvers: the `resolvers` option (merged like `new Neo4jGraphQL({ typeDefs, resolvers })`)
+  serves `Query` / `Mutation` fields without `@cypher`, object, input and union types without
+  `@node` (passed through as written) and `@customResolver(requires)` fields (left out of the
+  Cypher; the `requires` selection is always fetched for the parent). `context.jwt` and
+  `context.executionContext` are set like v7. One deliberate difference: `@authentication` applies
+  to every field served by resolvers (v7 7.6.8 applies it to the first two only).
 - One Cypher statement per root field, in its own transaction. Needs Neo4j 5.23+.
 - Not yet: interfaces, `@cypher` fields returning unions, `@vector`, `Point` /
   `Duration` and custom scalars (`makeSchema` throws `UnsupportedTypeDefsError`).

@@ -449,12 +449,25 @@ export class SelectionCompiler {
     for (const f of fields) checkAuthentication(this.model, this.auth, node, [operation], f);
   }
 
+  /**
+   * The fields selected on `node`, merged by response key, with the `requires` selection of every
+   * selected `@customResolver` field (v7 merges it in, so the resolver's parent always has it).
+   */
+  nodeSelection(node: NodeType, fieldNodes: readonly FieldNode[]): Map<string, FieldNode[]> {
+    const sets = subSelections(fieldNodes);
+    const fields = collectFields(this.info, sets);
+    if (!node.userFields.length) return fields;
+    const names = new Set([...fields.values()].map((n) => n[0]!.name.value));
+    const requires = node.userFields.flatMap((f) =>
+      f.requires && names.has(f.name) ? [f.requires] : [],
+    );
+    return requires.length ? collectFields(this.info, [...sets, ...requires]) : fields;
+  }
+
   /** Attributes of `node` selected in `fieldNodes` (they bring their field-level rules). */
   selectedAttributes(node: NodeType, fieldNodes: readonly FieldNode[]): Attribute[] {
     const names = new Set(
-      [...collectFields(this.info, subSelections(fieldNodes)).values()].map(
-        (n) => n[0]!.name.value,
-      ),
+      [...this.nodeSelection(node, fieldNodes).values()].map((n) => n[0]!.name.value),
     );
     return node.attributes.filter((a) => names.has(a.name));
   }
@@ -584,17 +597,18 @@ export class SelectionCompiler {
     /** Entries added to the projected map (the hidden keys of union rows). */
     extra: readonly string[] = [],
   ): { expr: string; decode: Decoder } {
-    const fields = [...collectFields(this.info, subSelections(fieldNodes)).values()].map(
-      (n) => n[0]!.name.value,
-    );
+    const selection = this.nodeSelection(node, fieldNodes);
+    const fields = [...selection.values()].map((n) => n[0]!.name.value);
     this.authenticate(node, "READ", fields);
     const type = objectType(this.info, node.name);
     const gqlFields = type.getFields();
     const entries: string[] = [...extra];
     const decoders: [string, Decoder][] = [];
-    for (const [key, nodes] of collectFields(this.info, subSelections(fieldNodes))) {
+    for (const [key, nodes] of selection) {
       const name = nodes[0]!.name.value;
       if (name === "__typename") continue;
+      // Served by the application's resolvers (with the parent): not in the statement.
+      if (node.userFields.some((f) => f.name === name)) continue;
       const attr = node.attributes.find((a) => a.name === name);
       if (attr) {
         const value = attr.cypher

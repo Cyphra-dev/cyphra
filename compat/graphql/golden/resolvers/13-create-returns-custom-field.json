@@ -1,0 +1,15 @@
+{
+  "data": {
+    "createLabs": {
+      "labs": [
+        {
+          "id": "l9",
+          "titleUpper": "NEW LAB",
+          "myProgress": {
+            "percent": 0
+          }
+        }
+      ]
+    }
+  }
+}

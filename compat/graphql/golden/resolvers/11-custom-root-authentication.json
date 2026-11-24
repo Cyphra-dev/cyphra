@@ -1,0 +1,13 @@
+{
+  "data": {
+    "adminNote": null
+  },
+  "errors": [
+    {
+      "message": "Unauthenticated",
+      "path": [
+        "adminNote"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,4 @@
+# features: resolvers.root, auth.authentication
+query {
+  adminNote
+}

@@ -243,7 +243,7 @@ export function checkAuthentication(
 }
 
 /**
- * `@authentication` of a `Query` / `Mutation` `@cypher` field (v7 7.6): the schema-level, the
+ * `@authentication` of a `Query` / `Mutation` custom field (`@cypher` or served by resolvers, v7 7.6): the schema-level, the
  * `type Query` / `type Mutation` and the field annotations, for READ (queries) or CREATE, UPDATE,
  * DELETE (mutations).
  */
@@ -251,7 +251,7 @@ export function checkRootAuthentication(
   model: V7Model,
   auth: AuthContext,
   type: "Query" | "Mutation",
-  field: CypherRootField,
+  field: Pick<CypherRootField, "authentication">,
 ): void {
   const operations: AuthOperation[] = type === "Query" ? ["READ"] : ["CREATE", "UPDATE", "DELETE"];
   applyAuthentication(model.authentication, operations, auth);

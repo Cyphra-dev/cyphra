@@ -1,0 +1,15 @@
+{
+  "data": {
+    "feed": [
+      {
+        "__typename": "ProgressSummary",
+        "labId": "l1",
+        "percent": 10
+      },
+      {
+        "__typename": "Viewer",
+        "sub": "user-ann"
+      }
+    ]
+  }
+}
