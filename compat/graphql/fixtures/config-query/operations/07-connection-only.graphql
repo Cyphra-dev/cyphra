@@ -1,0 +1,20 @@
+# features: config.query, aggregate
+# ordered
+query {
+  auditsConnection(sort: [{ id: ASC }]) {
+    totalCount
+    edges {
+      node {
+        id
+        size
+      }
+    }
+    aggregate {
+      node {
+        size {
+          max
+        }
+      }
+    }
+  }
+}

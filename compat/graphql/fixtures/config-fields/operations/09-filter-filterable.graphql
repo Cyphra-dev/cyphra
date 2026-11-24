@@ -1,0 +1,14 @@
+# features: config.filterable
+query {
+  movies(
+    where: {
+      released: { gte: 2000 }
+      tagline: { contains: "first" }
+      plain: { eq: "p1" }
+      actors: { some: { name: { eq: "Carrie" } } }
+      actorsConnection: { some: { edge: { screenTime: { gt: 100 } } } }
+    }
+  ) {
+    id
+  }
+}

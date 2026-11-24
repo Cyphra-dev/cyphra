@@ -1,0 +1,27 @@
+{
+  "data": {
+    "volumesConnection": {
+      "aggregate": {
+        "count": {
+          "nodes": 5
+        },
+        "node": {
+          "pages": {
+            "sum": 1500
+          }
+        }
+      }
+    },
+    "authors": [
+      {
+        "volumesConnection": {
+          "aggregate": {
+            "count": {
+              "nodes": 5
+            }
+          }
+        }
+      }
+    ]
+  }
+}

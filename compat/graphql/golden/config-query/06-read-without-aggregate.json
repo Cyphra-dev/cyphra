@@ -1,0 +1,29 @@
+{
+  "data": {
+    "logs": [
+      {
+        "id": "l1",
+        "level": 1
+      },
+      {
+        "id": "l2",
+        "level": 3
+      }
+    ],
+    "logsConnection": {
+      "totalCount": 2,
+      "edges": [
+        {
+          "node": {
+            "id": "l1"
+          }
+        },
+        {
+          "node": {
+            "id": "l2"
+          }
+        }
+      ]
+    }
+  }
+}

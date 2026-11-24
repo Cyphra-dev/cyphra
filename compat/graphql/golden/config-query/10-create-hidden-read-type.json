@@ -1,0 +1,12 @@
+{
+  "data": {
+    "createSecrets": {
+      "secrets": [
+        {
+          "id": "s3",
+          "value": "gamma"
+        }
+      ]
+    }
+  }
+}

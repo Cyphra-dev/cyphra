@@ -1,0 +1,36 @@
+# @query(read, connection, aggregate) hides root queries of a type or union. The type stays
+# readable through relationships.
+type Owner @node {
+  id: ID!
+  name: String!
+  secrets: [Secret!]! @relationship(type: "KEEPS", direction: OUT)
+  reports: [Report!]! @relationship(type: "WROTE", direction: OUT)
+  items: [Item!]! @relationship(type: "HAS", direction: OUT)
+}
+
+type Secret @node @query(read: false) {
+  id: ID!
+  value: String
+}
+
+type Report @node @query(read: true, aggregate: true) {
+  id: ID!
+  pages: Int
+}
+
+type Log @node @query(aggregate: false) {
+  id: ID!
+  level: Int
+}
+
+type Audit @node @query(read: false, connection: true, aggregate: true) {
+  id: ID!
+  size: Int
+}
+
+type Draft @node @query {
+  id: ID!
+  words: Int
+}
+
+union Item @query(read: false) = Report | Log

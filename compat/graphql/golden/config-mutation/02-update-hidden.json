@@ -1,0 +1,7 @@
+{
+  "errors": [
+    {
+      "message": "Cannot query field \"updateUsers\" on type \"Mutation\". Did you mean \"updatePosts\"?"
+    }
+  ]
+}

@@ -1,0 +1,10 @@
+# features: config.query, aggregate
+query {
+  draftsConnection {
+    aggregate {
+      count {
+        nodes
+      }
+    }
+  }
+}

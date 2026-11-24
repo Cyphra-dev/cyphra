@@ -1,0 +1,17 @@
+{
+  "data": {
+    "updatePosts": {
+      "posts": [
+        {
+          "id": "p1",
+          "title": "Hello again",
+          "tags": [
+            {
+              "name": "fresh"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

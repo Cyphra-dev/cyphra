@@ -1,0 +1,16 @@
+# features: config.query, aggregate
+query {
+  reportsConnection {
+    totalCount
+    aggregate {
+      count {
+        nodes
+      }
+      node {
+        pages {
+          sum
+        }
+      }
+    }
+  }
+}

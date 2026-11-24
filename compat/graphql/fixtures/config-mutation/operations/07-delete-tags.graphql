@@ -1,0 +1,6 @@
+# features: config.mutation
+mutation {
+  deleteTags(where: { name: { eq: "neo4j" } }) {
+    nodesDeleted
+  }
+}

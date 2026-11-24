@@ -52,9 +52,23 @@ Status (early release):
   Cypher; the `requires` selection is always fetched for the parent). `context.jwt` and
   `context.executionContext` are set like v7. One deliberate difference: `@authentication` applies
   to every field served by resolvers (v7 7.6.8 applies it to the first two only).
+- Schema configuration directives: `@query`, `@mutation`, `@selectable`, `@settable`,
+  `@filterable`, `@sortable` (type, field and `extend schema` level, with their effect on nested
+  inputs) and `@limit` on every read of the type. A root field they hide can be redefined in
+  `Query` / `Mutation` and served by your resolvers.
 - One Cypher statement per root field, in its own transaction. Needs Neo4j 5.23+.
-- Not yet: interfaces, `@cypher` fields returning unions, `@vector`, `Point` /
-  `Duration` and custom scalars (`makeSchema` throws `UnsupportedTypeDefsError`).
+- Not yet: interfaces, `@cypher` fields returning unions, `@vector`, `@populatedBy`, `@relayId`,
+  `@coalesce`, `Point` / `Duration` and custom scalars. `makeSchema` throws
+  `UnsupportedTypeDefsError` for any directive or argument it does not implement: it never ignores
+  one.
+
+**Security note.** Never strip a directive to get past `UnsupportedTypeDefsError`: without
+`@mutation(operations: [])`, for example, every user can call `createUsers`. And like in v7, these
+directives shape the API but are not access control: `@mutation` hides root mutations only (the type
+can still be written through nested inputs of other types), `@query(read: false)` hides root
+queries only, and a `@selectable(onRead: false)` field can still be filtered on. Use
+`@authentication` / `@authorization` for access rules
+([details](https://www.cyphra.dev/graphql#schema-configuration)).
 
 JWTs are verified like v7, with `features.authorization` and the request's `Authorization` header
 as `token` in the context (a decoded `jwt` in the context is trusted as it is):

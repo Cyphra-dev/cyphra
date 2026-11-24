@@ -1,0 +1,28 @@
+# features: config.selectable, aggregate
+# ordered
+query {
+  actors(sort: [{ name: ASC }]) {
+    name
+    moviesConnection {
+      aggregate {
+        count {
+          nodes
+          edges
+        }
+        node {
+          internalScore {
+            max
+          }
+          budget {
+            sum
+          }
+        }
+        edge {
+          year {
+            min
+          }
+        }
+      }
+    }
+  }
+}

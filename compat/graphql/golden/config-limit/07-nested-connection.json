@@ -1,0 +1,45 @@
+{
+  "data": {
+    "authors": [
+      {
+        "volumesConnection": {
+          "totalCount": 5,
+          "pageInfo": {
+            "hasNextPage": false
+          },
+          "edges": [
+            {
+              "node": {
+                "id": "v1"
+              }
+            },
+            {
+              "node": {
+                "id": "v2"
+              }
+            }
+          ]
+        },
+        "capped": {
+          "edges": [
+            {
+              "node": {
+                "id": "v5"
+              }
+            },
+            {
+              "node": {
+                "id": "v4"
+              }
+            },
+            {
+              "node": {
+                "id": "v3"
+              }
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

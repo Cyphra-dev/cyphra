@@ -1,0 +1,7 @@
+{
+  "errors": [
+    {
+      "message": "Cannot query field \"createUsers\" on type \"Mutation\". Did you mean \"createPosts\"?"
+    }
+  ]
+}

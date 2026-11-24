@@ -1,0 +1,8 @@
+# features: config.selectable, resolvers
+query {
+  accounts {
+    settings {
+      theme
+    }
+  }
+}

@@ -1,0 +1,8 @@
+# features: config.schema, config.mutation
+mutation {
+  updateTeams(where: { id: { eq: "t1" } }, update: { name: { set: "X" } }) {
+    teams {
+      id
+    }
+  }
+}

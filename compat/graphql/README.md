@@ -29,7 +29,9 @@ REPORT.md                     generated compatibility report
 ```
 
 Every operation runs on a freshly reset database (everything deleted, fixture seed applied), so
-operations are independent and mutations can be compared.
+operations are independent and mutations can be compared. Operations are validated against the
+schema first, like a GraphQL server does: one that uses a field or argument the schema does not have
+(e.g. a mutation hidden by `@mutation`) records the validation errors.
 
 ## Running
 

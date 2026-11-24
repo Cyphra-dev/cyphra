@@ -1,0 +1,31 @@
+{
+  "data": {
+    "users": [
+      {
+        "id": "u1",
+        "name": "Ada",
+        "posts": [
+          {
+            "id": "p1"
+          },
+          {
+            "id": "p2"
+          }
+        ]
+      },
+      {
+        "id": "u2",
+        "name": "Bob",
+        "posts": []
+      }
+    ],
+    "tags": [
+      {
+        "name": "graph"
+      },
+      {
+        "name": "neo4j"
+      }
+    ]
+  }
+}

@@ -1,0 +1,9 @@
+# features: config.mutation, resolvers
+mutation {
+  createAccounts(email: "eve@example.test") {
+    id
+    email
+    role
+    displayName
+  }
+}

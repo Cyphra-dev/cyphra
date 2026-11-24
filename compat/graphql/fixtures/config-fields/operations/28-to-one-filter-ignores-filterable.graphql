@@ -1,0 +1,6 @@
+# features: config.filterable, relationship.to-one
+query {
+  movies(where: { studio: { name: { eq: "Studio One" } } }) {
+    id
+  }
+}

@@ -1,0 +1,28 @@
+# features: config.mutation, mutation.nested
+mutation {
+  createPosts(
+    input: [
+      {
+        id: "p3"
+        title: "Nested"
+        author: { create: { node: { id: "u3", name: "Cy" } } }
+        tags: {
+          create: [{ node: { name: "new" } }]
+          connect: [{ where: { node: { name: { eq: "neo4j" } } } }]
+        }
+      }
+    ]
+  ) {
+    posts {
+      id
+      title
+      author {
+        id
+        name
+      }
+      tags {
+        name
+      }
+    }
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "errors": [
+    {
+      "message": "Field \"id\" is not defined by type \"MovieUpdateInput\"."
+    }
+  ]
+}

@@ -1,0 +1,7 @@
+{
+  "errors": [
+    {
+      "message": "Field \"accounts\" is not defined by type \"TeamCreateInput\"."
+    }
+  ]
+}

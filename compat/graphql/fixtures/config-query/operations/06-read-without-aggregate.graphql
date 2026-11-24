@@ -1,0 +1,16 @@
+# features: config.query
+# ordered
+query {
+  logs(sort: [{ id: ASC }]) {
+    id
+    level
+  }
+  logsConnection(sort: [{ id: ASC }]) {
+    totalCount
+    edges {
+      node {
+        id
+      }
+    }
+  }
+}

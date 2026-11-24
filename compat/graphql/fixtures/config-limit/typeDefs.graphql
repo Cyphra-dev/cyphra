@@ -1,0 +1,39 @@
+# @limit(default, max): the page size when no limit / first is given, and its upper bound, on every
+# read of the type (root and nested lists and connections, @cypher fields, full-text queries).
+type Author @node {
+  id: ID!
+  name: String!
+  volumes: [Volume!]! @relationship(type: "WROTE", direction: OUT)
+  topVolumes: [Volume!]!
+    @cypher(
+      statement: "MATCH (this)-[:WROTE]->(v:Volume) RETURN v ORDER BY v.id DESC"
+      columnName: "v"
+    )
+  shelf: [Shelf!]! @relationship(type: "SHELVES", direction: OUT)
+}
+
+type Volume
+  @node
+  @limit(default: 2, max: 3)
+  @fulltext(
+    indexes: [{ indexName: "CfgLimitVolumeTitle", queryName: "volumesByTitle", fields: ["title"] }]
+  ) {
+  id: ID!
+  title: String!
+  pages: Int
+}
+
+type Note @node @limit(max: 2) {
+  id: ID!
+}
+
+type Tag @node @limit(default: 1) {
+  id: ID!
+}
+
+union Shelf = Volume | Note
+
+type Query {
+  allVolumes: [Volume!]!
+    @cypher(statement: "MATCH (v:Volume) RETURN v ORDER BY v.id", columnName: "v")
+}

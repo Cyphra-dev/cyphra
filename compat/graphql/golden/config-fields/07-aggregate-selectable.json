@@ -1,0 +1,22 @@
+{
+  "data": {
+    "moviesConnection": {
+      "aggregate": {
+        "count": {
+          "nodes": 2
+        },
+        "node": {
+          "internalScore": {
+            "sum": 14
+          },
+          "budget": {
+            "max": 100.5
+          },
+          "released": {
+            "min": 2000
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,12 @@
+# features: config.limit, fulltext
+# ordered
+query {
+  volumesByTitle(phrase: "graph", sort: [{ node: { id: ASC } }]) {
+    totalCount
+    edges {
+      node {
+        title
+      }
+    }
+  }
+}

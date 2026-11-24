@@ -1,0 +1,12 @@
+{
+  "data": {
+    "drafts": [
+      {
+        "id": "d1"
+      }
+    ],
+    "draftsConnection": {
+      "totalCount": 1
+    }
+  }
+}

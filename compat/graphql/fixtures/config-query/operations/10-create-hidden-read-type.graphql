@@ -1,0 +1,9 @@
+# features: config.query
+mutation {
+  createSecrets(input: [{ id: "s3", value: "gamma" }]) {
+    secrets {
+      id
+      value
+    }
+  }
+}

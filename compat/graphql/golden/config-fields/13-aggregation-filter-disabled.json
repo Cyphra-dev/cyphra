@@ -1,0 +1,7 @@
+{
+  "errors": [
+    {
+      "message": "Field \"tagline\" is not defined by type \"ActorMoviesNodeAggregationWhereInput\"."
+    }
+  ]
+}

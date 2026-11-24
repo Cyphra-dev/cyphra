@@ -1,0 +1,20 @@
+{
+  "data": {
+    "updateTeams": {
+      "teams": [
+        {
+          "accounts": [
+            {
+              "id": "a1",
+              "role": "admin"
+            },
+            {
+              "id": "a2",
+              "role": "admin"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

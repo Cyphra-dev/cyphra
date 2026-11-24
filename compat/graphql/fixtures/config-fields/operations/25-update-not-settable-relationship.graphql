@@ -1,0 +1,8 @@
+# features: config.settable
+mutation {
+  updateMovies(update: { reviews: [{ create: [{ node: { score: 2 } }] }] }) {
+    movies {
+      id
+    }
+  }
+}

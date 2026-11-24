@@ -301,35 +301,46 @@ function attachResolvers(schema: GraphQLSchema, auth: Auth, executors: Executors
   const model = auth.model;
   const execute = executors.read;
   const query = schema.getQueryType()!.getFields();
+  // Only generated root fields get a generated resolver: a field hidden by `@query` / `@mutation`
+  // may be redefined by the application (served by its resolvers, never by the generated ones).
+  const attach = (
+    fields: Record<string, { resolve?: GraphQLFieldResolver<unknown, unknown> }> | undefined,
+    generated: boolean,
+    name: string,
+    resolve: GraphQLFieldResolver<unknown, unknown>,
+  ) => {
+    const field = fields?.[name];
+    if (field && generated) field.resolve = resolve;
+  };
   for (const node of model.nodes) {
-    query[node.plural]!.resolve = rootReadResolver(auth, execute, node.name, "list");
-    query[`${node.plural}Connection`]!.resolve = rootReadResolver(
-      auth,
-      execute,
-      node.name,
-      "connection",
+    attach(query, node.query.read, node.plural, rootReadResolver(auth, execute, node.name, "list"));
+    attach(
+      query,
+      node.query.connection || node.query.aggregate,
+      `${node.plural}Connection`,
+      rootReadResolver(auth, execute, node.name, "connection"),
     );
     for (const ft of node.fulltext) {
       query[ft.queryName]!.resolve = fulltextResolver(auth, execute, node.name, ft.queryName);
     }
   }
   for (const u of model.unions.values()) {
-    query[u.plural]!.resolve = rootUnionResolver(auth, execute, u.name);
+    attach(query, u.read, u.plural, rootUnionResolver(auth, execute, u.name));
   }
   for (const f of model.query.fields) {
     query[f.name]!.resolve = rootCypherResolver(auth, executors, "Query", f.name);
   }
-  const mutation = schema.getMutationType()!.getFields();
+  const mutation = schema.getMutationType()?.getFields();
   for (const f of model.mutation.fields) {
-    mutation[f.name]!.resolve = rootCypherResolver(auth, executors, "Mutation", f.name);
+    attach(mutation, true, f.name, rootCypherResolver(auth, executors, "Mutation", f.name));
   }
   for (const node of model.nodes) {
     for (const kind of ["create", "update", "delete"] as const) {
-      mutation[`${kind}${node.pascalPlural}`]!.resolve = rootMutationResolver(
-        auth,
-        executors.write,
-        node.name,
-        kind,
+      attach(
+        mutation,
+        node.mutation[kind],
+        `${kind}${node.pascalPlural}`,
+        rootMutationResolver(auth, executors.write, node.name, kind),
       );
     }
   }
@@ -506,8 +517,10 @@ function addDefaultFieldResolvers(schema: GraphQLSchema): void {
  * `@cypher` fields (on node types, relationship properties, `Query` and `Mutation`; sortable and
  * filterable like v7), `@fulltext` queries (on indexes the application creates) and unions
  * (relationships to a union, with member-keyed filters and nested writes, and the root union query),
- * and subscriptions (`@subscription`, `@subscriptionsAuthorization`) on Neo4j Change Data Capture
- * with `features.subscriptions`.
+ * subscriptions (`@subscription`, `@subscriptionsAuthorization`) on Neo4j Change Data Capture
+ * with `features.subscriptions`, and the schema configuration directives (`@query`, `@mutation`,
+ * `@selectable`, `@settable`, `@filterable`, `@sortable`, `@limit`). A directive or argument it does
+ * not implement throws {@link UnsupportedTypeDefsError}: it is never ignored.
  *
  * @example
  * ```ts

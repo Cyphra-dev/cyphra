@@ -1,0 +1,6 @@
+# features: config.filterable, filter.aggregate
+query {
+  actors(where: { moviesConnection: { aggregate: { edge: { year: { max: { gt: 2000 } } } } } }) {
+    name
+  }
+}

@@ -1,0 +1,386 @@
+input ConnectionAggregationCountFilterInput {
+  edges: IntScalarFilters
+  nodes: IntScalarFilters
+}
+
+type CountConnection {
+  edges: Int!
+  nodes: Int!
+}
+
+"""
+Information about the number of nodes and relationships created during a create mutation
+"""
+type CreateInfo {
+  nodesCreated: Int!
+  relationshipsCreated: Int!
+}
+
+type CreateMembersMutationResponse {
+  info: CreateInfo!
+  members: [Member!]!
+}
+
+type CreateTeamsMutationResponse {
+  info: CreateInfo!
+  teams: [Team!]!
+}
+
+union Entity = Member | Team
+
+input EntityWhere {
+  Member: MemberWhere
+  Team: TeamWhere
+}
+
+"""Float filters"""
+input FloatScalarFilters {
+  eq: Float
+  gt: Float
+  gte: Float
+  in: [Float!]
+  lt: Float
+  lte: Float
+}
+
+"""ID filters"""
+input IDScalarFilters {
+  contains: ID
+  endsWith: ID
+  eq: ID
+  in: [ID!]
+  startsWith: ID
+}
+
+type IntAggregateSelection {
+  average: Float
+  max: Int
+  min: Int
+  sum: Int
+}
+
+"""Filters for an aggregation of an int field"""
+input IntScalarAggregationFilters {
+  average: FloatScalarFilters
+  max: IntScalarFilters
+  min: IntScalarFilters
+  sum: IntScalarFilters
+}
+
+"""Int filters"""
+input IntScalarFilters {
+  eq: Int
+  gt: Int
+  gte: Int
+  in: [Int!]
+  lt: Int
+  lte: Int
+}
+
+type Member {
+  age: Int
+  id: ID!
+}
+
+input MemberConnectWhere {
+  node: MemberWhere!
+}
+
+input MemberCreateInput {
+  age: Int
+  id: ID!
+}
+
+type MemberEdge {
+  cursor: String!
+  node: Member!
+}
+
+input MemberRelationshipFilters {
+  """Filter type where all of the related Members match this filter"""
+  all: MemberWhere
+
+  """Filter type where none of the related Members match this filter"""
+  none: MemberWhere
+
+  """Filter type where one of the related Members match this filter"""
+  single: MemberWhere
+
+  """Filter type where some of the related Members match this filter"""
+  some: MemberWhere
+}
+
+"""
+Fields to sort Members by. The order in which sorts are applied is not guaranteed when specifying many fields in one MemberSort object.
+"""
+input MemberSort {
+  age: SortDirection
+  id: SortDirection
+}
+
+input MemberWhere {
+  AND: [MemberWhere!]
+  NOT: MemberWhere
+  OR: [MemberWhere!]
+  age: IntScalarFilters
+  age_EQ: Int @deprecated(reason: "Please use the relevant generic filter age: { eq: ... }")
+  age_GT: Int @deprecated(reason: "Please use the relevant generic filter age: { gt: ... }")
+  age_GTE: Int @deprecated(reason: "Please use the relevant generic filter age: { gte: ... }")
+  age_IN: [Int] @deprecated(reason: "Please use the relevant generic filter age: { in: ... }")
+  age_LT: Int @deprecated(reason: "Please use the relevant generic filter age: { lt: ... }")
+  age_LTE: Int @deprecated(reason: "Please use the relevant generic filter age: { lte: ... }")
+  id: IDScalarFilters
+  id_CONTAINS: ID @deprecated(reason: "Please use the relevant generic filter id: { contains: ... }")
+  id_ENDS_WITH: ID @deprecated(reason: "Please use the relevant generic filter id: { endsWith: ... }")
+  id_EQ: ID @deprecated(reason: "Please use the relevant generic filter id: { eq: ... }")
+  id_IN: [ID!] @deprecated(reason: "Please use the relevant generic filter id: { in: ... }")
+  id_STARTS_WITH: ID @deprecated(reason: "Please use the relevant generic filter id: { startsWith: ... }")
+}
+
+type MembersConnection {
+  edges: [MemberEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+type Mutation {
+  createMembers(input: [MemberCreateInput!]!): CreateMembersMutationResponse!
+  createTeams(input: [TeamCreateInput!]!): CreateTeamsMutationResponse!
+}
+
+"""Pagination information (Relay)"""
+type PageInfo {
+  endCursor: String
+  hasNextPage: Boolean!
+  hasPreviousPage: Boolean!
+  startCursor: String
+}
+
+type Query {
+  entities(limit: Int, offset: Int, where: EntityWhere): [Entity!]!
+  members(limit: Int, offset: Int, sort: [MemberSort!], where: MemberWhere): [Member!]!
+  membersConnection(after: String, first: Int, sort: [MemberSort!], where: MemberWhere): MembersConnection!
+  teams(limit: Int, offset: Int, sort: [TeamSort!], where: TeamWhere): [Team!]!
+  teamsConnection(after: String, first: Int, sort: [TeamSort!], where: TeamWhere): TeamsConnection!
+}
+
+"""An enum for sorting in either ascending or descending order."""
+enum SortDirection {
+  """Sort by field values in ascending order."""
+  ASC
+
+  """Sort by field values in descending order."""
+  DESC
+}
+
+"""String filters"""
+input StringScalarFilters {
+  contains: String
+  endsWith: String
+  eq: String
+  in: [String!]
+  startsWith: String
+}
+
+type Team {
+  id: ID!
+  members(limit: Int, offset: Int, sort: [MemberSort!], where: MemberWhere): [Member!]!
+  membersConnection(after: String, first: Int, sort: [TeamMembersConnectionSort!], where: TeamMembersConnectionWhere): TeamMembersConnection!
+  name: String!
+}
+
+input TeamCreateInput {
+  id: ID!
+  members: TeamMembersFieldInput
+  name: String!
+}
+
+type TeamEdge {
+  cursor: String!
+  node: Team!
+}
+
+type TeamMemberMembersAggregateSelection {
+  count: CountConnection!
+  node: TeamMemberMembersNodeAggregateSelection
+}
+
+type TeamMemberMembersNodeAggregateSelection {
+  age: IntAggregateSelection!
+}
+
+input TeamMembersAggregateInput {
+  AND: [TeamMembersAggregateInput!]
+  NOT: TeamMembersAggregateInput
+  OR: [TeamMembersAggregateInput!]
+  count: IntScalarFilters
+  count_EQ: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { eq: ... } } }' instead.")
+  count_GT: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { gt: ... } } }' instead.")
+  count_GTE: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { gte: ... } } }' instead.")
+  count_LT: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { lt: ... } } }' instead.")
+  count_LTE: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { lte: ... } } }' instead.")
+  node: TeamMembersNodeAggregationWhereInput
+}
+
+input TeamMembersConnectFieldInput {
+  where: MemberConnectWhere
+}
+
+type TeamMembersConnection {
+  aggregate: TeamMemberMembersAggregateSelection!
+  edges: [TeamMembersRelationship!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+input TeamMembersConnectionAggregateInput {
+  AND: [TeamMembersConnectionAggregateInput!]
+  NOT: TeamMembersConnectionAggregateInput
+  OR: [TeamMembersConnectionAggregateInput!]
+  count: ConnectionAggregationCountFilterInput
+  node: TeamMembersNodeAggregationWhereInput
+}
+
+input TeamMembersConnectionFilters {
+  """Filter Teams by aggregating results on related TeamMembersConnections"""
+  aggregate: TeamMembersConnectionAggregateInput
+
+  """
+  Return Teams where all of the related TeamMembersConnections match this filter
+  """
+  all: TeamMembersConnectionWhere
+
+  """
+  Return Teams where none of the related TeamMembersConnections match this filter
+  """
+  none: TeamMembersConnectionWhere
+
+  """
+  Return Teams where one of the related TeamMembersConnections match this filter
+  """
+  single: TeamMembersConnectionWhere
+
+  """
+  Return Teams where some of the related TeamMembersConnections match this filter
+  """
+  some: TeamMembersConnectionWhere
+}
+
+input TeamMembersConnectionSort {
+  node: MemberSort
+}
+
+input TeamMembersConnectionWhere {
+  AND: [TeamMembersConnectionWhere!]
+  NOT: TeamMembersConnectionWhere
+  OR: [TeamMembersConnectionWhere!]
+  node: MemberWhere
+}
+
+input TeamMembersCreateFieldInput {
+  node: MemberCreateInput!
+}
+
+input TeamMembersFieldInput {
+  connect: [TeamMembersConnectFieldInput!]
+  create: [TeamMembersCreateFieldInput!]
+}
+
+input TeamMembersNodeAggregationWhereInput {
+  AND: [TeamMembersNodeAggregationWhereInput!]
+  NOT: TeamMembersNodeAggregationWhereInput
+  OR: [TeamMembersNodeAggregationWhereInput!]
+  age: IntScalarAggregationFilters
+  age_AVERAGE_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'age: { average: { eq: ... } } }' instead.")
+  age_AVERAGE_GT: Float @deprecated(reason: "Please use the relevant generic filter 'age: { average: { gt: ... } } }' instead.")
+  age_AVERAGE_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'age: { average: { gte: ... } } }' instead.")
+  age_AVERAGE_LT: Float @deprecated(reason: "Please use the relevant generic filter 'age: { average: { lt: ... } } }' instead.")
+  age_AVERAGE_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'age: { average: { lte: ... } } }' instead.")
+  age_MAX_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'age: { max: { eq: ... } } }' instead.")
+  age_MAX_GT: Int @deprecated(reason: "Please use the relevant generic filter 'age: { max: { gt: ... } } }' instead.")
+  age_MAX_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'age: { max: { gte: ... } } }' instead.")
+  age_MAX_LT: Int @deprecated(reason: "Please use the relevant generic filter 'age: { max: { lt: ... } } }' instead.")
+  age_MAX_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'age: { max: { lte: ... } } }' instead.")
+  age_MIN_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'age: { min: { eq: ... } } }' instead.")
+  age_MIN_GT: Int @deprecated(reason: "Please use the relevant generic filter 'age: { min: { gt: ... } } }' instead.")
+  age_MIN_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'age: { min: { gte: ... } } }' instead.")
+  age_MIN_LT: Int @deprecated(reason: "Please use the relevant generic filter 'age: { min: { lt: ... } } }' instead.")
+  age_MIN_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'age: { min: { lte: ... } } }' instead.")
+  age_SUM_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'age: { sum: { eq: ... } } }' instead.")
+  age_SUM_GT: Int @deprecated(reason: "Please use the relevant generic filter 'age: { sum: { gt: ... } } }' instead.")
+  age_SUM_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'age: { sum: { gte: ... } } }' instead.")
+  age_SUM_LT: Int @deprecated(reason: "Please use the relevant generic filter 'age: { sum: { lt: ... } } }' instead.")
+  age_SUM_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'age: { sum: { lte: ... } } }' instead.")
+}
+
+type TeamMembersRelationship {
+  cursor: String!
+  node: Member!
+}
+
+"""
+Fields to sort Teams by. The order in which sorts are applied is not guaranteed when specifying many fields in one TeamSort object.
+"""
+input TeamSort {
+  id: SortDirection
+  name: SortDirection
+}
+
+input TeamWhere {
+  AND: [TeamWhere!]
+  NOT: TeamWhere
+  OR: [TeamWhere!]
+  id: IDScalarFilters
+  id_CONTAINS: ID @deprecated(reason: "Please use the relevant generic filter id: { contains: ... }")
+  id_ENDS_WITH: ID @deprecated(reason: "Please use the relevant generic filter id: { endsWith: ... }")
+  id_EQ: ID @deprecated(reason: "Please use the relevant generic filter id: { eq: ... }")
+  id_IN: [ID!] @deprecated(reason: "Please use the relevant generic filter id: { in: ... }")
+  id_STARTS_WITH: ID @deprecated(reason: "Please use the relevant generic filter id: { startsWith: ... }")
+  members: MemberRelationshipFilters
+  membersAggregate: TeamMembersAggregateInput @deprecated(reason: "Aggregate filters are moved inside the membersConnection filter, please use { membersConnection: { aggregate: {...} } } instead")
+  membersConnection: TeamMembersConnectionFilters
+
+  """
+  Return Teams where all of the related TeamMembersConnections match this filter
+  """
+  membersConnection_ALL: TeamMembersConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'membersConnection: { all: { node: ... } } }' instead.")
+
+  """
+  Return Teams where none of the related TeamMembersConnections match this filter
+  """
+  membersConnection_NONE: TeamMembersConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'membersConnection: { none: { node: ... } } }' instead.")
+
+  """
+  Return Teams where one of the related TeamMembersConnections match this filter
+  """
+  membersConnection_SINGLE: TeamMembersConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'membersConnection: { single: { node: ... } } }' instead.")
+
+  """
+  Return Teams where some of the related TeamMembersConnections match this filter
+  """
+  membersConnection_SOME: TeamMembersConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'membersConnection: { some: { node: ... } } }' instead.")
+
+  """Return Teams where all of the related Members match this filter"""
+  members_ALL: MemberWhere @deprecated(reason: "Please use the relevant generic filter 'members: { all: ... }' instead.")
+
+  """Return Teams where none of the related Members match this filter"""
+  members_NONE: MemberWhere @deprecated(reason: "Please use the relevant generic filter 'members: { none: ... }' instead.")
+
+  """Return Teams where one of the related Members match this filter"""
+  members_SINGLE: MemberWhere @deprecated(reason: "Please use the relevant generic filter 'members: {  single: ... }' instead.")
+
+  """Return Teams where some of the related Members match this filter"""
+  members_SOME: MemberWhere @deprecated(reason: "Please use the relevant generic filter 'members: {  some: ... }' instead.")
+  name: StringScalarFilters
+  name_CONTAINS: String @deprecated(reason: "Please use the relevant generic filter name: { contains: ... }")
+  name_ENDS_WITH: String @deprecated(reason: "Please use the relevant generic filter name: { endsWith: ... }")
+  name_EQ: String @deprecated(reason: "Please use the relevant generic filter name: { eq: ... }")
+  name_IN: [String!] @deprecated(reason: "Please use the relevant generic filter name: { in: ... }")
+  name_STARTS_WITH: String @deprecated(reason: "Please use the relevant generic filter name: { startsWith: ... }")
+}
+
+type TeamsConnection {
+  edges: [TeamEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}

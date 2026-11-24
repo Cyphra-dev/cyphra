@@ -1,0 +1,13 @@
+# features: config.schema, config.mutation
+mutation {
+  createTeams(
+    input: [{ id: "t2", name: "New", members: { create: [{ node: { id: "m3", age: 20 } }] } }]
+  ) {
+    teams {
+      id
+      members {
+        id
+      }
+    }
+  }
+}

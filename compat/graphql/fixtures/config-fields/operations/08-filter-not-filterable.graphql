@@ -1,0 +1,6 @@
+# features: config.filterable
+query {
+  movies(where: { budget: { gt: 1 } }) {
+    id
+  }
+}

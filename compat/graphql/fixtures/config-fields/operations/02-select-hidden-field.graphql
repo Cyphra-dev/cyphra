@@ -1,0 +1,7 @@
+# features: config.selectable
+query {
+  movies {
+    id
+    secretNote
+  }
+}

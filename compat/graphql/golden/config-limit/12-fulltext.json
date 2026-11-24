@@ -1,0 +1,19 @@
+{
+  "data": {
+    "volumesByTitle": {
+      "totalCount": 5,
+      "edges": [
+        {
+          "node": {
+            "title": "Graph volume 1"
+          }
+        },
+        {
+          "node": {
+            "title": "Graph volume 2"
+          }
+        }
+      ]
+    }
+  }
+}

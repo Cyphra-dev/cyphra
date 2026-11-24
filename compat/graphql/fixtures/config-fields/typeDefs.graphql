@@ -1,0 +1,62 @@
+# Field-level @selectable / @settable / @filterable / @sortable on attributes, relationships,
+# relationship properties and @cypher fields.
+type Movie @node @subscription(events: [CREATED]) {
+  id: ID! @settable(onCreate: true, onUpdate: false)
+  title: String! @sortable(byValue: false)
+  secretNote: String @selectable(onRead: false, onAggregate: false)
+  internalScore: Int @selectable(onRead: false, onAggregate: true)
+  rating: Int @selectable(onRead: true, onAggregate: false)
+  budget: Float @filterable(byValue: false, byAggregate: true)
+  tagline: String @filterable
+  released: Int @filterable(byValue: true, byAggregate: false) @sortable
+  createdBy: String @settable(onCreate: false, onUpdate: true)
+  plain: String @selectable @settable @filterable @sortable
+  computed: String
+    @cypher(statement: "RETURN this.title + '!' AS r", columnName: "r")
+    @sortable(byValue: false)
+    @filterable(byValue: false)
+  actors: [Actor!]!
+    @relationship(type: "ACTED_IN", direction: IN, properties: "ActedIn")
+    @settable(onCreate: false, onUpdate: true)
+    @filterable(byValue: true, byAggregate: false)
+  reviews: [Review!]!
+    @relationship(type: "REVIEWED", direction: IN)
+    @filterable(byValue: false, byAggregate: true)
+    @settable(onCreate: true, onUpdate: false)
+  studio: Studio
+    @relationship(type: "MADE", direction: IN)
+    @filterable(byValue: false, byAggregate: false)
+    @settable(onCreate: false)
+}
+
+type ActedIn @relationshipProperties {
+  role: String @settable(onCreate: true, onUpdate: false)
+  screenTime: Int
+    @selectable(onRead: true, onAggregate: false)
+    @filterable(byValue: true, byAggregate: false)
+    @sortable(byValue: false)
+  year: Int @filterable(byValue: false, byAggregate: true)
+}
+
+type Actor @node {
+  name: String!
+  age: Int @filterable(byValue: true, byAggregate: true)
+  movies: [Movie!]!
+    @relationship(type: "ACTED_IN", direction: OUT, properties: "ActedIn")
+    @selectable(onRead: false)
+}
+
+type Review @node {
+  score: Int @sortable(byValue: false)
+  text: String @sortable(byValue: false)
+}
+
+type Studio @node {
+  name: String @settable(onCreate: false, onUpdate: false)
+  movies: [Movie!]! @relationship(type: "MADE", direction: OUT)
+}
+
+# Nothing settable: v7 adds `_emptyInput` to the create and update inputs.
+type Counter @node {
+  hits: Int @settable(onCreate: false, onUpdate: false) @default(value: 0)
+}

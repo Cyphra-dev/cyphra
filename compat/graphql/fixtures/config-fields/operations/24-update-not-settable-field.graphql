@@ -1,0 +1,8 @@
+# features: config.settable
+mutation {
+  updateMovies(update: { id: { set: "z" } }) {
+    movies {
+      id
+    }
+  }
+}

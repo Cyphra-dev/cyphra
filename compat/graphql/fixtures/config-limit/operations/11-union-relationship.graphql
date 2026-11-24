@@ -1,0 +1,13 @@
+# features: config.limit, union
+query {
+  authors {
+    shelf {
+      ... on Volume {
+        id
+      }
+      ... on Note {
+        id
+      }
+    }
+  }
+}

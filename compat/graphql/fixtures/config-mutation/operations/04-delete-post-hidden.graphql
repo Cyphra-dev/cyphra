@@ -1,0 +1,6 @@
+# features: config.mutation
+mutation {
+  deletePosts(where: { id: { eq: "p1" } }) {
+    nodesDeleted
+  }
+}

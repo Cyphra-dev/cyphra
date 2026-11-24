@@ -1,0 +1,13 @@
+# features: config.sortable, connection.edge-properties
+# ordered
+query {
+  movies(where: { id: { eq: "m1" } }) {
+    actorsConnection(sort: [{ edge: { screenTime: DESC } }]) {
+      edges {
+        properties {
+          screenTime
+        }
+      }
+    }
+  }
+}

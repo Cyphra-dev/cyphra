@@ -1,0 +1,9 @@
+# features: config.query
+query {
+  drafts {
+    id
+  }
+  draftsConnection {
+    totalCount
+  }
+}

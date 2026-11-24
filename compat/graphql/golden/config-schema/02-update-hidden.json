@@ -1,0 +1,7 @@
+{
+  "errors": [
+    {
+      "message": "Cannot query field \"updateTeams\" on type \"Mutation\". Did you mean \"createTeams\"?"
+    }
+  ]
+}

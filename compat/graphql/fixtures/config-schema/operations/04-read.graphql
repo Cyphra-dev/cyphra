@@ -1,0 +1,18 @@
+# features: config.schema, config.query
+# ordered
+query {
+  teams {
+    id
+    members(sort: [{ id: ASC }]) {
+      id
+    }
+  }
+  membersConnection(sort: [{ id: ASC }]) {
+    totalCount
+    edges {
+      node {
+        id
+      }
+    }
+  }
+}

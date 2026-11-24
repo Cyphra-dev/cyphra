@@ -1,0 +1,900 @@
+type Author {
+  id: ID!
+  name: String!
+  shelf(limit: Int, offset: Int, where: ShelfWhere): [Shelf!]!
+  shelfConnection(after: String, first: Int, where: AuthorShelfConnectionWhere): AuthorShelfConnection!
+  topVolumes: [Volume!]!
+  volumes(limit: Int, offset: Int, sort: [VolumeSort!], where: VolumeWhere): [Volume!]!
+  volumesConnection(after: String, first: Int, sort: [AuthorVolumesConnectionSort!], where: AuthorVolumesConnectionWhere): AuthorVolumesConnection!
+}
+
+type AuthorAggregate {
+  count: Count!
+  node: AuthorAggregateNode!
+}
+
+type AuthorAggregateNode {
+  name: StringAggregateSelection!
+}
+
+input AuthorCreateInput {
+  id: ID!
+  name: String!
+  shelf: AuthorShelfCreateInput
+  volumes: AuthorVolumesFieldInput
+}
+
+input AuthorDeleteInput {
+  shelf: AuthorShelfDeleteInput
+  volumes: [AuthorVolumesDeleteFieldInput!]
+}
+
+type AuthorEdge {
+  cursor: String!
+  node: Author!
+}
+
+type AuthorShelfConnection {
+  edges: [AuthorShelfRelationship!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+input AuthorShelfConnectionFilters {
+  """
+  Return Authors where all of the related AuthorShelfConnections match this filter
+  """
+  all: AuthorShelfConnectionWhere
+
+  """
+  Return Authors where none of the related AuthorShelfConnections match this filter
+  """
+  none: AuthorShelfConnectionWhere
+
+  """
+  Return Authors where one of the related AuthorShelfConnections match this filter
+  """
+  single: AuthorShelfConnectionWhere
+
+  """
+  Return Authors where some of the related AuthorShelfConnections match this filter
+  """
+  some: AuthorShelfConnectionWhere
+}
+
+input AuthorShelfConnectionWhere {
+  Note: AuthorShelfNoteConnectionWhere
+  Volume: AuthorShelfVolumeConnectionWhere
+}
+
+input AuthorShelfCreateInput {
+  Note: AuthorShelfNoteFieldInput
+  Volume: AuthorShelfVolumeFieldInput
+}
+
+input AuthorShelfDeleteInput {
+  Note: [AuthorShelfNoteDeleteFieldInput!]
+  Volume: [AuthorShelfVolumeDeleteFieldInput!]
+}
+
+input AuthorShelfNoteConnectFieldInput {
+  where: NoteConnectWhere
+}
+
+input AuthorShelfNoteConnectionWhere {
+  AND: [AuthorShelfNoteConnectionWhere!]
+  NOT: AuthorShelfNoteConnectionWhere
+  OR: [AuthorShelfNoteConnectionWhere!]
+  node: NoteWhere
+}
+
+input AuthorShelfNoteCreateFieldInput {
+  node: NoteCreateInput!
+}
+
+input AuthorShelfNoteDeleteFieldInput {
+  where: AuthorShelfNoteConnectionWhere
+}
+
+input AuthorShelfNoteDisconnectFieldInput {
+  where: AuthorShelfNoteConnectionWhere
+}
+
+input AuthorShelfNoteFieldInput {
+  connect: [AuthorShelfNoteConnectFieldInput!]
+  create: [AuthorShelfNoteCreateFieldInput!]
+}
+
+input AuthorShelfNoteUpdateConnectionInput {
+  node: NoteUpdateInput
+  where: AuthorShelfNoteConnectionWhere
+}
+
+input AuthorShelfNoteUpdateFieldInput {
+  connect: [AuthorShelfNoteConnectFieldInput!]
+  create: [AuthorShelfNoteCreateFieldInput!]
+  delete: [AuthorShelfNoteDeleteFieldInput!]
+  disconnect: [AuthorShelfNoteDisconnectFieldInput!]
+  update: AuthorShelfNoteUpdateConnectionInput
+}
+
+type AuthorShelfRelationship {
+  cursor: String!
+  node: Shelf!
+}
+
+input AuthorShelfUpdateInput {
+  Note: [AuthorShelfNoteUpdateFieldInput!]
+  Volume: [AuthorShelfVolumeUpdateFieldInput!]
+}
+
+input AuthorShelfVolumeConnectFieldInput {
+  where: VolumeConnectWhere
+}
+
+input AuthorShelfVolumeConnectionWhere {
+  AND: [AuthorShelfVolumeConnectionWhere!]
+  NOT: AuthorShelfVolumeConnectionWhere
+  OR: [AuthorShelfVolumeConnectionWhere!]
+  node: VolumeWhere
+}
+
+input AuthorShelfVolumeCreateFieldInput {
+  node: VolumeCreateInput!
+}
+
+input AuthorShelfVolumeDeleteFieldInput {
+  where: AuthorShelfVolumeConnectionWhere
+}
+
+input AuthorShelfVolumeDisconnectFieldInput {
+  where: AuthorShelfVolumeConnectionWhere
+}
+
+input AuthorShelfVolumeFieldInput {
+  connect: [AuthorShelfVolumeConnectFieldInput!]
+  create: [AuthorShelfVolumeCreateFieldInput!]
+}
+
+input AuthorShelfVolumeUpdateConnectionInput {
+  node: VolumeUpdateInput
+  where: AuthorShelfVolumeConnectionWhere
+}
+
+input AuthorShelfVolumeUpdateFieldInput {
+  connect: [AuthorShelfVolumeConnectFieldInput!]
+  create: [AuthorShelfVolumeCreateFieldInput!]
+  delete: [AuthorShelfVolumeDeleteFieldInput!]
+  disconnect: [AuthorShelfVolumeDisconnectFieldInput!]
+  update: AuthorShelfVolumeUpdateConnectionInput
+}
+
+"""
+Fields to sort Authors by. The order in which sorts are applied is not guaranteed when specifying many fields in one AuthorSort object.
+"""
+input AuthorSort {
+  id: SortDirection
+  name: SortDirection
+}
+
+input AuthorUpdateInput {
+  id: IDScalarMutations
+  id_SET: ID @deprecated(reason: "Please use the generic mutation 'id: { set: ... } }' instead.")
+  name: StringScalarMutations
+  name_SET: String @deprecated(reason: "Please use the generic mutation 'name: { set: ... } }' instead.")
+  shelf: AuthorShelfUpdateInput
+  volumes: [AuthorVolumesUpdateFieldInput!]
+}
+
+type AuthorVolumeVolumesAggregateSelection {
+  count: CountConnection!
+  node: AuthorVolumeVolumesNodeAggregateSelection
+}
+
+type AuthorVolumeVolumesNodeAggregateSelection {
+  pages: IntAggregateSelection!
+  title: StringAggregateSelection!
+}
+
+input AuthorVolumesAggregateInput {
+  AND: [AuthorVolumesAggregateInput!]
+  NOT: AuthorVolumesAggregateInput
+  OR: [AuthorVolumesAggregateInput!]
+  count: IntScalarFilters
+  count_EQ: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { eq: ... } } }' instead.")
+  count_GT: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { gt: ... } } }' instead.")
+  count_GTE: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { gte: ... } } }' instead.")
+  count_LT: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { lt: ... } } }' instead.")
+  count_LTE: Int @deprecated(reason: "Please use the relevant generic filter '{ count: { lte: ... } } }' instead.")
+  node: AuthorVolumesNodeAggregationWhereInput
+}
+
+input AuthorVolumesConnectFieldInput {
+  where: VolumeConnectWhere
+}
+
+type AuthorVolumesConnection {
+  aggregate: AuthorVolumeVolumesAggregateSelection!
+  edges: [AuthorVolumesRelationship!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+input AuthorVolumesConnectionAggregateInput {
+  AND: [AuthorVolumesConnectionAggregateInput!]
+  NOT: AuthorVolumesConnectionAggregateInput
+  OR: [AuthorVolumesConnectionAggregateInput!]
+  count: ConnectionAggregationCountFilterInput
+  node: AuthorVolumesNodeAggregationWhereInput
+}
+
+input AuthorVolumesConnectionFilters {
+  """
+  Filter Authors by aggregating results on related AuthorVolumesConnections
+  """
+  aggregate: AuthorVolumesConnectionAggregateInput
+
+  """
+  Return Authors where all of the related AuthorVolumesConnections match this filter
+  """
+  all: AuthorVolumesConnectionWhere
+
+  """
+  Return Authors where none of the related AuthorVolumesConnections match this filter
+  """
+  none: AuthorVolumesConnectionWhere
+
+  """
+  Return Authors where one of the related AuthorVolumesConnections match this filter
+  """
+  single: AuthorVolumesConnectionWhere
+
+  """
+  Return Authors where some of the related AuthorVolumesConnections match this filter
+  """
+  some: AuthorVolumesConnectionWhere
+}
+
+input AuthorVolumesConnectionSort {
+  node: VolumeSort
+}
+
+input AuthorVolumesConnectionWhere {
+  AND: [AuthorVolumesConnectionWhere!]
+  NOT: AuthorVolumesConnectionWhere
+  OR: [AuthorVolumesConnectionWhere!]
+  node: VolumeWhere
+}
+
+input AuthorVolumesCreateFieldInput {
+  node: VolumeCreateInput!
+}
+
+input AuthorVolumesDeleteFieldInput {
+  where: AuthorVolumesConnectionWhere
+}
+
+input AuthorVolumesDisconnectFieldInput {
+  where: AuthorVolumesConnectionWhere
+}
+
+input AuthorVolumesFieldInput {
+  connect: [AuthorVolumesConnectFieldInput!]
+  create: [AuthorVolumesCreateFieldInput!]
+}
+
+input AuthorVolumesNodeAggregationWhereInput {
+  AND: [AuthorVolumesNodeAggregationWhereInput!]
+  NOT: AuthorVolumesNodeAggregationWhereInput
+  OR: [AuthorVolumesNodeAggregationWhereInput!]
+  pages: IntScalarAggregationFilters
+  pages_AVERAGE_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'pages: { average: { eq: ... } } }' instead.")
+  pages_AVERAGE_GT: Float @deprecated(reason: "Please use the relevant generic filter 'pages: { average: { gt: ... } } }' instead.")
+  pages_AVERAGE_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'pages: { average: { gte: ... } } }' instead.")
+  pages_AVERAGE_LT: Float @deprecated(reason: "Please use the relevant generic filter 'pages: { average: { lt: ... } } }' instead.")
+  pages_AVERAGE_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'pages: { average: { lte: ... } } }' instead.")
+  pages_MAX_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'pages: { max: { eq: ... } } }' instead.")
+  pages_MAX_GT: Int @deprecated(reason: "Please use the relevant generic filter 'pages: { max: { gt: ... } } }' instead.")
+  pages_MAX_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'pages: { max: { gte: ... } } }' instead.")
+  pages_MAX_LT: Int @deprecated(reason: "Please use the relevant generic filter 'pages: { max: { lt: ... } } }' instead.")
+  pages_MAX_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'pages: { max: { lte: ... } } }' instead.")
+  pages_MIN_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'pages: { min: { eq: ... } } }' instead.")
+  pages_MIN_GT: Int @deprecated(reason: "Please use the relevant generic filter 'pages: { min: { gt: ... } } }' instead.")
+  pages_MIN_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'pages: { min: { gte: ... } } }' instead.")
+  pages_MIN_LT: Int @deprecated(reason: "Please use the relevant generic filter 'pages: { min: { lt: ... } } }' instead.")
+  pages_MIN_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'pages: { min: { lte: ... } } }' instead.")
+  pages_SUM_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'pages: { sum: { eq: ... } } }' instead.")
+  pages_SUM_GT: Int @deprecated(reason: "Please use the relevant generic filter 'pages: { sum: { gt: ... } } }' instead.")
+  pages_SUM_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'pages: { sum: { gte: ... } } }' instead.")
+  pages_SUM_LT: Int @deprecated(reason: "Please use the relevant generic filter 'pages: { sum: { lt: ... } } }' instead.")
+  pages_SUM_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'pages: { sum: { lte: ... } } }' instead.")
+  title: StringScalarAggregationFilters
+  title_AVERAGE_LENGTH_EQUAL: Float @deprecated(reason: "Please use the relevant generic filter 'title: { averageLength: { eq: ... } } }' instead.")
+  title_AVERAGE_LENGTH_GT: Float @deprecated(reason: "Please use the relevant generic filter 'title: { averageLength: { gt: ... } } }' instead.")
+  title_AVERAGE_LENGTH_GTE: Float @deprecated(reason: "Please use the relevant generic filter 'title: { averageLength: { gte: ... } } }' instead.")
+  title_AVERAGE_LENGTH_LT: Float @deprecated(reason: "Please use the relevant generic filter 'title: { averageLength: { lt: ... } } }' instead.")
+  title_AVERAGE_LENGTH_LTE: Float @deprecated(reason: "Please use the relevant generic filter 'title: { averageLength: { lte: ... } } }' instead.")
+  title_LONGEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'title: { longestLength: { eq: ... } } }' instead.")
+  title_LONGEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'title: { longestLength: { gt: ... } } }' instead.")
+  title_LONGEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'title: { longestLength: { gte: ... } } }' instead.")
+  title_LONGEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'title: { longestLength: { lt: ... } } }' instead.")
+  title_LONGEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'title: { longestLength: { lte: ... } } }' instead.")
+  title_SHORTEST_LENGTH_EQUAL: Int @deprecated(reason: "Please use the relevant generic filter 'title: { shortestLength: { eq: ... } } }' instead.")
+  title_SHORTEST_LENGTH_GT: Int @deprecated(reason: "Please use the relevant generic filter 'title: { shortestLength: { gt: ... } } }' instead.")
+  title_SHORTEST_LENGTH_GTE: Int @deprecated(reason: "Please use the relevant generic filter 'title: { shortestLength: { gte: ... } } }' instead.")
+  title_SHORTEST_LENGTH_LT: Int @deprecated(reason: "Please use the relevant generic filter 'title: { shortestLength: { lt: ... } } }' instead.")
+  title_SHORTEST_LENGTH_LTE: Int @deprecated(reason: "Please use the relevant generic filter 'title: { shortestLength: { lte: ... } } }' instead.")
+}
+
+type AuthorVolumesRelationship {
+  cursor: String!
+  node: Volume!
+}
+
+input AuthorVolumesUpdateConnectionInput {
+  node: VolumeUpdateInput
+  where: AuthorVolumesConnectionWhere
+}
+
+input AuthorVolumesUpdateFieldInput {
+  connect: [AuthorVolumesConnectFieldInput!]
+  create: [AuthorVolumesCreateFieldInput!]
+  delete: [AuthorVolumesDeleteFieldInput!]
+  disconnect: [AuthorVolumesDisconnectFieldInput!]
+  update: AuthorVolumesUpdateConnectionInput
+}
+
+input AuthorWhere {
+  AND: [AuthorWhere!]
+  NOT: AuthorWhere
+  OR: [AuthorWhere!]
+  id: IDScalarFilters
+  id_CONTAINS: ID @deprecated(reason: "Please use the relevant generic filter id: { contains: ... }")
+  id_ENDS_WITH: ID @deprecated(reason: "Please use the relevant generic filter id: { endsWith: ... }")
+  id_EQ: ID @deprecated(reason: "Please use the relevant generic filter id: { eq: ... }")
+  id_IN: [ID!] @deprecated(reason: "Please use the relevant generic filter id: { in: ... }")
+  id_STARTS_WITH: ID @deprecated(reason: "Please use the relevant generic filter id: { startsWith: ... }")
+  name: StringScalarFilters
+  name_CONTAINS: String @deprecated(reason: "Please use the relevant generic filter name: { contains: ... }")
+  name_ENDS_WITH: String @deprecated(reason: "Please use the relevant generic filter name: { endsWith: ... }")
+  name_EQ: String @deprecated(reason: "Please use the relevant generic filter name: { eq: ... }")
+  name_IN: [String!] @deprecated(reason: "Please use the relevant generic filter name: { in: ... }")
+  name_STARTS_WITH: String @deprecated(reason: "Please use the relevant generic filter name: { startsWith: ... }")
+  shelf: ShelfRelationshipFilters
+  shelfConnection: AuthorShelfConnectionFilters
+
+  """
+  Return Authors where all of the related AuthorShelfConnections match this filter
+  """
+  shelfConnection_ALL: AuthorShelfConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'shelfConnection: { all: { node: ... } } }' instead.")
+
+  """
+  Return Authors where none of the related AuthorShelfConnections match this filter
+  """
+  shelfConnection_NONE: AuthorShelfConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'shelfConnection: { none: { node: ... } } }' instead.")
+
+  """
+  Return Authors where one of the related AuthorShelfConnections match this filter
+  """
+  shelfConnection_SINGLE: AuthorShelfConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'shelfConnection: { single: { node: ... } } }' instead.")
+
+  """
+  Return Authors where some of the related AuthorShelfConnections match this filter
+  """
+  shelfConnection_SOME: AuthorShelfConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'shelfConnection: { some: { node: ... } } }' instead.")
+
+  """Return Authors where all of the related Shelves match this filter"""
+  shelf_ALL: ShelfWhere @deprecated(reason: "Please use the relevant generic filter 'shelf: { all: ... }' instead.")
+
+  """Return Authors where none of the related Shelves match this filter"""
+  shelf_NONE: ShelfWhere @deprecated(reason: "Please use the relevant generic filter 'shelf: { none: ... }' instead.")
+
+  """Return Authors where one of the related Shelves match this filter"""
+  shelf_SINGLE: ShelfWhere @deprecated(reason: "Please use the relevant generic filter 'shelf: {  single: ... }' instead.")
+
+  """Return Authors where some of the related Shelves match this filter"""
+  shelf_SOME: ShelfWhere @deprecated(reason: "Please use the relevant generic filter 'shelf: {  some: ... }' instead.")
+  topVolumes: VolumeRelationshipFilters
+  topVolumes_ALL: VolumeWhere
+  topVolumes_NONE: VolumeWhere
+  topVolumes_SINGLE: VolumeWhere
+  topVolumes_SOME: VolumeWhere
+  volumes: VolumeRelationshipFilters
+  volumesAggregate: AuthorVolumesAggregateInput @deprecated(reason: "Aggregate filters are moved inside the volumesConnection filter, please use { volumesConnection: { aggregate: {...} } } instead")
+  volumesConnection: AuthorVolumesConnectionFilters
+
+  """
+  Return Authors where all of the related AuthorVolumesConnections match this filter
+  """
+  volumesConnection_ALL: AuthorVolumesConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'volumesConnection: { all: { node: ... } } }' instead.")
+
+  """
+  Return Authors where none of the related AuthorVolumesConnections match this filter
+  """
+  volumesConnection_NONE: AuthorVolumesConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'volumesConnection: { none: { node: ... } } }' instead.")
+
+  """
+  Return Authors where one of the related AuthorVolumesConnections match this filter
+  """
+  volumesConnection_SINGLE: AuthorVolumesConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'volumesConnection: { single: { node: ... } } }' instead.")
+
+  """
+  Return Authors where some of the related AuthorVolumesConnections match this filter
+  """
+  volumesConnection_SOME: AuthorVolumesConnectionWhere @deprecated(reason: "Please use the relevant generic filter 'volumesConnection: { some: { node: ... } } }' instead.")
+
+  """Return Authors where all of the related Volumes match this filter"""
+  volumes_ALL: VolumeWhere @deprecated(reason: "Please use the relevant generic filter 'volumes: { all: ... }' instead.")
+
+  """Return Authors where none of the related Volumes match this filter"""
+  volumes_NONE: VolumeWhere @deprecated(reason: "Please use the relevant generic filter 'volumes: { none: ... }' instead.")
+
+  """Return Authors where one of the related Volumes match this filter"""
+  volumes_SINGLE: VolumeWhere @deprecated(reason: "Please use the relevant generic filter 'volumes: {  single: ... }' instead.")
+
+  """Return Authors where some of the related Volumes match this filter"""
+  volumes_SOME: VolumeWhere @deprecated(reason: "Please use the relevant generic filter 'volumes: {  some: ... }' instead.")
+}
+
+type AuthorsConnection {
+  aggregate: AuthorAggregate!
+  edges: [AuthorEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+input ConnectionAggregationCountFilterInput {
+  edges: IntScalarFilters
+  nodes: IntScalarFilters
+}
+
+type Count {
+  nodes: Int!
+}
+
+type CountConnection {
+  edges: Int!
+  nodes: Int!
+}
+
+type CreateAuthorsMutationResponse {
+  authors: [Author!]!
+  info: CreateInfo!
+}
+
+"""
+Information about the number of nodes and relationships created during a create mutation
+"""
+type CreateInfo {
+  nodesCreated: Int!
+  relationshipsCreated: Int!
+}
+
+type CreateNotesMutationResponse {
+  info: CreateInfo!
+  notes: [Note!]!
+}
+
+type CreateTagsMutationResponse {
+  info: CreateInfo!
+  tags: [Tag!]!
+}
+
+type CreateVolumesMutationResponse {
+  info: CreateInfo!
+  volumes: [Volume!]!
+}
+
+"""
+Information about the number of nodes and relationships deleted during a delete mutation
+"""
+type DeleteInfo {
+  nodesDeleted: Int!
+  relationshipsDeleted: Int!
+}
+
+"""Float filters"""
+input FloatScalarFilters {
+  eq: Float
+  gt: Float
+  gte: Float
+  in: [Float!]
+  lt: Float
+  lte: Float
+}
+
+"""The input for filtering a float"""
+input FloatWhere {
+  max: Float
+  min: Float
+}
+
+"""ID filters"""
+input IDScalarFilters {
+  contains: ID
+  endsWith: ID
+  eq: ID
+  in: [ID!]
+  startsWith: ID
+}
+
+"""ID mutations"""
+input IDScalarMutations {
+  set: ID
+}
+
+type IntAggregateSelection {
+  average: Float
+  max: Int
+  min: Int
+  sum: Int
+}
+
+"""Filters for an aggregation of an int field"""
+input IntScalarAggregationFilters {
+  average: FloatScalarFilters
+  max: IntScalarFilters
+  min: IntScalarFilters
+  sum: IntScalarFilters
+}
+
+"""Int filters"""
+input IntScalarFilters {
+  eq: Int
+  gt: Int
+  gte: Int
+  in: [Int!]
+  lt: Int
+  lte: Int
+}
+
+"""Int mutations"""
+input IntScalarMutations {
+  add: Int
+  set: Int
+  subtract: Int
+}
+
+type Mutation {
+  createAuthors(input: [AuthorCreateInput!]!): CreateAuthorsMutationResponse!
+  createNotes(input: [NoteCreateInput!]!): CreateNotesMutationResponse!
+  createTags(input: [TagCreateInput!]!): CreateTagsMutationResponse!
+  createVolumes(input: [VolumeCreateInput!]!): CreateVolumesMutationResponse!
+  deleteAuthors(delete: AuthorDeleteInput, where: AuthorWhere): DeleteInfo!
+  deleteNotes(where: NoteWhere): DeleteInfo!
+  deleteTags(where: TagWhere): DeleteInfo!
+  deleteVolumes(where: VolumeWhere): DeleteInfo!
+  updateAuthors(update: AuthorUpdateInput, where: AuthorWhere): UpdateAuthorsMutationResponse!
+  updateNotes(update: NoteUpdateInput, where: NoteWhere): UpdateNotesMutationResponse!
+  updateTags(update: TagUpdateInput, where: TagWhere): UpdateTagsMutationResponse!
+  updateVolumes(update: VolumeUpdateInput, where: VolumeWhere): UpdateVolumesMutationResponse!
+}
+
+type Note {
+  id: ID!
+}
+
+type NoteAggregate {
+  count: Count!
+}
+
+input NoteConnectWhere {
+  node: NoteWhere!
+}
+
+input NoteCreateInput {
+  id: ID!
+}
+
+type NoteEdge {
+  cursor: String!
+  node: Note!
+}
+
+"""
+Fields to sort Notes by. The order in which sorts are applied is not guaranteed when specifying many fields in one NoteSort object.
+"""
+input NoteSort {
+  id: SortDirection
+}
+
+input NoteUpdateInput {
+  id: IDScalarMutations
+  id_SET: ID @deprecated(reason: "Please use the generic mutation 'id: { set: ... } }' instead.")
+}
+
+input NoteWhere {
+  AND: [NoteWhere!]
+  NOT: NoteWhere
+  OR: [NoteWhere!]
+  id: IDScalarFilters
+  id_CONTAINS: ID @deprecated(reason: "Please use the relevant generic filter id: { contains: ... }")
+  id_ENDS_WITH: ID @deprecated(reason: "Please use the relevant generic filter id: { endsWith: ... }")
+  id_EQ: ID @deprecated(reason: "Please use the relevant generic filter id: { eq: ... }")
+  id_IN: [ID!] @deprecated(reason: "Please use the relevant generic filter id: { in: ... }")
+  id_STARTS_WITH: ID @deprecated(reason: "Please use the relevant generic filter id: { startsWith: ... }")
+}
+
+type NotesConnection {
+  aggregate: NoteAggregate!
+  edges: [NoteEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+"""Pagination information (Relay)"""
+type PageInfo {
+  endCursor: String
+  hasNextPage: Boolean!
+  hasPreviousPage: Boolean!
+  startCursor: String
+}
+
+type Query {
+  allVolumes: [Volume!]!
+  authors(limit: Int, offset: Int, sort: [AuthorSort!], where: AuthorWhere): [Author!]!
+  authorsConnection(after: String, first: Int, sort: [AuthorSort!], where: AuthorWhere): AuthorsConnection!
+  notes(limit: Int, offset: Int, sort: [NoteSort!], where: NoteWhere): [Note!]!
+  notesConnection(after: String, first: Int, sort: [NoteSort!], where: NoteWhere): NotesConnection!
+  shelves(limit: Int, offset: Int, where: ShelfWhere): [Shelf!]!
+  tags(limit: Int, offset: Int, sort: [TagSort!], where: TagWhere): [Tag!]!
+  tagsConnection(after: String, first: Int, sort: [TagSort!], where: TagWhere): TagsConnection!
+  volumes(limit: Int, offset: Int, sort: [VolumeSort!], where: VolumeWhere): [Volume!]!
+  volumesByTitle(after: String, first: Int, phrase: String!, sort: [VolumeIndexSort!], where: VolumeIndexWhere): VolumesIndexConnection!
+  volumesConnection(after: String, first: Int, sort: [VolumeSort!], where: VolumeWhere): VolumesConnection!
+}
+
+union Shelf = Note | Volume
+
+input ShelfRelationshipFilters {
+  """Filter type where all of the related Shelves match this filter"""
+  all: ShelfWhere
+
+  """Filter type where none of the related Shelves match this filter"""
+  none: ShelfWhere
+
+  """Filter type where one of the related Shelves match this filter"""
+  single: ShelfWhere
+
+  """Filter type where some of the related Shelves match this filter"""
+  some: ShelfWhere
+}
+
+input ShelfWhere {
+  Note: NoteWhere
+  Volume: VolumeWhere
+}
+
+"""An enum for sorting in either ascending or descending order."""
+enum SortDirection {
+  """Sort by field values in ascending order."""
+  ASC
+
+  """Sort by field values in descending order."""
+  DESC
+}
+
+type StringAggregateSelection {
+  longest: String
+  shortest: String
+}
+
+"""Filters for an aggregation of a string field"""
+input StringScalarAggregationFilters {
+  averageLength: FloatScalarFilters
+  longestLength: IntScalarFilters
+  shortestLength: IntScalarFilters
+}
+
+"""String filters"""
+input StringScalarFilters {
+  contains: String
+  endsWith: String
+  eq: String
+  in: [String!]
+  startsWith: String
+}
+
+"""String mutations"""
+input StringScalarMutations {
+  set: String
+}
+
+type Tag {
+  id: ID!
+}
+
+type TagAggregate {
+  count: Count!
+}
+
+input TagCreateInput {
+  id: ID!
+}
+
+type TagEdge {
+  cursor: String!
+  node: Tag!
+}
+
+"""
+Fields to sort Tags by. The order in which sorts are applied is not guaranteed when specifying many fields in one TagSort object.
+"""
+input TagSort {
+  id: SortDirection
+}
+
+input TagUpdateInput {
+  id: IDScalarMutations
+  id_SET: ID @deprecated(reason: "Please use the generic mutation 'id: { set: ... } }' instead.")
+}
+
+input TagWhere {
+  AND: [TagWhere!]
+  NOT: TagWhere
+  OR: [TagWhere!]
+  id: IDScalarFilters
+  id_CONTAINS: ID @deprecated(reason: "Please use the relevant generic filter id: { contains: ... }")
+  id_ENDS_WITH: ID @deprecated(reason: "Please use the relevant generic filter id: { endsWith: ... }")
+  id_EQ: ID @deprecated(reason: "Please use the relevant generic filter id: { eq: ... }")
+  id_IN: [ID!] @deprecated(reason: "Please use the relevant generic filter id: { in: ... }")
+  id_STARTS_WITH: ID @deprecated(reason: "Please use the relevant generic filter id: { startsWith: ... }")
+}
+
+type TagsConnection {
+  aggregate: TagAggregate!
+  edges: [TagEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+type UpdateAuthorsMutationResponse {
+  authors: [Author!]!
+  info: UpdateInfo!
+}
+
+"""
+Information about the number of nodes and relationships created and deleted during an update mutation
+"""
+type UpdateInfo {
+  nodesCreated: Int!
+  nodesDeleted: Int!
+  relationshipsCreated: Int!
+  relationshipsDeleted: Int!
+}
+
+type UpdateNotesMutationResponse {
+  info: UpdateInfo!
+  notes: [Note!]!
+}
+
+type UpdateTagsMutationResponse {
+  info: UpdateInfo!
+  tags: [Tag!]!
+}
+
+type UpdateVolumesMutationResponse {
+  info: UpdateInfo!
+  volumes: [Volume!]!
+}
+
+type Volume {
+  id: ID!
+  pages: Int
+  title: String!
+}
+
+type VolumeAggregate {
+  count: Count!
+  node: VolumeAggregateNode!
+}
+
+type VolumeAggregateNode {
+  pages: IntAggregateSelection!
+  title: StringAggregateSelection!
+}
+
+input VolumeConnectWhere {
+  node: VolumeWhere!
+}
+
+input VolumeCreateInput {
+  id: ID!
+  pages: Int
+  title: String!
+}
+
+type VolumeEdge {
+  cursor: String!
+  node: Volume!
+}
+
+type VolumeIndexEdge {
+  cursor: String!
+  node: Volume!
+  score: Float!
+}
+
+"""The input for sorting a Fulltext query on an index of Volume"""
+input VolumeIndexSort {
+  node: VolumeSort
+  score: SortDirection
+}
+
+"""The input for filtering a full-text query on an index of Volume"""
+input VolumeIndexWhere {
+  node: VolumeWhere
+  score: FloatWhere
+}
+
+input VolumeRelationshipFilters {
+  """Filter type where all of the related Volumes match this filter"""
+  all: VolumeWhere
+
+  """Filter type where none of the related Volumes match this filter"""
+  none: VolumeWhere
+
+  """Filter type where one of the related Volumes match this filter"""
+  single: VolumeWhere
+
+  """Filter type where some of the related Volumes match this filter"""
+  some: VolumeWhere
+}
+
+"""
+Fields to sort Volumes by. The order in which sorts are applied is not guaranteed when specifying many fields in one VolumeSort object.
+"""
+input VolumeSort {
+  id: SortDirection
+  pages: SortDirection
+  title: SortDirection
+}
+
+input VolumeUpdateInput {
+  id: IDScalarMutations
+  id_SET: ID @deprecated(reason: "Please use the generic mutation 'id: { set: ... } }' instead.")
+  pages: IntScalarMutations
+  pages_DECREMENT: Int @deprecated(reason: "Please use the relevant generic mutation 'pages: { decrement: ... } }' instead.")
+  pages_INCREMENT: Int @deprecated(reason: "Please use the relevant generic mutation 'pages: { increment: ... } }' instead.")
+  pages_SET: Int @deprecated(reason: "Please use the generic mutation 'pages: { set: ... } }' instead.")
+  title: StringScalarMutations
+  title_SET: String @deprecated(reason: "Please use the generic mutation 'title: { set: ... } }' instead.")
+}
+
+input VolumeWhere {
+  AND: [VolumeWhere!]
+  NOT: VolumeWhere
+  OR: [VolumeWhere!]
+  id: IDScalarFilters
+  id_CONTAINS: ID @deprecated(reason: "Please use the relevant generic filter id: { contains: ... }")
+  id_ENDS_WITH: ID @deprecated(reason: "Please use the relevant generic filter id: { endsWith: ... }")
+  id_EQ: ID @deprecated(reason: "Please use the relevant generic filter id: { eq: ... }")
+  id_IN: [ID!] @deprecated(reason: "Please use the relevant generic filter id: { in: ... }")
+  id_STARTS_WITH: ID @deprecated(reason: "Please use the relevant generic filter id: { startsWith: ... }")
+  pages: IntScalarFilters
+  pages_EQ: Int @deprecated(reason: "Please use the relevant generic filter pages: { eq: ... }")
+  pages_GT: Int @deprecated(reason: "Please use the relevant generic filter pages: { gt: ... }")
+  pages_GTE: Int @deprecated(reason: "Please use the relevant generic filter pages: { gte: ... }")
+  pages_IN: [Int] @deprecated(reason: "Please use the relevant generic filter pages: { in: ... }")
+  pages_LT: Int @deprecated(reason: "Please use the relevant generic filter pages: { lt: ... }")
+  pages_LTE: Int @deprecated(reason: "Please use the relevant generic filter pages: { lte: ... }")
+  title: StringScalarFilters
+  title_CONTAINS: String @deprecated(reason: "Please use the relevant generic filter title: { contains: ... }")
+  title_ENDS_WITH: String @deprecated(reason: "Please use the relevant generic filter title: { endsWith: ... }")
+  title_EQ: String @deprecated(reason: "Please use the relevant generic filter title: { eq: ... }")
+  title_IN: [String!] @deprecated(reason: "Please use the relevant generic filter title: { in: ... }")
+  title_STARTS_WITH: String @deprecated(reason: "Please use the relevant generic filter title: { startsWith: ... }")
+}
+
+type VolumesConnection {
+  aggregate: VolumeAggregate!
+  edges: [VolumeEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+type VolumesIndexConnection {
+  edges: [VolumeIndexEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}

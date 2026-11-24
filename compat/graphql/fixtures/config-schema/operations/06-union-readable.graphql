@@ -1,0 +1,11 @@
+# features: config.schema, config.query, union
+query {
+  entities {
+    ... on Team {
+      id
+    }
+    ... on Member {
+      id
+    }
+  }
+}

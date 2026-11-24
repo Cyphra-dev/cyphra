@@ -1,0 +1,11 @@
+# features: config.mutation, mutation.nested
+mutation {
+  updatePosts(
+    where: { id: { eq: "p2" } }
+    update: { tags: [{ update: { node: { name: { set: "x" } } } }] }
+  ) {
+    posts {
+      id
+    }
+  }
+}

@@ -1,0 +1,23 @@
+# features: config.mutation, mutation.nested
+mutation {
+  updatePosts(
+    where: { id: { eq: "p1" } }
+    update: {
+      title: { set: "Hello again" }
+      tags: [
+        {
+          disconnect: [{ where: { node: { name: { eq: "graph" } } } }]
+          create: [{ node: { name: "fresh" } }]
+        }
+      ]
+    }
+  ) {
+    posts {
+      id
+      title
+      tags {
+        name
+      }
+    }
+  }
+}

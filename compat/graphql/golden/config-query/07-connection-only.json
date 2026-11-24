@@ -1,0 +1,28 @@
+{
+  "data": {
+    "auditsConnection": {
+      "totalCount": 2,
+      "edges": [
+        {
+          "node": {
+            "id": "a1",
+            "size": 5
+          }
+        },
+        {
+          "node": {
+            "id": "a2",
+            "size": 7
+          }
+        }
+      ],
+      "aggregate": {
+        "node": {
+          "size": {
+            "max": 7
+          }
+        }
+      }
+    }
+  }
+}

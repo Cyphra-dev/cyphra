@@ -331,6 +331,23 @@ function intParam(ctx: CypherContext, value: unknown): string | undefined {
   return ctx.param(neo4j.int(Math.max(0, Math.trunc(value))));
 }
 
+/**
+ * The page size of a read of `node` (v7 `getOptions` / `getConnectionOptions`): the requested
+ * `limit` / `first`, else `@limit(default)`, else `@limit(max)`, capped by `@limit(max)`.
+ *
+ * Deliberate difference with v7: v7 ignores a requested `0` after applying `@limit`, so `limit: 0`
+ * / `first: 0` returned every node and bypassed `max`. Here `0` counts as "not given" on a type with
+ * `@limit`, so `max` always holds. Without `@limit`, `0` still means "no limit" (like v7).
+ */
+export function pageLimit(node: NodeType | undefined, requested: unknown): unknown {
+  const l = node?.limit;
+  if (!l) return requested;
+  const given =
+    typeof requested === "number" && Math.trunc(requested) !== 0 ? requested : undefined;
+  const limit = given ?? l.default ?? l.max;
+  return limit !== undefined && l.max !== undefined ? Math.min(limit, l.max) : limit;
+}
+
 function paging(ctx: CypherContext, offset: unknown, limit: unknown): string {
   const parts: string[] = [];
   const o = intParam(ctx, offset);
@@ -716,7 +733,7 @@ export class SelectionCompiler {
     const pred = and([this.where.node(m, target, args.where), auth.filter]);
     const pre = sortScope();
     const order = this.nodeOrder(m, target, args.sort, pre);
-    const page = paging(this.ctx, args.offset, args.limit);
+    const page = paging(this.ctx, args.offset, pageLimit(target, args.limit));
     const inner: Scope = [];
     const proj = this.projectNode(m, target, fieldNodes, inner, pre);
     const row = this.rowGate(inner, auth.failure, proj.expr, this.forbiddenMap());
@@ -748,7 +765,7 @@ export class SelectionCompiler {
   ): { expr: string; decode: Decoder } {
     const target = this.model.node(field.target);
     const call = statementCall(this.ctx, field.cypher, field.args, args, variable);
-    const p = this.cypherNodes(call, field.cypher, target, fieldNodes);
+    const p = this.cypherNodes(call, field.cypher, target, fieldNodes, field.type.list);
     const s = this.ctx.variable("cypher");
     const value = field.type.list ? `collect(${p.row})` : `head(collect(${p.row}))`;
     scope.push([`CALL (${variable}) {`, ...p.clauses, `RETURN ${value} AS ${s}`, "}"].join("\n"));
@@ -769,16 +786,20 @@ export class SelectionCompiler {
     cypher: CypherAnnotation,
     target: NodeType,
     fieldNodes: readonly FieldNode[],
+    list: boolean,
   ): { clauses: string[]; row: string; decode: Decoder } {
     const n = this.ctx.variable("this");
     const auth = this.readRules(n, target, fieldNodes);
     const inner: Scope = [];
     const proj = this.projectNode(n, target, fieldNodes, inner);
     const row = this.rowGate(inner, auth.failure, proj.expr, this.forbiddenMap());
+    // v7 applies the type's `@limit` to `@cypher` fields returning a list of it.
+    const page = list ? paging(this.ctx, undefined, pageLimit(target, undefined)) : "";
     return {
       clauses: [
         call,
         `WITH ${column(cypher)} AS ${n} WHERE ${and([`${n} IS NOT NULL`, auth.filter])}`,
+        ...(page ? [`WITH ${n} ${page}`] : []),
         ...inner,
       ],
       row,
@@ -899,7 +920,7 @@ export class SelectionCompiler {
     }
 
     const withVars = opts.relVar ? `${opts.relVar}, ${opts.nodeVar}` : opts.nodeVar;
-    const page = paging(this.ctx, offset || undefined, opts.args.first);
+    const page = paging(this.ctx, offset || undefined, pageLimit(opts.node, opts.args.first));
     const edgeRow = this.rowGate(
       edgeScope,
       needsEdges ? readAuth.failure : undefined,
@@ -954,9 +975,16 @@ export class SelectionCompiler {
             const info: AnyRecord = {};
             for (const [pk, pn] of collectFields(this.info, subSelections(nodes))) {
               switch (pn[0]!.name.value) {
-                case "hasNextPage":
-                  info[pk] = offset + edges.length < total;
+                case "hasNextPage": {
+                  // v7 computes it from the requested `first` (not the `@limit` page size).
+                  const first = opts.args.first;
+                  info[pk] = !opts.node.limit
+                    ? offset + edges.length < total
+                    : typeof first === "number"
+                      ? offset + (first || edges.length) < total
+                      : false;
                   break;
+                }
                 case "hasPreviousPage":
                   info[pk] = offset > 0;
                   break;
@@ -1426,7 +1454,7 @@ export class SelectionCompiler {
     const pred = and([this.where.node(v, node, args.where), auth.filter]);
     const pre = sortScope();
     const order = this.nodeOrder(v, node, args.sort, pre);
-    const page = paging(this.ctx, args.offset, args.limit);
+    const page = paging(this.ctx, args.offset, pageLimit(node, args.limit));
     const inner: Scope = [];
     const proj = this.projectNode(v, node, fieldNodes, inner, pre);
     const head = [
@@ -1506,7 +1534,7 @@ export class SelectionCompiler {
     }
     const target = this.model.node(field.type.name);
     this.authenticate(target, "READ");
-    const p = this.cypherNodes(call, field.cypher, target, fieldNodes);
+    const p = this.cypherNodes(call, field.cypher, target, fieldNodes, list);
     return {
       cypher: [...p.clauses, `RETURN ${p.row} AS this`].join("\n"),
       params: this.ctx.params,
@@ -1566,7 +1594,7 @@ export class SelectionCompiler {
     }
     const afterOffset = cursorToOffset(args.after);
     const offset = afterOffset === undefined ? 0 : afterOffset + 1;
-    const page = paging(this.ctx, offset || undefined, args.first);
+    const page = paging(this.ctx, offset || undefined, pageLimit(node, args.first));
     const edges = this.ctx.variable("edges");
     const e = this.ctx.variable("edge");
     const inner: Scope = [];

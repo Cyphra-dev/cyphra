@@ -1,0 +1,54 @@
+{
+  "data": {
+    "actors": [
+      {
+        "name": "Carrie",
+        "moviesConnection": {
+          "aggregate": {
+            "count": {
+              "nodes": 1,
+              "edges": 1
+            },
+            "node": {
+              "internalScore": {
+                "max": 5
+              },
+              "budget": {
+                "sum": 100.5
+              }
+            },
+            "edge": {
+              "year": {
+                "min": 1999
+              }
+            }
+          }
+        }
+      },
+      {
+        "name": "Keanu",
+        "moviesConnection": {
+          "aggregate": {
+            "count": {
+              "nodes": 2,
+              "edges": 2
+            },
+            "node": {
+              "internalScore": {
+                "max": 9
+              },
+              "budget": {
+                "sum": 120.5
+              }
+            },
+            "edge": {
+              "year": {
+                "min": 1999
+              }
+            }
+          }
+        }
+      }
+    ]
+  }
+}

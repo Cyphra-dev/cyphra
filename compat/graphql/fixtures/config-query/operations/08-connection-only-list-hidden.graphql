@@ -1,0 +1,6 @@
+# features: config.query
+query {
+  audits {
+    id
+  }
+}

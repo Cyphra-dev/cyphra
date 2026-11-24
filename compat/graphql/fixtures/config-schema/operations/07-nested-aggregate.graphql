@@ -1,0 +1,17 @@
+# features: config.schema, aggregate
+query {
+  teams {
+    membersConnection {
+      aggregate {
+        count {
+          nodes
+        }
+        node {
+          age {
+            max
+          }
+        }
+      }
+    }
+  }
+}

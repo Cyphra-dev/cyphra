@@ -1,0 +1,99 @@
+{
+  "data": {
+    "movies": [
+      {
+        "id": "m1",
+        "title": "Alpha",
+        "rating": 7,
+        "budget": 100.5,
+        "tagline": "first one",
+        "released": 2000,
+        "createdBy": "seed",
+        "plain": "p1",
+        "computed": "Alpha!",
+        "actors": [
+          {
+            "name": "Carrie",
+            "age": 40
+          },
+          {
+            "name": "Keanu",
+            "age": 50
+          }
+        ],
+        "actorsConnection": {
+          "edges": [
+            {
+              "properties": {
+                "role": "Neo",
+                "screenTime": 120,
+                "year": 1999
+              },
+              "node": {
+                "name": "Keanu"
+              }
+            },
+            {
+              "properties": {
+                "role": "Trinity",
+                "screenTime": 80,
+                "year": 1999
+              },
+              "node": {
+                "name": "Carrie"
+              }
+            }
+          ]
+        },
+        "reviews": [
+          {
+            "score": 3
+          },
+          {
+            "score": 5
+          }
+        ],
+        "studio": {
+          "name": "Studio One"
+        }
+      },
+      {
+        "id": "m2",
+        "title": "Beta",
+        "rating": 4,
+        "budget": 20,
+        "tagline": "second",
+        "released": 2010,
+        "createdBy": "seed",
+        "plain": "p2",
+        "computed": "Beta!",
+        "actors": [
+          {
+            "name": "Keanu",
+            "age": 50
+          }
+        ],
+        "actorsConnection": {
+          "edges": [
+            {
+              "properties": {
+                "role": "John",
+                "screenTime": 90,
+                "year": 2014
+              },
+              "node": {
+                "name": "Keanu"
+              }
+            }
+          ]
+        },
+        "reviews": [
+          {
+            "score": 4
+          }
+        ],
+        "studio": null
+      }
+    ]
+  }
+}

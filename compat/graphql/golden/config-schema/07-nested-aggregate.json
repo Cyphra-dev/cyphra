@@ -1,0 +1,20 @@
+{
+  "data": {
+    "teams": [
+      {
+        "membersConnection": {
+          "aggregate": {
+            "count": {
+              "nodes": 2
+            },
+            "node": {
+              "age": {
+                "max": 40
+              }
+            }
+          }
+        }
+      }
+    ]
+  }
+}

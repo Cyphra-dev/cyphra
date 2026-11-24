@@ -20,9 +20,9 @@ This guide is a checklist. Each step was run on a small app with `@id`, `@relati
 
 <Callout type="info">
   Before you start, check that your type definitions are covered: interfaces, `@vector`, some
-  scalars and the schema configuration directives (`@query`, `@selectable`, `@filterable`, …) are
-  not supported yet ([full list](#what-is-not-supported-yet)). `makeSchema` throws an
-  `UnsupportedTypeDefsError` that names the type or field, so the first run tells you.
+  scalars, `@populatedBy`, `@relayId` and `@coalesce` are not supported yet ([full
+  list](#what-is-not-supported-yet)). `makeSchema` throws an `UnsupportedTypeDefsError` that names
+  the type or field, so the first run tells you.
 </Callout>
 
 ## Steps
@@ -418,12 +418,13 @@ Some v7 behaviour is kept on purpose, because changing it would change your resu
 - The scalars `Time`, `LocalTime`, `LocalDateTime`, `Duration`, `Point`, `CartesianPoint` and
   custom scalars. `ID`, `String`, `Int`, `Float`, `Boolean`, `BigInt`, `Date`, `DateTime` and enums
   work.
-- `@populatedBy` and `@relayId`.
-- The schema configuration directives `@query`, `@mutation`, `@selectable`,
-  `@settable`, `@filterable`, `@sortable` and `@limit`.
+- `@populatedBy`, `@relayId` and `@coalesce`.
 
 `makeSchema` throws an `UnsupportedTypeDefsError` for them instead of serving a different API.
-`@plural` works.
+`@plural` and the schema configuration directives (`@query`, `@mutation`, `@selectable`,
+`@settable`, `@filterable`, `@sortable`, `@limit`) [work](/graphql#schema-configuration). Keep them
+when you migrate: removing `@mutation(operations: [])` or `@query(read: false)` exposes operations
+v7 did not generate.
 
 ## Using the typed client alongside GraphQL
 

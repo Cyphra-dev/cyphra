@@ -1,0 +1,7 @@
+{
+  "errors": [
+    {
+      "message": "Field \"reviews\" is not defined by type \"MovieWhere\"."
+    }
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "data": {
+    "teams": [
+      {
+        "id": "t1",
+        "members": [
+          {
+            "id": "m1"
+          },
+          {
+            "id": "m2"
+          }
+        ]
+      }
+    ],
+    "membersConnection": {
+      "totalCount": 2,
+      "edges": [
+        {
+          "node": {
+            "id": "m1"
+          }
+        },
+        {
+          "node": {
+            "id": "m2"
+          }
+        }
+      ]
+    }
+  }
+}

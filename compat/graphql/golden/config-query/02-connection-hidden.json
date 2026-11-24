@@ -1,0 +1,7 @@
+{
+  "errors": [
+    {
+      "message": "Cannot query field \"secretsConnection\" on type \"Query\". Did you mean \"reportsConnection\", \"auditsConnection\", \"draftsConnection\", \"ownersConnection\", or \"logsConnection\"?"
+    }
+  ]
+}

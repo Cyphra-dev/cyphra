@@ -1,0 +1,10 @@
+# features: config.query, aggregate
+query {
+  logsConnection {
+    aggregate {
+      count {
+        nodes
+      }
+    }
+  }
+}

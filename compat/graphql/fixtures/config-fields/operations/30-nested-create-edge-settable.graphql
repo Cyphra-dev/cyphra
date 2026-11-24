@@ -1,0 +1,30 @@
+# features: config.settable, mutation.nested
+mutation {
+  updateMovies(
+    where: { id: { eq: "m2" } }
+    update: {
+      actors: [
+        {
+          create: [
+            { node: { name: "Laurence" }, edge: { role: "Morpheus", screenTime: 60, year: 1999 } }
+          ]
+        }
+      ]
+    }
+  ) {
+    movies {
+      actorsConnection(sort: [{ node: { name: ASC } }]) {
+        edges {
+          properties {
+            role
+            screenTime
+            year
+          }
+          node {
+            name
+          }
+        }
+      }
+    }
+  }
+}

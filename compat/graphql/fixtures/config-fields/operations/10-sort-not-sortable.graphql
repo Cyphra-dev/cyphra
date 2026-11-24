@@ -1,0 +1,6 @@
+# features: config.sortable
+query {
+  movies(sort: [{ title: ASC }]) {
+    id
+  }
+}

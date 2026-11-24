@@ -1,0 +1,7 @@
+{
+  "errors": [
+    {
+      "message": "Cannot query field \"secrets\" on type \"Query\"."
+    }
+  ]
+}
