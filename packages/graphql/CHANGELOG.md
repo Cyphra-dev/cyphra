@@ -1,5 +1,30 @@
 # @cyphra/graphql
 
+## 0.19.0
+
+### Minor Changes
+
+- 88c9fc4: `compat.v7.makeSchema` supports the v7 schema configuration directives with v7's exact schema and behaviour: `@mutation(operations)`, `@query(read, connection, aggregate)` (type, union and `extend schema` level), `@selectable`, `@settable`, `@filterable`, `@sortable` (fields, relationships and relationship properties, including their effect on nested inputs) and `@limit(default, max)` on every read of the type. Directives and arguments it does not implement are now always rejected with `UnsupportedTypeDefsError` instead of ignored: `@coalesce`, `@unique`, unknown directives on relationship fields, enums and enum values, and extra directives on `@jwt` / `@relationshipProperties` types. A root field hidden by `@query` / `@mutation` can be redefined in `Query` / `Mutation` and served by the application's resolvers (it never gets the generated resolver), and `@selectable` hides fields returning types without `@node`; combining `@customResolver` with a configuration directive is rejected like v7. Deliberate differences from v7: `limit: 0` / `first: 0` no longer bypass `@limit(max)`, and `@selectable(onRead: false)` on a to-one relationship (an invalid schema in v7) is rejected.
+- 53ad657: `compat.v7.makeSchema` accepts `resolvers`, merged like `new Neo4jGraphQL({ typeDefs, resolvers })`:
+  `Query` / `Mutation` fields without `@cypher` are served by them, object, input and union types
+  without `@node` are passed through to the schema as written, and `@customResolver(requires)` fields
+  are left out of the generated Cypher while the `requires` selection is always fetched for the
+  parent. As in v7, `context.jwt` (from a verified token) and `context.executionContext` are set for
+  the resolvers. The printed schema matches `@neo4j/graphql` 7.6.8. One deliberate difference:
+  `@authentication` applies to every root field served by resolvers (v7 7.6.8 applies it to the first
+  two only).
+- dbee2a3: `compat.v7.makeSchema` supports to-one (non-list) relationships such as
+  `lab: Lab @relationship(…)`, with the API `@neo4j/graphql` 7.6.8 generates for them: the field and
+  its connection without arguments, `lab: { … }` / `lab: null` and `labConnection` filters (also in
+  `@authorization` rules), nested `create` in create inputs and nested `delete` in `deleteX`. Like v7,
+  a non-nullable to-one relationship (`Lab!`) is rejected, and a create input naming two members of a
+  to-one union fails.
+
+### Patch Changes
+
+- @cyphra/runtime@0.19.0
+- @cyphra/schema@0.19.0
+
 ## 0.18.0
 
 ### Minor Changes

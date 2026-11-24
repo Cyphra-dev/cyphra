@@ -1,5 +1,12 @@
 # @cyphra/better-auth
 
+## 0.19.0
+
+### Patch Changes
+
+- @cyphra/runtime@0.19.0
+- @cyphra/schema@0.19.0
+
 ## 0.18.0
 
 ### Patch Changes
