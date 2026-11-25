@@ -7,7 +7,9 @@
  * one) becomes `interface LearningActivity { … }` holding the fields its carriers have in common,
  * and each carrier `implements` it. When the carriers declare a common field differently, the
  * fields do not line up and the label becomes `@@labels([LearningActivity])` on each carrier
- * instead (a label Cyphra reads and filters on, but does not add on create).
+ * instead (a label Cyphra reads and filters on, but does not add on create). A field that only
+ * some carriers mark `@id` (`id: ID! @id` on one, a plain `id: ID!` on another) lines up: the
+ * interface declares it `@id`, with `@default(uuid())` when one of them generated its values.
  *
  * A v7 GraphQL `interface` adds no label. It becomes a Cyphra interface (relationships to it
  * included) when every `@node` implementation already carries its name as a label, or, with
@@ -17,8 +19,8 @@
  * @packageDocumentation
  */
 
-import type { ModelAttribute, NodeField } from "@cyphra/schema";
-import type { IssueDraft } from "./mappings.js";
+import type { Decorator, ModelAttribute, NodeField, ScalarNodeField } from "@cyphra/schema";
+import { defaultFn, ID, type IssueDraft } from "./mappings.js";
 
 /** A converted `@node` type, before printing. The interface pass moves fields out of it. */
 export type NodeDraft = {
@@ -112,6 +114,49 @@ const same = (a: NodeField, b: NodeField): boolean => JSON.stringify(a) === JSON
 
 function hasId(f: NodeField): boolean {
   return f.kind === "Scalar" && f.decorators.some((d) => d.name === "id");
+}
+
+const UUID_DEFAULT = defaultFn("uuid");
+const DECORATOR_ORDER = ["id", "unique", "index", "default"];
+/** Decorators an identifier may differ by between implementations (and `@default(uuid())`). */
+const ID_DECORATORS = new Set(["id", "unique"]);
+const isUuidDefault = (d: Decorator): boolean =>
+  d.name === "default" && JSON.stringify(d.args) === JSON.stringify(UUID_DEFAULT.args);
+
+/** `f` without `@id`, `@unique` and `@default(uuid())`, to compare identifiers. */
+function withoutIdDecorators(f: ScalarNodeField): ScalarNodeField {
+  return {
+    ...f,
+    decorators: f.decorators.filter((d) => !ID_DECORATORS.has(d.name) && !isUuidDefault(d)),
+  };
+}
+
+/**
+ * An identifier only some members mark `@id` (v7 `@id` on one implementation, a plain or
+ * constrained `ID!` on another): the field the interface declares instead (`@id`, plus
+ * `@default(uuid())` when a member generated its values), or `undefined` when the fields differ
+ * otherwise, or a member has its `@id` on another field.
+ */
+function mergedId(
+  members: readonly NodeDraft[],
+  graphqlField: string,
+): { field: ScalarNodeField; plain: NodeDraft[]; generated: NodeDraft[] } | undefined {
+  const fields = members.map((m) => m.byGraphql.get(graphqlField));
+  if (!fields.every((f): f is ScalarNodeField => f?.kind === "Scalar")) return undefined;
+  if (!fields.some(hasId)) return undefined;
+  const base = withoutIdDecorators(fields[0]!);
+  if (base.type.optional || base.type.list) return undefined;
+  if (!fields.every((f) => same(withoutIdDecorators(f), base))) return undefined;
+  if (members.some((m, i) => m.fields.some((x) => x !== fields[i] && hasId(x)))) return undefined;
+  const generated = members.filter((_, i) => fields[i]!.decorators.some(isUuidDefault));
+  const decorators = [ID, ...base.decorators, ...(generated.length ? [UUID_DEFAULT] : [])].sort(
+    (x, y) => DECORATOR_ORDER.indexOf(x.name) - DECORATOR_ORDER.indexOf(y.name),
+  );
+  return {
+    field: { ...base, decorators },
+    plain: members.filter((_, i) => !hasId(fields[i]!)),
+    generated,
+  };
 }
 
 function list(names: readonly string[]): string {
@@ -225,6 +270,8 @@ export function mapInterfaces(input: InterfacePassInput): InterfacePassResult {
         ? [...members[0]!.byGraphql.keys()].filter((f) => members.every((m) => m.byGraphql.has(f)))
         : [];
     let mismatch: string | undefined;
+    /** Identifiers only some members mark `@id`: the field declared on the interface instead. */
+    const merged = new Map<string, NonNullable<ReturnType<typeof mergedId>>>();
     for (const f of names) {
       const missing = members.find((m) => !m.byGraphql.has(f));
       if (missing) {
@@ -233,6 +280,11 @@ export function mapInterfaces(input: InterfacePassInput): InterfacePassResult {
       }
       const first = members[0]!.byGraphql.get(f)!;
       const other = members.find((m) => !same(m.byGraphql.get(f)!, first));
+      const id = other ? mergedId(members, f) : undefined;
+      if (id) {
+        merged.set(f, id);
+        continue;
+      }
       if (other) {
         mismatch = `field "${f}" differs: ${members[0]!.graphqlName} has \`${show(first)}\`, ${other.graphqlName} has \`${show(other.byGraphql.get(f)!)}\``;
         break;
@@ -255,8 +307,9 @@ export function mapInterfaces(input: InterfacePassInput): InterfacePassResult {
     const moved = new Map<string, string>();
     const graphqlTypeOf = new Map<string, string>();
     const kept: string[] = [];
+    const idNotes: string[] = [];
     for (const f of names) {
-      const field = members[0]!.byGraphql.get(f)!;
+      const field = merged.get(f)?.field ?? members[0]!.byGraphql.get(f)!;
       if (members.some((m) => hoisted.get(m.graphqlName)?.has(f))) continue;
       if (members.some((m) => inherited.get(m.graphqlName)?.has(field.name))) continue;
       const pin = members.map((m) => input.pinned(m, f)).find(Boolean);
@@ -270,6 +323,18 @@ export function mapInterfaces(input: InterfacePassInput): InterfacePassResult {
       }
       fields.push(field);
       moved.set(f, field.name);
+      const id = merged.get(f);
+      if (id) {
+        const marked = members.filter((m) => !id.plain.includes(m)).map((m) => m.graphqlName);
+        const plain = id.plain.map((m) => m.graphqlName);
+        const notGenerated = members.filter((m) => !id.generated.includes(m));
+        idNotes.push(
+          `${f} is @id on ${list(marked)} but not on ${list(plain)}: the interface declares it @id${id.generated.length ? " @default(uuid())" : ""}, so the ${f} values of ${list(plain)} must be unique across :${g.name} nodes too` +
+            (id.generated.length && notGenerated.length
+              ? `, and ${list(notGenerated.map((m) => m.graphqlName))} now ${notGenerated.length > 1 ? "get" : "gets"} a generated ${f} when the application gives none (an inherited field has a single declaration, so the default cannot stay on ${list(id.generated.map((m) => m.graphqlName))} only)`
+              : ""),
+        );
+      }
       const t = members[0]!.graphqlTypeOf.get(field.name);
       if (t) graphqlTypeOf.set(field.name, t);
     }
@@ -318,6 +383,7 @@ export function mapInterfaces(input: InterfacePassInput): InterfacePassResult {
         `the uniqueness of ${list(constrained.map((f) => f.name))} now spans every :${g.name} node (one constraint on :${g.name} instead of one per label)`,
       );
     }
+    parts.push(...idNotes);
     if (kept.length) parts.push(`kept on each implementation: ${kept.join(", ")}`);
     report(g.name, { severity: "changed", feature: what, message: parts.join("; ") });
     for (const m of unlabelled) {

@@ -1,0 +1,54 @@
+// Imported from @neo4j/graphql type definitions with `cyphra import graphql`.
+// Review before use (run the import again to see the full report):
+// - Lab.id: became @id @default(uuid()); Cyphra also adds a uniqueness constraint, which v7 @id does not
+// - Course.id: became @id @default(uuid()); Cyphra also adds a uniqueness constraint, which v7 @id does not
+// - Video.id: became @id @default(uuid()); Cyphra also adds a uniqueness constraint, which v7 @id does not
+// - Badge.id: became @id @default(uuid()); Cyphra also adds a uniqueness constraint, which v7 @id does not
+// - Activity: mapped to interface Activity, implemented by Lab and Step, which carry its label through @node(labels) (Cyphra writes and matches it, like v7); it declares their common fields id and title; the uniqueness of id now spans every :Activity node (one constraint on :Activity instead of one per label); id is @id on Lab but not on Step: the interface declares it @id @default(uuid()), so the id values of Step must be unique across :Activity nodes too, and Step now gets a generated id when the application gives none (an inherited field has a single declaration, so the default cannot stay on Lab only)
+// - Media: label shared by Video and Podcast: mapped to interface Media (Cyphra writes and matches the label, like v7); it declares their common fields id and url; the uniqueness of id now spans every :Media node (one constraint on :Media instead of one per label); id is @id on Video but not on Podcast: the interface declares it @id @default(uuid()), so the id values of Podcast must be unique across :Media nodes too, and Podcast now gets a generated id when the application gives none (an inherited field has a single declaration, so the default cannot stay on Video only)
+// - Badge: label "Award" became @@labels([Award]) (the fields do not line up: field "id" differs: Badge has `id String @id @default`, Trophy has `id String?`): Cyphra matches Badge nodes with or without it and does not add it on create; add it with `$labels: { add: ["Award"] }`
+// - Trophy: label "Award" became @@labels([Award]) (the fields do not line up: field "id" differs: Badge has `id String @id @default`, Trophy has `id String?`): Cyphra matches Trophy nodes with or without it and does not add it on create; add it with `$labels: { add: ["Award"] }`
+// - Activity.id: already @id; --id-fields backs it
+
+interface Activity {
+  id String @id @default(uuid())
+  title String
+}
+
+interface Media {
+  id String @id @default(uuid())
+  url String
+}
+
+node Lab implements Activity {
+  environment String?
+}
+
+node Step implements Activity {
+  order Int
+}
+
+node Course {
+  id String @id @default(uuid())
+  contains Activity[] @relationship(type: "CONTAINS", direction: OUT)
+}
+
+node Video implements Media {
+}
+
+node Podcast implements Media {
+}
+
+node Badge {
+  id String @id @default(uuid())
+  name String
+
+  @@labels([Award])
+}
+
+node Trophy {
+  id String?
+  name String
+
+  @@labels([Award])
+}

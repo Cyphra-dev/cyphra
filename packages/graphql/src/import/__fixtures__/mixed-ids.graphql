@@ -1,0 +1,47 @@
+# Identifiers only some implementations mark @id (#252); converted with --id-fields Activity.id
+# (see golden.test.ts).
+
+# A GraphQL interface whose implementations carry its label: v7 @id on Lab, a plain ID! on Step.
+interface Activity {
+  id: ID!
+  title: String!
+}
+
+type Lab implements Activity @node(labels: ["Lab", "Activity"]) {
+  id: ID! @id
+  title: String!
+  environment: String
+}
+
+type Step implements Activity @node(labels: ["Step", "Activity"]) {
+  id: ID!
+  title: String!
+  order: Int!
+}
+
+type Course @node {
+  id: ID! @id
+  contains: [Activity!]! @relationship(type: "CONTAINS", direction: OUT)
+}
+
+# A shared label without a GraphQL interface, no hint: the plain id lines up with the @id too.
+type Video @node(labels: ["Video", "Media"]) {
+  id: ID! @id
+  url: String!
+}
+
+type Podcast @node(labels: ["Podcast", "Media"]) {
+  id: ID!
+  url: String!
+}
+
+# Two ids that differ otherwise (optional on one side): still not lined up.
+type Badge @node(labels: ["Badge", "Award"]) {
+  id: ID! @id
+  name: String!
+}
+
+type Trophy @node(labels: ["Trophy", "Award"]) {
+  id: ID
+  name: String!
+}
