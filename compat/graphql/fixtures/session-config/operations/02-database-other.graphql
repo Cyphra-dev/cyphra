@@ -1,0 +1,9 @@
+# features: context.sessionConfig
+# The statement runs on the `system` database, which has no `MATCH`: the error proves the request's
+# database is used (an unknown database fails with an edition-specific message).
+query {
+  things {
+    id
+    name
+  }
+}

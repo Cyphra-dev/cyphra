@@ -1,0 +1,165 @@
+type Count {
+  nodes: Int!
+}
+
+"""
+Information about the number of nodes and relationships created during a create mutation
+"""
+type CreateInfo {
+  nodesCreated: Int!
+  relationshipsCreated: Int!
+}
+
+type CreateThingsMutationResponse {
+  info: CreateInfo!
+  things: [Thing!]!
+}
+
+"""
+Information about the number of nodes and relationships deleted during a delete mutation
+"""
+type DeleteInfo {
+  nodesDeleted: Int!
+  relationshipsDeleted: Int!
+}
+
+"""ID filters"""
+input IDScalarFilters {
+  contains: ID
+  endsWith: ID
+  eq: ID
+  in: [ID!]
+  startsWith: ID
+}
+
+"""ID mutations"""
+input IDScalarMutations {
+  set: ID
+}
+
+type Mutation {
+  createThings(input: [ThingCreateInput!]!): CreateThingsMutationResponse!
+  deleteThings(where: ThingWhere): DeleteInfo!
+  updateThings(update: ThingUpdateInput, where: ThingWhere): UpdateThingsMutationResponse!
+}
+
+"""Pagination information (Relay)"""
+type PageInfo {
+  endCursor: String
+  hasNextPage: Boolean!
+  hasPreviousPage: Boolean!
+  startCursor: String
+}
+
+type Query {
+  thingCount: Int!
+  things(limit: Int, offset: Int, sort: [ThingSort!], where: ThingWhere): [Thing!]!
+  thingsConnection(after: String, first: Int, sort: [ThingSort!], where: ThingWhere): ThingsConnection!
+}
+
+"""An enum for sorting in either ascending or descending order."""
+enum SortDirection {
+  """Sort by field values in ascending order."""
+  ASC
+
+  """Sort by field values in descending order."""
+  DESC
+}
+
+type StringAggregateSelection {
+  longest: String
+  shortest: String
+}
+
+"""String filters"""
+input StringScalarFilters {
+  contains: String
+  endsWith: String
+  eq: String
+  in: [String!]
+  startsWith: String
+}
+
+"""String mutations"""
+input StringScalarMutations {
+  set: String
+}
+
+type Thing {
+  id: ID!
+  name: String
+}
+
+type ThingAggregate {
+  count: Count!
+  node: ThingAggregateNode!
+}
+
+type ThingAggregateNode {
+  name: StringAggregateSelection!
+}
+
+input ThingCreateInput {
+  id: ID!
+  name: String
+}
+
+type ThingEdge {
+  cursor: String!
+  node: Thing!
+}
+
+"""
+Fields to sort Things by. The order in which sorts are applied is not guaranteed when specifying many fields in one ThingSort object.
+"""
+input ThingSort {
+  id: SortDirection
+  name: SortDirection
+}
+
+input ThingUpdateInput {
+  id: IDScalarMutations
+  id_SET: ID @deprecated(reason: "Please use the generic mutation 'id: { set: ... } }' instead.")
+  name: StringScalarMutations
+  name_SET: String @deprecated(reason: "Please use the generic mutation 'name: { set: ... } }' instead.")
+}
+
+input ThingWhere {
+  AND: [ThingWhere!]
+  NOT: ThingWhere
+  OR: [ThingWhere!]
+  id: IDScalarFilters
+  id_CONTAINS: ID @deprecated(reason: "Please use the relevant generic filter id: { contains: ... }")
+  id_ENDS_WITH: ID @deprecated(reason: "Please use the relevant generic filter id: { endsWith: ... }")
+  id_EQ: ID @deprecated(reason: "Please use the relevant generic filter id: { eq: ... }")
+  id_IN: [ID!] @deprecated(reason: "Please use the relevant generic filter id: { in: ... }")
+  id_STARTS_WITH: ID @deprecated(reason: "Please use the relevant generic filter id: { startsWith: ... }")
+  name: StringScalarFilters
+  name_CONTAINS: String @deprecated(reason: "Please use the relevant generic filter name: { contains: ... }")
+  name_ENDS_WITH: String @deprecated(reason: "Please use the relevant generic filter name: { endsWith: ... }")
+  name_EQ: String @deprecated(reason: "Please use the relevant generic filter name: { eq: ... }")
+  name_IN: [String] @deprecated(reason: "Please use the relevant generic filter name: { in: ... }")
+  name_STARTS_WITH: String @deprecated(reason: "Please use the relevant generic filter name: { startsWith: ... }")
+}
+
+type ThingsConnection {
+  aggregate: ThingAggregate!
+  edges: [ThingEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+"""
+Information about the number of nodes and relationships created and deleted during an update mutation
+"""
+type UpdateInfo {
+  nodesCreated: Int!
+  nodesDeleted: Int!
+  relationshipsCreated: Int!
+  relationshipsDeleted: Int!
+}
+
+type UpdateThingsMutationResponse {
+  info: UpdateInfo!
+  things: [Thing!]!
+}

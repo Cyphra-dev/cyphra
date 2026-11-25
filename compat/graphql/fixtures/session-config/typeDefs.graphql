@@ -1,0 +1,8 @@
+type Thing @node {
+  id: ID!
+  name: String
+}
+
+type Query {
+  thingCount: Int! @cypher(statement: "MATCH (t:Thing) RETURN count(t) AS n", columnName: "n")
+}

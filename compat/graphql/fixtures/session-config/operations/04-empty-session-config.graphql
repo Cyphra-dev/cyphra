@@ -1,0 +1,4 @@
+# features: context.sessionConfig
+query {
+  thingCount
+}

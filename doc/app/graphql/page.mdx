@@ -46,14 +46,14 @@ const driver = neo4j.driver(
 export const schema = compat.v7.makeSchema({ typeDefs, driver });
 ```
 
-| Option     | Description                                                                                        |
-| ---------- | -------------------------------------------------------------------------------------------------- |
-| `typeDefs` | Your v7 type definitions (`@node`, `@relationship`, …), as a string.                               |
-| `driver`   | A `neo4j-driver` driver.                                                                           |
-| `client`   | A `CyphraClient`, instead of `driver`, to share the connection of your app.                        |
-| `database` | Database name used with `driver`. Default: the default database.                                   |
-| `debug`    | Log each generated Cypher statement and its parameter names (not values).                          |
-| `features` | `{ authorization }`: how JWTs are verified, as in v7 ([below](#authentication-and-authorization)). |
+| Option     | Description                                                                                                                     |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `typeDefs` | Your v7 type definitions (`@node`, `@relationship`, …), as a string.                                                            |
+| `driver`   | A `neo4j-driver` driver.                                                                                                        |
+| `client`   | A `CyphraClient`, instead of `driver`, to share the connection of your app.                                                     |
+| `database` | Database name used with `driver`. Default: the default database. A request's `context.sessionConfig.database` takes precedence. |
+| `debug`    | Log each generated Cypher statement and its parameter names (not values).                                                       |
+| `features` | `{ authorization }`: how JWTs are verified, as in v7 ([below](#authentication-and-authorization)).                              |
 
 `makeSchema` throws an `UnsupportedTypeDefsError` when the type definitions use something it cannot
 serve yet (`Point`, `Duration`, custom scalars, …). It never serves an API that
@@ -77,6 +77,20 @@ for (const issue of compat.v7.checkTypeDefs(typeDefs)) {
 
 `checkTypeDefs` also takes several files, `[{ name, body }]`, checked together: each issue's
 `location.source` is then its file.
+
+As in v7, a request's `context.sessionConfig` (`database`, `impersonatedUser`, `auth`) is spread over
+the session options of every statement of the request, so one schema can serve several databases or
+run as the signed-in user. Its `database` wins over the `database` option. It needs `driver`: with
+`client`, a request that sets `sessionConfig` fails with an error instead of running on the client's
+database.
+
+```ts
+const yoga = createYoga({
+  schema,
+  // tenantDatabase: your own lookup, e.g. from the request's host or token.
+  context: ({ request }) => ({ sessionConfig: { database: tenantDatabase(request) } }),
+});
+```
 
 `printSchema(schema)` prints the schema exactly as v7 does, byte for byte: types, fields, arguments,
 input fields and enum values come in v7's order (`moviesConnection` before `movies`,

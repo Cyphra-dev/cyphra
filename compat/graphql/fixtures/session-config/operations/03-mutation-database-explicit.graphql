@@ -1,0 +1,9 @@
+# features: context.sessionConfig, mutation.create
+mutation {
+  createThings(input: [{ id: "t3", name: "Cog" }]) {
+    things {
+      id
+      name
+    }
+  }
+}
