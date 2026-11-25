@@ -1,5 +1,14 @@
 # @cyphra/graphql
 
+## 0.20.1
+
+### Patch Changes
+
+- 368b85f: `compat.v7` honours `context.sessionConfig` per request, like `@neo4j/graphql` 7: its `database`, `impersonatedUser` and `auth` are spread over the session options of every generated statement (`sessionConfig.database` wins over the `database` passed to `makeSchema`). With a `CyphraClient`, a request that sets `sessionConfig` now fails with an error instead of silently running on the client's database. New compat fixture `session-config` (#251).
+- 7c766e5: `cyphra import graphql`: a shared label or GraphQL interface whose implementations declare the same id differently (`id: ID! @id` on one, a plain `id: ID!` on another) is now converted to an interface instead of `@@labels` (which also dropped every relationship to the interface, and made `--id-fields Interface.id` fail with "the label is not an interface"). The interface declares the id `@id`, with `@default(uuid())` when one implementation generated its ids, and the report explains the decision (#252).
+  - @cyphra/runtime@0.20.1
+  - @cyphra/schema@0.20.1
+
 ## 0.20.0
 
 ### Minor Changes
