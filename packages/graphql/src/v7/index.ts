@@ -175,7 +175,7 @@ function rootReadResolver(
     const node = model.node(nodeName);
     const auth = await requestAuth(ctx, a);
     // On the shared engine when it serves the request exactly like the compiler.
-    const plan = a.engine?.read(kind, node, args as AnyRecord, info, info.fieldNodes, ctx);
+    const plan = a.engine?.read(kind, node, args as AnyRecord, info, info.fieldNodes, ctx, auth);
     const client = plan && a.engine!.clients.for(sessionConfigOf(ctx));
     if (plan) a.engine!.ran(info.fieldName, client !== undefined);
     if (plan && client) {
@@ -274,7 +274,15 @@ function rootMutationResolver(
     const node = model.node(nodeName);
     const auth = await requestAuth(ctx, opts);
     // On the shared engine when it writes and answers exactly like the compiler.
-    const plan = opts.engine?.write(kind, node, args as AnyRecord, info, info.fieldNodes, ctx);
+    const plan = opts.engine?.write(
+      kind,
+      node,
+      args as AnyRecord,
+      info,
+      info.fieldNodes,
+      ctx,
+      auth,
+    );
     const client = plan && opts.engine!.clients.for(sessionConfigOf(ctx));
     if (plan) opts.engine!.ran(info.fieldName, client !== undefined);
     if (plan && client) {

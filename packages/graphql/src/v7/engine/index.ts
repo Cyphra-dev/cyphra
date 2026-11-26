@@ -1,14 +1,16 @@
 /**
  * `compat.v7` on the shared engine: v7 requests the engine can serve exactly like the compat
  * compiler are translated into ORM operations on an engine client (see `schema.ts`, `where.ts`,
- * `read.ts`); the others run on the compat compiler, which stays for the v7 features whose engine
- * pieces come later (aggregations, fulltext, `@cypher`, `@authorization`, subscriptions,
- * interfaces, unions) and for what the engine cannot express yet (edge filters and sorts, …).
+ * `read.ts`, `write.ts`, with the request's `@authorization` rules from `rules.ts`); the others run
+ * on the compat compiler, which stays for the v7 features whose engine pieces come later
+ * (aggregations, fulltext, `@cypher`, subscriptions, interfaces, unions) and for what the engine
+ * cannot express yet (edge filters and sorts, nested writes, …).
  *
  * @packageDocumentation
  */
 
 import type { FieldNode } from "graphql";
+import type { AuthContext } from "../auth/context.js";
 import type { ExecutorOptions } from "../execute.js";
 import type { SelectionInfo } from "../cypher/select.js";
 import type { NodeType, V7Model } from "../model.js";
@@ -85,9 +87,10 @@ export class V7Engine {
     info: SelectionInfo,
     fieldNodes: readonly FieldNode[],
     ctx: unknown,
+    auth: AuthContext,
   ): ReadPlan | undefined {
     return this.plan(fieldNodes[0]?.name.value ?? "", ctx, () => {
-      const t = new ReadTranslator(this.model, this.schema, info);
+      const t = new ReadTranslator(this.model, this.schema, info, auth);
       return kind === "list"
         ? t.rootList(node, args, fieldNodes)
         : t.rootConnection(node, args, fieldNodes);
@@ -105,9 +108,10 @@ export class V7Engine {
     info: SelectionInfo,
     fieldNodes: readonly FieldNode[],
     ctx: unknown,
+    auth: AuthContext,
   ): WritePlan | undefined {
     return this.plan(fieldNodes[0]?.name.value ?? "", ctx, () => {
-      const t = new WriteTranslator(this.model, this.schema, info);
+      const t = new WriteTranslator(this.model, this.schema, info, auth);
       return t[kind](node, args, fieldNodes);
     });
   }

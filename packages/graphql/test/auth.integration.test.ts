@@ -421,4 +421,75 @@ describe.skipIf(!hasNeo)("v7 authorization on Neo4j (adversarial)", () => {
       expect(await docTitles()).toContain(BEN_SECRET_TITLE);
     });
   });
+
+  describe("the shared engine and the compat compiler", () => {
+    /** The internal `makeSchema` option that turns the engine off or reports how fields ran. */
+    const ENGINE = Symbol.for("cyphra.compat.v7.engine");
+
+    it("answer every rule-protected request alike (the engine serves those it can)", async () => {
+      const engineFields: string[] = [];
+      const probe = {
+        onRootField: (field: string, reason: string | undefined) => {
+          if (reason === undefined) engineFields.push(field);
+        },
+      };
+      const build = (engine: unknown) =>
+        compat.v7.makeSchema({
+          typeDefs,
+          driver,
+          features: { authorization: { key } },
+          [ENGINE]: engine,
+        } as Parameters<typeof compat.v7.makeSchema>[0]);
+      const on = build(probe);
+      const off = build(false);
+      const ann = await as("u-ann");
+      const hr = await as("u-ben", ["hr"]);
+      const requests: [string, Record<string, unknown>][] = [
+        [`{ gqlAuthDocs(sort: [{ id: ASC }]) { id title } }`, {}],
+        [`{ gqlAuthDocs(sort: [{ id: ASC }]) { id title owner { id phone } } }`, ann],
+        [
+          `{ gqlAuthUsers(sort: [{ id: ASC }]) { id phone docs(sort: [{ id: ASC }]) { id } } }`,
+          ann,
+        ],
+        [`{ gqlAuthUsers(sort: [{ id: ASC }]) { id salary } }`, ann],
+        [`{ gqlAuthUsers(sort: [{ id: ASC }]) { id salary } }`, hr],
+        [
+          `{ gqlAuthUsersConnection(sort: [{ id: ASC }]) { totalCount edges { node { id phone docsConnection { totalCount } } } } }`,
+          ann,
+        ],
+        [`{ gqlAuthDocsConnection(first: 1) { totalCount pageInfo { hasNextPage } } }`, ann],
+        [`{ gqlAuthDocs(where: { owner: { single: { id: { eq: "u-ben" } } } }) { id } }`, ann],
+        [
+          `mutation { updateGqlAuthDocs(update: { title: { set: "x" } }) { gqlAuthDocs { id title } } }`,
+          ann,
+        ],
+        [
+          `mutation { updateGqlAuthUsers(where: { id: { eq: "u-ann" } }, update: { name: { set: "A" } }) { gqlAuthUsers { id name } } }`,
+          ann,
+        ],
+        [`mutation { deleteGqlAuthDocs(where: { public: { eq: true } }) { nodesDeleted } }`, ann],
+        [`mutation { deleteGqlAuthDocs { nodesDeleted } }`, {}],
+      ];
+      const results = async (schema: GraphQLSchema, document: string, ctx: object) => {
+        await cypher("MATCH (n) WHERE n:GqlAuthUser OR n:GqlAuthDoc DETACH DELETE n");
+        await cypher(SEED);
+        const result = await execute({ schema, document: parse(document), contextValue: ctx });
+        const state = await cypher(
+          "MATCH (n) WHERE n:GqlAuthUser OR n:GqlAuthDoc RETURN n.id AS id, n.title AS title, n.name AS name ORDER BY id",
+        );
+        return JSON.stringify({ result, state });
+      };
+      for (const [document, ctx] of requests) {
+        expect(await results(on, document, ctx), document).toBe(await results(off, document, ctx));
+      }
+      expect(engineFields).toEqual(
+        expect.arrayContaining([
+          "gqlAuthDocs",
+          "gqlAuthUsersConnection",
+          "gqlAuthDocsConnection",
+          "deleteGqlAuthDocs",
+        ]),
+      );
+    }, 60_000);
+  });
 });

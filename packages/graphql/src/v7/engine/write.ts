@@ -15,19 +15,34 @@
  * `CREATE`, the engine's is a `MERGE` —, `update`, `delete`, `disconnect`, `connectOrCreate`),
  * arithmetic and list operators (v7 fails on `null` operands and 32-bit overflow), deprecated
  * `field_SET` keys (v7 reports conflicting modifications), `@timestamp` fields (v7 writes the
- * database clock), `@limit` types (v7 limits the returned nodes), DateTime values, and every type
- * with rules.
+ * database clock), `@limit` types (v7 limits the returned nodes), DateTime values,
+ * `@authentication`, and `@authorization` rules the engine cannot apply like the compiler: a
+ * `validate` rule that may fail, a READ filter on the nodes an update returns that depends on the
+ * node.
+ *
+ * `@authorization` `filter` rules of UPDATE / DELETE are ANDed into the `where` of the nodes
+ * written, like the compiler; nested selections of the response get their READ rules.
  *
  * @packageDocumentation
  */
 
 import type { FieldNode } from "graphql";
 import { CyphraError } from "@cyphra/runtime";
+import type { AuthContext } from "../auth/context.js";
 import { collectFields, subSelections, type SelectionInfo } from "../cypher/select.js";
 import type { Attribute, NodeType, V7Model } from "../model.js";
 import { ReadTranslator, delegate } from "./read.js";
+import type { EngineAuthRules } from "./rules.js";
 import type { EngineSchema } from "./schema.js";
-import { Fallback, WhereTranslator, engineValue, isPlainObject, rootWhere } from "./where.js";
+import {
+  Fallback,
+  TRUE,
+  WhereTranslator,
+  allOf,
+  engineValue,
+  isPlainObject,
+  rootWhere,
+} from "./where.js";
 
 type AnyRecord = Record<string, unknown>;
 
@@ -67,17 +82,33 @@ function writeValue(attr: Attribute, value: unknown): unknown {
 export class WriteTranslator {
   private readonly where: WhereTranslator;
   private readonly read: ReadTranslator;
+  private readonly rules: EngineAuthRules;
 
   constructor(
     model: V7Model,
     schema: EngineSchema,
     private readonly info: SelectionInfo,
+    auth: AuthContext,
   ) {
     this.where = new WhereTranslator(model, schema);
-    this.read = new ReadTranslator(model, schema, info);
+    this.read = new ReadTranslator(model, schema, info, auth);
+    this.rules = this.read.rules;
   }
 
-  /** The type's checks shared by every write: in the engine, no rules, no `@limit`. */
+  /** The attributes an input writes (the compiler's `writtenAttributes`: every defined key). */
+  private written(node: NodeType, input: unknown): Attribute[] {
+    if (!isPlainObject(input)) return [];
+    const out = new Set<Attribute>();
+    for (const [key, value] of Object.entries(input)) {
+      if (value === undefined) continue;
+      const attr = node.attributes.find((a) => a.name === key);
+      // Deprecated `title_SET` keys stay on the compiler (see `update`).
+      if (attr) out.add(attr);
+    }
+    return [...out];
+  }
+
+  /** The type's checks shared by every write: in the engine (no `@authentication`), no `@limit`. */
   private writable(node: NodeType): void {
     this.where.engineNode(node);
     if (node.limit) throw new Fallback("@limit on the returned nodes");
@@ -101,6 +132,8 @@ export class WriteTranslator {
   private response(
     node: NodeType,
     fieldNodes: readonly FieldNode[],
+    /** Apply the READ rules to the returned nodes (update; v7 does not for create). */
+    readRules: boolean,
   ): {
     select: AnyRecord | undefined;
     shape: (counts: Record<string, number>, rows: readonly AnyRecord[]) => AnyRecord;
@@ -121,6 +154,13 @@ export class WriteTranslator {
           (counts) => Object.fromEntries(fields.map(([k, f]) => [k, counts[f] ?? 0])),
         ]);
       } else if (name === node.plural) {
+        if (readRules) {
+          // The returned nodes are filtered in the compiler's statement, not in the engine's.
+          const filter = this.rules.read(node, this.read.selectedAttributes(node, nodes));
+          if (filter !== undefined && filter !== TRUE) {
+            throw new Fallback("READ filter on the returned nodes");
+          }
+        }
         const p = this.read.node(node, nodes);
         select = { ...select, ...p.select };
         shapers.push([key, (_counts, rows) => rows.map(p.shape)]);
@@ -139,6 +179,8 @@ export class WriteTranslator {
     const ids = node.attributes.filter((a) => a.id && !a.cypher);
     const rows = asList(args.input).map((input) => {
       if (!isPlainObject(input)) throw new Fallback("create input");
+      // CREATE validations are AFTER rules (v7); they must hold for every created node.
+      this.rules.validated(node, "CREATE", "AFTER", this.written(node, input));
       const row: AnyRecord = {};
       for (const [key, value] of Object.entries(input)) {
         if (value === undefined || key === EMPTY_INPUT) continue;
@@ -149,7 +191,7 @@ export class WriteTranslator {
       return row;
     });
     const idFields = ids.map((a) => this.field(node, a));
-    const { select, shape } = this.response(node, fieldNodes);
+    const { select, shape } = this.response(node, fieldNodes, false);
     return async (client) => {
       // v7 generates `@id` values in the statement (`randomUUID()`): same kind of value.
       const data = rows.map((row) => {
@@ -194,8 +236,19 @@ export class WriteTranslator {
     } else if (args.update !== undefined && args.update !== null) {
       throw new Fallback("update input");
     }
-    const where = rootWhere(this.where.node(node, args.where));
-    const { select, shape } = this.response(node, fieldNodes);
+    // v7 applies the type's UPDATE rules to a top-level update only when attributes are written.
+    const written = this.written(node, args.update);
+    const typeRules = written.length > 0;
+    for (const when of ["BEFORE", "AFTER"] as const) {
+      this.rules.validated(node, "UPDATE", when, written, typeRules);
+    }
+    const where = rootWhere(
+      allOf([
+        this.where.node(node, args.where),
+        typeRules ? this.rules.filter(node, "UPDATE") : undefined,
+      ]),
+    );
+    const { select, shape } = this.response(node, fieldNodes, true);
     const updateArgs: AnyRecord = {
       ...(where !== undefined ? { where } : {}),
       data,
@@ -223,7 +276,10 @@ export class WriteTranslator {
     } else if (args.delete !== undefined && args.delete !== null) {
       throw new Fallback("delete input");
     }
-    const where = rootWhere(this.where.node(node, args.where));
+    this.rules.validated(node, "DELETE", "BEFORE");
+    const where = rootWhere(
+      allOf([this.where.node(node, args.where), this.rules.filter(node, "DELETE")]),
+    );
     const fields = [...collectFields(this.info, subSelections(fieldNodes))]
       .map(([k, n]) => [k, n[0]!.name.value] as const)
       .filter(([, f]) => COUNTERS.includes(f));

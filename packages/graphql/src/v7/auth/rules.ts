@@ -317,33 +317,37 @@ export class AuthRules {
     return v instanceof AuthValue ? (v.value ?? null) : (v ?? null);
   }
 
-  /**
-   * Copy of a rule `where` with `$jwt.<path>` / `$context.<path>` strings replaced by their values
-   * for this request ({@link AuthValue}); like v7, strings inside lists are left as they are.
-   */
-  private populate(value: unknown, key?: string): unknown {
-    if (typeof value === "string") return this.reference(value);
-    if (Array.isArray(value)) {
-      return key === "AND" || key === "OR" ? value.map((v) => this.populate(v)) : value;
-    }
-    if (isRecord(value)) {
-      const out: AnyRecord = {};
-      for (const [k, v] of Object.entries(value)) out[k] = this.populate(v, k);
-      return out;
-    }
-    return value;
+  private populate(value: unknown): unknown {
+    return populateRule(this.auth, value);
   }
+}
 
-  private reference(value: string): unknown {
-    if (value.startsWith("$jwt")) {
-      const path = value.substring(5);
-      const mapped = this.auth.claims?.get(path) ?? path;
-      // v7 splits `$jwt` paths on every dot (escaping is only supported in @jwtClaim filters).
-      return new AuthValue(readPath(this.auth.jwt ?? {}, mapped.split(".")));
-    }
-    if (value.startsWith("$context")) {
-      return new AuthValue(readPath(this.auth.context, value.substring(9).split(".")));
-    }
-    return value;
+/**
+ * Copy of a rule `where` with `$jwt.<path>` / `$context.<path>` strings replaced by their values
+ * for the request ({@link AuthValue}); like v7, strings inside lists are left as they are.
+ */
+export function populateRule(auth: AuthContext, value: unknown, key?: string): unknown {
+  if (typeof value === "string") return reference(auth, value);
+  if (Array.isArray(value)) {
+    return key === "AND" || key === "OR" ? value.map((v) => populateRule(auth, v)) : value;
   }
+  if (isRecord(value)) {
+    const out: AnyRecord = {};
+    for (const [k, v] of Object.entries(value)) out[k] = populateRule(auth, v, k);
+    return out;
+  }
+  return value;
+}
+
+function reference(auth: AuthContext, value: string): unknown {
+  if (value.startsWith("$jwt")) {
+    const path = value.substring(5);
+    const mapped = auth.claims?.get(path) ?? path;
+    // v7 splits `$jwt` paths on every dot (escaping is only supported in @jwtClaim filters).
+    return new AuthValue(readPath(auth.jwt ?? {}, mapped.split(".")));
+  }
+  if (value.startsWith("$context")) {
+    return new AuthValue(readPath(auth.context, value.substring(9).split(".")));
+  }
+  return value;
 }
