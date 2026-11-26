@@ -1,5 +1,11 @@
 # @cyphra/language-server
 
+## 0.26.0
+
+### Patch Changes
+
+- @cyphra/schema@0.26.0
+
 ## 0.25.0
 
 ### Patch Changes

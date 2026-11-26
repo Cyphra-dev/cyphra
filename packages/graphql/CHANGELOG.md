@@ -1,5 +1,27 @@
 # @cyphra/graphql
 
+## 0.26.0
+
+### Minor Changes
+
+- 751c55e: `compat.v7` runs more requests on the shared engine, with the same results: `single` relationship filters, and reads and root mutations of types with `@authorization`. The rules are applied where v7 applies them (root nodes, nested relationships and connections, update and delete targets); requests whose `validate` rules may fail, or whose rules the engine cannot evaluate exactly like v7, stay on the compat compiler, as do types with `@authentication`. With `client`, the client's `query` events and spans now name the engine operation (`findMany`, `updateMany`, …) for these requests too.
+- 8b74583: Native API extension points (#247): `computed` exposes the client's computed fields
+  (`$extends({ result })`, their `needs` loaded when selected); `cypherFields` adds Cypher-backed
+  fields (the native `@cypher`, built with `native.cypher`), compiled into the parent's statement
+  with arguments and context values bound as parameters, returning scalars (filterable and sortable)
+  or nodes (filtered by the target's read rules); `extend` merges SDL and resolvers into the
+  generated schema (non-node result types, custom root fields, fields added to generated types),
+  with `ctx.cyphra` (the request's client, rules applied) and `ctx.cyphra.selection(info)` (the
+  selection as the client's `select`, so a custom resolver loads generated types in one statement).
+  Rules do not apply inside the Cypher of a Cypher-backed field.
+
+### Patch Changes
+
+- 3b850b3: `compat.v7` runs `single` relationship filters (`actors: { single: … }`, `actors_SINGLE`, `actorsConnection: { single: … }`) on the shared engine, as a `_count` of the matching related nodes equal to 1, with the same results.
+- Updated dependencies [db04150]
+  - @cyphra/runtime@0.26.0
+  - @cyphra/schema@0.26.0
+
 ## 0.25.0
 
 ### Minor Changes
