@@ -32,6 +32,7 @@ import type {
   ResolvedScalarField,
 } from "@cyphra/schema";
 import type { ApiModel } from "./api.js";
+import { forbidden, type RequestAuth } from "./auth.js";
 import type { Limits } from "./config.js";
 import { badInput, limitError } from "./errors.js";
 import { toGlobalId } from "./relay.js";
@@ -76,8 +77,15 @@ export class Translator {
     private readonly api: ApiModel,
     private readonly info: GraphQLResolveInfo,
     private readonly limits: Limits,
+    /** The request's auth: context-only field rules it denies. */
+    private readonly auth?: RequestAuth,
   ) {
     this.gql = info.schema;
+  }
+
+  /** Fail when a context-only field rule denies `model.field` to the request (filter, sort, …). */
+  private usable(model: ResolvedNodeModel, field: string, use: string): void {
+    if (this.auth?.fieldDenied(model, field)) throw this.auth.fieldForbidden(model, field, use);
   }
 
   /** The selection sets of the root field being resolved. */
@@ -275,6 +283,7 @@ export class Translator {
         for (const [k, ns] of sub) {
           const rel = ns[0]!.name.value;
           if (rel === "__typename") continue;
+          this.usable(model, rel, "counted");
           const field = model.fields.find((f) => f.name === rel) as ResolvedRelationField;
           const where = this.where(this.api.node(field.target), this.args(countType, ns[0]!).where);
           const spec = where === undefined ? true : { where };
@@ -313,6 +322,17 @@ export class Translator {
       const fieldName = this.api.fieldOfOutput(model, name);
       const field = model.fields.find((f) => f.name === fieldName);
       if (!field) throw badInput(`Unknown field "${model.name}.${name}".`);
+      if (this.auth?.fieldDenied(model, fieldName)) {
+        // Not read: `null` with a FORBIDDEN error at its path (the field is nullable).
+        const error = forbidden(`${model.name}.${fieldName} is not readable by this request.`, {
+          model: model.name,
+          field: fieldName,
+        });
+        parts.push((_row, out) => {
+          out[key] = error;
+        });
+        continue;
+      }
       if (field.kind === "scalar") {
         select[fieldName] = true;
         parts.push((row, out) => {
@@ -411,6 +431,7 @@ export class Translator {
       }
       const f = model.fields.find((x) => x.name === k);
       if (!f) throw badInput(`Unknown field "${model.name}.${k}" in where.`);
+      this.usable(model, k, "filtered on");
       if (f.kind === "scalar") {
         out[k] = this.scalarFilter(f, v);
         continue;
@@ -460,7 +481,12 @@ export class Translator {
     const rest: AnyRecord = {};
     for (const [k, v] of Object.entries(w)) {
       if (keys.has(k)) {
-        if (v !== null && v !== undefined) key[k] = v;
+        if (v !== null && v !== undefined) {
+          for (const f of model.compoundUniques?.find((c) => c.key === k)?.fields ?? [k]) {
+            this.usable(model, f, "filtered on");
+          }
+          key[k] = v;
+        }
       } else rest[k] = v;
     }
     return { ...(this.where(model, rest) ?? {}), ...key };
@@ -486,6 +512,7 @@ export class Translator {
       if (k === "_typename") return { __typename: v };
       const f = model.fields.find((x) => x.name === k);
       if (!f) throw badInput(`Unknown field "${model.name}.${k}" in orderBy.`);
+      this.usable(model, k, "sorted on");
       if (f.kind === "scalar") {
         if ((f.type === "Point" || f.type === "CartesianPoint") && isPlainObject(v)) {
           return {
@@ -504,6 +531,7 @@ export class Translator {
         return { [k]: { _count: spec._count, ...(where ? { where } : {}) } };
       }
       const [field, dir] = one(v, `orderBy[${i}].${k}`);
+      this.usable(target, field, "sorted on");
       return { [k]: { [field]: dir } };
     });
   }

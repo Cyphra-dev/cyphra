@@ -1,0 +1,18 @@
+{
+  "data": {
+    "userFindUnique": {
+      "name": "Alice",
+      "salary": null
+    }
+  },
+  "errors": [
+    {
+      "message": "User.salary is not readable by this request.",
+      "path": [
+        "userFindUnique",
+        "salary"
+      ],
+      "code": "FORBIDDEN"
+    }
+  ]
+}

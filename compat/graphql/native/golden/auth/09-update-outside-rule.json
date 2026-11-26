@@ -1,0 +1,33 @@
+{
+  "data": {
+    "title": null,
+    "relationOnly": null,
+    "steal": null,
+    "own": {
+      "views": 8
+    }
+  },
+  "errors": [
+    {
+      "message": "update: no Post matches {\"id\":\"p-hello\"}.",
+      "path": [
+        "relationOnly"
+      ],
+      "code": "NOT_FOUND"
+    },
+    {
+      "message": "connect: no Post matches {\"id\":\"p-hello\"}.",
+      "path": [
+        "steal"
+      ],
+      "code": "NOT_FOUND"
+    },
+    {
+      "message": "update: no Post matches {\"id\":\"p-hello\"}.",
+      "path": [
+        "title"
+      ],
+      "code": "NOT_FOUND"
+    }
+  ]
+}

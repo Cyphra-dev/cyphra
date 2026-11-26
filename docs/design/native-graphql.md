@@ -1290,6 +1290,23 @@ fixtures and goldens: printed SDL plus results) grows with it.
 5. **Auth**: `rules` (read / create / update / delete / connect / disconnect / after),
    `authenticated`, field rules (context-only and row-dependent), `native.jwtContext`,
    `ctx.cyphra`, a security test per v7 footgun fixed.
+
+   Status (#245): landed. Choices made where this note left them open: a node the request cannot
+   `read` does not exist for `update` / `delete` / `connect` / `disconnect` either (`NOT_FOUND`);
+   a written node the `read` rules hide is returned as `null` (the write happened; batch `nodes`
+   leave it out); connecting through a to-many side whose inverse is to-one applies the target's
+   `update` rule; explicit `disconnect` / `set` leave edges outside the `disconnect` rule alone,
+   while a to-one edge a write must replace outside it is `FORBIDDEN`; `upsert` checks the
+   `create` rule whether it creates or updates; a whole `authenticated` group also hides the
+   model (or blocks its nested writes) for anonymous requests, an operation list only guards root
+   fields; `native.jwtContext` returns `{ token, jwt, user }` (the default `isAuthenticated` is
+   "has a `user` or a `jwt`"); `ctx.cyphra` is set by `native.context(schema, build)` or by the
+   first generated root field of the request; field rules cannot target the `@id` field, and
+   row-dependent ones are for scalars; `after` / `disconnect` rules are refused on FalkorDB (no
+   rollback). TypeScript checks the object a rule returns only partly (a misspelled key next to a
+   valid one passes `tsc`), so `makeSchema` also calls each `where` rule with an empty context and
+   checks what it returns.
+
 6. **Aggregates, groupBy, search, findSimilar, union search, traversals** (`<model>Traverse`,
    `TraversePaths`, `ShortestPath`, named traversal fields).
 7. **Extension points**: computed fields, `extend` SDL + resolvers, `ctx.cyphra.selection(info)`,

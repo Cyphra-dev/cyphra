@@ -1,0 +1,21 @@
+# features: auth.rules.update, mutation.update, auth.jwt, errors
+# Outside the update rule a node does not exist for the request: NOT_FOUND, also for an update
+# that only writes relations (v7 skips the node's UPDATE rules then), and for a connect that
+# would replace the target's to-one author.
+mutation {
+  title: postUpdate(where: { id: "p-hello" }, data: { title: "Mine" }) {
+    id
+  }
+  relationOnly: postUpdate(
+    where: { id: "p-hello" }
+    data: { tags: { disconnect: [{ name: "db" }] } }
+  ) {
+    id
+  }
+  steal: userUpdate(where: { id: "u-bob" }, data: { posts: { connect: [{ id: "p-hello" }] } }) {
+    id
+  }
+  own: postUpdate(where: { id: "p-bob" }, data: { views: 8 }) {
+    views
+  }
+}

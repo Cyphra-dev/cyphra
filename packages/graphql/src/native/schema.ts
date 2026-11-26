@@ -16,6 +16,7 @@ import {
   GraphQLInterfaceType,
   GraphQLList,
   GraphQLNonNull,
+  getNullableType,
   GraphQLObjectType,
   GraphQLSchema,
   GraphQLString,
@@ -1031,9 +1032,14 @@ export class SchemaBuilder {
     for (const f of this.api.fields(model)) {
       const access = this.api.config.field(model.name, f.name);
       const deprecationReason = access.deprecated;
+      // A field with a read rule is nullable: `null` where the rule hides it.
+      const ruled = this.api.config.fieldRuled(model.name, f.name);
+      const description = ruled ? "Null where a read rule hides it." : undefined;
       if (f.kind === "scalar") {
+        const type = this.scalarOutput(f);
         fields[this.api.outputName(model, f.name)] = {
-          type: this.scalarOutput(f),
+          type: ruled ? getNullableType(type) : type,
+          description,
           resolve: byResponseKey,
           deprecationReason,
         };
@@ -1041,14 +1047,16 @@ export class SchemaBuilder {
       }
       const target = this.api.node(f.target);
       const t = this.output(target);
+      const list = new GraphQLList(new GraphQLNonNull(t));
       fields[f.name] = f.many
         ? {
-            type: new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(t))),
+            type: ruled ? list : new GraphQLNonNull(list),
+            description,
             args: this.listArgs(target),
             resolve: byResponseKey,
             deprecationReason,
           }
-        : { type: t, resolve: byResponseKey, deprecationReason };
+        : { type: t, description, resolve: byResponseKey, deprecationReason };
     }
     const count = this.countType(model);
     if (count) {

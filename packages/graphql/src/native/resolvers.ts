@@ -14,10 +14,11 @@ import {
   type GraphQLObjectType,
   type GraphQLResolveInfo,
 } from "graphql";
-import { withReadTransaction } from "@cyphra/runtime";
+import { withEngineRules, withReadTransaction } from "@cyphra/runtime";
 import type { ResolvedNodeModel } from "@cyphra/schema";
 import type { ApiModel } from "./api.js";
 import { isWrite, type RootOperation, type WriteOperation } from "./config.js";
+import { RequestAuth } from "./auth.js";
 import { badInput, toGraphQLError } from "./errors.js";
 import { names, TYPE, type RootResolver } from "./schema.js";
 import { fromGlobalId, keyValue } from "./relay.js";
@@ -29,6 +30,55 @@ type Delegate = Record<string, (args: AnyRecord) => Promise<unknown>>;
 
 /** A client (or a function of the request's context returning one). */
 export type ClientSource = object | ((context: unknown) => object | Promise<object>);
+
+/** One request: its auth, and its client with the request's rules applied. */
+export type Session = {
+  readonly auth: RequestAuth;
+  /** The client root fields run on (the request's rules applied). */
+  readonly client: object;
+};
+
+/**
+ * The session of each request, one per context object (shared by its root fields): the rules
+ * evaluated once against the context, the client of `client` with them applied. Also sets
+ * `ctx.cyphra` (when the context is an object without one): that client, with `$unsafe` (the
+ * client without the API's rules).
+ */
+export function sessions(api: ApiModel, source: ClientSource): (ctx: unknown) => Promise<Session> {
+  const cache = new WeakMap<object, Promise<Session>>();
+  const make = async (ctx: unknown): Promise<Session> => {
+    const auth = new RequestAuth(api, ctx);
+    const base =
+      typeof source === "function"
+        ? await (source as (c: unknown) => object | Promise<object>)(ctx)
+        : source;
+    const client = auth.hasRules ? withEngineRules(base, auth.rules) : base;
+    if (typeof ctx === "object" && ctx !== null && !("cyphra" in ctx) && Object.isExtensible(ctx)) {
+      // A client of its own (never the shared one), so that `$unsafe` can be set on it. Not set
+      // when `client` is not a Cyphra client (a stub): root fields still run on it.
+      let scoped: object | undefined;
+      try {
+        scoped = auth.hasRules ? client : withEngineRules(base, {});
+      } catch {
+        scoped = undefined;
+      }
+      if (scoped) {
+        Object.defineProperty(scoped, "$unsafe", { value: base });
+        (ctx as AnyRecord).cyphra = scoped;
+      }
+    }
+    return { auth, client };
+  };
+  return (ctx) => {
+    if (typeof ctx !== "object" || ctx === null) return make(ctx);
+    let s = cache.get(ctx);
+    if (!s) {
+      s = make(ctx);
+      cache.set(ctx, s);
+    }
+    return s;
+  };
+}
 
 function delegateKey(model: string): string {
   return model.charAt(0).toLowerCase() + model.slice(1);
@@ -48,13 +98,8 @@ type Outcome = { readonly ok: true; readonly value: unknown } | { ok: false; err
 /** The resolvers of the root fields, for {@link SchemaBuilder}. */
 export function rootResolvers(
   api: ApiModel,
-  options: { client: ClientSource; debug: boolean },
+  options: { session: (ctx: unknown) => Promise<Session>; debug: boolean },
 ): RootResolver {
-  const clientFor = async (ctx: unknown): Promise<object> =>
-    typeof options.client === "function"
-      ? await (options.client as (c: unknown) => object | Promise<object>)(ctx)
-      : options.client;
-
   // Mutation root fields by name, for `mutationTransaction: "request"`.
   const writes = new Map<string, { model: ResolvedNodeModel; op: WriteOperation }>();
   for (const [model, ops] of api.config.operations) {
@@ -79,6 +124,12 @@ export function rootResolvers(
       for (const key of fields.keys()) outcomes.set(key, { ok: false, error });
       return outcomes;
     };
+    let session: Session;
+    try {
+      session = await options.session(ctx);
+    } catch (err) {
+      return failAll(toGraphQLError(err, options.debug));
+    }
     for (const [key, nodes] of fields) {
       const fieldName = nodes[0]!.name.value;
       if (fieldName === "__typename") {
@@ -98,7 +149,12 @@ export function rootResolvers(
           returnType: def.type,
           path: { prev: undefined, key, typename: mutationType.name },
         };
-        plans.push([key, planWrite(api, target.model, target.op, args, fieldInfo), args]);
+        session.auth.checkRoot(target.model, target.op);
+        plans.push([
+          key,
+          planWrite(api, target.model, target.op, args, fieldInfo, session.auth),
+          args,
+        ]);
       } catch (err) {
         // Nothing runs when one field cannot be translated: they commit together or not at all.
         return failAll(toGraphQLError(err, options.debug, args));
@@ -106,7 +162,7 @@ export function rootResolvers(
     }
     let failed: GraphQLError | undefined;
     try {
-      const client = (await clientFor(ctx)) as {
+      const client = session.client as {
         $transaction?: (fn: (tx: object) => Promise<unknown>) => Promise<unknown>;
       };
       if (typeof client.$transaction !== "function") {
@@ -144,12 +200,13 @@ export function rootResolvers(
         return outcome.value;
       }
       try {
+        const { auth, client } = await options.session(ctx);
+        auth.checkRoot(model, op);
         if (isWrite(op)) {
-          const plan = planWrite(api, model, op, args, info);
-          return await plan.run(await clientFor(ctx));
+          const plan = planWrite(api, model, op, args, info, auth);
+          return await plan.run(client);
         }
-        const t = new Translator(api, info, api.config.limits);
-        const client = await clientFor(ctx);
+        const t = new Translator(api, info, api.config.limits, auth);
         switch (op) {
           case "count": {
             t.checkAliases();
@@ -186,7 +243,7 @@ export function rootResolvers(
 /** `node(id)` (Relay): the node a global id names, or `null`. */
 export function nodeResolver(
   api: ApiModel,
-  options: { client: ClientSource; debug: boolean },
+  options: { session: (ctx: unknown) => Promise<Session>; debug: boolean },
 ): GraphQLFieldResolver<unknown, unknown> {
   return async (_src, rawArgs, ctx, info) => {
     try {
@@ -204,14 +261,13 @@ export function nodeResolver(
       }
       const key = keyValue(keyField, decoded.key);
       if (key === undefined) throw badInput(`node: ${JSON.stringify(id)} is not a global id.`);
-      const t = new Translator(api, info, api.config.limits);
+      const { auth, client } = await options.session(ctx);
+      // A node an anonymous request may not read (or that the rules hide) is not there.
+      if (!auth.authenticated && api.config.authenticated(model.name, "findUnique")) return null;
+      const t = new Translator(api, info, api.config.limits, auth);
       const tr = t.node(model, t.rootSelections(), undefined, 0, 1);
       t.checkAliases();
       t.checkComplexity(1, tr.cost);
-      const client =
-        typeof options.client === "function"
-          ? await (options.client as (c: unknown) => object | Promise<object>)(ctx)
-          : options.client;
       const row = (await delegateOf(client, model).findUnique!({
         where: { [keyField.name]: key },
         select: tr.select,
@@ -233,8 +289,9 @@ function planWrite(
   op: WriteOperation,
   args: AnyRecord,
   info: GraphQLResolveInfo,
+  auth: RequestAuth,
 ): WritePlan {
-  const t = new Translator(api, info, api.config.limits);
+  const t = new Translator(api, info, api.config.limits, auth);
   const w = new WriteArgs(api, t);
   if (op === "createMany" || op === "updateMany" || op === "deleteMany") {
     const batchType = names.batch(model.name);
@@ -306,8 +363,9 @@ function planWrite(
   clientArgs.select = tr.select;
   return {
     run: async (db) => {
-      const row = (await delegateOf(db, model)[op]!(clientArgs)) as AnyRecord;
-      return tr.shape(row);
+      // `null`: written, but the read rules hide the node from this request.
+      const row = (await delegateOf(db, model)[op]!(clientArgs)) as AnyRecord | null;
+      return row ? tr.shape(row) : null;
     },
   };
 }

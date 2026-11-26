@@ -124,7 +124,11 @@ the native API itself, and the diff is reviewed like any other code. A change of
 of a result is a golden diff in the PR. Errors are sorted by path (root fields resolve
 concurrently) and keep `extensions.issues` when there are some (validation issue paths are part
 of the native contract). Mutation fixtures (`writes`, `writes-transaction`) start from the seed
-for each operation, like queries; a seed may create constraints (one statement each).
+for each operation, like queries; a seed may create constraints (one statement each). The `auth`
+fixture covers rules, `authenticated` and field rules: an operation's context is its
+`NN-name.context.json` values, `jwt` from `NN-name.jwt.json` (trusted as-is, what the config's
+rules read), and for `NN-name.token.json` what `native.jwtContext` makes of the signed
+`Authorization` header (suite key; a token signed with another key is anonymous).
 
 ```sh
 pnpm --filter compat-graphql golden:native          # every native fixture

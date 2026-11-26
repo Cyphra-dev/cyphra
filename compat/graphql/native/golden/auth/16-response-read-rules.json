@@ -1,0 +1,28 @@
+{
+  "data": {
+    "userUpdate": {
+      "name": "Al",
+      "email": "alice@acme.io",
+      "salary": null,
+      "audits": [],
+      "posts": [
+        {
+          "id": "p-draft"
+        },
+        {
+          "id": "p-hello"
+        }
+      ]
+    }
+  },
+  "errors": [
+    {
+      "message": "User.salary is not readable by this request.",
+      "path": [
+        "userUpdate",
+        "salary"
+      ],
+      "code": "FORBIDDEN"
+    }
+  ]
+}

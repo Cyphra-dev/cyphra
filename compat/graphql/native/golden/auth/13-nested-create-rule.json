@@ -1,0 +1,14 @@
+{
+  "data": {
+    "postCreate": null
+  },
+  "errors": [
+    {
+      "message": "Forbidden: the rules do not allow creating this Tag.",
+      "path": [
+        "postCreate"
+      ],
+      "code": "FORBIDDEN"
+    }
+  ]
+}

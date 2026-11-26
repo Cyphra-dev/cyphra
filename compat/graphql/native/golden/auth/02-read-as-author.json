@@ -1,0 +1,37 @@
+{
+  "data": {
+    "postFindMany": {
+      "nodes": [
+        {
+          "id": "p-bob",
+          "published": true
+        },
+        {
+          "id": "p-draft",
+          "published": false
+        },
+        {
+          "id": "p-hello",
+          "published": true
+        }
+      ]
+    },
+    "userFindMany": {
+      "nodes": [
+        {
+          "id": "u-alice",
+          "email": "alice@acme.io"
+        },
+        {
+          "id": "u-bob",
+          "email": null
+        },
+        {
+          "id": "u-root",
+          "email": null
+        }
+      ]
+    },
+    "bobByEmail": null
+  }
+}

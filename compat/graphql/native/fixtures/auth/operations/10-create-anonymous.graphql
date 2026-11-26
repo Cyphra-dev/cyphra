@@ -1,0 +1,6 @@
+# features: auth.authenticated, mutation.create, errors
+mutation {
+  postCreate(data: { title: "Anonymous" }) {
+    title
+  }
+}

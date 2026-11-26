@@ -1,0 +1,9 @@
+# features: auth.rules.read, filter.relationship, auth.jwt
+# A filter cannot find a node the read rule hides: Alice cannot learn who wrote "Bob draft".
+{
+  userFindMany(where: { posts: { some: { title: { equals: "Bob draft" } } } }) {
+    nodes {
+      id
+    }
+  }
+}

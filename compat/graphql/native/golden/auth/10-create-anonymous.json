@@ -1,0 +1,14 @@
+{
+  "data": {
+    "postCreate": null
+  },
+  "errors": [
+    {
+      "message": "Post.create needs an authenticated request.",
+      "path": [
+        "postCreate"
+      ],
+      "code": "UNAUTHENTICATED"
+    }
+  ]
+}

@@ -167,7 +167,7 @@ jobs:
           # adversarial authorization tests (tokens, nested reads, aggregates, rolled-back writes)
           # @cypher / @fulltext (aggregating statements, injection attempts through arguments) and the
           # native API (paging, fragments, _edge, limits; only Ng* nodes; mutations, only Nw* nodes).
-          pnpm --filter @cyphra/graphql --fail-if-no-match exec vitest run test/mutations.integration.test.ts test/auth.integration.test.ts test/cypher.integration.test.ts test/native.integration.test.ts test/native.writes.integration.test.ts
+          pnpm --filter @cyphra/graphql --fail-if-no-match exec vitest run test/mutations.integration.test.ts test/auth.integration.test.ts test/cypher.integration.test.ts test/native.integration.test.ts test/native.writes.integration.test.ts test/native.auth.integration.test.ts
           # @cyphra/nestjs: @Transactional() commit/rollback across services, health check, shutdown.
           pnpm --filter @cyphra/nestjs --fail-if-no-match exec vitest run test/nestjs.integration.test.ts
           # @cyphra/testing: schema, migrations, wipe, rollback and factories (only Tst* nodes).

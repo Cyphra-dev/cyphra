@@ -1,0 +1,21 @@
+{
+  "data": {
+    "connectInternal": null,
+    "disconnect": {
+      "tags": [
+        {
+          "name": "internal"
+        }
+      ]
+    }
+  },
+  "errors": [
+    {
+      "message": "connect: no Tag matches {\"name\":\"internal\"}.",
+      "path": [
+        "connectInternal"
+      ],
+      "code": "NOT_FOUND"
+    }
+  ]
+}

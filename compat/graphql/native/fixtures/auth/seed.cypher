@@ -1,0 +1,12 @@
+CREATE (alice:User {id: "u-alice", email: "alice@acme.io", name: "Alice", role: "MEMBER", salary: 100, passwordHash: "h1"}),
+  (bob:User {id: "u-bob", email: "bob@acme.io", name: "Bob", role: "MEMBER", salary: 200, passwordHash: "h2"}),
+  (root:User {id: "u-root", email: "root@acme.io", name: "Root", role: "ADMIN", salary: 300}),
+  (p1:Post {id: "p-hello", title: "Hello", published: true, views: 5}),
+  (p2:Post {id: "p-draft", title: "Secret draft", published: false, views: 0}),
+  (p3:Post {id: "p-bob", title: "Bob's post", published: true, views: 7}),
+  (p4:Post {id: "p-bob-draft", title: "Bob draft", published: false, views: 1}),
+  (alice)-[:AUTHORED]->(p1), (alice)-[:AUTHORED]->(p2),
+  (bob)-[:AUTHORED]->(p3), (bob)-[:AUTHORED]->(p4),
+  (db:Tag {name: "db", internal: false}), (int:Tag {name: "internal", internal: true}),
+  (p1)-[:TAGGED]->(db), (p1)-[:TAGGED]->(int),
+  (a1:Audit {id: "a-1", message: "login"}), (a1)-[:AUDITED]->(alice);

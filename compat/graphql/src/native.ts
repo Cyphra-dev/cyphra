@@ -15,6 +15,7 @@ import { execute, parse, validate, type ExecutionResult, type GraphQLSchema } fr
 import type { Driver } from "neo4j-driver";
 import { COMPAT_ROOT, loadOperations, type Operation } from "./fixtures.js";
 import { normalizeResult, stringifyResult } from "./normalize.js";
+import { JWT_KEY, operationContext } from "./implementations.js";
 import { resetAndSeed } from "./runner.js";
 
 export const NATIVE_FIXTURES_DIR = path.join(COMPAT_ROOT, "native", "fixtures");
@@ -83,6 +84,21 @@ export function nativeGoldenResultPath(fixture: string, operation: string): stri
   return path.join(NATIVE_GOLDEN_DIR, fixture, `${operation}.json`);
 }
 
+/**
+ * The context of an operation for the native API: `<name>.context.json` values, `jwt` (a decoded
+ * payload, trusted as-is) and, for `<name>.token.json`, what `native.jwtContext` makes of the
+ * signed `Authorization` header (with the suite key: a token signed with another key is
+ * anonymous).
+ */
+async function nativeContext(op: Operation): Promise<Record<string, unknown>> {
+  const { token, ...context } = await operationContext(op);
+  if (typeof token !== "string") return context;
+  const verified = await native.jwtContext({ key: JWT_KEY })({
+    req: { headers: { authorization: token } },
+  });
+  return { ...context, ...verified };
+}
+
 /** Resets the database, applies the seed, runs one operation and returns normalized JSON. */
 export async function runNativeOperation(
   schema: GraphQLSchema,
@@ -95,7 +111,12 @@ export async function runNativeOperation(
   const errors = validate(schema, document);
   const result: ExecutionResult = errors.length
     ? { errors }
-    : await execute({ schema, document, variableValues: op.variables, contextValue: {} });
+    : await execute({
+        schema,
+        document,
+        variableValues: op.variables,
+        contextValue: await nativeContext(op),
+      });
   const normalized = normalizeResult(result, { ordered: op.ordered });
   // Root fields resolve concurrently: errors come in completion order. Sort them by path.
   const key = (e: { path?: readonly (string | number)[]; message: string }) =>

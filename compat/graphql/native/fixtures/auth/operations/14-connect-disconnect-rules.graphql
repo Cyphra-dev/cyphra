@@ -1,0 +1,19 @@
+# features: auth.rules.connect, auth.rules.disconnect, mutation.connect, mutation.disconnect, auth.jwt, errors
+# connect / disconnect rules restrict the targets: the internal tag cannot be connected
+# (NOT_FOUND) and a disconnect leaves it alone.
+mutation {
+  connectInternal: postUpdate(
+    where: { id: "p-draft" }
+    data: { tags: { connect: [{ name: "internal" }] } }
+  ) {
+    id
+  }
+  disconnect: postUpdate(
+    where: { id: "p-hello" }
+    data: { tags: { disconnect: [{ name: "internal" }, { name: "db" }] } }
+  ) {
+    tags(orderBy: [{ name: asc }]) {
+      name
+    }
+  }
+}

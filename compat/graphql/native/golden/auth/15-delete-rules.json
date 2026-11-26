@@ -1,0 +1,18 @@
+{
+  "data": {
+    "other": null,
+    "own": {
+      "id": "p-draft",
+      "title": "Secret draft"
+    }
+  },
+  "errors": [
+    {
+      "message": "delete: no Post matches {\"id\":\"p-bob\"}.",
+      "path": [
+        "other"
+      ],
+      "code": "NOT_FOUND"
+    }
+  ]
+}

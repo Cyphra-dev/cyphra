@@ -112,6 +112,16 @@ export function toGraphQLError(err: unknown, debug: boolean, args?: unknown): Gr
           },
         },
       );
+    case "ForbiddenError":
+      // A create rule, an after rule, or a to-one edge outside the disconnect rule.
+      return new GraphQLError(e.message, {
+        extensions: {
+          code: "FORBIDDEN",
+          model: e.model,
+          operation: e.operation,
+          ...(e.relation !== undefined ? { relation: e.relation } : {}),
+        },
+      });
     case "UnsupportedFeatureError":
       return badInput(e.message);
   }
