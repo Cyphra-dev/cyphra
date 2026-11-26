@@ -1,0 +1,20 @@
+// Relay (config.relay): every model with an @id implements Node; node(id) refetches by global id.
+interface Content {
+  id    String @id
+  title String
+}
+
+node Article implements Content {
+  words  Int
+  author Writer? @relationship(type: "WROTE", direction: IN)
+}
+
+node Video implements Content {
+  seconds Int
+}
+
+node Writer {
+  handle   String    @id
+  name     String
+  articles Article[] @relationship(type: "WROTE", direction: OUT)
+}

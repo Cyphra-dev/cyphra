@@ -13,6 +13,7 @@ import type { ApiModel } from "./api.js";
 import type { ReadOperation } from "./config.js";
 import { badInput, toGraphQLError } from "./errors.js";
 import { names, TYPE, type RootResolver } from "./schema.js";
+import { fromGlobalId, keyValue } from "./relay.js";
 import { Translator } from "./translate.js";
 
 type AnyRecord = Record<string, unknown>;
@@ -78,6 +79,43 @@ export function rootResolvers(
         throw toGraphQLError(err, options.debug);
       }
     };
+}
+
+/** `node(id)` (Relay): the node a global id names, or `null`. */
+export function nodeResolver(
+  api: ApiModel,
+  options: { client: ClientSource; debug: boolean },
+): GraphQLFieldResolver<unknown, unknown> {
+  return async (_src, rawArgs, ctx, info) => {
+    try {
+      const id = (rawArgs as AnyRecord).id as string;
+      const decoded = fromGlobalId(id);
+      if (!decoded) throw badInput(`node: ${JSON.stringify(id)} is not a global id.`);
+      const model = api.nodes.get(decoded.type);
+      const keyField = model && !model.abstract ? api.relayKey(model) : undefined;
+      // Unknown types, and models whose reads are all off, have no nodes.
+      if (!model || !keyField || (api.config.operations.get(model.name)?.size ?? 0) === 0) {
+        return null;
+      }
+      const key = keyValue(keyField, decoded.key);
+      if (key === undefined) throw badInput(`node: ${JSON.stringify(id)} is not a global id.`);
+      const t = new Translator(api, info, api.config.limits);
+      const tr = t.node(model, t.rootSelections(), undefined, 0, 1);
+      t.checkAliases();
+      t.checkComplexity(1, tr.cost);
+      const client =
+        typeof options.client === "function"
+          ? await (options.client as (c: unknown) => object | Promise<object>)(ctx)
+          : options.client;
+      const row = (await delegateOf(client, model).findUnique!({
+        where: { [keyField.name]: key },
+        select: tr.select,
+      })) as AnyRecord | null;
+      return row ? tr.shape(row) : null;
+    } catch (err) {
+      throw toGraphQLError(err, options.debug);
+    }
+  };
 }
 
 async function findMany(

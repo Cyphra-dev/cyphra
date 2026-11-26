@@ -1,0 +1,30 @@
+{
+  "data": {
+    "contentFindMany": {
+      "nodes": [
+        {
+          "__typename": "Video",
+          "id": "VmlkZW86djE=",
+          "rawId": "v1",
+          "title": "Cypher in 5 minutes"
+        },
+        {
+          "__typename": "Article",
+          "id": "QXJ0aWNsZTphMQ==",
+          "rawId": "a1",
+          "title": "Graphs"
+        }
+      ]
+    },
+    "writerFindUnique": {
+      "id": "V3JpdGVyOmFkYQ==",
+      "handle": "ada",
+      "articles": [
+        {
+          "id": "QXJ0aWNsZTphMQ==",
+          "rawId": "a1"
+        }
+      ]
+    }
+  }
+}

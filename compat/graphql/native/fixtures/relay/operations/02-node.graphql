@@ -1,0 +1,29 @@
+# features: relay
+query ($article: ID!, $writer: ID!, $video: ID!, $missing: ID!) {
+  article: node(id: $article) {
+    __typename
+    id
+    ... on Article {
+      title
+      author {
+        name
+      }
+    }
+  }
+  writer: node(id: $writer) {
+    ... on Writer {
+      name
+    }
+  }
+  video: node(id: $video) {
+    ... on Content {
+      title
+    }
+  }
+  missing: node(id: $missing) {
+    id
+  }
+  malformed: node(id: "%%%") {
+    id
+  }
+}

@@ -18,8 +18,9 @@ generated client.
   **Experimental** (see the [stability policy](/stability#experimental-features)): the native API
   may change in a minor release. This release serves **reads**: `findUnique`, `findFirst`,
   `findMany` and `count`. Writes, authorization rules, aggregates, search and traversals come next
-  ([#77](https://github.com/Cyphra-dev/cyphra/issues/77)). To keep the API `@neo4j/graphql` v7
-  generates, use [`compat.v7`](/graphql); both can be served side by side.
+  ([#77](https://github.com/Cyphra-dev/cyphra/issues/77)). Relay `Node` is opt-in ([below](#relay)).
+  To keep the API `@neo4j/graphql` v7 generates, use [`compat.v7`](/graphql); both can be served
+  side by side.
 </Callout>
 
 ## Create the schema
@@ -84,6 +85,7 @@ dynamically) and throws a `NativeSchemaError` naming the unknown model, field or
 | `models.<M>.fields.<f>`  | `false` hides the field everywhere. `{ read, filter, sort }` toggle reading it, filtering and sorting on it. `{ deprecated: "reason" }` emits `@deprecated`. A toggle on an interface applies to its implementations. |
 | `defaults.operations`    | The default of every model. Reads are on, writes off.                                                                                                                                                                 |
 | `naming.<M>.<operation>` | A root field name replacing `<model><Operation>`. It is part of the printed contract.                                                                                                                                 |
+| `relay`                  | `true` adds Relay's `Node` interface and `node(id)` ([Relay](#relay)). Off by default.                                                                                                                                |
 | `limits`                 | Checked before the statement is built (see [Limits](#limits)).                                                                                                                                                        |
 | `generator`              | The generator version the printed SDL follows. Only `1` today.                                                                                                                                                        |
 
@@ -338,6 +340,54 @@ Errors carry a stable `extensions.code`, mapped from the client's errors:
 | `RestrictError`                                                    | `RESTRICTED`            | `model`, `relation`, `target`, `count` |
 | `UniqueConstraintError`                                            | `UNIQUE_CONSTRAINT`     | `model`, `fields`, `constraint`        |
 | anything else (driver, bug)                                        | `INTERNAL_SERVER_ERROR` | message masked unless `debug: true`    |
+
+## Relay
+
+`relay: true` in the config adds Relay's `Node` interface and a `node(id: ID!)` root field:
+
+```graphql
+interface Node {
+  id: ID!
+}
+
+type Post implements Node {
+  id: ID! # the global id
+  rawId: ID! # the post's own id field
+  title: String!
+}
+
+type Query {
+  node(id: ID!): Node
+}
+```
+
+- Every model with an `@id` field of type `String`, `Int` or `BigInt` implements `Node` (an
+  interface with one implements it too). Its global id is `base64("<Type>:<id>")`;
+  `native.toGlobalId` / `native.fromGlobalId` build and read them on the server.
+- The model's own field named `id` is returned as `rawId`, since `id` is the global id. Inputs
+  (`where`, `orderBy`, `<model>FindUnique`) keep `id` with raw values. A model with a field already
+  named `rawId` is a `makeSchema` error.
+- `node(id)` is one `findUnique`. It returns `null` for an id of an unknown type, of a model whose
+  reads are all off, or of a node that does not exist; a string that is not a global id is a
+  `BAD_USER_INPUT` error.
+
+Relay is off by default.
+
+## Print and check the contract
+
+The generated SDL is deterministic: printed with `lexicographicSortSchema` and `printSchema`,
+descriptions included. Commit it and check it in CI, so a field removed by a schema edit or a
+config toggle shows up in review:
+
+```bash
+cyphra graphql print --out schema.graphql   # write it (reads graphql.config.ts)
+cyphra graphql print --check                # fails when schema.graphql is out of date
+```
+
+`--check` lists the breaking and dangerous changes between the committed SDL and the generated one
+([CLI reference](/cli#print-the-native-graphql-contract)). From code, `native.printSchema(schemaModel,
+config)` returns the same text. `config.generator` pins the generator version: a release that
+would print something else for the same schema and config ships it as a new, opt-in version.
 
 ## One statement per root field
 

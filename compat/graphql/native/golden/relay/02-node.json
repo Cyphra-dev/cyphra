@@ -1,0 +1,29 @@
+{
+  "data": {
+    "article": {
+      "__typename": "Article",
+      "id": "QXJ0aWNsZTphMQ==",
+      "title": "Graphs",
+      "author": {
+        "name": "Ada"
+      }
+    },
+    "writer": {
+      "name": "Ada"
+    },
+    "video": {
+      "title": "Cypher in 5 minutes"
+    },
+    "missing": null,
+    "malformed": null
+  },
+  "errors": [
+    {
+      "message": "node: \"%%%\" is not a global id.",
+      "path": [
+        "malformed"
+      ],
+      "code": "BAD_USER_INPUT"
+    }
+  ]
+}

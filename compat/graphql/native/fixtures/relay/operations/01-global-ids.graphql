@@ -1,0 +1,20 @@
+# features: relay
+# ordered
+query {
+  contentFindMany(orderBy: [{ title: asc }]) {
+    nodes {
+      __typename
+      id
+      rawId
+      title
+    }
+  }
+  writerFindUnique(where: { handle: "ada" }) {
+    id
+    handle
+    articles {
+      id
+      rawId
+    }
+  }
+}

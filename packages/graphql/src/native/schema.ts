@@ -119,9 +119,18 @@ export class SchemaBuilder {
     },
   });
 
+  /** Relay's `Node` (`relay: true`). */
+  readonly Node = new GraphQLInterfaceType({
+    name: "Node",
+    description: "An object with a global id (Relay): refetch it with node(id).",
+    fields: { id: { type: new GraphQLNonNull(GraphQLID), description: "The global id." } },
+    resolveType,
+  });
+
   constructor(
     private readonly api: ApiModel,
     private readonly resolver?: RootResolver,
+    private readonly nodeResolver?: GraphQLFieldResolver<unknown, unknown>,
   ) {
     this.modelNames = new Set([
       ...api.schema.nodes.map((n) => n.name),
@@ -608,21 +617,27 @@ export class SchemaBuilder {
     } else if (model.abstract) {
       t = new GraphQLInterfaceType({
         name: model.name,
-        interfaces: () =>
-          this.api.graphQLInterfaces(model).map((i) => this.output(i) as GraphQLInterfaceType),
+        interfaces: () => this.interfacesOf(model),
         fields: () => this.outputFields(model),
         resolveType,
       });
     } else {
       t = new GraphQLObjectType({
         name: model.name,
-        interfaces: () =>
-          this.api.graphQLInterfaces(model).map((i) => this.output(i) as GraphQLInterfaceType),
+        interfaces: () => this.interfacesOf(model),
         fields: () => this.outputFields(model),
       });
     }
     this.types.set(model.name, t);
     return t;
+  }
+
+  /** The GraphQL interfaces of a model's type: its own, and `Node` with Relay. */
+  private interfacesOf(model: ResolvedNodeModel): GraphQLInterfaceType[] {
+    const own = this.api
+      .graphQLInterfaces(model)
+      .map((i) => this.output(i) as GraphQLInterfaceType);
+    return this.api.relayKey(model) ? [this.Node, ...own] : own;
   }
 
   /** Arguments of a to-many relation field (a nested `include` of the client). */
@@ -637,11 +652,22 @@ export class SchemaBuilder {
 
   private outputFields(model: ResolvedNodeModel): GraphQLFieldConfigMap<AnyRecord, unknown> {
     const fields: GraphQLFieldConfigMap<AnyRecord, unknown> = {};
+    if (this.api.relayKey(model)) {
+      fields.id = {
+        type: new GraphQLNonNull(GraphQLID),
+        description: "The global id (Relay).",
+        resolve: byResponseKey,
+      };
+    }
     for (const f of this.api.fields(model)) {
       const access = this.api.config.field(model.name, f.name);
       const deprecationReason = access.deprecated;
       if (f.kind === "scalar") {
-        fields[f.name] = { type: this.scalarOutput(f), resolve: byResponseKey, deprecationReason };
+        fields[this.api.outputName(model, f.name)] = {
+          type: this.scalarOutput(f),
+          resolve: byResponseKey,
+          deprecationReason,
+        };
         continue;
       }
       const target = this.api.node(f.target);
@@ -843,6 +869,19 @@ export class SchemaBuilder {
         owners.set(fieldName, `${model.name}.${op}`);
         query[fieldName] = field;
       }
+    }
+    if (this.api.config.relay) {
+      if (query.node) {
+        throw new NativeSchemaError(
+          'With relay, "node" is the Relay root field; rename the other one with config.naming.',
+        );
+      }
+      query.node = {
+        type: this.Node,
+        description: "The node with this global id (null when there is none).",
+        args: { id: { type: new GraphQLNonNull(GraphQLID) } },
+        resolve: this.nodeResolver,
+      };
     }
     // Every model type is in the schema, even one only reached through relations.
     const types = this.api.schema.nodes.map((n) => this.output(n));

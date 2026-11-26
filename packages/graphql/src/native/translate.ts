@@ -34,6 +34,7 @@ import type {
 import type { ApiModel } from "./api.js";
 import type { Limits } from "./config.js";
 import { badInput, limitError } from "./errors.js";
+import { toGlobalId } from "./relay.js";
 import { names, TYPE } from "./schema.js";
 
 type AnyRecord = Record<string, unknown>;
@@ -301,12 +302,21 @@ export class Translator {
         });
         continue;
       }
-      const field = model.fields.find((f) => f.name === name);
+      const relayKey = this.api.relayKey(model);
+      if (name === "id" && relayKey) {
+        select[relayKey.name] = true;
+        parts.push((row, out) => {
+          out[key] = toGlobalId(model.name, row[relayKey.name]);
+        });
+        continue;
+      }
+      const fieldName = this.api.fieldOfOutput(model, name);
+      const field = model.fields.find((f) => f.name === fieldName);
       if (!field) throw badInput(`Unknown field "${model.name}.${name}".`);
       if (field.kind === "scalar") {
-        select[name] = true;
+        select[fieldName] = true;
         parts.push((row, out) => {
-          out[key] = row[name] ?? null;
+          out[key] = row[fieldName] ?? null;
         });
         continue;
       }

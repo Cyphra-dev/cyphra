@@ -2,7 +2,14 @@ import { readFileSync } from "node:fs";
 import { buildSchema, validateSchema } from "graphql";
 import { parseSchema, resolveSchema, type SchemaModel } from "@cyphra/schema";
 import { describe, expect, it } from "vitest";
-import { defineGraphQL, makeSchema, NativeSchemaError, printSchema } from "./index.js";
+import {
+  defineGraphQL,
+  fromGlobalId,
+  makeSchema,
+  NativeSchemaError,
+  printSchema,
+  toGlobalId,
+} from "./index.js";
 
 function model(file: string | URL): SchemaModel {
   return resolveSchema(parseSchema(readFileSync(file, "utf8")));
@@ -85,6 +92,38 @@ describe("native.printSchema", () => {
   });
 });
 
+describe("relay", () => {
+  it("adds Node, node(id) and rawId, and keeps inputs on the raw id", () => {
+    const sdl = printSchema(blog, { relay: true });
+    valid(sdl);
+    expect(sdl).toContain("interface Node {\n");
+    expect(sdl).toContain("node(id: ID!): Node");
+    expect(sdl).toMatch(/type Post implements Node \{/);
+    expect(sdl).toMatch(/type Post implements Node \{[^}]*rawId: ID!/);
+    // Tag's key is `name`: no rawId, `name` stays.
+    expect(sdl).toMatch(/type Tag implements Node \{[^}]*name: ID!/);
+    expect(sdl).not.toMatch(/type Tag implements Node \{[^}]*rawId:/);
+    expect(sdl).toMatch(/input PostWhere \{[^}]*\bid: IDFilter/);
+  });
+
+  it("makes interfaces with an @id implement Node too", () => {
+    const sdl = printSchema(runtimeFixture("interfaces"), { relay: true });
+    valid(sdl);
+    expect(sdl).toContain("interface Person implements Node {");
+    expect(sdl).toContain("type Employee implements Node & Person");
+  });
+
+  it("is off by default", () => {
+    expect(printSchema(blog)).not.toContain("interface Node");
+  });
+
+  it("round-trips global ids", () => {
+    const id = toGlobalId("Post", "p:1");
+    expect(fromGlobalId(id)).toEqual({ type: "Post", key: "p:1" });
+    expect(fromGlobalId("not base64!")).toBeUndefined();
+  });
+});
+
 describe("config checks at startup", () => {
   const bad = (config: unknown, message: RegExp) =>
     expect(() => printSchema(blog, config as never)).toThrow(message);
@@ -100,6 +139,7 @@ describe("config checks at startup", () => {
     bad({ naming: { Post: { findMany: "post-list" } } }, /must be a GraphQL name/);
     bad({ naming: { Post: { findMany: "userCount" } } }, /Two root fields are named "userCount"/);
     bad({ defaults: { operations: { read: false } } }, /has no root field/);
+    bad({ relay: "yes" }, /relay must be a boolean/);
   });
 
   it("rejects reserved field names and name collisions", () => {
