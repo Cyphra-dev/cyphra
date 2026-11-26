@@ -29,6 +29,7 @@ App code depends on **`cyphra`** separately (see [Getting started](/getting-star
 | `cyphra pull`                    | Introspect the database and write `schema.cyphra` (`--print`, `--force`, `--interface <labels…>`)                                                                   |
 | `cyphra import graphql <files>`  | Convert `@neo4j/graphql` v7 type definitions to `schema.cyphra` (`--out`, `--merge`, `--force`, `--print`, `--url`, `--id-fields`, `--add-interface-labels`)        |
 | `cyphra graphql check <files>`   | Report what `compat.v7.makeSchema` does not serve in v7 type definitions ([details](#check-neo4jgraphql-type-definitions); `--json`; exit 1)                        |
+| `cyphra graphql print`           | Print the native GraphQL API's SDL ([details](#print-the-native-graphql-contract); `--config`, `--export`, `--out`, `--check`)                                      |
 | `cyphra import prisma <schema>`  | Convert a Prisma schema to `schema.cyphra`, foreign keys to edges ([details](#import-from-prisma); `--out`, `--merge`, `--force`, `--print`)                        |
 | `cyphra import neogma <files>`   | Convert neogma models (decorator classes or `ModelFactory`) to `schema.cyphra` ([details](#import-from-neogma); `--out`, `--merge`, `--force`, `--print`)           |
 | `cyphra push`                    | Apply constraints and range, vector and full-text indexes directly (prototyping)                                                                                    |
@@ -327,6 +328,27 @@ their endpoints. Review the result:
 - Integers are pulled as `Int` and strings as `String`: the database cannot tell a `BigInt`, an enum
   or a `Json` field apart from those. Change the types by hand where it applies (for example an
   `Int` whose values exceed 2^53 to `BigInt`, a status string to an [enum](/schema#enums)).
+
+## Print the native GraphQL contract
+
+The [native GraphQL API](/graphql/native) (experimental) is generated from `schema.cyphra` and its
+config (`graphql.config.ts`). `cyphra graphql print` prints its SDL, sorted, without a database:
+the contract to commit and review.
+
+```bash
+cyphra graphql print                          # to stdout
+cyphra graphql print --out schema.graphql     # write it
+cyphra graphql print --check                  # CI: compare with the committed schema.graphql
+```
+
+- The config is `graphql.config.ts` (or `.mts`, `.js`, `.mjs`) in the project root, or the file
+  given with `--config`. Its default export is used, else its only export, else the one named
+  with `--export`. Without a config file, the defaults apply (every read operation). TypeScript
+  configs are imported as is when Node strips types, and transpiled otherwise.
+- `--check` exits with 1 when the generated SDL differs from the file (`--out`, default
+  `schema.graphql`), and lists the changes `graphql`'s `findBreakingChanges` /
+  `findDangerousChanges` report (a field removed by a schema edit or a toggle, a type changed, …),
+  so they show up in review.
 
 ## Check @neo4j/graphql type definitions
 

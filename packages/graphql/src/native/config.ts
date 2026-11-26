@@ -93,6 +93,12 @@ export type GraphQLConfig<TM extends TypeMap = TypeMap, Ctx = unknown> = {
     readonly [M in keyof TM & string]?: { readonly [O in ReadOperation]?: string };
   };
   readonly limits?: Limits;
+  /**
+   * Relay: a `Node` interface with global ids, implemented by every model with an `@id` field
+   * (`String`, `Int` or `BigInt`), and `node(id: ID!)`. The model's own `id` field is then
+   * returned as `rawId` (inputs keep `id`). Off by default.
+   */
+  readonly relay?: boolean;
   /** Phantom: the context type of the API (never set). */
   readonly __context?: Ctx;
 };
@@ -152,11 +158,13 @@ export type ResolvedConfig = {
   /** `field(model, name)`: the effective toggles of a field. */
   field(model: string, name: string): FieldAccess;
   readonly limits: Limits;
+  /** `relay: true`: the `Node` interface and `node(id)`. */
+  readonly relay: boolean;
 };
 
 const LIMIT_KEYS = ["maxDepth", "maxTake", "maxAliases", "maxComplexity"] as const;
 const FIELD_KEYS = ["read", "filter", "sort", "create", "update", "deprecated"] as const;
-const TOP_KEYS = ["generator", "models", "defaults", "naming", "limits"] as const;
+const TOP_KEYS = ["generator", "models", "defaults", "naming", "limits", "relay"] as const;
 
 function checkKeys(where: string, obj: AnyRecord, allowed: readonly string[]): void {
   for (const k of Object.keys(obj)) {
@@ -213,6 +221,9 @@ export function rootFieldName(model: string, operation: ReadOperation): string {
 export function checkConfig(schema: SchemaModel, config: GraphQLConfig = {}): ResolvedConfig {
   if (!isPlainObject(config)) throw new NativeSchemaError("config must be an object.");
   checkKeys("config", config, [...TOP_KEYS, "__context"]);
+  if (config.relay !== undefined && typeof config.relay !== "boolean") {
+    throw new NativeSchemaError("config.relay must be a boolean.");
+  }
   if (config.generator !== undefined && config.generator !== 1) {
     throw new NativeSchemaError(
       `config.generator: unknown generator version ${JSON.stringify(config.generator)} (this release has 1).`,
@@ -369,5 +380,5 @@ export function checkConfig(schema: SchemaModel, config: GraphQLConfig = {}): Re
     operations.set(node.name, names);
   }
 
-  return { operations, field: access, limits: limits as Limits };
+  return { operations, field: access, limits: limits as Limits, relay: config.relay === true };
 }

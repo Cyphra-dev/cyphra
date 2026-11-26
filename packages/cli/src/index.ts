@@ -5,6 +5,7 @@ import { runDev } from "./commands/dev.js";
 import { runFormat } from "./commands/format.js";
 import { runGenerate, runGenerateWatch, withZodFlags } from "./commands/generate.js";
 import { runGraphqlCheck } from "./commands/graphqlCheck.js";
+import { runGraphqlPrint } from "./commands/graphqlPrint.js";
 import { runImportGraphql } from "./commands/importGraphql.js";
 import { runImportNeogma } from "./commands/importNeogma.js";
 import { runImportPrisma } from "./commands/importPrisma.js";
@@ -353,7 +354,28 @@ importCmd
 
 const graphqlCmd = program
   .command("graphql")
-  .description("@neo4j/graphql v7 compatibility (compat.v7 of @cyphra/graphql)");
+  .description("GraphQL: the native API's contract and @neo4j/graphql v7 compatibility");
+
+graphqlCmd
+  .command("print")
+  .description(
+    "Print the SDL of the native GraphQL API (schema.cyphra + graphql.config.ts), sorted; --check compares it with the committed file and lists breaking changes (exit 1 when they differ)",
+  )
+  .option(
+    "--config <file>",
+    "the API's config module (default: graphql.config.ts / .mts / .js / .mjs if present)",
+  )
+  .option("--export <name>", "export of the config module (default: default, else its only export)")
+  .option(
+    "-o, --out <file>",
+    "write the SDL to this file (with --check: the file to compare, default schema.graphql)",
+  )
+  .option("--check", "fail when the committed SDL differs, listing breaking and dangerous changes")
+  .action(async (opts: { config?: string; export?: string; out?: string; check?: boolean }) => {
+    const cwd = process.cwd();
+    const config = await loadConfig(cwd);
+    process.exitCode = await runGraphqlPrint(cwd, config, opts);
+  });
 
 graphqlCmd
   .command("check")

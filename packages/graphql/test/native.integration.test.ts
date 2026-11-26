@@ -340,6 +340,41 @@ describe.skipIf(!hasNeo)("native GraphQL API (Neo4j)", () => {
     });
   });
 
+  it("serves Relay global ids and node(id) with relay: true", async () => {
+    const relay = native.makeSchema({ client: db, config: { relay: true } });
+    const list = await run(
+      `{ ngPostFindMany(orderBy: [{ id: asc }], take: 1) { nodes { id rawId } } ngPersonFindUnique(where: { id: "e2" }) { id } }`,
+      undefined,
+      relay,
+    );
+    const post = list.data.ngPostFindMany.nodes[0];
+    expect(post.rawId).toBe("p1");
+    expect(native.fromGlobalId(post.id)).toEqual({ type: "NgPost", key: "p1" });
+    expect(native.fromGlobalId(list.data.ngPersonFindUnique.id)).toEqual({
+      type: "NgEmployee",
+      key: "e2",
+    });
+    const node = await run(
+      `query ($id: ID!) { node(id: $id) { __typename id ... on NgPost { title author { id name } } } }`,
+      { id: post.id },
+      relay,
+    );
+    expect(node.data.node).toEqual({
+      __typename: "NgPost",
+      id: post.id,
+      title: "Graphs",
+      author: { id: native.toGlobalId("NgUser", "u1"), name: "Alice" },
+    });
+    const missing = await run(
+      `query ($id: ID!) { node(id: $id) { id } }`,
+      { id: native.toGlobalId("NgPost", "nope") },
+      relay,
+    );
+    expect(missing).toEqual({ data: { node: null } });
+    const malformed = await run(`{ node(id: "%%") { id } }`, undefined, relay);
+    expect(malformed.errors[0].extensions.code).toBe("BAD_USER_INPUT");
+  });
+
   it("runs the request's client when client is a function", async () => {
     const calls: string[] = [];
     const s = native.makeSchema({

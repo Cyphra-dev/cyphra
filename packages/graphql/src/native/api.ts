@@ -27,6 +27,9 @@ export const RESERVED_FIELDS = [
   "_typename",
 ] as const;
 
+/** Output name of a model's own `id` field when Relay global ids take `id`. */
+export const RAW_ID = "rawId";
+
 /** Scalar types that cannot be sorted on (points sort by distance instead). */
 const UNSORTABLE = new Set(["Vector", "Json", "Duration"]);
 
@@ -80,6 +83,13 @@ export class ApiModel {
     );
     this.check();
     this.computeEdgeSets();
+    for (const n of schema.nodes) {
+      if (this.relayKey(n) && n.fields.some((f) => f.name === RAW_ID)) {
+        throw new NativeSchemaError(
+          `${n.name}.${RAW_ID}: with relay, a model's id field is returned as "${RAW_ID}"; rename this field in schema.cyphra.`,
+        );
+      }
+    }
   }
 
   node(name: string): ResolvedNodeModel {
@@ -123,6 +133,31 @@ export class ApiModel {
     return this.scalars(model).filter(
       (f) => this.sortable(model, f) && f.type !== "Point" && f.type !== "CartesianPoint",
     );
+  }
+
+  /**
+   * The key field behind a Relay global id: the `@id` field of a node or an interface, when
+   * `relay` is on and it is a `String`, `Int` or `BigInt` (absent otherwise).
+   */
+  relayKey(model: ResolvedNodeModel): ResolvedScalarField | undefined {
+    if (!this.config.relay || model.union) return undefined;
+    if (model.abstract && !this.isGraphQLInterface(model)) return undefined;
+    const f = model.fields.find((x) => x.name === model.idField);
+    if (f?.kind !== "scalar" || f.list) return undefined;
+    return f.type === "String" || f.type === "Int" || f.type === "BigInt" ? f : undefined;
+  }
+
+  /**
+   * The GraphQL name of a model field in output types: with Relay, a field named `id` is returned
+   * as `rawId` (`id` is the global id).
+   */
+  outputName(model: ResolvedNodeModel, field: string): string {
+    return field === "id" && this.relayKey(model) ? RAW_ID : field;
+  }
+
+  /** The model field behind a GraphQL output field name (the reverse of {@link outputName}). */
+  fieldOfOutput(model: ResolvedNodeModel, name: string): string {
+    return name === RAW_ID && this.relayKey(model) ? "id" : name;
   }
 
   /** Concrete node models of an abstract model (an interface or a union), or the model itself. */

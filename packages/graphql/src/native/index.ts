@@ -16,9 +16,10 @@ import {
 import type { SchemaModel } from "@cyphra/schema";
 import { ApiModel } from "./api.js";
 import { checkConfig, NativeSchemaError, type GraphQLConfig } from "./config.js";
-import { rootResolvers, type ClientSource } from "./resolvers.js";
+import { nodeResolver, rootResolvers, type ClientSource } from "./resolvers.js";
 import { SchemaBuilder } from "./schema.js";
 
+export { fromGlobalId, toGlobalId } from "./relay.js";
 export {
   defineGraphQL,
   NativeSchemaError,
@@ -79,11 +80,8 @@ function schemaOf(options: { client?: unknown; schema?: SchemaModel }): SchemaMo
 export function makeSchema(options: NativeMakeSchemaOptions): GraphQLSchema {
   const schema = schemaOf(options);
   const api = new ApiModel(schema, checkConfig(schema, options.config as GraphQLConfig));
-  const resolver = rootResolvers(api, {
-    client: options.client as ClientSource,
-    debug: options.debug ?? false,
-  });
-  return new SchemaBuilder(api, resolver).build();
+  const runtime = { client: options.client as ClientSource, debug: options.debug ?? false };
+  return new SchemaBuilder(api, rootResolvers(api, runtime), nodeResolver(api, runtime)).build();
 }
 
 /**

@@ -1,0 +1,372 @@
+type Article implements Content & Node {
+  author: Writer
+
+  """The global id (Relay)."""
+  id: ID!
+  rawId: ID!
+  title: String!
+  words: Int!
+}
+
+type ArticleList {
+  nodes: [Article!]!
+  pageInfo: PageInfo!
+
+  """
+  Number of nodes matching where, ignoring paging. Counted only when selected.
+  """
+  totalCount: Int!
+}
+
+input ArticleListRelationFilter {
+  """Every related node matches."""
+  every: ArticleWhere
+
+  """No related node matches."""
+  none: ArticleWhere
+
+  """At least one related node matches."""
+  some: ArticleWhere
+}
+
+"""One key per element of the orderBy list."""
+input ArticleOrderBy {
+  """Sort by a field of the related node."""
+  author: WriterScalarOrderBy
+  id: SortOrder
+  title: SortOrder
+  words: SortOrder
+}
+
+input ArticleRelationCountOrder {
+  _count: SortOrder!
+
+  """Count only the matching nodes."""
+  where: ArticleWhere
+}
+
+input ArticleWhere {
+  AND: [ArticleWhere!]
+  NOT: ArticleWhere
+  OR: [ArticleWhere!]
+  author: WriterRelationFilter
+  id: IDFilter
+  title: StringFilter
+  words: IntFilter
+}
+
+"""
+At least one unique key (checked when the query runs), plus filters on the other fields.
+"""
+input ArticleWhereUnique {
+  AND: [ArticleWhere!]
+  NOT: ArticleWhere
+  OR: [ArticleWhere!]
+  author: WriterRelationFilter
+  id: ID
+  title: StringFilter
+  words: IntFilter
+}
+
+interface Content implements Node {
+  """The global id (Relay)."""
+  id: ID!
+  rawId: ID!
+  title: String!
+}
+
+type ContentList {
+  nodes: [Content!]!
+  pageInfo: PageInfo!
+
+  """
+  Number of nodes matching where, ignoring paging. Counted only when selected.
+  """
+  totalCount: Int!
+}
+
+"""Per-implementation filters: only the listed ones are kept."""
+input ContentOnWhere {
+  Article: ArticleWhere
+  Video: VideoWhere
+}
+
+"""One key per element of the orderBy list."""
+input ContentOrderBy {
+  _typename: SortOrder
+  id: SortOrder
+  title: SortOrder
+}
+
+enum ContentTypename {
+  Article
+  Video
+}
+
+input ContentTypenameFilter {
+  equals: ContentTypename
+  in: [ContentTypename!]
+  not: ContentTypename
+  notIn: [ContentTypename!]
+}
+
+input ContentWhere {
+  AND: [ContentWhere!]
+  NOT: ContentWhere
+  OR: [ContentWhere!]
+  _on: ContentOnWhere
+  _typename: ContentTypenameFilter
+  id: IDFilter
+  title: StringFilter
+}
+
+"""
+At least one unique key (checked when the query runs), plus filters on the other fields.
+"""
+input ContentWhereUnique {
+  AND: [ContentWhere!]
+  NOT: ContentWhere
+  OR: [ContentWhere!]
+  id: ID
+  title: StringFilter
+}
+
+input IDFilter {
+  contains: ID
+  endsWith: ID
+  equals: ID
+  gt: ID
+  gte: ID
+  in: [ID!]
+  lt: ID
+  lte: ID
+  mode: QueryMode
+  not: ID
+  notIn: [ID!]
+  startsWith: ID
+}
+
+input IntFilter {
+  equals: Int
+  gt: Int
+  gte: Int
+  in: [Int!]
+  lt: Int
+  lte: Int
+  not: Int
+  notIn: [Int!]
+}
+
+"""An object with a global id (Relay): refetch it with node(id)."""
+interface Node {
+  """The global id."""
+  id: ID!
+}
+
+type PageInfo {
+  endCursor: String
+  hasNextPage: Boolean!
+  hasPreviousPage: Boolean!
+  startCursor: String
+}
+
+type Query {
+  articleCount(where: ArticleWhere): Int
+  articleFindFirst(orderBy: [ArticleOrderBy!], skip: Int, where: ArticleWhere): Article
+  articleFindMany(
+    """A cursor (pageInfo.endCursor): the page after it."""
+    after: String
+
+    """A cursor (pageInfo.startCursor): the page before it."""
+    before: String
+    orderBy: [ArticleOrderBy!]
+    skip: Int
+    take: Int
+    where: ArticleWhere
+  ): ArticleList
+  articleFindUnique(where: ArticleWhereUnique!): Article
+  contentCount(where: ContentWhere): Int
+  contentFindFirst(orderBy: [ContentOrderBy!], skip: Int, where: ContentWhere): Content
+  contentFindMany(
+    """A cursor (pageInfo.endCursor): the page after it."""
+    after: String
+
+    """A cursor (pageInfo.startCursor): the page before it."""
+    before: String
+    orderBy: [ContentOrderBy!]
+    skip: Int
+    take: Int
+    where: ContentWhere
+  ): ContentList
+  contentFindUnique(where: ContentWhereUnique!): Content
+
+  """The node with this global id (null when there is none)."""
+  node(id: ID!): Node
+  videoCount(where: VideoWhere): Int
+  videoFindFirst(orderBy: [VideoOrderBy!], skip: Int, where: VideoWhere): Video
+  videoFindMany(
+    """A cursor (pageInfo.endCursor): the page after it."""
+    after: String
+
+    """A cursor (pageInfo.startCursor): the page before it."""
+    before: String
+    orderBy: [VideoOrderBy!]
+    skip: Int
+    take: Int
+    where: VideoWhere
+  ): VideoList
+  videoFindUnique(where: VideoWhereUnique!): Video
+  writerCount(where: WriterWhere): Int
+  writerFindFirst(orderBy: [WriterOrderBy!], skip: Int, where: WriterWhere): Writer
+  writerFindMany(
+    """A cursor (pageInfo.endCursor): the page after it."""
+    after: String
+
+    """A cursor (pageInfo.startCursor): the page before it."""
+    before: String
+    orderBy: [WriterOrderBy!]
+    skip: Int
+    take: Int
+    where: WriterWhere
+  ): WriterList
+  writerFindUnique(where: WriterWhereUnique!): Writer
+}
+
+"""`insensitive` compares lower-cased values."""
+enum QueryMode {
+  default
+  insensitive
+}
+
+enum SortOrder {
+  asc
+  desc
+}
+
+input StringFilter {
+  contains: String
+  endsWith: String
+  equals: String
+  gt: String
+  gte: String
+  in: [String!]
+  lt: String
+  lte: String
+  mode: QueryMode
+  not: String
+  notIn: [String!]
+  startsWith: String
+}
+
+type Video implements Content & Node {
+  """The global id (Relay)."""
+  id: ID!
+  rawId: ID!
+  seconds: Int!
+  title: String!
+}
+
+type VideoList {
+  nodes: [Video!]!
+  pageInfo: PageInfo!
+
+  """
+  Number of nodes matching where, ignoring paging. Counted only when selected.
+  """
+  totalCount: Int!
+}
+
+"""One key per element of the orderBy list."""
+input VideoOrderBy {
+  id: SortOrder
+  seconds: SortOrder
+  title: SortOrder
+}
+
+input VideoWhere {
+  AND: [VideoWhere!]
+  NOT: VideoWhere
+  OR: [VideoWhere!]
+  id: IDFilter
+  seconds: IntFilter
+  title: StringFilter
+}
+
+"""
+At least one unique key (checked when the query runs), plus filters on the other fields.
+"""
+input VideoWhereUnique {
+  AND: [VideoWhere!]
+  NOT: VideoWhere
+  OR: [VideoWhere!]
+  id: ID
+  seconds: IntFilter
+  title: StringFilter
+}
+
+type Writer implements Node {
+  """
+  Number of related nodes per to-many relation (only the selected ones are counted).
+  """
+  _count: WriterCount!
+  articles(orderBy: [ArticleOrderBy!], skip: Int, take: Int, where: ArticleWhere): [Article!]!
+  handle: ID!
+
+  """The global id (Relay)."""
+  id: ID!
+  name: String!
+}
+
+type WriterCount {
+  articles(where: ArticleWhere): Int!
+}
+
+type WriterList {
+  nodes: [Writer!]!
+  pageInfo: PageInfo!
+
+  """
+  Number of nodes matching where, ignoring paging. Counted only when selected.
+  """
+  totalCount: Int!
+}
+
+"""One key per element of the orderBy list."""
+input WriterOrderBy {
+  """Sort by the number of related nodes."""
+  articles: ArticleRelationCountOrder
+  handle: SortOrder
+  name: SortOrder
+}
+
+input WriterRelationFilter {
+  """The related node matches (null: none)."""
+  is: WriterWhere
+  isNot: WriterWhere
+}
+
+input WriterScalarOrderBy {
+  handle: SortOrder
+  name: SortOrder
+}
+
+input WriterWhere {
+  AND: [WriterWhere!]
+  NOT: WriterWhere
+  OR: [WriterWhere!]
+  articles: ArticleListRelationFilter
+  handle: IDFilter
+  name: StringFilter
+}
+
+"""
+At least one unique key (checked when the query runs), plus filters on the other fields.
+"""
+input WriterWhereUnique {
+  AND: [WriterWhere!]
+  NOT: WriterWhere
+  OR: [WriterWhere!]
+  articles: ArticleListRelationFilter
+  handle: ID
+  name: StringFilter
+}
