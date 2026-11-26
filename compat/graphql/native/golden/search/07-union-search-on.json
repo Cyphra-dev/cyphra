@@ -1,0 +1,20 @@
+{
+  "data": {
+    "articles": [
+      {
+        "__typename": "Article",
+        "id": "a1"
+      },
+      {
+        "__typename": "Article",
+        "id": "a2"
+      }
+    ],
+    "adaOnly": [
+      {
+        "__typename": "Author",
+        "id": "au-ada"
+      }
+    ]
+  }
+}

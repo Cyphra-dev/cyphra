@@ -1,0 +1,23 @@
+# features: search.union, auth.rules.read
+# ordered
+# Reciprocal rank fusion over both members' indexes; the unpublished article is not a hit.
+{
+  searchHitSearch(query: "graph", mode: terms) {
+    __typename
+    ... on Article {
+      id
+      _score
+      _scores {
+        index
+        rank
+      }
+    }
+    ... on Author {
+      name
+      _scores {
+        index
+        rank
+      }
+    }
+  }
+}

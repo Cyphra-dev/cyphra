@@ -1,0 +1,18 @@
+# features: aggregate, groupBy, auth.field.context
+# ordered
+{
+  userAggregate {
+    _sum {
+      salary
+    }
+    _count {
+      salary
+    }
+  }
+  userGroupBy(by: { fields: [team] }, orderBy: [{ _sum: { salary: desc } }]) {
+    team
+    _sum {
+      salary
+    }
+  }
+}

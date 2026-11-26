@@ -1,0 +1,26 @@
+# features: aggregate, auth.rules.read
+# Anonymous: the secret post (views 1000) is neither counted nor summed, nor the max createdAt.
+{
+  postAggregate {
+    _count {
+      _all
+      rating
+    }
+    _sum {
+      views
+    }
+    _avg {
+      views
+      rating
+    }
+    _min {
+      createdAt
+      title
+    }
+    _max {
+      createdAt
+      views
+      status
+    }
+  }
+}

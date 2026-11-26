@@ -1,0 +1,23 @@
+// Full-text search, findSimilar and union search of the native API (#246), under read rules.
+
+union SearchHit = Article | Author
+
+node Article {
+  id        String     @id
+  title     String
+  body      String
+  published Boolean    @default(false)
+  embedding Vector(3)? @vectorIndex(similarity: cosine, name: "articleEmbedding", quantization: false)
+  author    Author?    @relationship(type: "WROTE", direction: IN)
+
+  @@fulltext([title, body], name: "articleText", eventuallyConsistent: false)
+}
+
+node Author {
+  id       String    @id
+  name     String
+  bio      String?
+  articles Article[] @relationship(type: "WROTE", direction: OUT)
+
+  @@fulltext([name, bio], name: "authorText", eventuallyConsistent: false)
+}

@@ -1,0 +1,23 @@
+{
+  "data": {
+    "postAggregate": {
+      "total": {
+        "all": 2
+      },
+      "_sum": {
+        "views": 40
+      }
+    },
+    "empty": {
+      "_count": {
+        "_all": 0
+      },
+      "_sum": {
+        "views": null
+      },
+      "_min": {
+        "title": null
+      }
+    }
+  }
+}

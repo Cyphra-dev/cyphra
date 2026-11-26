@@ -3,8 +3,29 @@ input BooleanFilter {
   not: Boolean
 }
 
+"""
+Aggregates of the field in each group; the other filters need the field in by.
+"""
+input BooleanHaving {
+  """The number of non-null values."""
+  _count: IntFilter
+  equals: Boolean
+  not: Boolean
+}
+
 """An instant, as an ISO 8601 string (`2026-11-01T09:30:00.000Z`)."""
 scalar DateTime
+
+input FloatFilter {
+  equals: Float
+  gt: Float
+  gte: Float
+  in: [Float!]
+  lt: Float
+  lte: Float
+  not: Float
+  notIn: [Float!]
+}
 
 type Follows {
   since: DateTime!
@@ -39,7 +60,50 @@ input IDFilter {
   startsWith: ID
 }
 
+"""
+Aggregates of the field in each group; the other filters need the field in by.
+"""
+input IDHaving {
+  """The number of non-null values."""
+  _count: IntFilter
+  _max: IDFilter
+  _min: IDFilter
+  contains: ID
+  endsWith: ID
+  equals: ID
+  gt: ID
+  gte: ID
+  in: [ID!]
+  lt: ID
+  lte: ID
+  mode: QueryMode
+  not: ID
+  notIn: [ID!]
+  startsWith: ID
+}
+
 input IntFilter {
+  equals: Int
+  gt: Int
+  gte: Int
+  in: [Int!]
+  lt: Int
+  lte: Int
+  not: Int
+  notIn: [Int!]
+}
+
+"""
+Aggregates of the field in each group; the other filters need the field in by.
+"""
+input IntHaving {
+  _avg: FloatFilter
+
+  """The number of non-null values."""
+  _count: IntFilter
+  _max: IntFilter
+  _min: IntFilter
+  _sum: IntFilter
   equals: Int
   gt: Int
   gte: Int
@@ -94,6 +158,19 @@ type Post {
   views: Int!
 }
 
+type PostAggregate {
+  _avg: PostAvgAggregate!
+  _count: PostCountAggregate!
+  _max: PostMaxAggregate!
+  _min: PostMinAggregate!
+  _sum: PostSumAggregate!
+}
+
+"""Means of the non-null values (null when there are none)."""
+type PostAvgAggregate {
+  views: Float
+}
+
 type PostBatch {
   count: Int!
 
@@ -113,6 +190,25 @@ input PostConnectOrCreateManyWithoutAuthorInput {
 
 type PostCount {
   tags(where: TagWhere): Int!
+}
+
+"""
+`_all`: the number of nodes; a field: the number of its non-null values.
+"""
+type PostCountAggregate {
+  _all: Int!
+  id: Int!
+  published: Int!
+  title: Int!
+  views: Int!
+}
+
+input PostCountAggregateOrderBy {
+  _all: SortOrder
+  id: SortOrder
+  published: SortOrder
+  title: SortOrder
+  views: SortOrder
 }
 
 input PostCountFilter {
@@ -164,6 +260,65 @@ input PostCreateWithoutAuthorInput {
   views: Int
 }
 
+"""
+One group: its keys (only the fields listed in by can be selected) and aggregates.
+"""
+type PostGroup {
+  _avg: PostAvgAggregate!
+  _count: PostCountAggregate!
+  _max: PostMaxAggregate!
+  _min: PostMinAggregate!
+  _sum: PostSumAggregate!
+  author: UserGroupKeys
+  id: ID
+  published: Boolean
+  title: String
+  views: Int
+}
+
+"""The fields to group on: at least one."""
+input PostGroupByInput {
+  """Fields of the related User (to-one)."""
+  author: [UserGroupField!]
+
+  """Fields of the model."""
+  fields: [PostGroupField!]
+}
+
+enum PostGroupField {
+  id
+  published
+  title
+  views
+}
+
+"""
+One key per element of the orderBy list: a key listed in by, or an aggregate.
+"""
+input PostGroupOrderBy {
+  _avg: PostNumericAggregateOrderBy
+  _count: PostCountAggregateOrderBy
+  _max: PostMinMaxAggregateOrderBy
+  _min: PostMinMaxAggregateOrderBy
+  _sum: PostNumericAggregateOrderBy
+  author: UserGroupKeyOrderBy
+  id: SortOrder
+  published: SortOrder
+  title: SortOrder
+  views: SortOrder
+}
+
+input PostHaving {
+  AND: [PostHaving!]
+  NOT: PostHaving
+  OR: [PostHaving!]
+  author: UserGroupKeyFilter
+  id: IDHaving
+  published: BooleanHaving
+  title: StringHaving
+  views: IntHaving
+}
+
 type PostList {
   nodes: [Post!]!
   pageInfo: PageInfo!
@@ -183,6 +338,30 @@ input PostListRelationFilter {
 
   """At least one related node matches."""
   some: PostWhere
+}
+
+"""Largest non-null values."""
+type PostMaxAggregate {
+  id: ID
+  title: String
+  views: Int
+}
+
+"""Smallest non-null values."""
+type PostMinAggregate {
+  id: ID
+  title: String
+  views: Int
+}
+
+input PostMinMaxAggregateOrderBy {
+  id: SortOrder
+  title: SortOrder
+  views: SortOrder
+}
+
+input PostNumericAggregateOrderBy {
+  views: SortOrder
 }
 
 """Number updates of the fields (not with a value for the same field)."""
@@ -208,6 +387,11 @@ input PostRelationCountOrder {
 
   """Count only the matching nodes."""
   where: PostWhere
+}
+
+"""Sums of the non-null values (null when there are none)."""
+type PostSumAggregate {
+  views: Int
 }
 
 input PostUpdateInput {
@@ -303,6 +487,10 @@ input PostWhereUnique {
 }
 
 type Query {
+  """
+  Aggregates over the matching nodes (with skip / take: over that window).
+  """
+  postAggregate(orderBy: [PostOrderBy!], skip: Int, take: Int, where: PostWhere): PostAggregate
   postCount(where: PostWhere): Int
   postFindFirst(orderBy: [PostOrderBy!], skip: Int, where: PostWhere): Post
   postFindMany(
@@ -317,6 +505,16 @@ type Query {
     where: PostWhere
   ): PostList
   postFindUnique(where: PostWhereUnique!): Post
+
+  """
+  Groups of the matching nodes by the fields in by, with their aggregates.
+  """
+  postGroupBy(by: PostGroupByInput!, having: PostHaving, orderBy: [PostGroupOrderBy!], skip: Int, take: Int, where: PostWhere): [PostGroup!]
+
+  """
+  Aggregates over the matching nodes (with skip / take: over that window).
+  """
+  tagAggregate(orderBy: [TagOrderBy!], skip: Int, take: Int, where: TagWhere): TagAggregate
   tagCount(where: TagWhere): Int
   tagFindFirst(orderBy: [TagOrderBy!], skip: Int, where: TagWhere): Tag
   tagFindMany(
@@ -331,6 +529,16 @@ type Query {
     where: TagWhere
   ): TagList
   tagFindUnique(where: TagWhereUnique!): Tag
+
+  """
+  Groups of the matching nodes by the fields in by, with their aggregates.
+  """
+  tagGroupBy(by: TagGroupByInput!, having: TagHaving, orderBy: [TagGroupOrderBy!], skip: Int, take: Int, where: TagWhere): [TagGroup!]
+
+  """
+  Aggregates over the matching nodes (with skip / take: over that window).
+  """
+  userAggregate(orderBy: [UserOrderBy!], skip: Int, take: Int, where: UserWhere): UserAggregate
   userCount(where: UserWhere): Int
   userFindFirst(orderBy: [UserOrderBy!], skip: Int, where: UserWhere): User
   userFindMany(
@@ -345,6 +553,11 @@ type Query {
     where: UserWhere
   ): UserList
   userFindUnique(where: UserWhereUnique!): User
+
+  """
+  Groups of the matching nodes by the fields in by, with their aggregates.
+  """
+  userGroupBy(by: UserGroupByInput!, having: UserHaving, orderBy: [UserGroupOrderBy!], skip: Int, take: Int, where: UserWhere): [UserGroup!]
 }
 
 """`insensitive` compares lower-cased values."""
@@ -359,6 +572,20 @@ enum Role {
 }
 
 input RoleFilter {
+  equals: Role
+  in: [Role!]
+  not: Role
+  notIn: [Role!]
+}
+
+"""
+Aggregates of the field in each group; the other filters need the field in by.
+"""
+input RoleHaving {
+  """The number of non-null values."""
+  _count: IntFilter
+  _max: RoleFilter
+  _min: RoleFilter
   equals: Role
   in: [Role!]
   not: Role
@@ -385,6 +612,28 @@ input StringFilter {
   startsWith: String
 }
 
+"""
+Aggregates of the field in each group; the other filters need the field in by.
+"""
+input StringHaving {
+  """The number of non-null values."""
+  _count: IntFilter
+  _max: StringFilter
+  _min: StringFilter
+  contains: String
+  endsWith: String
+  equals: String
+  gt: String
+  gte: String
+  in: [String!]
+  lt: String
+  lte: String
+  mode: QueryMode
+  not: String
+  notIn: [String!]
+  startsWith: String
+}
+
 type Tag {
   """
   Number of related nodes per to-many relation (only the selected ones are counted).
@@ -394,8 +643,27 @@ type Tag {
   posts(orderBy: [PostOrderBy!], skip: Int, take: Int, where: PostWhere): [Post!]!
 }
 
+type TagAggregate {
+  _count: TagCountAggregate!
+  _max: TagMaxAggregate!
+  _min: TagMinAggregate!
+}
+
 type TagCount {
   posts(where: PostWhere): Int!
+}
+
+"""
+`_all`: the number of nodes; a field: the number of its non-null values.
+"""
+type TagCountAggregate {
+  _all: Int!
+  name: Int!
+}
+
+input TagCountAggregateOrderBy {
+  _all: SortOrder
+  name: SortOrder
 }
 
 input TagCountFilter {
@@ -421,6 +689,43 @@ input TagCreateManyWithoutPostsRelation {
   connect: [TagWhereUnique!]
 }
 
+"""
+One group: its keys (only the fields listed in by can be selected) and aggregates.
+"""
+type TagGroup {
+  _count: TagCountAggregate!
+  _max: TagMaxAggregate!
+  _min: TagMinAggregate!
+  name: ID
+}
+
+"""The fields to group on: at least one."""
+input TagGroupByInput {
+  """Fields of the model."""
+  fields: [TagGroupField!]
+}
+
+enum TagGroupField {
+  name
+}
+
+"""
+One key per element of the orderBy list: a key listed in by, or an aggregate.
+"""
+input TagGroupOrderBy {
+  _count: TagCountAggregateOrderBy
+  _max: TagMinMaxAggregateOrderBy
+  _min: TagMinMaxAggregateOrderBy
+  name: SortOrder
+}
+
+input TagHaving {
+  AND: [TagHaving!]
+  NOT: TagHaving
+  OR: [TagHaving!]
+  name: IDHaving
+}
+
 type TagList {
   nodes: [Tag!]!
   pageInfo: PageInfo!
@@ -440,6 +745,20 @@ input TagListRelationFilter {
 
   """At least one related node matches."""
   some: TagWhere
+}
+
+"""Largest non-null values."""
+type TagMaxAggregate {
+  name: ID
+}
+
+"""Smallest non-null values."""
+type TagMinAggregate {
+  name: ID
+}
+
+input TagMinMaxAggregateOrderBy {
+  name: SortOrder
 }
 
 """One key per element of the orderBy list."""
@@ -508,6 +827,19 @@ type User {
   role: Role!
 }
 
+type UserAggregate {
+  _avg: UserAvgAggregate!
+  _count: UserCountAggregate!
+  _max: UserMaxAggregate!
+  _min: UserMinAggregate!
+  _sum: UserSumAggregate!
+}
+
+"""Means of the non-null values (null when there are none)."""
+type UserAvgAggregate {
+  loginCount: Float
+}
+
 type UserBatch {
   count: Int!
 
@@ -561,6 +893,27 @@ type UserCount {
   followers(where: UserWhere): Int!
   following(where: UserWhere): Int!
   posts(where: PostWhere): Int!
+}
+
+"""
+`_all`: the number of nodes; a field: the number of its non-null values.
+"""
+type UserCountAggregate {
+  _all: Int!
+  email: Int!
+  id: Int!
+  loginCount: Int!
+  name: Int!
+  role: Int!
+}
+
+input UserCountAggregateOrderBy {
+  _all: SortOrder
+  email: SortOrder
+  id: SortOrder
+  loginCount: SortOrder
+  name: SortOrder
+  role: SortOrder
 }
 
 input UserCountFilter {
@@ -668,6 +1021,89 @@ input UserCreateWithoutPostsInput {
   role: Role
 }
 
+"""
+One group: its keys (only the fields listed in by can be selected) and aggregates.
+"""
+type UserGroup {
+  _avg: UserAvgAggregate!
+  _count: UserCountAggregate!
+  _max: UserMaxAggregate!
+  _min: UserMinAggregate!
+  _sum: UserSumAggregate!
+  email: String
+  id: ID
+  loginCount: Int
+  name: String
+  role: Role
+}
+
+"""The fields to group on: at least one."""
+input UserGroupByInput {
+  """Fields of the model."""
+  fields: [UserGroupField!]
+}
+
+enum UserGroupField {
+  email
+  id
+  loginCount
+  name
+  role
+}
+
+"""Filters on the related node's fields listed in by."""
+input UserGroupKeyFilter {
+  email: StringFilter
+  id: IDFilter
+  loginCount: IntFilter
+  name: StringFilter
+  role: RoleFilter
+}
+
+input UserGroupKeyOrderBy {
+  email: SortOrder
+  id: SortOrder
+  loginCount: SortOrder
+  name: SortOrder
+  role: SortOrder
+}
+
+"""Group keys of the related node (only the fields listed in by)."""
+type UserGroupKeys {
+  email: String
+  id: ID
+  loginCount: Int
+  name: String
+  role: Role
+}
+
+"""
+One key per element of the orderBy list: a key listed in by, or an aggregate.
+"""
+input UserGroupOrderBy {
+  _avg: UserNumericAggregateOrderBy
+  _count: UserCountAggregateOrderBy
+  _max: UserMinMaxAggregateOrderBy
+  _min: UserMinMaxAggregateOrderBy
+  _sum: UserNumericAggregateOrderBy
+  email: SortOrder
+  id: SortOrder
+  loginCount: SortOrder
+  name: SortOrder
+  role: SortOrder
+}
+
+input UserHaving {
+  AND: [UserHaving!]
+  NOT: UserHaving
+  OR: [UserHaving!]
+  email: StringHaving
+  id: IDHaving
+  loginCount: IntHaving
+  name: StringHaving
+  role: RoleHaving
+}
+
 type UserList {
   nodes: [User!]!
   pageInfo: PageInfo!
@@ -687,6 +1123,36 @@ input UserListRelationFilter {
 
   """At least one related node matches."""
   some: UserWhere
+}
+
+"""Largest non-null values."""
+type UserMaxAggregate {
+  email: String
+  id: ID
+  loginCount: Int
+  name: String
+  role: Role
+}
+
+"""Smallest non-null values."""
+type UserMinAggregate {
+  email: String
+  id: ID
+  loginCount: Int
+  name: String
+  role: Role
+}
+
+input UserMinMaxAggregateOrderBy {
+  email: SortOrder
+  id: SortOrder
+  loginCount: SortOrder
+  name: SortOrder
+  role: SortOrder
+}
+
+input UserNumericAggregateOrderBy {
+  loginCount: SortOrder
 }
 
 """Number updates of the fields (not with a value for the same field)."""
@@ -731,6 +1197,11 @@ input UserScalarOrderBy {
   loginCount: SortOrder
   name: SortOrder
   role: SortOrder
+}
+
+"""Sums of the non-null values (null when there are none)."""
+type UserSumAggregate {
+  loginCount: Int
 }
 
 input UserUpdateInput {

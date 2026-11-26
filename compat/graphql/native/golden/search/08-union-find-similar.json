@@ -1,0 +1,14 @@
+{
+  "data": {
+    "searchHitFindSimilar": [
+      {
+        "__typename": "Article",
+        "id": "a1"
+      },
+      {
+        "__typename": "Article",
+        "id": "a2"
+      }
+    ]
+  }
+}

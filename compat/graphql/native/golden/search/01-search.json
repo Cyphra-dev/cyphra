@@ -1,0 +1,20 @@
+{
+  "data": {
+    "articleSearch": [
+      {
+        "id": "a1",
+        "title": "Graph databases",
+        "author": {
+          "name": "Ada Graph"
+        }
+      },
+      {
+        "id": "a2",
+        "title": "Cypher queries",
+        "author": {
+          "name": "Ada Graph"
+        }
+      }
+    ]
+  }
+}

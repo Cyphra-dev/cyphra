@@ -1,0 +1,768 @@
+type Article {
+  """
+  Relevance or similarity score when this Article comes from a search or findSimilar root field (selecting it anywhere else is an error).
+  """
+  _score: Float
+
+  """
+  Each index's score when this Article comes from a search or findSimilar over a union (selecting it anywhere else is an error).
+  """
+  _scores: [IndexScore!]
+  author: Author
+  body: String!
+  embedding: [Float!]
+  id: ID!
+  published: Boolean!
+  title: String!
+}
+
+type ArticleAggregate {
+  _count: ArticleCountAggregate!
+  _max: ArticleMaxAggregate!
+  _min: ArticleMinAggregate!
+}
+
+"""
+`_all`: the number of nodes; a field: the number of its non-null values.
+"""
+type ArticleCountAggregate {
+  _all: Int!
+  body: Int!
+  embedding: Int!
+  id: Int!
+  published: Int!
+  title: Int!
+}
+
+input ArticleCountAggregateOrderBy {
+  _all: SortOrder
+  body: SortOrder
+  id: SortOrder
+  published: SortOrder
+  title: SortOrder
+}
+
+input ArticleCountFilter {
+  equals: Int
+  gt: Int
+  gte: Int
+  in: [Int!]
+  lt: Int
+  lte: Int
+  not: Int
+  notIn: [Int!]
+
+  """Count only these nodes."""
+  where: ArticleWhere
+}
+
+enum ArticleFulltextIndex {
+  articleText
+}
+
+"""
+One group: its keys (only the fields listed in by can be selected) and aggregates.
+"""
+type ArticleGroup {
+  _count: ArticleCountAggregate!
+  _max: ArticleMaxAggregate!
+  _min: ArticleMinAggregate!
+  author: AuthorGroupKeys
+  body: String
+  id: ID
+  published: Boolean
+  title: String
+}
+
+"""The fields to group on: at least one."""
+input ArticleGroupByInput {
+  """Fields of the related Author (to-one)."""
+  author: [AuthorGroupField!]
+
+  """Fields of the model."""
+  fields: [ArticleGroupField!]
+}
+
+enum ArticleGroupField {
+  body
+  id
+  published
+  title
+}
+
+"""
+One key per element of the orderBy list: a key listed in by, or an aggregate.
+"""
+input ArticleGroupOrderBy {
+  _count: ArticleCountAggregateOrderBy
+  _max: ArticleMinMaxAggregateOrderBy
+  _min: ArticleMinMaxAggregateOrderBy
+  author: AuthorGroupKeyOrderBy
+  body: SortOrder
+  id: SortOrder
+  published: SortOrder
+  title: SortOrder
+}
+
+input ArticleHaving {
+  AND: [ArticleHaving!]
+  NOT: ArticleHaving
+  OR: [ArticleHaving!]
+  author: AuthorGroupKeyFilter
+  body: StringHaving
+  embedding: CountHaving
+  id: IDHaving
+  published: BooleanHaving
+  title: StringHaving
+}
+
+type ArticleList {
+  nodes: [Article!]!
+  pageInfo: PageInfo!
+
+  """
+  Number of nodes matching where, ignoring paging. Counted only when selected.
+  """
+  totalCount: Int!
+}
+
+input ArticleListRelationFilter {
+  """Every related node matches."""
+  every: ArticleWhere
+
+  """No related node matches."""
+  none: ArticleWhere
+
+  """At least one related node matches."""
+  some: ArticleWhere
+}
+
+"""Largest non-null values."""
+type ArticleMaxAggregate {
+  body: String
+  id: ID
+  title: String
+}
+
+"""Smallest non-null values."""
+type ArticleMinAggregate {
+  body: String
+  id: ID
+  title: String
+}
+
+input ArticleMinMaxAggregateOrderBy {
+  body: SortOrder
+  id: SortOrder
+  title: SortOrder
+}
+
+"""One key per element of the orderBy list."""
+input ArticleOrderBy {
+  """Sort by a field of the related node."""
+  author: AuthorScalarOrderBy
+  body: SortOrder
+  id: SortOrder
+  published: SortOrder
+  title: SortOrder
+}
+
+input ArticleRelationCountOrder {
+  _count: SortOrder!
+
+  """Count only the matching nodes."""
+  where: ArticleWhere
+}
+
+enum ArticleVectorField {
+  embedding
+}
+
+input ArticleWhere {
+  AND: [ArticleWhere!]
+  NOT: ArticleWhere
+  OR: [ArticleWhere!]
+  author: AuthorRelationFilter
+  body: StringFilter
+  id: IDFilter
+  published: BooleanFilter
+  title: StringFilter
+}
+
+"""
+At least one unique key (checked when the query runs), plus filters on the other fields.
+"""
+input ArticleWhereUnique {
+  AND: [ArticleWhere!]
+  NOT: ArticleWhere
+  OR: [ArticleWhere!]
+  author: AuthorRelationFilter
+  body: StringFilter
+  id: ID
+  published: BooleanFilter
+  title: StringFilter
+}
+
+type Author {
+  """
+  Number of related nodes per to-many relation (only the selected ones are counted).
+  """
+  _count: AuthorCount!
+
+  """
+  Relevance or similarity score when this Author comes from a search or findSimilar root field (selecting it anywhere else is an error).
+  """
+  _score: Float
+
+  """
+  Each index's score when this Author comes from a search or findSimilar over a union (selecting it anywhere else is an error).
+  """
+  _scores: [IndexScore!]
+  articles(orderBy: [ArticleOrderBy!], skip: Int, take: Int, where: ArticleWhere): [Article!]!
+  bio: String
+  id: ID!
+  name: String!
+}
+
+type AuthorAggregate {
+  _count: AuthorCountAggregate!
+  _max: AuthorMaxAggregate!
+  _min: AuthorMinAggregate!
+}
+
+type AuthorCount {
+  articles(where: ArticleWhere): Int!
+}
+
+"""
+`_all`: the number of nodes; a field: the number of its non-null values.
+"""
+type AuthorCountAggregate {
+  _all: Int!
+  bio: Int!
+  id: Int!
+  name: Int!
+}
+
+input AuthorCountAggregateOrderBy {
+  _all: SortOrder
+  bio: SortOrder
+  id: SortOrder
+  name: SortOrder
+}
+
+input AuthorCountWhere {
+  articles: ArticleCountFilter
+}
+
+enum AuthorFulltextIndex {
+  authorText
+}
+
+"""
+One group: its keys (only the fields listed in by can be selected) and aggregates.
+"""
+type AuthorGroup {
+  _count: AuthorCountAggregate!
+  _max: AuthorMaxAggregate!
+  _min: AuthorMinAggregate!
+  bio: String
+  id: ID
+  name: String
+}
+
+"""The fields to group on: at least one."""
+input AuthorGroupByInput {
+  """Fields of the model."""
+  fields: [AuthorGroupField!]
+}
+
+enum AuthorGroupField {
+  bio
+  id
+  name
+}
+
+"""Filters on the related node's fields listed in by."""
+input AuthorGroupKeyFilter {
+  bio: StringFilter
+  id: IDFilter
+  name: StringFilter
+}
+
+input AuthorGroupKeyOrderBy {
+  bio: SortOrder
+  id: SortOrder
+  name: SortOrder
+}
+
+"""Group keys of the related node (only the fields listed in by)."""
+type AuthorGroupKeys {
+  bio: String
+  id: ID
+  name: String
+}
+
+"""
+One key per element of the orderBy list: a key listed in by, or an aggregate.
+"""
+input AuthorGroupOrderBy {
+  _count: AuthorCountAggregateOrderBy
+  _max: AuthorMinMaxAggregateOrderBy
+  _min: AuthorMinMaxAggregateOrderBy
+  bio: SortOrder
+  id: SortOrder
+  name: SortOrder
+}
+
+input AuthorHaving {
+  AND: [AuthorHaving!]
+  NOT: AuthorHaving
+  OR: [AuthorHaving!]
+  bio: StringHaving
+  id: IDHaving
+  name: StringHaving
+}
+
+type AuthorList {
+  nodes: [Author!]!
+  pageInfo: PageInfo!
+
+  """
+  Number of nodes matching where, ignoring paging. Counted only when selected.
+  """
+  totalCount: Int!
+}
+
+"""Largest non-null values."""
+type AuthorMaxAggregate {
+  bio: String
+  id: ID
+  name: String
+}
+
+"""Smallest non-null values."""
+type AuthorMinAggregate {
+  bio: String
+  id: ID
+  name: String
+}
+
+input AuthorMinMaxAggregateOrderBy {
+  bio: SortOrder
+  id: SortOrder
+  name: SortOrder
+}
+
+"""One key per element of the orderBy list."""
+input AuthorOrderBy {
+  """Sort by the number of related nodes."""
+  articles: ArticleRelationCountOrder
+  bio: SortOrder
+  id: SortOrder
+  name: SortOrder
+}
+
+input AuthorRelationFilter {
+  """The related node matches (null: none)."""
+  is: AuthorWhere
+  isNot: AuthorWhere
+}
+
+input AuthorScalarOrderBy {
+  bio: SortOrder
+  id: SortOrder
+  name: SortOrder
+}
+
+input AuthorWhere {
+  AND: [AuthorWhere!]
+  NOT: AuthorWhere
+  OR: [AuthorWhere!]
+
+  """Filters on the number of related nodes (only the readable ones)."""
+  _count: AuthorCountWhere
+  articles: ArticleListRelationFilter
+  bio: StringFilter
+  id: IDFilter
+  name: StringFilter
+}
+
+"""
+At least one unique key (checked when the query runs), plus filters on the other fields.
+"""
+input AuthorWhereUnique {
+  AND: [AuthorWhere!]
+  NOT: AuthorWhere
+  OR: [AuthorWhere!]
+  articles: ArticleListRelationFilter
+  bio: StringFilter
+  id: ID
+  name: StringFilter
+}
+
+input BooleanFilter {
+  equals: Boolean
+  not: Boolean
+}
+
+"""
+Aggregates of the field in each group; the other filters need the field in by.
+"""
+input BooleanHaving {
+  """The number of non-null values."""
+  _count: IntFilter
+  equals: Boolean
+  not: Boolean
+}
+
+"""Aggregates of the field in each group."""
+input CountHaving {
+  """The number of non-null values."""
+  _count: IntFilter
+}
+
+input IDFilter {
+  contains: ID
+  endsWith: ID
+  equals: ID
+  gt: ID
+  gte: ID
+  in: [ID!]
+  lt: ID
+  lte: ID
+  mode: QueryMode
+  not: ID
+  notIn: [ID!]
+  startsWith: ID
+}
+
+"""
+Aggregates of the field in each group; the other filters need the field in by.
+"""
+input IDHaving {
+  """The number of non-null values."""
+  _count: IntFilter
+  _max: IDFilter
+  _min: IDFilter
+  contains: ID
+  endsWith: ID
+  equals: ID
+  gt: ID
+  gte: ID
+  in: [ID!]
+  lt: ID
+  lte: ID
+  mode: QueryMode
+  not: ID
+  notIn: [ID!]
+  startsWith: ID
+}
+
+type IndexScore {
+  """The full-text index (search) or the vector field (findSimilar)."""
+  index: String!
+
+  """score min-max normalised over the hits of this index, in [0, 1]."""
+  normalized: Float!
+
+  """Position of the hit in this index's list, from 1."""
+  rank: Int!
+
+  """The index's own score."""
+  score: Float!
+}
+
+input IntFilter {
+  equals: Int
+  gt: Int
+  gte: Int
+  in: [Int!]
+  lt: Int
+  lte: Int
+  not: Int
+  notIn: [Int!]
+}
+
+type PageInfo {
+  endCursor: String
+  hasNextPage: Boolean!
+  hasPreviousPage: Boolean!
+  startCursor: String
+}
+
+type Query {
+  """
+  Aggregates over the matching nodes (with skip / take: over that window).
+  """
+  articleAggregate(orderBy: [ArticleOrderBy!], skip: Int, take: Int, where: ArticleWhere): ArticleAggregate
+  articleCount(where: ArticleWhere): Int
+  articleFindFirst(orderBy: [ArticleOrderBy!], skip: Int, where: ArticleWhere): Article
+  articleFindMany(
+    """A cursor (pageInfo.endCursor): the page after it."""
+    after: String
+
+    """A cursor (pageInfo.startCursor): the page before it."""
+    before: String
+    orderBy: [ArticleOrderBy!]
+    skip: Int
+    take: Int
+    where: ArticleWhere
+  ): ArticleList
+
+  """
+  The k nodes most similar to vector, best first (_score: the similarity).
+  """
+  articleFindSimilar(
+    field: ArticleVectorField!
+
+    """Number of results, best first."""
+    k: Int!
+
+    """Drop hits scoring below this (similarities, in [0, 1])."""
+    minScore: Float
+
+    """The query embedding."""
+    vector: [Float!]!
+
+    """Filter on the results."""
+    where: ArticleWhere
+  ): [Article!]
+  articleFindUnique(where: ArticleWhereUnique!): Article
+
+  """
+  Groups of the matching nodes by the fields in by, with their aggregates.
+  """
+  articleGroupBy(by: ArticleGroupByInput!, having: ArticleHaving, orderBy: [ArticleGroupOrderBy!], skip: Int, take: Int, where: ArticleWhere): [ArticleGroup!]
+
+  """Nodes matching a full-text query, best first (_score: the relevance)."""
+  articleSearch(
+    index: ArticleFulltextIndex!
+
+    """Drop hits scoring below this (Lucene scores: positive, per query)."""
+    minScore: Float
+    mode: SearchMode
+
+    """The search text (blank: no hits)."""
+    query: String!
+    skip: Int
+    take: Int
+
+    """Filter on the hits, before skip / take."""
+    where: ArticleWhere
+  ): [Article!]
+
+  """
+  Aggregates over the matching nodes (with skip / take: over that window).
+  """
+  authorAggregate(orderBy: [AuthorOrderBy!], skip: Int, take: Int, where: AuthorWhere): AuthorAggregate
+  authorCount(where: AuthorWhere): Int
+  authorFindFirst(orderBy: [AuthorOrderBy!], skip: Int, where: AuthorWhere): Author
+  authorFindMany(
+    """A cursor (pageInfo.endCursor): the page after it."""
+    after: String
+
+    """A cursor (pageInfo.startCursor): the page before it."""
+    before: String
+    orderBy: [AuthorOrderBy!]
+    skip: Int
+    take: Int
+    where: AuthorWhere
+  ): AuthorList
+  authorFindUnique(where: AuthorWhereUnique!): Author
+
+  """
+  Groups of the matching nodes by the fields in by, with their aggregates.
+  """
+  authorGroupBy(by: AuthorGroupByInput!, having: AuthorHaving, orderBy: [AuthorGroupOrderBy!], skip: Int, take: Int, where: AuthorWhere): [AuthorGroup!]
+
+  """Nodes matching a full-text query, best first (_score: the relevance)."""
+  authorSearch(
+    index: AuthorFulltextIndex!
+
+    """Drop hits scoring below this (Lucene scores: positive, per query)."""
+    minScore: Float
+    mode: SearchMode
+
+    """The search text (blank: no hits)."""
+    query: String!
+    skip: Int
+    take: Int
+
+    """Filter on the hits, before skip / take."""
+    where: AuthorWhere
+  ): [Author!]
+  searchHitCount(where: SearchHitWhere): Int
+  searchHitFindFirst(orderBy: [SearchHitOrderBy!], skip: Int, where: SearchHitWhere): SearchHit
+  searchHitFindMany(
+    """A cursor (pageInfo.endCursor): the page after it."""
+    after: String
+
+    """A cursor (pageInfo.startCursor): the page before it."""
+    before: String
+    orderBy: [SearchHitOrderBy!]
+    skip: Int
+    take: Int
+    where: SearchHitWhere
+  ): SearchHitList
+
+  """
+  Nearest neighbours over the members' vector indexes, merged by reciprocal rank fusion (_score), best first.
+  """
+  searchHitFindSimilar(
+    fields: SearchHitSimilarFields
+
+    """Drop hits scoring below this (similarities, in [0, 1])."""
+    minScore: Float
+
+    """k of reciprocal rank fusion (default 60)."""
+    rrfK: Int
+
+    """Hits to skip, after fusion."""
+    skip: Int
+    take: Int!
+
+    """The query embedding."""
+    vector: [Float!]!
+
+    """Filter on the hits (_on: per member), before ranking."""
+    where: SearchHitWhere
+  ): [SearchHit!]
+
+  """
+  Full-text search over the members' indexes, merged by reciprocal rank fusion (_score), best first.
+  """
+  searchHitSearch(
+    indexes: SearchHitSearchIndexes
+
+    """Drop hits scoring below this (Lucene scores: positive, per query)."""
+    minScore: Float
+    mode: SearchMode
+    query: String!
+
+    """k of reciprocal rank fusion (default 60)."""
+    rrfK: Int
+
+    """Hits to skip, after fusion."""
+    skip: Int
+    take: Int
+
+    """Filter on the hits (_on: per member), before ranking."""
+    where: SearchHitWhere
+  ): [SearchHit!]
+}
+
+"""`insensitive` compares lower-cased values."""
+enum QueryMode {
+  default
+  insensitive
+}
+
+union SearchHit = Article | Author
+
+type SearchHitList {
+  nodes: [SearchHit!]!
+  pageInfo: PageInfo!
+
+  """
+  Number of nodes matching where, ignoring paging. Counted only when selected.
+  """
+  totalCount: Int!
+}
+
+"""Per-member filters: only the listed ones are kept."""
+input SearchHitOnWhere {
+  Article: ArticleWhere
+  Author: AuthorWhere
+}
+
+"""One key per element of the orderBy list."""
+input SearchHitOrderBy {
+  _typename: SortOrder
+}
+
+"""
+The @@fulltext index to query for each member (only the members listed are searched). Default: every member with exactly one.
+"""
+input SearchHitSearchIndexes {
+  Article: ArticleFulltextIndex
+  Author: AuthorFulltextIndex
+}
+
+"""
+The vector field to query for each member (only the members listed are searched). Default: every member with exactly one.
+"""
+input SearchHitSimilarFields {
+  Article: ArticleVectorField
+}
+
+enum SearchHitTypename {
+  Article
+  Author
+}
+
+input SearchHitTypenameFilter {
+  equals: SearchHitTypename
+  in: [SearchHitTypename!]
+  not: SearchHitTypename
+  notIn: [SearchHitTypename!]
+}
+
+input SearchHitWhere {
+  AND: [SearchHitWhere!]
+  NOT: SearchHitWhere
+  OR: [SearchHitWhere!]
+  _on: SearchHitOnWhere
+  _typename: SearchHitTypenameFilter
+}
+
+"""
+How search reads query: `lucene` (Lucene query syntax, the default), `terms` (any of the words, escaped), `phrase` (the words in order, escaped).
+"""
+enum SearchMode {
+  lucene
+  phrase
+  terms
+}
+
+enum SortOrder {
+  asc
+  desc
+}
+
+input StringFilter {
+  contains: String
+  endsWith: String
+  equals: String
+  gt: String
+  gte: String
+  in: [String!]
+  lt: String
+  lte: String
+  mode: QueryMode
+  not: String
+  notIn: [String!]
+  startsWith: String
+}
+
+"""
+Aggregates of the field in each group; the other filters need the field in by.
+"""
+input StringHaving {
+  """The number of non-null values."""
+  _count: IntFilter
+  _max: StringFilter
+  _min: StringFilter
+  contains: String
+  endsWith: String
+  equals: String
+  gt: String
+  gte: String
+  in: [String!]
+  lt: String
+  lte: String
+  mode: QueryMode
+  not: String
+  notIn: [String!]
+  startsWith: String
+}

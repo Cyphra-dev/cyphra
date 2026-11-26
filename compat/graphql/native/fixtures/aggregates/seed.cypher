@@ -1,0 +1,10 @@
+CREATE (alice:User {id: "u-alice", name: "Alice", team: "core", salary: 100}),
+  (bob:User {id: "u-bob", name: "Bob", team: "core", salary: 200}),
+  (carol:User {id: "u-carol", name: "Carol", salary: 250}),
+  (p1:Post {id: "p1", title: "Graphs", status: "PUBLISHED", views: 10, rating: 4.5, secret: false, createdAt: datetime("2024-01-01T00:00:00Z")}),
+  (p2:Post {id: "p2", title: "Cypher", status: "PUBLISHED", views: 30, rating: 3.5, secret: false, createdAt: datetime("2024-02-01T00:00:00Z")}),
+  (p3:Post {id: "p3", title: "Draft", status: "DRAFT", views: 1, secret: false, createdAt: datetime("2024-03-01T00:00:00Z")}),
+  (p4:Post {id: "p4", title: "Secret", status: "PUBLISHED", views: 1000, rating: 1.0, secret: true, createdAt: datetime("2025-01-01T00:00:00Z")}),
+  (p5:Post {id: "p5", title: "Orphan", status: "DRAFT", views: 5, secret: false, createdAt: datetime("2024-04-01T00:00:00Z")}),
+  (alice)-[:AUTHORED]->(p1), (alice)-[:AUTHORED]->(p2), (bob)-[:AUTHORED]->(p3),
+  (carol)-[:AUTHORED]->(p4);

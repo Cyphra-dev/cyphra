@@ -1,0 +1,22 @@
+{
+  "data": {
+    "articleSearch": null,
+    "articleFindSimilar": null
+  },
+  "errors": [
+    {
+      "message": "Article.findSimilar: take 11 is above the limit (maxTake: 10).",
+      "path": [
+        "articleFindSimilar"
+      ],
+      "code": "BAD_USER_INPUT"
+    },
+    {
+      "message": "Article.search: take 11 is above the limit (maxTake: 10).",
+      "path": [
+        "articleSearch"
+      ],
+      "code": "BAD_USER_INPUT"
+    }
+  ]
+}

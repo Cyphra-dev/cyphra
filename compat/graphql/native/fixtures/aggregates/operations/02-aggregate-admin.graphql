@@ -1,0 +1,26 @@
+# features: aggregate, auth.rules.read
+# An admin sees every post: the same aggregates include the secret one.
+{
+  postAggregate {
+    _count {
+      _all
+      rating
+    }
+    _sum {
+      views
+    }
+    _avg {
+      views
+      rating
+    }
+    _min {
+      createdAt
+      title
+    }
+    _max {
+      createdAt
+      views
+      status
+    }
+  }
+}

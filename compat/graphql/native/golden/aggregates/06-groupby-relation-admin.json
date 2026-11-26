@@ -1,0 +1,50 @@
+{
+  "data": {
+    "postGroupBy": [
+      {
+        "author": {
+          "name": "Alice"
+        },
+        "_count": {
+          "_all": 2
+        },
+        "_max": {
+          "views": 30
+        }
+      },
+      {
+        "author": {
+          "name": "Bob"
+        },
+        "_count": {
+          "_all": 1
+        },
+        "_max": {
+          "views": 1
+        }
+      },
+      {
+        "author": {
+          "name": "Carol"
+        },
+        "_count": {
+          "_all": 1
+        },
+        "_max": {
+          "views": 1000
+        }
+      },
+      {
+        "author": {
+          "name": null
+        },
+        "_count": {
+          "_all": 1
+        },
+        "_max": {
+          "views": 5
+        }
+      }
+    ]
+  }
+}

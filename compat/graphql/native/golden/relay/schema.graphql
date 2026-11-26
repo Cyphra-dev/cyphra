@@ -8,6 +8,36 @@ type Article implements Content & Node {
   words: Int!
 }
 
+type ArticleAggregate {
+  _avg: ArticleAvgAggregate!
+  _count: ArticleCountAggregate!
+  _max: ArticleMaxAggregate!
+  _min: ArticleMinAggregate!
+  _sum: ArticleSumAggregate!
+}
+
+"""Means of the non-null values (null when there are none)."""
+type ArticleAvgAggregate {
+  words: Float
+}
+
+"""
+`_all`: the number of nodes; a field: the number of its non-null values.
+"""
+type ArticleCountAggregate {
+  _all: Int!
+  id: Int!
+  title: Int!
+  words: Int!
+}
+
+input ArticleCountAggregateOrderBy {
+  _all: SortOrder
+  id: SortOrder
+  title: SortOrder
+  words: SortOrder
+}
+
 input ArticleCountFilter {
   equals: Int
   gt: Int
@@ -20,6 +50,61 @@ input ArticleCountFilter {
 
   """Count only these nodes."""
   where: ArticleWhere
+}
+
+"""
+One group: its keys (only the fields listed in by can be selected) and aggregates.
+"""
+type ArticleGroup {
+  _avg: ArticleAvgAggregate!
+  _count: ArticleCountAggregate!
+  _max: ArticleMaxAggregate!
+  _min: ArticleMinAggregate!
+  _sum: ArticleSumAggregate!
+  author: WriterGroupKeys
+  id: ID
+  title: String
+  words: Int
+}
+
+"""The fields to group on: at least one."""
+input ArticleGroupByInput {
+  """Fields of the related Writer (to-one)."""
+  author: [WriterGroupField!]
+
+  """Fields of the model."""
+  fields: [ArticleGroupField!]
+}
+
+enum ArticleGroupField {
+  id
+  title
+  words
+}
+
+"""
+One key per element of the orderBy list: a key listed in by, or an aggregate.
+"""
+input ArticleGroupOrderBy {
+  _avg: ArticleNumericAggregateOrderBy
+  _count: ArticleCountAggregateOrderBy
+  _max: ArticleMinMaxAggregateOrderBy
+  _min: ArticleMinMaxAggregateOrderBy
+  _sum: ArticleNumericAggregateOrderBy
+  author: WriterGroupKeyOrderBy
+  id: SortOrder
+  title: SortOrder
+  words: SortOrder
+}
+
+input ArticleHaving {
+  AND: [ArticleHaving!]
+  NOT: ArticleHaving
+  OR: [ArticleHaving!]
+  author: WriterGroupKeyFilter
+  id: IDHaving
+  title: StringHaving
+  words: IntHaving
 }
 
 type ArticleList {
@@ -43,6 +128,30 @@ input ArticleListRelationFilter {
   some: ArticleWhere
 }
 
+"""Largest non-null values."""
+type ArticleMaxAggregate {
+  id: ID
+  title: String
+  words: Int
+}
+
+"""Smallest non-null values."""
+type ArticleMinAggregate {
+  id: ID
+  title: String
+  words: Int
+}
+
+input ArticleMinMaxAggregateOrderBy {
+  id: SortOrder
+  title: SortOrder
+  words: SortOrder
+}
+
+input ArticleNumericAggregateOrderBy {
+  words: SortOrder
+}
+
 """One key per element of the orderBy list."""
 input ArticleOrderBy {
   """Sort by a field of the related node."""
@@ -57,6 +166,11 @@ input ArticleRelationCountOrder {
 
   """Count only the matching nodes."""
   where: ArticleWhere
+}
+
+"""Sums of the non-null values (null when there are none)."""
+type ArticleSumAggregate {
+  words: Int
 }
 
 input ArticleWhere {
@@ -89,6 +203,68 @@ interface Content implements Node {
   title: String!
 }
 
+type ContentAggregate {
+  _count: ContentCountAggregate!
+  _max: ContentMaxAggregate!
+  _min: ContentMinAggregate!
+}
+
+"""
+`_all`: the number of nodes; a field: the number of its non-null values.
+"""
+type ContentCountAggregate {
+  _all: Int!
+  id: Int!
+  title: Int!
+}
+
+input ContentCountAggregateOrderBy {
+  _all: SortOrder
+  id: SortOrder
+  title: SortOrder
+}
+
+"""
+One group: its keys (only the fields listed in by can be selected) and aggregates.
+"""
+type ContentGroup {
+  _count: ContentCountAggregate!
+  _max: ContentMaxAggregate!
+  _min: ContentMinAggregate!
+  id: ID
+  title: String
+}
+
+"""The fields to group on: at least one."""
+input ContentGroupByInput {
+  """Fields of the model."""
+  fields: [ContentGroupField!]
+}
+
+enum ContentGroupField {
+  id
+  title
+}
+
+"""
+One key per element of the orderBy list: a key listed in by, or an aggregate.
+"""
+input ContentGroupOrderBy {
+  _count: ContentCountAggregateOrderBy
+  _max: ContentMinMaxAggregateOrderBy
+  _min: ContentMinMaxAggregateOrderBy
+  id: SortOrder
+  title: SortOrder
+}
+
+input ContentHaving {
+  AND: [ContentHaving!]
+  NOT: ContentHaving
+  OR: [ContentHaving!]
+  id: IDHaving
+  title: StringHaving
+}
+
 type ContentList {
   nodes: [Content!]!
   pageInfo: PageInfo!
@@ -97,6 +273,23 @@ type ContentList {
   Number of nodes matching where, ignoring paging. Counted only when selected.
   """
   totalCount: Int!
+}
+
+"""Largest non-null values."""
+type ContentMaxAggregate {
+  id: ID
+  title: String
+}
+
+"""Smallest non-null values."""
+type ContentMinAggregate {
+  id: ID
+  title: String
+}
+
+input ContentMinMaxAggregateOrderBy {
+  id: SortOrder
+  title: SortOrder
 }
 
 """Per-implementation filters: only the listed ones are kept."""
@@ -145,7 +338,40 @@ input ContentWhereUnique {
   title: StringFilter
 }
 
+input FloatFilter {
+  equals: Float
+  gt: Float
+  gte: Float
+  in: [Float!]
+  lt: Float
+  lte: Float
+  not: Float
+  notIn: [Float!]
+}
+
 input IDFilter {
+  contains: ID
+  endsWith: ID
+  equals: ID
+  gt: ID
+  gte: ID
+  in: [ID!]
+  lt: ID
+  lte: ID
+  mode: QueryMode
+  not: ID
+  notIn: [ID!]
+  startsWith: ID
+}
+
+"""
+Aggregates of the field in each group; the other filters need the field in by.
+"""
+input IDHaving {
+  """The number of non-null values."""
+  _count: IntFilter
+  _max: IDFilter
+  _min: IDFilter
   contains: ID
   endsWith: ID
   equals: ID
@@ -171,6 +397,27 @@ input IntFilter {
   notIn: [Int!]
 }
 
+"""
+Aggregates of the field in each group; the other filters need the field in by.
+"""
+input IntHaving {
+  _avg: FloatFilter
+
+  """The number of non-null values."""
+  _count: IntFilter
+  _max: IntFilter
+  _min: IntFilter
+  _sum: IntFilter
+  equals: Int
+  gt: Int
+  gte: Int
+  in: [Int!]
+  lt: Int
+  lte: Int
+  not: Int
+  notIn: [Int!]
+}
+
 """An object with a global id (Relay): refetch it with node(id)."""
 interface Node {
   """The global id."""
@@ -185,6 +432,10 @@ type PageInfo {
 }
 
 type Query {
+  """
+  Aggregates over the matching nodes (with skip / take: over that window).
+  """
+  articleAggregate(orderBy: [ArticleOrderBy!], skip: Int, take: Int, where: ArticleWhere): ArticleAggregate
   articleCount(where: ArticleWhere): Int
   articleFindFirst(orderBy: [ArticleOrderBy!], skip: Int, where: ArticleWhere): Article
   articleFindMany(
@@ -199,6 +450,16 @@ type Query {
     where: ArticleWhere
   ): ArticleList
   articleFindUnique(where: ArticleWhereUnique!): Article
+
+  """
+  Groups of the matching nodes by the fields in by, with their aggregates.
+  """
+  articleGroupBy(by: ArticleGroupByInput!, having: ArticleHaving, orderBy: [ArticleGroupOrderBy!], skip: Int, take: Int, where: ArticleWhere): [ArticleGroup!]
+
+  """
+  Aggregates over the matching nodes (with skip / take: over that window).
+  """
+  contentAggregate(orderBy: [ContentOrderBy!], skip: Int, take: Int, where: ContentWhere): ContentAggregate
   contentCount(where: ContentWhere): Int
   contentFindFirst(orderBy: [ContentOrderBy!], skip: Int, where: ContentWhere): Content
   contentFindMany(
@@ -214,8 +475,18 @@ type Query {
   ): ContentList
   contentFindUnique(where: ContentWhereUnique!): Content
 
+  """
+  Groups of the matching nodes by the fields in by, with their aggregates.
+  """
+  contentGroupBy(by: ContentGroupByInput!, having: ContentHaving, orderBy: [ContentGroupOrderBy!], skip: Int, take: Int, where: ContentWhere): [ContentGroup!]
+
   """The node with this global id (null when there is none)."""
   node(id: ID!): Node
+
+  """
+  Aggregates over the matching nodes (with skip / take: over that window).
+  """
+  videoAggregate(orderBy: [VideoOrderBy!], skip: Int, take: Int, where: VideoWhere): VideoAggregate
   videoCount(where: VideoWhere): Int
   videoFindFirst(orderBy: [VideoOrderBy!], skip: Int, where: VideoWhere): Video
   videoFindMany(
@@ -230,6 +501,16 @@ type Query {
     where: VideoWhere
   ): VideoList
   videoFindUnique(where: VideoWhereUnique!): Video
+
+  """
+  Groups of the matching nodes by the fields in by, with their aggregates.
+  """
+  videoGroupBy(by: VideoGroupByInput!, having: VideoHaving, orderBy: [VideoGroupOrderBy!], skip: Int, take: Int, where: VideoWhere): [VideoGroup!]
+
+  """
+  Aggregates over the matching nodes (with skip / take: over that window).
+  """
+  writerAggregate(orderBy: [WriterOrderBy!], skip: Int, take: Int, where: WriterWhere): WriterAggregate
   writerCount(where: WriterWhere): Int
   writerFindFirst(orderBy: [WriterOrderBy!], skip: Int, where: WriterWhere): Writer
   writerFindMany(
@@ -244,6 +525,11 @@ type Query {
     where: WriterWhere
   ): WriterList
   writerFindUnique(where: WriterWhereUnique!): Writer
+
+  """
+  Groups of the matching nodes by the fields in by, with their aggregates.
+  """
+  writerGroupBy(by: WriterGroupByInput!, having: WriterHaving, orderBy: [WriterGroupOrderBy!], skip: Int, take: Int, where: WriterWhere): [WriterGroup!]
 }
 
 """`insensitive` compares lower-cased values."""
@@ -272,12 +558,113 @@ input StringFilter {
   startsWith: String
 }
 
+"""
+Aggregates of the field in each group; the other filters need the field in by.
+"""
+input StringHaving {
+  """The number of non-null values."""
+  _count: IntFilter
+  _max: StringFilter
+  _min: StringFilter
+  contains: String
+  endsWith: String
+  equals: String
+  gt: String
+  gte: String
+  in: [String!]
+  lt: String
+  lte: String
+  mode: QueryMode
+  not: String
+  notIn: [String!]
+  startsWith: String
+}
+
 type Video implements Content & Node {
   """The global id (Relay)."""
   id: ID!
   rawId: ID!
   seconds: Int!
   title: String!
+}
+
+type VideoAggregate {
+  _avg: VideoAvgAggregate!
+  _count: VideoCountAggregate!
+  _max: VideoMaxAggregate!
+  _min: VideoMinAggregate!
+  _sum: VideoSumAggregate!
+}
+
+"""Means of the non-null values (null when there are none)."""
+type VideoAvgAggregate {
+  seconds: Float
+}
+
+"""
+`_all`: the number of nodes; a field: the number of its non-null values.
+"""
+type VideoCountAggregate {
+  _all: Int!
+  id: Int!
+  seconds: Int!
+  title: Int!
+}
+
+input VideoCountAggregateOrderBy {
+  _all: SortOrder
+  id: SortOrder
+  seconds: SortOrder
+  title: SortOrder
+}
+
+"""
+One group: its keys (only the fields listed in by can be selected) and aggregates.
+"""
+type VideoGroup {
+  _avg: VideoAvgAggregate!
+  _count: VideoCountAggregate!
+  _max: VideoMaxAggregate!
+  _min: VideoMinAggregate!
+  _sum: VideoSumAggregate!
+  id: ID
+  seconds: Int
+  title: String
+}
+
+"""The fields to group on: at least one."""
+input VideoGroupByInput {
+  """Fields of the model."""
+  fields: [VideoGroupField!]
+}
+
+enum VideoGroupField {
+  id
+  seconds
+  title
+}
+
+"""
+One key per element of the orderBy list: a key listed in by, or an aggregate.
+"""
+input VideoGroupOrderBy {
+  _avg: VideoNumericAggregateOrderBy
+  _count: VideoCountAggregateOrderBy
+  _max: VideoMinMaxAggregateOrderBy
+  _min: VideoMinMaxAggregateOrderBy
+  _sum: VideoNumericAggregateOrderBy
+  id: SortOrder
+  seconds: SortOrder
+  title: SortOrder
+}
+
+input VideoHaving {
+  AND: [VideoHaving!]
+  NOT: VideoHaving
+  OR: [VideoHaving!]
+  id: IDHaving
+  seconds: IntHaving
+  title: StringHaving
 }
 
 type VideoList {
@@ -290,11 +677,40 @@ type VideoList {
   totalCount: Int!
 }
 
+"""Largest non-null values."""
+type VideoMaxAggregate {
+  id: ID
+  seconds: Int
+  title: String
+}
+
+"""Smallest non-null values."""
+type VideoMinAggregate {
+  id: ID
+  seconds: Int
+  title: String
+}
+
+input VideoMinMaxAggregateOrderBy {
+  id: SortOrder
+  seconds: SortOrder
+  title: SortOrder
+}
+
+input VideoNumericAggregateOrderBy {
+  seconds: SortOrder
+}
+
 """One key per element of the orderBy list."""
 input VideoOrderBy {
   id: SortOrder
   seconds: SortOrder
   title: SortOrder
+}
+
+"""Sums of the non-null values (null when there are none)."""
+type VideoSumAggregate {
+  seconds: Int
 }
 
 input VideoWhere {
@@ -331,12 +747,91 @@ type Writer implements Node {
   name: String!
 }
 
+type WriterAggregate {
+  _count: WriterCountAggregate!
+  _max: WriterMaxAggregate!
+  _min: WriterMinAggregate!
+}
+
 type WriterCount {
   articles(where: ArticleWhere): Int!
 }
 
+"""
+`_all`: the number of nodes; a field: the number of its non-null values.
+"""
+type WriterCountAggregate {
+  _all: Int!
+  handle: Int!
+  name: Int!
+}
+
+input WriterCountAggregateOrderBy {
+  _all: SortOrder
+  handle: SortOrder
+  name: SortOrder
+}
+
 input WriterCountWhere {
   articles: ArticleCountFilter
+}
+
+"""
+One group: its keys (only the fields listed in by can be selected) and aggregates.
+"""
+type WriterGroup {
+  _count: WriterCountAggregate!
+  _max: WriterMaxAggregate!
+  _min: WriterMinAggregate!
+  handle: ID
+  name: String
+}
+
+"""The fields to group on: at least one."""
+input WriterGroupByInput {
+  """Fields of the model."""
+  fields: [WriterGroupField!]
+}
+
+enum WriterGroupField {
+  handle
+  name
+}
+
+"""Filters on the related node's fields listed in by."""
+input WriterGroupKeyFilter {
+  handle: IDFilter
+  name: StringFilter
+}
+
+input WriterGroupKeyOrderBy {
+  handle: SortOrder
+  name: SortOrder
+}
+
+"""Group keys of the related node (only the fields listed in by)."""
+type WriterGroupKeys {
+  handle: ID
+  name: String
+}
+
+"""
+One key per element of the orderBy list: a key listed in by, or an aggregate.
+"""
+input WriterGroupOrderBy {
+  _count: WriterCountAggregateOrderBy
+  _max: WriterMinMaxAggregateOrderBy
+  _min: WriterMinMaxAggregateOrderBy
+  handle: SortOrder
+  name: SortOrder
+}
+
+input WriterHaving {
+  AND: [WriterHaving!]
+  NOT: WriterHaving
+  OR: [WriterHaving!]
+  handle: IDHaving
+  name: StringHaving
 }
 
 type WriterList {
@@ -347,6 +842,23 @@ type WriterList {
   Number of nodes matching where, ignoring paging. Counted only when selected.
   """
   totalCount: Int!
+}
+
+"""Largest non-null values."""
+type WriterMaxAggregate {
+  handle: ID
+  name: String
+}
+
+"""Smallest non-null values."""
+type WriterMinAggregate {
+  handle: ID
+  name: String
+}
+
+input WriterMinMaxAggregateOrderBy {
+  handle: SortOrder
+  name: SortOrder
 }
 
 """One key per element of the orderBy list."""

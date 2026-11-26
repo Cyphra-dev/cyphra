@@ -1,0 +1,14 @@
+# features: search, errors
+# _score is only meaningful on search results; _scores only over a union.
+{
+  articleFindMany {
+    nodes {
+      _score
+    }
+  }
+  articleSearch(index: articleText, query: "graph") {
+    _scores {
+      rank
+    }
+  }
+}

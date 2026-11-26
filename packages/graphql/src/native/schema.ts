@@ -34,6 +34,7 @@ import {
 import type { ResolvedNodeModel, ResolvedRelationField, ResolvedScalarField } from "@cyphra/schema";
 import type { ApiModel } from "./api.js";
 import { NativeSchemaError, isWrite, type RootOperation } from "./config.js";
+import { NUMERIC_TYPES, ORDERABLE_TYPES } from "./api.js";
 import {
   BigIntScalar,
   CartesianPointInputType,
@@ -85,7 +86,42 @@ export const names = {
   connect: (m: string, edge: string) => `${m}Connect${edge}`,
   countWhere: (m: string) => `${m}CountWhere`,
   countFilter: (m: string) => `${m}CountFilter`,
+  aggregate: (m: string) => `${m}Aggregate`,
+  countAggregate: (m: string) => `${m}CountAggregate`,
+  sumAggregate: (m: string) => `${m}SumAggregate`,
+  avgAggregate: (m: string) => `${m}AvgAggregate`,
+  minAggregate: (m: string) => `${m}MinAggregate`,
+  maxAggregate: (m: string) => `${m}MaxAggregate`,
+  group: (m: string) => `${m}Group`,
+  groupKeys: (m: string) => `${m}GroupKeys`,
+  groupField: (m: string) => `${m}GroupField`,
+  groupByInput: (m: string) => `${m}GroupByInput`,
+  having: (m: string) => `${m}Having`,
+  groupKeyFilter: (m: string) => `${m}GroupKeyFilter`,
+  groupOrderBy: (m: string) => `${m}GroupOrderBy`,
+  groupKeyOrderBy: (m: string) => `${m}GroupKeyOrderBy`,
+  countOrderBy: (m: string) => `${m}CountAggregateOrderBy`,
+  numericOrderBy: (m: string) => `${m}NumericAggregateOrderBy`,
+  minMaxOrderBy: (m: string) => `${m}MinMaxAggregateOrderBy`,
+  fulltextIndex: (m: string) => `${m}FulltextIndex`,
+  vectorField: (m: string) => `${m}VectorField`,
+  searchIndexes: (m: string) => `${m}SearchIndexes`,
+  similarFields: (m: string) => `${m}SimilarFields`,
 };
+
+/** A scalar field of `type`, for the shared inputs of aggregate results (`IntFilter`, …). */
+function syntheticField(type: ResolvedScalarField["type"]): ResolvedScalarField {
+  return {
+    kind: "scalar",
+    name: "",
+    type,
+    optional: true,
+    list: false,
+    id: false,
+    unique: false,
+    index: false,
+  };
+}
 
 /**
  * How a relation is written from its owner: the part of the generated names that depends on the
@@ -168,7 +204,7 @@ export class SchemaBuilder {
   }
 
   /** A generated type, created once; its name must not be a model's, an enum's or an edge's. */
-  private named<T extends GraphQLNamedType>(name: string, create: () => T, own = false): T {
+  named<T extends GraphQLNamedType>(name: string, create: () => T, own = false): T {
     const existing = this.types.get(name);
     if (existing) return existing as T;
     if (!own && this.modelNames.has(name)) {
@@ -1234,6 +1270,20 @@ export class SchemaBuilder {
         resolve: byResponseKey,
       };
     }
+    if (this.api.scored(model)) {
+      fields._score = {
+        type: GraphQLFloat,
+        description: `Relevance or similarity score when this ${model.name} comes from a search or findSimilar root field (selecting it anywhere else is an error).`,
+        resolve: byResponseKey,
+      };
+    }
+    if (this.api.fused(model)) {
+      fields._scores = {
+        type: new GraphQLList(new GraphQLNonNull(this.indexScore())),
+        description: `Each index's score when this ${model.name} comes from a search or findSimilar over a union (selecting it anywhere else is an error).`,
+        resolve: byResponseKey,
+      };
+    }
     if (Object.keys(fields).length === 0) {
       throw new NativeSchemaError(
         `${model.name} has no field the API exposes; GraphQL object types need at least one.`,
@@ -1330,6 +1380,501 @@ export class SchemaBuilder {
   }
 
   // ---------------------------------------------------------------------------
+  // Aggregates and groupBy
+  // ---------------------------------------------------------------------------
+
+  /** The nullable output type of one aggregated value of `f` (`_min`, `_sum`, a group key). */
+  private valueOutput(f: ResolvedScalarField): GraphQLOutputType {
+    return this.scalarBase(f, false) as GraphQLOutputType;
+  }
+
+  /** `_sum`'s type for `f`: the field's own number type (`Int`, `Float`, `BigInt`). */
+  private sumOutput(f: ResolvedScalarField): GraphQLOutputType {
+    return f.type === "BigInt" ? BigIntScalar : f.type === "Float" ? GraphQLFloat : GraphQLInt;
+  }
+
+  /** `<Model>CountAggregate`, `<Model>SumAggregate`, …: one object type per aggregate. */
+  private aggregateFields(model: ResolvedNodeModel): GraphQLFieldConfigMap<AnyRecord, unknown> {
+    const nn = (t: GraphQLOutputType) => new GraphQLNonNull(t);
+    const object = (
+      name: string,
+      description: string,
+      fields: [string, GraphQLOutputType][],
+    ): GraphQLObjectType =>
+      this.named(
+        name,
+        () =>
+          new GraphQLObjectType({
+            name,
+            description,
+            fields: Object.fromEntries(
+              fields.map(([k, type]) => [k, { type, resolve: byResponseKey }]),
+            ),
+          }),
+      );
+    const out: GraphQLFieldConfigMap<AnyRecord, unknown> = {};
+    const count = object(
+      names.countAggregate(model.name),
+      "`_all`: the number of nodes; a field: the number of its non-null values.",
+      [
+        ["_all", nn(GraphQLInt)],
+        ...this.api
+          .scalars(model)
+          .map((f): [string, GraphQLOutputType] => [f.name, nn(GraphQLInt)]),
+      ],
+    );
+    out._count = { type: nn(count), resolve: byResponseKey };
+    const numeric = this.api.numericFields(model);
+    const orderable = this.api.orderableFields(model);
+    if (numeric.length > 0) {
+      const sum = object(
+        names.sumAggregate(model.name),
+        "Sums of the non-null values (null when there are none).",
+        numeric.map((f) => [f.name, this.sumOutput(f)]),
+      );
+      const avg = object(
+        names.avgAggregate(model.name),
+        "Means of the non-null values (null when there are none).",
+        numeric.map((f) => [f.name, GraphQLFloat]),
+      );
+      out._sum = { type: nn(sum), resolve: byResponseKey };
+      out._avg = { type: nn(avg), resolve: byResponseKey };
+    }
+    if (orderable.length > 0) {
+      const fields = orderable.map((f): [string, GraphQLOutputType] => [
+        f.name,
+        this.valueOutput(f),
+      ]);
+      const min = object(names.minAggregate(model.name), "Smallest non-null values.", fields);
+      const max = object(names.maxAggregate(model.name), "Largest non-null values.", fields);
+      out._min = { type: nn(min), resolve: byResponseKey };
+      out._max = { type: nn(max), resolve: byResponseKey };
+    }
+    return out;
+  }
+
+  /** `<Model>Aggregate`: what `<model>Aggregate` returns (only the selected aggregates run). */
+  aggregateType(model: ResolvedNodeModel): GraphQLObjectType {
+    const name = names.aggregate(model.name);
+    return this.named(
+      name,
+      () => new GraphQLObjectType({ name, fields: () => this.aggregateFields(model) }),
+    );
+  }
+
+  /** `<Model>GroupField`: the fields of `model` `groupBy` can group on. */
+  private groupFieldEnum(model: ResolvedNodeModel): GraphQLEnumType {
+    const name = names.groupField(model.name);
+    return this.named(
+      name,
+      () =>
+        new GraphQLEnumType({
+          name,
+          values: Object.fromEntries(
+            this.api.groupFields(model).map((f) => [f.name, { value: f.name }]),
+          ),
+        }),
+    );
+  }
+
+  /** `<Model>GroupByInput`: `fields` of the model, and the fields of each to-one relation. */
+  private groupByInput(model: ResolvedNodeModel): GraphQLInputObjectType {
+    const name = names.groupByInput(model.name);
+    return this.named(name, () => {
+      const list = (t: GraphQLInputType) => new GraphQLList(new GraphQLNonNull(t));
+      const fields: GraphQLInputFieldConfigMap = {};
+      if (this.api.groupFields(model).length > 0) {
+        fields.fields = {
+          type: list(this.groupFieldEnum(model)),
+          description: "Fields of the model.",
+        };
+      }
+      for (const r of this.api.groupRelations(model)) {
+        fields[r.name] = {
+          type: list(this.groupFieldEnum(this.api.node(r.target))),
+          description: `Fields of the related ${r.target} (to-one).`,
+        };
+      }
+      return new GraphQLInputObjectType({
+        name,
+        description: "The fields to group on: at least one.",
+        fields,
+      });
+    });
+  }
+
+  /** `<Model>GroupKeys`: the group key fields of a related node, in a `<Model>Group` row. */
+  private groupKeys(model: ResolvedNodeModel): GraphQLObjectType {
+    const name = names.groupKeys(model.name);
+    return this.named(
+      name,
+      () =>
+        new GraphQLObjectType({
+          name,
+          description: "Group keys of the related node (only the fields listed in by).",
+          fields: Object.fromEntries(
+            this.api
+              .groupFields(model)
+              .map((f) => [f.name, { type: this.valueOutput(f), resolve: byResponseKey }]),
+          ),
+        }),
+    );
+  }
+
+  /** `<Model>Group`: one row of `<model>GroupBy` (keys listed in `by`, then aggregates). */
+  groupType(model: ResolvedNodeModel): GraphQLObjectType {
+    const name = names.group(model.name);
+    return this.named(
+      name,
+      () =>
+        new GraphQLObjectType({
+          name,
+          description:
+            "One group: its keys (only the fields listed in by can be selected) and aggregates.",
+          fields: () => {
+            const fields: GraphQLFieldConfigMap<AnyRecord, unknown> = {};
+            for (const f of this.api.groupFields(model)) {
+              fields[f.name] = { type: this.valueOutput(f), resolve: byResponseKey };
+            }
+            for (const r of this.api.groupRelations(model)) {
+              fields[r.name] = {
+                type: this.groupKeys(this.api.node(r.target)),
+                resolve: byResponseKey,
+              };
+            }
+            return { ...fields, ...this.aggregateFields(model) };
+          },
+        }),
+    );
+  }
+
+  /**
+   * `<Type>Having` (`IntHaving`, `StringHaving`, …): the filters of a group key (when the field is
+   * listed in `by`) and of the aggregates of a field of that type.
+   */
+  private scalarHaving(f: ResolvedScalarField): GraphQLInputObjectType {
+    const groupable = !f.list && !["Vector", "Json", "Point", "CartesianPoint"].includes(f.type);
+    const base = this.scalarBase(f, true) as GraphQLInputType & { name: string };
+    const name = groupable ? `${base.name}Having` : "CountHaving";
+    return this.named(name, () => {
+      const filter = (type: ResolvedScalarField["type"]) => this.scalarFilter(syntheticField(type));
+      const fields: GraphQLInputFieldConfigMap = {};
+      if (groupable) {
+        const own = this.scalarFilter(f) as GraphQLInputObjectType;
+        for (const [k, v] of Object.entries(own.getFields())) {
+          fields[k] = { type: v.type, description: v.description };
+        }
+      }
+      fields._count = { type: filter("Int"), description: "The number of non-null values." };
+      if (groupable && NUMERIC_TYPES.has(f.type)) {
+        fields._sum = {
+          type: filter(f.type === "BigInt" ? "BigInt" : f.type === "Float" ? "Float" : "Int"),
+        };
+        fields._avg = { type: filter("Float") };
+      }
+      if (groupable && ORDERABLE_TYPES.has(f.type)) {
+        fields._min = { type: this.scalarFilter(f) };
+        fields._max = { type: this.scalarFilter(f) };
+      }
+      return new GraphQLInputObjectType({
+        name,
+        description: groupable
+          ? "Aggregates of the field in each group; the other filters need the field in by."
+          : "Aggregates of the field in each group.",
+        fields,
+      });
+    });
+  }
+
+  /** `<Model>GroupKeyFilter`: filters on the group keys of a related node, in `having`. */
+  private groupKeyFilter(model: ResolvedNodeModel): GraphQLInputObjectType {
+    const name = names.groupKeyFilter(model.name);
+    return this.named(
+      name,
+      () =>
+        new GraphQLInputObjectType({
+          name,
+          description: "Filters on the related node's fields listed in by.",
+          fields: Object.fromEntries(
+            this.api
+              .groupFields(model)
+              .filter((f) => this.api.filterable(model, f))
+              .map((f) => [f.name, { type: this.scalarFilter(f) }]),
+          ),
+        }),
+    );
+  }
+
+  /** `<Model>Having`: filters on the groups of a `groupBy` (keys and aggregates). */
+  private having(model: ResolvedNodeModel): GraphQLInputObjectType {
+    const name = names.having(model.name);
+    return this.named(
+      name,
+      () =>
+        new GraphQLInputObjectType({
+          name,
+          fields: () => {
+            const self = this.having(model);
+            const fields: GraphQLInputFieldConfigMap = {
+              AND: { type: new GraphQLList(new GraphQLNonNull(self)) },
+              OR: { type: new GraphQLList(new GraphQLNonNull(self)) },
+              NOT: { type: self },
+            };
+            for (const f of this.api.scalars(model)) {
+              if (this.api.config.field(model.name, f.name).filter) {
+                fields[f.name] = { type: this.scalarHaving(f) };
+              }
+            }
+            for (const r of this.api.groupRelations(model)) {
+              if (!this.api.filterable(model, r)) continue;
+              const t = this.groupKeyFilter(this.api.node(r.target));
+              if (Object.keys(t.getFields()).length > 0) fields[r.name] = { type: t };
+            }
+            return fields;
+          },
+        }),
+    );
+  }
+
+  /** An input of `SortOrder` fields (aggregate and group key orderings). */
+  private sortInput(
+    name: string,
+    keys: readonly string[],
+    description?: string,
+  ): GraphQLInputObjectType {
+    return this.named(
+      name,
+      () =>
+        new GraphQLInputObjectType({
+          name,
+          description,
+          fields: Object.fromEntries(keys.map((k) => [k, { type: this.SortOrder }])),
+        }),
+    );
+  }
+
+  /** `<Model>GroupOrderBy`: sort groups by keys listed in `by` or by aggregates. */
+  private groupOrderBy(model: ResolvedNodeModel): GraphQLInputObjectType {
+    const name = names.groupOrderBy(model.name);
+    return this.named(
+      name,
+      () =>
+        new GraphQLInputObjectType({
+          name,
+          description:
+            "One key per element of the orderBy list: a key listed in by, or an aggregate.",
+          fields: () => {
+            const sortable = (m: ResolvedNodeModel, fs: readonly ResolvedScalarField[]) =>
+              fs.filter((f) => this.api.sortable(m, f)).map((f) => f.name);
+            const fields: GraphQLInputFieldConfigMap = {};
+            for (const k of sortable(model, this.api.groupFields(model))) {
+              fields[k] = { type: this.SortOrder };
+            }
+            for (const r of this.api.groupRelations(model)) {
+              const target = this.api.node(r.target);
+              const keys = sortable(target, this.api.groupFields(target));
+              if (!this.api.sortable(model, r) || keys.length === 0) continue;
+              fields[r.name] = { type: this.sortInput(names.groupKeyOrderBy(target.name), keys) };
+            }
+            const counted = sortable(model, this.api.scalars(model));
+            fields._count = {
+              type: this.sortInput(names.countOrderBy(model.name), ["_all", ...counted]),
+            };
+            const numeric = sortable(model, this.api.numericFields(model));
+            if (numeric.length > 0) {
+              const t = this.sortInput(names.numericOrderBy(model.name), numeric);
+              fields._sum = { type: t };
+              fields._avg = { type: t };
+            }
+            const orderable = sortable(model, this.api.orderableFields(model));
+            if (orderable.length > 0) {
+              const t = this.sortInput(names.minMaxOrderBy(model.name), orderable);
+              fields._min = { type: t };
+              fields._max = { type: t };
+            }
+            return fields;
+          },
+        }),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Search
+  // ---------------------------------------------------------------------------
+
+  readonly SearchMode = new GraphQLEnumType({
+    name: "SearchMode",
+    description:
+      "How search reads query: `lucene` (Lucene query syntax, the default), `terms` (any of the words, escaped), `phrase` (the words in order, escaped).",
+    values: { lucene: { value: "lucene" }, terms: { value: "terms" }, phrase: { value: "phrase" } },
+  });
+
+  /** `IndexScore`: one index's score of a union search hit (`_scores`). */
+  private indexScore(): GraphQLObjectType {
+    return this.named(
+      "IndexScore",
+      () =>
+        new GraphQLObjectType({
+          name: "IndexScore",
+          fields: {
+            index: {
+              type: new GraphQLNonNull(GraphQLString),
+              description: "The full-text index (search) or the vector field (findSimilar).",
+              resolve: byResponseKey,
+            },
+            score: {
+              type: new GraphQLNonNull(GraphQLFloat),
+              description: "The index's own score.",
+              resolve: byResponseKey,
+            },
+            normalized: {
+              type: new GraphQLNonNull(GraphQLFloat),
+              description: "score min-max normalised over the hits of this index, in [0, 1].",
+              resolve: byResponseKey,
+            },
+            rank: {
+              type: new GraphQLNonNull(GraphQLInt),
+              description: "Position of the hit in this index's list, from 1.",
+              resolve: byResponseKey,
+            },
+          },
+        }),
+    );
+  }
+
+  /** An enum of names (index names, vector fields); each must be a GraphQL name. */
+  private nameEnum(name: string, values: readonly string[], what: string): GraphQLEnumType {
+    return this.named(name, () => {
+      for (const v of values) {
+        if (!/^[_A-Za-z][_0-9A-Za-z]*$/.test(v) || v === "true" || v === "false" || v === "null") {
+          throw new NativeSchemaError(
+            `${what} "${v}" is not a valid GraphQL enum value; rename it in schema.cyphra (name: "…").`,
+          );
+        }
+      }
+      return new GraphQLEnumType({
+        name,
+        values: Object.fromEntries(values.map((v) => [v, { value: v }])),
+      });
+    });
+  }
+
+  /** `<Model>FulltextIndex`: the `@@fulltext` indexes of a model. */
+  private fulltextIndexEnum(model: ResolvedNodeModel): GraphQLEnumType {
+    return this.nameEnum(
+      names.fulltextIndex(model.name),
+      (model.fulltextIndexes ?? []).map((i) => i.name),
+      `${model.name}: the @@fulltext index name`,
+    );
+  }
+
+  /** `<Model>VectorField`: the `Vector(N)` fields of a model with a `@vectorIndex`. */
+  private vectorFieldEnum(model: ResolvedNodeModel): GraphQLEnumType {
+    return this.nameEnum(
+      names.vectorField(model.name),
+      model.fields.filter((f) => f.kind === "scalar" && f.vectorIndex).map((f) => f.name),
+      `${model.name}: the vector field`,
+    );
+  }
+
+  /** Members of a union with a `@@fulltext` index / a `@vectorIndex` field. */
+  private searchedMembers(
+    union: ResolvedNodeModel,
+    kind: "search" | "findSimilar",
+  ): ResolvedNodeModel[] {
+    return this.api
+      .concrete(union)
+      .filter((m) =>
+        kind === "search"
+          ? (m.fulltextIndexes?.length ?? 0) > 0
+          : m.fields.some((f) => f.kind === "scalar" && f.vectorIndex),
+      );
+  }
+
+  /** `<Union>SearchIndexes` / `<Union>SimilarFields`: the index of each member to query. */
+  private memberIndexes(
+    union: ResolvedNodeModel,
+    kind: "search" | "findSimilar",
+  ): GraphQLInputObjectType {
+    const name =
+      kind === "search" ? names.searchIndexes(union.name) : names.similarFields(union.name);
+    return this.named(
+      name,
+      () =>
+        new GraphQLInputObjectType({
+          name,
+          description: `The ${kind === "search" ? "@@fulltext index" : "vector field"} to query for each member (only the members listed are searched). Default: every member with exactly one.`,
+          fields: () =>
+            Object.fromEntries(
+              this.searchedMembers(union, kind).map((m) => [
+                m.name,
+                { type: kind === "search" ? this.fulltextIndexEnum(m) : this.vectorFieldEnum(m) },
+              ]),
+            ),
+        }),
+    );
+  }
+
+  /** Arguments of `<model>Search` / `<model>FindSimilar` (a node model or a union). */
+  private searchArgs(
+    model: ResolvedNodeModel,
+    op: "search" | "findSimilar",
+  ): GraphQLFieldConfigArgumentMap {
+    const nn = <T extends GraphQLInputType>(t: T) => new GraphQLNonNull(t);
+    const where = { type: this.where(model) };
+    const minScore = {
+      type: GraphQLFloat,
+      description:
+        op === "search"
+          ? "Drop hits scoring below this (Lucene scores: positive, per query)."
+          : "Drop hits scoring below this (similarities, in [0, 1]).",
+    };
+    const vector = {
+      type: nn(new GraphQLList(nn(GraphQLFloat))),
+      description: "The query embedding.",
+    };
+    if (model.union) {
+      const fusion: GraphQLFieldConfigArgumentMap = {
+        where: { ...where, description: "Filter on the hits (_on: per member), before ranking." },
+        minScore,
+        skip: { type: GraphQLInt, description: "Hits to skip, after fusion." },
+        rrfK: { type: GraphQLInt, description: "k of reciprocal rank fusion (default 60)." },
+      };
+      return op === "search"
+        ? {
+            query: { type: nn(GraphQLString) },
+            mode: { type: this.SearchMode },
+            indexes: { type: this.memberIndexes(model, "search") },
+            ...fusion,
+            take: { type: GraphQLInt },
+          }
+        : {
+            vector,
+            fields: { type: this.memberIndexes(model, "findSimilar") },
+            take: { type: nn(GraphQLInt) },
+            ...fusion,
+          };
+    }
+    return op === "search"
+      ? {
+          index: { type: nn(this.fulltextIndexEnum(model)) },
+          query: { type: nn(GraphQLString), description: "The search text (blank: no hits)." },
+          mode: { type: this.SearchMode },
+          where: { ...where, description: "Filter on the hits, before skip / take." },
+          minScore,
+          skip: { type: GraphQLInt },
+          take: { type: GraphQLInt },
+        }
+      : {
+          field: { type: nn(this.vectorFieldEnum(model)) },
+          vector,
+          k: { type: nn(GraphQLInt), description: "Number of results, best first." },
+          where: { ...where, description: "Filter on the results." },
+          minScore,
+        };
+  }
+
+  // ---------------------------------------------------------------------------
   // Root
   // ---------------------------------------------------------------------------
 
@@ -1379,6 +1924,50 @@ export class SchemaBuilder {
         };
       case "count":
         return { type: GraphQLInt, args: { where: { type: where } }, resolve };
+      case "aggregate":
+        return {
+          type: this.aggregateType(model),
+          description: "Aggregates over the matching nodes (with skip / take: over that window).",
+          args: {
+            where: { type: where },
+            ...orderArg,
+            skip: { type: GraphQLInt },
+            take: { type: GraphQLInt },
+          },
+          resolve,
+        };
+      case "groupBy": {
+        const by = this.groupByInput(model);
+        if (Object.keys(by.getFields()).length === 0) return undefined;
+        return {
+          type: new GraphQLList(new GraphQLNonNull(this.groupType(model))),
+          description: "Groups of the matching nodes by the fields in by, with their aggregates.",
+          args: {
+            by: { type: new GraphQLNonNull(by) },
+            where: { type: where },
+            having: { type: this.having(model) },
+            orderBy: { type: new GraphQLList(new GraphQLNonNull(this.groupOrderBy(model))) },
+            skip: { type: GraphQLInt },
+            take: { type: GraphQLInt },
+          },
+          resolve,
+        };
+      }
+      case "search":
+      case "findSimilar":
+        return {
+          type: new GraphQLList(new GraphQLNonNull(out)),
+          description:
+            op === "search"
+              ? model.union
+                ? "Full-text search over the members' indexes, merged by reciprocal rank fusion (_score), best first."
+                : "Nodes matching a full-text query, best first (_score: the relevance)."
+              : model.union
+                ? "Nearest neighbours over the members' vector indexes, merged by reciprocal rank fusion (_score), best first."
+                : "The k nodes most similar to vector, best first (_score: the similarity).",
+          args: this.searchArgs(model, op),
+          resolve,
+        };
     }
   }
 

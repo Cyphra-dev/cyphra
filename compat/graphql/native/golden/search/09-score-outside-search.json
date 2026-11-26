@@ -1,0 +1,22 @@
+{
+  "data": {
+    "articleFindMany": null,
+    "articleSearch": null
+  },
+  "errors": [
+    {
+      "message": "_score is only available on the results of a search or findSimilar root field.",
+      "path": [
+        "articleFindMany"
+      ],
+      "code": "BAD_USER_INPUT"
+    },
+    {
+      "message": "_scores is only available on the results of a search or findSimilar over a union.",
+      "path": [
+        "articleSearch"
+      ],
+      "code": "BAD_USER_INPUT"
+    }
+  ]
+}

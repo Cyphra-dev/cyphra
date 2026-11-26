@@ -1,0 +1,26 @@
+{
+  "data": {
+    "userAggregate": {
+      "_sum": {
+        "salary": 550
+      },
+      "_count": {
+        "salary": 3
+      }
+    },
+    "userGroupBy": [
+      {
+        "team": "core",
+        "_sum": {
+          "salary": 300
+        }
+      },
+      {
+        "team": null,
+        "_sum": {
+          "salary": 250
+        }
+      }
+    ]
+  }
+}

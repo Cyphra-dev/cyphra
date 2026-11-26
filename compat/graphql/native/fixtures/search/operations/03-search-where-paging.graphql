@@ -1,0 +1,17 @@
+# features: search
+# ordered
+{
+  articleSearch(
+    index: articleText
+    query: "graph"
+    mode: terms
+    where: { author: { is: { name: { startsWith: "Ada" } } } }
+    skip: 1
+    take: 1
+  ) {
+    id
+  }
+  blank: articleSearch(index: articleText, query: "  ") {
+    id
+  }
+}

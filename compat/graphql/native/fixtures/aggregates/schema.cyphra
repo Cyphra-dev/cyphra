@@ -1,0 +1,25 @@
+// Aggregates and groupBy of the native API (#246), under read rules.
+
+enum Status {
+  DRAFT
+  PUBLISHED
+}
+
+node User {
+  id     String  @id
+  name   String
+  team   String?
+  salary Int?
+  posts  Post[]  @relationship(type: "AUTHORED", direction: OUT)
+}
+
+node Post {
+  id        String   @id
+  title     String
+  status    Status
+  views     Int
+  rating    Float?
+  secret    Boolean  @default(false)
+  createdAt DateTime
+  author    User?    @relationship(type: "AUTHORED", direction: IN)
+}

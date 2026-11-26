@@ -1,0 +1,20 @@
+# features: findSimilar, auth.rules.read
+# ordered
+# An admin: a3 is the nearest.
+query ($v: [Float!]!) {
+  articleFindSimilar(field: embedding, vector: $v, k: 2) {
+    id
+  }
+  filtered: articleFindSimilar(
+    field: embedding
+    vector: $v
+    k: 5
+    where: { title: { contains: "Bread" } }
+  ) {
+    id
+  }
+  best: articleFindSimilar(field: embedding, vector: $v, k: 1) {
+    id
+    _score
+  }
+}

@@ -1,0 +1,9 @@
+# features: search, limits, errors
+query ($v: [Float!]!) {
+  articleSearch(index: articleText, query: "graph", take: 11) {
+    id
+  }
+  articleFindSimilar(field: embedding, vector: $v, k: 11) {
+    id
+  }
+}

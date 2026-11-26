@@ -1,0 +1,16 @@
+# features: groupBy, auth.rules.read
+# ordered
+# Groups by a to-one relation's fields: Carol's only post is secret, so she has no group; posts without an author group under null.
+{
+  postGroupBy(by: { author: [name] }, orderBy: [{ author: { name: asc } }]) {
+    author {
+      name
+    }
+    _count {
+      _all
+    }
+    _max {
+      views
+    }
+  }
+}

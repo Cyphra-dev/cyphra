@@ -1,0 +1,23 @@
+{
+  "data": {
+    "articleFindSimilar": [
+      {
+        "id": "a3"
+      },
+      {
+        "id": "a1"
+      }
+    ],
+    "filtered": [
+      {
+        "id": "a4"
+      }
+    ],
+    "best": [
+      {
+        "id": "a3",
+        "_score": 1
+      }
+    ]
+  }
+}

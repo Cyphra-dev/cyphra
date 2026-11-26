@@ -1,0 +1,17 @@
+{
+  "data": {
+    "articleFindSimilar": [
+      {
+        "id": "a1"
+      },
+      {
+        "id": "a2"
+      }
+    ],
+    "filtered": [
+      {
+        "id": "a4"
+      }
+    ]
+  }
+}

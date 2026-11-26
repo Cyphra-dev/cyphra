@@ -1,0 +1,23 @@
+# features: aggregate
+# where, then the window of the two most viewed matching posts; aliases on aggregates.
+{
+  postAggregate(where: { status: { equals: PUBLISHED } }, orderBy: [{ views: desc }], take: 2) {
+    total: _count {
+      all: _all
+    }
+    _sum {
+      views
+    }
+  }
+  empty: postAggregate(where: { title: { equals: "nope" } }) {
+    _count {
+      _all
+    }
+    _sum {
+      views
+    }
+    _min {
+      title
+    }
+  }
+}

@@ -10,11 +10,28 @@
 import type { CreateInput, ModelTypeDef, TypeMap, WhereInput } from "@cyphra/runtime";
 import type { ResolvedNodeModel, SchemaModel } from "@cyphra/schema";
 
-/** Read operations a model can expose as root fields. */
-export const READ_OPERATIONS = ["findUnique", "findFirst", "findMany", "count"] as const;
+/** Read operations a model can expose as root fields (on by default). */
+export const READ_OPERATIONS = [
+  "findUnique",
+  "findFirst",
+  "findMany",
+  "count",
+  "aggregate",
+  "groupBy",
+  "search",
+] as const;
 
 /** A read operation of the native API (`<model>FindMany`, …). */
 export type ReadOperation = (typeof READ_OPERATIONS)[number];
+
+/**
+ * The expensive reads, off by default (the `traverse` group): raw vector search (`findSimilar`,
+ * which takes a vector from the client).
+ */
+export const TRAVERSE_OPERATIONS = ["findSimilar"] as const;
+
+/** An operation of the `traverse` group (`<model>FindSimilar`, …). */
+export type TraverseOperation = (typeof TRAVERSE_OPERATIONS)[number];
 
 /** Operations of the `create` group (`upsert` needs the `update` group too). */
 export const CREATE_OPERATIONS = ["create", "createMany", "upsert"] as const;
@@ -40,10 +57,11 @@ export type DeleteOperation = (typeof DELETE_OPERATIONS)[number];
 /** A write operation of the native API (`<model>Create`, …). */
 export type WriteOperation = (typeof WRITE_OPERATIONS)[number];
 /** Any root field operation. */
-export type RootOperation = ReadOperation | WriteOperation;
+export type RootOperation = ReadOperation | TraverseOperation | WriteOperation;
 
 const GROUPS = {
   read: READ_OPERATIONS,
+  traverse: TRAVERSE_OPERATIONS,
   create: CREATE_OPERATIONS,
   update: UPDATE_OPERATIONS,
   delete: DELETE_OPERATIONS,
@@ -58,10 +76,12 @@ export function isWrite(op: RootOperation): op is WriteOperation {
 /**
  * Which operations of a model are root fields, per group: `true` (every operation of the group),
  * `false` or a list of operations. `upsert` is served when both `create` and `update` include it.
- * Default: reads on, writes off.
+ * Default: reads on, the expensive reads (`traverse`) and writes off.
  */
 export type OperationToggles = {
   readonly read?: boolean | readonly ReadOperation[];
+  /** The expensive reads: `findSimilar` (raw vector search). Off by default. */
+  readonly traverse?: boolean | readonly TraverseOperation[];
   readonly create?: boolean | readonly CreateOperation[];
   readonly update?: boolean | readonly UpdateOperation[];
   readonly delete?: boolean | readonly DeleteOperation[];
@@ -362,7 +382,11 @@ const TOP_KEYS = [
   "mutationTransaction",
   "isAuthenticated",
 ] as const;
-const ROOT_OPERATIONS: readonly RootOperation[] = [...READ_OPERATIONS, ...WRITE_OPERATIONS];
+const ROOT_OPERATIONS: readonly RootOperation[] = [
+  ...READ_OPERATIONS,
+  ...TRAVERSE_OPERATIONS,
+  ...WRITE_OPERATIONS,
+];
 const HIDDEN: FieldAccess = {
   read: false,
   filter: false,
@@ -464,6 +488,7 @@ export function checkConfig(schema: SchemaModel, config: GraphQLConfig = {}): Re
   }
   const defaults = {
     read: new Set<RootOperation>(READ_OPERATIONS),
+    traverse: new Set<RootOperation>(),
     create: new Set<RootOperation>(),
     update: new Set<RootOperation>(),
     delete: new Set<RootOperation>(),
@@ -688,6 +713,7 @@ export function checkConfig(schema: SchemaModel, config: GraphQLConfig = {}): Re
       // Operations on one node need a unique key (a union has none).
       const single = op === "findUnique" || op === "update" || op === "upsert" || op === "delete";
       if (single && (node.union || !hasUnique)) continue;
+      if (!servable(node, op, byName)) continue;
       const override = (naming[node.name] as AnyRecord | undefined)?.[op];
       names.set(op, typeof override === "string" ? override : rootFieldName(node.name, op));
     }
@@ -715,9 +741,9 @@ export function checkConfig(schema: SchemaModel, config: GraphQLConfig = {}): Re
         (Object.keys(GROUPS) as Group[]).some((g) => groups[g]?.has(op) === true),
       ),
     authenticatedGroups: (model) => {
-      const out = new Set<Group>();
+      const out = new Set<"read" | "create" | "update" | "delete">();
       for (const groups of authGroups(model)) {
-        for (const g of Object.keys(GROUPS) as Group[]) {
+        for (const g of ["read", "create", "update", "delete"] as const) {
           if (GROUPS[g].every((op) => groups[g]?.has(op))) out.add(g);
         }
       }
@@ -725,6 +751,37 @@ export function checkConfig(schema: SchemaModel, config: GraphQLConfig = {}): Re
     },
     isAuthenticated: (ctx) => isAuthenticated(ctx) === true,
   };
+}
+
+/** Whether a model has the indexes (or the shape) an operation needs; served only then. */
+function servable(
+  node: ResolvedNodeModel,
+  op: RootOperation,
+  byName: ReadonlyMap<string, ResolvedNodeModel>,
+): boolean {
+  const members = (): ResolvedNodeModel[] =>
+    (node.implementations ?? []).flatMap((m) => {
+      const found = byName.get(m);
+      return found ? [found] : [];
+    });
+  switch (op) {
+    case "aggregate":
+    case "groupBy":
+      return !node.union;
+    case "search":
+      return node.union
+        ? members().some((m) => (m.fulltextIndexes?.length ?? 0) > 0)
+        : (node.fulltextIndexes?.length ?? 0) > 0;
+    case "findSimilar":
+      return node.union ? members().some(hasVectorIndex) : hasVectorIndex(node);
+    default:
+      return true;
+  }
+}
+
+/** Whether a model has a `Vector(N)` field with a `@vectorIndex`. */
+export function hasVectorIndex(node: ResolvedNodeModel): boolean {
+  return node.fields.some((f) => f.kind === "scalar" && f.vectorIndex !== undefined);
 }
 
 /** Check the shape of `models.<M>.rules`: known keys, functions, relations of the model. */
