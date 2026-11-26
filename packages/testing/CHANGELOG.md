@@ -1,5 +1,15 @@
 # @cyphra/testing
 
+## 0.23.0
+
+### Patch Changes
+
+- Updated dependencies [609a44c]
+- Updated dependencies [5f36831]
+  - @cyphra/runtime@0.23.0
+  - @cyphra/migrator@0.23.0
+  - @cyphra/schema@0.23.0
+
 ## 0.22.0
 
 ### Patch Changes
