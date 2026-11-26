@@ -1,0 +1,17 @@
+{
+  "data": {
+    "twoPosts": {
+      "nodes": []
+    },
+    "onePost": {
+      "nodes": [
+        {
+          "id": "u-alice"
+        },
+        {
+          "id": "u-bob"
+        }
+      ]
+    }
+  }
+}

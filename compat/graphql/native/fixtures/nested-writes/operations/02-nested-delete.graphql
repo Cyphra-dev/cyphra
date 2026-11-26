@@ -1,0 +1,21 @@
+# features: mutation.nested.delete, onDelete.cascade
+# A nested delete deletes the linked node with its onDelete rules (the remaining comment of
+# p-cypher cascades with it); a to-one delete takes true.
+mutation {
+  comment: postUpdate(where: { id: "p-cypher" }, data: { comments: { delete: [{ id: "c-1" }] } }) {
+    id
+    _count {
+      comments
+    }
+  }
+  post: userUpdate(where: { id: "u-alice" }, data: { posts: { delete: [{ id: "p-cypher" }] } }) {
+    posts {
+      id
+    }
+  }
+  profile: userUpdate(where: { id: "u-alice" }, data: { profile: { delete: true } }) {
+    profile {
+      bio
+    }
+  }
+}

@@ -1,0 +1,45 @@
+{
+  "data": {
+    "userUpdate": {
+      "profile": {
+        "bio": "New here"
+      },
+      "posts": [
+        {
+          "id": "p-bob",
+          "title": "Bob's post, edited"
+        },
+        {
+          "id": "p-new",
+          "title": "Brand new"
+        }
+      ],
+      "following": [
+        {
+          "id": "u-alice",
+          "name": "Alice",
+          "_edge": {
+            "weight": 2
+          }
+        },
+        {
+          "id": "u-erin",
+          "name": null,
+          "_edge": {
+            "weight": 5
+          }
+        }
+      ]
+    },
+    "takeOver": null
+  },
+  "errors": [
+    {
+      "message": "Unique constraint violated on User (email).",
+      "path": [
+        "takeOver"
+      ],
+      "code": "UNIQUE_CONSTRAINT"
+    }
+  ]
+}

@@ -27,6 +27,10 @@ const HEAD = new RegExp(
   `already exists with (label|type) ${QUOTED} and propert(?:y|ies) (${QUOTED} = [\\s\\S]*)$`,
 );
 const PROPERTY = new RegExp(`(?:^|, )${QUOTED} = `, "g");
+/** The constraint of a Neo4j violation: `schema=(:User {email})` or `schema=()-[:T {p}]-()`. */
+const SCHEMA = new RegExp(
+  `schema=(?:\\(:(?:${QUOTED}|([^\\s{]+)) \\{|\\(\\)-\\[:(?:${QUOTED}|([^\\s{]+)) \\{)([^}]*)\\}`,
+);
 /**
  * Memgraph (3.x), at commit: `Unable to commit due to unique constraint violation on :User(email)`
  * or `… on :Member(email, tenantId)` (properties sorted, no values). Memgraph has no relationship
@@ -72,13 +76,23 @@ export function parseUniqueViolation(message: string): ParsedUniqueViolation | u
   }
   const m = HEAD.exec(message);
   if (!m) return undefined;
+  const entity = m[1] === "type" ? "relationship" : "node";
+  // A write through `SET n = $map` (batched nested creates) names tokens, not names
+  // (``label `Label[0]` and property `PropertyKey[0]` ``): the constraint's schema has them.
+  const schema = SCHEMA.exec(message);
+  if (schema && /^(Label|RelationshipType)\[\d+\]$/.test(unquote(m[2]!))) {
+    return {
+      entity,
+      label: unquote(schema[1] ?? schema[2] ?? schema[3] ?? schema[4]!),
+      properties: schema[5]!
+        .split(",")
+        .map((p) => p.trim().replace(/^`|`$/g, ""))
+        .filter(Boolean),
+    };
+  }
   const properties: string[] = [];
   for (const p of m[3]!.matchAll(PROPERTY)) properties.push(unquote(p[1]!));
-  return {
-    entity: m[1] === "type" ? "relationship" : "node",
-    label: unquote(m[2]!),
-    properties,
-  };
+  return { entity, label: unquote(m[2]!), properties };
 }
 
 type ErrorLike = { code?: unknown; gqlStatus?: unknown; message?: unknown; cause?: unknown };

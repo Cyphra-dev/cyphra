@@ -1,0 +1,45 @@
+// Nested update / delete / upsert / connectOrCreate and _count filters of the native API (#248).
+
+node User {
+  id        String   @id
+  email     String   @unique
+  name      String?  @length(2, 50)
+  posts     Post[]   @relationship(type: "AUTHORED", direction: OUT)
+  profile   Profile? @relationship(type: "HAS_PROFILE", direction: OUT)
+  following User[]   @relationship(type: "FOLLOWS", direction: OUT)
+  followers User[]   @relationship(type: "FOLLOWS", direction: IN)
+}
+
+node Profile {
+  id   String @id @default(uuid())
+  bio  String
+  user User?  @relationship(type: "HAS_PROFILE", direction: IN)
+}
+
+node Post {
+  id        String    @id
+  title     String    @length(3, 100)
+  views     Int       @default(0) @max(1000)
+  published Boolean   @default(false)
+  author    User?     @relationship(type: "AUTHORED", direction: IN)
+  tags      Tag[]     @relationship(type: "TAGGED", direction: OUT)
+  comments  Comment[] @relationship(type: "ON", direction: IN, onDelete: Cascade)
+}
+
+node Tag {
+  name  String @id
+  posts Post[] @relationship(type: "TAGGED", direction: IN)
+}
+
+node Comment {
+  id   String @id
+  body String
+  post Post?  @relationship(type: "ON", direction: OUT)
+}
+
+relationship Follows {
+  type   "FOLLOWS"
+  from   User
+  to     User
+  weight Int @default(1)
+}

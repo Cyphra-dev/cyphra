@@ -1,8 +1,8 @@
 /**
  * Write arguments of the native API: GraphQL `data` / `create` / `update` inputs as the client's
  * (`_ops` merged into the fields, `_edge` → `$edge`, `_labels` → `$labels`, unique keys of
- * `connect` / `disconnect` / `set`). Validation issue paths are mapped back to GraphQL argument
- * paths by `graphQLPath` (`errors.ts`).
+ * `connect` / `disconnect` / `set` / `delete`, nested `update` / `upsert` / `connectOrCreate`).
+ * Validation issue paths are mapped back to GraphQL argument paths by `graphQLPath` (`errors.ts`).
  *
  * @packageDocumentation
  */
@@ -152,7 +152,40 @@ export class WriteArgs {
     return this.withEdge(rel, item, this.t.whereUnique(target, key), at);
   }
 
-  /** `{ create, connect, disconnect, set }` of a relation as the client's relation write. */
+  /** One nested update: `{ where, data }` on a to-many relation, the data on a to-one. */
+  private updateItem(rel: ResolvedRelationField, item: unknown, at: string): AnyRecord {
+    const target = this.api.node(rel.target);
+    if (!isPlainObject(item)) return {};
+    if (!rel.many) return this.update(target, item, at);
+    return {
+      where: this.t.whereUnique(target, item.where),
+      data: this.update(target, item.data, `${at}.data`),
+    };
+  }
+
+  /**
+   * One nested `upsert` (`{ where?, create, update }`) or `connectOrCreate` (`{ where, create }`)
+   * item. The `_edge` of its `create` becomes the item's `$edge`, as the client takes it.
+   */
+  private upsertItem(
+    rel: ResolvedRelationField,
+    item: unknown,
+    at: string,
+    upsert: boolean,
+  ): AnyRecord {
+    const target = this.api.node(rel.target);
+    if (!isPlainObject(item)) return {};
+    const { $edge, ...create } = this.createItem(rel, item.create, `${at}.create`);
+    const out: AnyRecord = { create };
+    if (item.where !== undefined && item.where !== null) {
+      out.where = this.t.whereUnique(target, item.where);
+    }
+    if (upsert) out.update = this.update(target, item.update, `${at}.update`);
+    if ($edge !== undefined) out.$edge = $edge;
+    return out;
+  }
+
+  /** The relation writes of a relation (`create`, `connect`, `update`, …) as the client's. */
   private relation(rel: ResolvedRelationField, spec: unknown, at: string): AnyRecord {
     if (!isPlainObject(spec)) return {};
     const out: AnyRecord = {};
@@ -171,6 +204,19 @@ export class WriteArgs {
         case "disconnect":
           out.disconnect =
             typeof v === "boolean" ? v : each(v, (x, a) => this.uniqueItem(rel, x, a), op);
+          break;
+        case "delete":
+          out.delete =
+            typeof v === "boolean" ? v : each(v, (x, a) => this.uniqueItem(rel, x, a), op);
+          break;
+        case "update":
+          out.update = each(v, (x, a) => this.updateItem(rel, x, a), op);
+          break;
+        case "upsert":
+          out.upsert = each(v, (x, a) => this.upsertItem(rel, x, a, true), op);
+          break;
+        case "connectOrCreate":
+          out.connectOrCreate = each(v, (x, a) => this.upsertItem(rel, x, a, false), op);
           break;
         default:
           throw badInput(`${at}: unknown relation operation "${op}".`);

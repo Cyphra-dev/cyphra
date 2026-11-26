@@ -45,6 +45,25 @@ export function whereProblem(
       continue;
     }
     if (k === "__typename" || k === "$labels") continue;
+    if (k === "_count") {
+      if (!isPlainObject(v)) return `${at}._count must be an object of to-many relations.`;
+      for (const [rel, filter] of Object.entries(v)) {
+        const f = model.fields.find((x) => x.name === rel);
+        if (f?.kind !== "relation" || !f.many) {
+          return `${at}._count: "${rel}" is not a to-many relation of ${model.name}.`;
+        }
+        if (isPlainObject(filter) && filter.where !== undefined) {
+          const p = whereProblem(
+            schema,
+            node(f.target)!,
+            filter.where,
+            `${at}._count.${rel}.where`,
+          );
+          if (p) return p;
+        }
+      }
+      continue;
+    }
     if (k === "$on") {
       if (!isPlainObject(v)) return `${at}.$on must be an object.`;
       for (const [impl, w] of Object.entries(v)) {

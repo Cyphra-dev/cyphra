@@ -19,10 +19,11 @@ generated client.
   may change in a minor release. This release serves **reads** (`findUnique`, `findFirst`,
   `findMany`, `count`), **writes** (`create`, `createMany`, `update`, `updateMany`, `upsert`,
   `delete`, `deleteMany`, off by default) and **[auth](#auth)** (rules compiled into the statement,
-  field rules, `authenticated`). Nested `update` / `delete` / `upsert`, aggregates, search and
-  traversals come next ([#77](https://github.com/Cyphra-dev/cyphra/issues/77)). Relay `Node` is
-  opt-in ([below](#relay)). To keep the API `@neo4j/graphql` v7 generates, use
-  [`compat.v7`](/graphql); both can be served side by side.
+  field rules, `authenticated`), with nested `update` / `delete` / `upsert` / `connectOrCreate` and
+  `_count` filters. Aggregates, search and traversals come next
+  ([#77](https://github.com/Cyphra-dev/cyphra/issues/77)). Relay `Node` is opt-in ([below](#relay)).
+  To keep the API `@neo4j/graphql` v7 generates, use [`compat.v7`](/graphql); both can be served
+  side by side.
 </Callout>
 
 ## Create the schema
@@ -221,6 +222,11 @@ query {
   others.
 - To-many relations take `some`, `none`, `every`; `some: {}` means "has at least one". To-one
   relations take `is`, `isNot`; `author: null` means "has none".
+- `_count` filters on the number of related nodes of to-many relations, with the `Int` operators
+  and an optional `where` on the counted nodes:
+  `userFindMany(where: { _count: { posts: { gte: 2, where: { published: { equals: true } } } } })`.
+  Only the nodes the request may read are counted ([rules](#rules)). It compiles to a `COUNT {}`
+  subquery (v7's `postsAggregate: { count_GTE: 2 }`).
 - `Vector` fields cannot be filtered or sorted on (use the client's `findSimilar`).
 
 ### Ordering
@@ -340,8 +346,9 @@ type PostBatch {
 
 ### Nested writes
 
-Relations in `<Model>CreateInput` take `create` and `connect`; in `<Model>UpdateInput` also
-`disconnect` (a list on to-many, `disconnect: true` on to-one) and, on to-many, `set`:
+Relations in `<Model>CreateInput` take `create`, `connect` and `connectOrCreate`; in
+`<Model>UpdateInput` also `disconnect` (a list on to-many, `disconnect: true` on to-one), `set`
+(to-many), and [`update`, `delete` and `upsert`](#nested-update-delete-and-upsert):
 
 ```graphql
 mutation {
@@ -380,10 +387,66 @@ mutation {
   (`PostCreateManyWithoutAuthorRelation`). Items of a typed edge take `_edge`; `connect` items are
   the target's unique key plus `_edge` (`UserConnectFollows`).
 - A model whose `create` is off has **no nested create** either: with `Tag` read-only,
-  `PostCreateInput.tags` has `connect` only. Nested `update`, `delete`, `upsert` and
-  `connectOrCreate` are not served yet.
+  `PostCreateInput.tags` has `connect` only (no `create`, `connectOrCreate` or `upsert`). The same
+  holds for the other writes: nested `update`, `delete` and `upsert` of a model need its
+  `update`, `delete` and `upsert` operations.
 - Unions take a member-keyed item (`{ Post: { … } }`); an interface is connected by its unique
   key, and created through its implementations.
+
+### Nested update, delete and upsert
+
+On update, a relation also writes the related nodes themselves, in the root field's statement:
+
+```graphql
+mutation {
+  userUpdate(
+    where: { id: "u1" }
+    data: {
+      posts: {
+        update: [
+          { where: { id: "p1" }, data: { title: "Edited", _ops: { views: { increment: 1 } } } }
+        ]
+        delete: [{ id: "p2" }]
+        upsert: [
+          { where: { id: "p3" }, create: { id: "p3", title: "New" }, update: { title: "Again" } }
+        ]
+        connectOrCreate: [{ where: { id: "p4" }, create: { id: "p4", title: "Linked or new" } }]
+      }
+      profile: { upsert: { create: { bio: "Hi" }, update: { bio: "Hello" } } }
+    }
+  ) {
+    posts {
+      title
+    }
+  }
+}
+```
+
+| Field             | To-many items (`[…]`)                                   | To-one                        | Nothing matches   |
+| ----------------- | ------------------------------------------------------- | ----------------------------- | ----------------- |
+| `update`          | `<Target>UpdateWhere…Input` `{ where, data }`           | `<Target>UpdateWithout…Input` | `NOT_FOUND`       |
+| `delete`          | the target's `WhereUnique`                              | `true`                        | `NOT_FOUND`       |
+| `upsert`          | `<Target>UpsertMany…Input` `{ where, create, update }`  | `{ create, update }`          | creates and links |
+| `connectOrCreate` | `<Target>ConnectOrCreateMany…Input` `{ where, create }` | `{ where, create }`           | creates and links |
+
+- `update` and `upsert` find **linked** nodes only (on to-many, the one with the unique key of
+  `where`); `connectOrCreate` links any node matching `where` (a `MERGE` of the edge, as
+  `connect`), and is also served in create inputs. A node with the key that is not linked is not
+  taken over by `upsert`: creating it again is `UNIQUE_CONSTRAINT`.
+- The data of a nested update is the target's update input without the back relation
+  (`PostUpdateWithoutAuthorInput`): plain values, `_ops`, `_labels` and its own nested writes.
+- `delete` deletes the node with its `onDelete` rules (`RESTRICTED` when a `Restrict` rule
+  refuses).
+- On a typed edge, the `_edge` of `create` sets the new edge's properties (on `connectOrCreate`,
+  also those of an existing node it links).
+- A missing target, a validation issue anywhere in the input or a refused rule fails the root
+  field as a whole: nothing it wrote is kept.
+- [Rules](#rules) hold: `update` / `delete` rules restrict the targets (outside them: `NOT_FOUND`),
+  `create` and `after` rules apply to the nodes `upsert` / `connectOrCreate` create or update.
+  A linked node the request may read but not update is `FORBIDDEN` for `upsert` (nothing is
+  created instead), and a node it may read but not link is `FORBIDDEN` for `connectOrCreate`.
+- Union targets take none of these (write the member); interface targets take `update` and
+  `delete`.
 
 ### Scalar updates
 
@@ -522,8 +585,8 @@ model, typed as the client's `where` of that model:
 | -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `read`                     | Every read of the model: root fields, relation loads at any depth, relation filters (`some` / `none` / `every` / `is`), `_count`, `totalCount`, mutation results, and the targets of writes. |
 | `create`                   | `({ ctx, data }) => boolean`: each node created, root or nested, from its create data, before anything runs.                                                                                 |
-| `update`                   | The nodes `update` / `updateMany` / `upsert` match, whatever they write (scalars, relations only, or nothing).                                                                               |
-| `delete`                   | The nodes `delete` / `deleteMany` match.                                                                                                                                                     |
+| `update`                   | The nodes `update` / `updateMany` / `upsert` match, whatever they write (scalars, relations only, or nothing), and the targets of nested `update` / `upsert`.                                |
+| `delete`                   | The nodes `delete` / `deleteMany` match, and the targets of nested `delete`.                                                                                                                 |
 | `connect.<relation>`       | The targets a nested `connect` / `set` may link (a `where` on the target model).                                                                                                             |
 | `disconnect.<relation>`    | The targets a nested `disconnect` / `set` may unlink.                                                                                                                                        |
 | `after.create` / `.update` | Checked on the nodes created / updated once every write of the statement ran (nested ones included); a node that does not match rolls the whole write back.                                  |
@@ -674,20 +737,20 @@ the statement is built; exceeding one fails the root field with `BAD_USER_INPUT`
 
 Errors carry a stable `extensions.code`, mapped from the client's errors:
 
-| Error                                                                    | `extensions.code`       | `extensions`                                                          |
-| ------------------------------------------------------------------------ | ----------------------- | --------------------------------------------------------------------- |
-| `CyphraValidationError` (bad input, invalid cursor, no unique key)       | `BAD_USER_INPUT`        | `issues` (paths in GraphQL argument terms) when the client lists some |
-| `_edge` outside its context, two keys in one `orderBy` element           | `BAD_USER_INPUT`        |                                                                       |
-| a value and an `_ops` operator on one field, `null` for a required field | `BAD_USER_INPUT`        |                                                                       |
-| a [limit](#limits) exceeded                                              | `BAD_USER_INPUT`        | `limit`                                                               |
-| `NotFoundError` (`update` / `delete` / `connect` target missing)         | `NOT_FOUND`             |                                                                       |
-| `RestrictError`                                                          | `RESTRICTED`            | `model`, `relation`, `target`, `count`                                |
-| `UniqueConstraintError` (a duplicate `@id` / `@unique` value)            | `UNIQUE_CONSTRAINT`     | `model`, `fields`, `constraint` (never the value)                     |
-| `authenticated` and an anonymous request                                 | `UNAUTHENTICATED`       | `model`, `operation`                                                  |
-| a rule denying the whole operation (`false`)                             | `FORBIDDEN`             | `model`, `operation`                                                  |
-| a `create` rule, an `after` rule, a to-one replace outside `disconnect`  | `FORBIDDEN`             | `model`, `operation` (`relation`)                                     |
-| a field a context-only rule denies (selected, filtered, sorted)          | `FORBIDDEN`             | `model`, `field`                                                      |
-| anything else (driver, bug)                                              | `INTERNAL_SERVER_ERROR` | message masked unless `debug: true`                                   |
+| Error                                                                                                                              | `extensions.code`       | `extensions`                                                          |
+| ---------------------------------------------------------------------------------------------------------------------------------- | ----------------------- | --------------------------------------------------------------------- |
+| `CyphraValidationError` (bad input, invalid cursor, no unique key)                                                                 | `BAD_USER_INPUT`        | `issues` (paths in GraphQL argument terms) when the client lists some |
+| `_edge` outside its context, two keys in one `orderBy` element                                                                     | `BAD_USER_INPUT`        |                                                                       |
+| a value and an `_ops` operator on one field, `null` for a required field                                                           | `BAD_USER_INPUT`        |                                                                       |
+| a [limit](#limits) exceeded                                                                                                        | `BAD_USER_INPUT`        | `limit`                                                               |
+| `NotFoundError` (`update` / `delete` / `connect` target missing, also nested)                                                      | `NOT_FOUND`             |                                                                       |
+| `RestrictError`                                                                                                                    | `RESTRICTED`            | `model`, `relation`, `target`, `count`                                |
+| `UniqueConstraintError` (a duplicate `@id` / `@unique` value)                                                                      | `UNIQUE_CONSTRAINT`     | `model`, `fields`, `constraint` (never the value)                     |
+| `authenticated` and an anonymous request                                                                                           | `UNAUTHENTICATED`       | `model`, `operation`                                                  |
+| a rule denying the whole operation (`false`)                                                                                       | `FORBIDDEN`             | `model`, `operation`                                                  |
+| a `create` / `after` rule, a to-one replace outside `disconnect`, a nested `upsert` / `connectOrCreate` the rules do not let write | `FORBIDDEN`             | `model`, `operation` (`relation`)                                     |
+| a field a context-only rule denies (selected, filtered, sorted)                                                                    | `FORBIDDEN`             | `model`, `field`                                                      |
+| anything else (driver, bug)                                                                                                        | `INTERNAL_SERVER_ERROR` | message masked unless `debug: true`                                   |
 
 ## Relay
 

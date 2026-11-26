@@ -1,0 +1,42 @@
+# features: mutation.nested.update, mutation.connectOrCreate, mutation._ops
+# A to-many update names the post by its unique key (with its own nested writes); a to-one update
+# takes the data of the linked node.
+mutation {
+  userUpdate(
+    where: { id: "u-alice" }
+    data: {
+      name: "Alice L"
+      posts: {
+        update: [
+          {
+            where: { id: "p-graphs" }
+            data: {
+              title: "Graphs, again"
+              _ops: { views: { increment: 5 } }
+              tags: {
+                connectOrCreate: [
+                  { where: { name: "db" }, create: { name: "db" } }
+                  { where: { name: "neo4j" }, create: { name: "neo4j" } }
+                ]
+              }
+            }
+          }
+        ]
+      }
+      profile: { update: { bio: "Graphs and Cypher" } }
+    }
+  ) {
+    name
+    profile {
+      bio
+    }
+    posts(orderBy: [{ id: asc }]) {
+      id
+      title
+      views
+      tags(orderBy: [{ name: asc }]) {
+        name
+      }
+    }
+  }
+}

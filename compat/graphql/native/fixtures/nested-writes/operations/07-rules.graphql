@@ -1,0 +1,32 @@
+# features: auth.rules.read, auth.rules.update, auth.rules.create, auth.jwt, filters._count, mutation.nested.update, errors
+# As Bob: Alice's unpublished post is not counted; her posts are outside the update rule (a nested
+# update finds none: NOT_FOUND); the create rule refuses a tag connectOrCreate may create.
+mutation {
+  hijack: userUpdate(
+    where: { id: "u-alice" }
+    data: { posts: { update: [{ where: { id: "p-graphs" }, data: { title: "Hijacked" } }] } }
+  ) {
+    name
+  }
+  forbidden: postUpdate(
+    where: { id: "p-bob" }
+    data: {
+      tags: { connectOrCreate: [{ where: { name: "forbidden" }, create: { name: "forbidden" } }] }
+    }
+  ) {
+    id
+  }
+  own: postUpdate(
+    where: { id: "p-bob" }
+    data: { tags: { connectOrCreate: [{ where: { name: "db" }, create: { name: "db" } }] } }
+  ) {
+    tags {
+      name
+    }
+  }
+  counted: userUpdate(where: { id: "u-alice" }, data: {}) {
+    _count {
+      posts
+    }
+  }
+}

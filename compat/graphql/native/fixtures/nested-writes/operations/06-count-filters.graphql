@@ -1,0 +1,37 @@
+# features: filters._count
+# _count filters on to-many relations: a number, Int operators, a where on the counted nodes,
+# inside relation filters and in count.
+query {
+  twoPosts: userFindMany(where: { _count: { posts: { equals: 2 } } }, orderBy: [{ id: asc }]) {
+    nodes {
+      id
+    }
+  }
+  anyPost: userFindMany(where: { _count: { posts: { gte: 1 } } }, orderBy: [{ id: asc }]) {
+    nodes {
+      id
+    }
+  }
+  published: userFindMany(
+    where: { _count: { posts: { gte: 2, where: { published: { equals: true } } } } }
+    orderBy: [{ id: asc }]
+  ) {
+    nodes {
+      id
+    }
+  }
+  noFollowers: userFindMany(
+    where: { _count: { followers: { equals: 0 }, following: { lt: 1 } } }
+    orderBy: [{ id: asc }]
+  ) {
+    nodes {
+      id
+    }
+  }
+  commented: userFindMany(where: { posts: { some: { _count: { comments: { gt: 1 } } } } }) {
+    nodes {
+      id
+    }
+  }
+  postCount(where: { NOT: { _count: { tags: { equals: 0 } } } })
+}

@@ -83,6 +83,8 @@ export const names = {
   ops: (m: string) => `${m}Ops`,
   edgeInput: (e: string) => `${e}Input`,
   connect: (m: string, edge: string) => `${m}Connect${edge}`,
+  countWhere: (m: string) => `${m}CountWhere`,
+  countFilter: (m: string) => `${m}CountFilter`,
 };
 
 /**
@@ -355,6 +357,13 @@ export class SchemaBuilder {
               NOT: { type: self },
             };
             Object.assign(fields, this.fieldFilters(model));
+            const counted = this.api.counted(model).filter((f) => this.api.filterable(model, f));
+            if (counted.length > 0) {
+              fields._count = {
+                type: this.countWhere(model, counted),
+                description: "Filters on the number of related nodes (only the readable ones).",
+              };
+            }
             if (model.abstract) {
               fields._typename = { type: this.typenameFilter(model) };
               fields._on = { type: this.onWhere(model) };
@@ -383,6 +392,49 @@ export class SchemaBuilder {
       }
     }
     return fields;
+  }
+
+  /** `<Model>CountWhere`: a count filter per to-many relation of `model`. */
+  private countWhere(
+    model: ResolvedNodeModel,
+    counted: readonly ResolvedRelationField[],
+  ): GraphQLInputObjectType {
+    const name = names.countWhere(model.name);
+    return this.named(
+      name,
+      () =>
+        new GraphQLInputObjectType({
+          name,
+          fields: () =>
+            Object.fromEntries(
+              counted.map((f) => [f.name, { type: this.countFilter(this.api.node(f.target)) }]),
+            ),
+        }),
+    );
+  }
+
+  /** `<Target>CountFilter`: `Int` operators on a number of related nodes, and their `where`. */
+  private countFilter(target: ResolvedNodeModel): GraphQLInputObjectType {
+    const name = names.countFilter(target.name);
+    return this.named(
+      name,
+      () =>
+        new GraphQLInputObjectType({
+          name,
+          fields: () => {
+            const list = new GraphQLList(new GraphQLNonNull(GraphQLInt));
+            const fields: GraphQLInputFieldConfigMap = {
+              equals: { type: GraphQLInt },
+              not: { type: GraphQLInt },
+              in: { type: list },
+              notIn: { type: list },
+            };
+            for (const op of RANGE_OPS) fields[op] = { type: GraphQLInt };
+            fields.where = { type: this.where(target), description: "Count only these nodes." };
+            return fields;
+          },
+        }),
+    );
   }
 
   private listRelationFilter(target: ResolvedNodeModel): GraphQLInputObjectType {
@@ -783,16 +835,23 @@ export class SchemaBuilder {
     return this.named(name, () => new GraphQLInputObjectType({ name, fields }));
   }
 
-  /** `<Model>UpdateInput`: new values (`null` removes the property), `_ops`, relation writes. */
-  updateInput(model: ResolvedNodeModel): GraphQLInputObjectType | undefined {
+  /**
+   * `<Model>UpdateInput`: new values (`null` removes the property), `_ops`, relation writes. Or
+   * the data of a nested update through `side`, without the target's back relation
+   * (`<Model>UpdateWithout<Inverse>Input`).
+   */
+  updateInput(model: ResolvedNodeModel, side?: RelationSide): GraphQLInputObjectType | undefined {
     const scalars = this.updateScalars(model);
+    const inverse = side?.inverse;
     const relations = this.api
       .writeFields(model, "update")
-      .filter((f): f is ResolvedRelationField => f.kind === "relation")
+      .filter((f): f is ResolvedRelationField => f.kind === "relation" && f.name !== inverse)
       .map((f) => [f.name, this.relationInput(this.relationSide(model, f), "update")] as const)
       .filter((e): e is readonly [string, GraphQLInputObjectType] => e[1] !== undefined);
     if (Object.keys(scalars).length === 0 && relations.length === 0) return undefined;
-    const name = names.update(model.name);
+    const name = inverse
+      ? `${model.name}UpdateWithout${pascal(inverse)}Input`
+      : names.update(model.name);
     return this.named(
       name,
       () =>
@@ -904,7 +963,14 @@ export class SchemaBuilder {
         : undefined;
     const connect = this.connectInput(side, true);
     const unique = this.connectInput(side, false);
-    if (!create && !connect) return undefined;
+    // Built in the fields thunk (an update input of the target has relation inputs in turn).
+    const toOne =
+      mode === "update" &&
+      !field.many &&
+      !target.union &&
+      (this.api.has(target, "delete") ||
+        (this.api.has(target, "update") && Object.keys(this.updateScalars(target)).length > 0));
+    if (!create && !connect && !toOne) return undefined;
     const list = (t: GraphQLInputType) => new GraphQLList(new GraphQLNonNull(t));
     const name = `${target.name}${mode === "create" ? "Create" : "Update"}${field.many ? "Many" : "One"}${side.suffix}Relation`;
     return this.named(
@@ -942,10 +1008,96 @@ export class SchemaBuilder {
                 fields.disconnect = { type: GraphQLBoolean, description: "true: remove the edge." };
               }
             }
-            return fields;
+            return { ...fields, ...this.nestedWrites(side, mode, create) };
           },
         }),
     );
+  }
+
+  /**
+   * The writes of a relation to the related nodes themselves: `connectOrCreate` (when the target
+   * can be created and has a unique key), and on update `update` / `delete` / `upsert` (when the
+   * target's `update` / `delete` / `upsert` operations are on). None for a union target: they name
+   * the node by the target's own key.
+   */
+  private nestedWrites(
+    side: RelationSide,
+    mode: "create" | "update",
+    create: GraphQLInputObjectType | undefined,
+  ): GraphQLInputFieldConfigMap {
+    const { target, field } = side;
+    const fields: GraphQLInputFieldConfigMap = {};
+    if (target.union) return fields;
+    const unique = this.whereUnique(target);
+    const list = (t: GraphQLInputType) => new GraphQLList(new GraphQLNonNull(t));
+    const nonNull = (t: GraphQLInputType) => new GraphQLNonNull(t);
+    const many = (t: GraphQLInputType) => (field.many ? list(t) : t);
+    const item = (kind: string, build: () => GraphQLInputFieldConfigMap, description: string) => {
+      const name = `${target.name}${kind}${field.many ? "Many" : "One"}${side.suffix}Input`;
+      return this.named(
+        name,
+        () => new GraphQLInputObjectType({ name, description, fields: build }),
+      );
+    };
+    if (create && unique) {
+      fields.connectOrCreate = {
+        type: many(
+          item(
+            "ConnectOrCreate",
+            () => ({ where: { type: nonNull(unique) }, create: { type: nonNull(create) } }),
+            `Links the ${target.name} matching where (a MERGE of the edge, as connect), or creates it.`,
+          ),
+        ),
+        description: side.edge
+          ? "`_edge` (in create) sets the edge's properties, also when an existing node is linked."
+          : undefined,
+      };
+    }
+    if (mode === "create") return fields;
+    const updatable = this.api.has(target, "update");
+    const data = updatable ? this.updateInput(target, side) : undefined;
+    if (data && (unique || !field.many)) {
+      fields.update = field.many
+        ? {
+            type: list(
+              item(
+                "UpdateWhere",
+                () => ({ where: { type: nonNull(unique!) }, data: { type: nonNull(data) } }),
+                `A linked ${target.name}, by unique key, and its update.`,
+              ),
+            ),
+            description: "Updates linked nodes (NOT_FOUND when one is not linked).",
+          }
+        : { type: data, description: "Updates the linked node (NOT_FOUND when there is none)." };
+    }
+    if (this.api.has(target, "delete") && (unique || !field.many)) {
+      fields.delete = field.many
+        ? {
+            type: list(unique!),
+            description:
+              "Deletes linked nodes, with their onDelete rules (NOT_FOUND when one is not linked).",
+          }
+        : {
+            type: GraphQLBoolean,
+            description: "true: deletes the linked node (NOT_FOUND when there is none).",
+          };
+    }
+    if (this.api.has(target, "upsert") && create && data && (unique || !field.many)) {
+      fields.upsert = {
+        type: many(
+          item(
+            "Upsert",
+            () => ({
+              ...(field.many ? { where: { type: nonNull(unique!) } } : {}),
+              create: { type: nonNull(create) },
+              update: { type: nonNull(data) },
+            }),
+            `Updates the linked ${target.name}${field.many ? " matching where" : ""}, or creates and links one when there is none.`,
+          ),
+        ),
+      };
+    }
+    return fields;
   }
 
   /** `<Model>Batch`: what batch mutations return. */

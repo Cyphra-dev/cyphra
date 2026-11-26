@@ -103,8 +103,34 @@ type PostBatch {
   nodes: [Post!]!
 }
 
+"""
+Links the Post matching where (a MERGE of the edge, as connect), or creates it.
+"""
+input PostConnectOrCreateManyWithoutAuthorInput {
+  create: PostCreateWithoutAuthorInput!
+  where: PostWhereUnique!
+}
+
 type PostCount {
   tags(where: TagWhere): Int!
+}
+
+input PostCountFilter {
+  equals: Int
+  gt: Int
+  gte: Int
+  in: [Int!]
+  lt: Int
+  lte: Int
+  not: Int
+  notIn: [Int!]
+
+  """Count only these nodes."""
+  where: PostWhere
+}
+
+input PostCountWhere {
+  tags: TagCountFilter
 }
 
 input PostCreateInput {
@@ -126,6 +152,7 @@ input PostCreateManyInput {
 input PostCreateManyWithoutAuthorRelation {
   """MERGEs an edge to each node (connecting a linked node keeps one edge)."""
   connect: [PostWhereUnique!]
+  connectOrCreate: [PostConnectOrCreateManyWithoutAuthorInput!]
   create: [PostCreateWithoutAuthorInput!]
 }
 
@@ -204,17 +231,54 @@ input PostUpdateManyInput {
 input PostUpdateManyWithoutAuthorRelation {
   """MERGEs an edge to each node (connecting a linked node keeps one edge)."""
   connect: [PostWhereUnique!]
+  connectOrCreate: [PostConnectOrCreateManyWithoutAuthorInput!]
   create: [PostCreateWithoutAuthorInput!]
+
+  """
+  Deletes linked nodes, with their onDelete rules (NOT_FOUND when one is not linked).
+  """
+  delete: [PostWhereUnique!]
   disconnect: [PostWhereUnique!]
 
   """The only linked nodes afterwards (edges to the others are deleted)."""
   set: [PostWhereUnique!]
+
+  """Updates linked nodes (NOT_FOUND when one is not linked)."""
+  update: [PostUpdateWhereManyWithoutAuthorInput!]
+  upsert: [PostUpsertManyWithoutAuthorInput!]
+}
+
+"""A linked Post, by unique key, and its update."""
+input PostUpdateWhereManyWithoutAuthorInput {
+  data: PostUpdateWithoutAuthorInput!
+  where: PostWhereUnique!
+}
+
+input PostUpdateWithoutAuthorInput {
+  _ops: PostOps
+  id: ID
+  published: Boolean
+  tags: TagUpdateManyWithoutPostsRelation
+  title: String
+  views: Int
+}
+
+"""
+Updates the linked Post matching where, or creates and links one when there is none.
+"""
+input PostUpsertManyWithoutAuthorInput {
+  create: PostCreateWithoutAuthorInput!
+  update: PostUpdateWithoutAuthorInput!
+  where: PostWhereUnique!
 }
 
 input PostWhere {
   AND: [PostWhere!]
   NOT: PostWhere
   OR: [PostWhere!]
+
+  """Filters on the number of related nodes (only the readable ones)."""
+  _count: PostCountWhere
   author: UserRelationFilter
   id: IDFilter
   published: BooleanFilter
@@ -334,6 +398,24 @@ type TagCount {
   posts(where: PostWhere): Int!
 }
 
+input TagCountFilter {
+  equals: Int
+  gt: Int
+  gte: Int
+  in: [Int!]
+  lt: Int
+  lte: Int
+  not: Int
+  notIn: [Int!]
+
+  """Count only these nodes."""
+  where: TagWhere
+}
+
+input TagCountWhere {
+  posts: PostCountFilter
+}
+
 input TagCreateManyWithoutPostsRelation {
   """MERGEs an edge to each node (connecting a linked node keeps one edge)."""
   connect: [TagWhereUnique!]
@@ -388,6 +470,9 @@ input TagWhere {
   AND: [TagWhere!]
   NOT: TagWhere
   OR: [TagWhere!]
+
+  """Filters on the number of related nodes (only the readable ones)."""
+  _count: TagCountWhere
   name: IDFilter
   posts: PostListRelationFilter
 }
@@ -448,10 +533,54 @@ input UserConnectFollows {
   role: RoleFilter
 }
 
+"""
+Links the User matching where (a MERGE of the edge, as connect), or creates it.
+"""
+input UserConnectOrCreateManyWithoutFollowersInput {
+  create: UserCreateWithoutFollowersInput!
+  where: UserWhereUnique!
+}
+
+"""
+Links the User matching where (a MERGE of the edge, as connect), or creates it.
+"""
+input UserConnectOrCreateManyWithoutFollowingInput {
+  create: UserCreateWithoutFollowingInput!
+  where: UserWhereUnique!
+}
+
+"""
+Links the User matching where (a MERGE of the edge, as connect), or creates it.
+"""
+input UserConnectOrCreateOneWithoutPostsInput {
+  create: UserCreateWithoutPostsInput!
+  where: UserWhereUnique!
+}
+
 type UserCount {
   followers(where: UserWhere): Int!
   following(where: UserWhere): Int!
   posts(where: PostWhere): Int!
+}
+
+input UserCountFilter {
+  equals: Int
+  gt: Int
+  gte: Int
+  in: [Int!]
+  lt: Int
+  lte: Int
+  not: Int
+  notIn: [Int!]
+
+  """Count only these nodes."""
+  where: UserWhere
+}
+
+input UserCountWhere {
+  followers: UserCountFilter
+  following: UserCountFilter
+  posts: PostCountFilter
 }
 
 input UserCreateInput {
@@ -476,18 +605,29 @@ input UserCreateManyInput {
 input UserCreateManyWithoutFollowersRelation {
   """MERGEs an edge to each node (connecting a linked node keeps one edge)."""
   connect: [UserConnectFollows!]
+
+  """
+  `_edge` (in create) sets the edge's properties, also when an existing node is linked.
+  """
+  connectOrCreate: [UserConnectOrCreateManyWithoutFollowersInput!]
   create: [UserCreateWithoutFollowersInput!]
 }
 
 input UserCreateManyWithoutFollowingRelation {
   """MERGEs an edge to each node (connecting a linked node keeps one edge)."""
   connect: [UserConnectFollows!]
+
+  """
+  `_edge` (in create) sets the edge's properties, also when an existing node is linked.
+  """
+  connectOrCreate: [UserConnectOrCreateManyWithoutFollowingInput!]
   create: [UserCreateWithoutFollowingInput!]
 }
 
 input UserCreateOneWithoutPostsRelation {
   """MERGEs the edge, replacing the current one."""
   connect: UserWhereUnique
+  connectOrCreate: UserConnectOrCreateOneWithoutPostsInput
   create: UserCreateWithoutPostsInput
 }
 
@@ -610,38 +750,143 @@ input UserUpdateManyInput {
 input UserUpdateManyWithoutFollowersRelation {
   """MERGEs an edge to each node (connecting a linked node keeps one edge)."""
   connect: [UserConnectFollows!]
+
+  """
+  `_edge` (in create) sets the edge's properties, also when an existing node is linked.
+  """
+  connectOrCreate: [UserConnectOrCreateManyWithoutFollowersInput!]
   create: [UserCreateWithoutFollowersInput!]
+
+  """
+  Deletes linked nodes, with their onDelete rules (NOT_FOUND when one is not linked).
+  """
+  delete: [UserWhereUnique!]
   disconnect: [UserWhereUnique!]
 
   """The only linked nodes afterwards (edges to the others are deleted)."""
   set: [UserConnectFollows!]
+
+  """Updates linked nodes (NOT_FOUND when one is not linked)."""
+  update: [UserUpdateWhereManyWithoutFollowersInput!]
+  upsert: [UserUpsertManyWithoutFollowersInput!]
 }
 
 input UserUpdateManyWithoutFollowingRelation {
   """MERGEs an edge to each node (connecting a linked node keeps one edge)."""
   connect: [UserConnectFollows!]
+
+  """
+  `_edge` (in create) sets the edge's properties, also when an existing node is linked.
+  """
+  connectOrCreate: [UserConnectOrCreateManyWithoutFollowingInput!]
   create: [UserCreateWithoutFollowingInput!]
+
+  """
+  Deletes linked nodes, with their onDelete rules (NOT_FOUND when one is not linked).
+  """
+  delete: [UserWhereUnique!]
   disconnect: [UserWhereUnique!]
 
   """The only linked nodes afterwards (edges to the others are deleted)."""
   set: [UserConnectFollows!]
+
+  """Updates linked nodes (NOT_FOUND when one is not linked)."""
+  update: [UserUpdateWhereManyWithoutFollowingInput!]
+  upsert: [UserUpsertManyWithoutFollowingInput!]
 }
 
 input UserUpdateOneWithoutPostsRelation {
   """MERGEs the edge, replacing the current one."""
   connect: UserWhereUnique
+  connectOrCreate: UserConnectOrCreateOneWithoutPostsInput
 
   """Replaces the related node's edge."""
   create: UserCreateWithoutPostsInput
 
+  """true: deletes the linked node (NOT_FOUND when there is none)."""
+  delete: Boolean
+
   """true: remove the edge."""
   disconnect: Boolean
+
+  """Updates the linked node (NOT_FOUND when there is none)."""
+  update: UserUpdateWithoutPostsInput
+  upsert: UserUpsertOneWithoutPostsInput
+}
+
+"""A linked User, by unique key, and its update."""
+input UserUpdateWhereManyWithoutFollowersInput {
+  data: UserUpdateWithoutFollowersInput!
+  where: UserWhereUnique!
+}
+
+"""A linked User, by unique key, and its update."""
+input UserUpdateWhereManyWithoutFollowingInput {
+  data: UserUpdateWithoutFollowingInput!
+  where: UserWhereUnique!
+}
+
+input UserUpdateWithoutFollowersInput {
+  _ops: UserOps
+  email: String
+  following: UserUpdateManyWithoutFollowersRelation
+  id: ID
+  loginCount: Int
+  name: String
+  posts: PostUpdateManyWithoutAuthorRelation
+}
+
+input UserUpdateWithoutFollowingInput {
+  _ops: UserOps
+  email: String
+  followers: UserUpdateManyWithoutFollowingRelation
+  id: ID
+  loginCount: Int
+  name: String
+  posts: PostUpdateManyWithoutAuthorRelation
+}
+
+input UserUpdateWithoutPostsInput {
+  _ops: UserOps
+  email: String
+  followers: UserUpdateManyWithoutFollowingRelation
+  following: UserUpdateManyWithoutFollowersRelation
+  id: ID
+  loginCount: Int
+  name: String
+}
+
+"""
+Updates the linked User matching where, or creates and links one when there is none.
+"""
+input UserUpsertManyWithoutFollowersInput {
+  create: UserCreateWithoutFollowersInput!
+  update: UserUpdateWithoutFollowersInput!
+  where: UserWhereUnique!
+}
+
+"""
+Updates the linked User matching where, or creates and links one when there is none.
+"""
+input UserUpsertManyWithoutFollowingInput {
+  create: UserCreateWithoutFollowingInput!
+  update: UserUpdateWithoutFollowingInput!
+  where: UserWhereUnique!
+}
+
+"""Updates the linked User, or creates and links one when there is none."""
+input UserUpsertOneWithoutPostsInput {
+  create: UserCreateWithoutPostsInput!
+  update: UserUpdateWithoutPostsInput!
 }
 
 input UserWhere {
   AND: [UserWhere!]
   NOT: UserWhere
   OR: [UserWhere!]
+
+  """Filters on the number of related nodes (only the readable ones)."""
+  _count: UserCountWhere
   email: StringFilter
   followers: UserListRelationFilter
   following: UserListRelationFilter

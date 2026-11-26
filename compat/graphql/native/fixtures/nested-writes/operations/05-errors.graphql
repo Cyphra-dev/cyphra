@@ -1,0 +1,40 @@
+# features: errors, mutation.nested.update, validation
+# A nested target that is not linked is NOT_FOUND and rolls the whole root field back (the name
+# is unchanged); validation issues and @max on nested data have their GraphQL argument paths.
+mutation {
+  notLinked: userUpdate(
+    where: { id: "u-alice" }
+    data: {
+      name: "Changed"
+      posts: { update: [{ where: { id: "p-bob" }, data: { title: "Stolen" } }] }
+    }
+  ) {
+    name
+  }
+  noProfile: userUpdate(where: { id: "u-bob" }, data: { profile: { update: { bio: "x" } } }) {
+    name
+  }
+  tooShort: userUpdate(
+    where: { id: "u-alice" }
+    data: { posts: { update: [{ where: { id: "p-graphs" }, data: { title: "x" } }] } }
+  ) {
+    name
+  }
+  tooMany: userUpdate(
+    where: { id: "u-alice" }
+    data: {
+      posts: {
+        update: [{ where: { id: "p-graphs" }, data: { _ops: { views: { increment: 5000 } } } }]
+      }
+    }
+  ) {
+    name
+  }
+  unchanged: userUpdate(where: { id: "u-alice" }, data: {}) {
+    name
+    posts(orderBy: [{ id: asc }]) {
+      title
+      views
+    }
+  }
+}

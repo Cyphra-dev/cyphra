@@ -1,0 +1,66 @@
+# features: mutation.nested.upsert, mutation._edge
+# Upsert updates the linked node, or creates and links one when there is none: Bob has no profile,
+# p-bob is his, p-new and Erin are not there yet (Erin's edge gets the _edge of create). Carol
+# exists but Bob does not follow her: she is not taken over, creating her again breaks the key.
+mutation {
+  userUpdate(
+    where: { id: "u-bob" }
+    data: {
+      profile: { upsert: { create: { bio: "New here" }, update: { bio: "Never" } } }
+      posts: {
+        upsert: [
+          {
+            where: { id: "p-bob" }
+            create: { id: "p-bob", title: "Never" }
+            update: { title: "Bob's post, edited" }
+          }
+          {
+            where: { id: "p-new" }
+            create: { id: "p-new", title: "Brand new" }
+            update: { title: "Never" }
+          }
+        ]
+      }
+      following: {
+        upsert: [
+          {
+            where: { id: "u-erin" }
+            create: { id: "u-erin", email: "erin@acme.io", _edge: { weight: 5 } }
+            update: { name: "Never" }
+          }
+        ]
+      }
+    }
+  ) {
+    profile {
+      bio
+    }
+    posts(orderBy: [{ id: asc }]) {
+      id
+      title
+    }
+    following(orderBy: [{ id: asc }]) {
+      id
+      name
+      _edge {
+        weight
+      }
+    }
+  }
+  takeOver: userUpdate(
+    where: { id: "u-bob" }
+    data: {
+      following: {
+        upsert: [
+          {
+            where: { id: "u-carol" }
+            create: { id: "u-carol", email: "carol@acme.io" }
+            update: { name: "Never" }
+          }
+        ]
+      }
+    }
+  ) {
+    id
+  }
+}

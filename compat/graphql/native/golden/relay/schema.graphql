@@ -8,6 +8,20 @@ type Article implements Content & Node {
   words: Int!
 }
 
+input ArticleCountFilter {
+  equals: Int
+  gt: Int
+  gte: Int
+  in: [Int!]
+  lt: Int
+  lte: Int
+  not: Int
+  notIn: [Int!]
+
+  """Count only these nodes."""
+  where: ArticleWhere
+}
+
 type ArticleList {
   nodes: [Article!]!
   pageInfo: PageInfo!
@@ -321,6 +335,10 @@ type WriterCount {
   articles(where: ArticleWhere): Int!
 }
 
+input WriterCountWhere {
+  articles: ArticleCountFilter
+}
+
 type WriterList {
   nodes: [Writer!]!
   pageInfo: PageInfo!
@@ -354,6 +372,9 @@ input WriterWhere {
   AND: [WriterWhere!]
   NOT: WriterWhere
   OR: [WriterWhere!]
+
+  """Filters on the number of related nodes (only the readable ones)."""
+  _count: WriterCountWhere
   articles: ArticleListRelationFilter
   handle: IDFilter
   name: StringFilter

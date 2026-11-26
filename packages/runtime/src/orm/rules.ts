@@ -2,10 +2,11 @@
  * Validation rules of the schema (`@length`, `@min`, `@email`, …) on writes.
  *
  * {@link validateWriteArgs} walks the arguments of a write (scalar data, nested `create` /
- * `connect` / `set` / `update` / `upsert` / `connectOrCreate` items and their `$edge` properties) before any statement runs, collects every
- * value that breaks a rule and throws one {@link CyphraValidationError} listing them. Numeric
- * update operators (`increment`, `decrement`, `multiply`) on a field with `@min` / `@max` are
- * checked in Cypher against the resulting value: see {@link numericGuard}.
+ * `connect` / `set` / `update` / `upsert` / `connectOrCreate` items and their `$edge` properties)
+ * before any statement runs, collects every value that breaks a rule and throws one
+ * {@link CyphraValidationError} listing them. Numeric update operators (`increment`, `decrement`,
+ * `multiply`) on a field with `@min` / `@max` are checked in Cypher against the resulting value:
+ * see {@link numericGuard}.
  *
  * @packageDocumentation
  */

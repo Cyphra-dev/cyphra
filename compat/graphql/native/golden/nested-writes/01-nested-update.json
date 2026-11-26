@@ -1,0 +1,31 @@
+{
+  "data": {
+    "userUpdate": {
+      "name": "Alice L",
+      "profile": {
+        "bio": "Graphs and Cypher"
+      },
+      "posts": [
+        {
+          "id": "p-cypher",
+          "title": "Cypher",
+          "views": 3,
+          "tags": []
+        },
+        {
+          "id": "p-graphs",
+          "title": "Graphs, again",
+          "views": 15,
+          "tags": [
+            {
+              "name": "db"
+            },
+            {
+              "name": "neo4j"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

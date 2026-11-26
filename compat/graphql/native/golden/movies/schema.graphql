@@ -65,6 +65,25 @@ type MovieCount {
   directors(where: PersonWhere): Int!
 }
 
+input MovieCountFilter {
+  equals: Int
+  gt: Int
+  gte: Int
+  in: [Int!]
+  lt: Int
+  lte: Int
+  not: Int
+  notIn: [Int!]
+
+  """Count only these nodes."""
+  where: MovieWhere
+}
+
+input MovieCountWhere {
+  actors: PersonCountFilter
+  directors: PersonCountFilter
+}
+
 type MovieList {
   nodes: [Movie!]!
   pageInfo: PageInfo!
@@ -111,6 +130,9 @@ input MovieWhere {
   AND: [MovieWhere!]
   NOT: MovieWhere
   OR: [MovieWhere!]
+
+  """Filters on the number of related nodes (only the readable ones)."""
+  _count: MovieCountWhere
   actors: PersonListRelationFilter
   directors: PersonListRelationFilter
   genres: StringListFilter
@@ -167,6 +189,25 @@ type PersonCount {
   directed(where: MovieWhere): Int!
 }
 
+input PersonCountFilter {
+  equals: Int
+  gt: Int
+  gte: Int
+  in: [Int!]
+  lt: Int
+  lte: Int
+  not: Int
+  notIn: [Int!]
+
+  """Count only these nodes."""
+  where: PersonWhere
+}
+
+input PersonCountWhere {
+  actedIn: MovieCountFilter
+  directed: MovieCountFilter
+}
+
 type PersonList {
   nodes: [Person!]!
   pageInfo: PageInfo!
@@ -211,6 +252,9 @@ input PersonWhere {
   AND: [PersonWhere!]
   NOT: PersonWhere
   OR: [PersonWhere!]
+
+  """Filters on the number of related nodes (only the readable ones)."""
+  _count: PersonCountWhere
   actedIn: MovieListRelationFilter
   born: IntFilter
   directed: MovieListRelationFilter

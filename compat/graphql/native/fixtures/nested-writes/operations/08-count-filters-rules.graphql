@@ -1,0 +1,14 @@
+# features: auth.rules.read, auth.jwt, filters._count
+# As Bob, a _count filter only counts the posts he may read: Alice has one.
+query {
+  twoPosts: userFindMany(where: { _count: { posts: { equals: 2 } } }) {
+    nodes {
+      id
+    }
+  }
+  onePost: userFindMany(where: { _count: { posts: { equals: 1 } } }, orderBy: [{ id: asc }]) {
+    nodes {
+      id
+    }
+  }
+}
