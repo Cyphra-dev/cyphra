@@ -1297,6 +1297,11 @@ fixtures and goldens: printed SDL plus results) grows with it.
    for it, internal: `withRawValues(client)` (driver values, shaped by the v7 decoders) and
    `deleteMany({ $relationships: true })` (v7's `relationshipsDeleted`).
 
+   Status (#265, in progress): also moved, with the same check before each request: `single`
+   filters (a `_count` of the matching related nodes equal to 1, with the client's `_count`
+   filters). `compat/graphql` has an engine-off/on differential run (`pnpm --filter compat-graphql
+differential`), on an internal `makeSchema` option.
+
 5. **Auth**: `rules` (read / create / update / delete / connect / disconnect / after),
    `authenticated`, field rules (context-only and row-dependent), `native.jwtContext`,
    `ctx.cyphra`, a security test per v7 footgun fixed.

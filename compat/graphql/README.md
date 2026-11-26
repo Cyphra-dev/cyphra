@@ -53,7 +53,16 @@ pnpm --filter compat-graphql golden   # regenerate goldens from @neo4j/graphql, 
 pnpm --filter compat-graphql report   # compare every implementation, write REPORT.md
 pnpm --filter compat-graphql golden movies   # only some fixtures (REPORT.md not written)
 pnpm --filter compat-graphql report --update-expected   # also rewrite cyphra-expected.json
+pnpm --filter compat-graphql differential   # compat.v7 with the shared engine off vs on
 ```
+
+`differential` runs every non-subscription operation on `@cyphra/graphql` twice, with the shared
+engine forced off (every request on the compat compiler) and on, and fails when a normalized result
+differs, including on the operations whose golden it deliberately does not match. It prints how
+many root fields the engine served and why the others fell back (`--verbose`: per operation). It
+uses an internal `makeSchema` option, keyed by `Symbol.for("cyphra.compat.v7.engine")`. Run it on
+the built package (`pnpm --filter @cyphra/graphql build`) whenever a change moves requests between
+the engine and the compat compiler: the result must be 0 differences.
 
 `test` is skipped when the `NEO4J_TEST_*` variables are unset. `COMPAT_FIXTURES=a,b` restricts
 `test` to some fixtures. Scripts run with `TZ=UTC`:

@@ -55,7 +55,7 @@ import { attachSubscriptionResolvers } from "./subscriptions/resolvers.js";
 import { AuthRules } from "./auth/rules.js";
 import { CypherContext } from "./cypher/context.js";
 import { containsForbidden } from "./cypher/select.js";
-import { V7Engine } from "./engine/index.js";
+import { V7Engine, engineOption } from "./engine/index.js";
 
 export type MakeSchemaOptions = ExecutorOptions & {
   /** v7 type definitions (`@node`, `@relationship`, …). */
@@ -177,6 +177,7 @@ function rootReadResolver(
     // On the shared engine when it serves the request exactly like the compiler.
     const plan = a.engine?.read(kind, node, args as AnyRecord, info, info.fieldNodes, ctx);
     const client = plan && a.engine!.clients.for(sessionConfigOf(ctx));
+    if (plan) a.engine!.ran(info.fieldName, client !== undefined);
     if (plan && client) {
       return plan(client);
     }
@@ -275,6 +276,7 @@ function rootMutationResolver(
     // On the shared engine when it writes and answers exactly like the compiler.
     const plan = opts.engine?.write(kind, node, args as AnyRecord, info, info.fieldNodes, ctx);
     const client = plan && opts.engine!.clients.for(sessionConfigOf(ctx));
+    if (plan) opts.engine!.ran(info.fieldName, client !== undefined);
     if (plan && client) {
       return plan(client);
     }
@@ -605,7 +607,7 @@ export function makeSchema(options: MakeSchemaOptions): GraphQLSchema {
   const engine = subscriptionsEngine(options);
   attachResolvers(
     schema,
-    { model, decoder, engine: new V7Engine(model, options) },
+    { model, decoder, engine: v7Engine(model, options) },
     createExecutors(options),
   );
   if (engine) {
@@ -711,6 +713,12 @@ export function checkTypeDefs(
     ];
   }
   return issues.map(relocate);
+}
+
+/** The shared-engine side of the schema, unless the internal engine option turns it off. */
+function v7Engine(model: V7Model, options: MakeSchemaOptions): V7Engine | undefined {
+  const option = engineOption(options);
+  return option === false ? undefined : new V7Engine(model, options, option);
 }
 
 /** The CDC engine of `features.subscriptions`, created from `driver` / `client` unless given. */
