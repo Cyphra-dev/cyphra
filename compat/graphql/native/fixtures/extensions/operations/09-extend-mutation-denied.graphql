@@ -1,0 +1,8 @@
+# features: native.extend, auth.rules.update
+# A custom mutation through ctx.cyphra: Ada cannot publish Bob's post (it does not exist for her).
+mutation {
+  publishPost(id: "p3") {
+    id
+    published
+  }
+}

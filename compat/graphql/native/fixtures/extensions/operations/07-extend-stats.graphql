@@ -1,0 +1,20 @@
+# features: native.extend, auth.rules.read
+# A non-node result type: its fields call ctx.cyphra (rules applied) and load generated types
+# with ctx.cyphra.selection(info), nested relations included.
+{
+  stats {
+    people
+    posts
+    topAuthors {
+      id
+      fullName
+      followerCount
+      posts(orderBy: [{ id: asc }]) {
+        title
+      }
+      count: _count {
+        posts
+      }
+    }
+  }
+}

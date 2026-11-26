@@ -1,6 +1,7 @@
 /**
  * The native suite: fixtures written for `native.makeSchema` (`native/fixtures/<app>/`:
- * `schema.cyphra`, optional `config.ts`, `seed.cypher`, `operations/`) and their goldens
+ * `schema.cyphra`, optional `config.ts` (its default export is the config; an optional `client`
+ * export extends the fixture's client), `seed.cypher`, `operations/`) and their goldens
  * (`native/golden/<app>/`: the sorted SDL and the normalized result of each operation). There is
  * no reference implementation: goldens are written by the native API itself (`golden:native`)
  * and reviewed, so any change of the printed contract or of a result shows up as a golden diff.
@@ -53,12 +54,19 @@ export function loadNativeFixtures(only: string[] = []): NativeFixture[] {
     .map(loadNativeFixture);
 }
 
-export async function nativeConfig(fixture: NativeFixture): Promise<GraphQLConfig | undefined> {
+type ConfigModule = {
+  default: GraphQLConfig;
+  /** Optional: the fixture's client from the plain one (`db.$extends(…)`, for computed fields). */
+  client?: (db: object) => object;
+};
+
+async function configModule(fixture: NativeFixture): Promise<ConfigModule | undefined> {
   if (!fixture.configPath) return undefined;
-  const mod = (await import(pathToFileURL(fixture.configPath).href)) as {
-    default: GraphQLConfig;
-  };
-  return mod.default;
+  return (await import(pathToFileURL(fixture.configPath).href)) as ConfigModule;
+}
+
+export async function nativeConfig(fixture: NativeFixture): Promise<GraphQLConfig | undefined> {
+  return (await configModule(fixture))?.default;
 }
 
 /** The fixture's sorted SDL (`native.printSchema`), as committed in `schema.graphql`. */
@@ -70,10 +78,9 @@ export async function buildNativeSchema(
   fixture: NativeFixture,
   driver: Driver,
 ): Promise<GraphQLSchema> {
-  return native.makeSchema({
-    client: createOrm(fixture.schema, { driver }),
-    config: await nativeConfig(fixture),
-  });
+  const mod = await configModule(fixture);
+  const db = createOrm(fixture.schema, { driver });
+  return native.makeSchema({ client: mod?.client ? mod.client(db) : db, config: mod?.default });
 }
 
 export function nativeGoldenSchemaPath(fixture: string): string {

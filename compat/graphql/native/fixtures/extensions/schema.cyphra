@@ -1,0 +1,16 @@
+// Extension points of the native API (#247): computed fields, Cypher-backed fields, extend.
+node Person {
+  id        String   @id
+  firstName String
+  lastName  String
+  email     String?
+  posts     Post[]   @relationship(type: "WROTE", direction: OUT)
+  follows   Person[] @relationship(type: "FOLLOWS", direction: OUT)
+}
+
+node Post {
+  id        String  @id
+  title     String
+  published Boolean
+  author    Person? @relationship(type: "WROTE", direction: IN)
+}

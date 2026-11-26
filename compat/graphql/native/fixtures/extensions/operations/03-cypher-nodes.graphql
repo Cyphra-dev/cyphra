@@ -1,0 +1,14 @@
+# features: native.cypherFields, auth.rules.read
+# ordered
+# A Cypher-backed field returning nodes: the read rule of Post filters them (Ada's draft is hidden).
+{
+  personFindUnique(where: { id: "a" }) {
+    writings {
+      id
+      title
+    }
+    first: writings(first: 1) {
+      id
+    }
+  }
+}

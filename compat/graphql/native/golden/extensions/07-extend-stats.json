@@ -1,0 +1,36 @@
+{
+  "data": {
+    "stats": {
+      "people": 3,
+      "posts": 2,
+      "topAuthors": [
+        {
+          "id": "a",
+          "fullName": "Ada Lovelace",
+          "followerCount": 2,
+          "posts": [
+            {
+              "title": "Engines"
+            }
+          ],
+          "count": {
+            "posts": 1
+          }
+        },
+        {
+          "id": "b",
+          "fullName": "Bob Byte",
+          "followerCount": 1,
+          "posts": [
+            {
+              "title": "Bits"
+            }
+          ],
+          "count": {
+            "posts": 1
+          }
+        }
+      ]
+    }
+  }
+}

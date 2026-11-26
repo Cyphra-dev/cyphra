@@ -1,0 +1,12 @@
+# features: native.extend, auth.rules.update
+# Ada publishes her draft; the result is loaded with the selection.
+mutation {
+  publishPost(id: "p2") {
+    id
+    title
+    published
+    author {
+      fullName
+    }
+  }
+}

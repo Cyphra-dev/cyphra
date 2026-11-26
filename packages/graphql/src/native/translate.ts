@@ -36,7 +36,9 @@ import { forbidden, type RequestAuth } from "./auth.js";
 import type { Limits, ResolvedTraversal } from "./config.js";
 import { badInput, limitError } from "./errors.js";
 import { toGlobalId } from "./relay.js";
-import { names, TYPE } from "./schema.js";
+import { names, ROW, TYPE } from "./schema.js";
+import { CYPHER_NODE, isCypherFragment } from "@cyphra/runtime";
+import { cypherArgs, resolverNeeds, type ResolvedCypherField } from "./extensions.js";
 
 type AnyRecord = Record<string, unknown>;
 type Shaped = Record<string | symbol, unknown>;
@@ -369,6 +371,22 @@ export class Translator {
         );
         continue;
       }
+      if (
+        this.extensionField(
+          model,
+          name,
+          key,
+          nodes,
+          depth,
+          rows,
+          select,
+          parts,
+          loadKey,
+          (c) => (cost += c),
+        )
+      ) {
+        continue;
+      }
       const fieldName = this.api.fieldOfOutput(model, name);
       const field = model.fields.find((f) => f.name === fieldName);
       if (!field) throw badInput(`Unknown field "${model.name}.${name}".`);
@@ -436,11 +454,122 @@ export class Translator {
       select,
       cost,
       shape: (row) => {
-        const out: Shaped = { [TYPE]: model.name };
+        const out: Shaped = { [TYPE]: model.name, [ROW]: row };
         for (const p of parts) p(row, out);
         return out;
       },
     };
+  }
+
+  /**
+   * A computed field, a Cypher-backed field or a field `extend` adds to a generated type: adds
+   * what it loads to `select` and how to shape it to `parts`. `false` when `name` is none of them.
+   */
+  private extensionField(
+    model: ResolvedNodeModel,
+    name: string,
+    key: string,
+    nodes: readonly FieldNode[],
+    depth: number,
+    rows: number,
+    select: AnyRecord,
+    parts: ((row: AnyRecord, out: Shaped) => void)[],
+    loadKey: (key: string, relation: string) => string,
+    addCost: (cost: number) => void,
+  ): boolean {
+    const ext = this.api.config.extensions;
+    const computed = ext.computed.get(model.name)?.get(name);
+    const cy = computed ? undefined : ext.cypherFields.get(model.name)?.get(name);
+    if (computed || cy) {
+      if (this.auth?.fieldDenied(model, name)) {
+        const error = forbidden(`${model.name}.${name} is not readable by this request.`, {
+          model: model.name,
+          field: name,
+        });
+        parts.push((_row, out) => {
+          out[key] = error;
+        });
+        return true;
+      }
+    }
+    if (computed) {
+      select[name] = true;
+      parts.push((row, out) => {
+        out[key] = row[name] ?? null;
+      });
+      return true;
+    }
+    if (cy) {
+      const k = loadKey(key, name);
+      const $cypher = this.cypherExpr(cy, this.args(model.name, nodes[0]!));
+      if (cy.type.scalar !== undefined) {
+        select[k] = {
+          $cypher,
+          $type: cy.type.scalar,
+          ...(cy.type.list ? { $list: true } : {}),
+          ...(cy.type.enumValues ? { $enumValues: cy.type.enumValues } : {}),
+        };
+        parts.push((row, out) => {
+          out[key] = row[k] ?? null;
+        });
+        return true;
+      }
+      if (this.limits.maxDepth !== undefined && depth + 1 > this.limits.maxDepth) {
+        throw limitError(
+          "maxDepth",
+          `${model.name}.${name} is nested ${depth + 1} relations deep; the limit is ${this.limits.maxDepth} (maxDepth).`,
+        );
+      }
+      const target = this.api.node(cy.type.name);
+      const childRows = cy.type.list ? rows * this.listRows(undefined) : rows;
+      const sub = this.node(target, this.subSelections(nodes), undefined, depth + 1, childRows);
+      addCost(childRows + sub.cost);
+      select[k] = { $cypher, $model: target.name, $many: cy.type.list, select: sub.select };
+      parts.push((row, out) => {
+        const v = row[k];
+        if (cy.type.list)
+          out[key] = Array.isArray(v) ? v.map((x) => sub.shape(x as AnyRecord)) : [];
+        else out[key] = isPlainObject(v) ? sub.shape(v) : null;
+      });
+      return true;
+    }
+    if (ext.extend?.resolvers.get(model.name)?.has(name)) {
+      // Resolved by its own resolver, from the node: its id and the fields it needs.
+      for (const f of [model.idField, ...resolverNeeds(ext.extend, model.name, name)]) {
+        const field = f ? model.fields.find((x) => x.name === f) : undefined;
+        if (field?.kind === "scalar") select[field.name] = true;
+        else if (f && f !== model.idField) {
+          throw new Error(
+            `config.extend.resolvers.${model.name}.${name}.needs: "${f}" is not a scalar field of ${model.name}.`,
+          );
+        }
+      }
+      return true;
+    }
+    return false;
+  }
+
+  /** The expression of a Cypher-backed field, for `args` (GraphQL values) and this request. */
+  private cypherExpr(def: ResolvedCypherField, args: AnyRecord): unknown {
+    const frag = def.cypher({
+      node: CYPHER_NODE,
+      args: cypherArgs(def, args),
+      ctx: this.auth?.ctx,
+    });
+    if (!isCypherFragment(frag)) {
+      throw new Error("A Cypher-backed field's cypher function must return a cypher`…` fragment.");
+    }
+    return frag;
+  }
+
+  /** The Cypher-backed field `name` of `model` that `where` / `orderBy` take (or `undefined`). */
+  private comparableCypher(
+    model: ResolvedNodeModel,
+    name: string,
+    use: "filter" | "sort",
+  ): ResolvedCypherField | undefined {
+    const def = this.api.config.extensions.cypherFields.get(model.name)?.get(name);
+    return def?.[use] ? def : undefined;
   }
 
   /**
@@ -542,6 +671,21 @@ export class Translator {
           continue;
         }
       }
+      const cy = this.comparableCypher(model, k, "filter");
+      if (cy) {
+        this.usable(model, k, "filtered on");
+        if (v === null) continue;
+        const list = (out.$cypher ?? []) as AnyRecord[];
+        list.push({
+          name: k,
+          expr: this.cypherExpr(cy, {}),
+          type: cy.type.scalar,
+          ...(cy.type.enumValues ? { enumValues: cy.type.enumValues } : {}),
+          filter: v,
+        });
+        out.$cypher = list;
+        continue;
+      }
       const f = model.fields.find((x) => x.name === k);
       if (!f) throw badInput(`Unknown field "${model.name}.${k}" in where.`);
       this.usable(model, k, "filtered on");
@@ -623,6 +767,13 @@ export class Translator {
     return items.map((item, i) => {
       const [k, v] = one(item, `orderBy[${i}]`);
       if (k === "_typename") return { __typename: v };
+      const cy = this.comparableCypher(model, k, "sort");
+      if (cy) {
+        this.usable(model, k, "sorted on");
+        return {
+          $cypher: { name: k, expr: this.cypherExpr(cy, {}), type: cy.type.scalar, sort: v },
+        };
+      }
       const f = model.fields.find((x) => x.name === k);
       if (!f) throw badInput(`Unknown field "${model.name}.${k}" in orderBy.`);
       this.usable(model, k, "sorted on");

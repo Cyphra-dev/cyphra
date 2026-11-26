@@ -1,0 +1,11 @@
+# features: native.extend
+# ordered
+# A field extend adds to a generated type, inside a generated list.
+{
+  personFindMany(orderBy: [{ id: asc }], take: 2) {
+    nodes {
+      id
+      greeting
+    }
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "data": {
+    "me": {
+      "id": "a",
+      "fullName": "Ada Lovelace",
+      "email": null,
+      "greeting": "Hello, Ada!"
+    },
+    "searchPosts": [
+      {
+        "id": "p1",
+        "title": "Engines"
+      },
+      {
+        "id": "p2",
+        "title": "Draft notes"
+      }
+    ]
+  },
+  "errors": [
+    {
+      "message": "Person.email is not readable by this request.",
+      "path": [
+        "me",
+        "email"
+      ],
+      "code": "FORBIDDEN"
+    }
+  ]
+}

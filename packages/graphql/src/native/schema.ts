@@ -7,6 +7,7 @@
  */
 
 import {
+  Kind,
   GraphQLBoolean,
   GraphQLEnumType,
   GraphQLFloat,
@@ -30,10 +31,12 @@ import {
   type GraphQLNamedType,
   type GraphQLOutputType,
   type GraphQLScalarType,
+  type TypeNode,
 } from "graphql";
 import type { ResolvedNodeModel, ResolvedRelationField, ResolvedScalarField } from "@cyphra/schema";
 import type { ApiModel } from "./api.js";
 import { NativeSchemaError, isWrite, type RootOperation } from "./config.js";
+import type { TypeRef } from "./extensions.js";
 import { NUMERIC_TYPES, ORDERABLE_TYPES } from "./api.js";
 import {
   BigIntScalar,
@@ -53,14 +56,21 @@ import {
 /** Key under which a shaped result object carries its GraphQL type name (for `resolveType`). */
 export const TYPE = Symbol("cyphra.native.type");
 
+/** Key under which a shaped node carries the client's row it was shaped from (for `extend`). */
+export const ROW = Symbol("cyphra.native.row");
+
 type AnyRecord = Record<string | symbol, unknown>;
 
 /** Resolver of a field of a shaped object: the value under the field's response key. */
 const byResponseKey: GraphQLFieldResolver<AnyRecord, unknown> = (src, _args, _ctx, info) =>
-  src[info.path.key];
+  // A shaped object has its values under response keys; anything else (an object a custom
+  // resolver returned as is) under field names.
+  TYPE in src || info.path.key in src ? src[info.path.key] : src[info.fieldName];
 
-const resolveType = (value: unknown): string | undefined =>
-  (value as AnyRecord | null)?.[TYPE] as string | undefined;
+const resolveType = (value: unknown): string | undefined => {
+  const v = value as AnyRecord | null;
+  return (v?.[TYPE] ?? v?.__typename) as string | undefined;
+};
 
 /** Names of the generated types of a model. */
 export const names = {
@@ -125,6 +135,15 @@ function syntheticField(type: ResolvedScalarField["type"]): ResolvedScalarField 
     id: false,
     unique: false,
     index: false,
+  };
+}
+
+/** A scalar field standing for the value of a computed or Cypher-backed field (`ref`). */
+function refField(ref: TypeRef): ResolvedScalarField {
+  return {
+    ...syntheticField(ref.scalar!),
+    list: ref.list,
+    ...(ref.scalar === "Enum" ? { enum: ref.name, enumValues: ref.enumValues } : {}),
   };
 }
 
@@ -421,6 +440,10 @@ export class SchemaBuilder {
   /** `where` entries of every filterable field of `model`. */
   private fieldFilters(model: ResolvedNodeModel, skip: ReadonlySet<string> = new Set()) {
     const fields: GraphQLInputFieldConfigMap = {};
+    for (const [name, def] of this.api.config.extensions.cypherFields.get(model.name) ?? []) {
+      if (!def.filter || skip.has(name)) continue;
+      fields[name] = { type: this.scalarFilter(refField(def.type)) };
+    }
     for (const f of this.api.fields(model)) {
       if (skip.has(f.name) || !this.api.filterable(model, f)) continue;
       if (f.kind === "scalar") {
@@ -664,6 +687,9 @@ export class SchemaBuilder {
   private orderByFields(model: ResolvedNodeModel): GraphQLInputFieldConfigMap {
     const fields: GraphQLInputFieldConfigMap = {};
     if (model.abstract) fields._typename = { type: this.SortOrder };
+    for (const [name, def] of this.api.config.extensions.cypherFields.get(model.name) ?? []) {
+      if (def.sort) fields[name] = { type: this.SortOrder, description: "A Cypher-backed field." };
+    }
     for (const f of this.api.fields(model)) {
       if (!this.api.sortable(model, f)) continue;
       if (f.kind === "scalar") {
@@ -1275,7 +1301,7 @@ export class SchemaBuilder {
         resolve: byResponseKey,
       };
     }
-    Object.assign(fields, this.namedTraversalFields(model));
+    Object.assign(fields, this.namedTraversalFields(model), this.extensionFields(model));
     if (this.api.scored(model)) {
       fields._score = {
         type: GraphQLFloat,
@@ -2074,6 +2100,71 @@ export class SchemaBuilder {
       },
       resolve,
     };
+  }
+
+  /** The GraphQL type of a computed or Cypher-backed field (or argument). */
+  private refType(node: TypeNode, input: boolean): GraphQLOutputType & GraphQLInputType {
+    if (node.kind === Kind.NON_NULL_TYPE) {
+      return new GraphQLNonNull(this.refType(node.type, input)) as never;
+    }
+    if (node.kind === Kind.LIST_TYPE)
+      return new GraphQLList(this.refType(node.type, input)) as never;
+    const name = node.name.value;
+    const builtin: Record<string, GraphQLScalarType> = {
+      String: GraphQLString,
+      ID: GraphQLID,
+      Int: GraphQLInt,
+      Float: GraphQLFloat,
+      Boolean: GraphQLBoolean,
+      DateTime: DateTimeScalar,
+      Date: DateScalar,
+      LocalDateTime: LocalDateTimeScalar,
+      LocalTime: LocalTimeScalar,
+      Time: TimeScalar,
+      Duration: DurationScalar,
+      BigInt: BigIntScalar,
+      Json: JsonScalar,
+    };
+    if (builtin[name]) return builtin[name] as never;
+    const model = this.api.nodes.get(name);
+    if (model && !input) return this.output(model) as never;
+    return this.enumType(name) as never;
+  }
+
+  /** Computed and Cypher-backed fields of `model` (`config.computed`, `config.cypherFields`). */
+  private extensionFields(model: ResolvedNodeModel): GraphQLFieldConfigMap<AnyRecord, unknown> {
+    const out: GraphQLFieldConfigMap<AnyRecord, unknown> = {};
+    const ext = this.api.config.extensions;
+    const typeOf = (ref: TypeRef, ruled: boolean): GraphQLOutputType => {
+      const t: GraphQLOutputType = this.refType(ref.node, false);
+      return ruled ? (getNullableType(t) as GraphQLOutputType) : t;
+    };
+    for (const [name, def] of ext.computed.get(model.name) ?? []) {
+      out[name] = {
+        type: typeOf(def.type, def.read !== undefined),
+        description: def.description ?? "Computed by the server (cannot be filtered or sorted on).",
+        resolve: byResponseKey,
+        deprecationReason: def.deprecated,
+      };
+    }
+    for (const [name, def] of ext.cypherFields.get(model.name) ?? []) {
+      const args: GraphQLFieldConfigArgumentMap = {};
+      for (const [a, spec] of def.args) {
+        args[a] = {
+          type: this.refType(spec.type.node, true),
+          ...(spec.default !== undefined ? { defaultValue: spec.default } : {}),
+          ...(spec.description !== undefined ? { description: spec.description } : {}),
+        };
+      }
+      out[name] = {
+        type: typeOf(def.type, def.read !== undefined),
+        description: def.description,
+        args,
+        resolve: byResponseKey,
+        deprecationReason: def.deprecated,
+      };
+    }
+    return out;
   }
 
   /** The named traversal fields of `model` (`config.traversals`). */

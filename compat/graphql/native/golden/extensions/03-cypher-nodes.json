@@ -1,0 +1,17 @@
+{
+  "data": {
+    "personFindUnique": {
+      "writings": [
+        {
+          "id": "p1",
+          "title": "Engines"
+        }
+      ],
+      "first": [
+        {
+          "id": "p1"
+        }
+      ]
+    }
+  }
+}

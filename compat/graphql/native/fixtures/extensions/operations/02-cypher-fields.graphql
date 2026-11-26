@@ -1,0 +1,13 @@
+# features: native.cypherFields
+# ordered
+# Cypher-backed fields: selected (aliased, with arguments), filtered and sorted on.
+{
+  personFindMany(where: { followerCount: { gte: 1 } }, orderBy: [{ followerCount: desc }]) {
+    nodes {
+      id
+      followerCount
+      recent: followersSince(since: "2026-02-01T00:00:00Z")
+      all: followersSince(since: "2025-01-01T00:00:00Z")
+    }
+  }
+}

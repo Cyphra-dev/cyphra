@@ -4,7 +4,14 @@
  */
 import { describe, expectTypeOf, it } from "vitest";
 import { defineGraphQL } from "./config.js";
-import { jwtContext, makeSchema, type JwtContext, type RequestClient } from "./index.js";
+import {
+  cypher,
+  jwtContext,
+  makeSchema,
+  type CypherFragment,
+  type JwtContext,
+  type RequestClient,
+} from "./index.js";
 
 type TM = {
   User: {
@@ -272,6 +279,49 @@ describe("defineGraphQL: rules (typed against the client, #77)", () => {
         // @ts-expect-error unknown operation in authenticated
         Post: { authenticated: { read: ["findAll"] } },
       },
+    });
+  });
+
+  it("types computed fields, Cypher-backed fields and extend", () => {
+    defineGraphQL<TM, Ctx>({
+      computed: {
+        User: { label: "String!", badge: { type: "String", read: ({ ctx }) => !!ctx.user } },
+      },
+      cypherFields: {
+        User: {
+          followers: {
+            type: "Int!",
+            args: { since: "DateTime" },
+            cypher: ({ node, args, ctx }) => {
+              expectTypeOf(ctx).toEqualTypeOf<Ctx>();
+              return cypher`COUNT { (${node})<-[f:FOLLOWS]-() WHERE f.since >= ${args.since} }`;
+            },
+          },
+        },
+      },
+      extend: {
+        typeDefs: "extend type Query { me: User }",
+        resolvers: {
+          Query: {
+            me: (_src, _args, ctx, info) => {
+              expectTypeOf(ctx.user).toEqualTypeOf<Ctx["user"]>();
+              return ctx.cyphra.user.findUnique({
+                where: { id: "x" },
+                ...ctx.cyphra.selection(info),
+              });
+            },
+          },
+        },
+      },
+    });
+    expectTypeOf(cypher`RETURN 1`).toEqualTypeOf<CypherFragment>();
+    defineGraphQL<TM>({
+      // @ts-expect-error unknown model in computed
+      computed: { Nope: { x: "Int" } },
+    });
+    defineGraphQL<TM>({
+      // @ts-expect-error a Cypher-backed field needs its cypher function
+      cypherFields: { User: { x: { type: "Int" } } },
     });
   });
 

@@ -1352,6 +1352,24 @@ fixtures and goldens: printed SDL plus results) grows with it.
 
 7. **Extension points**: computed fields, `extend` SDL + resolvers, `ctx.cyphra.selection(info)`,
    Cypher-backed fields.
+
+   Status (#247): landed. Choices made where this note left them open: computed and Cypher-backed
+   fields are declared on node models only (not interfaces or unions); `makeSchema` checks that the
+   client declares each computed field (`computedFieldsOf`, an internal engine entry), but not its
+   GraphQL type against `compute`; both take an optional context-only `read` rule (`null` with
+   `FORBIDDEN`). A Cypher-backed field is an expression (`` cypher`COUNT { (${node})<-[:F]-() }` ``)
+   compiled through internal `$cypher` engine entries in `select` / `where` / `orderBy`; every
+   interpolated value is a parameter, `args` are encoded for their declared type; it returns a
+   scalar or an enum (filterable and sortable when it has no arguments and one comparable value)
+   or a model (a node or a list of nodes, projected like a relation load and filtered by the
+   target's read rules; refused on FalkorDB). Rules do not apply inside the expression. `extend`
+   takes `{ typeDefs, resolvers }`: `extend type Mutation` without generated mutations becomes the
+   `Mutation` type; a field added to a generated type needs a resolver, which gets the node's
+   client row (its `@id` field plus the resolver's `needs`); resolvers run after the request's
+   session is set up (so `ctx.cyphra` is always there), their client errors are mapped like
+   generated fields', and whatever they return for a generated type is shaped from the selection
+   (so `ctx.cyphra.selection(info)` results are returned as is).
+
 8. **Runtime prerequisites, part 2 + exposure**: nested `update` / `delete` / `upsert` /
    `connectOrCreate`, `_count` filters in `where`.
 9. **Migration tooling**: mapping table in the docs, `cyphra graphql migrate-operations`,
