@@ -216,8 +216,9 @@ its first clause and model (`MATCH Post`), with the database semantic convention
 A failed statement records the exception and sets the span status to `ERROR`, on the statement span
 and on its operation span. Operation spans also carry `cyphra.model`.
 
-`@cyphra/graphql` emits the same events and spans (`graphql.read` / `graphql.write`) when you give it
-a `client` rather than a raw `driver`.
+`@cyphra/graphql` emits the same events and spans when you give it a `client` rather than a raw
+`driver`: the engine's operations (`findMany`, `count`) for what `compat.v7` runs on the
+shared engine, `graphql.read` / `graphql.write` for the statements of its compat compiler.
 
 ## Missing index warnings
 

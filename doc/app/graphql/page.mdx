@@ -195,6 +195,18 @@ Each root field runs as one Cypher statement, in its own transaction (a read tra
 queries, a write transaction for mutations). Values are always parameters, and labels, property
 keys and relationship types come from your type definitions.
 
+`compat.v7` runs on the same engine as the typed client and the [native API](/graphql/native) when
+that engine answers exactly like v7: list and connection queries with their filters, sorting,
+paging and nested relationships, on types without `@authentication` / `@authorization`. The rest
+(mutations, aggregations, full-text, `@cypher`, rules, unions, interfaces, edge filters and sorts,
+`single`, …) runs on the compat compiler, with the same results. What you can see of the
+difference:
+
+- With `client`, the client's `query` events and spans name the engine operation and model
+  (`findMany` on `Movie`) instead of `graphql.read`.
+- A root connection that selects both a page (`edges` / `pageInfo`) and `totalCount` reads them with
+  two statements in one read transaction.
+
 ## Authentication and authorization
 
 `@authentication`, `@authorization`, `@jwt` and `@jwtClaim` work as in v7, with the same results.

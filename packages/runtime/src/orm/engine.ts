@@ -195,6 +195,8 @@ export type EngineOptions = {
   readonly dialect?: CyphraDialect;
   /** Rules ANDed into every statement (see {@link EngineRules}); every set applies. */
   readonly rules?: readonly EngineRules[];
+  /** Return projected scalars as the driver gives them (see {@link withRawValues}). */
+  readonly rawValues?: boolean;
 };
 
 /** Column holding the sort keys of a row, for its `$cursor`. */
@@ -209,7 +211,12 @@ export class ModelEngine {
   ) {}
 
   private ctx(): QueryContext {
-    return new QueryContext(this.schema, this.options.dialect, this.options.rules);
+    return new QueryContext(
+      this.schema,
+      this.options.dialect,
+      this.options.rules,
+      this.options.rawValues === true,
+    );
   }
 
   private get label(): string {

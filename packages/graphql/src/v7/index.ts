@@ -55,6 +55,7 @@ import { attachSubscriptionResolvers } from "./subscriptions/resolvers.js";
 import { AuthRules } from "./auth/rules.js";
 import { CypherContext } from "./cypher/context.js";
 import { containsForbidden } from "./cypher/select.js";
+import { V7Engine } from "./engine/index.js";
 
 export type MakeSchemaOptions = ExecutorOptions & {
   /** v7 type definitions (`@node`, `@relationship`, …). */
@@ -111,7 +112,7 @@ function toNumber(value: unknown): unknown {
   return neo4j.isInt(value) ? value.toNumber() : value;
 }
 
-type Auth = { model: V7Model; decoder?: JwtDecoder };
+type Auth = { model: V7Model; decoder?: JwtDecoder; engine?: V7Engine };
 
 /** The authorization context the root field wrapper computed (see {@link wrapRootField}). */
 const REQUEST_AUTH = Symbol("cyphra.v7.auth");
@@ -173,6 +174,12 @@ function rootReadResolver(
   return async (_source, args, ctx, info: GraphQLResolveInfo) => {
     const node = model.node(nodeName);
     const auth = await requestAuth(ctx, a);
+    // On the shared engine when it serves the request exactly like the compiler.
+    const plan = a.engine?.read(kind, node, args as AnyRecord, info, info.fieldNodes, ctx);
+    const client = plan && a.engine!.clients.for(sessionConfigOf(ctx));
+    if (plan && client) {
+      return plan(client);
+    }
     const compiler = new SelectionCompiler(model, info, auth);
     const compiled =
       kind === "list"
@@ -590,7 +597,11 @@ export function makeSchema(options: MakeSchemaOptions): GraphQLSchema {
   const feature = options.features?.authorization;
   const decoder = feature ? new JwtDecoder(feature) : undefined;
   const engine = subscriptionsEngine(options);
-  attachResolvers(schema, { model, decoder }, createExecutors(options));
+  attachResolvers(
+    schema,
+    { model, decoder, engine: new V7Engine(model, options) },
+    createExecutors(options),
+  );
   if (engine) {
     engine.attach(model);
     warnUnfilteredAuthorization(model);

@@ -129,6 +129,11 @@ export class QueryContext {
      * apply.
      */
     readonly rules: readonly EngineRules[] = [],
+    /**
+     * `true`: projected scalars (node and edge properties) are returned as the driver gives them,
+     * not decoded (see {@link Shape.raw}).
+     */
+    readonly raw: boolean = false,
   ) {}
 
   /** Bind a value and return its `$placeholder`. */
@@ -1082,6 +1087,11 @@ export type Shape = {
   readonly counts?: readonly ResolvedRelationField[];
   /** `true` when `$labels` is selected: the result gets the node's dynamic labels. */
   readonly labels?: true;
+  /**
+   * `true`: scalars and edge properties are returned as the driver gives them (`Integer`,
+   * temporal and point objects, `null` lists), not decoded for their schema type.
+   */
+  readonly raw?: true;
 };
 
 type LoadArgs = {
@@ -1281,6 +1291,7 @@ export function compileProjection(
       relations: relShapes,
       ...(counts ? { counts: counts.map((c) => c.field) } : {}),
       ...(withLabels ? { labels: true as const } : {}),
+      ...(ctx.raw ? { raw: true as const } : {}),
     },
   };
 }
@@ -1394,6 +1405,11 @@ function expandInterfaceMembers(
   return out;
 }
 
+/** A scalar of a {@link Shape.raw} projection: the driver's value (`null` when absent). */
+function rawScalar(_field: ResolvedScalarField, value: unknown): unknown {
+  return value ?? null;
+}
+
 /** Decode a projected map according to its {@link Shape}. */
 export function decodeRow(shape: Shape, row: unknown): AnyRecord | null {
   if (row === null || row === undefined) return null;
@@ -1413,7 +1429,8 @@ export function decodeRow(shape: Shape, row: unknown): AnyRecord | null {
     if (variant?.scalars) scalars = variant.scalars;
     if (variant?.on) on = decodeRow(variant.on, src[onKey(variant.name)]);
   }
-  for (const f of scalars) out[f.name] = decodeScalar(f, src[f.name]);
+  const decode = shape.raw ? rawScalar : decodeScalar;
+  for (const f of scalars) out[f.name] = decode(f, src[f.name]);
   if (shape.labels) out.$labels = decodeDynamicLabels(shape.model, src[LABELS_KEY]);
   for (const r of shape.relations) {
     const decodeItem = (v: unknown) => {
@@ -1421,7 +1438,7 @@ export function decodeRow(shape: Shape, row: unknown): AnyRecord | null {
       if (item && r.edge) {
         const rawEdge = ((v as AnyRecord)["$edge"] ?? {}) as AnyRecord;
         const edge: AnyRecord = {};
-        for (const p of r.edge) edge[p.name] = decodeScalar(p, rawEdge[p.name]);
+        for (const p of r.edge) edge[p.name] = decode(p, rawEdge[p.name]);
         item.$edge = edge;
       }
       return item;

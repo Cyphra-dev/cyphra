@@ -3,7 +3,8 @@ import type { DriverLike, TransactionLike } from "../client.js";
 import { createClient, schemaModel } from "./__fixtures__/blog.gen.js";
 import { schemaModel as interfacesSchema } from "./__fixtures__/interfaces.gen.js";
 import { ModelEngine, type Executor, type Runner } from "./engine.js";
-import { withEngineRules } from "./client.js";
+import neo4j from "neo4j-driver";
+import { withEngineRules, withRawValues } from "./client.js";
 import { CyphraValidationError } from "./errors.js";
 import type { EngineRules } from "./scope.js";
 
@@ -200,6 +201,54 @@ describe("withEngineRules", () => {
       CyphraValidationError,
     );
     expect(() => withEngineRules({}, {})).toThrow(/not a Cyphra ORM client/);
+  });
+});
+
+describe("withRawValues", () => {
+  const raw = {
+    id: "u1",
+    email: "a@x.io",
+    name: null,
+    age: neo4j.int(41),
+    tags: null,
+    createdAt: new neo4j.types.DateTime(2024, 1, 2, 3, 4, 5, 6_000_000, 3600),
+  };
+
+  it("returns node and edge properties as the driver gives them; the original client decodes", async () => {
+    const since = new neo4j.types.DateTime(2020, 1, 1, 0, 0, 0, 0, 0);
+    const fake = fakeDriver(() => [
+      { row: { ...raw, following: [{ ...raw, id: "u2", $edge: { since } }] } },
+    ]);
+    const db = createClient({ driver: fake.driver });
+    const rawDb = withRawValues(db);
+    const args = { select: { id: true, age: true, tags: true, createdAt: true, following: true } };
+    const [r] = (await rawDb.user.findMany(args)) as unknown as Record<string, unknown>[];
+    expect(r!.age).toBe(raw.age);
+    expect(r!.tags).toBeNull();
+    expect(r!.createdAt).toBe(raw.createdAt);
+    const following = (r!.following as Record<string, unknown>[])[0]!;
+    expect(following.age).toBe(raw.age);
+    expect((following.$edge as Record<string, unknown>).since).toBe(since);
+    const [d] = (await db.user.findMany(args)) as unknown as Record<string, unknown>[];
+    expect(d!.age).toBe(41);
+    expect(d!.tags).toEqual([]);
+    expect(d!.createdAt).toBeInstanceOf(Date);
+  });
+
+  it("keeps rules, extensions and transactions, and composes with withEngineRules", async () => {
+    const fake = fakeDriver(() => [{ row: raw }]);
+    const db = withEngineRules(createClient({ driver: fake.driver }), {
+      User: { read: { name: "a" } },
+    });
+    const rawDb = withEngineRules(withRawValues(db), { User: { read: { email: "a@x.io" } } });
+    const rows = (await rawDb.$transaction((tx) => tx.user.findMany())) as unknown as Record<
+      string,
+      unknown
+    >[];
+    expect(rows[0]!.age).toBe(raw.age);
+    expect(fake.calls[0]).toContain("n.`name` = $p0");
+    expect(fake.calls[0]).toContain("n.`email` = $p1");
+    expect(() => withRawValues({})).toThrow(/not a Cyphra ORM client/);
   });
 });
 

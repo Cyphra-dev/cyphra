@@ -33,10 +33,12 @@ describe("cursors", () => {
 });
 
 describe("root fields compile to one statement each", () => {
-  it("list query: filter, sort, paging and nested relationship in one statement", async () => {
-    const { driver, statements } = fakeDriver(() => [
-      { title: "The Matrix", actors: [{ name: "Keanu" }] },
-    ]);
+  it("list query: filter, sort, paging and nested relationship in one engine statement", async () => {
+    const { driver, statements } = fakeDriver((cypher) =>
+      cypher.includes("count(n)")
+        ? [{ c: 0 }]
+        : [{ row: { title: "The Matrix", r0: [{ name: "Keanu" }] } }],
+    );
     const schema = makeSchema({ typeDefs, driver });
     const result = await execute({
       schema,
@@ -51,13 +53,11 @@ describe("root fields compile to one statement each", () => {
     expect(result.errors).toBeUndefined();
     expect(statements).toHaveLength(2);
     expect(statements[0]!.cypher).toBe(
-      [
-        "MATCH (this0:`Movie`)",
-        "WHERE this0.`title` CONTAINS $p0",
-        "WITH this0 ORDER BY this0.`released` DESC LIMIT $p1",
-        "RETURN { `title`: this0.`title`, `actors`: COLLECT { MATCH (this0)<-[:`ACTED_IN`]-(this1:`Person`) WITH this1 ORDER BY this1.`name` ASC RETURN { `name`: this1.`name` } } } AS this",
-      ].join("\n"),
+      "MATCH (n:`Movie`) WHERE n.`title` CONTAINS $p0 WITH n ORDER BY n.`released` DESC LIMIT $p1" +
+        " RETURN n{.`title`, `r0`: COLLECT { MATCH (n)<-[r1:`ACTED_IN`]-(m0:`Person`) WITH m0, r1 ORDER BY m0.`name` ASC" +
+        " RETURN m0{.`name`, `$edge`: properties(r1)} }} AS row ORDER BY n.`released` DESC",
     );
+    expect(statements[1]!.cypher).toBe("MATCH (n:`Person`) RETURN count(n) AS c");
     expect(result.data).toEqual({
       movies: [{ title: "The Matrix", actors: [{ name: "Keanu" }] }],
       peopleConnection: { totalCount: 0 },
@@ -65,12 +65,9 @@ describe("root fields compile to one statement each", () => {
   });
 
   it("connection: cursors, pageInfo and edge properties come from the offset and the total", async () => {
-    const { driver, statements } = fakeDriver(() => [
-      {
-        total: 5,
-        edges: [{ node: { n: "A" } }, { node: { n: "B" } }],
-      },
-    ]);
+    const { driver, statements } = fakeDriver((cypher) =>
+      cypher.includes("count(n)") ? [{ c: 5 }] : [{ row: { name: "A" } }, { row: { name: "B" } }],
+    );
     const schema = makeSchema({ typeDefs, driver });
     const result = await execute({
       schema,
@@ -83,9 +80,14 @@ describe("root fields compile to one statement each", () => {
       }`),
     });
     expect(result.errors).toBeUndefined();
-    expect(statements[0]!.cypher).toBe(
-      "RETURN { total: COUNT { MATCH (this0:`Person`) }, edges: COLLECT { MATCH (this0:`Person`) WITH this0 ORDER BY this0.`name` ASC SKIP $p0 LIMIT $p1 RETURN { `node`: { `n`: this0.`name` } } } } AS this",
-    );
+    // The page and its total, in one read transaction (the after cursor is offset 0: skip 1).
+    expect(statements.map((s) => [s.mode, s.cypher])).toEqual([
+      [
+        "read",
+        "MATCH (n:`Person`) WITH n ORDER BY n.`name` ASC SKIP $p0 LIMIT $p1 RETURN n{.`name`} AS row ORDER BY n.`name` ASC",
+      ],
+      ["read", "MATCH (n:`Person`) RETURN count(n) AS c"],
+    ]);
     expect(String(statements[0]!.params.p0)).toBe("1");
     expect(result.data).toEqual({
       page: {
@@ -126,7 +128,7 @@ describe("root fields compile to one statement each", () => {
 
   it("BigInt values are returned as strings", async () => {
     const neo4j = (await import("neo4j-driver")).default;
-    const { driver } = fakeDriver(() => [{ budget: neo4j.int("9007199254740993") }]);
+    const { driver } = fakeDriver(() => [{ row: { budget: neo4j.int("9007199254740993") } }]);
     const schema = makeSchema({ typeDefs, driver });
     const result = await execute({ schema, document: parse("{ people { budget } }") });
     expect(result.data).toEqual({ people: [{ budget: "9007199254740993" }] });

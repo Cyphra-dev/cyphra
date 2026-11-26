@@ -1,0 +1,203 @@
+import { CyphraClient } from "@cyphra/runtime";
+import { execute, parse } from "graphql";
+import neo4j, { type Driver, type SessionConfig } from "neo4j-driver";
+import { describe, expect, it } from "vitest";
+import { fakeDriver } from "../../../test/helpers.js";
+import { makeSchema } from "../index.js";
+import { readTypeDefs } from "../model.js";
+import { engineSchema } from "./schema.js";
+import { Fallback, TRUE, WhereTranslator, rootWhere } from "./where.js";
+
+const typeDefs = /* GraphQL */ `
+  type Movie @node(labels: ["Movie", "Film"]) {
+    title: String! @alias(property: "name")
+    released: Int
+    tags: [String!]
+    budget: BigInt
+    premiere: DateTime
+    actors: [Person!]! @relationship(type: "ACTED_IN", direction: IN, properties: "ActedIn")
+    studio: Studio @relationship(type: "MADE", direction: IN)
+    top: Person
+      @cypher(statement: "MATCH (this)<-[:ACTED_IN]-(p) RETURN p LIMIT 1", columnName: "p")
+    favorites: [Content!]! @relationship(type: "LIKES", direction: OUT)
+  }
+  type Person @node {
+    name: String!
+    born: Int
+  }
+  type Studio @node {
+    name: String!
+  }
+  type Book @node {
+    title: String
+  }
+  union Content = Movie | Book
+  type ActedIn @relationshipProperties {
+    role: String
+  }
+  type Secret @node @authorization(filter: [{ where: { node: { owner: { eq: "$jwt.sub" } } } }]) {
+    owner: String
+  }
+`;
+
+const model = readTypeDefs(typeDefs);
+const schema = engineSchema(model);
+const where = new WhereTranslator(model, schema);
+const movie = model.node("Movie");
+const tr = (w: unknown) => {
+  const f = where.node(movie, w);
+  return f === TRUE ? "TRUE" : rootWhere(f);
+};
+
+describe("engine schema", () => {
+  it("maps @node types: labels, attributes by property, relationships to plain nodes, edge models", () => {
+    const m = schema.nodes.get("Movie")!;
+    expect(m.model.label).toBe("Movie");
+    expect(m.model.labels).toEqual(["Movie", "Film"]);
+    expect(m.fields.get("title")).toBe("name");
+    expect(m.fields.has("top")).toBe(false);
+    expect(m.relations.get("actors")).toBe("actors");
+    // A relationship to a union stays on the compat compiler.
+    expect(m.relations.has("favorites")).toBe(false);
+    expect(m.model.fields.find((f) => f.name === "actors")).toMatchObject({
+      kind: "relation",
+      target: "Person",
+      relType: "ACTED_IN",
+      direction: "IN",
+      edge: "Movie.actors",
+    });
+    expect(schema.schema.relationships).toEqual([
+      expect.objectContaining({
+        name: "Movie.actors",
+        properties: [expect.objectContaining({ name: "role" })],
+      }),
+    ]);
+  });
+});
+
+describe("v7 where → engine where", () => {
+  it("scalar operators, eq null, and operators with null that filter nothing", () => {
+    expect(tr({ title: { eq: "x" } })).toEqual({ name: { equals: "x" } });
+    expect(tr({ title: { eq: null } })).toEqual({ name: { equals: null } });
+    expect(tr({ title: { contains: null } })).toBeUndefined();
+    expect(tr({ released: { gt: 1, lt: 3 } })).toEqual({
+      AND: [{ released: { gt: 1 } }, { released: { lt: 3 } }],
+    });
+    expect(tr({ tags: { includes: "a" } })).toEqual({ tags: { has: "a" } });
+    expect(tr({ released_GTE: 2 })).toEqual({ released: { gte: 2 } });
+    expect(tr({ budget: { eq: neo4j.int("9007199254740993") } })).toEqual({
+      budget: { equals: 9007199254740993n },
+    });
+  });
+
+  it("AND / OR / NOT like v7: an OR with an empty member is `true`, NOT of it matches nothing", () => {
+    expect(tr({ OR: [{}, { title: { eq: "x" } }] })).toBe("TRUE");
+    expect(tr({ NOT: { OR: [{}] } })).toEqual({ OR: [] });
+    expect(tr({ OR: [] })).toBeUndefined();
+    expect(tr({ AND: [{}, { title: { eq: "x" } }] })).toEqual({ name: { equals: "x" } });
+    expect(tr({ NOT: {} })).toBeUndefined();
+  });
+
+  it("relationship quantifiers: `{}` is ignored, `all` needs a related node, to-one null / {}", () => {
+    expect(tr({ actors: { some: {} } })).toBeUndefined();
+    expect(tr({ actors: { some: { name: { eq: "K" } } } })).toEqual({
+      actors: { some: { name: { equals: "K" } } },
+    });
+    expect(tr({ actors: { all: { born: { gt: 1 } } } })).toEqual({
+      actors: { some: {}, every: { born: { gt: 1 } } },
+    });
+    expect(tr({ actors: { some: { OR: [{}] } } })).toEqual({ actors: { some: {} } });
+    expect(tr({ studio: null })).toEqual({ studio: null });
+    expect(tr({ studio: {} })).toBeUndefined();
+    expect(tr({ studio: { name: null } })).toEqual({ studio: { is: {} } });
+    expect(tr({ actorsConnection: { none: { node: { name: { eq: "K" } } } } })).toEqual({
+      actors: { none: { name: { equals: "K" } } },
+    });
+  });
+
+  it("throws Fallback for what only the compat compiler handles", () => {
+    for (const w of [
+      { actors: { single: { name: { eq: "K" } } } },
+      { actorsConnection: { some: { edge: { role: { eq: "x" } } } } },
+      { actorsConnection: { aggregate: { count: { nodes: { gt: 1 } } } } },
+      { actorsAggregate: { count: { gt: 1 } } },
+      { premiere: { eq: "2020-01-01T00:00:00Z" } },
+      { top: { name: { eq: "K" } } },
+      { favorites: { some: { Book: { title: { eq: "x" } } } } },
+    ]) {
+      expect(() => where.node(movie, w), JSON.stringify(w)).toThrow(Fallback);
+    }
+    expect(() => where.node(model.node("Secret"), {})).toThrow(Fallback);
+  });
+});
+
+type Run = { mode: string; cypher: string };
+
+/** A fake driver answering engine statements (`{ row }` / `{ c }` records) and compiler ones. */
+function engineDriver(answer: (cypher: string) => unknown[] = () => []) {
+  return fakeDriver((cypher) => answer(cypher));
+}
+
+async function run(schema: ReturnType<typeof makeSchema>, source: string, contextValue = {}) {
+  return execute({ schema, document: parse(source), contextValue });
+}
+
+describe("routing between the engine and the compat compiler", () => {
+  it("serves plain reads on the engine, the rest on the compiler", async () => {
+    const { driver, statements } = engineDriver();
+    const s = makeSchema({ typeDefs, driver });
+    await run(s, "{ movies { title released } }");
+    await run(s, "{ movies { top { name } } }");
+    await run(s, "{ movies { favorites { __typename } } }");
+    await run(s, "{ secrets { owner } }", { jwt: { sub: "a" } });
+    await run(s, '{ movies(where: { actors: { single: { name: { eq: "K" } } } }) { title } }');
+    await run(s, "{ movies { title } }", { cypherParams: { x: 1 } });
+    // Engine statements bind `n`; the compiler's `this0`.
+    const engine = (r: Run) => r.cypher.startsWith("MATCH (n:");
+    expect(statements.map(engine)).toEqual([true, false, false, false, false, false]);
+  });
+
+  it("runs engine statements with the compiler's session options and transaction metadata", async () => {
+    const sessions: SessionConfig[] = [];
+    const metadata: unknown[] = [];
+    const tx = { run: async () => ({ records: [] }) };
+    const driver = {
+      session: (config: SessionConfig) => {
+        sessions.push(config);
+        return {
+          executeRead: async <T>(fn: (t: typeof tx) => Promise<T>, c?: { metadata?: unknown }) => {
+            metadata.push(c?.metadata);
+            return fn(tx);
+          },
+          executeWrite: async <T>(fn: (t: typeof tx) => Promise<T>, c?: { metadata?: unknown }) => {
+            metadata.push(c?.metadata);
+            return fn(tx);
+          },
+          close: async () => {},
+        };
+      },
+    } as unknown as Driver;
+    const s = makeSchema({ typeDefs, driver, database: "movies" });
+    await run(s, "{ people { name } }");
+    await run(s, "{ people { name } }", {
+      sessionConfig: { database: "other", impersonatedUser: "u" },
+    });
+    expect(sessions).toEqual([
+      { database: "movies", defaultAccessMode: neo4j.session.READ },
+      { database: "other", impersonatedUser: "u", defaultAccessMode: neo4j.session.READ },
+    ]);
+    expect(metadata).toEqual([{ app: "@cyphra/graphql" }, { app: "@cyphra/graphql" }]);
+  });
+
+  it("with a CyphraClient: client events report the engine operations; sessionConfig stays an error", async () => {
+    const { driver } = engineDriver();
+    const client = new CyphraClient({ driver });
+    const events: string[] = [];
+    client.on("query", (e) => events.push(`${e.model ?? ""}.${e.operation ?? ""}`));
+    const s = makeSchema({ typeDefs, client });
+    await run(s, "{ people { name } }");
+    expect(events).toEqual(["Person.findMany"]);
+    const r = await run(s, "{ people { name } }", { sessionConfig: { database: "x" } });
+    expect(r.errors?.[0]?.message).toMatch(/context.sessionConfig \(database\) needs makeSchema/);
+  });
+});
