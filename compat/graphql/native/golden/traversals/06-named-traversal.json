@@ -1,0 +1,31 @@
+{
+  "data": {
+    "chunkFindMany": {
+      "nodes": [
+        {
+          "id": "c1",
+          "context": [
+            {
+              "id": "c2",
+              "text": "Neo4j clusters"
+            },
+            {
+              "id": "c4",
+              "text": "Cypher patterns"
+            }
+          ],
+          "first": [
+            {
+              "id": "c4"
+            }
+          ]
+        },
+        {
+          "id": "c5",
+          "context": [],
+          "first": []
+        }
+      ]
+    }
+  }
+}

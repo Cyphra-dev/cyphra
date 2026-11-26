@@ -1,0 +1,14 @@
+# features: traverse, auth.rules.read
+# ordered
+# An admin: Hal and Cy are reached too.
+{
+  personTraverse(
+    from: { id: { equals: "a" } }
+    via: [follows]
+    depth: { max: 2 }
+    orderBy: [{ id: asc }]
+  ) {
+    id
+    name
+  }
+}

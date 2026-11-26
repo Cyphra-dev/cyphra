@@ -1,0 +1,22 @@
+{
+  "data": {
+    "personTraverse": null,
+    "personTraversePaths": null
+  },
+  "errors": [
+    {
+      "message": "Person.traverse: depth.max 4 is above the limit (maxTraversalDepth: 3).",
+      "path": [
+        "personTraverse"
+      ],
+      "code": "BAD_USER_INPUT"
+    },
+    {
+      "message": "PersonPath.nodes of Person.traversePaths carry scalar fields only (follows cannot be selected there).",
+      "path": [
+        "personTraversePaths"
+      ],
+      "code": "BAD_USER_INPUT"
+    }
+  ]
+}

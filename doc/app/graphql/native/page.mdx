@@ -18,10 +18,10 @@ generated client.
   **Experimental** (see the [stability policy](/stability#experimental-features)): the native API
   may change in a minor release. This release serves **reads** (`findUnique`, `findFirst`,
   `findMany`, `count`, [`aggregate`, `groupBy`](#aggregates-and-groupby), [`search`,
-  `findSimilar`](#search-and-findsimilar)), **writes** (`create`, `createMany`, `update`,
-  `updateMany`, `upsert`, `delete`, `deleteMany`, off by default) and **[auth](#auth)** (rules
-  compiled into the statement, field rules, `authenticated`), with nested `update` / `delete` /
-  `upsert` / `connectOrCreate` and `_count` filters. Traversals come next
+  `findSimilar`](#search-and-findsimilar), [traversals](#traversals)), **writes** (`create`,
+  `createMany`, `update`, `updateMany`, `upsert`, `delete`, `deleteMany`, off by default) and
+  **[auth](#auth)** (rules compiled into the statement, field rules, `authenticated`), with nested
+  `update` / `delete` / `upsert` / `connectOrCreate` and `_count` filters
   ([#77](https://github.com/Cyphra-dev/cyphra/issues/77)). Relay `Node` is opt-in ([below](#relay)).
   To keep the API `@neo4j/graphql` v7 generates, use [`compat.v7`](/graphql); both can be served
   side by side.
@@ -87,19 +87,20 @@ also refuses a model whose create is on while a required field without a default
 (`fields: { passwordHash: false }` with `create: true`), `create` on an interface and writes on a
 union.
 
-| Key                        | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `models.<M>.operations`    | Per group, `true`, `false` or a list of operations: `read` (`findUnique`, `findFirst`, `findMany`, `count`, `aggregate`, `groupBy`, `search`), `traverse` (`findSimilar`, off by default: the expensive reads), `create` (`create`, `createMany`, `upsert`), `update` (`update`, `updateMany`, `upsert`), `delete` (`delete`, `deleteMany`). `upsert` is served when both `create` and `update` include it. Turning an operation off removes its root field. |
-| `models.<M>.fields.<f>`    | `false` hides the field everywhere, writes included. `{ read, filter, sort, create, update }` toggle reading it, filtering and sorting on it, and setting it in create / update inputs (for a relation: its nested writes). `{ read: false, create: true }` is a write-only field. `read` may also be a [field rule](#field-rules). `{ deprecated: "reason" }` emits `@deprecated`. A toggle on an interface applies to its implementations.                 |
-| `models.<M>.rules`         | Row-level [rules](#rules), compiled into every statement that reaches the model.                                                                                                                                                                                                                                                                                                                                                                             |
-| `models.<M>.authenticated` | Operations that need an authenticated request ([`authenticated`](#authenticated)).                                                                                                                                                                                                                                                                                                                                                                           |
-| `isAuthenticated`          | `(ctx) => boolean`: whether a request is authenticated. Default: the context has a `user` or a `jwt`.                                                                                                                                                                                                                                                                                                                                                        |
-| `defaults.operations`      | The default of every model, per group. Reads are on, `traverse` and writes off.                                                                                                                                                                                                                                                                                                                                                                              |
-| `naming.<M>.<operation>`   | A root field name replacing `<model><Operation>` (reads and writes). It is part of the printed contract.                                                                                                                                                                                                                                                                                                                                                     |
-| `relay`                    | `true` adds Relay's `Node` interface and `node(id)` ([Relay](#relay)). Off by default.                                                                                                                                                                                                                                                                                                                                                                       |
-| `limits`                   | Checked before the statement is built (see [Limits](#limits)).                                                                                                                                                                                                                                                                                                                                                                                               |
-| `mutationTransaction`      | `"field"` (default): each mutation root field is its own transaction. `"request"`: every root field of a mutation operation in one transaction (see [Transactions](#transactions)).                                                                                                                                                                                                                                                                          |
-| `generator`                | The generator version the printed SDL follows. Only `1` today.                                                                                                                                                                                                                                                                                                                                                                                               |
+| Key                        | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `models.<M>.operations`    | Per group, `true`, `false` or a list of operations: `read` (`findUnique`, `findFirst`, `findMany`, `count`, `aggregate`, `groupBy`, `search`), `traverse` (`findSimilar`, `traverse`, `traversePaths`, `shortestPath`, off by default: the expensive reads), `create` (`create`, `createMany`, `upsert`), `update` (`update`, `updateMany`, `upsert`), `delete` (`delete`, `deleteMany`). `upsert` is served when both `create` and `update` include it. Turning an operation off removes its root field. |
+| `models.<M>.fields.<f>`    | `false` hides the field everywhere, writes included. `{ read, filter, sort, create, update }` toggle reading it, filtering and sorting on it, and setting it in create / update inputs (for a relation: its nested writes). `{ read: false, create: true }` is a write-only field. `read` may also be a [field rule](#field-rules). `{ deprecated: "reason" }` emits `@deprecated`. A toggle on an interface applies to its implementations.                                                              |
+| `models.<M>.rules`         | Row-level [rules](#rules), compiled into every statement that reaches the model.                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `models.<M>.authenticated` | Operations that need an authenticated request ([`authenticated`](#authenticated)).                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `isAuthenticated`          | `(ctx) => boolean`: whether a request is authenticated. Default: the context has a `user` or a `jwt`.                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `defaults.operations`      | The default of every model, per group. Reads are on, `traverse` and writes off.                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `naming.<M>.<operation>`   | A root field name replacing `<model><Operation>` (reads and writes). It is part of the printed contract.                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `relay`                    | `true` adds Relay's `Node` interface and `node(id)` ([Relay](#relay)). Off by default.                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `traversals.<M>.<field>`   | A [named traversal field](#named-traversal-fields): `{ via: [{ rel, direction?, depth? }, …], args?, description? }`.                                                                                                                                                                                                                                                                                                                                                                                     |
+| `limits`                   | Checked before the statement is built (see [Limits](#limits)).                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `mutationTransaction`      | `"field"` (default): each mutation root field is its own transaction. `"request"`: every root field of a mutation operation in one transaction (see [Transactions](#transactions)).                                                                                                                                                                                                                                                                                                                       |
+| `generator`                | The generator version the printed SDL follows. Only `1` today.                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 
 ## Naming
 
@@ -428,6 +429,103 @@ query ($vector: [Float!]!) {
   (a `findMany`, a relation) is a `BAD_USER_INPUT` error, not a silent `null`.
 - **Rules apply**: a node the `read` rules hide is never a hit, and does not take a neighbour's
   place in `findSimilar` (`k` hits among the readable nodes).
+
+### Traversals
+
+A model with relations back to itself (`User.following`) has `<model>Traverse`,
+`<model>TraversePaths` and `<model>ShortestPath`, the client's [`traverse`](/client#traversals)
+and [`shortestPath`](/client#shortest-path): one statement each. They are the expensive reads,
+**off by default**: turn them on with `operations: { traverse: true }` (or a list).
+
+```graphql
+query {
+  userTraverse(
+    from: { email: { equals: "alice@acme.io" } }
+    via: [following]
+    depth: { max: 2 }
+    where: { name: { not: null } }
+    orderBy: [{ name: asc }]
+    take: 20
+  ) {
+    name
+  }
+  userTraversePaths(from: { id: { equals: "u1" } }, via: [following], depth: { max: 2 }) {
+    node {
+      name
+    }
+    path {
+      nodes {
+        name
+      }
+      edges {
+        type
+        direction
+        _edge {
+          since
+        }
+      }
+    }
+  }
+  userShortestPath(
+    from: { id: { equals: "u1" } }
+    to: { id: { equals: "u9" } }
+    via: [following, followers]
+    maxDepth: 4
+  ) {
+    nodes {
+      name
+    }
+  }
+}
+```
+
+- `via` lists relations of the model back to itself (an enum of them), any of them on each hop;
+  `direction` overrides their declared direction (`out`, `in`, `both`). `depth: { min, max }` is
+  required; `min` defaults to 1, and 0 includes the start node.
+- `traverse` returns each reached node once (`distinct: false`: one result per path), filtered by
+  `where`, paged by `orderBy` / `skip` / `take` ([`maxTake`](#limits)). `traversePaths` returns
+  `{ node, path }`, the shortest path each node was reached by. `shortestPath` returns one shortest
+  path between a `from` node and a `to` node, or `null`; its `where` holds on every intermediate
+  node.
+- Paths are `{ nodes, edges }`: `edges[i]` joins `nodes[i]` and `nodes[i + 1]`, with its `type`,
+  `direction` and `_edge` (the relationship model's properties). The nodes of a `shortestPath` take
+  any selection; the path nodes of `traversePaths` carry their scalar fields only.
+- `depth.max` and `maxDepth` are bounded by `limits.maxTraversalDepth` and by the client's
+  `maxTraversalDepth` (default 10), the lower wins.
+- **Rules apply to every node of a path**, not only to the start and reached ones: a traversal
+  never steps through a node the `read` rules hide (it does not exist for the request), and the
+  nodes of a returned path read their fields through the field rules.
+- Traversals are served on node models (not on interfaces or unions).
+
+#### Named traversal fields
+
+A traversal across models (`Chunk → Entity → Chunk`) is a field declared in the config, which also
+bounds what clients may ask the database to explore:
+
+```ts filename="graphql.config.ts"
+export const api = defineGraphQL<CyphraTypeMap>({
+  traversals: {
+    Chunk: {
+      context: {
+        via: [
+          { rel: "entities" },
+          { rel: "related", direction: "both", depth: { min: 0, max: 2 } },
+          { rel: "chunks" },
+        ],
+        args: ["where", "orderBy", "take"], // what clients may pass
+      },
+    },
+  },
+});
+```
+
+It generates `Chunk.context(where: ChunkWhere, orderBy: [ChunkOrderBy!], take: Int): [Chunk!]!`,
+the nodes the hops reach from each chunk (each once, not the chunk itself), compiled into the
+parent's statement like a relation load. Each hop follows relations of the model the previous hop
+reached; `depth` repeats a hop on a relation back to the same model. `makeSchema` checks the hops,
+that their relations are not hidden by `fields`, and that their `depth.max` add up to at most
+`limits.maxTraversalDepth` (default 10). The read rules apply to every node of the paths, as above.
+Named traversal fields need Neo4j (quantified path patterns in a subquery).
 
 ## Mutations
 
@@ -841,12 +939,13 @@ Optional fields are nullable; required ones are non-null; lists are `[T!]!`.
 the statement is built; exceeding one fails the root field with `BAD_USER_INPUT` and
 `extensions.limit` naming it.
 
-| Limit           | Description                                                                                                                          |
-| --------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `maxDepth`      | Deepest relation nesting (a root's relations are depth 1).                                                                           |
-| `maxTake`       | Largest `take` of a list, root or relation (and of `groupBy`, `search`, `findSimilar`'s `k`); also the `take` of one that sets none. |
-| `maxAliases`    | Most aliased fields in one root field's selection.                                                                                   |
-| `maxComplexity` | Most rows a root field may load: each list multiplies its parent's rows by its `take` (`maxTake`, or 100, when it has none).         |
+| Limit               | Description                                                                                                                          |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `maxDepth`          | Deepest relation nesting (a root's relations are depth 1).                                                                           |
+| `maxTake`           | Largest `take` of a list, root or relation (and of `groupBy`, `search`, `findSimilar`'s `k`); also the `take` of one that sets none. |
+| `maxAliases`        | Most aliased fields in one root field's selection.                                                                                   |
+| `maxComplexity`     | Most rows a root field may load: each list multiplies its parent's rows by its `take` (`maxTake`, or 100, when it has none).         |
+| `maxTraversalDepth` | Largest `depth.max` of a traversal and `maxDepth` of a shortest path; also bounds named traversal fields at startup.                 |
 
 ## Errors
 
@@ -857,6 +956,7 @@ Errors carry a stable `extensions.code`, mapped from the client's errors:
 | `CyphraValidationError` (bad input, invalid cursor, no unique key)                                                                 | `BAD_USER_INPUT`        | `issues` (paths in GraphQL argument terms) when the client lists some |
 | `_edge` outside its context, two keys in one `orderBy` element                                                                     | `BAD_USER_INPUT`        |                                                                       |
 | `_score` / `_scores` outside a search, a group field not listed in `by`                                                            | `BAD_USER_INPUT`        |                                                                       |
+| a relation selected on the path nodes of `traversePaths`                                                                           | `BAD_USER_INPUT`        |                                                                       |
 | a value and an `_ops` operator on one field, `null` for a required field                                                           | `BAD_USER_INPUT`        |                                                                       |
 | a [limit](#limits) exceeded                                                                                                        | `BAD_USER_INPUT`        | `limit`                                                               |
 | `NotFoundError` (`update` / `delete` / `connect` target missing, also nested)                                                      | `NOT_FOUND`             |                                                                       |

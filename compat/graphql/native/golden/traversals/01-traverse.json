@@ -1,0 +1,14 @@
+{
+  "data": {
+    "personTraverse": [
+      {
+        "id": "b",
+        "name": "Bo"
+      },
+      {
+        "id": "d",
+        "name": "Di"
+      }
+    ]
+  }
+}

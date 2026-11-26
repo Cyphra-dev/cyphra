@@ -1319,6 +1319,21 @@ fixtures and goldens: printed SDL plus results) grows with it.
 
 6. **Aggregates, groupBy, search, findSimilar, union search, traversals** (`<model>Traverse`,
    `TraversePaths`, `ShortestPath`, named traversal fields).
+
+   Status (#246): landed. Choices made where this note left them open: `aggregate`, `groupBy` and
+   `search` are `read` operations (on by default); `findSimilar`, `traverse`, `traversePaths` and
+   `shortestPath` form the `traverse` group, off by default (each operation is in one group);
+   root fields are only served where the model has what they need (indexes, a relation back to
+   itself, not a union for aggregates, a node model for traversals); `_score` / `_scores` exist on
+   a type only when it can come out of a search; group keys are nullable and lists, vectors, points
+   and `Json` cannot be grouped on; `findSimilar` exposes `field, vector, k, where, minScore` (not
+   `candidates` / `exact`); traversals take no `edgeWhere`; path nodes of `traversePaths` carry
+   scalar fields only (the client's), those of `shortestPath` take any selection; the cap is
+   `limits.maxTraversalDepth`. The engine now applies the read rules to every node a traversal or
+   a shortest path steps through and the field rules to path nodes (before, only to the start and
+   reached nodes), and loads named traversal fields with an internal `$traverse` projection key
+   (`COLLECT {}` of quantified path patterns, Neo4j only).
+
 7. **Extension points**: computed fields, `extend` SDL + resolvers, `ctx.cyphra.selection(info)`,
    Cypher-backed fields.
 8. **Runtime prerequisites, part 2 + exposure**: nested `update` / `delete` / `upsert` /

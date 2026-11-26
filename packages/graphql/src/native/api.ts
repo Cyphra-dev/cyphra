@@ -190,6 +190,12 @@ export class ApiModel {
     return this.fields(model).filter((f): f is ResolvedRelationField => f.kind === "relation");
   }
 
+  /** Readable relations of `model` back to `model` (what `traverse` / `shortestPath` follow). */
+  selfRelations(model: ResolvedNodeModel): ResolvedRelationField[] {
+    if (model.abstract) return [];
+    return this.relations(model).filter((f) => f.target === model.name);
+  }
+
   /** To-many relations: what `_count` counts. */
   counted(model: ResolvedNodeModel): ResolvedRelationField[] {
     return this.relations(model).filter((f) => f.many);

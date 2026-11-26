@@ -33,7 +33,7 @@ import type {
 } from "@cyphra/schema";
 import type { ApiModel } from "./api.js";
 import { forbidden, type RequestAuth } from "./auth.js";
-import type { Limits } from "./config.js";
+import type { Limits, ResolvedTraversal } from "./config.js";
 import { badInput, limitError } from "./errors.js";
 import { toGlobalId } from "./relay.js";
 import { names, TYPE } from "./schema.js";
@@ -353,6 +353,22 @@ export class Translator {
         });
         continue;
       }
+      const traversal = this.api.config.traversals.get(model.name)?.get(name);
+      if (traversal) {
+        cost += this.namedTraversal(
+          model,
+          name,
+          traversal,
+          key,
+          nodes,
+          depth,
+          rows,
+          select,
+          parts,
+          loadKey,
+        );
+        continue;
+      }
       const fieldName = this.api.fieldOfOutput(model, name);
       const field = model.fields.find((f) => f.name === fieldName);
       if (!field) throw badInput(`Unknown field "${model.name}.${name}".`);
@@ -425,6 +441,50 @@ export class Translator {
         return out;
       },
     };
+  }
+
+  /**
+   * A named traversal field (`config.traversals`): the client's traversal load (`$traverse`),
+   * compiled into the parent's projection. Returns its cost (rows it may load).
+   */
+  private namedTraversal(
+    model: ResolvedNodeModel,
+    name: string,
+    traversal: ResolvedTraversal,
+    key: string,
+    nodes: readonly FieldNode[],
+    depth: number,
+    rows: number,
+    select: AnyRecord,
+    parts: ((row: AnyRecord, out: Shaped) => void)[],
+    loadKey: (key: string, relation: string) => string,
+  ): number {
+    if (this.limits.maxDepth !== undefined && depth + 1 > this.limits.maxDepth) {
+      throw limitError(
+        "maxDepth",
+        `${model.name}.${name} is nested ${depth + 1} relations deep; the limit is ${this.limits.maxDepth} (maxDepth).`,
+      );
+    }
+    const end = this.api.node(traversal.end);
+    const args = this.args(model.name, nodes[0]!);
+    const load: AnyRecord = { $traverse: { via: traversal.via } };
+    const where = this.where(end, args.where);
+    if (where !== undefined) load.where = where;
+    const orderBy = this.orderBy(end, args.orderBy);
+    if (orderBy !== undefined) load.orderBy = orderBy;
+    if (args.skip !== undefined && args.skip !== null) load.skip = args.skip;
+    const take = this.take(args.take, `${model.name}.${name}`);
+    if (take !== undefined) load.take = take;
+    const childRows = rows * this.listRows(take);
+    const sub = this.node(end, this.subSelections(nodes), undefined, depth + 1, childRows);
+    load.select = sub.select;
+    const k = loadKey(key, name);
+    select[k] = load;
+    parts.push((row, out) => {
+      const v = row[k];
+      out[key] = Array.isArray(v) ? v.map((x) => sub.shape(x as AnyRecord)) : [];
+    });
+    return childRows + sub.cost;
   }
 
   // ---------------------------------------------------------------------------

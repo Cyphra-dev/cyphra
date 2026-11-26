@@ -107,6 +107,11 @@ export const names = {
   vectorField: (m: string) => `${m}VectorField`,
   searchIndexes: (m: string) => `${m}SearchIndexes`,
   similarFields: (m: string) => `${m}SimilarFields`,
+  traverseRelation: (m: string) => `${m}TraverseRelation`,
+  path: (m: string) => `${m}Path`,
+  pathEdge: (m: string) => `${m}PathEdge`,
+  pathEdgeProperties: (m: string) => `${m}PathEdgeProperties`,
+  traversal: (m: string) => `${m}Traversal`,
 };
 
 /** A scalar field of `type`, for the shared inputs of aggregate results (`IntFilter`, …). */
@@ -1270,6 +1275,7 @@ export class SchemaBuilder {
         resolve: byResponseKey,
       };
     }
+    Object.assign(fields, this.namedTraversalFields(model));
     if (this.api.scored(model)) {
       fields._score = {
         type: GraphQLFloat,
@@ -1875,6 +1881,226 @@ export class SchemaBuilder {
   }
 
   // ---------------------------------------------------------------------------
+  // Traversals
+  // ---------------------------------------------------------------------------
+
+  readonly TraversalDirection = new GraphQLEnumType({
+    name: "TraversalDirection",
+    description:
+      "Arrow direction of each hop, from the node stepped from (default: each relation's declared direction).",
+    values: { out: { value: "out" }, in: { value: "in" }, both: { value: "both" } },
+  });
+
+  readonly PathDirection = new GraphQLEnumType({
+    name: "PathDirection",
+    description: "`out`: the edge points from nodes[i] to nodes[i + 1]; `in`: the other way round.",
+    values: { out: { value: "out" }, in: { value: "in" } },
+  });
+
+  readonly TraverseDepth = new GraphQLInputObjectType({
+    name: "TraverseDepth",
+    fields: {
+      min: { type: GraphQLInt, description: "Fewest hops (default 1; 0 includes the start node)." },
+      max: { type: new GraphQLNonNull(GraphQLInt), description: "Most hops." },
+    },
+  });
+
+  /** `<Model>TraverseRelation`: the readable relations of `model` back to `model`. */
+  private traverseRelation(model: ResolvedNodeModel): GraphQLEnumType | undefined {
+    const rels = this.api.selfRelations(model);
+    if (rels.length === 0) return undefined;
+    const name = names.traverseRelation(model.name);
+    return this.named(
+      name,
+      () =>
+        new GraphQLEnumType({
+          name,
+          values: Object.fromEntries(rels.map((r) => [r.name, { value: r.name }])),
+        }),
+    );
+  }
+
+  /** The type of `_edge` on the edges of `model`'s paths (edge models of its self relations). */
+  private pathEdgeProperties(model: ResolvedNodeModel): GraphQLOutputType | undefined {
+    const edges = [
+      ...new Set(
+        this.api
+          .selfRelations(model)
+          .flatMap((r) => (r.edge && this.api.edges.has(r.edge) ? [r.edge] : [])),
+      ),
+    ].sort();
+    if (edges.length === 0) return undefined;
+    if (edges.length === 1) return this.edgeObject(edges[0]!);
+    const name = names.pathEdgeProperties(model.name);
+    return this.named(
+      name,
+      () =>
+        new GraphQLUnionType({
+          name,
+          types: () => edges.map((e) => this.edgeObject(e)),
+          resolveType,
+        }),
+    );
+  }
+
+  /** `<Model>Path`: the nodes and edges of a path between nodes of `model`. */
+  pathType(model: ResolvedNodeModel): GraphQLObjectType {
+    const name = names.path(model.name);
+    return this.named(
+      name,
+      () =>
+        new GraphQLObjectType({
+          name,
+          description: "edges[i] joins nodes[i] and nodes[i + 1].",
+          fields: () => {
+            const edgeName = names.pathEdge(model.name);
+            const props = this.pathEdgeProperties(model);
+            const edge = this.named(
+              edgeName,
+              () =>
+                new GraphQLObjectType({
+                  name: edgeName,
+                  fields: {
+                    type: {
+                      type: new GraphQLNonNull(GraphQLString),
+                      description: "The relationship type.",
+                      resolve: byResponseKey,
+                    },
+                    direction: {
+                      type: new GraphQLNonNull(this.PathDirection),
+                      resolve: byResponseKey,
+                    },
+                    ...(props
+                      ? {
+                          _edge: {
+                            type: props,
+                            description:
+                              "The edge's properties (null for an edge without a relationship model).",
+                            resolve: byResponseKey,
+                          },
+                        }
+                      : {}),
+                  },
+                }),
+            );
+            return {
+              nodes: {
+                type: new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(this.output(model)))),
+                resolve: byResponseKey,
+              },
+              edges: {
+                type: new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(edge))),
+                resolve: byResponseKey,
+              },
+            };
+          },
+        }),
+    );
+  }
+
+  /** `<Model>Traversal`: a reached node and the (shortest) path it was reached by. */
+  private traversalType(model: ResolvedNodeModel): GraphQLObjectType {
+    const name = names.traversal(model.name);
+    return this.named(
+      name,
+      () =>
+        new GraphQLObjectType({
+          name,
+          fields: () => ({
+            node: { type: new GraphQLNonNull(this.output(model)), resolve: byResponseKey },
+            path: {
+              type: new GraphQLNonNull(this.pathType(model)),
+              description:
+                "How the node was reached (the shortest such path unless distinct is false). Path nodes carry their scalar fields.",
+              resolve: byResponseKey,
+            },
+          }),
+        }),
+    );
+  }
+
+  /** Root field of `traverse`, `traversePaths` or `shortestPath` on `model`. */
+  private traversalField(
+    model: ResolvedNodeModel,
+    op: "traverse" | "traversePaths" | "shortestPath",
+    resolve: GraphQLFieldResolver<unknown, unknown> | undefined,
+  ): GraphQLFieldConfig<unknown, unknown> | undefined {
+    const via = this.traverseRelation(model);
+    if (!via) return undefined;
+    const nn = <T extends GraphQLInputType>(t: T) => new GraphQLNonNull(t);
+    const where = this.where(model);
+    const common: GraphQLFieldConfigArgumentMap = {
+      from: { type: nn(where), description: "The start node(s)." },
+      via: {
+        type: nn(new GraphQLList(nn(via))),
+        description: "Relations to follow (any of them on each hop).",
+      },
+      direction: { type: this.TraversalDirection },
+    };
+    if (op === "shortestPath") {
+      return {
+        type: this.pathType(model),
+        description:
+          "One shortest path from a from node to a to node along via (null when there is none).",
+        args: {
+          ...common,
+          to: { type: nn(where), description: "The end node(s)." },
+          maxDepth: { type: nn(GraphQLInt), description: "Longest path searched, in hops." },
+          where: { type: where, description: "Filter every intermediate node must match." },
+        },
+        resolve,
+      };
+    }
+    const order = this.orderBy(model);
+    return {
+      type: new GraphQLList(
+        new GraphQLNonNull(op === "traverse" ? this.output(model) : this.traversalType(model)),
+      ),
+      description:
+        op === "traverse"
+          ? "The nodes reached from the from node(s) along via, in depth.min..depth.max hops."
+          : "The nodes reached from the from node(s) along via, with the path each was reached by.",
+      args: {
+        ...common,
+        depth: { type: nn(this.TraverseDepth) },
+        where: { type: where, description: "Filter on the reached nodes." },
+        distinct: {
+          type: GraphQLBoolean,
+          description: "Each reached node once (default true); false: one result per path.",
+        },
+        ...(order ? { orderBy: { type: new GraphQLList(nn(order)) } } : {}),
+        skip: { type: GraphQLInt },
+        take: { type: GraphQLInt },
+      },
+      resolve,
+    };
+  }
+
+  /** The named traversal fields of `model` (`config.traversals`). */
+  private namedTraversalFields(
+    model: ResolvedNodeModel,
+  ): GraphQLFieldConfigMap<AnyRecord, unknown> {
+    const out: GraphQLFieldConfigMap<AnyRecord, unknown> = {};
+    for (const [name, t] of this.api.config.traversals.get(model.name) ?? []) {
+      const end = this.api.node(t.end);
+      const args: GraphQLFieldConfigArgumentMap = {};
+      if (t.args.has("where")) args.where = { type: this.where(end) };
+      const order = this.orderBy(end);
+      if (t.args.has("orderBy") && order)
+        args.orderBy = { type: new GraphQLList(new GraphQLNonNull(order)) };
+      if (t.args.has("skip")) args.skip = { type: GraphQLInt };
+      if (t.args.has("take")) args.take = { type: GraphQLInt };
+      out[name] = {
+        type: new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(this.output(end)))),
+        description: t.description ?? `The ${end.name} nodes this traversal reaches (each once).`,
+        args,
+        resolve: byResponseKey,
+      };
+    }
+    return out;
+  }
+
+  // ---------------------------------------------------------------------------
   // Root
   // ---------------------------------------------------------------------------
 
@@ -1953,6 +2179,10 @@ export class SchemaBuilder {
           resolve,
         };
       }
+      case "traverse":
+      case "traversePaths":
+      case "shortestPath":
+        return this.traversalField(model, op, resolve);
       case "search":
       case "findSimilar":
         return {

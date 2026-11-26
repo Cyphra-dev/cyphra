@@ -36,8 +36,15 @@ import {
   q,
 } from "./compile.js";
 import { CyphraValidationError } from "./errors.js";
-import { decodePath, decodePathEdges } from "./path.js";
-import { edgeWhereModel, parseDepth, resolveHops, viaRelations } from "./traverse.js";
+import { decodePath, decodePathEdges, pathNodeProperties } from "./path.js";
+import {
+  edgeWhereModel,
+  parseDepth,
+  resolveHops,
+  stepOrEnd,
+  stepWhere,
+  viaRelations,
+} from "./traverse.js";
 import { unsupportedOnFalkorDB } from "../dialect.js";
 
 type AnyRecord = Record<string, unknown>;
@@ -128,7 +135,7 @@ function listPath(ctx: QueryContext, nodes: string, rels: string, nodeProperties
   const x = ctx.variable("x");
   const i = ctx.variable("i");
   const rel = `${rels}[${i}]`;
-  const props = nodeProperties ? `, properties: properties(${x})` : "";
+  const props = nodeProperties ? `, properties: ${pathNodeProperties(ctx, x)}` : "";
   return (
     `{nodes: [${x} IN ${nodes} | {labels: labels(${x})${props}}], ` +
     `edges: [${i} IN range(0, size(${rels}) - 1) | ` +
@@ -174,7 +181,7 @@ export function falkordbTraverse(
                 e,
                 h.spec.edgeWhere,
               ),
-        h.spec.where === undefined ? undefined : (t) => compileWhere(ctx, h.to, t, h.spec.where),
+        stepWhere(ctx, h.to, h.spec.where),
         `*${h.min}..${h.max}`,
         where,
       );
@@ -199,7 +206,7 @@ export function falkordbTraverse(
         args.edgeWhere === undefined
           ? null
           : compileWhere(ctx, edgeWhereModel(ctx.schema, model, rels), e, args.edgeWhere),
-      undefined,
+      stepWhere(ctx, model, undefined),
       `*${depth.min}..${depth.max}`,
       "traverse",
     );
@@ -283,12 +290,7 @@ export function falkordbShortestPath(
       args.edgeWhere === undefined
         ? null
         : compileWhere(ctx, edgeWhereModel(ctx.schema, model, rels, op), e, args.edgeWhere),
-    args.where === undefined
-      ? undefined
-      : (m) => {
-          const where = compileWhere(ctx, model, m, args.where);
-          return where ? `${m} = t OR (${where})` : null;
-        },
+    stepOrEnd(ctx, model, args.where),
     `*1..${max}`,
     op,
     false,

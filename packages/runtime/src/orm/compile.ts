@@ -23,6 +23,7 @@ import type { QueryMode } from "./types.js";
 import type { CyphraDialect } from "../dialect.js";
 import { compileLabelsFilter, decodeDynamicLabels, dynamicLabelsOf } from "./labels.js";
 import type { EngineRules, ModelRules, RuleOperation, RuleValue } from "./scope.js";
+import { compileTraverseLoad } from "./traverse.js";
 
 /** Quote an identifier for Cypher (labels, property keys, relationship types). */
 export function q(id: string): string {
@@ -1226,6 +1227,8 @@ export type Shape = {
     readonly shape: Shape;
     readonly edge?: readonly ResolvedScalarField[];
   }[];
+  /** Traversal loads (`$traverse`, internal): lists of the nodes reached, under their keys. */
+  readonly traversals?: readonly { readonly key: string; readonly shape: Shape }[];
   /** Relations counted under `_count` (absent: no `_count` key in the result). */
   readonly counts?: readonly ResolvedRelationField[];
   /** `true` when `$labels` is selected: the result gets the node's dynamic labels. */
@@ -1266,6 +1269,7 @@ export function compileProjection(
   let counts: { field: ResolvedRelationField; where: unknown }[] | undefined;
   let on: { spec: AnyRecord; label: string } | undefined;
   let withLabels = false;
+  const traversals: { key: string; spec: AnyRecord; label: string }[] = [];
 
   const takeRelations = (spec: AnyRecord, label: string) => {
     for (const [key, v] of Object.entries(spec)) {
@@ -1296,6 +1300,10 @@ export function compileProjection(
           );
         }
         on = { spec: v, label };
+        continue;
+      }
+      if (isPlainObject(v) && v.$traverse !== undefined) {
+        traversals.push({ key, spec: v, label });
         continue;
       }
       if (isPlainObject(v) && v.$relation !== undefined) {
@@ -1420,6 +1428,12 @@ export function compileProjection(
       ...(edgeModel ? { edge: edgeModel.properties } : {}),
     });
   }
+  const travShapes: { key: string; shape: Shape }[] = [];
+  for (const { key, spec, label } of traversals) {
+    const t = compileTraverseLoad(ctx, model, alias, key, spec, label);
+    entries.push(`${q(key)}: ${t.expr}`);
+    travShapes.push({ key, shape: t.shape });
+  }
   if (counts) {
     const map = counts.map(
       ({ field, where }) =>
@@ -1435,6 +1449,7 @@ export function compileProjection(
       scalars,
       ...(variants ? { variants } : {}),
       relations: relShapes,
+      ...(travShapes.length ? { traversals: travShapes } : {}),
       ...(counts ? { counts: counts.map((c) => c.field) } : {}),
       ...(withLabels ? { labels: true as const } : {}),
       ...(ctx.raw ? { raw: true as const } : {}),
@@ -1591,6 +1606,9 @@ export function decodeRow(shape: Shape, row: unknown): AnyRecord | null {
     };
     const v = src[r.key];
     out[r.key] = r.field.many ? ((v as unknown[] | null) ?? []).map(decodeItem) : decodeItem(v);
+  }
+  for (const t of shape.traversals ?? []) {
+    out[t.key] = ((src[t.key] as unknown[] | null) ?? []).map((v) => decodeRow(t.shape, v));
   }
   if (shape.counts) {
     const raw = (src["_count"] ?? {}) as AnyRecord;

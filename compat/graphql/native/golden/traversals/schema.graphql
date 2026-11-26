@@ -1,0 +1,881 @@
+input BooleanFilter {
+  equals: Boolean
+  not: Boolean
+}
+
+"""
+Aggregates of the field in each group; the other filters need the field in by.
+"""
+input BooleanHaving {
+  """The number of non-null values."""
+  _count: IntFilter
+  equals: Boolean
+  not: Boolean
+}
+
+type Chunk {
+  """
+  Number of related nodes per to-many relation (only the selected ones are counted).
+  """
+  _count: ChunkCount!
+
+  """Chunks about the same entities, or entities related to them."""
+  context(orderBy: [ChunkOrderBy!], take: Int, where: ChunkWhere): [Chunk!]!
+  entities(orderBy: [EntityOrderBy!], skip: Int, take: Int, where: EntityWhere): [Entity!]!
+  hidden: Boolean!
+  id: ID!
+  text: String!
+}
+
+type ChunkAggregate {
+  _count: ChunkCountAggregate!
+  _max: ChunkMaxAggregate!
+  _min: ChunkMinAggregate!
+}
+
+type ChunkCount {
+  entities(where: EntityWhere): Int!
+}
+
+"""
+`_all`: the number of nodes; a field: the number of its non-null values.
+"""
+type ChunkCountAggregate {
+  _all: Int!
+  hidden: Int!
+  id: Int!
+  text: Int!
+}
+
+input ChunkCountAggregateOrderBy {
+  _all: SortOrder
+  hidden: SortOrder
+  id: SortOrder
+  text: SortOrder
+}
+
+input ChunkCountFilter {
+  equals: Int
+  gt: Int
+  gte: Int
+  in: [Int!]
+  lt: Int
+  lte: Int
+  not: Int
+  notIn: [Int!]
+
+  """Count only these nodes."""
+  where: ChunkWhere
+}
+
+input ChunkCountWhere {
+  entities: EntityCountFilter
+}
+
+"""
+One group: its keys (only the fields listed in by can be selected) and aggregates.
+"""
+type ChunkGroup {
+  _count: ChunkCountAggregate!
+  _max: ChunkMaxAggregate!
+  _min: ChunkMinAggregate!
+  hidden: Boolean
+  id: ID
+  text: String
+}
+
+"""The fields to group on: at least one."""
+input ChunkGroupByInput {
+  """Fields of the model."""
+  fields: [ChunkGroupField!]
+}
+
+enum ChunkGroupField {
+  hidden
+  id
+  text
+}
+
+"""
+One key per element of the orderBy list: a key listed in by, or an aggregate.
+"""
+input ChunkGroupOrderBy {
+  _count: ChunkCountAggregateOrderBy
+  _max: ChunkMinMaxAggregateOrderBy
+  _min: ChunkMinMaxAggregateOrderBy
+  hidden: SortOrder
+  id: SortOrder
+  text: SortOrder
+}
+
+input ChunkHaving {
+  AND: [ChunkHaving!]
+  NOT: ChunkHaving
+  OR: [ChunkHaving!]
+  hidden: BooleanHaving
+  id: IDHaving
+  text: StringHaving
+}
+
+type ChunkList {
+  nodes: [Chunk!]!
+  pageInfo: PageInfo!
+
+  """
+  Number of nodes matching where, ignoring paging. Counted only when selected.
+  """
+  totalCount: Int!
+}
+
+input ChunkListRelationFilter {
+  """Every related node matches."""
+  every: ChunkWhere
+
+  """No related node matches."""
+  none: ChunkWhere
+
+  """At least one related node matches."""
+  some: ChunkWhere
+}
+
+"""Largest non-null values."""
+type ChunkMaxAggregate {
+  id: ID
+  text: String
+}
+
+"""Smallest non-null values."""
+type ChunkMinAggregate {
+  id: ID
+  text: String
+}
+
+input ChunkMinMaxAggregateOrderBy {
+  id: SortOrder
+  text: SortOrder
+}
+
+"""One key per element of the orderBy list."""
+input ChunkOrderBy {
+  """Sort by the number of related nodes."""
+  entities: EntityRelationCountOrder
+  hidden: SortOrder
+  id: SortOrder
+  text: SortOrder
+}
+
+input ChunkRelationCountOrder {
+  _count: SortOrder!
+
+  """Count only the matching nodes."""
+  where: ChunkWhere
+}
+
+input ChunkWhere {
+  AND: [ChunkWhere!]
+  NOT: ChunkWhere
+  OR: [ChunkWhere!]
+
+  """Filters on the number of related nodes (only the readable ones)."""
+  _count: ChunkCountWhere
+  entities: EntityListRelationFilter
+  hidden: BooleanFilter
+  id: IDFilter
+  text: StringFilter
+}
+
+"""
+At least one unique key (checked when the query runs), plus filters on the other fields.
+"""
+input ChunkWhereUnique {
+  AND: [ChunkWhere!]
+  NOT: ChunkWhere
+  OR: [ChunkWhere!]
+  entities: EntityListRelationFilter
+  hidden: BooleanFilter
+  id: ID
+  text: StringFilter
+}
+
+type Entity {
+  """
+  Number of related nodes per to-many relation (only the selected ones are counted).
+  """
+  _count: EntityCount!
+  chunks(orderBy: [ChunkOrderBy!], skip: Int, take: Int, where: ChunkWhere): [Chunk!]!
+  id: ID!
+  name: String!
+  related(orderBy: [EntityOrderBy!], skip: Int, take: Int, where: EntityWhere): [Entity!]!
+}
+
+type EntityAggregate {
+  _count: EntityCountAggregate!
+  _max: EntityMaxAggregate!
+  _min: EntityMinAggregate!
+}
+
+type EntityCount {
+  chunks(where: ChunkWhere): Int!
+  related(where: EntityWhere): Int!
+}
+
+"""
+`_all`: the number of nodes; a field: the number of its non-null values.
+"""
+type EntityCountAggregate {
+  _all: Int!
+  id: Int!
+  name: Int!
+}
+
+input EntityCountAggregateOrderBy {
+  _all: SortOrder
+  id: SortOrder
+  name: SortOrder
+}
+
+input EntityCountFilter {
+  equals: Int
+  gt: Int
+  gte: Int
+  in: [Int!]
+  lt: Int
+  lte: Int
+  not: Int
+  notIn: [Int!]
+
+  """Count only these nodes."""
+  where: EntityWhere
+}
+
+input EntityCountWhere {
+  chunks: ChunkCountFilter
+  related: EntityCountFilter
+}
+
+"""
+One group: its keys (only the fields listed in by can be selected) and aggregates.
+"""
+type EntityGroup {
+  _count: EntityCountAggregate!
+  _max: EntityMaxAggregate!
+  _min: EntityMinAggregate!
+  id: ID
+  name: String
+}
+
+"""The fields to group on: at least one."""
+input EntityGroupByInput {
+  """Fields of the model."""
+  fields: [EntityGroupField!]
+}
+
+enum EntityGroupField {
+  id
+  name
+}
+
+"""
+One key per element of the orderBy list: a key listed in by, or an aggregate.
+"""
+input EntityGroupOrderBy {
+  _count: EntityCountAggregateOrderBy
+  _max: EntityMinMaxAggregateOrderBy
+  _min: EntityMinMaxAggregateOrderBy
+  id: SortOrder
+  name: SortOrder
+}
+
+input EntityHaving {
+  AND: [EntityHaving!]
+  NOT: EntityHaving
+  OR: [EntityHaving!]
+  id: IDHaving
+  name: StringHaving
+}
+
+type EntityList {
+  nodes: [Entity!]!
+  pageInfo: PageInfo!
+
+  """
+  Number of nodes matching where, ignoring paging. Counted only when selected.
+  """
+  totalCount: Int!
+}
+
+input EntityListRelationFilter {
+  """Every related node matches."""
+  every: EntityWhere
+
+  """No related node matches."""
+  none: EntityWhere
+
+  """At least one related node matches."""
+  some: EntityWhere
+}
+
+"""Largest non-null values."""
+type EntityMaxAggregate {
+  id: ID
+  name: String
+}
+
+"""Smallest non-null values."""
+type EntityMinAggregate {
+  id: ID
+  name: String
+}
+
+input EntityMinMaxAggregateOrderBy {
+  id: SortOrder
+  name: SortOrder
+}
+
+"""One key per element of the orderBy list."""
+input EntityOrderBy {
+  """Sort by the number of related nodes."""
+  chunks: ChunkRelationCountOrder
+  id: SortOrder
+  name: SortOrder
+
+  """Sort by the number of related nodes."""
+  related: EntityRelationCountOrder
+}
+
+input EntityRelationCountOrder {
+  _count: SortOrder!
+
+  """Count only the matching nodes."""
+  where: EntityWhere
+}
+
+input EntityWhere {
+  AND: [EntityWhere!]
+  NOT: EntityWhere
+  OR: [EntityWhere!]
+
+  """Filters on the number of related nodes (only the readable ones)."""
+  _count: EntityCountWhere
+  chunks: ChunkListRelationFilter
+  id: IDFilter
+  name: StringFilter
+  related: EntityListRelationFilter
+}
+
+"""
+At least one unique key (checked when the query runs), plus filters on the other fields.
+"""
+input EntityWhereUnique {
+  AND: [EntityWhere!]
+  NOT: EntityWhere
+  OR: [EntityWhere!]
+  chunks: ChunkListRelationFilter
+  id: ID
+  name: StringFilter
+  related: EntityListRelationFilter
+}
+
+type Follows {
+  since: Int!
+}
+
+input IDFilter {
+  contains: ID
+  endsWith: ID
+  equals: ID
+  gt: ID
+  gte: ID
+  in: [ID!]
+  lt: ID
+  lte: ID
+  mode: QueryMode
+  not: ID
+  notIn: [ID!]
+  startsWith: ID
+}
+
+"""
+Aggregates of the field in each group; the other filters need the field in by.
+"""
+input IDHaving {
+  """The number of non-null values."""
+  _count: IntFilter
+  _max: IDFilter
+  _min: IDFilter
+  contains: ID
+  endsWith: ID
+  equals: ID
+  gt: ID
+  gte: ID
+  in: [ID!]
+  lt: ID
+  lte: ID
+  mode: QueryMode
+  not: ID
+  notIn: [ID!]
+  startsWith: ID
+}
+
+input IntFilter {
+  equals: Int
+  gt: Int
+  gte: Int
+  in: [Int!]
+  lt: Int
+  lte: Int
+  not: Int
+  notIn: [Int!]
+}
+
+type PageInfo {
+  endCursor: String
+  hasNextPage: Boolean!
+  hasPreviousPage: Boolean!
+  startCursor: String
+}
+
+"""
+`out`: the edge points from nodes[i] to nodes[i + 1]; `in`: the other way round.
+"""
+enum PathDirection {
+  in
+  out
+}
+
+type Person {
+  """
+  Number of related nodes per to-many relation (only the selected ones are counted).
+  """
+  _count: PersonCount!
+
+  """
+  Edge properties when this Person is reached through a relation with a relationship model (selecting it anywhere else is an error).
+  """
+  _edge: Follows
+
+  """Null where a read rule hides it."""
+  email: String
+  follows(orderBy: [PersonOrderBy!], skip: Int, take: Int, where: PersonWhere): [Person!]!
+  hidden: Boolean!
+  id: ID!
+  name: String!
+}
+
+type PersonAggregate {
+  _count: PersonCountAggregate!
+  _max: PersonMaxAggregate!
+  _min: PersonMinAggregate!
+}
+
+type PersonCount {
+  follows(where: PersonWhere): Int!
+}
+
+"""
+`_all`: the number of nodes; a field: the number of its non-null values.
+"""
+type PersonCountAggregate {
+  _all: Int!
+  email: Int!
+  hidden: Int!
+  id: Int!
+  name: Int!
+}
+
+input PersonCountAggregateOrderBy {
+  _all: SortOrder
+  email: SortOrder
+  hidden: SortOrder
+  id: SortOrder
+  name: SortOrder
+}
+
+input PersonCountFilter {
+  equals: Int
+  gt: Int
+  gte: Int
+  in: [Int!]
+  lt: Int
+  lte: Int
+  not: Int
+  notIn: [Int!]
+
+  """Count only these nodes."""
+  where: PersonWhere
+}
+
+input PersonCountWhere {
+  follows: PersonCountFilter
+}
+
+"""
+One group: its keys (only the fields listed in by can be selected) and aggregates.
+"""
+type PersonGroup {
+  _count: PersonCountAggregate!
+  _max: PersonMaxAggregate!
+  _min: PersonMinAggregate!
+  email: String
+  hidden: Boolean
+  id: ID
+  name: String
+}
+
+"""The fields to group on: at least one."""
+input PersonGroupByInput {
+  """Fields of the model."""
+  fields: [PersonGroupField!]
+}
+
+enum PersonGroupField {
+  email
+  hidden
+  id
+  name
+}
+
+"""
+One key per element of the orderBy list: a key listed in by, or an aggregate.
+"""
+input PersonGroupOrderBy {
+  _count: PersonCountAggregateOrderBy
+  _max: PersonMinMaxAggregateOrderBy
+  _min: PersonMinMaxAggregateOrderBy
+  email: SortOrder
+  hidden: SortOrder
+  id: SortOrder
+  name: SortOrder
+}
+
+input PersonHaving {
+  AND: [PersonHaving!]
+  NOT: PersonHaving
+  OR: [PersonHaving!]
+  email: StringHaving
+  hidden: BooleanHaving
+  id: IDHaving
+  name: StringHaving
+}
+
+type PersonList {
+  nodes: [Person!]!
+  pageInfo: PageInfo!
+
+  """
+  Number of nodes matching where, ignoring paging. Counted only when selected.
+  """
+  totalCount: Int!
+}
+
+input PersonListRelationFilter {
+  """Every related node matches."""
+  every: PersonWhere
+
+  """No related node matches."""
+  none: PersonWhere
+
+  """At least one related node matches."""
+  some: PersonWhere
+}
+
+"""Largest non-null values."""
+type PersonMaxAggregate {
+  email: String
+  id: ID
+  name: String
+}
+
+"""Smallest non-null values."""
+type PersonMinAggregate {
+  email: String
+  id: ID
+  name: String
+}
+
+input PersonMinMaxAggregateOrderBy {
+  email: SortOrder
+  id: SortOrder
+  name: SortOrder
+}
+
+"""One key per element of the orderBy list."""
+input PersonOrderBy {
+  email: SortOrder
+
+  """Sort by the number of related nodes."""
+  follows: PersonRelationCountOrder
+  hidden: SortOrder
+  id: SortOrder
+  name: SortOrder
+}
+
+"""edges[i] joins nodes[i] and nodes[i + 1]."""
+type PersonPath {
+  edges: [PersonPathEdge!]!
+  nodes: [Person!]!
+}
+
+type PersonPathEdge {
+  """The edge's properties (null for an edge without a relationship model)."""
+  _edge: Follows
+  direction: PathDirection!
+
+  """The relationship type."""
+  type: String!
+}
+
+input PersonRelationCountOrder {
+  _count: SortOrder!
+
+  """Count only the matching nodes."""
+  where: PersonWhere
+}
+
+type PersonTraversal {
+  node: Person!
+
+  """
+  How the node was reached (the shortest such path unless distinct is false). Path nodes carry their scalar fields.
+  """
+  path: PersonPath!
+}
+
+enum PersonTraverseRelation {
+  follows
+}
+
+input PersonWhere {
+  AND: [PersonWhere!]
+  NOT: PersonWhere
+  OR: [PersonWhere!]
+
+  """Filters on the number of related nodes (only the readable ones)."""
+  _count: PersonCountWhere
+  email: StringFilter
+  follows: PersonListRelationFilter
+  hidden: BooleanFilter
+  id: IDFilter
+  name: StringFilter
+}
+
+"""
+At least one unique key (checked when the query runs), plus filters on the other fields.
+"""
+input PersonWhereUnique {
+  AND: [PersonWhere!]
+  NOT: PersonWhere
+  OR: [PersonWhere!]
+  email: StringFilter
+  follows: PersonListRelationFilter
+  hidden: BooleanFilter
+  id: ID
+  name: StringFilter
+}
+
+type Query {
+  """
+  Aggregates over the matching nodes (with skip / take: over that window).
+  """
+  chunkAggregate(orderBy: [ChunkOrderBy!], skip: Int, take: Int, where: ChunkWhere): ChunkAggregate
+  chunkCount(where: ChunkWhere): Int
+  chunkFindFirst(orderBy: [ChunkOrderBy!], skip: Int, where: ChunkWhere): Chunk
+  chunkFindMany(
+    """A cursor (pageInfo.endCursor): the page after it."""
+    after: String
+
+    """A cursor (pageInfo.startCursor): the page before it."""
+    before: String
+    orderBy: [ChunkOrderBy!]
+    skip: Int
+    take: Int
+    where: ChunkWhere
+  ): ChunkList
+  chunkFindUnique(where: ChunkWhereUnique!): Chunk
+
+  """
+  Groups of the matching nodes by the fields in by, with their aggregates.
+  """
+  chunkGroupBy(by: ChunkGroupByInput!, having: ChunkHaving, orderBy: [ChunkGroupOrderBy!], skip: Int, take: Int, where: ChunkWhere): [ChunkGroup!]
+
+  """
+  Aggregates over the matching nodes (with skip / take: over that window).
+  """
+  entityAggregate(orderBy: [EntityOrderBy!], skip: Int, take: Int, where: EntityWhere): EntityAggregate
+  entityCount(where: EntityWhere): Int
+  entityFindFirst(orderBy: [EntityOrderBy!], skip: Int, where: EntityWhere): Entity
+  entityFindMany(
+    """A cursor (pageInfo.endCursor): the page after it."""
+    after: String
+
+    """A cursor (pageInfo.startCursor): the page before it."""
+    before: String
+    orderBy: [EntityOrderBy!]
+    skip: Int
+    take: Int
+    where: EntityWhere
+  ): EntityList
+  entityFindUnique(where: EntityWhereUnique!): Entity
+
+  """
+  Groups of the matching nodes by the fields in by, with their aggregates.
+  """
+  entityGroupBy(by: EntityGroupByInput!, having: EntityHaving, orderBy: [EntityGroupOrderBy!], skip: Int, take: Int, where: EntityWhere): [EntityGroup!]
+
+  """
+  Aggregates over the matching nodes (with skip / take: over that window).
+  """
+  personAggregate(orderBy: [PersonOrderBy!], skip: Int, take: Int, where: PersonWhere): PersonAggregate
+  personCount(where: PersonWhere): Int
+  personFindFirst(orderBy: [PersonOrderBy!], skip: Int, where: PersonWhere): Person
+  personFindMany(
+    """A cursor (pageInfo.endCursor): the page after it."""
+    after: String
+
+    """A cursor (pageInfo.startCursor): the page before it."""
+    before: String
+    orderBy: [PersonOrderBy!]
+    skip: Int
+    take: Int
+    where: PersonWhere
+  ): PersonList
+  personFindUnique(where: PersonWhereUnique!): Person
+
+  """
+  Groups of the matching nodes by the fields in by, with their aggregates.
+  """
+  personGroupBy(by: PersonGroupByInput!, having: PersonHaving, orderBy: [PersonGroupOrderBy!], skip: Int, take: Int, where: PersonWhere): [PersonGroup!]
+
+  """
+  One shortest path from a from node to a to node along via (null when there is none).
+  """
+  personShortestPath(
+    direction: TraversalDirection
+
+    """The start node(s)."""
+    from: PersonWhere!
+
+    """Longest path searched, in hops."""
+    maxDepth: Int!
+
+    """The end node(s)."""
+    to: PersonWhere!
+
+    """Relations to follow (any of them on each hop)."""
+    via: [PersonTraverseRelation!]!
+
+    """Filter every intermediate node must match."""
+    where: PersonWhere
+  ): PersonPath
+
+  """
+  The nodes reached from the from node(s) along via, in depth.min..depth.max hops.
+  """
+  personTraverse(
+    depth: TraverseDepth!
+    direction: TraversalDirection
+
+    """Each reached node once (default true); false: one result per path."""
+    distinct: Boolean
+
+    """The start node(s)."""
+    from: PersonWhere!
+    orderBy: [PersonOrderBy!]
+    skip: Int
+    take: Int
+
+    """Relations to follow (any of them on each hop)."""
+    via: [PersonTraverseRelation!]!
+
+    """Filter on the reached nodes."""
+    where: PersonWhere
+  ): [Person!]
+
+  """
+  The nodes reached from the from node(s) along via, with the path each was reached by.
+  """
+  personTraversePaths(
+    depth: TraverseDepth!
+    direction: TraversalDirection
+
+    """Each reached node once (default true); false: one result per path."""
+    distinct: Boolean
+
+    """The start node(s)."""
+    from: PersonWhere!
+    orderBy: [PersonOrderBy!]
+    skip: Int
+    take: Int
+
+    """Relations to follow (any of them on each hop)."""
+    via: [PersonTraverseRelation!]!
+
+    """Filter on the reached nodes."""
+    where: PersonWhere
+  ): [PersonTraversal!]
+}
+
+"""`insensitive` compares lower-cased values."""
+enum QueryMode {
+  default
+  insensitive
+}
+
+enum SortOrder {
+  asc
+  desc
+}
+
+input StringFilter {
+  contains: String
+  endsWith: String
+  equals: String
+  gt: String
+  gte: String
+  in: [String!]
+  lt: String
+  lte: String
+  mode: QueryMode
+  not: String
+  notIn: [String!]
+  startsWith: String
+}
+
+"""
+Aggregates of the field in each group; the other filters need the field in by.
+"""
+input StringHaving {
+  """The number of non-null values."""
+  _count: IntFilter
+  _max: StringFilter
+  _min: StringFilter
+  contains: String
+  endsWith: String
+  equals: String
+  gt: String
+  gte: String
+  in: [String!]
+  lt: String
+  lte: String
+  mode: QueryMode
+  not: String
+  notIn: [String!]
+  startsWith: String
+}
+
+"""
+Arrow direction of each hop, from the node stepped from (default: each relation's declared direction).
+"""
+enum TraversalDirection {
+  both
+  in
+  out
+}
+
+input TraverseDepth {
+  """Most hops."""
+  max: Int!
+
+  """Fewest hops (default 1; 0 includes the start node)."""
+  min: Int
+}

@@ -1,0 +1,86 @@
+{
+  "data": {
+    "personTraversePaths": [
+      {
+        "node": {
+          "id": "a",
+          "email": "a@x.io"
+        },
+        "path": {
+          "nodes": [
+            {
+              "id": "a",
+              "email": "a@x.io"
+            }
+          ],
+          "edges": []
+        }
+      },
+      {
+        "node": {
+          "id": "b",
+          "email": null
+        },
+        "path": {
+          "nodes": [
+            {
+              "id": "a",
+              "email": "a@x.io"
+            },
+            {
+              "id": "b",
+              "email": null
+            }
+          ],
+          "edges": [
+            {
+              "type": "FOLLOWS",
+              "direction": "out",
+              "_edge": {
+                "since": 2020
+              }
+            }
+          ]
+        }
+      },
+      {
+        "node": {
+          "id": "d",
+          "email": null
+        },
+        "path": {
+          "nodes": [
+            {
+              "id": "a",
+              "email": "a@x.io"
+            },
+            {
+              "id": "b",
+              "email": null
+            },
+            {
+              "id": "d",
+              "email": null
+            }
+          ],
+          "edges": [
+            {
+              "type": "FOLLOWS",
+              "direction": "out",
+              "_edge": {
+                "since": 2020
+              }
+            },
+            {
+              "type": "FOLLOWS",
+              "direction": "out",
+              "_edge": {
+                "since": 2023
+              }
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

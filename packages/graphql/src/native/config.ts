@@ -26,9 +26,14 @@ export type ReadOperation = (typeof READ_OPERATIONS)[number];
 
 /**
  * The expensive reads, off by default (the `traverse` group): raw vector search (`findSimilar`,
- * which takes a vector from the client).
+ * which takes a vector from the client), traversals and shortest paths.
  */
-export const TRAVERSE_OPERATIONS = ["findSimilar"] as const;
+export const TRAVERSE_OPERATIONS = [
+  "findSimilar",
+  "traverse",
+  "traversePaths",
+  "shortestPath",
+] as const;
 
 /** An operation of the `traverse` group (`<model>FindSimilar`, …). */
 export type TraverseOperation = (typeof TRAVERSE_OPERATIONS)[number];
@@ -80,7 +85,10 @@ export function isWrite(op: RootOperation): op is WriteOperation {
  */
 export type OperationToggles = {
   readonly read?: boolean | readonly ReadOperation[];
-  /** The expensive reads: `findSimilar` (raw vector search). Off by default. */
+  /**
+   * The expensive reads: `findSimilar` (raw vector search), `traverse`, `traversePaths`,
+   * `shortestPath`. Off by default.
+   */
   readonly traverse?: boolean | readonly TraverseOperation[];
   readonly create?: boolean | readonly CreateOperation[];
   readonly update?: boolean | readonly UpdateOperation[];
@@ -227,6 +235,43 @@ export type Limits = {
    * (`maxTake`, or 100, when it sets none); every to-one relation loads at most one.
    */
   readonly maxComplexity?: number;
+  /**
+   * Largest `depth.max` of a traversal and `maxDepth` of a shortest path (the client's
+   * `maxTraversalDepth`, default 10, applies too: the lower wins).
+   */
+  readonly maxTraversalDepth?: number;
+};
+
+/** One hop of a named traversal: relation(s) of the model the previous hop reached. */
+export type TraversalHop = {
+  /** A relation of the model this hop steps from, or several leading to the same model. */
+  readonly rel: string | readonly string[];
+  /** Arrow direction (default: each relation's declared direction). */
+  readonly direction?: "out" | "in" | "both";
+  /** Repeat the hop `min` (default 1) to `max` times: only on a relation back to the same model. */
+  readonly depth?: { readonly min?: number; readonly max: number };
+};
+
+/**
+ * A named traversal field (`traversals.<Model>.<field>`): a field of the model's type returning
+ * the nodes the hops reach from each node, compiled into the parent's statement (Neo4j).
+ */
+export type NamedTraversal = {
+  /** The hops, in order: `[{ rel: "entities" }, { rel: "related", depth: { max: 2 } }, { rel: "chunks" }]`. */
+  readonly via: readonly TraversalHop[];
+  /** What clients may pass (default: none): `where`, `orderBy`, `skip`, `take` on the reached nodes. */
+  readonly args?: readonly ("where" | "orderBy" | "skip" | "take")[];
+  /** The field's description in the schema. */
+  readonly description?: string;
+};
+
+/** A checked named traversal. */
+export type ResolvedTraversal = {
+  readonly via: readonly TraversalHop[];
+  readonly args: ReadonlySet<"where" | "orderBy" | "skip" | "take">;
+  /** The model the last hop reaches. */
+  readonly end: string;
+  readonly description?: string;
 };
 
 /**
@@ -253,6 +298,13 @@ export type GraphQLConfig<TM extends TypeMap = TypeMap, Ctx = unknown> = {
     readonly [M in keyof TM & string]?: { readonly [O in RootOperation]?: string };
   };
   readonly limits?: Limits;
+  /**
+   * Named traversal fields, per model: `{ Chunk: { context: { via: [{ rel: "entities" }, …] } } }`
+   * adds `Chunk.context: [Chunk!]!`, the nodes the hops reach (see {@link NamedTraversal}).
+   */
+  readonly traversals?: {
+    readonly [M in keyof TM & string]?: { readonly [field: string]: NamedTraversal };
+  };
   /**
    * Relay: a `Node` interface with global ids, implemented by every model with an `@id` field
    * (`String`, `Int` or `BigInt`), and `node(id: ID!)`. The model's own `id` field is then
@@ -332,6 +384,8 @@ export type ResolvedConfig = {
   readonly mutationTransaction: "field" | "request";
   /** The rules of each model that has some, as configured. */
   readonly rules: ReadonlyMap<string, ConfiguredRules>;
+  /** Named traversal fields per model (field name → traversal). */
+  readonly traversals: ReadonlyMap<string, ReadonlyMap<string, ResolvedTraversal>>;
   /** Read rules of fields (functions or `{ where }`), per `Model.field` where declared. */
   readonly fieldRules: ReadonlyMap<string, ConfiguredFieldRule>;
   /** Whether the field, or the interface field it implements, has a read rule (it is nullable). */
@@ -370,7 +424,13 @@ function defaultIsAuthenticated(ctx: unknown): boolean {
   return (c.user !== undefined && c.user !== null) || (c.jwt !== undefined && c.jwt !== null);
 }
 
-const LIMIT_KEYS = ["maxDepth", "maxTake", "maxAliases", "maxComplexity"] as const;
+const LIMIT_KEYS = [
+  "maxDepth",
+  "maxTake",
+  "maxAliases",
+  "maxComplexity",
+  "maxTraversalDepth",
+] as const;
 const FIELD_KEYS = ["read", "filter", "sort", "create", "update", "deprecated"] as const;
 const TOP_KEYS = [
   "generator",
@@ -381,6 +441,7 @@ const TOP_KEYS = [
   "relay",
   "mutationTransaction",
   "isAuthenticated",
+  "traversals",
 ] as const;
 const ROOT_OPERATIONS: readonly RootOperation[] = [
   ...READ_OPERATIONS,
@@ -734,6 +795,12 @@ export function checkConfig(schema: SchemaModel, config: GraphQLConfig = {}): Re
     relay: config.relay === true,
     mutationTransaction: config.mutationTransaction ?? "field",
     rules: rulesByModel,
+    traversals: checkTraversals(
+      config.traversals,
+      byName,
+      access,
+      (limits.maxTraversalDepth as number | undefined) ?? 10,
+    ),
     fieldRules,
     fieldRuled: ruledOn,
     authenticated: (model, op) =>
@@ -751,6 +818,154 @@ export function checkConfig(schema: SchemaModel, config: GraphQLConfig = {}): Re
     },
     isAuthenticated: (ctx) => isAuthenticated(ctx) === true,
   };
+}
+
+const TRAVERSAL_KEYS = ["via", "args", "description"] as const;
+const TRAVERSAL_ARGS = ["where", "orderBy", "skip", "take"] as const;
+const HOP_KEYS = ["rel", "direction", "depth"] as const;
+
+/**
+ * Check `config.traversals`: known models (not interfaces or unions), field names free on the
+ * model, hops along readable relations of the model each hop reaches, `depth` only on a relation
+ * back to the same model, the hops' `depth.max` adding up to at most `maxDepth`.
+ */
+function checkTraversals(
+  traversals: unknown,
+  byName: ReadonlyMap<string, ResolvedNodeModel>,
+  access: (model: string, field: string) => FieldAccess,
+  maxDepth: number,
+): ReadonlyMap<string, ReadonlyMap<string, ResolvedTraversal>> {
+  const out = new Map<string, Map<string, ResolvedTraversal>>();
+  if (traversals === undefined) return out;
+  if (!isPlainObject(traversals))
+    throw new NativeSchemaError("config.traversals must be an object.");
+  for (const [name, fields] of Object.entries(traversals)) {
+    if (fields === undefined) continue;
+    const where = `config.traversals.${name}`;
+    const node = byName.get(name);
+    if (!node) {
+      throw new NativeSchemaError(
+        `config.traversals: unknown model "${name}" (models: ${[...byName.keys()].join(", ") || "none"}).`,
+      );
+    }
+    if (node.abstract) {
+      throw new NativeSchemaError(
+        `${where}: ${name} is an interface or a union; declare named traversals on its implementations.`,
+      );
+    }
+    if (!isPlainObject(fields)) throw new NativeSchemaError(`${where} must be an object.`);
+    const resolved = new Map<string, ResolvedTraversal>();
+    for (const [field, t] of Object.entries(fields)) {
+      if (t === undefined) continue;
+      const at = `${where}.${field}`;
+      if (!/^[A-Za-z][_0-9A-Za-z]*$/.test(field)) {
+        throw new NativeSchemaError(
+          `${at}: "${field}" is not a GraphQL field name (it cannot start with "_").`,
+        );
+      }
+      if (node.fields.some((f) => f.name === field) || field === "id") {
+        throw new NativeSchemaError(`${at}: ${name} already has a field "${field}".`);
+      }
+      if (!isPlainObject(t))
+        throw new NativeSchemaError(`${at} must be an object ({ via, args? }).`);
+      checkKeys(at, t, TRAVERSAL_KEYS);
+      if (!Array.isArray(t.via) || t.via.length === 0) {
+        throw new NativeSchemaError(
+          `${at}.via must be a non-empty list of hops ({ rel, direction?, depth? }).`,
+        );
+      }
+      let current = node;
+      let total = 0;
+      for (const [i, hop] of (t.via as unknown[]).entries()) {
+        const h = `${at}.via[${i}]`;
+        if (!isPlainObject(hop))
+          throw new NativeSchemaError(`${h} must be an object ({ rel, direction?, depth? }).`);
+        checkKeys(h, hop, HOP_KEYS);
+        const rels = Array.isArray(hop.rel) ? hop.rel : [hop.rel];
+        if (rels.length === 0 || rels.some((r) => typeof r !== "string")) {
+          throw new NativeSchemaError(
+            `${h}.rel must be a relation of ${current.name} or a list of them.`,
+          );
+        }
+        const targets = new Set<string>();
+        for (const r of rels as string[]) {
+          const f = current.fields.find((x) => x.name === r);
+          if (f?.kind !== "relation") {
+            throw new NativeSchemaError(
+              `${h}.rel: unknown relation "${current.name}.${r}" (relations: ${
+                current.fields
+                  .filter((x) => x.kind === "relation")
+                  .map((x) => x.name)
+                  .join(", ") || "none"
+              }).`,
+            );
+          }
+          if (!access(current.name, r).read) {
+            throw new NativeSchemaError(
+              `${h}.rel: ${current.name}.${r} is hidden by config.models.${current.name}.fields.`,
+            );
+          }
+          targets.add(f.target);
+        }
+        if (targets.size !== 1) {
+          throw new NativeSchemaError(`${h}.rel: the relations of one hop must lead to one model.`);
+        }
+        const next = byName.get([...targets][0]!)!;
+        if (
+          hop.direction !== undefined &&
+          !["out", "in", "both"].includes(hop.direction as string)
+        ) {
+          throw new NativeSchemaError(`${h}.direction must be "out", "in" or "both".`);
+        }
+        let max = 1;
+        if (hop.depth !== undefined) {
+          const d = hop.depth as AnyRecord;
+          if (next !== current) {
+            throw new NativeSchemaError(
+              `${h}.depth repeats a hop: only on a relation leading back to ${current.name}.`,
+            );
+          }
+          const int = (v: unknown, min: number) =>
+            typeof v === "number" && Number.isInteger(v) && v >= min;
+          if (
+            !isPlainObject(d) ||
+            !int(d.max, 1) ||
+            (d.min !== undefined && (!int(d.min, 0) || (d.min as number) > (d.max as number)))
+          ) {
+            throw new NativeSchemaError(
+              `${h}.depth must be { min?: integer >= 0, max: integer >= min, >= 1 }.`,
+            );
+          }
+          max = d.max as number;
+        }
+        total += max;
+        current = next;
+      }
+      if (total > maxDepth) {
+        throw new NativeSchemaError(
+          `${at}: the hops reach up to ${total} relations deep; the limit is ${maxDepth} (limits.maxTraversalDepth, default 10).`,
+        );
+      }
+      const args = t.args === undefined ? [] : t.args;
+      if (
+        !Array.isArray(args) ||
+        args.some((a) => !(TRAVERSAL_ARGS as readonly unknown[]).includes(a))
+      ) {
+        throw new NativeSchemaError(`${at}.args must be a list of ${TRAVERSAL_ARGS.join(", ")}.`);
+      }
+      if (t.description !== undefined && typeof t.description !== "string") {
+        throw new NativeSchemaError(`${at}.description must be a string.`);
+      }
+      resolved.set(field, {
+        via: t.via as TraversalHop[],
+        args: new Set(args as ("where" | "orderBy" | "skip" | "take")[]),
+        end: current.name,
+        ...(t.description !== undefined ? { description: t.description as string } : {}),
+      });
+    }
+    out.set(name, resolved);
+  }
+  return out;
 }
 
 /** Whether a model has the indexes (or the shape) an operation needs; served only then. */
@@ -774,6 +989,13 @@ function servable(
         : (node.fulltextIndexes?.length ?? 0) > 0;
     case "findSimilar":
       return node.union ? members().some(hasVectorIndex) : hasVectorIndex(node);
+    case "traverse":
+    case "traversePaths":
+    case "shortestPath":
+      // Over relations back to the same model, on a node model (path nodes are of the model).
+      return (
+        !node.abstract && node.fields.some((f) => f.kind === "relation" && f.target === node.name)
+      );
     default:
       return true;
   }

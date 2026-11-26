@@ -1,0 +1,35 @@
+{
+  "data": {
+    "toCy": null,
+    "toDi": {
+      "nodes": [
+        {
+          "id": "a",
+          "name": "Ada"
+        },
+        {
+          "id": "b",
+          "name": "Bo"
+        },
+        {
+          "id": "d",
+          "name": "Di"
+        }
+      ],
+      "edges": [
+        {
+          "direction": "out",
+          "_edge": {
+            "since": 2020
+          }
+        },
+        {
+          "direction": "out",
+          "_edge": {
+            "since": 2023
+          }
+        }
+      ]
+    }
+  }
+}

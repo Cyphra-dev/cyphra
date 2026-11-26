@@ -302,7 +302,7 @@ describe("aggregates, groupBy and search", () => {
     const named = printSchema(blog, { naming: { Post: { aggregate: "postStats" } } });
     expect(named).toContain("postStats(");
     expect(() =>
-      printSchema(blog, { models: { Post: { operations: { traverse: ["traverse"] as never } } } }),
+      printSchema(blog, { models: { Post: { operations: { traverse: ["nope"] as never } } } }),
     ).toThrow(NativeSchemaError);
   });
 
@@ -313,6 +313,70 @@ describe("aggregates, groupBy and search", () => {
       @@fulltext([title], name: "true")
     }`);
     expect(() => printSchema(s)).toThrow(/not a valid GraphQL enum value/);
+  });
+});
+
+describe("traversals", () => {
+  const graph = runtimeFixture("graph");
+
+  it("serves traverse, traversePaths and shortestPath only with the traverse group", () => {
+    expect(printSchema(blog)).not.toContain("Traverse(");
+    const sdl = printSchema(blog, {
+      models: { User: { operations: { traverse: ["traverse", "traversePaths", "shortestPath"] } } },
+    });
+    valid(sdl);
+    expect(sdl).toContain("userTraverse(");
+    expect(sdl).toContain("userTraversePaths(");
+    expect(sdl).toContain("userShortestPath(");
+    expect(sdl).toContain("enum UserTraverseRelation {\n  followers\n  following\n}");
+    expect(sdl).toContain("type UserTraversal {");
+    expect(sdl).toMatch(/type UserPathEdge \{\n {2}"""[^"]*"""\n {2}_edge: Follows/);
+    // Models without a relation back to themselves have none.
+    const all = printSchema(blog, { defaults: { operations: { traverse: true } } });
+    expect(all).not.toContain("postTraverse(");
+  });
+
+  it("adds named traversal fields, compiled from config.traversals", () => {
+    const sdl = printSchema(graph, {
+      traversals: {
+        GrChunk: {
+          context: {
+            via: [{ rel: "entities" }, { rel: "related", depth: { max: 2 } }, { rel: "chunks" }],
+            args: ["where", "take"],
+          },
+        },
+      },
+    });
+    valid(sdl);
+    expect(sdl).toMatch(/context\(take: Int, where: GrChunkWhere\): \[GrChunk!\]!/);
+  });
+
+  it("checks named traversals and limits at startup", () => {
+    const bad = (traversals: unknown, limits?: unknown) => () =>
+      printSchema(graph, { traversals, limits } as never);
+    expect(bad({ Nope: { x: { via: [{ rel: "a" }] } } })).toThrow(/unknown model "Nope"/);
+    expect(bad({ GrChunk: { text: { via: [{ rel: "entities" }] } } })).toThrow(
+      /already has a field "text"/,
+    );
+    expect(bad({ GrChunk: { x: { via: [{ rel: "nope" }] } } })).toThrow(/unknown relation/);
+    expect(bad({ GrChunk: { x: { via: [{ rel: "entities", depth: { max: 2 } }] } } })).toThrow(
+      /only on a relation leading back/,
+    );
+    expect(
+      bad(
+        { GrChunk: { x: { via: [{ rel: "entities" }, { rel: "related", depth: { max: 3 } }] } } },
+        { maxTraversalDepth: 3 },
+      ),
+    ).toThrow(/up to 4 relations deep/);
+    expect(bad({ GrChunk: { x: { via: [{ rel: "entities" }], args: ["first"] } } })).toThrow(
+      /args must be a list/,
+    );
+    expect(() =>
+      printSchema(graph, {
+        models: { GrChunk: { fields: { entities: false } } },
+        traversals: { GrChunk: { x: { via: [{ rel: "entities" }] } } },
+      }),
+    ).toThrow(/hidden by config.models.GrChunk.fields/);
   });
 });
 
