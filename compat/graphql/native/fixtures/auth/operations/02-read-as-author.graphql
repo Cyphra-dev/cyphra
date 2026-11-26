@@ -1,0 +1,20 @@
+# features: auth.rules.read, auth.field.row, auth.jwt
+# ordered
+# Alice sees her draft too, and only her own email (sorting and filtering see the others as null).
+{
+  postFindMany(orderBy: [{ id: asc }]) {
+    nodes {
+      id
+      published
+    }
+  }
+  userFindMany(orderBy: [{ email: asc }, { id: asc }]) {
+    nodes {
+      id
+      email
+    }
+  }
+  bobByEmail: userFindUnique(where: { email: "bob@acme.io" }) {
+    id
+  }
+}

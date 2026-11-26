@@ -1,0 +1,31 @@
+{
+  "data": {
+    "filtered": null,
+    "sorted": null,
+    "throughRelation": null,
+    "ok": 3
+  },
+  "errors": [
+    {
+      "message": "User.salary cannot be filtered on by this request.",
+      "path": [
+        "filtered"
+      ],
+      "code": "FORBIDDEN"
+    },
+    {
+      "message": "User.salary cannot be sorted on by this request.",
+      "path": [
+        "sorted"
+      ],
+      "code": "FORBIDDEN"
+    },
+    {
+      "message": "User.salary cannot be filtered on by this request.",
+      "path": [
+        "throughRelation"
+      ],
+      "code": "FORBIDDEN"
+    }
+  ]
+}

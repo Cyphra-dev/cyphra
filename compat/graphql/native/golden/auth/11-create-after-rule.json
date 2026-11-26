@@ -1,0 +1,28 @@
+{
+  "data": {
+    "forged": null,
+    "orphan": null,
+    "own": {
+      "title": "Mine",
+      "author": {
+        "id": "u-alice"
+      }
+    }
+  },
+  "errors": [
+    {
+      "message": "Forbidden: the Post written does not satisfy the after.create rule.",
+      "path": [
+        "forged"
+      ],
+      "code": "FORBIDDEN"
+    },
+    {
+      "message": "Forbidden: the Post written does not satisfy the after.create rule.",
+      "path": [
+        "orphan"
+      ],
+      "code": "FORBIDDEN"
+    }
+  ]
+}

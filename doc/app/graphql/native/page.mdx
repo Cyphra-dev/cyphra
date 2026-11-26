@@ -1,7 +1,7 @@
 ---
 title: "Native GraphQL API for Neo4j, generated from schema.cyphra"
 sidebarTitle: Native API
-description: "Serve a GraphQL API generated from schema.cyphra with @cyphra/graphql's native API: typed config, the client's filters and ordering, keyset cursors, edge properties, interfaces and unions, mutations returning records, one Cypher statement per root field."
+description: "Serve a GraphQL API generated from schema.cyphra with @cyphra/graphql's native API: typed config and rules, the client's filters and ordering, keyset cursors, edge properties, interfaces and unions, mutations returning records, one Cypher statement per root field."
 ---
 
 import { Callout } from "nextra/components";
@@ -17,12 +17,12 @@ generated client.
 <Callout type="warning">
   **Experimental** (see the [stability policy](/stability#experimental-features)): the native API
   may change in a minor release. This release serves **reads** (`findUnique`, `findFirst`,
-  `findMany`, `count`) and **writes** (`create`, `createMany`, `update`, `updateMany`, `upsert`,
-  `delete`, `deleteMany`, off by default). Authorization rules, nested `update` / `delete` /
-  `upsert`, aggregates, search and traversals come next
-  ([#77](https://github.com/Cyphra-dev/cyphra/issues/77)). Relay `Node` is opt-in ([below](#relay)).
-  To keep the API `@neo4j/graphql` v7 generates, use [`compat.v7`](/graphql); both can be served
-  side by side.
+  `findMany`, `count`), **writes** (`create`, `createMany`, `update`, `updateMany`, `upsert`,
+  `delete`, `deleteMany`, off by default) and **[auth](#auth)** (rules compiled into the statement,
+  field rules, `authenticated`). Nested `update` / `delete` / `upsert`, aggregates, search and
+  traversals come next ([#77](https://github.com/Cyphra-dev/cyphra/issues/77)). Relay `Node` is
+  opt-in ([below](#relay)). To keep the API `@neo4j/graphql` v7 generates, use
+  [`compat.v7`](/graphql); both can be served side by side.
 </Callout>
 
 ## Create the schema
@@ -85,16 +85,19 @@ also refuses a model whose create is on while a required field without a default
 (`fields: { passwordHash: false }` with `create: true`), `create` on an interface and writes on a
 union.
 
-| Key                      | Description                                                                                                                                                                                                                                                                                                                                                                                 |
-| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `models.<M>.operations`  | Per group, `true`, `false` or a list of operations: `read` (`findUnique`, `findFirst`, `findMany`, `count`), `create` (`create`, `createMany`, `upsert`), `update` (`update`, `updateMany`, `upsert`), `delete` (`delete`, `deleteMany`). `upsert` is served when both `create` and `update` include it. Turning an operation off removes its root field.                                   |
-| `models.<M>.fields.<f>`  | `false` hides the field everywhere, writes included. `{ read, filter, sort, create, update }` toggle reading it, filtering and sorting on it, and setting it in create / update inputs (for a relation: its nested writes). `{ read: false, create: true }` is a write-only field. `{ deprecated: "reason" }` emits `@deprecated`. A toggle on an interface applies to its implementations. |
-| `defaults.operations`    | The default of every model, per group. Reads are on, writes off.                                                                                                                                                                                                                                                                                                                            |
-| `naming.<M>.<operation>` | A root field name replacing `<model><Operation>` (reads and writes). It is part of the printed contract.                                                                                                                                                                                                                                                                                    |
-| `relay`                  | `true` adds Relay's `Node` interface and `node(id)` ([Relay](#relay)). Off by default.                                                                                                                                                                                                                                                                                                      |
-| `limits`                 | Checked before the statement is built (see [Limits](#limits)).                                                                                                                                                                                                                                                                                                                              |
-| `mutationTransaction`    | `"field"` (default): each mutation root field is its own transaction. `"request"`: every root field of a mutation operation in one transaction (see [Transactions](#transactions)).                                                                                                                                                                                                         |
-| `generator`              | The generator version the printed SDL follows. Only `1` today.                                                                                                                                                                                                                                                                                                                              |
+| Key                        | Description                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `models.<M>.operations`    | Per group, `true`, `false` or a list of operations: `read` (`findUnique`, `findFirst`, `findMany`, `count`), `create` (`create`, `createMany`, `upsert`), `update` (`update`, `updateMany`, `upsert`), `delete` (`delete`, `deleteMany`). `upsert` is served when both `create` and `update` include it. Turning an operation off removes its root field.                                                                                    |
+| `models.<M>.fields.<f>`    | `false` hides the field everywhere, writes included. `{ read, filter, sort, create, update }` toggle reading it, filtering and sorting on it, and setting it in create / update inputs (for a relation: its nested writes). `{ read: false, create: true }` is a write-only field. `read` may also be a [field rule](#field-rules). `{ deprecated: "reason" }` emits `@deprecated`. A toggle on an interface applies to its implementations. |
+| `models.<M>.rules`         | Row-level [rules](#rules), compiled into every statement that reaches the model.                                                                                                                                                                                                                                                                                                                                                             |
+| `models.<M>.authenticated` | Operations that need an authenticated request ([`authenticated`](#authenticated)).                                                                                                                                                                                                                                                                                                                                                           |
+| `isAuthenticated`          | `(ctx) => boolean`: whether a request is authenticated. Default: the context has a `user` or a `jwt`.                                                                                                                                                                                                                                                                                                                                        |
+| `defaults.operations`      | The default of every model, per group. Reads are on, writes off.                                                                                                                                                                                                                                                                                                                                                                             |
+| `naming.<M>.<operation>`   | A root field name replacing `<model><Operation>` (reads and writes). It is part of the printed contract.                                                                                                                                                                                                                                                                                                                                     |
+| `relay`                    | `true` adds Relay's `Node` interface and `node(id)` ([Relay](#relay)). Off by default.                                                                                                                                                                                                                                                                                                                                                       |
+| `limits`                   | Checked before the statement is built (see [Limits](#limits)).                                                                                                                                                                                                                                                                                                                                                                               |
+| `mutationTransaction`      | `"field"` (default): each mutation root field is its own transaction. `"request"`: every root field of a mutation operation in one transaction (see [Transactions](#transactions)).                                                                                                                                                                                                                                                          |
+| `generator`                | The generator version the printed SDL follows. Only `1` today.                                                                                                                                                                                                                                                                                                                                                                               |
 
 ## Naming
 
@@ -424,6 +427,218 @@ in order. With `mutationTransaction: "request"`, every root field of a mutation 
 The first failing field rolls the whole operation back, the remaining fields are not run, and
 every root field is `null` with that field's error (nothing it reported was committed).
 
+## Auth
+
+Authorization is configured in `graphql.config.ts`, next to the operations it guards, as
+TypeScript functions of the request's context. Rules are **schema-level and compiled into the
+statement**: the same `where` the client compiles is ANDed into every place the model is matched,
+so nothing is filtered in JavaScript and no query can read around a rule.
+
+```ts filename="graphql.config.ts"
+import { defineGraphQL } from "@cyphra/graphql/native";
+import type { CyphraTypeMap } from "./cyphra.gen";
+
+type Ctx = { user?: { id: string; role: "MEMBER" | "ADMIN" } };
+const me = (ctx: Ctx) => ctx.user?.id ?? "";
+
+export const api = defineGraphQL<CyphraTypeMap, Ctx>({
+  models: {
+    User: {
+      operations: { update: ["update"] },
+      fields: {
+        passwordHash: false,
+        email: { read: { where: ({ ctx }) => ({ id: me(ctx) }) } }, // each user reads their own
+        salary: { read: ({ ctx }) => ctx.user?.role === "ADMIN" }, // admins only
+      },
+      rules: { update: ({ ctx }) => ({ id: me(ctx) }) },
+    },
+    Post: {
+      operations: { create: true, update: true, delete: true },
+      authenticated: { create: true, update: true, delete: true },
+      rules: {
+        read: ({ ctx }) => ({ OR: [{ published: true }, { author: { is: { id: me(ctx) } } }] }),
+        update: ({ ctx }) => ({ author: { is: { id: me(ctx) } } }),
+        delete: ({ ctx }) =>
+          ctx.user?.role === "ADMIN" ? true : { author: { is: { id: me(ctx) } } },
+        after: { create: ({ ctx }) => ({ author: { is: { id: me(ctx) } } }) },
+        connect: { tags: () => ({ internal: false }) },
+      },
+    },
+    AuditLog: { rules: { read: () => false } },
+  },
+});
+```
+
+### Authentication
+
+`makeSchema` does not verify tokens: the server's context function does, and `Ctx` types what
+rules see. `native.jwtContext` builds such a context from the `Authorization: Bearer <jwt>` header,
+with the same verifier as `compat.v7`'s `features.authorization`, so both APIs can share one
+context function:
+
+```ts filename="app/api/graphql/route.ts"
+import { createYoga } from "graphql-yoga";
+import { native } from "@cyphra/graphql";
+
+const yoga = createYoga({
+  schema,
+  context: native.context(
+    schema,
+    native.jwtContext({
+      key: process.env.JWT_SECRET!, // or { url: "https://…/.well-known/jwks.json" }
+      verifyOptions: { issuer: "https://auth.example.com", audience: "api" },
+      user: (jwt) => ({ id: jwt.sub!, role: jwt.role as "MEMBER" | "ADMIN" }),
+    }),
+  ),
+});
+```
+
+- The context is `{ token, jwt, user }`: `jwt` is the verified payload, `user` what the `user`
+  option makes of it. A missing, malformed, expired or forged token leaves the request anonymous
+  (no `jwt`, no `user`), as in `compat.v7`. It reads `{ request }` (GraphQL Yoga, Fetch servers) or
+  `{ req }` (Apollo Server on Node).
+- Any context function works: `context: async ({ request }) => ({ user: await verify(request) })`.
+- `native.context(schema, build)` (optional) also sets [`ctx.cyphra`](#ctxcyphra) before any
+  resolver runs.
+
+### `authenticated`
+
+`models.<M>.authenticated` names the operations that need an authenticated request: `true` (all of
+them) or per group, like `operations` (`{ create: true, update: ["update"] }`). An anonymous request
+gets `UNAUTHENTICATED` before anything runs. A request is authenticated when
+`config.isAuthenticated(ctx)` says so (default: the context has a `user` or a `jwt`).
+
+A whole group (`read: true`, `create: true`, …) also applies wherever the model is reached: for an
+anonymous request, the model's nodes are not there in relations, `_count` and relation filters
+(`read`), and nested writes cannot create or update them. A list of operations guards only those
+root fields.
+
+### Rules
+
+A rule is a function of `{ ctx }` returning `true` (allowed), `false` (denied) or a `where` on the
+model, typed as the client's `where` of that model:
+
+| Rule                       | Applies to                                                                                                                                                                                   |
+| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `read`                     | Every read of the model: root fields, relation loads at any depth, relation filters (`some` / `none` / `every` / `is`), `_count`, `totalCount`, mutation results, and the targets of writes. |
+| `create`                   | `({ ctx, data }) => boolean`: each node created, root or nested, from its create data, before anything runs.                                                                                 |
+| `update`                   | The nodes `update` / `updateMany` / `upsert` match, whatever they write (scalars, relations only, or nothing).                                                                               |
+| `delete`                   | The nodes `delete` / `deleteMany` match.                                                                                                                                                     |
+| `connect.<relation>`       | The targets a nested `connect` / `set` may link (a `where` on the target model).                                                                                                             |
+| `disconnect.<relation>`    | The targets a nested `disconnect` / `set` may unlink.                                                                                                                                        |
+| `after.create` / `.update` | Checked on the nodes created / updated once every write of the statement ran (nested ones included); a node that does not match rolls the whole write back.                                  |
+
+- **Compiled, not filtered in JavaScript.** A `where` rule is the client's `where`: relations,
+  `_on`, `_labels`, anything a filter can do. Context values are parameters. A rule's own `where`
+  is not subject to other rules.
+- **Evaluated once per request**, against its context, and shared by its root fields.
+- **Denied vs not found.** An `update` / `delete` / `connect` on a node outside its rules fails
+  with `NOT_FOUND`: the node does not exist for this request, so a rule never reveals that a key
+  exists. A node the request cannot `read` cannot be updated, deleted, connected or disconnected
+  either. `false` (the whole operation denied) fails the root field with `FORBIDDEN`; a failing
+  `create` or `after` rule is `FORBIDDEN` too, and nothing is written.
+- **Relationships.** Connecting a node whose other side is to-one (`user.posts.connect` moves a
+  post from its author) is an update of that node: its `update` rule applies. A to-one edge a
+  write must replace (`connect` or `create` on `post.author`) is a disconnect of the current target:
+  outside the `disconnect` rule, the write is `FORBIDDEN`. Explicit `disconnect` / `set` leave the
+  edges outside the rule alone.
+- **Mutation results** apply `read`: relations of the written node show what the request can
+  read, field rules apply, and a written node the request cannot read is returned as `null` (the
+  write happened). Batch `nodes` leave such nodes out.
+- **Interfaces and unions.** A rule on an interface applies to every implementation; a node
+  matched through an interface or a union gets its own model's rules too.
+- **Startup check.** Rule keys, models and relations are typed from `CyphraTypeMap`, and
+  `makeSchema` checks them again. It also calls every `where` rule once with an empty context
+  (`{ ctx: {} }`) and checks the fields and relations of the `where` it returns, so
+  `{ publishd: true }` fails at startup even in JavaScript. A rule that throws without a context is
+  checked on its first request (an invalid `where` then fails that request with
+  `INTERNAL_SERVER_ERROR`).
+
+<Callout type="info">
+  TypeScript checks object literals returned by a function only partly: `({ publishd: true })` and
+  `({ author: { is: { emial: "x" } } })` fail `tsc`, but a misspelled key next to a correct one
+  (`({ published: true, publishd: true })`) does not. The startup check catches it.
+</Callout>
+
+On FalkorDB, which cannot roll a write back, `after` rules and `disconnect` rules are refused.
+
+### Field rules
+
+`fields.<f>.read` takes a rule instead of a boolean. A field with a rule is generated nullable.
+
+- **Context-only**: `read: ({ ctx }) => boolean`, evaluated once per request. A denied field
+  selected is `null` with a `FORBIDDEN` error at its path (`extensions.field` names it); using it
+  in `where`, `orderBy` (also through a relation) or `_count` fails the root field with
+  `FORBIDDEN` before anything runs.
+- **Row-dependent**: `read: { where: ({ ctx }) => … }`, compiled to
+  `CASE WHEN <where> THEN n.email END`. The field is `null` on the rows the `where` does not
+  match, and filters, ordering, unique lookups and mutation results see that `null` too: no query
+  can probe the hidden values. Scalar fields only; not the `@id` field.
+
+A rule on a field of an interface goes on the interface and applies to every implementation.
+
+### `ctx.cyphra`
+
+`ctx.cyphra` is the request's client **with the API's rules applied** (the same rules as the
+generated root fields), for custom resolvers and anything else that reads on the request's
+behalf; `ctx.cyphra.$unsafe` is the client without them, for the rare code that must.
+
+```ts
+const yoga = createYoga({ schema, context: native.context(schema, native.jwtContext({ key })) });
+
+// In a resolver:
+const drafts = await ctx.cyphra.post.findMany({ where: { published: false } }); // only readable ones
+const all = await ctx.cyphra.$unsafe.post.count(); // no rules
+```
+
+`native.context(schema, build)` sets it before any resolver runs. Without it, the first generated
+root field of the request sets it, when the context has no `cyphra` of its own.
+
+### Hooks
+
+Rules are declarative and reach every place a model appears in a statement. [Query
+hooks](/client#query-hooks) (a `client` function: `(ctx) => db.$extends(…)`) are code around one
+**root** operation: they do not run for `post` loaded under `user { posts }`. Use a rule for
+anything that must hold wherever a model is reached, and hooks for the rest (hashing a password,
+audit logs, soft delete).
+
+## Security guide
+
+Checklist for an API exposed to untrusted clients:
+
+1. **Expose on purpose.** Writes are off by default; turn on the operations each model needs, per
+   group or per operation. Hide fields no client should see with `fields: { f: false }`.
+2. **Guard data with rules, not with toggles.** `operations: { read: false }` removes root fields
+   only: the model is still reached through relations. `rules: { read }` hides its nodes
+   everywhere.
+3. **Write `update` / `delete` rules** for every writable model, and `after.create` (or a
+   `create` rule) to constrain what a create may produce, such as the author being the requester.
+4. **Guard relationships.** `connect` / `disconnect` rules restrict what nested writes may link;
+   remember that connecting through a to-many side can move a node off its to-one owner (its
+   `update` rule applies).
+5. **Use field rules for sensitive values** (emails, salaries): they cannot be filtered, sorted or
+   looked up by unique key around the rule.
+6. **Use `ctx.cyphra`** in custom resolvers, so they apply the same rules; keep `$unsafe` for
+   code that must bypass them, and review it.
+7. **Set [limits](#limits)** (`maxDepth`, `maxTake`, `maxComplexity`) to bound what one request may
+   load, and leave `debug` off in production.
+8. **Commit the printed contract** ([`cyphra graphql print --check`](#print-and-check-the-contract))
+   so a change in what the API exposes shows up in review.
+
+What the native API fixes over `@neo4j/graphql` v7 (each has a test in
+`packages/graphql/test/native.auth.integration.test.ts` and the `auth` fixture of the compat
+suite):
+
+| v7                                                                                             | Native API                                                                                        |
+| ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `@mutation(operations: [])` hides root mutations; a nested `create` through another type works | A model whose writes are off has no nested create; a `create` rule holds through nested writes.   |
+| `@query(read: false)` types are readable through relationships                                 | A `read` rule hides the nodes in relations, `_count`, relation filters and connects.              |
+| `where` / `sort` / aggregation filters can probe fields and nodes the user cannot read         | Filters and sorting only see readable nodes, and ruled fields as `null` (or `FORBIDDEN`).         |
+| `AGGREGATE` rules are separate from `READ` rules                                               | One `read` rule covers counts, `totalCount` and `_count`.                                         |
+| Relationship-only updates skip the node's `UPDATE` rules                                       | `update` restricts every update, whatever it writes; connects that move a node need its `update`. |
+| `create` responses ignore `READ` rules                                                         | Mutation results apply `read` and field rules.                                                    |
+| Rules are strings in SDL directives, checked when the schema is built                          | Rules are TypeScript, typed against `schema.cyphra`, and checked again at startup.                |
+
 ## Scalars
 
 | Cyphra                                           | GraphQL                                                              |
@@ -468,6 +683,10 @@ Errors carry a stable `extensions.code`, mapped from the client's errors:
 | `NotFoundError` (`update` / `delete` / `connect` target missing)         | `NOT_FOUND`             |                                                                       |
 | `RestrictError`                                                          | `RESTRICTED`            | `model`, `relation`, `target`, `count`                                |
 | `UniqueConstraintError` (a duplicate `@id` / `@unique` value)            | `UNIQUE_CONSTRAINT`     | `model`, `fields`, `constraint` (never the value)                     |
+| `authenticated` and an anonymous request                                 | `UNAUTHENTICATED`       | `model`, `operation`                                                  |
+| a rule denying the whole operation (`false`)                             | `FORBIDDEN`             | `model`, `operation`                                                  |
+| a `create` rule, an `after` rule, a to-one replace outside `disconnect`  | `FORBIDDEN`             | `model`, `operation` (`relation`)                                     |
+| a field a context-only rule denies (selected, filtered, sorted)          | `FORBIDDEN`             | `model`, `field`                                                      |
 | anything else (driver, bug)                                              | `INTERNAL_SERVER_ERROR` | message masked unless `debug: true`                                   |
 
 ## Relay

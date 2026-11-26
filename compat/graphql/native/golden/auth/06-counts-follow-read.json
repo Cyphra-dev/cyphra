@@ -1,0 +1,30 @@
+{
+  "data": {
+    "postCount": 3,
+    "postFindMany": {
+      "totalCount": 3
+    },
+    "userFindMany": {
+      "nodes": [
+        {
+          "id": "u-alice",
+          "_count": {
+            "posts": 1
+          }
+        },
+        {
+          "id": "u-bob",
+          "_count": {
+            "posts": 2
+          }
+        },
+        {
+          "id": "u-root",
+          "_count": {
+            "posts": 0
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,13 @@
+# features: auth.rules.create, mutation.nested-create, auth.jwt, errors
+# A create rule holds through nested creates: only admins create tags, also through a post.
+mutation {
+  postCreate(
+    data: {
+      title: "Tagged"
+      author: { connect: { id: "u-alice" } }
+      tags: { create: [{ name: "new" }] }
+    }
+  ) {
+    title
+  }
+}

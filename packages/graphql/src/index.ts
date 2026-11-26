@@ -24,14 +24,20 @@ export const native = nativeApi;
 export {
   defineGraphQL,
   NativeSchemaError,
+  type FieldReadRule,
   type FieldToggle,
   type GraphQLConfig,
+  type JwtContext,
+  type JwtContextOptions,
   type Limits,
   type ModelConfig,
+  type ModelRules,
   type NativeMakeSchemaOptions,
+  type RequestClient,
   type OperationToggles,
   type ReadOperation,
   type RootOperation,
+  type WhereRule,
   type WriteOperation,
 } from "./native/index.js";
 

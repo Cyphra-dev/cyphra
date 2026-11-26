@@ -1,0 +1,17 @@
+# features: auth.rules.read, relationship, auth.jwt, errors
+# A model whose read rule is false: its root fields are FORBIDDEN, and it is not there through
+# relations, _count or relation filters either (v7's @query(read: false) only hides root fields).
+{
+  auditFindMany {
+    totalCount
+  }
+  userFindUnique(where: { id: "u-alice" }) {
+    audits {
+      id
+    }
+    _count {
+      audits
+    }
+  }
+  userCount(where: { audits: { some: { message: { equals: "login" } } } })
+}

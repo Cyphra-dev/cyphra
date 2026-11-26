@@ -289,6 +289,108 @@ describe("config checks at startup", () => {
     );
   });
 
+  it("checks auth config: rule keys, relations, field read rules, authenticated", () => {
+    const fn = () => true;
+    bad({ models: { Post: { rules: { write: fn } } } }, /rules: unknown key "write"/);
+    bad(
+      { models: { Post: { rules: { read: { published: true } } } } },
+      /rules.read must be a function/,
+    );
+    bad({ models: { Post: { rules: { connect: { tagz: fn } } } } }, /unknown relation "Post.tagz"/);
+    bad({ models: { Post: { rules: { after: { delete: fn } } } } }, /unknown key "delete"/);
+    bad(
+      { models: { User: { fields: { posts: { read: { where: fn } } } } } },
+      /row-dependent rules \(\{ where \}\) are for scalar fields/,
+    );
+    bad(
+      { models: { User: { fields: { id: { read: fn } } } } },
+      /the @id field cannot have a read rule/,
+    );
+    bad(
+      { models: { User: { fields: { email: { read: "admin" } } } } },
+      /must be a boolean, a function or \{ where \}/,
+    );
+    bad(
+      { models: { User: { authenticated: { read: ["findAll"] } } } },
+      /unknown operation "findAll"/,
+    );
+    bad({ isAuthenticated: true }, /isAuthenticated must be a function/);
+    expect(() =>
+      printSchema(runtimeFixture("unions"), {
+        models: { SearchHit: { rules: { update: fn } } },
+      }),
+    ).toThrow(/SearchHit is a union, which is only read/);
+    expect(() =>
+      printSchema(runtimeFixture("interfaces"), {
+        models: { Employee: { fields: { bio: { read: fn } } } },
+      }),
+    ).toThrow(/a rule on a field of the interface Person goes on Person/);
+  });
+
+  it("checks the where of rules at startup (with an empty context)", () => {
+    const make = (config: unknown) => () =>
+      makeSchema({ client: { $schema: blog }, config: config as never });
+    expect(make({ models: { Post: { rules: { read: () => ({ publishd: true }) } } } })).toThrow(
+      /config.models.Post.rules.read: unknown field "Post.publishd"/,
+    );
+    expect(
+      make({
+        models: {
+          Post: {
+            rules: {
+              update: () => ({ published: true, author: { is: { emial: "x" } } }),
+            },
+          },
+        },
+      }),
+    ).toThrow(/rules.update.author.is: unknown field "User.emial"/);
+    expect(
+      make({ models: { Post: { rules: { connect: { tags: () => ({ OR: [{ nme: "x" }] }) } } } } }),
+    ).toThrow(/rules.connect.tags.OR\[0\]: unknown field "Tag.nme"/);
+    expect(
+      make({ models: { User: { fields: { email: { read: { where: () => ({ idd: "x" }) } } } } } }),
+    ).toThrow(/fields.email.read.where: unknown field "User.idd"/);
+    // A rule that needs a context is checked on its first request instead.
+    expect(
+      make({
+        models: {
+          Post: {
+            rules: {
+              read: ({ ctx }: { ctx: { user: { id: string } } }) => ({
+                author: { is: { id: ctx.user.id } },
+              }),
+            },
+          },
+        },
+      }),
+    ).not.toThrow();
+  });
+
+  it("generates fields with a read rule nullable", () => {
+    const sdl = printSchema(blog, {
+      models: {
+        User: {
+          fields: {
+            email: { read: { where: () => ({ name: "me" }) } },
+            loginCount: { read: () => true },
+            posts: { read: () => true },
+            passwordHash: false,
+          },
+        },
+      },
+    });
+    valid(sdl);
+    expect(sdl).toMatch(/type User \{[^}]*\n {2}email: String\n/);
+    expect(sdl).toMatch(/type User \{[^}]*\n {2}loginCount: Int\n/);
+    expect(sdl).toMatch(/type User \{[^}]*\n {2}posts\([^)]*\): \[Post!\]\n/);
+    expect(sdl).toMatch(/type User \{[^}]*\n {2}name: String\n/);
+    expect(sdl).toMatch(/type User \{[^}]*\n {2}role: Role!\n/);
+    const iface = printSchema(runtimeFixture("interfaces"), {
+      models: { Person: { fields: { name: { read: () => true } } } },
+    });
+    valid(iface);
+  });
+
   it("needs a schema when the client is a function", () => {
     expect(() => makeSchema({ client: () => ({}) })).toThrow(/pass schema/);
   });

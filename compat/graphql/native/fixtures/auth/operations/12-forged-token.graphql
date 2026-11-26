@@ -1,0 +1,7 @@
+# features: auth.token, auth.authenticated, errors
+# A token signed with another key leaves the request anonymous.
+mutation {
+  postCreate(data: { title: "Forged", author: { connect: { id: "u-alice" } } }) {
+    title
+  }
+}

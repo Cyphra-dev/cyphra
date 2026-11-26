@@ -15,9 +15,18 @@ import {
 } from "graphql";
 import type { SchemaModel } from "@cyphra/schema";
 import { ApiModel } from "./api.js";
+import { checkRuleWheres } from "./auth.js";
 import { checkConfig, NativeSchemaError, type GraphQLConfig } from "./config.js";
-import { nodeResolver, rootResolvers, type ClientSource } from "./resolvers.js";
+import {
+  nodeResolver,
+  rootResolvers,
+  sessions,
+  type ClientSource,
+  type Session,
+} from "./resolvers.js";
 import { SchemaBuilder } from "./schema.js";
+
+export { jwtContext, type JwtContext, type JwtContextOptions } from "./jwt.js";
 
 export { fromGlobalId, toGlobalId } from "./relay.js";
 export {
@@ -30,8 +39,17 @@ export {
   WRITE_OPERATIONS,
   type CreateOperation,
   type DeleteOperation,
+  type ContextPredicate,
+  type ContextRule,
+  type CreateRule,
+  type FieldReadRule,
   type FieldToggle,
   type GraphQLConfig,
+  type ModelRules,
+  type RuleArgs,
+  type RuleCreateData,
+  type RuleWhere,
+  type WhereRule,
   type Limits,
   type ModelConfig,
   type OperationToggles,
@@ -55,7 +73,8 @@ export type NativeMakeSchemaOptions = {
    * The API's configuration (`defineGraphQL`). Default: every read operation, no writes (turn
    * them on per model with `operations: { create, update, delete }`).
    */
-  readonly config?: GraphQLConfig;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- any type map and context
+  readonly config?: GraphQLConfig<any, any>;
   /** Show the message of unexpected errors instead of masking them (`INTERNAL_SERVER_ERROR`). */
   readonly debug?: boolean;
 };
@@ -92,8 +111,59 @@ function schemaOf(options: { client?: unknown; schema?: SchemaModel }): SchemaMo
 export function makeSchema(options: NativeMakeSchemaOptions): GraphQLSchema {
   const schema = schemaOf(options);
   const api = new ApiModel(schema, checkConfig(schema, options.config as GraphQLConfig));
-  const runtime = { client: options.client as ClientSource, debug: options.debug ?? false };
-  return new SchemaBuilder(api, rootResolvers(api, runtime), nodeResolver(api, runtime)).build();
+  checkRuleWheres(api);
+  const session = sessions(api, options.client as ClientSource);
+  const runtime = { session, debug: options.debug ?? false };
+  const built = new SchemaBuilder(
+    api,
+    rootResolvers(api, runtime),
+    nodeResolver(api, runtime),
+  ).build();
+  sessionsBySchema.set(built, session);
+  return built;
+}
+
+/** The request sessions of each schema `makeSchema` built (for {@link context}). */
+const sessionsBySchema = new WeakMap<GraphQLSchema, (ctx: unknown) => Promise<Session>>();
+
+/**
+ * `ctx.cyphra`: the request's client with the API's rules applied (a custom resolver cannot read
+ * around a rule by accident), and `$unsafe`, the client without them.
+ */
+export type RequestClient<C extends object> = C & {
+  /** The client without the API's rules (what `client` gave for the request). */
+  readonly $unsafe: C;
+};
+
+/**
+ * A GraphQL context function (for GraphQL Yoga, Apollo Server, …) that builds the context with
+ * `build` (e.g. {@link jwtContext}), then sets `ctx.cyphra`: the request's client with the API's
+ * rules applied, for custom resolvers. The rules are evaluated once per request, with the context
+ * `build` returned; the generated root fields share them. (Root fields also set `ctx.cyphra`
+ * when the context has none, but only once one of them runs.)
+ *
+ * @example
+ * ```ts
+ * const schema = native.makeSchema({ client: db, config: api });
+ * const yoga = createYoga({ schema, context: native.context(schema, native.jwtContext({ key })) });
+ * // In any resolver: ctx.cyphra.post.findMany(…) (rules applied), ctx.cyphra.$unsafe (none).
+ * ```
+ *
+ * @experimental
+ */
+export function context<Init = unknown, C extends object = Record<string, never>>(
+  schema: GraphQLSchema,
+  build?: (init: Init) => C | Promise<C>,
+): (init: Init) => Promise<C & { cyphra?: RequestClient<object> }> {
+  const session = sessionsBySchema.get(schema);
+  if (!session) {
+    throw new NativeSchemaError("native.context: not a schema built by native.makeSchema.");
+  }
+  return async (init) => {
+    const ctx = (build ? await build(init) : {}) as C;
+    await session(ctx);
+    return ctx as C & { cyphra?: RequestClient<object> };
+  };
 }
 
 /**
@@ -103,7 +173,8 @@ export function makeSchema(options: NativeMakeSchemaOptions): GraphQLSchema {
  *
  * @experimental
  */
-export function printSchema(schema: SchemaModel, config?: GraphQLConfig): string {
-  const api = new ApiModel(schema, checkConfig(schema, config));
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- any type map and context
+export function printSchema(schema: SchemaModel, config?: GraphQLConfig<any, any>): string {
+  const api = new ApiModel(schema, checkConfig(schema, config as GraphQLConfig));
   return `${printGraphQLSchema(lexicographicSortSchema(new SchemaBuilder(api).build()))}\n`;
 }

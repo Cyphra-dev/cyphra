@@ -1,0 +1,21 @@
+{
+  "data": {
+    "auditFindMany": null,
+    "userFindUnique": {
+      "audits": [],
+      "_count": {
+        "audits": 0
+      }
+    },
+    "userCount": 0
+  },
+  "errors": [
+    {
+      "message": "The rules do not allow Audit.findMany for this request.",
+      "path": [
+        "auditFindMany"
+      ],
+      "code": "FORBIDDEN"
+    }
+  ]
+}

@@ -7,8 +7,8 @@
  * @packageDocumentation
  */
 
-import type { ModelTypeDef, TypeMap } from "@cyphra/runtime";
-import type { SchemaModel } from "@cyphra/schema";
+import type { CreateInput, ModelTypeDef, TypeMap, WhereInput } from "@cyphra/runtime";
+import type { ResolvedNodeModel, SchemaModel } from "@cyphra/schema";
 
 /** Read operations a model can expose as root fields. */
 export const READ_OPERATIONS = ["findUnique", "findFirst", "findMany", "count"] as const;
@@ -67,18 +67,101 @@ export type OperationToggles = {
   readonly delete?: boolean | readonly DeleteOperation[];
 };
 
+/** A `where` on model `M`, typed as the client's (loose when the type map is not known). */
+export type RuleWhere<TM extends TypeMap, M> = string extends keyof TM
+  ? Readonly<Record<string, unknown>>
+  : M extends keyof TM
+    ? WhereInput<TM, M>
+    : never;
+
+/** The create `data` of one node of model `M`, as the client takes it. */
+export type RuleCreateData<TM extends TypeMap, M> = string extends keyof TM
+  ? Readonly<Record<string, unknown>>
+  : M extends keyof TM
+    ? CreateInput<TM, M>
+    : never;
+
+/** A predicate on the request's context. */
+export type ContextPredicate<Ctx> = { bivarianceHack(ctx: Ctx): boolean }["bivarianceHack"];
+
+/** What a rule is called with: the request's GraphQL context. */
+export type RuleArgs<Ctx> = { readonly ctx: Ctx };
+
+/**
+ * A `where` rule: `true` (allowed), `false` (denied) or a `where` on the model (allowed for the
+ * nodes it matches), compiled into the statement.
+ */
+export type WhereRule<TM extends TypeMap, M, Ctx> = {
+  bivarianceHack(args: RuleArgs<Ctx>): boolean | RuleWhere<TM, M>;
+}["bivarianceHack"];
+
+/** A create rule: whether the node `data` describes may be created (checked before anything runs). */
+export type CreateRule<TM extends TypeMap, M, Ctx> = {
+  bivarianceHack(args: RuleArgs<Ctx> & { readonly data: RuleCreateData<TM, M> }): boolean;
+}["bivarianceHack"];
+
+/** A context-only predicate (evaluated once per request). */
+export type ContextRule<Ctx> = {
+  bivarianceHack(args: RuleArgs<Ctx>): boolean;
+}["bivarianceHack"];
+
+type RelationsOf<TM extends TypeMap, M extends keyof TM> = TM[M]["relations"];
+type RelationRules<TM extends TypeMap, M extends keyof TM, Ctx> = {
+  readonly [R in keyof RelationsOf<TM, M> & string]?: WhereRule<
+    TM,
+    RelationsOf<TM, M>[R]["target"],
+    Ctx
+  >;
+};
+
+/**
+ * The rules of one model, compiled into every statement that matches its nodes (see the native
+ * API docs, "Auth"):
+ *
+ * - `read`: every read of the model (root fields, relation loads and filters, `_count`, mutation
+ *   results) and the targets of updates, deletes, connects and disconnects;
+ * - `create`: each node created (root or nested), from its data, before anything runs;
+ * - `update` / `delete`: the nodes updates / deletes match (others are `NOT_FOUND`);
+ * - `connect` / `disconnect`: per relation, the targets a nested write may link / unlink;
+ * - `after`: checked on the nodes created / updated once the statement's writes ran
+ *   (`FORBIDDEN`, rolled back otherwise).
+ */
+export type ModelRules<TM extends TypeMap, M extends keyof TM, Ctx> = {
+  readonly read?: WhereRule<TM, M, Ctx>;
+  readonly create?: CreateRule<TM, M, Ctx>;
+  readonly update?: WhereRule<TM, M, Ctx>;
+  readonly delete?: WhereRule<TM, M, Ctx>;
+  readonly connect?: RelationRules<TM, M, Ctx>;
+  readonly disconnect?: RelationRules<TM, M, Ctx>;
+  readonly after?: {
+    readonly create?: WhereRule<TM, M, Ctx>;
+    readonly update?: WhereRule<TM, M, Ctx>;
+  };
+};
+
+/**
+ * Who reads a field: `true` / `false`, a context-only predicate (`({ ctx }) => boolean`,
+ * evaluated once per request: a denied field selected is `null` with a `FORBIDDEN` error, and
+ * using it in `where` / `orderBy` fails the root field), or a row-dependent rule
+ * (`{ where: ({ ctx }) => … }`: the field is `null` on the rows the `where` does not match, in
+ * results, filters and ordering alike).
+ */
+export type FieldReadRule<TM extends TypeMap, M, Ctx> =
+  boolean | ContextRule<Ctx> | { readonly where: WhereRule<TM, M, Ctx> };
+
 /**
  * What the API does with one field. `false` hides it everywhere (types, filters, ordering,
  * writes). `read: false` hides it from types, filters and ordering, and from writes unless
- * `create` / `update` say otherwise (a write-only field); `filter: false` / `sort: false` keep it
- * readable but remove it from `where` / `orderBy`; `create: false` / `update: false` remove it
- * from the create / update inputs (for a relation: its nested writes). `deprecated` marks the
- * field `@deprecated(reason)` in the schema.
+ * `create` / `update` say otherwise (a write-only field); `read` may also be a rule (see
+ * {@link FieldReadRule}: the field is then generated nullable); `filter: false` / `sort: false`
+ * keep it readable but remove it from `where` / `orderBy`; `create: false` / `update: false`
+ * remove it from the create / update inputs (for a relation: its nested writes). `deprecated`
+ * marks the field `@deprecated(reason)` in the schema.
  */
-export type FieldToggle =
+export type FieldToggle<TM extends TypeMap = TypeMap, M = string, Ctx = unknown> =
   | false
   | {
-      readonly read?: boolean;
+      readonly read?: FieldReadRule<TM, M, Ctx>;
       readonly filter?: boolean;
       readonly sort?: boolean;
       readonly create?: boolean;
@@ -89,9 +172,23 @@ export type FieldToggle =
 type FieldNames<M extends ModelTypeDef> = (keyof M["scalars"] | keyof M["relations"]) & string;
 
 /** The configuration of one model. */
-export type ModelConfig<M extends ModelTypeDef = ModelTypeDef> = {
+export type ModelConfig<
+  TM extends TypeMap = TypeMap,
+  M extends keyof TM & string = keyof TM & string,
+  Ctx = unknown,
+> = {
   readonly operations?: OperationToggles;
-  readonly fields?: { readonly [F in FieldNames<M>]?: FieldToggle };
+  readonly fields?: { readonly [F in FieldNames<TM[M]>]?: FieldToggle<TM, M, Ctx> };
+  /** Row-level rules, compiled into every statement (see {@link ModelRules}). */
+  readonly rules?: ModelRules<TM, M, Ctx>;
+  /**
+   * Operations that need an authenticated request (`isAuthenticated`), failing with
+   * `UNAUTHENTICATED` otherwise: `true` (every operation) or per group, like `operations`. A whole
+   * group (`read: true`, …) also applies wherever the model is reached for an anonymous request:
+   * its nodes are not readable through relations, not creatable or updatable through nested
+   * writes. A list of operations only guards those root fields.
+   */
+  readonly authenticated?: boolean | OperationToggles;
 };
 
 /**
@@ -122,8 +219,13 @@ export type GraphQLConfig<TM extends TypeMap = TypeMap, Ctx = unknown> = {
    * would print something else ships it as a new version, opt-in. Only `1` today.
    */
   readonly generator?: 1;
-  /** Per-model operations and fields. */
-  readonly models?: { readonly [M in keyof TM & string]?: ModelConfig<TM[M]> };
+  /** Per-model operations, fields, rules and `authenticated`. */
+  readonly models?: { readonly [M in keyof TM & string]?: ModelConfig<TM, M, Ctx> };
+  /**
+   * Whether a request is authenticated (for `authenticated`). Default: the context has a `user`
+   * or a `jwt` (what `native.jwtContext` sets).
+   */
+  readonly isAuthenticated?: ContextPredicate<Ctx>;
   /** Defaults for every model: reads on, writes off. */
   readonly defaults?: { readonly operations?: OperationToggles };
   /** Root field names replacing `<model><Operation>` (`{ Person: { findMany: "people" } }`). */
@@ -208,7 +310,45 @@ export type ResolvedConfig = {
   /** `relay: true`: the `Node` interface and `node(id)`. */
   readonly relay: boolean;
   readonly mutationTransaction: "field" | "request";
+  /** The rules of each model that has some, as configured. */
+  readonly rules: ReadonlyMap<string, ConfiguredRules>;
+  /** Read rules of fields (functions or `{ where }`), per `Model.field` where declared. */
+  readonly fieldRules: ReadonlyMap<string, ConfiguredFieldRule>;
+  /** Whether the field, or the interface field it implements, has a read rule (it is nullable). */
+  fieldRuled(model: string, name: string): boolean;
+  /** Whether the root operation `op` of `model` needs an authenticated request. */
+  authenticated(model: string, op: RootOperation): boolean;
+  /** The operation groups of `model` `authenticated` covers as a whole (they apply everywhere). */
+  authenticatedGroups(model: string): ReadonlySet<"read" | "create" | "update" | "delete">;
+  /** Whether a request is authenticated (`config.isAuthenticated`, or a `user` / `jwt`). */
+  isAuthenticated(ctx: unknown): boolean;
 };
+
+type AnyFn = (args: never) => unknown;
+
+/** The rules of one model as configured (functions of the context). */
+export type ConfiguredRules = {
+  readonly read?: AnyFn;
+  readonly create?: AnyFn;
+  readonly update?: AnyFn;
+  readonly delete?: AnyFn;
+  readonly connect?: Readonly<Record<string, AnyFn | undefined>>;
+  readonly disconnect?: Readonly<Record<string, AnyFn | undefined>>;
+  readonly after?: { readonly create?: AnyFn; readonly update?: AnyFn };
+};
+
+/** A field's read rule as configured: context-only, or row-dependent (`where`). */
+export type ConfiguredFieldRule =
+  { readonly kind: "context"; readonly fn: AnyFn } | { readonly kind: "where"; readonly fn: AnyFn };
+
+const RULE_KEYS = ["read", "create", "update", "delete", "connect", "disconnect", "after"] as const;
+
+/** The default `isAuthenticated`: the context has a `user` or a `jwt`. */
+function defaultIsAuthenticated(ctx: unknown): boolean {
+  if (typeof ctx !== "object" || ctx === null) return false;
+  const c = ctx as AnyRecord;
+  return (c.user !== undefined && c.user !== null) || (c.jwt !== undefined && c.jwt !== null);
+}
 
 const LIMIT_KEYS = ["maxDepth", "maxTake", "maxAliases", "maxComplexity"] as const;
 const FIELD_KEYS = ["read", "filter", "sort", "create", "update", "deprecated"] as const;
@@ -220,6 +360,7 @@ const TOP_KEYS = [
   "limits",
   "relay",
   "mutationTransaction",
+  "isAuthenticated",
 ] as const;
 const ROOT_OPERATIONS: readonly RootOperation[] = [...READ_OPERATIONS, ...WRITE_OPERATIONS];
 const HIDDEN: FieldAccess = {
@@ -296,6 +437,9 @@ export function checkConfig(schema: SchemaModel, config: GraphQLConfig = {}): Re
   ) {
     throw new NativeSchemaError('config.mutationTransaction must be "field" or "request".');
   }
+  if (config.isAuthenticated !== undefined && typeof config.isAuthenticated !== "function") {
+    throw new NativeSchemaError("config.isAuthenticated must be a function.");
+  }
   if (config.generator !== undefined && config.generator !== 1) {
     throw new NativeSchemaError(
       `config.generator: unknown generator version ${JSON.stringify(config.generator)} (this release has 1).`,
@@ -330,14 +474,30 @@ export function checkConfig(schema: SchemaModel, config: GraphQLConfig = {}): Re
   if (!isPlainObject(models)) throw new NativeSchemaError("config.models must be an object.");
   const fieldToggles = new Map<string, FieldAccess>();
   const opsByModel = new Map<string, Partial<Record<Group, Set<RootOperation>>>>();
+  const rulesByModel = new Map<string, ConfiguredRules>();
+  const fieldRules = new Map<string, ConfiguredFieldRule>();
+  const authByModel = new Map<string, Partial<Record<Group, Set<RootOperation>>>>();
   for (const [name, mc] of Object.entries(models)) {
     if (mc === undefined) continue;
     const where = `config.models.${name}`;
     const node = known("config.models", name);
     if (!isPlainObject(mc)) throw new NativeSchemaError(`${where} must be an object.`);
-    checkKeys(where, mc, ["operations", "fields"]);
+    checkKeys(where, mc, ["operations", "fields", "rules", "authenticated"]);
     const ops = readOps(`${where}.operations`, mc.operations);
     opsByModel.set(name, ops);
+    if (mc.rules !== undefined)
+      rulesByModel.set(name, checkRules(`${where}.rules`, node, mc.rules));
+    if (mc.authenticated === true || mc.authenticated === false) {
+      const all = mc.authenticated;
+      authByModel.set(
+        name,
+        Object.fromEntries(
+          (Object.keys(GROUPS) as Group[]).map((g) => [g, new Set(all ? GROUPS[g] : [])]),
+        ),
+      );
+    } else if (mc.authenticated !== undefined) {
+      authByModel.set(name, readOps(`${where}.authenticated`, mc.authenticated));
+    }
     // Interfaces are written through their implementations' create, unions through their members.
     const writes = (g: Group) => (ops[g]?.size ?? 0) > 0;
     if (node.union && (writes("create") || writes("update") || writes("delete"))) {
@@ -369,7 +529,32 @@ export function checkConfig(schema: SchemaModel, config: GraphQLConfig = {}): Re
         throw new NativeSchemaError(`${where}.fields.${field} must be false or an object.`);
       }
       checkKeys(`${where}.fields.${field}`, toggle, FIELD_KEYS);
-      for (const k of ["read", "filter", "sort", "create", "update"]) {
+      const readRule = toggle.read;
+      if (typeof readRule === "function") {
+        fieldRules.set(`${name}.${field}`, { kind: "context", fn: readRule as AnyFn });
+      } else if (isPlainObject(readRule)) {
+        checkKeys(`${where}.fields.${field}.read`, readRule, ["where"]);
+        if (typeof readRule.where !== "function") {
+          throw new NativeSchemaError(`${where}.fields.${field}.read.where must be a function.`);
+        }
+        const f = node.fields.find((x) => x.name === field)!;
+        if (f.kind !== "scalar") {
+          throw new NativeSchemaError(
+            `${where}.fields.${field}.read: row-dependent rules ({ where }) are for scalar fields; ${name}.${field} is a relation (use a context rule, or a read rule on its model).`,
+          );
+        }
+        fieldRules.set(`${name}.${field}`, { kind: "where", fn: readRule.where as AnyFn });
+      } else if (readRule !== undefined && typeof readRule !== "boolean") {
+        throw new NativeSchemaError(
+          `${where}.fields.${field}.read must be a boolean, a function or { where }.`,
+        );
+      }
+      if (fieldRules.has(`${name}.${field}`) && field === node.idField) {
+        throw new NativeSchemaError(
+          `${where}.fields.${field}.read: the @id field cannot have a read rule (cursors and global ids use it); hide it with false, or use a read rule on ${name}.`,
+        );
+      }
+      for (const k of ["filter", "sort", "create", "update"]) {
         if (toggle[k] !== undefined && typeof toggle[k] !== "boolean") {
           throw new NativeSchemaError(`${where}.fields.${field}.${k} must be a boolean.`);
         }
@@ -377,7 +562,7 @@ export function checkConfig(schema: SchemaModel, config: GraphQLConfig = {}): Re
       if (toggle.deprecated !== undefined && typeof toggle.deprecated !== "string") {
         throw new NativeSchemaError(`${where}.fields.${field}.deprecated must be a string.`);
       }
-      const read = toggle.read !== false;
+      const read = readRule !== false;
       fieldToggles.set(`${name}.${field}`, {
         read,
         filter: read && toggle.filter !== false,
@@ -457,6 +642,29 @@ export function checkConfig(schema: SchemaModel, config: GraphQLConfig = {}): Re
     }
   }
 
+  // A field rule makes the field nullable: an implementation cannot add one to a field of its
+  // interface (GraphQL would reject the schema); put it on the interface.
+  const ruledOn = (model: string, name: string): boolean => {
+    if (fieldRules.has(`${model}.${name}`)) return true;
+    const node = byName.get(model);
+    return (node?.interfaces ?? []).some(
+      (i) =>
+        byName.get(i)?.fields.some((f) => f.name === name) === true &&
+        fieldRules.has(`${i}.${name}`),
+    );
+  };
+  for (const node of schema.nodes) {
+    for (const i of node.interfaces ?? []) {
+      for (const f of byName.get(i)?.fields ?? []) {
+        if (fieldRules.has(`${node.name}.${f.name}`) && !ruledOn(i, f.name)) {
+          throw new NativeSchemaError(
+            `config.models.${node.name}.fields.${f.name}.read: a rule on a field of the interface ${i} goes on ${i} (it applies to every implementation).`,
+          );
+        }
+      }
+    }
+  }
+
   const operations = new Map<string, Map<RootOperation, string>>();
   for (const node of schema.nodes) {
     const own = opsByModel.get(node.name) ?? {};
@@ -486,11 +694,84 @@ export function checkConfig(schema: SchemaModel, config: GraphQLConfig = {}): Re
     operations.set(node.name, names);
   }
 
+  // A model is subject to its interfaces' `authenticated` too.
+  const authGroups = (model: string): Partial<Record<Group, Set<RootOperation>>>[] => [
+    authByModel.get(model) ?? {},
+    ...(byName.get(model)?.interfaces ?? []).map((i) => authByModel.get(i) ?? {}),
+  ];
+  const isAuthenticated =
+    (config.isAuthenticated as ((ctx: unknown) => boolean) | undefined) ?? defaultIsAuthenticated;
   return {
     operations,
     field: access,
     limits: limits as Limits,
     relay: config.relay === true,
     mutationTransaction: config.mutationTransaction ?? "field",
+    rules: rulesByModel,
+    fieldRules,
+    fieldRuled: ruledOn,
+    authenticated: (model, op) =>
+      authGroups(model).some((groups) =>
+        (Object.keys(GROUPS) as Group[]).some((g) => groups[g]?.has(op) === true),
+      ),
+    authenticatedGroups: (model) => {
+      const out = new Set<Group>();
+      for (const groups of authGroups(model)) {
+        for (const g of Object.keys(GROUPS) as Group[]) {
+          if (GROUPS[g].every((op) => groups[g]?.has(op))) out.add(g);
+        }
+      }
+      return out;
+    },
+    isAuthenticated: (ctx) => isAuthenticated(ctx) === true,
   };
+}
+
+/** Check the shape of `models.<M>.rules`: known keys, functions, relations of the model. */
+function checkRules(where: string, node: ResolvedNodeModel, rules: unknown): ConfiguredRules {
+  if (!isPlainObject(rules)) throw new NativeSchemaError(`${where} must be an object.`);
+  checkKeys(where, rules, RULE_KEYS);
+  if (node.union) {
+    const writes = Object.keys(rules).filter((k) => k !== "read" && rules[k] !== undefined);
+    if (writes.length) {
+      throw new NativeSchemaError(
+        `${where}: ${node.name} is a union, which is only read; put ${writes.join(", ")} rules on its members.`,
+      );
+    }
+  }
+  for (const k of ["read", "create", "update", "delete"] as const) {
+    if (rules[k] !== undefined && typeof rules[k] !== "function") {
+      throw new NativeSchemaError(`${where}.${k} must be a function ({ ctx }) => …`);
+    }
+  }
+  for (const k of ["connect", "disconnect"] as const) {
+    const per = rules[k];
+    if (per === undefined) continue;
+    if (!isPlainObject(per)) {
+      throw new NativeSchemaError(`${where}.${k} must be an object keyed by relation field.`);
+    }
+    const relations = node.fields.filter((f) => f.kind === "relation").map((f) => f.name);
+    for (const [rel, fn] of Object.entries(per)) {
+      if (fn === undefined) continue;
+      if (!relations.includes(rel)) {
+        throw new NativeSchemaError(
+          `${where}.${k}: unknown relation "${node.name}.${rel}" (relations: ${relations.join(", ") || "none"}).`,
+        );
+      }
+      if (typeof fn !== "function") {
+        throw new NativeSchemaError(`${where}.${k}.${rel} must be a function ({ ctx }) => …`);
+      }
+    }
+  }
+  if (rules.after !== undefined) {
+    if (!isPlainObject(rules.after))
+      throw new NativeSchemaError(`${where}.after must be an object.`);
+    checkKeys(`${where}.after`, rules.after, ["create", "update"]);
+    for (const [k, fn] of Object.entries(rules.after)) {
+      if (fn !== undefined && typeof fn !== "function") {
+        throw new NativeSchemaError(`${where}.after.${k} must be a function ({ ctx }) => …`);
+      }
+    }
+  }
+  return rules as ConfiguredRules;
 }

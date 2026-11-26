@@ -1,0 +1,11 @@
+# features: auth.field.context, auth.jwt
+# ordered
+# An admin reads, filters and sorts on salaries.
+{
+  userFindMany(where: { salary: { gt: 150 } }, orderBy: [{ salary: desc }]) {
+    nodes {
+      id
+      salary
+    }
+  }
+}

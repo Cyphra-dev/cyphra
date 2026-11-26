@@ -1,0 +1,11 @@
+# features: auth.field.context, auth.jwt, errors
+# Filtering or sorting on a field the request cannot read fails the root field (FORBIDDEN),
+# also through a relation; the other root fields still return.
+{
+  filtered: userCount(where: { salary: { gt: 150 } })
+  sorted: userFindMany(orderBy: [{ salary: desc }]) {
+    totalCount
+  }
+  throughRelation: postCount(where: { author: { is: { salary: { gt: 150 } } } })
+  ok: userCount
+}

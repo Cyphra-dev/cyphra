@@ -1,0 +1,17 @@
+# features: auth.rules.read, aggregate, auth.jwt
+# ordered
+# One read rule covers counts, totalCount and _count (v7 has separate AGGREGATE rules).
+{
+  postCount
+  postFindMany {
+    totalCount
+  }
+  userFindMany(orderBy: [{ id: asc }]) {
+    nodes {
+      id
+      _count {
+        posts
+      }
+    }
+  }
+}

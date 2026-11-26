@@ -1,0 +1,26 @@
+{
+  "data": {
+    "postFindMany": {
+      "totalCount": 2,
+      "nodes": [
+        {
+          "id": "p-bob",
+          "title": "Bob's post",
+          "author": {
+            "name": "Bob",
+            "email": null
+          }
+        },
+        {
+          "id": "p-hello",
+          "title": "Hello",
+          "author": {
+            "name": "Alice",
+            "email": null
+          }
+        }
+      ]
+    },
+    "userCount": 0
+  }
+}

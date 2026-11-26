@@ -1,0 +1,16 @@
+{
+  "data": {
+    "userFindMany": {
+      "nodes": [
+        {
+          "id": "u-root",
+          "salary": 300
+        },
+        {
+          "id": "u-bob",
+          "salary": 200
+        }
+      ]
+    }
+  }
+}

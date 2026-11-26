@@ -1,0 +1,609 @@
+type Audit {
+  id: ID!
+  message: String!
+  user: User
+}
+
+type AuditList {
+  nodes: [Audit!]!
+  pageInfo: PageInfo!
+
+  """
+  Number of nodes matching where, ignoring paging. Counted only when selected.
+  """
+  totalCount: Int!
+}
+
+input AuditListRelationFilter {
+  """Every related node matches."""
+  every: AuditWhere
+
+  """No related node matches."""
+  none: AuditWhere
+
+  """At least one related node matches."""
+  some: AuditWhere
+}
+
+"""One key per element of the orderBy list."""
+input AuditOrderBy {
+  id: SortOrder
+  message: SortOrder
+
+  """Sort by a field of the related node."""
+  user: UserScalarOrderBy
+}
+
+input AuditRelationCountOrder {
+  _count: SortOrder!
+
+  """Count only the matching nodes."""
+  where: AuditWhere
+}
+
+input AuditUpdateManyWithoutUserRelation {
+  """MERGEs an edge to each node (connecting a linked node keeps one edge)."""
+  connect: [AuditWhereUnique!]
+  disconnect: [AuditWhereUnique!]
+
+  """The only linked nodes afterwards (edges to the others are deleted)."""
+  set: [AuditWhereUnique!]
+}
+
+input AuditWhere {
+  AND: [AuditWhere!]
+  NOT: AuditWhere
+  OR: [AuditWhere!]
+  id: IDFilter
+  message: StringFilter
+  user: UserRelationFilter
+}
+
+"""
+At least one unique key (checked when the query runs), plus filters on the other fields.
+"""
+input AuditWhereUnique {
+  AND: [AuditWhere!]
+  NOT: AuditWhere
+  OR: [AuditWhere!]
+  id: ID
+  message: StringFilter
+  user: UserRelationFilter
+}
+
+input BooleanFilter {
+  equals: Boolean
+  not: Boolean
+}
+
+input IDFilter {
+  contains: ID
+  endsWith: ID
+  equals: ID
+  gt: ID
+  gte: ID
+  in: [ID!]
+  lt: ID
+  lte: ID
+  mode: QueryMode
+  not: ID
+  notIn: [ID!]
+  startsWith: ID
+}
+
+input IntFilter {
+  equals: Int
+  gt: Int
+  gte: Int
+  in: [Int!]
+  lt: Int
+  lte: Int
+  not: Int
+  notIn: [Int!]
+}
+
+"""Number updates, applied in this order to the current value."""
+input IntOps {
+  decrement: Int
+  increment: Int
+  multiply: Int
+}
+
+type Mutation {
+  postCreate(data: PostCreateInput!): Post
+  postCreateMany(data: [PostCreateManyInput!]!): PostBatch
+  postDelete(where: PostWhereUnique!): Post
+  postDeleteMany(where: PostWhere): PostBatch
+  postUpdate(data: PostUpdateInput!, where: PostWhereUnique!): Post
+  postUpdateMany(data: PostUpdateManyInput!, where: PostWhere): PostBatch
+  postUpsert(create: PostCreateInput!, update: PostUpdateInput!, where: PostWhereUnique!): Post
+  tagCreate(data: TagCreateInput!): Tag
+  userUpdate(data: UserUpdateInput!, where: UserWhereUnique!): User
+}
+
+type PageInfo {
+  endCursor: String
+  hasNextPage: Boolean!
+  hasPreviousPage: Boolean!
+  startCursor: String
+}
+
+type Post {
+  """
+  Number of related nodes per to-many relation (only the selected ones are counted).
+  """
+  _count: PostCount!
+  author: User
+  id: ID!
+  published: Boolean!
+  tags(orderBy: [TagOrderBy!], skip: Int, take: Int, where: TagWhere): [Tag!]!
+  title: String!
+  views: Int!
+}
+
+type PostBatch {
+  count: Int!
+
+  """
+  The affected records (as they were, for deleteMany). Loaded only when selected.
+  """
+  nodes: [Post!]!
+}
+
+type PostCount {
+  tags(where: TagWhere): Int!
+}
+
+input PostCreateInput {
+  author: UserCreateOneWithoutPostsRelation
+  id: ID
+  published: Boolean
+  tags: TagCreateManyWithoutPostsRelation
+  title: String!
+  views: Int
+}
+
+input PostCreateManyInput {
+  id: ID
+  published: Boolean
+  title: String!
+  views: Int
+}
+
+input PostCreateManyWithoutTagsRelation {
+  """MERGEs an edge to each node (connecting a linked node keeps one edge)."""
+  connect: [PostWhereUnique!]
+  create: [PostCreateWithoutTagsInput!]
+}
+
+input PostCreateWithoutAuthorInput {
+  id: ID
+  published: Boolean
+  tags: TagCreateManyWithoutPostsRelation
+  title: String!
+  views: Int
+}
+
+input PostCreateWithoutTagsInput {
+  author: UserCreateOneWithoutPostsRelation
+  id: ID
+  published: Boolean
+  title: String!
+  views: Int
+}
+
+type PostList {
+  nodes: [Post!]!
+  pageInfo: PageInfo!
+
+  """
+  Number of nodes matching where, ignoring paging. Counted only when selected.
+  """
+  totalCount: Int!
+}
+
+input PostListRelationFilter {
+  """Every related node matches."""
+  every: PostWhere
+
+  """No related node matches."""
+  none: PostWhere
+
+  """At least one related node matches."""
+  some: PostWhere
+}
+
+"""Number updates of the fields (not with a value for the same field)."""
+input PostOps {
+  views: IntOps
+}
+
+"""One key per element of the orderBy list."""
+input PostOrderBy {
+  """Sort by a field of the related node."""
+  author: UserScalarOrderBy
+  id: SortOrder
+  published: SortOrder
+
+  """Sort by the number of related nodes."""
+  tags: TagRelationCountOrder
+  title: SortOrder
+  views: SortOrder
+}
+
+input PostRelationCountOrder {
+  _count: SortOrder!
+
+  """Count only the matching nodes."""
+  where: PostWhere
+}
+
+input PostUpdateInput {
+  _ops: PostOps
+  author: UserUpdateOneWithoutPostsRelation
+  id: ID
+  published: Boolean
+  tags: TagUpdateManyWithoutPostsRelation
+  title: String
+  views: Int
+}
+
+input PostUpdateManyInput {
+  _ops: PostOps
+  id: ID
+  published: Boolean
+  title: String
+  views: Int
+}
+
+input PostUpdateManyWithoutAuthorRelation {
+  """MERGEs an edge to each node (connecting a linked node keeps one edge)."""
+  connect: [PostWhereUnique!]
+  create: [PostCreateWithoutAuthorInput!]
+  disconnect: [PostWhereUnique!]
+
+  """The only linked nodes afterwards (edges to the others are deleted)."""
+  set: [PostWhereUnique!]
+}
+
+input PostWhere {
+  AND: [PostWhere!]
+  NOT: PostWhere
+  OR: [PostWhere!]
+  author: UserRelationFilter
+  id: IDFilter
+  published: BooleanFilter
+  tags: TagListRelationFilter
+  title: StringFilter
+  views: IntFilter
+}
+
+"""
+At least one unique key (checked when the query runs), plus filters on the other fields.
+"""
+input PostWhereUnique {
+  AND: [PostWhere!]
+  NOT: PostWhere
+  OR: [PostWhere!]
+  author: UserRelationFilter
+  id: ID
+  published: BooleanFilter
+  tags: TagListRelationFilter
+  title: StringFilter
+  views: IntFilter
+}
+
+type Query {
+  auditCount(where: AuditWhere): Int
+  auditFindFirst(orderBy: [AuditOrderBy!], skip: Int, where: AuditWhere): Audit
+  auditFindMany(
+    """A cursor (pageInfo.endCursor): the page after it."""
+    after: String
+
+    """A cursor (pageInfo.startCursor): the page before it."""
+    before: String
+    orderBy: [AuditOrderBy!]
+    skip: Int
+    take: Int
+    where: AuditWhere
+  ): AuditList
+  auditFindUnique(where: AuditWhereUnique!): Audit
+  postCount(where: PostWhere): Int
+  postFindFirst(orderBy: [PostOrderBy!], skip: Int, where: PostWhere): Post
+  postFindMany(
+    """A cursor (pageInfo.endCursor): the page after it."""
+    after: String
+
+    """A cursor (pageInfo.startCursor): the page before it."""
+    before: String
+    orderBy: [PostOrderBy!]
+    skip: Int
+    take: Int
+    where: PostWhere
+  ): PostList
+  postFindUnique(where: PostWhereUnique!): Post
+  tagCount(where: TagWhere): Int
+  tagFindFirst(orderBy: [TagOrderBy!], skip: Int, where: TagWhere): Tag
+  tagFindMany(
+    """A cursor (pageInfo.endCursor): the page after it."""
+    after: String
+
+    """A cursor (pageInfo.startCursor): the page before it."""
+    before: String
+    orderBy: [TagOrderBy!]
+    skip: Int
+    take: Int
+    where: TagWhere
+  ): TagList
+  tagFindUnique(where: TagWhereUnique!): Tag
+  userCount(where: UserWhere): Int
+  userFindFirst(orderBy: [UserOrderBy!], skip: Int, where: UserWhere): User
+  userFindMany(
+    """A cursor (pageInfo.endCursor): the page after it."""
+    after: String
+
+    """A cursor (pageInfo.startCursor): the page before it."""
+    before: String
+    orderBy: [UserOrderBy!]
+    skip: Int
+    take: Int
+    where: UserWhere
+  ): UserList
+  userFindUnique(where: UserWhereUnique!): User
+}
+
+"""`insensitive` compares lower-cased values."""
+enum QueryMode {
+  default
+  insensitive
+}
+
+enum Role {
+  ADMIN
+  MEMBER
+}
+
+input RoleFilter {
+  equals: Role
+  in: [Role!]
+  not: Role
+  notIn: [Role!]
+}
+
+enum SortOrder {
+  asc
+  desc
+}
+
+input StringFilter {
+  contains: String
+  endsWith: String
+  equals: String
+  gt: String
+  gte: String
+  in: [String!]
+  lt: String
+  lte: String
+  mode: QueryMode
+  not: String
+  notIn: [String!]
+  startsWith: String
+}
+
+type Tag {
+  """
+  Number of related nodes per to-many relation (only the selected ones are counted).
+  """
+  _count: TagCount!
+  internal: Boolean!
+  name: ID!
+  posts(orderBy: [PostOrderBy!], skip: Int, take: Int, where: PostWhere): [Post!]!
+}
+
+type TagCount {
+  posts(where: PostWhere): Int!
+}
+
+input TagCreateInput {
+  internal: Boolean
+  name: ID!
+  posts: PostCreateManyWithoutTagsRelation
+}
+
+input TagCreateManyWithoutPostsRelation {
+  """MERGEs an edge to each node (connecting a linked node keeps one edge)."""
+  connect: [TagWhereUnique!]
+  create: [TagCreateWithoutPostsInput!]
+}
+
+input TagCreateWithoutPostsInput {
+  internal: Boolean
+  name: ID!
+}
+
+type TagList {
+  nodes: [Tag!]!
+  pageInfo: PageInfo!
+
+  """
+  Number of nodes matching where, ignoring paging. Counted only when selected.
+  """
+  totalCount: Int!
+}
+
+input TagListRelationFilter {
+  """Every related node matches."""
+  every: TagWhere
+
+  """No related node matches."""
+  none: TagWhere
+
+  """At least one related node matches."""
+  some: TagWhere
+}
+
+"""One key per element of the orderBy list."""
+input TagOrderBy {
+  internal: SortOrder
+  name: SortOrder
+
+  """Sort by the number of related nodes."""
+  posts: PostRelationCountOrder
+}
+
+input TagRelationCountOrder {
+  _count: SortOrder!
+
+  """Count only the matching nodes."""
+  where: TagWhere
+}
+
+input TagUpdateManyWithoutPostsRelation {
+  """MERGEs an edge to each node (connecting a linked node keeps one edge)."""
+  connect: [TagWhereUnique!]
+  create: [TagCreateWithoutPostsInput!]
+  disconnect: [TagWhereUnique!]
+
+  """The only linked nodes afterwards (edges to the others are deleted)."""
+  set: [TagWhereUnique!]
+}
+
+input TagWhere {
+  AND: [TagWhere!]
+  NOT: TagWhere
+  OR: [TagWhere!]
+  internal: BooleanFilter
+  name: IDFilter
+  posts: PostListRelationFilter
+}
+
+"""
+At least one unique key (checked when the query runs), plus filters on the other fields.
+"""
+input TagWhereUnique {
+  AND: [TagWhere!]
+  NOT: TagWhere
+  OR: [TagWhere!]
+  internal: BooleanFilter
+  name: ID
+  posts: PostListRelationFilter
+}
+
+type User {
+  """
+  Number of related nodes per to-many relation (only the selected ones are counted).
+  """
+  _count: UserCount!
+  audits(orderBy: [AuditOrderBy!], skip: Int, take: Int, where: AuditWhere): [Audit!]!
+
+  """Null where a read rule hides it."""
+  email: String
+  id: ID!
+  name: String!
+  posts(orderBy: [PostOrderBy!], skip: Int, take: Int, where: PostWhere): [Post!]!
+  role: Role!
+
+  """Null where a read rule hides it."""
+  salary: Int
+}
+
+type UserCount {
+  audits(where: AuditWhere): Int!
+  posts(where: PostWhere): Int!
+}
+
+input UserCreateOneWithoutPostsRelation {
+  """MERGEs the edge, replacing the current one."""
+  connect: UserWhereUnique
+}
+
+type UserList {
+  nodes: [User!]!
+  pageInfo: PageInfo!
+
+  """
+  Number of nodes matching where, ignoring paging. Counted only when selected.
+  """
+  totalCount: Int!
+}
+
+"""Number updates of the fields (not with a value for the same field)."""
+input UserOps {
+  salary: IntOps
+}
+
+"""One key per element of the orderBy list."""
+input UserOrderBy {
+  """Sort by the number of related nodes."""
+  audits: AuditRelationCountOrder
+  email: SortOrder
+  id: SortOrder
+  name: SortOrder
+
+  """Sort by the number of related nodes."""
+  posts: PostRelationCountOrder
+  role: SortOrder
+  salary: SortOrder
+}
+
+input UserRelationFilter {
+  """The related node matches (null: none)."""
+  is: UserWhere
+  isNot: UserWhere
+}
+
+input UserScalarOrderBy {
+  email: SortOrder
+  id: SortOrder
+  name: SortOrder
+  role: SortOrder
+  salary: SortOrder
+}
+
+input UserUpdateInput {
+  _ops: UserOps
+  audits: AuditUpdateManyWithoutUserRelation
+  email: String
+  id: ID
+  name: String
+  posts: PostUpdateManyWithoutAuthorRelation
+  role: Role
+  salary: Int
+}
+
+input UserUpdateOneWithoutPostsRelation {
+  """MERGEs the edge, replacing the current one."""
+  connect: UserWhereUnique
+
+  """true: remove the edge."""
+  disconnect: Boolean
+}
+
+input UserWhere {
+  AND: [UserWhere!]
+  NOT: UserWhere
+  OR: [UserWhere!]
+  audits: AuditListRelationFilter
+  email: StringFilter
+  id: IDFilter
+  name: StringFilter
+  posts: PostListRelationFilter
+  role: RoleFilter
+  salary: IntFilter
+}
+
+"""
+At least one unique key (checked when the query runs), plus filters on the other fields.
+"""
+input UserWhereUnique {
+  AND: [UserWhere!]
+  NOT: UserWhere
+  OR: [UserWhere!]
+  audits: AuditListRelationFilter
+  email: String
+  id: ID
+  name: StringFilter
+  posts: PostListRelationFilter
+  role: RoleFilter
+  salary: IntFilter
+}

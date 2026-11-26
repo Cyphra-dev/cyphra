@@ -1,0 +1,17 @@
+# features: auth.rules.after, auth.token, mutation.create, mutation.connect, errors
+# The after rule is checked once the statement's writes ran: a post must end up authored by the
+# requester. Failing ones are rolled back (FORBIDDEN); the token is verified by native.jwtContext.
+mutation {
+  forged: postCreate(data: { title: "Forged", author: { connect: { id: "u-bob" } } }) {
+    title
+  }
+  orphan: postCreate(data: { title: "Orphan" }) {
+    title
+  }
+  own: postCreate(data: { title: "Mine", author: { connect: { id: "u-alice" } } }) {
+    title
+    author {
+      id
+    }
+  }
+}

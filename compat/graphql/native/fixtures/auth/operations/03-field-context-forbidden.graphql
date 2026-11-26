@@ -1,0 +1,8 @@
+# features: auth.field.context, auth.jwt, errors
+# A member selecting a salary: null with FORBIDDEN at its path; the rest of the node is there.
+{
+  userFindUnique(where: { id: "u-alice" }) {
+    name
+    salary
+  }
+}

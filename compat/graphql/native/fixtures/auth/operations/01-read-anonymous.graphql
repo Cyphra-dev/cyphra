@@ -1,0 +1,17 @@
+# features: auth.rules.read, auth.field.row
+# ordered
+# Anonymous: published posts only; every email is hidden (row-dependent rule), filters see null.
+{
+  postFindMany(orderBy: [{ id: asc }]) {
+    totalCount
+    nodes {
+      id
+      title
+      author {
+        name
+        email
+      }
+    }
+  }
+  userCount(where: { email: { endsWith: "@acme.io" } })
+}

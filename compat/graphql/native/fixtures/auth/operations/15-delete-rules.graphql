@@ -1,0 +1,10 @@
+# features: auth.rules.delete, mutation.delete, auth.jwt, errors
+mutation {
+  other: postDelete(where: { id: "p-bob" }) {
+    id
+  }
+  own: postDelete(where: { id: "p-draft" }) {
+    id
+    title
+  }
+}

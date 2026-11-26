@@ -21,7 +21,8 @@ Serve `schema` with GraphQL Yoga, Apollo Server or any GraphQL server.
 
 **Native API (experimental):** `native.makeSchema({ client: db, config })` serves an API generated
 from `schema.cyphra` and run by the typed client (`postFindMany`, keyset cursors, `_edge`, typed
-config with `defineGraphQL`). Reads only for now. See
+config with `defineGraphQL`): reads, writes (off by default) and auth (rules compiled into the
+statement, field rules, `authenticated`, `native.jwtContext`, `ctx.cyphra`). See
 [the docs](https://www.cyphra.dev/graphql/native).
 
 Status (early release):

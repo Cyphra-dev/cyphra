@@ -1,0 +1,16 @@
+# features: auth.rules.read, auth.field.row, mutation.update, auth.jwt, errors
+# A mutation's response applies the read rules (v7 does not on create): hidden relations are
+# empty, ruled fields null.
+mutation {
+  userUpdate(where: { id: "u-alice" }, data: { name: "Al" }) {
+    name
+    email
+    salary
+    audits {
+      id
+    }
+    posts(orderBy: [{ id: asc }]) {
+      id
+    }
+  }
+}
