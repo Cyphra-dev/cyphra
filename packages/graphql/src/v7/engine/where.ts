@@ -6,13 +6,14 @@
  * - keys of one object, `AND` / `OR` / `NOT` combine like v7: a part that filters nothing is left
  *   out, an `OR` with a member that filters nothing filters nothing;
  * - `{ eq: null }` matches a missing property, any other operator with `null` filters nothing;
- * - `some` / `none` / `all` with a filter that filters nothing are left out (v7 ignores `{}`);
- *   `all` requires at least one related node (`some: {}` plus `every`);
+ * - `some` / `none` / `all` / `single` with a filter that filters nothing are left out (v7 ignores
+ *   `{}`); `all` requires at least one related node (`some: {}` plus `every`); `single` is a
+ *   `_count` of the matching related nodes equal to 1;
  * - to-one relationships: `null` matches nodes without one, `{}` filters nothing, a filter matches
  *   when the related node exists and matches.
  *
  * What it cannot translate exactly throws {@link Fallback}: the compat compiler then runs the
- * request (aggregation filters, `single`, edge filters, `@cypher` fields, relationships to
+ * request (aggregation filters, edge filters, `@cypher` fields, relationships to
  * interfaces and unions, DateTime values, …).
  *
  * @packageDocumentation
@@ -342,7 +343,7 @@ export class WhereTranslator {
     return { [name]: { is: condition(this.node(target, value) ?? TRUE) } };
   }
 
-  /** `some` / `none` / `all` of the related nodes matching a node or connection filter. */
+  /** `some` / `none` / `all` / `single` of the related nodes matching a node or connection filter. */
   private related(
     node: NodeType,
     rel: Relationship,
@@ -367,6 +368,9 @@ export class WhereTranslator {
       case "all":
         // At least one related node, and every one matches.
         return { [name]: { some: {}, every: inner } };
+      case "single":
+        // Exactly one matching related node (v7 counts the matching paths, like `_count`).
+        return { _count: { [name]: { equals: 1, where: inner } } };
     }
     throw new Fallback(`relationship filter ${quantifier}`);
   }

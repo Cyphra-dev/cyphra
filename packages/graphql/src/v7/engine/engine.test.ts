@@ -6,6 +6,7 @@ import { fakeDriver } from "../../../test/helpers.js";
 import { makeSchema } from "../index.js";
 import { readTypeDefs } from "../model.js";
 import { engineSchema } from "./schema.js";
+import { ENGINE_OPTION } from "./index.js";
 import { Fallback, TRUE, WhereTranslator, rootWhere } from "./where.js";
 
 const typeDefs = /* GraphQL */ `
@@ -115,9 +116,21 @@ describe("v7 where → engine where", () => {
     });
   });
 
+  it("single: a `_count` of the matching related nodes equal to 1", () => {
+    expect(tr({ actors: { single: { name: { eq: "K" } } } })).toEqual({
+      _count: { actors: { equals: 1, where: { name: { equals: "K" } } } },
+    });
+    expect(tr({ actors_SINGLE: { OR: [{}] } })).toEqual({
+      _count: { actors: { equals: 1, where: {} } },
+    });
+    expect(tr({ actorsConnection: { single: { node: { born: { gt: 1 } } } } })).toEqual({
+      _count: { actors: { equals: 1, where: { born: { gt: 1 } } } },
+    });
+    expect(tr({ actors: { single: {} } })).toBeUndefined();
+  });
+
   it("throws Fallback for what only the compat compiler handles", () => {
     for (const w of [
-      { actors: { single: { name: { eq: "K" } } } },
       { actorsConnection: { some: { edge: { role: { eq: "x" } } } } },
       { actorsConnection: { aggregate: { count: { nodes: { gt: 1 } } } } },
       { actorsAggregate: { count: { gt: 1 } } },
@@ -154,7 +167,23 @@ describe("routing between the engine and the compat compiler", () => {
     await run(s, "{ movies { title } }", { cypherParams: { x: 1 } });
     // Engine statements bind `n`; the compiler's `this0`.
     const engine = (r: Run) => r.cypher.startsWith("MATCH (n:");
-    expect(statements.map(engine)).toEqual([true, false, false, false, false, false]);
+    expect(statements.map(engine)).toEqual([true, false, false, false, true, false]);
+  });
+
+  it("reports how each root field ran to the internal engine probe, and turns the engine off", async () => {
+    const { driver, statements } = engineDriver();
+    const seen: [string, string | undefined][] = [];
+    const probe = { onRootField: (f: string, r: string | undefined) => seen.push([f, r]) };
+    const s = makeSchema({ typeDefs, driver, [ENGINE_OPTION]: probe } as never);
+    await run(s, "{ movies { title } }");
+    await run(s, "{ movies { top { name } } }");
+    expect(seen).toEqual([
+      ["movies", undefined],
+      ["movies", "Movie.top"],
+    ]);
+    const off = makeSchema({ typeDefs, driver, [ENGINE_OPTION]: false } as never);
+    await run(off, "{ movies { title } }");
+    expect(statements.at(-1)!.cypher.startsWith("MATCH (n:")).toBe(false);
   });
 
   it("runs engine statements with the compiler's session options and transaction metadata", async () => {

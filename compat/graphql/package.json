@@ -8,7 +8,8 @@
     "golden:native": "TZ=UTC tsx src/cli.ts golden-native",
     "report": "TZ=UTC tsx src/cli.ts report",
     "test": "TZ=UTC vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "differential": "TZ=UTC tsx src/differential.ts"
   },
   "devDependencies": {
     "@cyphra/graphql": "workspace:*",

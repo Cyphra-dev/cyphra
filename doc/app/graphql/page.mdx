@@ -197,10 +197,10 @@ keys and relationship types come from your type definitions.
 
 `compat.v7` runs on the same engine as the typed client and the [native API](/graphql/native) when
 that engine answers exactly like v7: list and connection queries with their filters, sorting,
-paging and nested relationships, `create` with attribute inputs, `update` with `set`, and `delete`
+paging and nested relationships (`single` included), `create` with attribute inputs, `update` with `set`, and `delete`
 without nested deletes, on types without `@authentication` / `@authorization`. The rest
 (aggregations, full-text, `@cypher`, rules, unions, interfaces, nested writes, edge filters and
-sorts, `single`, arithmetic operators, …) runs on the compat compiler, with the same results. What
+sorts, arithmetic operators, …) runs on the compat compiler, with the same results. What
 you can see of the difference:
 
 - With `client`, the client's `query` events and spans name the engine operation and model
