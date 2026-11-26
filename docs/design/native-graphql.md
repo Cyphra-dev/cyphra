@@ -1130,6 +1130,9 @@ export const { GET, POST } = routeBySegment({ "": yoga(v7), v2: yoga(api) });
 
 ### Mapping table v7 → native
 
+The full table, every construct `compat.v7` serves, is in the native API docs
+(`/graphql/native#mapping-from-compatv7`); this is its summary.
+
 | v7 (`compat.v7`)                                                                              | Native                                                                                                                           |
 | --------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
 | `movies(where, sort, limit, offset)`                                                          | `movieFindMany(where, orderBy, take, skip) { nodes }`                                                                            |
@@ -1138,9 +1141,9 @@ export const { GET, POST } = routeBySegment({ "": yoga(v7), v2: yoga(api) });
 | `where: { title: { eq: "x" } }`, `title_EQ` (deprecated)                                      | `where: { title: { equals: "x" } }`                                                                                              |
 | `{ in }`, `{ contains }`, `{ startsWith }`, `{ lt }`, …                                       | same names (`in`, `contains`, `startsWith`, `lt`, …)                                                                             |
 | `{ title: { eq: null } }`                                                                     | `{ title: null }`                                                                                                                |
-| `actors: { some / all / none / single: … }`                                                   | `actors: { some / every / none: … }`; `single` has no equivalent (count it: see below)                                           |
+| `actors: { some / all / none / single: … }`                                                   | `actors: { some / every / none: … }` (`all`: `every` + `some: {}`); `single`: `_count: { actors: { equals: 1, where } }`         |
 | to-one `author: { single: … }` (v7 lists)                                                     | `author: { is: … }`                                                                                                              |
-| `actorsAggregate: { count: { gt: 2 } }` (aggregation filter)                                  | not in the first version (needs `_count` filters in the client `where`)                                                          |
+| `actorsAggregate: { count: { gt: 2 } }` (aggregation filter)                                  | `_count: { actors: { gt: 2 } }`; other aggregation filters have no equivalent                                                    |
 | `sort: [{ title: ASC }]`                                                                      | `orderBy: [{ title: asc }]`                                                                                                      |
 | `moviesConnection { aggregate { count { nodes } node { year { average } } } }`                | `movieAggregate { _count { _all } _avg { year } }`                                                                               |
 | `createMovies(input: [...]) { info { nodesCreated } movies { … } }`                           | `movieCreate(data)` / `movieCreateMany(data) { count nodes { … } }`                                                              |
@@ -1149,7 +1152,7 @@ export const { GET, POST } = routeBySegment({ "": yoga(v7), v2: yoga(api) });
 | `deleteMovies(where, delete: { actors: … }) { nodesDeleted }`                                 | `movieDelete(where)` / `movieDeleteMany(where) { count nodes }`; nested delete: `onDelete: Cascade` in `schema.cyphra`           |
 | nested `connect: [{ where: { node: { name: { eq: "x" } } }, edge: { role } }]`                | `connect: [{ name: "x", _edge: { role } }]` (unique keys only, and a `MERGE`)                                                    |
 | nested `connect` by a non-unique `where` (many nodes)                                         | not supported: connect by key, or a custom mutation                                                                              |
-| nested `update` / `delete`                                                                    | phase 8 (client first); until then root mutations or a custom resolver                                                           |
+| nested `update` / `delete`                                                                    | nested `update` / `delete` by unique key in `movieUpdate` (phase 8)                                                              |
 | `@fulltext` query `moviesByTitle(phrase)` with `score`                                        | `movieSearch(index, query, mode) { _score }`                                                                                     |
 | `@cypher` field                                                                               | `cypherFields` (phase 7)                                                                                                         |
 | `@authorization` / `@authentication`                                                          | `rules` / `authenticated` in TypeScript                                                                                          |
@@ -1375,6 +1378,33 @@ fixtures and goldens: printed SDL plus results) grows with it.
 9. **Migration tooling**: mapping table in the docs, `cyphra graphql migrate-operations`,
    `cyphra graphql compare` (dual-run), `migrate-rules` drafts, the "Next: the native API" section of
    `/guides/migrate-from-neo4j-graphql` (follow-up comment on #77).
+
+   Status (#249): landed. Choices made where this note left them open: the translation lives in
+   `@cyphra/graphql` (`migrate.translateDocument`, `migrate.compareResults`, `migrate.draftRules`,
+   experimental), the commands in `@cyphra/cli`. A document (a file or a template) is translated as
+   a whole or not at all; an operation with a construct that has no native equivalent is left as
+   it is, with `# cyphra: not translated: …` comments, while a selected field the native API lacks
+   is dropped with a `# cyphra: …` note (filters, arguments and writes are never dropped). Every
+   translation validates against the native schema before it is written. Without `--schema` the
+   native model is `cyphra import graphql`'s conversion; without a config, every operation is
+   assumed on. Variables holding v7 inputs (`$where: MovieWhere`, a `SortDirection`) block the
+   operation (their values are built by the client); scalar variables are retyped for the native
+   position. Updates map to `updateMany` (v7 matches any number of nodes), and to `update` by
+   unique key only when they have nested writes (`NOT_FOUND` where v7 returned `[]`, reported as a
+   known difference); `connect` / `disconnect` / nested `update` / `delete` need a unique key in
+   their `where`. v7's semantics found by the dual run on the suite: `all` needs at least one
+   related node (`every` + `some: {}`), an empty quantifier filter and `null` on a to-one union
+   relationship are ignored, `limit: 0` is ignored, a custom root field may have a generated name
+   (served by its resolver). `compare` runs in-process (both schemas on one driver, reads only
+   unless `--reset` on a disposable database) or over HTTP; the v7 result is mapped to the native
+   shape by the translation, cursors are not compared, and known differences are reported apart.
+   `migrate-rules` combines the rules of one directive with `anyOf` and directives (filter,
+   validate, type) with `allOf`, guards each `$jwt` / `$context` comparison with `given` (a missing
+   value matches nothing), and writes a TODO for what could grant more access than v7: field rules,
+   `@authentication(jwt)`, relationship rules depending on the node from its own side. The suite's
+   dual run (`compat/graphql/test/migrate.test.ts`) translates every fixture operation, applies the
+   drafted rules, and lists the differences it finds on purpose in `migrate-expected.json`.
+
 10. **Subscriptions** on #76's CDC reader: `<model>Changed`, relationship events, rule-aware
     re-reads.
 

@@ -5,6 +5,9 @@ import { runDev } from "./commands/dev.js";
 import { runFormat } from "./commands/format.js";
 import { runGenerate, runGenerateWatch, withZodFlags } from "./commands/generate.js";
 import { runGraphqlCheck } from "./commands/graphqlCheck.js";
+import { runGraphqlCompare } from "./commands/graphqlCompare.js";
+import { runGraphqlMigrateOperations } from "./commands/graphqlMigrateOperations.js";
+import { runGraphqlMigrateRules } from "./commands/graphqlMigrateRules.js";
 import { runGraphqlPrint } from "./commands/graphqlPrint.js";
 import { runImportGraphql } from "./commands/importGraphql.js";
 import { runImportNeogma } from "./commands/importNeogma.js";
@@ -386,6 +389,128 @@ graphqlCmd
   .option("--json", "print { files, issues } as JSON (issues: code, message, location)")
   .action(async (files: string[], opts: { json?: boolean }) => {
     process.exitCode = await runGraphqlCheck(process.cwd(), files, opts);
+  });
+
+const collect = (value: string, previous: string[]) => [...previous, value];
+
+/** The options naming both APIs, for migrate-operations, compare and migrate-rules. */
+function migrationOptions(cmd: Command, typedefs: boolean): Command {
+  if (typedefs) {
+    cmd.requiredOption(
+      "--typedefs <files...>",
+      "the v7 type definitions (.graphql files, or modules exporting typeDefs)",
+    );
+  }
+  return cmd
+    .option(
+      "--schema <file>",
+      "schema.cyphra of the native API (default: converted from the type definitions)",
+    )
+    .option(
+      "--config <file>",
+      "the native API's config module (default: graphql.config.ts / .mts / .js / .mjs if present; none: every operation on)",
+    )
+    .option(
+      "--export <name>",
+      "export of the config module (default: default, else its only export)",
+    )
+    .option(
+      "--id-fields <fields>",
+      "without --schema: mark these fields @id in the conversion (Type.field, comma-separated or repeated)",
+      collect,
+      [] as string[],
+    )
+    .option(
+      "--add-interface-labels",
+      "without --schema: convert interfaces even when their implementations do not carry the interface's label",
+    );
+}
+
+migrationOptions(
+  graphqlCmd
+    .command("migrate-operations")
+    .argument(
+      "<files...>",
+      "operation files: .graphql / .gql, or TS / JS with gql / graphql templates (globs and directories)",
+    )
+    .description(
+      "Rewrite compat.v7 (@neo4j/graphql v7) operations into native ones, and report what cannot be translated, with its location",
+    ),
+  true,
+)
+  .option("--dry-run", "print the translated documents and the report; write nothing")
+  .option("--check", "write nothing; exit with 1 when v7 operations are left (for CI)")
+  .option(
+    "--tag <names>",
+    "more template tags or functions holding documents (e.g. doc for doc<T>(`…`)), comma-separated or repeated",
+    collect,
+    [] as string[],
+  )
+  .option("--no-comments", "do not write # cyphra: comments")
+  .option("--json", "print the report as JSON")
+  .action(async (files: string[], opts: Record<string, unknown>) => {
+    process.exitCode = await runGraphqlMigrateOperations(process.cwd(), files, opts);
+  });
+
+migrationOptions(
+  graphqlCmd
+    .command("compare")
+    .argument(
+      "<files...>",
+      "v7 operation files (as for migrate-operations); NN.variables.json / NN.jwt.json next to a .graphql file are used",
+    )
+    .description(
+      "Run each v7 operation against compat.v7 and its translation against the native API, map the v7 result to the native shape and report the differences (exit 1 when results differ)",
+    ),
+  true,
+)
+  .option("--v7-url <url>", "the compat.v7 endpoint (with --native-url: compare over HTTP)")
+  .option("--native-url <url>", "the native endpoint")
+  .option(
+    "--header <header>",
+    'an HTTP header for both endpoints ("Authorization: Bearer …"), repeatable',
+    collect,
+    [] as string[],
+  )
+  .option(
+    "--reset",
+    "in-process: delete every node and apply --seed before each run (a disposable database only)",
+  )
+  .option("--seed <file>", "in-process: Cypher statements applied after each reset")
+  .option("--allow-mutations", "over HTTP: also run mutations (once per API, on the same data)")
+  .option("--jwt <file>", "a decoded JWT payload (JSON) for every operation")
+  .option(
+    "--tag <names>",
+    "more template tags or functions holding documents",
+    collect,
+    [] as string[],
+  )
+  .option("--ordered", "compare lists in order")
+  .option("--json", "print the report as JSON")
+  .action(async (files: string[], opts: Record<string, unknown>) => {
+    process.exitCode = await runGraphqlCompare(process.cwd(), files, opts);
+  });
+
+migrationOptions(
+  graphqlCmd
+    .command("migrate-rules")
+    .argument(
+      "<typeDefs...>",
+      "the v7 type definitions (.graphql files, or modules exporting typeDefs)",
+    )
+    .description(
+      "Draft native rules (defineGraphQL) from @authorization / @authentication, as TypeScript to review; what cannot be expressed is a TODO(cyphra) comment",
+    ),
+  false,
+)
+  .option("-o, --out <file>", "write the draft to this file instead of stdout")
+  .option(
+    "--type-map <module>",
+    "module exporting the generated CyphraTypeMap (e.g. ./cyphra.gen.js)",
+  )
+  .option("--json", "print { code, entries, drafted, partial, todo } as JSON")
+  .action(async (files: string[], opts: Record<string, unknown>) => {
+    process.exitCode = await runGraphqlMigrateRules(process.cwd(), files, opts);
   });
 
 const schemaCmd = program.command("schema").description("Schema utilities");

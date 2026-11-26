@@ -462,10 +462,87 @@ the new fields into `schema.cyphra`. See the [typed client](/client).
 
 `compat.v7` reproduces the v7 API exactly, including its rough edges: generated plural names, two
 list APIs (lists and connections), very large input types, edge properties only through
-connections, and delete mutations that return counts. A Cyphra-native GraphQL API, generated from
-`schema.cyphra` and able to run next to `compat.v7` in the same server, is the next step
-([#77](https://github.com/Cyphra-dev/cyphra/issues/77)). It does not exist yet; this guide will cover
-the move to it when it ships.
+connections, and delete mutations that return counts. The [native API](/graphql/native) is
+generated from `schema.cyphra` and served by the typed client. Both run side by side on one client,
+so you move one operation at a time, and three commands do most of the work.
+
+### 1. Serve the native API next to compat.v7
+
+Keep `/api/graphql` on `compat.v7` and add the native API on its own endpoint (the two have types
+with the same names and different shapes):
+
+```ts filename="app/api/graphql/[[...v]]/route.ts"
+import { compat, native } from "@cyphra/graphql";
+import { db } from "@/lib/db";
+import api from "./graphql.config";
+
+const v7 = compat.v7.makeSchema({
+  typeDefs,
+  client: db.$client,
+  features: { authorization: { key } },
+});
+const v2 = native.makeSchema({ client: db, config: api });
+// /api/graphql: v7, /api/graphql/v2: native (route by path with your GraphQL server).
+```
+
+The native API serves reads by default; turn on the writes your frontend sends in
+`graphql.config.ts` (`operations: { create: true, update: true, delete: true }` per model).
+
+### 2. Draft the rules
+
+`@authorization` rules stay in `typeDefs.graphql` for `/api/graphql`. The native API needs its
+rules in TypeScript before you turn writes on there:
+
+```bash
+cyphra graphql migrate-rules typeDefs.graphql --out graphql.rules.ts --type-map ./cyphra.gen.js
+```
+
+The draft translates each rule it can (`"$jwt.sub"` becomes `ctx.jwt?.sub`, `filter` rules become
+`read` / `update` / `delete` rules) and leaves a `TODO(cyphra)` comment, with the v7 rule, for what
+the native API cannot express (field-level rules, `@authentication(jwt)`, edge filters). Review
+every rule, then merge `models` into your config: the native rules differ from v7's on purpose (a
+`read` rule also applies to relation filters and `_count`; a node a rule leaves out is
+`NOT_FOUND` instead of a `Forbidden` request). See [rules](/graphql/native#rules) and the
+[CLI reference](/cli#draft-native-rules-from-authorization).
+
+### 3. Rewrite the operations
+
+```bash
+cyphra graphql migrate-operations "src/**/*.{graphql,ts,tsx}" --typedefs typeDefs.graphql --dry-run
+```
+
+The codemod rewrites `.graphql` files and `gql` / `graphql` templates (`movies(where, sort, limit)`
+becomes `movieFindMany(where, orderBy, take) { nodes }`, `actorsConnection { edges { properties } }`
+becomes `actors { _edge { … } }`, `{ eq: … }` becomes `{ equals: … }`, …) and lists, with file,
+line and column, what it cannot translate. Those operations stay as they are, with a
+`# cyphra: not translated: …` comment: point them at `/api/graphql` until you rewrite them by hand.
+Run it without `--dry-run` to write the files, then rebuild your client types with your codegen.
+The [mapping table](/graphql/native#mapping-from-compatv7) lists every v7 construct and its native
+equivalent, or that there is none.
+
+Frontend code changes with the documents: lists are under `nodes`, edge properties under `_edge`,
+cursors are keyset cursors (a v7 cursor a client stored is not valid on the native API).
+
+### 4. Compare both APIs on your operations
+
+```bash
+cyphra graphql compare "operations/*.graphql" --typedefs typeDefs.graphql --reset --seed seed.cypher
+```
+
+On a disposable database, `compare` resets and seeds before each run, runs each v7 operation on
+`compat.v7` and its translation on the native API, maps the v7 result to the native shape and
+reports the differences. Known differences (cursors, `connect` as a `MERGE`) are reported as such.
+It also runs against two endpoints (`--v7-url`, `--native-url`). This extends the comparison of
+[step 7](#compare-both-libraries-on-your-operations) to the native API; the
+`compat/graphql` suite runs it on its 21 fixtures, and lists the differences it finds on purpose in
+[`migrate-expected.json`](https://github.com/Cyphra-dev/cyphra/blob/main/compat/graphql/migrate-expected.json).
+
+### 5. Switch the frontend
+
+Point each rewritten operation at `/api/graphql/v2`. When no operation uses `/api/graphql` any more
+(`cyphra graphql migrate-operations … --check` exits with 0), remove the `compat.v7` endpoint.
+Subscriptions are not in the native API yet ([#76](https://github.com/Cyphra-dev/cyphra/issues/76)):
+keep them on `compat.v7` until then.
 
 ## Related
 
