@@ -6,7 +6,9 @@ import { fakeDriver } from "../../../test/helpers.js";
 import { makeSchema } from "../index.js";
 import { readTypeDefs } from "../model.js";
 import { engineSchema } from "./schema.js";
+import type { AuthContext } from "../auth/context.js";
 import { ENGINE_OPTION } from "./index.js";
+import { EngineAuthRules } from "./rules.js";
 import { Fallback, TRUE, WhereTranslator, rootWhere } from "./where.js";
 
 const typeDefs = /* GraphQL */ `
@@ -38,6 +40,39 @@ const typeDefs = /* GraphQL */ `
   }
   type Secret @node @authorization(filter: [{ where: { node: { owner: { eq: "$jwt.sub" } } } }]) {
     owner: String
+  }
+  type Lab
+    @node
+    @authorization(
+      filter: [
+        {
+          operations: [READ]
+          requireAuthentication: false
+          where: { node: { state: { eq: "PUBLISHED" } } }
+        }
+        { requireAuthentication: false, where: { jwt: { roles: { includes: "admin" } } } }
+      ]
+      validate: [
+        { operations: [CREATE, UPDATE, DELETE], where: { jwt: { roles: { includes: "admin" } } } }
+      ]
+    ) {
+    state: String
+    steps: [Step!]! @relationship(type: "HAS", direction: OUT)
+  }
+  type Step
+    @node
+    @authorization(
+      filter: [
+        { requireAuthentication: false, where: { node: { lab: { state: { eq: "PUBLISHED" } } } } }
+        {
+          requireAuthentication: false
+          where: { node: { lab: { state: null } }, jwt: { level: { gt: 2 } } }
+        }
+        { where: { jwt: { email: { matches: ".*" } } } }
+      ]
+    ) {
+    key: String
+    lab: Lab @relationship(type: "HAS", direction: IN)
   }
 `;
 
@@ -140,7 +175,57 @@ describe("v7 where → engine where", () => {
     ]) {
       expect(() => where.node(movie, w), JSON.stringify(w)).toThrow(Fallback);
     }
-    expect(() => where.node(model.node("Secret"), {})).toThrow(Fallback);
+  });
+});
+
+describe("@authorization rules → engine filters", () => {
+  const authOf = (jwt?: Record<string, unknown>): AuthContext => ({
+    isAuthenticated: jwt !== undefined,
+    jwt,
+    claims: undefined,
+    context: {},
+  });
+  const rules = (jwt?: Record<string, unknown>) =>
+    new EngineAuthRules(new WhereTranslator(model, schema, true), authOf(jwt));
+  const lab = model.node("Lab");
+  const secret = model.node("Secret");
+
+  it("evaluates requireAuthentication and JWT comparisons for the request", () => {
+    expect(rules({ sub: "a" }).read(secret, [])).toEqual({ owner: { equals: "a" } });
+    // Not authenticated: the rule (requireAuthentication) matches nothing.
+    expect(rules().read(secret, [])).toEqual({ OR: [] });
+    // A missing `$jwt.sub` matches nothing.
+    expect(rules({}).read(secret, [])).toEqual({ OR: [] });
+    expect(rules({ roles: ["admin"] }).read(lab, [])).toBe(TRUE);
+    expect(rules({ roles: ["user"] }).read(lab, [])).toEqual({ state: { equals: "PUBLISHED" } });
+    expect(rules().read(lab, [])).toEqual({ state: { equals: "PUBLISHED" } });
+    // UPDATE: only the JWT rule applies.
+    expect(rules().filter(lab, "UPDATE")).toEqual({ OR: [] });
+  });
+
+  it("validate rules: on the engine only when they hold for the request", () => {
+    expect(() => rules({ roles: ["admin"] }).validated(lab, "CREATE", "AFTER")).not.toThrow();
+    expect(() => rules({ roles: ["user"] }).validated(lab, "CREATE", "AFTER")).toThrow(Fallback);
+    expect(() => rules().validated(lab, "DELETE", "BEFORE")).toThrow(Fallback);
+    // A claim that is not a list (Cypher fails on `IN`) stays on the compiler.
+    expect(() => rules({ roles: "admin" }).read(lab, [])).toThrow(Fallback);
+  });
+
+  it("rules mode: to-one filters, filters that filter nothing, uncertain comparisons", () => {
+    const step = model.node("Step");
+    // `lab: { state: null }` filters nothing in a rule (left out); MATCHES stays on the compiler.
+    expect(() => rules({ level: 3, email: "a@b" }).read(step, [])).toThrow(Fallback);
+    expect(rules({ level: 3 }).read(step, [])).toBe(TRUE);
+    const r = new EngineAuthRules(new WhereTranslator(model, schema, true), {
+      ...authOf({ level: 3 }),
+      isAuthenticated: false,
+    });
+    expect(r.read(step, [])).toBe(TRUE);
+    const anon = new EngineAuthRules(new WhereTranslator(model, schema, true), {
+      ...authOf({ level: 1 }),
+      isAuthenticated: false,
+    });
+    expect(anon.read(step, [])).toEqual({ lab: { is: { state: { equals: "PUBLISHED" } } } });
   });
 });
 
@@ -165,9 +250,13 @@ describe("routing between the engine and the compat compiler", () => {
     await run(s, "{ secrets { owner } }", { jwt: { sub: "a" } });
     await run(s, '{ movies(where: { actors: { single: { name: { eq: "K" } } } }) { title } }');
     await run(s, "{ movies { title } }", { cypherParams: { x: 1 } });
+    await run(s, 'mutation { createLabs(input: [{ state: "x" }]) { labs { state } } }', {
+      jwt: { roles: ["user"] },
+    });
     // Engine statements bind `n`; the compiler's `this0`.
-    const engine = (r: Run) => r.cypher.startsWith("MATCH (n:");
-    expect(statements.map(engine)).toEqual([true, false, false, false, true, false]);
+    const engine = (r: Run) => r.cypher.startsWith("MATCH (n:") || r.cypher.startsWith("UNWIND");
+    expect(statements.map(engine)).toEqual([true, false, false, true, true, false, false]);
+    expect(statements[3]!.cypher).toContain("WHERE n.`owner` = $p0");
   });
 
   it("reports how each root field ran to the internal engine probe, and turns the engine off", async () => {

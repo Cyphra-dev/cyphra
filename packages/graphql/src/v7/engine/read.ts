@@ -12,8 +12,12 @@
  *   `totalCount` is a count of the same `where`; `pageInfo` follows v7 (including its
  *   `hasNextPage` on a type with `@limit`).
  *
+ * - `@authorization` READ rules are ANDed into the `where` of the root, of each relation load and
+ *   of each connection (see `rules.ts`), with the rules of the attributes selected there.
+ *
  * Anything else throws {@link Fallback} (connection `aggregate`, edge filters and sorts, `@cypher`
- * fields, custom resolvers' fields, interfaces, unions, rules, …).
+ * fields, custom resolvers' fields, interfaces, unions, `@authentication`, READ validations that
+ * may fail, …).
  *
  * @packageDocumentation
  */
@@ -30,9 +34,17 @@ import {
   subSelections,
   type SelectionInfo,
 } from "../cypher/select.js";
-import { keyedConnectionEdge, type NodeType, type Relationship, type V7Model } from "../model.js";
+import type { AuthContext } from "../auth/context.js";
+import {
+  keyedConnectionEdge,
+  type Attribute,
+  type NodeType,
+  type Relationship,
+  type V7Model,
+} from "../model.js";
+import { EngineAuthRules } from "./rules.js";
 import type { EngineNode, EngineSchema } from "./schema.js";
-import { Fallback, WhereTranslator, isPlainObject, rootWhere } from "./where.js";
+import { Fallback, WhereTranslator, allOf, isPlainObject, rootWhere } from "./where.js";
 
 type AnyRecord = Record<string, unknown>;
 type Shape = (row: AnyRecord) => unknown;
@@ -62,14 +74,42 @@ type Counts = Map<string, unknown>;
 /** Translates one root field; one per resolver call. */
 export class ReadTranslator {
   private readonly where: WhereTranslator;
+  /** The request's `@authorization` rules. */
+  readonly rules: EngineAuthRules;
   private keys = 0;
 
   constructor(
     private readonly model: V7Model,
     schema: EngineSchema,
     private readonly info: SelectionInfo,
+    auth: AuthContext,
   ) {
     this.where = new WhereTranslator(model, schema);
+    this.rules = new EngineAuthRules(new WhereTranslator(model, schema, true), auth);
+  }
+
+  /**
+   * The attributes of `node` selected by `fieldNodes` (their field rules apply with the type's),
+   * like the compiler's `selectedAttributes`.
+   */
+  selectedAttributes(node: NodeType, fieldNodes: readonly FieldNode[]): Attribute[] {
+    const names = new Set(
+      [...collectFields(this.info, subSelections(fieldNodes)).values()].map(
+        (n) => n[0]!.name.value,
+      ),
+    );
+    return node.attributes.filter((a) => names.has(a.name));
+  }
+
+  /**
+   * The `edges { node }` field nodes of a connection selection, as the compiler reads them for the
+   * READ rules (from the response key `edges`).
+   */
+  private edgeNodeFields(fieldNodes: readonly FieldNode[]): FieldNode[] {
+    const conn = collectFields(this.info, subSelections(fieldNodes));
+    return [...collectFields(this.info, subSelections(conn.get("edges") ?? []))]
+      .filter(([, n]) => n[0]!.name.value === "node")
+      .flatMap(([, n]) => n);
   }
 
   /** A fresh key for a relation load of `engine`'s projection (never one of its fields). */
@@ -107,9 +147,17 @@ export class ReadTranslator {
     return items;
   }
 
-  /** `where`, `sort`, `offset`, `limit` of a node list → engine arguments. */
-  private listArgs(node: NodeType, args: AnyRecord): AnyRecord {
-    const where = rootWhere(this.where.node(node, args.where));
+  /**
+   * `where`, `sort`, `offset`, `limit` of a node list → engine arguments, with the READ rules of
+   * the nodes `fieldNodes` select.
+   */
+  private listArgs(node: NodeType, args: AnyRecord, fieldNodes: readonly FieldNode[]): AnyRecord {
+    const where = rootWhere(
+      allOf([
+        this.where.node(node, args.where),
+        this.rules.read(node, this.selectedAttributes(node, fieldNodes)),
+      ]),
+    );
     const orderBy = this.orderBy(node, args.sort);
     const skip = count(args.offset);
     const take = count(pageLimit(node, args.limit));
@@ -151,7 +199,11 @@ export class ReadTranslator {
         const { name: relation, target } = this.where.relation(node, rel);
         const inner = this.node(target, nodes);
         const k = this.key(engine);
-        select[k] = { $relation: relation, ...this.listArgs(target, args), select: inner.select };
+        select[k] = {
+          $relation: relation,
+          ...this.listArgs(target, args, nodes),
+          select: inner.select,
+        };
         shapers.push([
           key,
           rel.list
@@ -323,7 +375,12 @@ export class ReadTranslator {
     const afterOffset = cursorToOffset(args.after);
     const offset = afterOffset === undefined ? 0 : afterOffset + 1;
     const { conn, edgeFieldNodes, needsEdges, needsTotal } = this.connectionNeeds(fieldNodes);
-    const where = rootWhere(this.where.connection(rel, target, args.where));
+    const where = rootWhere(
+      allOf([
+        this.where.connection(rel, target, args.where),
+        this.rules.read(target, this.selectedAttributes(target, this.edgeNodeFields(fieldNodes))),
+      ]),
+    );
     const orderBy = this.connectionOrder(rel, target, args.sort);
     const select: AnyRecord = {};
     let rowsKey: string | undefined;
@@ -385,7 +442,7 @@ export class ReadTranslator {
   /** `movies(where, sort, limit, offset)`. */
   rootList(node: NodeType, args: AnyRecord, fieldNodes: readonly FieldNode[]): ReadPlan {
     const p = this.node(node, fieldNodes);
-    const findArgs = { ...this.listArgs(node, args), select: p.select };
+    const findArgs = { ...this.listArgs(node, args, fieldNodes), select: p.select };
     return async (client) => {
       const rows = (await delegate(client, node.name).findMany!(findArgs)) as AnyRecord[];
       return rows.map(p.shape);
@@ -398,7 +455,12 @@ export class ReadTranslator {
     const afterOffset = cursorToOffset(args.after);
     const offset = afterOffset === undefined ? 0 : afterOffset + 1;
     const { conn, edgeFieldNodes, needsEdges, needsTotal } = this.connectionNeeds(fieldNodes);
-    const where = rootWhere(this.where.node(node, args.where));
+    const where = rootWhere(
+      allOf([
+        this.where.node(node, args.where),
+        this.rules.read(node, this.selectedAttributes(node, this.edgeNodeFields(fieldNodes))),
+      ]),
+    );
     const orderBy = this.orderBy(node, args.sort);
     const e = needsEdges ? this.edges(node, edgeFieldNodes, undefined, offset) : undefined;
     const skip = offset || undefined;

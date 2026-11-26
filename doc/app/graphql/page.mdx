@@ -197,10 +197,12 @@ keys and relationship types come from your type definitions.
 
 `compat.v7` runs on the same engine as the typed client and the [native API](/graphql/native) when
 that engine answers exactly like v7: list and connection queries with their filters, sorting,
-paging and nested relationships (`single` included), `create` with attribute inputs, `update` with `set`, and `delete`
-without nested deletes, on types without `@authentication` / `@authorization`. The rest
-(aggregations, full-text, `@cypher`, rules, unions, interfaces, nested writes, edge filters and
-sorts, arithmetic operators, …) runs on the compat compiler, with the same results. What
+paging and nested relationships (`single` included), `create` with attribute inputs, `update` with
+`set`, and `delete` without nested deletes. `@authorization` rules are applied by the engine where v7
+applies them, as long as their `validate` rules hold for the request (an anonymous request on a type
+that only admins may update stays on the compat compiler, which raises v7's `Forbidden`). The rest
+(aggregations, full-text, `@cypher`, `@authentication`, unions, interfaces, nested writes, edge
+filters and sorts, arithmetic operators, …) runs on the compat compiler, with the same results. What
 you can see of the difference:
 
 - With `client`, the client's `query` events and spans name the engine operation and model

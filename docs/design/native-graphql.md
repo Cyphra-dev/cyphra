@@ -1298,9 +1298,20 @@ fixtures and goldens: printed SDL plus results) grows with it.
    `deleteMany({ $relationships: true })` (v7's `relationshipsDeleted`).
 
    Status (#265, in progress): also moved, with the same check before each request: `single`
-   filters (a `_count` of the matching related nodes equal to 1, with the client's `_count`
-   filters). `compat/graphql` has an engine-off/on differential run (`pnpm --filter compat-graphql
-differential`), on an internal `makeSchema` option.
+   filters (a `_count` of the matching related nodes equal to 1), and `@authorization` on reads and
+   root mutations. Rules are not mapped onto `withEngineRules`: it applies `read` rules in places v7
+   does not (relationship filters in `where`, connected nodes) and reads ruled fields as `null`
+   where v7 filters the node. The translators AND each type's rules into the `where` of the nodes
+   v7 applies them to instead (root, relation loads, connections and their `totalCount`, UPDATE /
+   DELETE targets), with the rules of the selected attributes. `requireAuthentication` and `jwt`
+   comparisons depend only on the request and are evaluated with Cypher's semantics; `where.node`
+   is translated in the compiler's rules mode. Still on the compat compiler: `validate` rules that
+   do not reduce to `true` for the request (v7 fails the request when one node breaks them, with no
+   engine equivalent), a READ filter on the nodes an update returns that depends on the node, JWT
+   comparisons whose Cypher result is not certain (`MATCHES`, `null`, lists, mixed types), to-one
+   connection filters inside rules (v7 reads them as `single`), and `@authentication` (checked
+   while the compiler builds the statement). `compat/graphql` has an engine-off/on differential
+   run (`pnpm --filter compat-graphql differential`), on an internal `makeSchema` option.
 
 5. **Auth**: `rules` (read / create / update / delete / connect / disconnect / after),
    `authenticated`, field rules (context-only and row-dependent), `native.jwtContext`,

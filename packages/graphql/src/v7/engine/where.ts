@@ -20,6 +20,7 @@
  */
 
 import neo4j from "neo4j-driver";
+import { AuthValue } from "../cypher/where.js";
 import type { Attribute, NodeType, Relationship, V7Model } from "../model.js";
 import type { EngineNode, EngineSchema } from "./schema.js";
 
@@ -113,13 +114,15 @@ const SCALAR_OPERATORS: Record<string, string> = {
   gte: "gte",
 };
 
-/** Whether the node's rules or `@authentication` could change what a request on it returns. */
-export function hasAuth(model: V7Model, node: NodeType): boolean {
+/**
+ * Whether `@authentication` could fail a request on the node (it stays on the compat compiler,
+ * which checks it while compiling the statement).
+ */
+export function hasAuthentication(model: V7Model, node: NodeType): boolean {
   return (
     model.authentication !== undefined ||
     node.auth.authentication !== undefined ||
-    node.auth.authorization !== undefined ||
-    node.attributes.some((a) => a.auth?.authentication || a.auth?.authorization)
+    node.attributes.some((a) => a.auth?.authentication)
   );
 }
 
@@ -162,13 +165,21 @@ export class WhereTranslator {
   constructor(
     private readonly model: V7Model,
     private readonly schema: EngineSchema,
+    /**
+     * Translates the `node` part of `@authorization` rules (the compiler's rules mode): `$jwt` /
+     * `$context` references, to-one filters that filter nothing are left out.
+     */
+    private readonly authorization = false,
   ) {}
 
-  /** The engine node of a v7 node type, or {@link Fallback} (interfaces, rules). */
+  /**
+   * The engine node of a v7 node type, or {@link Fallback} (interfaces, `@authentication`). Its
+   * `@authorization` rules are the callers' (they apply where they read or write its nodes).
+   */
   engineNode(node: NodeType): EngineNode {
     const n = this.schema.nodes.get(node.name);
     if (!n || n.v7 !== node) throw new Fallback(`${node.name} is not in the engine`);
-    if (hasAuth(this.model, node)) throw new Fallback(`${node.name} has rules`);
+    if (hasAuthentication(this.model, node)) throw new Fallback(`${node.name} has @authentication`);
     return n;
   }
 
@@ -281,6 +292,7 @@ export class WhereTranslator {
     const field = engine.fields.get(attr.name);
     if (!field || attr.cypher) throw new Fallback(`filter on ${attr.name}`);
     if (attr.type.list) {
+      if (value instanceof AuthValue) return this.reference(engine, attr, op, value.value);
       if (value === null) {
         if (op === "eq") throw new Fallback("null list filter");
         return undefined;
@@ -291,9 +303,24 @@ export class WhereTranslator {
     }
     const engineOp = SCALAR_OPERATORS[op];
     if (!engineOp) throw new Fallback(`filter ${op}`);
+    if (value instanceof AuthValue) return this.reference(engine, attr, op, value.value);
     if (value === null) return op === "eq" ? { [field]: { equals: null } } : undefined;
     if (op === "in" && !Array.isArray(value)) throw new Fallback("in without a list");
     return { [field]: { [engineOp]: engineValue(attr, value) } };
+  }
+
+  /**
+   * A comparison with a `$jwt` / `$context` reference of a rule (the compiler's `($p IS NOT NULL
+   * AND <comparison>)`): a missing value matches nothing (even under `NOT`), any other is compared.
+   */
+  private reference(
+    engine: Pick<EngineNode, "fields">,
+    attr: Attribute,
+    op: string,
+    value: unknown,
+  ): AnyRecord | undefined {
+    if (value === null || value === undefined) return FALSE;
+    return this.predicate(engine, attr, op, value);
   }
 
   /** A filter through a relationship (`actors: { some }`, `lab: { … }`, `actorsConnection`, …). */
@@ -307,6 +334,8 @@ export class WhereTranslator {
       return allOf(Object.entries(value).map(([q, w]) => this.related(node, r, q, w, false)));
     }
     if (key.endsWith("Connection") && (rel = find(key.slice(0, -"Connection".length)))) {
+      // In rules, v7 reads a to-one connection filter as `single` (not on to-one relations here).
+      if (!rel.list && this.authorization) throw new Fallback("to-one connection filter in a rule");
       if (!rel.list) return this.related(node, rel, "some", value, true);
       if (!isFilterObject(value)) return undefined;
       const r = rel;
@@ -339,8 +368,10 @@ export class WhereTranslator {
     const { name, target } = this.relation(node, rel);
     if (value === null) return { [name]: null };
     if (!isFilterObject(value) || Object.keys(value).length === 0) return undefined;
-    // A filter that filters nothing still requires the related node.
-    return { [name]: { is: condition(this.node(target, value) ?? TRUE) } };
+    const inner = this.node(target, value);
+    // A filter that filters nothing still requires the related node (not in rules).
+    if (inner === undefined && this.authorization) return undefined;
+    return { [name]: { is: condition(inner ?? TRUE) } };
   }
 
   /** `some` / `none` / `all` / `single` of the related nodes matching a node or connection filter. */

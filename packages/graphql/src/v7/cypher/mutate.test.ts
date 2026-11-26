@@ -2,7 +2,8 @@ import { execute, parse } from "graphql";
 import neo4j from "neo4j-driver";
 import { describe, expect, it } from "vitest";
 import { fakeDriver } from "../../../test/helpers.js";
-import { makeSchema } from "../index.js";
+import { makeSchema, type MakeSchemaOptions } from "../index.js";
+import { ENGINE_OPTION } from "../engine/index.js";
 
 const typeDefs = /* GraphQL */ `
   type Movie @node {
@@ -208,7 +209,8 @@ describe("delete", () => {
 describe("authorization", () => {
   it("compiles filter rules into the statement, the JWT claim as a parameter", async () => {
     const { driver, statements } = fakeDriver(() => [{ nc: 0, nd: 0, rc: 0, rd: 0 }]);
-    const schema = makeSchema({ typeDefs, driver });
+    // The compiler's statement (the engine would serve this delete).
+    const schema = makeSchema({ typeDefs, driver, [ENGINE_OPTION]: false } as MakeSchemaOptions);
     const result = await execute({
       schema,
       document: parse(`mutation { deleteSecrets { nodesDeleted } }`),
