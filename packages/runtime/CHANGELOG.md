@@ -1,5 +1,18 @@
 # @cyphra/runtime
 
+## 0.25.0
+
+### Minor Changes
+
+- 1e0082e: Nested `update`, `delete` and `upsert` on the relations of an update (`posts: { update: { where, data }, delete: { id }, upsert: { where, create, update } }`; on a to-one relation `update: data`, `delete: true`, `upsert: { create, update }`) and `connectOrCreate` on create and update, each a subquery of the write's single statement: a target that is not linked throws `NotFoundError` and rolls the whole write back, nested deletes apply `onDelete` rules, and validation rules and `@min` / `@max` are checked with their paths. `where` takes `_count` filters on to-many relations (`{ _count: { posts: { gte: 2, where: { published: true } } } }`), compiled to `COUNT {}`. Both are typed and respect engine rules (`read` / `update` / `delete` on the targets, `create` / `after` on what they create, `read` in counts). On FalkorDB, a nested `delete` of a model with `onDelete: Restrict` rules throws `UnsupportedFeatureError`.
+
+### Patch Changes
+
+- 1ac6f9d: Engine rules (`withEngineRules`) on paths: `traverse`, `shortestPath` and `allShortestPaths` apply the read rules to every node a path steps through (before, only to the start and reached nodes, so a path could go through a hidden node and return it), and the nodes of returned paths read their fields through the field rules. On Memgraph and FalkorDB, which cannot run a subquery on each node of a path, a read rule with a relation filter on a traversed model now fails the traversal (`UnsupportedFeatureError`) instead of being skipped. Internal: a traversal load (`$traverse` in `select`, Neo4j only), for the native GraphQL API's named traversal fields.
+- 942ebc0: Native GraphQL API: relation update inputs take nested `update` (`[{ where, data }]` on to-many, the data on to-one), `delete` (unique keys, or `true` on to-one; `onDelete` rules apply), `upsert` (`[{ where, create, update }]` / `{ create, update }`) and `connectOrCreate` (also in create inputs), each served when the target's matching operation is on, all in the root field's one statement and under its rules (`NOT_FOUND`, `RESTRICTED`, `FORBIDDEN`, validation issues with GraphQL argument paths). `<Model>Where` takes `_count` filters on to-many relations (`_count: { posts: { gte: 2, where: { … } } }`), counting only readable nodes; rule `where`s may use them too. In the runtime, a uniqueness violation from a batched nested create now names its model and fields.
+  - @cyphra/query@0.25.0
+  - @cyphra/schema@0.25.0
+
 ## 0.24.0
 
 ### Minor Changes

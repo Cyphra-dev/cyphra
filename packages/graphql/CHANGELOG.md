@@ -1,5 +1,21 @@
 # @cyphra/graphql
 
+## 0.25.0
+
+### Minor Changes
+
+- b2dbf64: Native API aggregates and search (#246): `<model>Aggregate` (`_count` / `_sum` / `_avg` / `_min` / `_max` typed per field, `where`, and `orderBy` / `skip` / `take` for a window) and `<model>GroupBy` (`by: { fields, <toOneRelation> }`, `having` on keys and aggregates, `orderBy` by key or aggregate, only the selected aggregates computed); `<model>Search` on `@@fulltext` indexes (`index`, `query`, `mode`, `where`, `minScore`, `skip`, `take`) and `<model>FindSimilar` on `@vectorIndex` fields (`field`, `vector`, `k`, `where`, `minScore`), with `_score` on the hits; `<union>Search` / `<union>FindSimilar` over the members' indexes (reciprocal rank fusion, `indexes` / `fields`, `_on` filters, `rrfK`), with `_scores: [IndexScore!]`. `aggregate`, `groupBy` and `search` are read operations (on by default); `findSimilar` is in the new `traverse` operation group, off by default. Read rules hide nodes from counts, groups and hits, row-dependent field rules from aggregated values, and a field a context-only rule denies cannot be aggregated or grouped on (`FORBIDDEN`). `_score` / `_scores` outside a search, and a group field not listed in `by`, are `BAD_USER_INPUT`. Every model now prints its aggregate and groupBy types: regenerate a committed contract with `cyphra graphql print`.
+- 942ebc0: Native GraphQL API: relation update inputs take nested `update` (`[{ where, data }]` on to-many, the data on to-one), `delete` (unique keys, or `true` on to-one; `onDelete` rules apply), `upsert` (`[{ where, create, update }]` / `{ create, update }`) and `connectOrCreate` (also in create inputs), each served when the target's matching operation is on, all in the root field's one statement and under its rules (`NOT_FOUND`, `RESTRICTED`, `FORBIDDEN`, validation issues with GraphQL argument paths). `<Model>Where` takes `_count` filters on to-many relations (`_count: { posts: { gte: 2, where: { … } } }`), counting only readable nodes; rule `where`s may use them too. In the runtime, a uniqueness violation from a batched nested create now names its model and fields.
+- 1ac6f9d: Native API traversals (#246): `<model>Traverse` (`from`, `via`, `direction`, `depth`, `where`, `distinct`, `orderBy`, `skip`, `take`), `<model>TraversePaths` (`{ node, path { nodes, edges { type direction _edge } } }`) and `<model>ShortestPath` (`from`, `to`, `via`, `maxDepth`, `where`) on models with relations back to themselves, in the `traverse` operation group (off by default); named traversal fields across models from `config.traversals` (`{ Chunk: { context: { via: [{ rel }, …], args } } }` → `Chunk.context(…): [Chunk!]!`), compiled into the parent's statement and checked at startup; `limits.maxTraversalDepth`. A traversal never steps through a node the read rules hide, and path nodes follow the field rules.
+
+### Patch Changes
+
+- Updated dependencies [1ac6f9d]
+- Updated dependencies [942ebc0]
+- Updated dependencies [1e0082e]
+  - @cyphra/runtime@0.25.0
+  - @cyphra/schema@0.25.0
+
 ## 0.24.0
 
 ### Minor Changes
