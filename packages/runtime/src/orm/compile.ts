@@ -705,12 +705,86 @@ export function compileWhere(
       parts.push(compileOnFilter(ctx, model, alias, value));
       continue;
     }
+    if (key === "_count") {
+      const c = compileCountFilter(ctx, model, alias, value);
+      if (c) parts.push(c);
+      continue;
+    }
     const f = model.fields.find((x) => x.name === key);
     if (!f) throw new CyphraValidationError(`Unknown field "${model.name}.${key}" in where.`);
     const c =
       f.kind === "scalar"
         ? compileScalarFilter(ctx, model, f, fieldRef(ctx, model, alias, f.name), value)
         : compileRelationFilter(ctx, model, f, alias, value);
+    if (c) parts.push(c);
+  }
+  return and(parts);
+}
+
+/**
+ * `_count` in a `where`: filters on the number of nodes related through to-many relations,
+ * `{ posts: 3 }` or `{ posts: { gte: 2, where: { published: true } } }` (the `Int` filter
+ * operators, plus a `where` on the related nodes). Each compiles to a `COUNT {}` subquery, which
+ * only counts related nodes the `read` rules show.
+ */
+function compileCountFilter(
+  ctx: QueryContext,
+  model: ResolvedNodeModel,
+  alias: string,
+  value: unknown,
+): string | null {
+  if (!isPlainObject(value)) {
+    throw new CyphraValidationError(
+      `${model.name}: where._count takes { <to-many relation>: <count filter> }.`,
+    );
+  }
+  const parts: string[] = [];
+  for (const [name, filter] of Object.entries(value)) {
+    if (filter === undefined) continue;
+    const rel = relationField(model, name);
+    if (!rel) {
+      throw new CyphraValidationError(`Unknown relation "${model.name}.${name}" in where._count.`);
+    }
+    if (!rel.many) {
+      throw new CyphraValidationError(
+        `${model.name}.${name} is a to-one relation; where._count counts to-many relations (filter it with is / isNot).`,
+      );
+    }
+    if (filter === null || (typeof filter !== "number" && !isPlainObject(filter))) {
+      throw new CyphraValidationError(
+        `${model.name}: where._count.${name} takes a number or { equals, not, in, notIn, lt, lte, gt, gte, where }.`,
+      );
+    }
+    const field: ResolvedScalarField = {
+      kind: "scalar",
+      name: `_count.${name}`,
+      type: "Int",
+      optional: false,
+      list: false,
+      id: false,
+      unique: false,
+      index: false,
+    };
+    let ops: unknown = filter;
+    let where: unknown;
+    if (isPlainObject(filter)) {
+      const { where: w, ...rest } = filter;
+      where = w;
+      ops = rest;
+      if (Object.values(rest).every((v) => v === undefined)) {
+        if (where === undefined) continue;
+        throw new CyphraValidationError(
+          `${model.name}: where._count.${name} needs an operator next to where (e.g. { gte: 1, where }).`,
+        );
+      }
+      if (isPlainObject(rest.not) && "where" in rest.not) {
+        throw new CyphraValidationError(
+          `${model.name}: where._count.${name}.not takes a number or operators; put where next to it.`,
+        );
+      }
+    }
+    const count = compileRelationCount(ctx, model, alias, rel, where);
+    const c = compileScalarFilter(ctx, model, field, count, ops);
     if (c) parts.push(c);
   }
   return and(parts);

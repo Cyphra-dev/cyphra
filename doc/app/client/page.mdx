@@ -176,19 +176,20 @@ properties under **`$edge`**.
 
 ## Filters
 
-| Field type                                             | Operators                                                       |
-| ------------------------------------------------------ | --------------------------------------------------------------- |
-| any scalar                                             | value (equals), `null` (absent), `equals`, `not`, `in`, `notIn` |
-| `Int`, `BigInt`, `Float`, `String`, `DateTime`, `Date` | `lt`, `lte`, `gt`, `gte` (strings compare lexicographically)    |
-| `LocalDateTime`, `LocalTime`, `Time`                   | `lt`, `lte`, `gt`, `gte` (compared as temporal values)          |
-| `String`                                               | `contains`, `startsWith`, `endsWith`, `mode`                    |
-| enum                                                   | the scalar operators above only, typed to the enum's values     |
-| `Duration`                                             | the scalar operators above only (durations have no order)       |
-| `Point`, `CartesianPoint`                              | value, `null`, `equals`, `not`, `distance`, `withinBBox`        |
-| `Json`                                                 | `null`, `equals`, `not` only (no bare value, see below)         |
-| lists (`String[]`, `Role[]`, …)                        | `has`, `hasEvery`, `hasSome`, `isEmpty`, `equals`               |
-| to-many relation                                       | `some`, `none`, `every`                                         |
-| to-one relation                                        | `is`, `isNot`, `null` (no related node)                         |
+| Field type                                             | Operators                                                        |
+| ------------------------------------------------------ | ---------------------------------------------------------------- |
+| any scalar                                             | value (equals), `null` (absent), `equals`, `not`, `in`, `notIn`  |
+| `Int`, `BigInt`, `Float`, `String`, `DateTime`, `Date` | `lt`, `lte`, `gt`, `gte` (strings compare lexicographically)     |
+| `LocalDateTime`, `LocalTime`, `Time`                   | `lt`, `lte`, `gt`, `gte` (compared as temporal values)           |
+| `String`                                               | `contains`, `startsWith`, `endsWith`, `mode`                     |
+| enum                                                   | the scalar operators above only, typed to the enum's values      |
+| `Duration`                                             | the scalar operators above only (durations have no order)        |
+| `Point`, `CartesianPoint`                              | value, `null`, `equals`, `not`, `distance`, `withinBBox`         |
+| `Json`                                                 | `null`, `equals`, `not` only (no bare value, see below)          |
+| lists (`String[]`, `Role[]`, …)                        | `has`, `hasEvery`, `hasSome`, `isEmpty`, `equals`                |
+| to-many relation                                       | `some`, `none`, `every`                                          |
+| to-one relation                                        | `is`, `isNot`, `null` (no related node)                          |
+| `_count` (to-many relations)                           | a number, or `equals`, `not`, `in`, `notIn`, `lt` … plus `where` |
 
 Combine with `AND`, `OR` and `NOT`.
 
@@ -314,6 +315,21 @@ const prolific = await db.user.findMany({
 
 It compiles to `ORDER BY COUNT { MATCH (n)-[:AUTHORED]->(m:Post) WHERE m.published = $p0 } DESC`.
 Prisma has no equivalent; `where` alone, without `_count`, does not sort.
+
+To **filter by a relation count**, put `_count` in `where`: a number (an exact count) or the
+`Int` operators, per to-many relation, with an optional `where` on the related nodes to count.
+Users with at least two published posts and no followers:
+
+```ts
+const writers = await db.user.findMany({
+  where: { _count: { posts: { gte: 2, where: { published: true } }, followers: 0 } },
+});
+```
+
+It compiles to `COUNT { MATCH (n)-[:AUTHORED]->(m:Post) WHERE m.published = $p0 } >= $p1 AND …`.
+`_count` filters work wherever a `where` does (`AND` / `OR` / `NOT`, relation filters, `count`,
+`updateMany`, …). To-one relations are not counted (filter them with `is` / `isNot`). Prisma has
+no equivalent in `where`.
 
 To **sort by a field of a to-one relation**, nest it under the relation:
 `orderBy: { author: { name: "asc" } }`. Nodes without the related node sort as `null` (last
@@ -1234,10 +1250,12 @@ const removed = await db.user.deleteMany({
 });
 ```
 
-Relation operations: `create` and `connect` (on create and update), plus `disconnect` and `set`
-(to-many only) on update. `set` makes the listed nodes the only linked ones: edges to other nodes
-are deleted, edges to the listed nodes are kept (and updated with their `$edge`) or created. On a
-to-one relation, `connect` / `create` replace the existing edge.
+Relation operations: `create`, `connect` and `connectOrCreate` (on create and update), plus
+`disconnect`, `set` (to-many only), `update`, `delete` and `upsert` on update (see
+[nested update, delete and upsert](#nested-update-delete-and-upsert)). `set` makes the listed
+nodes the only linked ones: edges to other nodes are deleted, edges to the listed nodes are kept
+(and updated with their `$edge`) or created. On a to-one relation, `connect` / `create` replace
+the existing edge.
 
 `connect` is idempotent: it `MERGE`s the relationship, so connecting a pair that is already linked
 keeps one edge. When the other side is declared to-one (connecting a post through `user.posts`
@@ -1268,6 +1286,57 @@ takes values only.
 upserts of the same key yield one node as long as the key has a uniqueness constraint, which
 `@id` / `@unique` / `@@unique` create through `cyphra push` or a migration. See
 [Upsert with MERGE](/cypher/upsert-merge#upsert-with-cyphra).
+
+### Nested update, delete and upsert
+
+On update, a relation also takes writes to the related nodes themselves. On a to-many relation each
+item names its node by a unique key, and only a node **linked through that relation** is found; on
+a to-one relation they act on the linked node:
+
+```ts
+await db.user.update({
+  where: { id },
+  data: {
+    posts: {
+      update: { where: { id: p1 }, data: { title: "Edited", views: { increment: 1 } } },
+      delete: [{ id: p2 }], // onDelete rules apply, as on post.delete
+      upsert: { where: { id: p3 }, create: { id: p3, title: "New" }, update: { title: "Again" } },
+      connectOrCreate: { where: { id: p4 }, create: { id: p4, title: "Linked or new" } },
+    },
+    profile: { upsert: { create: { bio: "hi" }, update: { bio: "hello" } } }, // to-one
+  },
+});
+
+await db.post.update({ where: { id }, data: { author: { update: { name: "Ada" } } } }); // to-one
+await db.post.update({ where: { id }, data: { author: { delete: true } } });
+```
+
+| Operation         | To-many item                | To-one value         | When nothing matches |
+| ----------------- | --------------------------- | -------------------- | -------------------- |
+| `update`          | `{ where, data }`           | the data             | `NotFoundError`      |
+| `delete`          | a unique `where`            | `true`               | `NotFoundError`      |
+| `upsert`          | `{ where, create, update }` | `{ create, update }` | creates and links    |
+| `connectOrCreate` | `{ where, create }`         | `{ where, create }`  | creates and links    |
+
+- `update` takes the full update input of the related model: plain values, number operators
+  (`@min` / `@max` checked as on a root update), `$labels` and its own nested writes, at any depth.
+- `delete` deletes the node (not only the edge) with its [`onDelete` rules](#deleting):
+  `Cascade`, `Restrict` (a `RestrictError`, nothing written) and `SetNull`. A model whose cascades
+  come back to a model already on their path, or go through an interface, cannot be deleted by a
+  nested write (`CyphraValidationError`): delete it with its own `delete`.
+- `upsert` updates the linked node (on a to-many relation, the one matching `where`) or creates a
+  node and links it when there is none. A node with the key that is not linked is not taken over:
+  creating it again fails on the key's uniqueness constraint (`cyphra push` or a migration).
+- `connectOrCreate` links any node matching the unique `where` (a `MERGE` of the edge, as
+  `connect`) or creates it and links it. It also works on create. On a to-one relation it replaces
+  the edge, as `connect`.
+- `$edge` on `upsert` and `connectOrCreate` items sets the properties of an edge they create (and,
+  on `connectOrCreate`, updates an existing edge as `connect` does).
+- Targets that are unions take none of these (write the member directly); interface targets take
+  `update` and `delete` (by the interface's unique key), not `upsert` / `connectOrCreate`.
+
+Every nested write is part of the update's single statement (one subquery each), so a missing
+target, a `Restrict` rule or a broken validation rule rolls the whole operation back.
 
 ### Deleting
 

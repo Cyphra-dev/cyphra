@@ -395,6 +395,17 @@ type RelationFilter<TM extends TypeMap, D extends RelationTypeDef> = D["many"] e
       isNot?: WhereInput<TM, D["target"] & keyof TM> | null;
     };
 
+/**
+ * A filter on a number of related nodes (`where._count`): a number (`equals`), or the `Int`
+ * operators, with an optional `where` on the related nodes to count.
+ */
+export type CountFilter<TM extends TypeMap, T extends keyof TM> =
+  | number
+  | (Exclude<ScalarFilter<number>, number> & {
+      /** Count only the related nodes matching this filter. */
+      where?: WhereInput<TM, T>;
+    });
+
 /** Vector fields only filter on presence (search them with `findSimilar`). */
 export type VectorFilter = null | { equals?: null; not?: null };
 
@@ -428,6 +439,14 @@ export type WhereInput<TM extends TypeMap, M extends keyof TM> = {
     : { [T in MemberNames<TM, M>]?: WhereInput<TM, T> };
 } & {
   [R in keyof Relations<TM, M>]?: RelationFilter<TM, Rel<TM, M, R>>;
+} & {
+  /**
+   * Filter on how many nodes are related through to-many relations (only the ones the request
+   * may read): `{ posts: 3 }`, `{ posts: { gte: 2, where: { published: true } } }`.
+   */
+  _count?: {
+    [R in ToManyRelations<TM, M>]?: CountFilter<TM, Target<TM, M, R>>;
+  };
 } & {
   AND?: WhereInput<TM, M> | readonly WhereInput<TM, M>[];
   OR?: readonly WhereInput<TM, M>[];
@@ -758,7 +777,7 @@ type RelationCreate<TM extends TypeMap, D extends RelationTypeDef> =
   IsUnion<TM, D["target"] & keyof TM> extends true
     ? UnionRelationCreate<TM, D>
     : IsAbstract<TM, D["target"] & keyof TM> extends true
-      ? Omit<RelationCreateAny<TM, D>, "create">
+      ? Omit<RelationCreateAny<TM, D>, "create" | "connectOrCreate">
       : RelationCreateAny<TM, D>;
 
 /**
@@ -806,7 +825,18 @@ type RelationCreateAny<TM extends TypeMap, D extends RelationTypeDef> = {
   create?: OneOrMany<D, CreateInput<TM, D["target"] & keyof TM> & EdgeInput<D>>;
   /** Link existing node(s); throws if a target does not exist. */
   connect?: OneOrMany<D, WhereUniqueInput<TM, D["target"] & keyof TM> & EdgeUpdateInput<D>>;
+  /**
+   * Link the node matching `where` (as `connect`), or create it from `create` and link it when
+   * there is none.
+   */
+  connectOrCreate?: OneOrMany<D, ConnectOrCreateInput<TM, D>>;
 };
+
+/** One `connectOrCreate` item: the node's unique key, and the data to create it with. */
+export type ConnectOrCreateInput<TM extends TypeMap, D extends RelationTypeDef> = {
+  where: WhereUniqueInput<TM, D["target"] & keyof TM>;
+  create: CreateInput<TM, D["target"] & keyof TM>;
+} & EdgeInput<D>;
 
 /** `$labels` on a create: the dynamic labels the new node gets. */
 type LabelsCreateInput<TM extends TypeMap, M extends keyof TM> = IfLabels<
@@ -843,7 +873,53 @@ type ScalarUpdate<TM extends TypeMap, M extends keyof TM> = {
       : Scalars<TM, M>[K];
 };
 
+/**
+ * One nested `upsert` item: update the linked node (on a to-many relation, the one matching
+ * `where`), or create and link one when there is none.
+ */
+export type NestedUpsertInput<
+  TM extends TypeMap,
+  D extends RelationTypeDef,
+> = (D["many"] extends true ? { where: WhereUniqueInput<TM, D["target"] & keyof TM> } : unknown) & {
+  create: CreateInput<TM, D["target"] & keyof TM>;
+  update: UpdateInput<TM, D["target"] & keyof TM>;
+} & EdgeInput<D>;
+
+/** Nested `update` / `delete` / `upsert` on a relation of an existing node. */
+type NestedWrites<TM extends TypeMap, D extends RelationTypeDef> = D["many"] extends true
+  ? {
+      /** Update linked node(s), each found by its unique key; throws if one is not linked. */
+      update?: OneOrMany<
+        D,
+        {
+          where: WhereUniqueInput<TM, D["target"] & keyof TM>;
+          data: UpdateInput<TM, D["target"] & keyof TM>;
+        }
+      >;
+      /** Delete linked node(s), by their unique key (`onDelete` rules apply); throws if one is not linked. */
+      delete?: OneOrMany<D, WhereUniqueInput<TM, D["target"] & keyof TM>>;
+      /** Update linked node(s) or, for each one not linked, create and link it. */
+      upsert?: OneOrMany<D, NestedUpsertInput<TM, D>>;
+    }
+  : {
+      /** Update the linked node; throws if there is none. */
+      update?: UpdateInput<TM, D["target"] & keyof TM>;
+      /** Delete the linked node (`onDelete` rules apply); throws if there is none. */
+      delete?: boolean;
+      /** Update the linked node, or create and link one when there is none. */
+      upsert?: NestedUpsertInput<TM, D>;
+    };
+
+/** The nested writes a relation's target allows: none on a union, no `upsert` on an interface. */
+type NestedWritesFor<TM extends TypeMap, D extends RelationTypeDef> =
+  IsUnion<TM, D["target"] & keyof TM> extends true
+    ? unknown
+    : IsAbstract<TM, D["target"] & keyof TM> extends true
+      ? Omit<NestedWrites<TM, D>, "upsert">
+      : NestedWrites<TM, D>;
+
 type RelationUpdate<TM extends TypeMap, D extends RelationTypeDef> = RelationCreate<TM, D> &
+  NestedWritesFor<TM, D> &
   (D["many"] extends true
     ? {
         /** Remove the edge(s) to these nodes (the nodes are kept). */

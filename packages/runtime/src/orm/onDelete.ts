@@ -179,14 +179,20 @@ export function compileRulesDelete(
   match: string,
   one: boolean,
   projection?: string,
+  /**
+   * The variable `match` binds to the root nodes (default `n`, which `projection` reads), and the
+   * name of the count column (default `c`): a nested delete, run as a subquery, names both.
+   */
+  names: { readonly alias?: string; readonly count?: string } = {},
 ): CompiledRulesDelete | null {
   const tree = cascadeTree(ctx.schema, root);
   if (!tree) return null;
+  const n = names.alias ?? "n";
   const flag = (v: string) => `SET ${v}.${q(LOCK_FLAG)} = true REMOVE ${v}.${q(LOCK_FLAG)}`;
   const lists = tree.map(() => ctx.variable("l"));
-  const scope = one ? ["n", lists[0]!] : [lists[0]!];
-  let text = `${match}${one ? " WITH n LIMIT 1" : ""} ${lockAndRematch(ctx, "n")} `;
-  text += one ? `WITH n, [n] AS ${lists[0]}` : `WITH collect(n) AS ${lists[0]}`;
+  const scope = one ? [n, lists[0]!] : [lists[0]!];
+  let text = `${match}${one ? ` WITH ${n} LIMIT 1` : ""} ${lockAndRematch(ctx, n)} `;
+  text += one ? `WITH ${n}, [${n}] AS ${lists[0]}` : `WITH collect(${n}) AS ${lists[0]}`;
   for (let i = 1; i < tree.length; i++) {
     const { parent, via } = tree[i]!;
     const [a, b] = [ctx.variable("a"), ctx.variable("b")];
@@ -235,7 +241,7 @@ export function compileRulesDelete(
     ` UNWIND ${all} AS ${d} WITH DISTINCT ${d} MATCH (${x}) WHERE elementId(${x}) = elementId(${d})` +
     ` DETACH DELETE ${x} RETURN count(*) AS ${deleted} }`;
   const c = ok ? `CASE WHEN ${ok} THEN size(${lists[0]}) ELSE 0 END` : `size(${lists[0]})`;
-  text += ` RETURN ${[`${c} AS c`, ...counts, ...(projection ? ["row"] : [])].join(", ")}`;
+  text += ` RETURN ${[`${c} AS ${names.count ?? "c"}`, ...counts, ...(projection ? ["row"] : [])].join(", ")}`;
   return { text, restricts };
 }
 

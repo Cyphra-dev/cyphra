@@ -82,9 +82,14 @@ export class ForbiddenError extends CyphraError {
   constructor(
     /** Model whose rule refused the operation. */
     readonly model: string,
-    /** The rule: `create`, `after.create`, `after.update` or `disconnect`. */
-    readonly operation: "create" | "after.create" | "after.update" | "disconnect",
-    /** For `disconnect`: the relation field. */
+    /**
+     * The rule: `create`, `after.create`, `after.update`, `disconnect`, `update` (a nested
+     * `upsert` found a linked node it may read but not update) or `connect` (a `connectOrCreate`
+     * found a node it may read but not link).
+     */
+    readonly operation:
+      "create" | "after.create" | "after.update" | "disconnect" | "update" | "connect",
+    /** For `disconnect` and `connect`: the relation field. */
     readonly relation?: string,
   ) {
     super(
@@ -92,7 +97,11 @@ export class ForbiddenError extends CyphraError {
         ? `Forbidden: the rules do not allow creating this ${model}.`
         : operation === "disconnect"
           ? `Forbidden: the rules do not allow disconnecting the current ${model}.${relation ?? ""} node, which this write replaces.`
-          : `Forbidden: the ${model} written does not satisfy the ${operation} rule.`,
+          : operation === "update"
+            ? `Forbidden: the rules do not allow updating this ${model}.`
+            : operation === "connect"
+              ? `Forbidden: the rules do not allow connecting this node through ${model}.${relation ?? ""}.`
+              : `Forbidden: the ${model} written does not satisfy the ${operation} rule.`,
     );
   }
 }

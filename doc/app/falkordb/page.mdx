@@ -80,17 +80,22 @@ multi-statement transactions and no rollback. Cyphra keeps what it can promise:
 - **One operation, one statement.** Every ORM operation, nested writes included (`create` with
   `connect`, `update` with `set`, `upsert`), compiles to one statement. FalkorDB undoes the whole
   statement when it fails, so a duplicate key or an invalid nested value writes nothing.
-- **Checks on the result come after it.** A `connect` whose target does not exist is detected from
-  the statement's result: the `NotFoundError` is thrown once the statement ran, and its other
-  writes stay. Number rules (`@min`, `@max`) on `$edge` updates are checked inside the statement,
-  before the update.
+- **Checks on the result come after it.** A `connect` whose target does not exist, or a nested
+  `update` / `delete` whose target is not linked, is detected from the statement's result: the
+  `NotFoundError` is thrown once the statement ran, and its other writes stay. Number rules
+  (`@min`, `@max`) on `$edge` updates are checked inside the statement, before the update.
+- **A nested `delete` of a model with `onDelete: Restrict` rules** (on it or on a model its
+  cascades reach) throws `UnsupportedFeatureError`: the rule would refuse the delete after the
+  statement's other writes ran. Delete the node with its own `delete`, which checks the rules
+  before anything is written.
 - **Writes of one client are serialized.** Write work of one process runs one operation at a time.
 - **`$transaction` throws** `UnsupportedFeatureError`: Cyphra does not pretend to roll back several
   operations. Write the work as one `$cypher` statement when it must be all or nothing.
 
 <Callout type="warning">
   Connect to nodes that exist: on FalkorDB, a `create` with a `connect` to a missing node throws
-  `NotFoundError` but keeps the created node.
+  `NotFoundError` but keeps the created node. The same goes for a nested `update` or `delete` whose
+  target is not linked.
 </Callout>
 
 ## Feature matrix
@@ -101,7 +106,7 @@ suite passes on FalkorDB.
 | Feature                                                              | FalkorDB                                                                                     |
 | -------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
 | CRUD (`create`, `findMany`, `update`, `delete`, `…Many`)             | Supported                                                                                    |
-| Nested writes (`create`, `connect`, `connectOrCreate`, `set`)        | Supported, one statement (see [transactions](#transactions))                                 |
+| Nested writes (`create`, `connect`, `update`, `upsert`, …)           | Supported, one statement (see [transactions](#transactions))                                 |
 | `upsert`                                                             | Supported                                                                                    |
 | `UniqueConstraintError`                                              | Supported, with the model and fields                                                         |
 | Relation filters, `_count`, ordering by relation counts              | Supported                                                                                    |

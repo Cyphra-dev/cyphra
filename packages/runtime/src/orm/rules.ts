@@ -2,7 +2,7 @@
  * Validation rules of the schema (`@length`, `@min`, `@email`, …) on writes.
  *
  * {@link validateWriteArgs} walks the arguments of a write (scalar data, nested `create` /
- * `connect` / `set` items and their `$edge` properties) before any statement runs, collects every
+ * `connect` / `set` / `update` / `upsert` / `connectOrCreate` items and their `$edge` properties) before any statement runs, collects every
  * value that breaks a rule and throws one {@link CyphraValidationError} listing them. Numeric
  * update operators (`increment`, `decrement`, `multiply`) on a field with `@min` / `@max` are
  * checked in Cypher against the resulting value: see {@link numericGuard}.
@@ -130,6 +130,22 @@ class Collector {
           if (item.$edge !== undefined) edgeProps(item.$edge, at, "update");
         });
       }
+      if (!target || target.union) continue;
+      // Nested update: `{ where, data }` on a to-many relation, the data itself on a to-one.
+      items("update", (item, at) => {
+        if (rel.many) this.node(target, item.data, [...at, "data"], "update");
+        else this.node(target, item, at, "update");
+      });
+      // Nested upsert and connectOrCreate: the node they may create, with its new edge.
+      items("upsert", (item, at) => {
+        this.node(target, item.create, [...at, "create"], "create");
+        this.node(target, item.update, [...at, "update"], "update");
+        edgeProps(item.$edge, at, "create");
+      });
+      items("connectOrCreate", (item, at) => {
+        this.node(target, item.create, [...at, "create"], "create");
+        if (item.$edge !== undefined) edgeProps(item.$edge, at, "update");
+      });
     }
   }
 }
