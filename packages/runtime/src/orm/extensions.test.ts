@@ -82,6 +82,20 @@ describe("computed fields", () => {
     expect(u).toEqual({ id: "u1", display: "Ada <ada@example.com>" });
   });
 
+  it("computes selected fields on the nodes of batch operations", async () => {
+    const fake = fakeDriver((text) =>
+      text.includes("DETACH DELETE")
+        ? [{ c: 1, nodes: [{ id: "u1", name: "Ada", email: "ada@example.com" }] }]
+        : [{ c: 1 }],
+    );
+    const xdb = createClient({ driver: fake.driver }).$extends(fullName);
+    const res = await xdb.user.deleteMany({ select: { id: true, display: true } });
+    expect(fake.calls[0]).toContain("n{.`id`, .`name`, .`email`}");
+    expect(res).toEqual({ count: 1, nodes: [{ id: "u1", display: "Ada <ada@example.com>" }] });
+    // Without select there are no nodes to compute on.
+    expect(await xdb.user.updateMany({ data: { age: 1 } })).toEqual({ count: 1 });
+  });
+
   it("keeps needs that are selected and leaves unselected computed fields out", async () => {
     const { db, calls } = blog({ name: "Ada" });
     const xdb = db.$extends(fullName);

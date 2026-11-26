@@ -1214,6 +1214,26 @@ await db.user.updateMany({ where: { name: null }, data: { name: "anonymous" } })
 await db.user.deleteMany({ where: { email: { endsWith: "@spam.io" } } });
 ```
 
+`createMany`, `updateMany` and `deleteMany` return `{ count }`. Pass `select` to also get the
+affected nodes as `nodes`, read in the same statement: the created nodes (in `data` order), the
+nodes as updated, or the deleted nodes as they were before the delete. `select` takes the same
+fields and relation loads as on `findMany` (`include` is not accepted: it would load every field of
+every node):
+
+```ts
+const { count, nodes } = await db.user.updateMany({
+  where: { name: null },
+  data: { name: "anonymous" },
+  select: { id: true, email: true, _count: { select: { posts: true } } },
+});
+// count: 2, nodes: [{ id, email, _count: { posts } }, …]
+
+const removed = await db.user.deleteMany({
+  where: { email: { endsWith: "@spam.io" } },
+  select: { email: true, posts: { select: { title: true } } }, // read before the delete
+});
+```
+
 Relation operations: `create` and `connect` (on create and update), plus `disconnect` and `set`
 (to-many only) on update. `set` makes the listed nodes the only linked ones: edges to other nodes
 are deleted, edges to the listed nodes are kept (and updated with their `$edge`) or created. On a
@@ -1252,7 +1272,8 @@ upserts of the same key yield one node as long as the key has a uniqueness const
 ### Deleting
 
 `delete` removes one node (by a unique key, `NotFoundError` when none matches) and returns it as it
-was; `deleteMany` removes every match and returns `{ count }`. Edges are removed with the node
+was; `deleteMany` removes every match and returns `{ count }` (and the deleted nodes as `nodes`
+with a `select`, see [Writing](#writing)). Edges are removed with the node
 (`DETACH DELETE`). [`onDelete` rules](/schema#ondelete-rules) in the schema decide what happens to
 the linked nodes:
 

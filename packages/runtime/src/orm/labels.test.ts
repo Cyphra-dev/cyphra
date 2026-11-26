@@ -79,6 +79,26 @@ describe("dynamic labels: writes", () => {
     expect(calls[0]!.params.p0).toHaveLength(2);
   });
 
+  it("projects createMany's nodes per group with select, back in data order", async () => {
+    const { calls, e } = engine("Page", () => [
+      { c0: [{ title: "a" }, { title: "c" }], c1: [{ title: "b" }] },
+    ]);
+    const res = await e.createMany({
+      data: [
+        { title: "a", path: "/a" },
+        { title: "b", path: "/b", $labels: ["Archived"] },
+        { title: "c", path: "/c" },
+      ],
+      select: { title: true },
+    });
+    expect(res).toEqual({ count: 3, nodes: [{ title: "a" }, { title: "b" }, { title: "c" }] });
+    expect(calls[0]!.text).toBe(
+      "UNWIND $p0 AS row CREATE (n:`Page`:`Content`) SET n = row WITH collect(n{.`title`}) AS c0 " +
+        "UNWIND $p1 AS row CREATE (n:`Page`:`Content`:`Archived`) SET n = row WITH c0, collect(n{.`title`}) AS c1 " +
+        "RETURN c0, c1",
+    );
+  });
+
   it("keeps createMany without labels as it was", async () => {
     const { calls, e } = engine("Page", () => [{ c: 1 }]);
     await e.createMany({ data: [{ title: "a", path: "/a" }] });

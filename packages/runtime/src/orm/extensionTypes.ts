@@ -81,7 +81,7 @@ export type OperationResult<
       : O extends "count"
         ? number
         : O extends "createMany" | "updateMany" | "deleteMany"
-          ? BatchResult
+          ? BatchResult & { nodes?: Payload<TM, M, object>[] }
           : O extends "aggregate"
             ? Record<string, unknown>
             : O extends "groupBy"

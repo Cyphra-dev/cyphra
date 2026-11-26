@@ -30,6 +30,7 @@ import {
   and,
   decodeRow,
   labelExpr,
+  type Shape,
   nodeMatch,
   q,
   relationField,
@@ -74,6 +75,8 @@ import { falkordbGuardedEdgeSet } from "./falkordb.js";
 import { createLabels, labelItem, labelSuffix, updateLabels } from "./labels.js";
 
 type AnyRecord = Record<string, unknown>;
+/** Result of `createMany` / `updateMany` / `deleteMany`: `nodes` only with a `select`. */
+type BatchResult = { count: number; nodes?: AnyRecord[] };
 
 /** Runs one Cypher statement and returns raw driver records as objects. */
 export type Executor = (text: string, params: AnyRecord) => Promise<AnyRecord[]>;
@@ -1182,17 +1185,51 @@ export class ModelEngine {
     return this.runPlan(plan, args, { autoCommit: plan.checks.length === 0 });
   }
 
+  /**
+   * The projection of a batch operation's `select` (`{ count, nodes }` results), or `null` without
+   * one. Batch operations take `select` only: `include` would load every scalar of every node.
+   */
+  private batchProjection(
+    ctx: QueryContext,
+    args: AnyRecord,
+    op: string,
+  ): { expr: string; shape: Shape } | null {
+    if (args.include !== undefined) {
+      throw new CyphraValidationError(
+        `${this.model.name}.${op}: batch operations take select (the fields of the returned nodes), not include.`,
+      );
+    }
+    if (args.select === undefined) return null;
+    if (!isPlainObject(args.select)) {
+      throw new CyphraValidationError(`${this.model.name}.${op}: select must be an object.`);
+    }
+    return compileProjection(ctx, this.model, "n", { select: args.select });
+  }
+
+  /** `{ count }`, plus `nodes` (decoded with `shape`) when the operation has a `select`. */
+  private static batchResult(count: unknown, shape: Shape | undefined, rows: unknown): BatchResult {
+    if (!shape) return { count: toCount(count) };
+    const nodes = (Array.isArray(rows) ? rows : []).map((r) => decodeRow(shape, r)!);
+    return { count: toCount(count), nodes };
+  }
+
+  /**
+   * One statement creating every node (`UNWIND` per group of dynamic labels). With `select`, the
+   * created nodes are projected in the same statement and returned as `nodes`, in `data` order.
+   */
   // `async` so that invalid data rejects the returned promise instead of throwing synchronously.
-  async createMany(args: AnyRecord): Promise<{ count: number }> {
+  async createMany(args: AnyRecord): Promise<BatchResult> {
     this.assertNotUnion("createMany");
     assertCreatable(this.model, `${this.model.name}.createMany`);
     if (!Array.isArray(args.data))
       throw new CyphraValidationError("createMany: data must be an array.");
+    const data: unknown[] = args.data;
     validateWriteArgs(this.schema, this.model, "createMany", args);
     const fields = this.model.fields.filter((f): f is ResolvedScalarField => f.kind === "scalar");
-    // Rows grouped by their dynamic labels (part of the CREATE pattern), in first-seen order.
-    const groups = new Map<string, AnyRecord[]>();
-    args.data.forEach((d: unknown, i: number) => {
+    // Rows grouped by their dynamic labels (part of the CREATE pattern), in first-seen order, with
+    // the index of each row in `data`.
+    const groups = new Map<string, { rows: AnyRecord[]; at: number[] }>();
+    data.forEach((d, i) => {
       const { scalars, relations, labels } = this.splitData(d, "createMany");
       if (Object.keys(relations).length) {
         throw new CyphraValidationError("createMany does not support nested relation writes.");
@@ -1200,33 +1237,46 @@ export class ModelEngine {
       const extra = labelSuffix(
         createLabels(this.model, labels, `${this.model.name}.createMany: data[${i}]`),
       );
-      const rows = groups.get(extra) ?? [];
-      groups.set(extra, rows);
-      rows.push(ModelEngine.createProps(this.model.name, fields, scalars));
+      const group = groups.get(extra) ?? { rows: [], at: [] };
+      groups.set(extra, group);
+      group.rows.push(ModelEngine.createProps(this.model.name, fields, scalars));
+      group.at.push(i);
     });
-    if (groups.size === 0) return { count: 0 };
+    const ctx = this.ctx();
+    const projection = this.batchProjection(ctx, args, "createMany");
+    if (groups.size === 0) return ModelEngine.batchResult(0, projection?.shape, []);
     return this.runner.write(async (exec) => {
-      const ctx = this.ctx();
-      if (groups.size === 1) {
-        const [[extra, rows]] = [...groups];
+      if (groups.size === 1 && !projection) {
+        const [[extra, { rows }]] = [...groups];
         const res = await exec(
           `UNWIND ${ctx.param(rows)} AS row CREATE (n:${this.label}${extra}) SET n = row RETURN count(n) AS c`,
           ctx.params,
         );
         return { count: toCount(res[0]?.c) };
       }
-      // One UNWIND per group, each counted before the next (an aggregation keeps one row).
+      // One UNWIND per group, each aggregated before the next (an aggregation keeps one row).
       const counts: string[] = [];
       let text = "";
-      for (const [extra, rows] of groups) {
+      for (const [extra, { rows }] of groups) {
         const c = `c${counts.length}`;
+        const agg = projection ? `collect(${projection.expr}) AS ${c}` : `count(n) AS ${c}`;
         text +=
           `${text ? " " : ""}UNWIND ${ctx.param(rows)} AS row CREATE (n:${this.label}${extra}) SET n = row ` +
-          `WITH ${[...counts, `count(n) AS ${c}`].join(", ")}`;
+          `WITH ${[...counts, agg].join(", ")}`;
         counts.push(c);
       }
-      const res = await exec(`${text} RETURN ${counts.join(" + ")} AS c`, ctx.params);
-      return { count: toCount(res[0]?.c) };
+      if (!projection) {
+        const res = await exec(`${text} RETURN ${counts.join(" + ")} AS c`, ctx.params);
+        return { count: toCount(res[0]?.c) };
+      }
+      const res = await exec(`${text} RETURN ${counts.join(", ")}`, ctx.params);
+      // Back in `data` order: each group's nodes come in its rows' order.
+      const nodes: unknown[] = new Array(data.length);
+      [...groups.values()].forEach(({ at }, g) => {
+        const created = (res[0]?.[counts[g]!] ?? []) as unknown[];
+        at.forEach((i, j) => (nodes[i] = created[j]));
+      });
+      return ModelEngine.batchResult(data.length, projection.shape, nodes);
     }, SINGLE);
   }
 
@@ -1269,7 +1319,7 @@ export class ModelEngine {
    * One statement. When numeric operators touch `@min` / `@max` fields, every matched node is
    * checked first and nothing is updated if one of them would break a rule.
    */
-  async updateMany(args: AnyRecord): Promise<{ count: number }> {
+  async updateMany(args: AnyRecord): Promise<BatchResult> {
     this.assertNotUnion("updateMany");
     validateWriteArgs(this.schema, this.model, "updateMany", args);
     const { scalars, relations, labels } = this.splitData(args.data, "updateMany");
@@ -1287,20 +1337,34 @@ export class ModelEngine {
     const body = ModelEngine.setAndRemove(sets, remove);
     const match = `MATCH (n:${this.label})${w ? ` WHERE ${w}` : ""}`;
     const guard = numericGuard(checks);
+    // With `select`, the updated nodes are projected after the update, in the same statement.
+    const projection = this.batchProjection(ctx, args, "updateMany");
+    const shape = projection?.shape;
     return this.runner.write(async (exec) => {
       if (guard) {
-        const res = await exec(
+        const head =
           `${match} WITH collect(n) AS ns` +
-            ` WITH ns, [b IN [n IN ns | ${guard}] WHERE size(b) > 0] AS bad` +
-            ` FOREACH (n IN CASE WHEN size(bad) = 0 THEN ns ELSE [] END | ${body})` +
-            ` RETURN size(ns) AS c, bad[0] AS bad`,
+          ` WITH ns, [b IN [n IN ns | ${guard}] WHERE size(b) > 0] AS bad` +
+          ` FOREACH (n IN CASE WHEN size(bad) = 0 THEN ns ELSE [] END | ${body})`;
+        // No match: the UNWIND leaves no row (nothing was updated, nothing to report).
+        const res = await exec(
+          projection
+            ? `${head} WITH ns, bad UNWIND ns AS n WITH ns, bad, ${projection.expr} AS row` +
+                ` RETURN size(ns) AS c, bad[0] AS bad, collect(row) AS nodes`
+            : `${head} RETURN size(ns) AS c, bad[0] AS bad`,
           ctx.params,
         );
         throwGuardIssues("updateMany", this.model, checks, res[0]?.bad, ["data"]);
-        return { count: toCount(res[0]?.c) };
+        return ModelEngine.batchResult(res[0]?.c, shape, res[0]?.nodes);
       }
-      const res = await exec(`${match}${body ? ` ${body}` : ""} RETURN count(n) AS c`, ctx.params);
-      return { count: toCount(res[0]?.c) };
+      const res = await exec(
+        `${match}${body ? ` ${body}` : ""}` +
+          (projection
+            ? ` WITH n, ${projection.expr} AS row RETURN count(n) AS c, collect(row) AS nodes`
+            : ` RETURN count(n) AS c`),
+        ctx.params,
+      );
+      return ModelEngine.batchResult(res[0]?.c, shape, res[0]?.nodes);
     }, SINGLE);
   }
 
@@ -1495,36 +1559,54 @@ export class ModelEngine {
     });
   }
 
+  /**
+   * Delete every matching node (and what its `onDelete` rules cascade to). With `select`, the
+   * deleted nodes are returned as `nodes`, projected as they were before the delete, in the same
+   * statement (or, when cascades take several statements, in the first one, which locks them).
+   */
   // `async` so that an invalid `where` rejects the returned promise instead of throwing.
-  async deleteMany(args: AnyRecord = {}): Promise<{ count: number }> {
+  async deleteMany(args: AnyRecord = {}): Promise<BatchResult> {
     this.assertNotUnion("deleteMany");
     const ctx = this.ctx();
     const w = scopedWhere(ctx, this.model, "n", args.where, "delete");
     const match = `MATCH (n:${this.label})${w ? ` WHERE ${w}` : ""}`;
+    const projection = this.batchProjection(ctx, args, "deleteMany");
+    const shape = projection?.shape;
     if (!hasDeleteRules(this.schema, this.model)) {
       return this.runner.write(async (exec) => {
-        const res = await exec(`${match} DETACH DELETE n RETURN count(*) AS c`, ctx.params);
-        return { count: toCount(res[0]?.c) };
+        const res = await exec(
+          projection
+            ? `${match} WITH n, ${projection.expr} AS row DETACH DELETE n RETURN count(*) AS c, collect(row) AS nodes`
+            : `${match} DETACH DELETE n RETURN count(*) AS c`,
+          ctx.params,
+        );
+        return ModelEngine.batchResult(res[0]?.c, shape, res[0]?.nodes);
       }, SINGLE);
     }
-    const compiled = compileRulesDelete(ctx, this.model, match, false);
+    const compiled = compileRulesDelete(ctx, this.model, match, false, projection?.expr);
     if (compiled) {
       return this.runner.write(async (exec) => {
         const [row] = await exec(compiled.text, ctx.params);
         throwRestrict(compiled.restricts, row ?? {});
-        return { count: toCount(row?.c) };
+        return ModelEngine.batchResult(row?.c, shape, row?.row);
       }, SINGLE);
     }
     return this.runner.write(async (exec) => {
       const rows = await exec(
-        `${match} ${lockAndRematch(ctx, "n")} RETURN elementId(n) AS id, labels(n) AS labels`,
+        `${match} ${lockAndRematch(ctx, "n")} RETURN elementId(n) AS id, labels(n) AS labels` +
+          (projection ? `, ${projection.expr} AS row` : ""),
         ctx.params,
       );
       const roots = rows.map((r) => ({
         id: r.id as string,
         labels: (r.labels ?? []) as unknown[],
       }));
-      return { count: await deleteWithRules(exec, this.schema, this.model, roots) };
+      const count = await deleteWithRules(exec, this.schema, this.model, roots);
+      return ModelEngine.batchResult(
+        count,
+        shape,
+        rows.map((r) => r.row),
+      );
     });
   }
 }

@@ -33,6 +33,27 @@ import type { ModelPath, Path, PathEdge, SelfRelations, ShortestPathResult } fro
 declare const db: Db;
 
 describe("ORM types", () => {
+  it("types batch operations: { count }, plus nodes with select", async () => {
+    expectTypeOf(await db.user.createMany({ data: [{ email: "a" }] })).toEqualTypeOf<{
+      count: number;
+    }>();
+    const created = await db.user.createMany({
+      data: [{ email: "a" }],
+      select: { email: true, posts: { select: { title: true } } },
+    });
+    expectTypeOf(created.count).toEqualTypeOf<number>();
+    expectTypeOf(created.nodes).toEqualTypeOf<{ email: string; posts: { title: string }[] }[]>();
+    const updated = await db.user.updateMany({ data: { name: "x" }, select: { name: true } });
+    expectTypeOf(updated.nodes).toEqualTypeOf<{ name: string | null }[]>();
+    const deleted = await db.post.deleteMany({ where: { views: 0 }, select: { id: true } });
+    expectTypeOf(deleted.nodes).toEqualTypeOf<{ id: string }[]>();
+    expectTypeOf(await db.post.deleteMany()).toEqualTypeOf<{ count: number }>();
+    // @ts-expect-error — batch operations take select, not include
+    await db.post.deleteMany({ include: { author: true } });
+    // @ts-expect-error — unknown field
+    await db.post.updateMany({ data: {}, select: { nope: true } });
+  });
+
   it("infers scalar payloads", async () => {
     const users = await db.user.findMany();
     expectTypeOf(users).toEqualTypeOf<

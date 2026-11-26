@@ -1204,6 +1204,7 @@ each useful on its own:
 2. **Aliased relation loads** (internal engine entry, not public types) for GraphQL aliases.
    Landed (#239): `select: { recent: { $relation: "posts", take: 3 } }`.
 3. **`select` on `createMany` / `updateMany` / `deleteMany`**, returning `{ count, nodes }`.
+   Landed (#243): `nodes` are read in the same statement (deleted nodes as they were).
 4. **Rule injection**: an engine option that ANDs a per-model `where` into every match of that
    model in a statement (root, relation loads, relation filters, `_count`, aggregates, write
    targets). This is also what `ctx.cyphra` uses, and could become a public `$extends` feature
