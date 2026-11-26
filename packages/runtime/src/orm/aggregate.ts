@@ -13,7 +13,8 @@ import {
   QueryContext,
   compilePaging,
   compileScalarFilter,
-  compileWhere,
+  ruleFilter,
+  scopedWhere,
   intParam,
   nonNegativeInt,
   q,
@@ -228,7 +229,7 @@ export function compileAggregate(
   args: AnyRecord,
 ): CompiledAggregate<AnyRecord> {
   checkKeys(args, ["where", "orderBy", "skip", "take", ...AGGREGATES], "aggregate");
-  const whereClause = compileWhere(ctx, model, "n", args.where);
+  const whereClause = scopedWhere(ctx, model, "n", args.where);
   const cols = new AggColumns(ctx, "n");
   const outputs = compileSelection(model, args, cols);
   const paging = compilePaging(ctx, model, "n", args);
@@ -320,8 +321,9 @@ function compileGroupKeys(
       g = ctx.variable("g");
       relVars.set(relName, g);
       const m = ctx.variable();
+      const w = ruleFilter(ctx, ctx.node(relation.target), m);
       related.push(
-        `head(COLLECT { MATCH ${relationMatch(ctx, "n", relation, m)} RETURN ${m} }) AS ${g}`,
+        `head(COLLECT { MATCH ${relationMatch(ctx, "n", relation, m, "", w)} RETURN ${m} }) AS ${g}`,
       );
     }
     keys.push({ path, column, field, relation });
@@ -490,7 +492,7 @@ export function compileGroupBy(
   args: AnyRecord,
 ): CompiledAggregate<AnyRecord[]> {
   checkKeys(args, ["by", "where", "having", "orderBy", "skip", "take", ...AGGREGATES], "groupBy");
-  const whereClause = compileWhere(ctx, model, "n", args.where);
+  const whereClause = scopedWhere(ctx, model, "n", args.where);
   const { keys, related, keyColumns } = compileGroupKeys(ctx, model, args.by);
   const cols = new AggColumns(ctx, "n");
   const outputs = compileSelection(model, args, cols);

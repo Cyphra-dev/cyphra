@@ -108,46 +108,36 @@ const total = await db.post.count({ where: { published: true } });
 const pages = Math.ceil(total / pageSize);
 ```
 
-Cyphra has no `cursor` argument, but keyset pagination is a `where` like the Cypher above. String
-fields take `lt` / `lte` / `gt` / `gte` too (compared lexicographically), so the `id` tie-breaker
-fits in the typed filter:
+For keyset pagination, select `$cursor` and pass the last row's cursor back as `cursor.after`
+([Cursor pagination](/client#cursor-pagination)):
 
 ```ts
-type Cursor = { createdAt: Date; id: string };
-
-async function postsAfter(after: Cursor | null) {
+async function postsAfter(after: string | undefined) {
   return db.post.findMany({
-    where: {
-      published: true,
-      ...(after && {
-        OR: [
-          { createdAt: { lt: after.createdAt } },
-          { createdAt: after.createdAt, id: { lt: after.id } },
-        ],
-      }),
-    },
-    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    where: { published: true },
+    orderBy: [{ createdAt: "desc" }],
     take: pageSize,
+    cursor: { after },
+    select: { id: true, title: true, $cursor: true },
   });
 }
 
-let page = await postsAfter(null);
-while (page.length === pageSize) {
-  const last = page[page.length - 1];
-  page = await postsAfter({ createdAt: last.createdAt, id: last.id });
-}
+let page = await postsAfter(undefined);
+while (page.length === pageSize) page = await postsAfter(page[page.length - 1].$cursor);
 ```
 
-To hand the cursor to a browser, send `createdAt.toISOString()` and `id`, and turn the string back
-into a `Date` on the way in.
+Cyphra appends the `@id` as the last sort key and compiles the cursor into the `WHERE` of the Cypher
+above (one branch per sort key, ties broken by the next one, `null` handled where it sorts). The
+cursor is an opaque string, ready to hand to a browser, and is rejected with a
+`CyphraValidationError` if it was made for another `orderBy`. `cursor: { before }` pages backwards.
 
-The `createdAt` equality in the tie-breaker relies on two things. Cyphra stores every `DateTime` at
-UTC offset `Z` and sends `Date` filter values the same way; this matters because Cypher's `=` on two
-datetimes compares the offset too (`datetime("2024-01-01T00:00Z") = datetime("2023-12-31T19:00-05:00")`
-is `false`). And a JavaScript `Date` has millisecond precision, which is what Cyphra writes; values
-written by other code with sub-millisecond precision, or by Cyphra before 0.3 (which used the
-server's local offset), will not compare equal. See
-[DateTime values](/client#datetime-values) to normalize them.
+The cursor compares the boundary row's values with `=` and `<` / `>`, which relies on two things for
+`DateTime` keys. Cyphra stores every `DateTime` at UTC offset `Z` and sends `Date` filter values the
+same way; this matters because Cypher's `=` on two datetimes compares the offset too
+(`datetime("2024-01-01T00:00Z") = datetime("2023-12-31T19:00-05:00")` is `false`). And a JavaScript
+`Date` has millisecond precision, which is what Cyphra writes; values written by other code with
+sub-millisecond precision, or by Cyphra before 0.3 (which used the server's local offset), will not
+compare equal. See [DateTime values](/client#datetime-values) to normalize them.
 
 Nested relations paginate the same way: `include: { posts: { orderBy: { createdAt: "desc" }, take: 5 } }`.
 

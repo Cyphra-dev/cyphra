@@ -26,7 +26,7 @@ import type { ResolvedNodeModel, ResolvedScalarField } from "@cyphra/schema";
 import {
   QueryContext,
   compileProjection,
-  compileWhere,
+  scopedWhere,
   decodeRow,
   intParam,
   labelTest,
@@ -294,7 +294,7 @@ export function compileUnionSearch(
     "@@fulltext indexes",
     (m) => (m.fulltextIndexes ?? []).map((i) => i.name),
   );
-  const where = compileWhere(ctx, model, "n", args.where);
+  const where = scopedWhere(ctx, model, "n", args.where);
   const scoreOk = minScore === undefined ? null : `score >= ${ctx.param(minScore)}`;
   // Lucene rejects an empty query: a blank search box simply matches nothing.
   if (args.query.trim() === "" || take === 0) return null;
@@ -367,7 +367,7 @@ export function compileUnionFindSimilar(
       `${op} vector (${member.name}.${field.name})`,
     );
   }
-  const where = compileWhere(ctx, model, "n", args.where);
+  const where = scopedWhere(ctx, model, "n", args.where);
   const candidates =
     args.candidates === undefined
       ? where

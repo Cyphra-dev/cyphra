@@ -493,6 +493,8 @@ class Rewriter {
       }
       out.push(sp, ...trim(restOut));
     }
+    // Only the projection had subqueries (`WITH n, COLLECT {…} AS k WHERE k > $p`): nothing moves.
+    if (moved.length === 0) return [...out, sp];
     const calls: Token[] = [];
     const filter = this.hoist(and(moved), calls);
     out.push(sp, ...calls, w("WITH"), sp, p("*"), sp, w("WHERE"), sp, ...filter, sp);

@@ -26,6 +26,7 @@ import {
   compilePaging,
   compileProjection,
   compileWhere,
+  scopedWhere,
   decodeRow,
   intParam,
   labelExpr,
@@ -211,7 +212,7 @@ export function falkordbTraverse(
   const reached = [
     ...preds,
     min > 0 ? "n <> s" : null,
-    compileWhere(ctx, end, "n", args.where),
+    scopedWhere(ctx, end, "n", args.where),
   ].filter((x): x is string => Boolean(x));
 
   let text = `MATCH (s:${labelExpr(model)})${from ? ` WHERE ${from}` : ""} `;

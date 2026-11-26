@@ -1,4 +1,5 @@
-export { createOrm } from "./client.js";
+export { createOrm, withEngineRules } from "./client.js";
+export type { EngineRules, ModelRules, RuleOperation, RuleValue } from "./scope.js";
 export type { OrmClient, OrmOptions, OrmTransactionClient } from "./client.js";
 export type { ValidationIssue } from "./errors.js";
 export {

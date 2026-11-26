@@ -22,6 +22,7 @@ import { decodeCount, decodeScalar, encodeFilterValue, isPointValue } from "./va
 import type { QueryMode } from "./types.js";
 import type { CyphraDialect } from "../dialect.js";
 import { compileLabelsFilter, decodeDynamicLabels, dynamicLabelsOf } from "./labels.js";
+import type { EngineRules, RuleOperation, RuleValue } from "./scope.js";
 
 /** Quote an identifier for Cypher (labels, property keys, relationship types). */
 export function q(id: string): string {
@@ -116,11 +117,18 @@ export class QueryContext {
   readonly params: Record<string, unknown> = {};
   private paramCount = 0;
   private varCount = 0;
+  /** Above 0 while a rule's own `where` compiles: rules do not apply inside rules. */
+  ruleDepth = 0;
 
   constructor(
     readonly schema: SchemaModel,
     /** The Cypher flavour to compile to (see `dialect.ts`). */
     readonly dialect: CyphraDialect = "neo4j",
+    /**
+     * Rules ANDed into every match of their model (see {@link scopedWhere}); several sets all
+     * apply.
+     */
+    readonly rules: readonly EngineRules[] = [],
   ) {}
 
   /** Bind a value and return its `$placeholder`. */
@@ -501,9 +509,10 @@ function compileRelationFilter(
 ): string | null {
   if (filter === undefined) return null;
   const target = ctx.node(rel.target);
+  // Related nodes the rules hide are not there: no filter can probe them.
   const exists = (where: unknown): string => {
     const m = ctx.variable();
-    const inner = where === undefined ? null : compileWhere(ctx, target, m, where);
+    const inner = scopedWhere(ctx, target, m, where);
     return `EXISTS { MATCH ${relationMatch(ctx, alias, rel, m, "", inner)} }`;
   };
 
@@ -523,9 +532,8 @@ function compileRelationFilter(
         const m = ctx.variable();
         const inner = compileWhere(ctx, target, m, v);
         if (inner) {
-          parts.push(
-            `NOT EXISTS { MATCH ${relationMatch(ctx, alias, rel, m, "", `NOT (${inner})`)} }`,
-          );
+          const visible = and([ruleFilter(ctx, target, m), `NOT (${inner})`]);
+          parts.push(`NOT EXISTS { MATCH ${relationMatch(ctx, alias, rel, m, "", visible)} }`);
         }
       } else throw new CyphraValidationError(`Unknown relation filter "${op}".`);
     }
@@ -703,6 +711,78 @@ export function compileWhere(
   return and(parts);
 }
 
+/** The predicate of one rule value on `model` (`null`: no restriction). */
+function compileRule(
+  ctx: QueryContext,
+  model: ResolvedNodeModel,
+  alias: string,
+  rule: RuleValue,
+): string | null {
+  if (rule === true) return null;
+  if (rule === false) return "false";
+  ctx.ruleDepth++;
+  try {
+    return compileWhere(ctx, model, alias, rule);
+  } finally {
+    ctx.ruleDepth--;
+  }
+}
+
+/** The rules of `op` on the model `name` itself, as predicates on `alias`. */
+function ownRules(ctx: QueryContext, name: string, alias: string, op: RuleOperation): string[] {
+  const out: string[] = [];
+  for (const set of ctx.rules) {
+    const rule = set[name]?.[op];
+    if (rule === undefined) continue;
+    const c = compileRule(ctx, ctx.node(name), alias, rule);
+    if (c) out.push(c);
+  }
+  return out;
+}
+
+/**
+ * The rules of `op` that apply to a node of `model` bound to `alias`, as one predicate (`null`:
+ * none). A node is subject to the rules of its model and of every interface it implements; matched
+ * through an interface or a union, each implementation's own rules apply to its nodes
+ * (`NOT n:Post OR <Post rule>`). A rule's `where` is trusted: rules do not apply inside it.
+ */
+export function ruleFilter(
+  ctx: QueryContext,
+  model: ResolvedNodeModel,
+  alias: string,
+  op: RuleOperation = "read",
+): string | null {
+  if (ctx.rules.length === 0 || ctx.ruleDepth > 0) return null;
+  if (!model.abstract) {
+    const parts = [model.name, ...(model.interfaces ?? [])].flatMap((n) =>
+      ownRules(ctx, n, alias, op),
+    );
+    return and(parts);
+  }
+  const parts = ownRules(ctx, model.name, alias, op);
+  for (const name of model.implementations ?? []) {
+    const impl = ctx.node(name);
+    const names = [impl.name, ...(impl.interfaces ?? [])].filter((n) => n !== model.name);
+    const own = and(names.flatMap((n) => ownRules(ctx, n, alias, op)));
+    if (own) parts.push(`NOT ${alias}:${q(impl.label)} OR (${own})`);
+  }
+  return and(parts);
+}
+
+/**
+ * The `where` of a place that matches nodes of `model` (a root, a relation load, a relation
+ * filter, a count, a write target): the rules of `op` on it (see {@link ruleFilter}) AND `where`.
+ */
+export function scopedWhere(
+  ctx: QueryContext,
+  model: ResolvedNodeModel,
+  alias: string,
+  where: unknown,
+  op: RuleOperation = "read",
+): string | null {
+  return and([ruleFilter(ctx, model, alias, op), compileWhere(ctx, model, alias, where)]);
+}
+
 /**
  * `COUNT { MATCH (alias)-[:T]->(m:Target) WHERE … }`: the number of nodes related to `alias`
  * through the to-many relation `rel`, optionally filtered by a `where` on the related node.
@@ -720,7 +800,7 @@ export function compileRelationCount(
     );
   }
   const m = ctx.variable();
-  const inner = compileWhere(ctx, ctx.node(rel.target), m, where);
+  const inner = scopedWhere(ctx, ctx.node(rel.target), m, where);
   return `COUNT { MATCH ${relationMatch(ctx, alias, rel, m, "", inner)} }`;
 }
 
@@ -744,7 +824,7 @@ function compileDistanceOrder(
   alias: string,
   field: ResolvedScalarField,
   dir: unknown,
-): string {
+): { expr: string; dir: "ASC" | "DESC" } {
   const where = `orderBy ${model.name}.${field.name}`;
   if (
     !isPlainObject(dir) ||
@@ -757,12 +837,13 @@ function compileDistanceOrder(
   }
   const from = ctx.param(encodeFilterValue(field, dir.distanceFrom, model.name));
   const d = dir.sort === undefined ? "ASC" : sortDirection(dir.sort, `${model.name}.${field.name}`);
-  return `point.distance(${alias}.${q(field.name)}, ${from}) ${d}`;
+  return { expr: `point.distance(${alias}.${q(field.name)}, ${from})`, dir: d as "ASC" | "DESC" };
 }
 
 /**
  * `head(COLLECT { MATCH (alias)<-[:T]-(m:Target) RETURN m.field })`: the value of a scalar of the
- * node related to `alias` through the to-one relation `rel` (`null` when there is none).
+ * node related to `alias` through the to-one relation `rel` (`null` when there is none, or when the
+ * rules hide it).
  */
 function compileRelatedScalar(
   ctx: QueryContext,
@@ -770,7 +851,7 @@ function compileRelatedScalar(
   alias: string,
   rel: ResolvedRelationField,
   name: string,
-): string {
+): { expr: string; field: ResolvedScalarField; owner: string } {
   const target = ctx.node(rel.target);
   const f = scalarField(target, name);
   if (!f) {
@@ -784,7 +865,12 @@ function compileRelatedScalar(
     );
   }
   const m = ctx.variable();
-  return `head(COLLECT { MATCH ${relationMatch(ctx, alias, rel, m)} RETURN ${m}.${q(name)} })`;
+  const w = ruleFilter(ctx, target, m);
+  return {
+    expr: `head(COLLECT { MATCH ${relationMatch(ctx, alias, rel, m, "", w)} RETURN ${m}.${q(name)} })`,
+    field: f,
+    owner: target.name,
+  };
 }
 
 /**
@@ -805,6 +891,23 @@ function typenameExpr(ctx: QueryContext, model: ResolvedNodeModel, alias: string
 }
 
 /**
+ * How the value of a sort key is read back and bound again (keyset cursors): a scalar field's
+ * value, a relation count, a text (`__typename`, an element id) or a number (a distance).
+ */
+export type SortKeyValue =
+  | { readonly kind: "scalar"; readonly field: ResolvedScalarField; readonly owner: string }
+  | { readonly kind: "count" }
+  | { readonly kind: "text" }
+  | { readonly kind: "number" };
+
+/** One key of an `ORDER BY`: a Cypher expression on the node, its direction and its value kind. */
+export type SortKey = {
+  readonly expr: string;
+  readonly dir: "ASC" | "DESC";
+  readonly value: SortKeyValue;
+};
+
+/**
  * Compile `orderBy` into `a.x ASC, a.y DESC` (or `null`). A to-many relation sorts by its number
  * of related nodes: `{ posts: { _count: "desc" } }`, optionally only those matching a filter
  * (`{ posts: { _count: "desc", where: { published: true } } }`); a to-one relation by a scalar of
@@ -816,17 +919,31 @@ export function compileOrderBy(
   alias: string,
   orderBy: unknown,
 ): string | null {
-  if (orderBy === undefined || orderBy === null) return null;
+  const keys = compileSortKeys(ctx, model, alias, orderBy);
+  return keys.length ? keys.map((k) => `${k.expr} ${k.dir}`).join(", ") : null;
+}
+
+/** The keys of `orderBy`, in order (see {@link compileOrderBy}). */
+export function compileSortKeys(
+  ctx: QueryContext,
+  model: ResolvedNodeModel,
+  alias: string,
+  orderBy: unknown,
+): SortKey[] {
+  if (orderBy === undefined || orderBy === null) return [];
   const list = Array.isArray(orderBy) ? orderBy : [orderBy];
-  const parts: string[] = [];
+  const keys: SortKey[] = [];
+  const dirOf = (d: unknown, what: string) => sortDirection(d, what) as "ASC" | "DESC";
   for (const item of list) {
     if (!isPlainObject(item)) throw new CyphraValidationError("orderBy entries must be objects.");
     for (const [key, dir] of Object.entries(item)) {
       if (dir === undefined) continue;
       if (key === "__typename") {
-        parts.push(
-          `${typenameExpr(ctx, model, alias)} ${sortDirection(dir, `${model.name}.__typename`)}`,
-        );
+        keys.push({
+          expr: typenameExpr(ctx, model, alias),
+          dir: dirOf(dir, `${model.name}.__typename`),
+          value: { kind: "text" },
+        });
         continue;
       }
       const rel = relationField(model, key);
@@ -843,8 +960,12 @@ export function compileOrderBy(
               `${model.name}.${key} is a to-one relation; only to-many relations can be counted.`,
             );
           }
-          const expr = compileRelatedScalar(ctx, model, alias, rel, name);
-          parts.push(`${expr} ${sortDirection(d, `${model.name}.${key}.${name}`)}`);
+          const related = compileRelatedScalar(ctx, model, alias, rel, name);
+          keys.push({
+            expr: related.expr,
+            dir: dirOf(d, `${model.name}.${key}.${name}`),
+            value: { kind: "scalar", field: related.field, owner: related.owner },
+          });
         }
         continue;
       }
@@ -855,14 +976,21 @@ export function compileOrderBy(
           );
         }
         if (dir._count === undefined) continue;
-        const d = sortDirection(dir._count, `${model.name}.${key}._count`);
-        parts.push(`${compileRelationCount(ctx, model, alias, rel, dir.where)} ${d}`);
+        const d = dirOf(dir._count, `${model.name}.${key}._count`);
+        keys.push({
+          expr: compileRelationCount(ctx, model, alias, rel, dir.where),
+          dir: d,
+          value: { kind: "count" },
+        });
         continue;
       }
       const sortField = scalarOrThrow(model, key);
       const sortType = sortField.type;
       if ((sortType === "Point" || sortType === "CartesianPoint") && !sortField.list) {
-        parts.push(compileDistanceOrder(ctx, model, alias, sortField, dir));
+        keys.push({
+          ...compileDistanceOrder(ctx, model, alias, sortField, dir),
+          value: { kind: "number" },
+        });
         continue;
       }
       if (UNSORTABLE.has(sortType)) {
@@ -870,10 +998,14 @@ export function compileOrderBy(
           `orderBy ${model.name}.${key}: ${sortType} fields cannot be sorted.`,
         );
       }
-      parts.push(`${alias}.${q(key)} ${sortDirection(dir, `${model.name}.${key}`)}`);
+      keys.push({
+        expr: `${alias}.${q(key)}`,
+        dir: dirOf(dir, `${model.name}.${key}`),
+        value: { kind: "scalar", field: sortField, owner: model.name },
+      });
     }
   }
-  return parts.length ? parts.join(", ") : null;
+  return keys;
 }
 
 export function nonNegativeInt(v: unknown, name: string): number {
@@ -940,6 +1072,8 @@ export type Shape = {
    */
   readonly variants?: readonly ShapeVariant[];
   readonly relations: readonly {
+    /** The key of the result (the relation's name, or the alias of an aliased load). */
+    readonly key: string;
     readonly field: ResolvedRelationField;
     readonly shape: Shape;
     readonly edge?: readonly ResolvedScalarField[];
@@ -974,7 +1108,7 @@ export function compileProjection(
     throw new CyphraValidationError("Use either select or include, not both.");
   }
   const scalars: ResolvedScalarField[] = [];
-  const rels: { field: ResolvedRelationField; args: LoadArgs }[] = [];
+  const rels: { key: string; field: ResolvedRelationField; args: LoadArgs }[] = [];
   const allScalars = model.fields.filter((f): f is ResolvedScalarField => f.kind === "scalar");
   let counts: { field: ResolvedRelationField; where: unknown }[] | undefined;
   let on: { spec: AnyRecord; label: string } | undefined;
@@ -1011,6 +1145,10 @@ export function compileProjection(
         on = { spec: v, label };
         continue;
       }
+      if (isPlainObject(v) && v.$relation !== undefined) {
+        rels.push(aliasedLoad(ctx, model, key, v, label));
+        continue;
+      }
       const f = model.fields.find((x) => x.name === key);
       if (!f) throw new CyphraValidationError(`Unknown field "${model.name}.${key}" in ${label}.`);
       if (f.kind === "scalar") {
@@ -1019,7 +1157,7 @@ export function compileProjection(
         }
         scalars.push(f);
       } else {
-        rels.push({ field: f, args: isPlainObject(v) ? (v as LoadArgs) : {} });
+        rels.push({ key, field: f, args: isPlainObject(v) ? (v as LoadArgs) : {} });
       }
     }
   };
@@ -1097,7 +1235,7 @@ export function compileProjection(
     }
   }
   const relShapes: Shape["relations"][number][] = [];
-  for (const { field, args: sub } of rels) {
+  for (const { key, field, args: sub } of rels) {
     const target = ctx.node(field.target);
     const m = ctx.variable();
     const r = ctx.variable("r");
@@ -1112,14 +1250,15 @@ export function compileProjection(
       edgeModel ? [`${q("$edge")}: properties(${r})`] : [],
     );
     const item = inner.expr;
-    const where = compileWhere(ctx, target, m, sub.where);
+    const where = scopedWhere(ctx, target, m, sub.where);
     const paging = compilePaging(ctx, target, m, sub);
     let body = `MATCH ${relationMatch(ctx, alias, field, m, r, where)}`;
     if (paging) body += ` WITH ${m}, ${r}${paging}`;
     body += ` RETURN ${item}`;
     const collected = `COLLECT { ${body} }`;
-    entries.push(`${q(field.name)}: ${field.many ? collected : `head(${collected})`}`);
+    entries.push(`${q(key)}: ${field.many ? collected : `head(${collected})`}`);
     relShapes.push({
+      key,
       field,
       shape: inner.shape,
       ...(edgeModel ? { edge: edgeModel.properties } : {}),
@@ -1144,6 +1283,45 @@ export function compileProjection(
       ...(withLabels ? { labels: true as const } : {}),
     },
   };
+}
+
+/**
+ * An aliased relation load (internal, not in the client's types): `select: { recent: { $relation:
+ * "posts", take: 3 } }` loads `posts` under the key `recent`, so that one projection can load the
+ * same relation several times with different arguments (GraphQL aliases). The alias cannot be a
+ * scalar field of the model or a reserved key (`_count`, `$…`, `__…`).
+ */
+function aliasedLoad(
+  ctx: QueryContext,
+  model: ResolvedNodeModel,
+  key: string,
+  spec: AnyRecord,
+  label: string,
+): { key: string; field: ResolvedRelationField; args: LoadArgs } {
+  const { $relation, ...args } = spec;
+  if (typeof $relation !== "string") {
+    throw new CyphraValidationError(`${label}.${key}.$relation must be a relation name.`);
+  }
+  const field = relationField(model, $relation);
+  if (!field) {
+    throw new CyphraValidationError(
+      `${label}.${key}.$relation: "${$relation}" is not a relation of ${model.name}.`,
+    );
+  }
+  const scalarNames = [model, ...(model.implementations ?? []).map((i) => ctx.node(i))].flatMap(
+    (m) => m.fields.filter((f) => f.kind === "scalar").map((f) => f.name),
+  );
+  if (
+    key === "_count" ||
+    key.startsWith("$") ||
+    key.startsWith("__") ||
+    scalarNames.includes(key)
+  ) {
+    throw new CyphraValidationError(
+      `${label}.${key}: "${key}" cannot alias a relation load (it is ${scalarNames.includes(key) ? `a scalar field of ${model.name}` : "a reserved key"}).`,
+    );
+  }
+  return { key, field, args: args as LoadArgs };
 }
 
 /**
@@ -1248,10 +1426,8 @@ export function decodeRow(shape: Shape, row: unknown): AnyRecord | null {
       }
       return item;
     };
-    const v = src[r.field.name];
-    out[r.field.name] = r.field.many
-      ? ((v as unknown[] | null) ?? []).map(decodeItem)
-      : decodeItem(v);
+    const v = src[r.key];
+    out[r.key] = r.field.many ? ((v as unknown[] | null) ?? []).map(decodeItem) : decodeItem(v);
   }
   if (shape.counts) {
     const raw = (src["_count"] ?? {}) as AnyRecord;

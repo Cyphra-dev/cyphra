@@ -700,14 +700,23 @@ type InterfacePayload<TM extends TypeMap, M extends keyof TM, A> = {
 /** Result type of a query on model `M` with args `A` (honours `select` / `include`). */
 export type Payload<TM extends TypeMap, M extends keyof TM, A> =
   IsAbstract<TM, M> extends true
-    ? InterfacePayload<TM, M, A>
+    ? CursorPart<A> extends { $cursor: string }
+      ? InterfacePayload<TM, M, A> & CursorPart<A>
+      : InterfacePayload<TM, M, A>
     : Simplify<
-        IsObject<ArgOf<A, "select">> extends true
+        (IsObject<ArgOf<A, "select">> extends true
           ? SelectPayload<TM, M, ArgOf<A, "select">>
           : IsObject<ArgOf<A, "include">> extends true
             ? IncludePayload<TM, M, ArgOf<A, "include">>
-            : NodeFields<TM, M>
+            : NodeFields<TM, M>) &
+          CursorPart<A>
       >;
+
+/** `{ $cursor: string }` when `A` selects `$cursor` (see {@link CursorSelect}). */
+type CursorPart<A> = "$cursor" extends
+  TrueKeys<NonNullable<ArgOf<A, "select">>> | TrueKeys<NonNullable<ArgOf<A, "include">>>
+  ? { $cursor: string }
+  : unknown;
 
 type IsObject<X> = [X] extends [never] ? false : [X] extends [object] ? true : false;
 type ArgOf<A, K extends string> = A extends { [P in K]?: infer V } ? Exclude<V, undefined> : never;
@@ -865,11 +874,37 @@ export type UpdateInput<TM extends TypeMap, M extends keyof TM> = ScalarUpdate<T
  */
 type Projection<S, I> = { select?: S; include?: I };
 
+/**
+ * Keyset paging: `after` / `before` take the `$cursor` of a row returned by the same query (same
+ * model and `orderBy`), and keep the nodes strictly after / before it in that order. Cursors are
+ * opaque strings.
+ */
+export type CursorInput = {
+  /** The nodes after this cursor (with `take`: the first `take` of them). */
+  after?: string;
+  /** The nodes before this cursor (with `take` and no `after`: the last `take` of them). */
+  before?: string;
+};
+
 export type FindManyArgs<TM extends TypeMap, M extends keyof TM> = {
   where?: WhereInput<TM, M>;
   orderBy?: OrderByInput<TM, M>;
   skip?: number;
   take?: number;
+  /**
+   * Keyset paging from the `$cursor` of a row (`select` / `include` `{ $cursor: true }`). `skip`
+   * then skips nodes after (before) the cursor.
+   */
+  cursor?: CursorInput;
+};
+
+/** `$cursor: true` in the `select` / `include` of `findMany` / `findFirst`. */
+export type CursorSelect = {
+  /**
+   * Return each row's keyset cursor as `$cursor`, for `cursor: { after }` / `{ before }` of the
+   * next query (with the same `orderBy`).
+   */
+  $cursor?: boolean;
 };
 
 export type FindUniqueArgs<TM extends TypeMap, M extends keyof TM> = {
@@ -1568,6 +1603,11 @@ type UnionVectorDelegate<TM extends TypeMap, U extends keyof TM> = [VectorMember
 
 type Sel<TM extends TypeMap, M extends keyof TM> = SelectInput<TM, M> | undefined;
 type Inc<TM extends TypeMap, M extends keyof TM> = IncludeInput<TM, M> | undefined;
+/** `select` / `include` of `findMany` / `findFirst`: they may ask for `$cursor`. */
+type FindSel<TM extends TypeMap, M extends keyof TM> =
+  (SelectInput<TM, M> & CursorSelect) | undefined;
+type FindInc<TM extends TypeMap, M extends keyof TM> =
+  (IncludeInput<TM, M> & CursorSelect) | undefined;
 type Out<TM extends TypeMap, M extends keyof TM, S, I> = Payload<TM, M, { select: S; include: I }>;
 
 /** Operations available on `db.<model>`. */
@@ -1592,10 +1632,10 @@ type UnionOperations = "findMany" | "findFirst" | "count";
 type CreateOperations = "create" | "createMany" | "upsert";
 
 type BaseModelDelegate<TM extends TypeMap, M extends keyof TM> = {
-  findMany<S extends Sel<TM, M> = undefined, I extends Inc<TM, M> = undefined>(
+  findMany<S extends FindSel<TM, M> = undefined, I extends FindInc<TM, M> = undefined>(
     args?: FindManyArgs<TM, M> & Projection<S, I>,
   ): Promise<Out<TM, M, S, I>[]>;
-  findFirst<S extends Sel<TM, M> = undefined, I extends Inc<TM, M> = undefined>(
+  findFirst<S extends FindSel<TM, M> = undefined, I extends FindInc<TM, M> = undefined>(
     args?: FindManyArgs<TM, M> & Projection<S, I>,
   ): Promise<Out<TM, M, S, I> | null>;
   /** `null` when no node matches. */

@@ -29,6 +29,65 @@ import type { DelegateKey, ModelDelegate, TypeMap } from "./types.js";
 import { mapUniqueError } from "./unique.js";
 import { falkordbTransactionError, falkordbUniqueError } from "./falkordb.js";
 import { toNative } from "./values.js";
+import { RULE_OPERATIONS, type EngineRules } from "./scope.js";
+
+/** Key of the hidden method behind {@link withEngineRules} (shared by every copy of the runtime). */
+const WITH_RULES = Symbol.for("cyphra.withEngineRules");
+
+/**
+ * A client whose statements carry `rules` (see {@link EngineRules}), on top of the rules `client`
+ * already has (they all apply: rules can be added, never removed). The new client keeps the
+ * extensions of `client`, and so do its `$extends` and `$transaction` clients.
+ *
+ * This is the engine entry `@cyphra/graphql`'s native API builds its authorization rules on. It is
+ * internal: experimental, and not covered by semantic versioning.
+ *
+ * @internal
+ * @experimental
+ */
+export function withEngineRules<C extends object>(client: C, rules: EngineRules): C {
+  const fn = (client as Record<symbol, unknown>)[WITH_RULES];
+  if (typeof fn !== "function") {
+    throw new CyphraValidationError(
+      "withEngineRules: not a Cyphra ORM client (createOrm / createClient).",
+    );
+  }
+  return (fn as (r: EngineRules) => C)(rules);
+}
+
+/** Check `rules` against the schema: known models and operations, boolean or object values. */
+function checkEngineRules(schema: SchemaModel, rules: EngineRules): void {
+  if (typeof rules !== "object" || rules === null || Array.isArray(rules)) {
+    throw new CyphraValidationError(
+      "withEngineRules: rules must be an object keyed by model name.",
+    );
+  }
+  for (const [model, ops] of Object.entries(rules)) {
+    if (ops === undefined) continue;
+    if (!schema.nodes.some((n) => n.name === model)) {
+      throw new CyphraValidationError(`withEngineRules: unknown model "${model}".`);
+    }
+    if (typeof ops !== "object" || ops === null || Array.isArray(ops)) {
+      throw new CyphraValidationError(`withEngineRules: rules.${model} must be an object.`);
+    }
+    for (const [op, rule] of Object.entries(ops)) {
+      if (rule === undefined) continue;
+      if (!(RULE_OPERATIONS as readonly string[]).includes(op)) {
+        throw new CyphraValidationError(
+          `withEngineRules: unknown operation "${op}" in rules.${model} (use ${RULE_OPERATIONS.join(", ")}).`,
+        );
+      }
+      if (
+        typeof rule !== "boolean" &&
+        (typeof rule !== "object" || rule === null || Array.isArray(rule))
+      ) {
+        throw new CyphraValidationError(
+          `withEngineRules: rules.${model}.${op} must be true, false or a where object.`,
+        );
+      }
+    }
+  }
+}
 
 /**
  * Options for {@link createOrm}: connection options, an existing `neo4j-driver` 5.28+ / 6.x
@@ -340,14 +399,25 @@ function fieldResolver(schema: SchemaModel): FieldResolver {
   };
 }
 
-function buildDelegates(ctx: DelegateContext): Record<string, unknown> {
-  const out: Record<string, unknown> = {};
-  for (const node of ctx.schema.nodes) {
-    const key = delegateKey(node.name);
-    if (key.startsWith("$")) throw new Error(`Model name "${node.name}" is reserved.`);
-    out[key] = delegate(ctx, node);
+const delegateCache = new WeakMap<SchemaModel, readonly (readonly [string, ResolvedNodeModel])[]>();
+
+/** `[delegate key, model]` of every model of `schema`, checked once per schema. */
+function delegateEntries(schema: SchemaModel): readonly (readonly [string, ResolvedNodeModel])[] {
+  let entries = delegateCache.get(schema);
+  if (!entries) {
+    entries = schema.nodes.map((node) => {
+      const key = delegateKey(node.name);
+      if (key.startsWith("$")) throw new Error(`Model name "${node.name}" is reserved.`);
+      return [key, node] as const;
+    });
+    delegateCache.set(schema, entries);
   }
-  return out;
+  return entries;
+}
+
+/** Install the model delegates on `target`. */
+function installDelegates(target: Record<string, unknown>, ctx: DelegateContext): void {
+  for (const [key, node] of delegateEntries(ctx.schema)) target[key] = delegate(ctx, node);
 }
 
 function rawFor(instr: Instrumentation, runnerFor: RunnerFor) {
@@ -428,7 +498,7 @@ export function createOrm<TM extends TypeMap>(
     };
   };
 
-  const build = (state: ExtensionState): Record<string, unknown> => {
+  const build = (state: ExtensionState, opts: EngineOptions): Record<string, unknown> => {
     const self: Record<string, unknown> = {};
     const transaction = <T>(fn: (tx: unknown) => Promise<T>): Promise<T> =>
       dialect === "falkordb"
@@ -447,52 +517,55 @@ export function createOrm<TM extends TypeMap>(
                   return { read: (f) => f(exec), write: (f) => f(exec) };
                 };
                 const txClient: Record<string, unknown> = {};
-                Object.assign(
-                  txClient,
-                  buildDelegates({
-                    instr,
-                    schema,
-                    runnerFor: inTx,
-                    options: engineOptions,
-                    state,
-                    parent: () => txClient,
-                  }),
-                  { $cypher: rawFor(instr, inTx) },
-                );
+                installDelegates(txClient, {
+                  instr,
+                  schema,
+                  runnerFor: inTx,
+                  options: opts,
+                  state,
+                  parent: () => txClient,
+                });
+                txClient.$cypher = rawFor(instr, inTx);
                 return fn(txClient);
               }),
             ),
           );
-    Object.assign(
-      self,
-      buildDelegates({
-        instr,
-        schema,
-        runnerFor,
-        options: engineOptions,
-        state,
-        parent: () => self,
-      }),
-      {
-        $cypher: rawFor(instr, runnerFor),
-        $transaction: transaction,
-        $on: (level: LogLevel, listener: (event: CyphraEvent) => void) => instr.on(level, listener),
-        $client: client,
-        $schema: schema,
-        $disconnect: async () => {
-          if (owns) await client.close();
-        },
-        $extends: (ext: unknown) =>
-          typeof ext === "function"
-            ? (ext as (c: unknown) => unknown)(self)
-            : build(state.extend(ext as ExtensionDef)),
+    installDelegates(self, {
+      instr,
+      schema,
+      runnerFor,
+      options: opts,
+      state,
+      parent: () => self,
+    });
+    Object.assign(self, {
+      $cypher: rawFor(instr, runnerFor),
+      $transaction: transaction,
+      $on: (level: LogLevel, listener: (event: CyphraEvent) => void) => instr.on(level, listener),
+      $client: client,
+      $schema: schema,
+      $disconnect: async () => {
+        if (owns) await client.close();
       },
-    );
+      $extends: (ext: unknown) =>
+        typeof ext === "function"
+          ? (ext as (c: unknown) => unknown)(self)
+          : build(state.extend(ext as ExtensionDef), opts),
+    });
+    Object.defineProperty(self, WITH_RULES, {
+      value: (rules: EngineRules) => {
+        checkEngineRules(schema, rules);
+        return build(state, {
+          ...opts,
+          rules: [...(opts.rules ?? []), rules],
+        });
+      },
+    });
     for (const [k, v] of Object.entries(state.clientMembers())) {
       self[k] = typeof v === "function" ? v.bind(self) : v;
     }
     return self;
   };
 
-  return build(ExtensionState.empty(schema)) as unknown as OrmClient<TM>;
+  return build(ExtensionState.empty(schema), engineOptions) as unknown as OrmClient<TM>;
 }

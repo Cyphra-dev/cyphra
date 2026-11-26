@@ -16,7 +16,7 @@ import type { ResolvedNodeModel } from "@cyphra/schema";
 import {
   QueryContext,
   compileProjection,
-  compileWhere,
+  scopedWhere,
   decodeRow,
   intParam,
   nonNegativeInt,
@@ -171,7 +171,7 @@ export async function search(
   const inherited = indexes.find((i) => i.name === args.index)?.inheritedFrom;
   const where = and([
     inherited ? `n:${labelExpr(model)}` : null,
-    compileWhere(ctx, model, "n", args.where),
+    scopedWhere(ctx, model, "n", args.where),
   ]);
   const { expr, shape } = compileProjection(ctx, model, "n", args);
   // Lucene rejects an empty query: a blank search box simply matches nothing.

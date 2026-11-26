@@ -1,0 +1,18 @@
+// Keyset cursors, engine rules and aliased relation loads: runtime integration tests (own Pg* labels).
+
+node PgUser {
+  id       String   @id
+  name     String
+  rank     Int?
+  posts    PgPost[] @relationship(type: "PG_WROTE", direction: OUT)
+}
+
+node PgPost {
+  id        String   @id
+  title     String
+  views     Int      @default(0)
+  score     Float?
+  createdAt DateTime
+  published Boolean  @default(false)
+  author    PgUser?  @relationship(type: "PG_WROTE", direction: IN)
+}
