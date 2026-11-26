@@ -1,5 +1,13 @@
 # @cyphra/better-auth
 
+## 0.22.0
+
+### Patch Changes
+
+- Updated dependencies [6f0644f]
+  - @cyphra/runtime@0.22.0
+  - @cyphra/schema@0.22.0
+
 ## 0.21.0
 
 ### Patch Changes
