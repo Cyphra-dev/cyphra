@@ -1,4 +1,17 @@
-export { createOrm, withEngineRules, withRawValues, withReadTransaction } from "./client.js";
+export {
+  computedFieldsOf,
+  createOrm,
+  withEngineRules,
+  withRawValues,
+  withReadTransaction,
+} from "./client.js";
+export {
+  CYPHER_NODE,
+  cypherFragment,
+  encodeCypherParam,
+  isCypherFragment,
+  type CypherFragment,
+} from "./cypherExpr.js";
 export type { CreateRule, EngineRules, ModelRules, RuleOperation, RuleValue } from "./scope.js";
 export type { OrmClient, OrmOptions, OrmTransactionClient } from "./client.js";
 export type { ValidationIssue } from "./errors.js";

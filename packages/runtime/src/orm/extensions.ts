@@ -330,6 +330,15 @@ function prepare(
         out[key] = parts;
         continue;
       }
+      // A Cypher expression (`{ $cypher, $model?, … }`, internal) returns nodes of `$model`, if any.
+      if (isPlainObject(v) && v.$cypher !== undefined) {
+        const model = typeof v.$model === "string" ? nodeByName(schema, v.$model) : undefined;
+        if (!model) continue;
+        const sub = prepare(state, schema, model, v);
+        out[key] = sub.args;
+        relations.push([key, sub.plan]);
+        continue;
+      }
       // An aliased load (`{ $relation: "posts", … }`, internal) loads the relation it names.
       const name = isPlainObject(v) && typeof v.$relation === "string" ? v.$relation : key;
       const target = relation(name);
