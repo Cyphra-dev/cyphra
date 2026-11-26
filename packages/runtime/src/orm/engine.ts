@@ -1572,6 +1572,39 @@ export class ModelEngine {
    * statement (or, when cascades take several statements, in the first one, which locks them).
    */
   // `async` so that an invalid `where` rejects the returned promise instead of throwing.
+  /**
+   * `deleteMany` with `$relationships: true` (internal, for `@cyphra/graphql`'s `compat.v7`): also
+   * returns `relationships`, the number of distinct relationships the delete removed (the v7
+   * `relationshipsDeleted` counter). Only on Neo4j, and only for models without `onDelete` rules.
+   */
+  private async deleteCountingRelationships(
+    ctx: QueryContext,
+    match: string,
+    flag: unknown,
+    projection: { expr: string; shape: Shape } | null,
+  ): Promise<BatchResult & { relationships: number }> {
+    if (flag !== true) {
+      throw new CyphraValidationError(`${this.model.name}.deleteMany: $relationships takes true.`);
+    }
+    if ((this.options.dialect ?? "neo4j") !== "neo4j" || hasDeleteRules(this.schema, this.model)) {
+      throw new CyphraValidationError(
+        `${this.model.name}.deleteMany: $relationships needs Neo4j and a model without onDelete rules.`,
+      );
+    }
+    const row = projection ? `, collect(${projection.expr}) AS nodes` : "";
+    const text =
+      `${match} WITH collect(n) AS ns${row}` +
+      ` WITH ns${projection ? ", nodes" : ""}, COUNT { UNWIND ns AS x MATCH (x)-[e]-() RETURN DISTINCT e } AS rels` +
+      ` FOREACH (x IN ns | DETACH DELETE x) RETURN size(ns) AS c, rels${projection ? ", nodes" : ""}`;
+    return this.runner.write(async (exec) => {
+      const [res] = await exec(text, ctx.params);
+      return {
+        ...ModelEngine.batchResult(res?.c, projection?.shape, res?.nodes),
+        relationships: toCount(res?.rels),
+      };
+    }, SINGLE);
+  }
+
   async deleteMany(args: AnyRecord = {}): Promise<BatchResult> {
     this.assertNotUnion("deleteMany");
     const ctx = this.ctx();
@@ -1579,6 +1612,9 @@ export class ModelEngine {
     const match = `MATCH (n:${this.label})${w ? ` WHERE ${w}` : ""}`;
     const projection = this.batchProjection(ctx, args, "deleteMany");
     const shape = projection?.shape;
+    if (args.$relationships !== undefined) {
+      return this.deleteCountingRelationships(ctx, match, args.$relationships, projection);
+    }
     if (!hasDeleteRules(this.schema, this.model)) {
       return this.runner.write(async (exec) => {
         const res = await exec(

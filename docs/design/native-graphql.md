@@ -1272,12 +1272,17 @@ fixtures and goldens: printed SDL plus results) grows with it.
    Status (#244): moved, each request checked before it runs (anything the engine cannot answer
    exactly like v7 runs on the compat compiler): list and connection queries (filters, sorting,
    `limit` / `offset` and v7 offset cursors, nested relationships and connections with edge
-   `properties`). Staying on the compat compiler, with the reason: aggregations, fulltext,
-   `@cypher`, `@authentication` / `@authorization` and subscriptions (later phases); interfaces
-   (v7 interfaces add no label) and unions; edge filters and sorts (runtime prerequisite 5);
-   `single` (no count filter in the client `where` yet); DateTime filter values (v7 keeps their
-   offset and precision); requests with `context.cypherParams`; mutations (next step). Engine entry
-   added for it, internal: `withRawValues(client)` (driver values, shaped by the v7 decoders).
+   `properties`), `create` with attribute inputs, `update` with `set`, `delete` without nested
+   deletes. Staying on the compat compiler, with the reason: aggregations, fulltext, `@cypher`,
+   `@authentication` / `@authorization` and subscriptions (later phases); interfaces (v7
+   interfaces add no label) and unions; edge filters and sorts (runtime prerequisite 5); `single`
+   (no count filter in the client `where` yet); nested writes (`connect` is a v7 `CREATE`, the
+   engine's a `MERGE`; nested `update` / `delete` are phase 8); arithmetic and list operators and
+   `field_SET` keys (v7-specific errors); `@timestamp` and `@limit` types in mutations (v7 writes
+   the database clock and limits the returned nodes); DateTime values in filters and inputs (v7
+   keeps their offset and precision); requests with `context.cypherParams`. Engine entries added
+   for it, internal: `withRawValues(client)` (driver values, shaped by the v7 decoders) and
+   `deleteMany({ $relationships: true })` (v7's `relationshipsDeleted`).
 
 5. **Auth**: `rules` (read / create / update / delete / connect / disconnect / after),
    `authenticated`, field rules (context-only and row-dependent), `native.jwtContext`,

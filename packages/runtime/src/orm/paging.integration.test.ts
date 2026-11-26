@@ -6,7 +6,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createClient, type Db } from "./__fixtures__/paging.gen.js";
 import { withEngineRules, withRawValues } from "./client.js";
 import { CyphraValidationError, NotFoundError } from "./errors.js";
-import { hasTestDb, testConnection } from "./__fixtures__/testDialect.js";
+import { hasTestDb, testConnection, testDialect } from "./__fixtures__/testDialect.js";
 
 vi.setConfig({ testTimeout: 30_000, hookTimeout: 30_000 });
 
@@ -304,4 +304,26 @@ describe.skipIf(!hasTestDb)("keyset cursors, engine rules and aliased loads", ()
     const [decoded] = await db.pgPost.findMany({ where: { id: "p00" }, select: { views: true } });
     expect(decoded!.views).toBe(0);
   });
+
+  it.skipIf(testDialect !== "neo4j")(
+    "deleteMany $relationships counts the distinct relationships removed",
+    async () => {
+      await db.$transaction(async (tx) => {
+        await tx.pgUser.create({ data: { id: "rx", name: "Rx" } });
+        await tx.pgPost.create({
+          data: { id: "rx1", title: "t", createdAt: new Date(), author: { connect: { id: "rx" } } },
+        });
+        await tx.pgPost.create({
+          data: { id: "rx2", title: "t", createdAt: new Date(), author: { connect: { id: "rx" } } },
+        });
+      });
+      // The user and its two relationships (the posts stay).
+      const res = (await db.pgUser.deleteMany({
+        where: { id: "rx" },
+        $relationships: true,
+      } as never)) as unknown as { count: number; relationships: number };
+      expect(res).toEqual({ count: 1, relationships: 2 });
+      await db.pgPost.deleteMany({ where: { id: { in: ["rx1", "rx2"] } } });
+    },
+  );
 });

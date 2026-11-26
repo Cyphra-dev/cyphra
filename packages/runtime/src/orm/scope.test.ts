@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { DriverLike, TransactionLike } from "../client.js";
 import { createClient, schemaModel } from "./__fixtures__/blog.gen.js";
 import { schemaModel as interfacesSchema } from "./__fixtures__/interfaces.gen.js";
+import { schemaModel as ondeleteSchema } from "./__fixtures__/ondelete.gen.js";
 import { ModelEngine, type Executor, type Runner } from "./engine.js";
 import neo4j from "neo4j-driver";
 import { withEngineRules, withRawValues } from "./client.js";
@@ -249,6 +250,33 @@ describe("withRawValues", () => {
     expect(fake.calls[0]).toContain("n.`name` = $p0");
     expect(fake.calls[0]).toContain("n.`email` = $p1");
     expect(() => withRawValues({})).toThrow(/not a Cyphra ORM client/);
+  });
+});
+
+describe("deleteMany $relationships (internal)", () => {
+  it("counts the distinct relationships the delete removes, in the same statement", async () => {
+    const { calls, e } = engine("User", [], () => [
+      { c: 2, rels: 3, nodes: [{ id: "a" }, { id: "b" }] },
+    ]);
+    const res = await e.deleteMany({
+      where: { name: "x" },
+      $relationships: true,
+      select: { id: true },
+    } as never);
+    expect(res).toEqual({ count: 2, relationships: 3, nodes: [{ id: "a" }, { id: "b" }] });
+    expect(calls[0]!.text).toBe(
+      "MATCH (n:`User`) WHERE n.`name` = $p0 WITH collect(n) AS ns, collect(n{.`id`}) AS nodes" +
+        " WITH ns, nodes, COUNT { UNWIND ns AS x MATCH (x)-[e]-() RETURN DISTINCT e } AS rels" +
+        " FOREACH (x IN ns | DETACH DELETE x) RETURN size(ns) AS c, rels, nodes",
+    );
+    await expect(e.deleteMany({ $relationships: 1 } as never)).rejects.toThrow(/takes true/);
+  });
+
+  it("refuses models with onDelete rules and other dialects", async () => {
+    const { e } = engine("OdUser", [], () => [], ondeleteSchema);
+    await expect(e.deleteMany({ $relationships: true } as never)).rejects.toThrow(
+      /without onDelete rules/,
+    );
   });
 });
 

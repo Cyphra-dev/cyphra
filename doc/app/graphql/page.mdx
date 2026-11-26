@@ -197,13 +197,14 @@ keys and relationship types come from your type definitions.
 
 `compat.v7` runs on the same engine as the typed client and the [native API](/graphql/native) when
 that engine answers exactly like v7: list and connection queries with their filters, sorting,
-paging and nested relationships, on types without `@authentication` / `@authorization`. The rest
-(mutations, aggregations, full-text, `@cypher`, rules, unions, interfaces, edge filters and sorts,
-`single`, …) runs on the compat compiler, with the same results. What you can see of the
-difference:
+paging and nested relationships, `create` with attribute inputs, `update` with `set`, and `delete`
+without nested deletes, on types without `@authentication` / `@authorization`. The rest
+(aggregations, full-text, `@cypher`, rules, unions, interfaces, nested writes, edge filters and
+sorts, `single`, arithmetic operators, …) runs on the compat compiler, with the same results. What
+you can see of the difference:
 
 - With `client`, the client's `query` events and spans name the engine operation and model
-  (`findMany` on `Movie`) instead of `graphql.read`.
+  (`findMany` on `Movie`) instead of `graphql.read` / `graphql.write`.
 - A root connection that selects both a page (`edges` / `pageInfo`) and `totalCount` reads them with
   two statements in one read transaction.
 
