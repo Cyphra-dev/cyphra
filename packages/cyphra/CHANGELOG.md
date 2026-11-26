@@ -1,5 +1,23 @@
 # cyphra
 
+## 0.22.0
+
+### Minor Changes
+
+- 6f0644f: `createMany`, `updateMany` and `deleteMany` take `select` and then return the affected nodes as
+  `nodes` next to `count`, read in the same statement: the created nodes in `data` order, the nodes as
+  updated, the deleted nodes as they were (with every `onDelete` path: plain, one-statement cascades
+  and level-by-level cascades). Without `select` they return `{ count }` as before. Computed fields of
+  `$extends({ result })` apply to the returned nodes.
+
+### Patch Changes
+
+- Updated dependencies [6f0644f]
+  - @cyphra/runtime@0.22.0
+  - @cyphra/migrator@0.22.0
+  - @cyphra/query@0.22.0
+  - @cyphra/schema@0.22.0
+
 ## 0.21.0
 
 ### Minor Changes
