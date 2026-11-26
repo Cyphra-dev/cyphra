@@ -9,7 +9,8 @@ export type Captured = {
 
 /**
  * A stand-in for `neo4j-driver`: records every statement and answers with `rows` (values of the
- * `this` column), so resolvers can be tested without a database.
+ * `this` column for the compat compiler's statements, whole records — `{ row }`, `{ c }`, … — for
+ * the engine's), so resolvers can be tested without a database.
  */
 export function fakeDriver(rows: (cypher: string) => unknown[] = () => []): {
   driver: Driver;
@@ -19,7 +20,9 @@ export function fakeDriver(rows: (cypher: string) => unknown[] = () => []): {
   const tx = (mode: Captured["mode"]) => ({
     run: async (cypher: string, params: Record<string, unknown>) => {
       statements.push({ cypher, params, mode });
-      return { records: rows(cypher).map((v) => ({ get: () => v })) };
+      return {
+        records: rows(cypher).map((v) => ({ get: () => v, toObject: () => v as object })),
+      };
     },
   });
   type Tx = ReturnType<typeof tx>;

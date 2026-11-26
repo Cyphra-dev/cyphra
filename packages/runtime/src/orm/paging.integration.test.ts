@@ -4,7 +4,7 @@
  */
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createClient, type Db } from "./__fixtures__/paging.gen.js";
-import { withEngineRules } from "./client.js";
+import { withEngineRules, withRawValues } from "./client.js";
 import { CyphraValidationError, NotFoundError } from "./errors.js";
 import { hasTestDb, testConnection } from "./__fixtures__/testDialect.js";
 
@@ -289,5 +289,19 @@ describe.skipIf(!hasTestDb)("keyset cursors, engine rules and aliased loads", ()
     expect(u.newest.map((p) => p.id)).toEqual(newest.slice(0, 2).map((p) => p.id));
     const popular = [...own].sort((a, b) => b.views - a.views || (a.id < b.id ? -1 : 1));
     expect(u.popular).toEqual([{ id: popular[0]!.id, views: popular[0]!.views }]);
+  });
+
+  it("withRawValues: driver values for scalars, decoded ones elsewhere", async () => {
+    const raw = withRawValues(db);
+    const [post] = (await raw.pgPost.findMany({
+      where: { id: "p00" },
+      select: { views: true, createdAt: true, author: { select: { rank: true } } },
+    })) as unknown as { views: unknown; createdAt: unknown; author: { rank: unknown } }[];
+    // Driver values (Bolt: neo4j-driver's, HTTP: the transport's), never the decoded ones.
+    expect(typeof post!.views).toBe("object");
+    expect(post!.createdAt).not.toBeInstanceOf(Date);
+    expect(typeof post!.author.rank).toBe("object");
+    const [decoded] = await db.pgPost.findMany({ where: { id: "p00" }, select: { views: true } });
+    expect(decoded!.views).toBe(0);
   });
 });

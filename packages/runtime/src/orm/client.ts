@@ -55,6 +55,31 @@ export function withEngineRules<C extends object>(client: C, rules: EngineRules)
   return (fn as (r: EngineRules) => C)(rules);
 }
 
+/** Key of the hidden method behind {@link withRawValues}. */
+const WITH_RAW = Symbol.for("cyphra.withRawValues");
+
+/**
+ * A client whose reads return projected scalars (node and edge properties) as the driver gives
+ * them: `Integer`, temporal and point objects, `null` for a missing list, instead of the values
+ * decoded for their schema type. Rules, extensions and hooks of `client` are kept.
+ *
+ * This is the engine entry `@cyphra/graphql`'s `compat.v7` reads through, so that it shapes
+ * values exactly as `@neo4j/graphql` does. It is internal: experimental, and not covered by
+ * semantic versioning.
+ *
+ * @internal
+ * @experimental
+ */
+export function withRawValues<C extends object>(client: C): C {
+  const fn = (client as Record<symbol, unknown>)[WITH_RAW];
+  if (typeof fn !== "function") {
+    throw new CyphraValidationError(
+      "withRawValues: not a Cyphra ORM client (createOrm / createClient).",
+    );
+  }
+  return (fn as () => C)();
+}
+
 /** Key of the hidden method behind {@link withReadTransaction}. */
 const READ_TX = Symbol.for("cyphra.withReadTransaction");
 
@@ -588,6 +613,9 @@ export function createOrm<TM extends TypeMap>(
           rules: [...(opts.rules ?? []), rules],
         });
       },
+    });
+    Object.defineProperty(self, WITH_RAW, {
+      value: () => build(state, { ...opts, rawValues: true }),
     });
     Object.defineProperty(self, READ_TX, {
       value: <T>(fn: (tx: unknown) => Promise<T>): Promise<T> =>

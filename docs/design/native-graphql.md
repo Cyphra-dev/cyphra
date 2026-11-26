@@ -1268,6 +1268,17 @@ fixtures and goldens: printed SDL plus results) grows with it.
    green at every step. v7 features whose engine pieces come in later phases (aggregations,
    fulltext, `@cypher`, `@authorization`) keep the current compat compiler until those land. The
    compat gaps #223–#229 are fixed in the current compiler before this phase.
+
+   Status (#244): moved, each request checked before it runs (anything the engine cannot answer
+   exactly like v7 runs on the compat compiler): list and connection queries (filters, sorting,
+   `limit` / `offset` and v7 offset cursors, nested relationships and connections with edge
+   `properties`). Staying on the compat compiler, with the reason: aggregations, fulltext,
+   `@cypher`, `@authentication` / `@authorization` and subscriptions (later phases); interfaces
+   (v7 interfaces add no label) and unions; edge filters and sorts (runtime prerequisite 5);
+   `single` (no count filter in the client `where` yet); DateTime filter values (v7 keeps their
+   offset and precision); requests with `context.cypherParams`; mutations (next step). Engine entry
+   added for it, internal: `withRawValues(client)` (driver values, shaped by the v7 decoders).
+
 5. **Auth**: `rules` (read / create / update / delete / connect / disconnect / after),
    `authenticated`, field rules (context-only and row-dependent), `native.jwtContext`,
    `ctx.cyphra`, a security test per v7 footgun fixed.

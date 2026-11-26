@@ -315,7 +315,7 @@ function integerToNumber(x: unknown): unknown {
   return isInt(x) ? x.toNumber() : x;
 }
 
-function attributeDecoder(a: Pick<Attribute, "kind" | "type">): Decoder {
+export function attributeDecoder(a: Pick<Attribute, "kind" | "type">): Decoder {
   if (a.kind === "scalar" && a.type.name === "BigInt") {
     return (v) => mapValue(v, (x) => (isInt(x) ? x.toString() : x));
   }
