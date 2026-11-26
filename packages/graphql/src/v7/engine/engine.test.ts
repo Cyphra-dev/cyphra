@@ -201,3 +201,61 @@ describe("routing between the engine and the compat compiler", () => {
     expect(r.errors?.[0]?.message).toMatch(/context.sessionConfig \(database\) needs makeSchema/);
   });
 });
+
+describe("writes on the engine", () => {
+  it("createPeople: createMany with the response projected in the same statement", async () => {
+    const { driver, statements } = engineDriver(() => [{ c0: [{ name: "A" }, { name: "B" }] }]);
+    const s = makeSchema({ typeDefs, driver });
+    const r = await run(
+      s,
+      'mutation { createPeople(input: [{ name: "A" }, { name: "B", born: 1 }]) { info { nodesCreated relationshipsCreated } people { name } } }',
+    );
+    expect(r.errors).toBeUndefined();
+    expect(r.data).toEqual({
+      createPeople: {
+        info: { nodesCreated: 2, relationshipsCreated: 0 },
+        people: [{ name: "A" }, { name: "B" }],
+      },
+    });
+    expect(statements[0]).toMatchObject({ mode: "write" });
+    expect(statements[0]!.cypher).toContain("UNWIND $p0 AS row CREATE (n:`Person`) SET n = row");
+  });
+
+  it("updatePeople with set: updateMany, all counters 0; deletePeople counts nodes and relationships", async () => {
+    const { driver, statements } = engineDriver((cypher) =>
+      cypher.includes("DETACH DELETE") ? [{ c: 2, rels: 3 }] : [{ c: 1, nodes: [{ name: "B" }] }],
+    );
+    const s = makeSchema({ typeDefs, driver });
+    const u = await run(
+      s,
+      'mutation { updatePeople(where: { name: { eq: "A" } }, update: { name: { set: "B" } }) { info { nodesCreated nodesDeleted } people { name } } }',
+    );
+    expect(u.data).toEqual({
+      updatePeople: { info: { nodesCreated: 0, nodesDeleted: 0 }, people: [{ name: "B" }] },
+    });
+    expect(statements[0]!.cypher).toContain(
+      "MATCH (n:`Person`) WHERE n.`name` = $p0 SET n.`name` = $p1",
+    );
+    const d = await run(s, "mutation { deletePeople { nodesDeleted relationshipsDeleted } }");
+    expect(d.data).toEqual({ deletePeople: { nodesDeleted: 2, relationshipsDeleted: 3 } });
+    expect(statements[1]!.cypher).toContain(
+      "COUNT { UNWIND ns AS x MATCH (x)-[e]-() RETURN DISTINCT e } AS rels FOREACH (x IN ns | DETACH DELETE x)",
+    );
+  });
+
+  it("keeps nested writes, arithmetic operators and @timestamp types on the compiler", async () => {
+    const { driver, statements } = engineDriver();
+    const s = makeSchema({ typeDefs, driver });
+    await run(
+      s,
+      'mutation { createMovies(input: [{ title: "x", actors: { create: [{ node: { name: "a" } }] } }]) { info { nodesCreated } } }',
+    );
+    await run(
+      s,
+      "mutation { updatePeople(update: { born: { add: 1 } }) { info { nodesCreated } } }",
+    );
+    await run(s, "mutation { deleteMovies(delete: { actors: [{ where: {} }] }) { nodesDeleted } }");
+    expect(statements.some((r) => r.cypher.startsWith("MATCH (n:"))).toBe(false);
+    expect(statements).toHaveLength(3);
+  });
+});

@@ -15,10 +15,12 @@ import type { SelectionInfo } from "../cypher/select.js";
 import type { NodeType, V7Model } from "../model.js";
 import { EngineClients } from "./client.js";
 import { ReadTranslator, type ReadPlan } from "./read.js";
+import { WriteTranslator, type WritePlan } from "./write.js";
 import { engineSchema, type EngineSchema } from "./schema.js";
 import { Fallback } from "./where.js";
 
 export type { ReadPlan } from "./read.js";
+export type { WritePlan } from "./write.js";
 
 type AnyRecord = Record<string, unknown>;
 
@@ -61,6 +63,28 @@ export class V7Engine {
       return kind === "list"
         ? t.rootList(node, args, fieldNodes)
         : t.rootConnection(node, args, fieldNodes);
+    } catch (e) {
+      if (e instanceof Fallback) return undefined;
+      throw e;
+    }
+  }
+
+  /**
+   * The plan of a root `create` / `update` / `delete` mutation, or `undefined` when the compat
+   * compiler must run it.
+   */
+  write(
+    kind: "create" | "update" | "delete",
+    node: NodeType,
+    args: AnyRecord,
+    info: SelectionInfo,
+    fieldNodes: readonly FieldNode[],
+    ctx: unknown,
+  ): WritePlan | undefined {
+    if (compilerOnlyContext(ctx)) return undefined;
+    try {
+      const t = new WriteTranslator(this.model, this.schema, info);
+      return t[kind](node, args, fieldNodes);
     } catch (e) {
       if (e instanceof Fallback) return undefined;
       throw e;

@@ -272,6 +272,12 @@ function rootMutationResolver(
   return async (_source, args, ctx, info: GraphQLResolveInfo) => {
     const node = model.node(nodeName);
     const auth = await requestAuth(ctx, opts);
+    // On the shared engine when it writes and answers exactly like the compiler.
+    const plan = opts.engine?.write(kind, node, args as AnyRecord, info, info.fieldNodes, ctx);
+    const client = plan && opts.engine!.clients.for(sessionConfigOf(ctx));
+    if (plan && client) {
+      return plan(client);
+    }
     const compiler = new MutationCompiler(model, info, auth);
     const a = args as AnyRecord;
     const compiled =
