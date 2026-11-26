@@ -1215,7 +1215,10 @@ each useful on its own:
    targets). This is also what `ctx.cyphra` uses, and could become a public `$extends` feature
    ("row-level rules") for TypeScript users. Landed (#239) as `withEngineRules(client, rules)`
    (internal): evaluated `read` / `update` / `delete` rules per model; the GraphQL layer evaluates
-   the context functions per request and passes the result. Per-request `$extends` costs about
+   the context functions per request and passes the result. Extended for phase 5 (#245) with
+   `create` (boolean or function of the data), `connect` / `disconnect` per relation, `after`
+   (`create` / `update`, checked in the statement, rolled back otherwise) and per-field read rules
+   (`fields`, `CASE WHEN`). Per-request `$extends` costs about
    2.5 µs on a 4-model schema and 45 µs on a 100-model one (`pnpm --filter cyphra-bench extends`).
 5. **Edge filters and ordering on relation loads** (`_edge` in `some` / `orderBy`) where the client
    does not have them yet.

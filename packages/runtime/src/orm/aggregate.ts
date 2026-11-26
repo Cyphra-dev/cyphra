@@ -13,11 +13,11 @@ import {
   QueryContext,
   compilePaging,
   compileScalarFilter,
+  fieldRef,
   ruleFilter,
   scopedWhere,
   intParam,
   nonNegativeInt,
-  q,
   relationField,
   relationMatch,
   scalarField,
@@ -85,9 +85,16 @@ function aggTarget(model: ResolvedNodeModel, op: AggregateOp, name: string): Agg
 }
 
 /** Cypher aggregate expression over node variable `alias`. Nulls are ignored, as in SQL. */
-function aggExpr(alias: string, op: AggregateOp, target: AggTarget): string {
+function aggExpr(
+  ctx: QueryContext,
+  model: ResolvedNodeModel,
+  alias: string,
+  op: AggregateOp,
+  target: AggTarget,
+): string {
   if (target === "_all") return `count(${alias})`;
-  const ref = `${alias}.${q(target.name)}`;
+  // A field rule makes the field null on the rows it hides: aggregates ignore them.
+  const ref = fieldRef(ctx, model, alias, target.name);
   switch (op) {
     case "_count":
       return `count(${ref})`;
@@ -143,10 +150,11 @@ class AggColumns {
   constructor(
     private readonly ctx: QueryContext,
     private readonly alias: string,
+    private readonly model: ResolvedNodeModel,
   ) {}
 
   add(op: AggregateOp, target: AggTarget): string {
-    const expr = aggExpr(this.alias, op, target);
+    const expr = aggExpr(this.ctx, this.model, this.alias, op, target);
     let v = this.byExpr.get(expr);
     if (!v) {
       v = this.ctx.variable("a");
@@ -230,7 +238,7 @@ export function compileAggregate(
 ): CompiledAggregate<AnyRecord> {
   checkKeys(args, ["where", "orderBy", "skip", "take", ...AGGREGATES], "aggregate");
   const whereClause = scopedWhere(ctx, model, "n", args.where);
-  const cols = new AggColumns(ctx, "n");
+  const cols = new AggColumns(ctx, "n", model);
   const outputs = compileSelection(model, args, cols);
   const paging = compilePaging(ctx, model, "n", args);
   let text = `MATCH (n:${labelExpr(model)})`;
@@ -295,7 +303,7 @@ function compileGroupKeys(
         );
       }
       keys.push({ path, column, field });
-      keyColumns.push(`n.${q(field.name)} AS ${column}`);
+      keyColumns.push(`${fieldRef(ctx, model, "n", field.name)} AS ${column}`);
       continue;
     }
     const relName = path.slice(0, dot);
@@ -327,7 +335,7 @@ function compileGroupKeys(
       );
     }
     keys.push({ path, column, field, relation });
-    keyColumns.push(`${g}.${q(field.name)} AS ${column}`);
+    keyColumns.push(`${fieldRef(ctx, target, g, field.name)} AS ${column}`);
   }
   return { keys, related, keyColumns };
 }
@@ -494,7 +502,7 @@ export function compileGroupBy(
   checkKeys(args, ["by", "where", "having", "orderBy", "skip", "take", ...AGGREGATES], "groupBy");
   const whereClause = scopedWhere(ctx, model, "n", args.where);
   const { keys, related, keyColumns } = compileGroupKeys(ctx, model, args.by);
-  const cols = new AggColumns(ctx, "n");
+  const cols = new AggColumns(ctx, "n", model);
   const outputs = compileSelection(model, args, cols);
   const having = compileHaving(ctx, model, keys, cols, args.having);
   const order = compileGroupOrder(model, keys, cols, args.orderBy);

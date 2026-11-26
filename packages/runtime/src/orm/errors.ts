@@ -74,6 +74,30 @@ export class UnsupportedFeatureError extends CyphraError {
 export class NotFoundError extends CyphraError {}
 
 /**
+ * A rule of the client (see `withEngineRules`, used by `@cyphra/graphql`'s native API) refused the
+ * operation: a `create` rule, an `after` rule, or a to-one edge a write had to replace whose target
+ * the `disconnect` rule hides. Nothing was written (the transaction was rolled back).
+ */
+export class ForbiddenError extends CyphraError {
+  constructor(
+    /** Model whose rule refused the operation. */
+    readonly model: string,
+    /** The rule: `create`, `after.create`, `after.update` or `disconnect`. */
+    readonly operation: "create" | "after.create" | "after.update" | "disconnect",
+    /** For `disconnect`: the relation field. */
+    readonly relation?: string,
+  ) {
+    super(
+      operation === "create"
+        ? `Forbidden: the rules do not allow creating this ${model}.`
+        : operation === "disconnect"
+          ? `Forbidden: the rules do not allow disconnecting the current ${model}.${relation ?? ""} node, which this write replaces.`
+          : `Forbidden: the ${model} written does not satisfy the ${operation} rule.`,
+    );
+  }
+}
+
+/**
  * A delete was refused by an `onDelete: Restrict` rule: nodes are still linked through
  * `model.relation`. Nothing was deleted.
  */

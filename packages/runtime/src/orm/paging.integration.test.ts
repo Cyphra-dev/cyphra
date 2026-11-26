@@ -5,8 +5,13 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createClient, type Db } from "./__fixtures__/paging.gen.js";
 import { withEngineRules, withRawValues } from "./client.js";
-import { CyphraValidationError, NotFoundError } from "./errors.js";
-import { hasTestDb, testConnection, testDialect } from "./__fixtures__/testDialect.js";
+import {
+  CyphraValidationError,
+  ForbiddenError,
+  NotFoundError,
+  UnsupportedFeatureError,
+} from "./errors.js";
+import { hasTestDb, onFalkorDB, testConnection, testDialect } from "./__fixtures__/testDialect.js";
 
 vi.setConfig({ testTimeout: 30_000, hookTimeout: 30_000 });
 
@@ -253,6 +258,157 @@ describe.skipIf(!hasTestDb)("keyset cursors, engine rules and aliased loads", ()
       );
       expect((await scoped.pgPost.deleteMany()).count).toBe(0);
       expect(await db.pgPost.count()).toBe(24);
+    });
+  });
+
+  describe("engine rules on writes and fields", () => {
+    /** Posts and edges, to compare before and after a write that must roll back. */
+    const snapshot = async () =>
+      JSON.stringify(
+        await db.pgPost.findMany({
+          orderBy: { id: "asc" },
+          select: { id: true, title: true, views: true, author: { select: { id: true } } },
+        }),
+      );
+
+    // FalkorDB cannot roll a write back: rules checked after it ran are refused (test below).
+    it.skipIf(onFalkorDB)(
+      "roll back a write whose nodes break an after rule (root, nested, batch, upsert)",
+      async () => {
+        const before = await snapshot();
+        const scoped = withEngineRules(db, {
+          PgPost: {
+            after: { create: { author: { is: { id: "ada" } } }, update: { views: { lt: 100 } } },
+          },
+        });
+        await expect(
+          scoped.pgPost.create({
+            data: {
+              id: "rx1",
+              title: "x",
+              createdAt: new Date(),
+              author: { connect: { id: "bob" } },
+            },
+          }),
+        ).rejects.toThrow(ForbiddenError);
+        await expect(
+          scoped.pgUser.update({
+            where: { id: "bob" },
+            data: { posts: { create: [{ id: "rx2", title: "x", createdAt: new Date() }] } },
+          }),
+        ).rejects.toMatchObject({
+          name: "ForbiddenError",
+          model: "PgPost",
+          operation: "after.create",
+        });
+        await expect(
+          scoped.pgPost.createMany({ data: [{ id: "rx3", title: "x", createdAt: new Date() }] }),
+        ).rejects.toThrow(ForbiddenError);
+        await expect(
+          scoped.pgPost.update({ where: { id: "p00" }, data: { views: { increment: 500 } } }),
+        ).rejects.toMatchObject({ operation: "after.update" });
+        await expect(
+          scoped.pgPost.updateMany({ where: { views: 0 }, data: { views: 500 } }),
+        ).rejects.toThrow(ForbiddenError);
+        await expect(
+          scoped.pgPost.upsert({
+            where: { id: "p00" },
+            create: { id: "p00", title: "x", createdAt: new Date() },
+            update: { views: 500 },
+          }),
+        ).rejects.toMatchObject({ operation: "after.update" });
+        expect(await snapshot()).toBe(before);
+
+        // Within the rule: written.
+        const ok = await scoped.pgPost.create({
+          data: {
+            id: "rx4",
+            title: "x",
+            createdAt: new Date(),
+            author: { connect: { id: "ada" } },
+          },
+          select: { id: true, author: { select: { id: true } } },
+        });
+        expect(ok.author?.id).toBe("ada");
+        await db.pgPost.delete({ where: { id: "rx4" } });
+      },
+    );
+
+    it.runIf(onFalkorDB)("refuse after and disconnect rules on FalkorDB", () => {
+      expect(() => withEngineRules(db, { PgPost: { after: { create: true } } })).toThrow(
+        UnsupportedFeatureError,
+      );
+      expect(() => withEngineRules(db, { PgUser: { disconnect: { posts: true } } })).toThrow(
+        UnsupportedFeatureError,
+      );
+    });
+
+    it.skipIf(onFalkorDB)(
+      "check create rules (also nested) and restrict connect / disconnect targets",
+      async () => {
+        const before = await snapshot();
+        const scoped = withEngineRules(db, {
+          PgPost: { create: (d) => d.title !== "forbidden" },
+          PgUser: { connect: { posts: { published: true } }, disconnect: { posts: { views: 0 } } },
+        });
+        await expect(
+          scoped.pgUser.update({
+            where: { id: "ada" },
+            data: { posts: { create: [{ id: "rx5", title: "forbidden", createdAt: new Date() }] } },
+          }),
+        ).rejects.toThrow(ForbiddenError);
+        const unpublished = await db.pgPost.findFirst({ where: { published: false } });
+        await expect(
+          scoped.pgUser.update({
+            where: { id: "ada" },
+            data: { posts: { connect: [{ id: unpublished!.id }] } },
+          }),
+        ).rejects.toThrow(NotFoundError);
+        // A disconnect outside the rule leaves the edge alone.
+        const linked = await db.pgPost.findFirst({
+          where: { author: { is: { id: "ada" } }, views: { gt: 0 } },
+        });
+        await scoped.pgUser.update({
+          where: { id: "ada" },
+          data: { posts: { disconnect: [{ id: linked!.id }] } },
+        });
+        expect(await snapshot()).toBe(before);
+
+        // Replacing a post's author (to-one): the current author must be disconnectable.
+        const guarded = withEngineRules(db, { PgPost: { disconnect: { author: { id: "cy" } } } });
+        await expect(
+          guarded.pgPost.update({
+            where: { id: linked!.id },
+            data: { author: { connect: { id: "bob" } } },
+          }),
+        ).rejects.toMatchObject({ name: "ForbiddenError", operation: "disconnect" });
+        expect(await snapshot()).toBe(before);
+      },
+    );
+
+    it("read a field ruled out as null in results, filters, ordering and aggregates", async () => {
+      const scoped = withEngineRules(db, { PgPost: { fields: { score: { published: true } } } });
+      const rows = await scoped.pgPost.findMany({
+        orderBy: [{ score: "asc" }, { id: "asc" }],
+        select: { id: true, score: true, published: true },
+      });
+      for (const r of rows) if (!r.published) expect(r.score).toBeNull();
+      const withScore = await db.pgPost.count({ where: { published: true, score: { not: null } } });
+      expect(await scoped.pgPost.count({ where: { score: { not: null } } })).toBe(withScore);
+      // Nulls sort last ascending: the readable scores come first.
+      expect(rows.slice(0, withScore).every((r) => r.published)).toBe(true);
+      const agg = await scoped.pgPost.aggregate({ _count: { score: true } });
+      expect(agg._count.score).toBe(withScore);
+    });
+
+    it("return null for a written node the read rules hide", async () => {
+      const scoped = withEngineRules(db, { PgPost: { read: { published: true } } });
+      const created = await scoped.pgPost.create({
+        data: { id: "rx6", title: "x", createdAt: new Date(), published: false },
+      });
+      expect(created).toBeNull();
+      expect(await db.pgPost.findUnique({ where: { id: "rx6" } })).not.toBeNull();
+      await db.pgPost.delete({ where: { id: "rx6" } });
     });
   });
 
