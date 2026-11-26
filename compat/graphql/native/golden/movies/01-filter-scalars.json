@@ -1,0 +1,53 @@
+{
+  "data": {
+    "after2000": {
+      "nodes": [
+        {
+          "title": "The Matrix Reloaded"
+        }
+      ]
+    },
+    "titleContains": {
+      "nodes": [
+        {
+          "title": "The Matrix Reloaded"
+        },
+        {
+          "title": "The Matrix"
+        }
+      ]
+    },
+    "inList": {
+      "nodes": [
+        {
+          "id": "m-devils"
+        },
+        {
+          "id": "m-matrix"
+        }
+      ]
+    },
+    "noTagline": {
+      "nodes": [
+        {
+          "title": "A Few Good Men"
+        }
+      ]
+    },
+    "hasTagline": {
+      "totalCount": 4
+    },
+    "genres": {
+      "nodes": [
+        {
+          "title": "Johnny Mnemonic",
+          "genres": [
+            "Action",
+            "Sci-Fi",
+            "Thriller"
+          ]
+        }
+      ]
+    }
+  }
+}

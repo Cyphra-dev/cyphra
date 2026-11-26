@@ -1,0 +1,18 @@
+{
+  "data": {
+    "searchableFindMany": {
+      "nodes": [
+        {
+          "__typename": "Author",
+          "name": "Ada"
+        },
+        {
+          "__typename": "Lab",
+          "title": "GraphQL on Neo4j"
+        }
+      ],
+      "totalCount": 2
+    },
+    "searchableCount": 6
+  }
+}

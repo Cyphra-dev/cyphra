@@ -1,0 +1,37 @@
+{
+  "data": {
+    "firstPage": {
+      "nodes": [
+        {
+          "title": "A Few Good Men",
+          "released": 1992
+        },
+        {
+          "title": "Johnny Mnemonic",
+          "released": 1995
+        }
+      ],
+      "pageInfo": {
+        "hasNextPage": true,
+        "hasPreviousPage": false,
+        "startCursor": "WzEsIm50MWN5bCIsWzE5OTIsIm0tZmV3Z29vZCJdXQ",
+        "endCursor": "WzEsIm50MWN5bCIsWzE5OTUsIm0tam9obm55Il1d"
+      },
+      "totalCount": 5
+    },
+    "secondPage": {
+      "nodes": [
+        {
+          "title": "The Devil's Advocate"
+        },
+        {
+          "title": "The Matrix"
+        }
+      ],
+      "pageInfo": {
+        "hasNextPage": true,
+        "hasPreviousPage": true
+      }
+    }
+  }
+}

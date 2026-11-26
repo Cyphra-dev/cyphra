@@ -1,0 +1,24 @@
+# features: config.naming, limits
+# ordered
+query {
+  posts(orderBy: [{ id: asc }]) {
+    nodes {
+      id
+      title
+      author {
+        name
+        email
+      }
+      comments(orderBy: [{ id: asc }]) {
+        text
+      }
+    }
+    pageInfo {
+      hasNextPage
+    }
+  }
+  post(where: { id: "p1" }) {
+    title
+  }
+  auditLogCount
+}

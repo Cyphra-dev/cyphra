@@ -1,0 +1,35 @@
+{
+  "data": {
+    "authorFindUnique": {
+      "joined": "2020-05-01",
+      "reach": "9007199254740993",
+      "office": {
+        "longitude": 2.35,
+        "latitude": 48.85,
+        "height": null
+      }
+    },
+    "joinedBefore2021": {
+      "nodes": [
+        {
+          "name": "Ada"
+        }
+      ]
+    },
+    "nearParis": {
+      "nodes": [
+        {
+          "name": "Ada"
+        }
+      ]
+    },
+    "bigReach": 1,
+    "recentTracks": {
+      "nodes": [
+        {
+          "name": "APIs"
+        }
+      ]
+    }
+  }
+}

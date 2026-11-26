@@ -1,0 +1,298 @@
+type ActedIn {
+  roles: [String!]!
+  screenTime: Int
+}
+
+input FloatFilter {
+  equals: Float
+  gt: Float
+  gte: Float
+  in: [Float!]
+  lt: Float
+  lte: Float
+  not: Float
+  notIn: [Float!]
+}
+
+input IDFilter {
+  contains: ID
+  endsWith: ID
+  equals: ID
+  gt: ID
+  gte: ID
+  in: [ID!]
+  lt: ID
+  lte: ID
+  mode: QueryMode
+  not: ID
+  notIn: [ID!]
+  startsWith: ID
+}
+
+input IntFilter {
+  equals: Int
+  gt: Int
+  gte: Int
+  in: [Int!]
+  lt: Int
+  lte: Int
+  not: Int
+  notIn: [Int!]
+}
+
+type Movie {
+  """
+  Number of related nodes per to-many relation (only the selected ones are counted).
+  """
+  _count: MovieCount!
+
+  """
+  Edge properties when this Movie is reached through a relation with a relationship model (selecting it anywhere else is an error).
+  """
+  _edge: ActedIn
+  actors(orderBy: [PersonOrderBy!], skip: Int, take: Int, where: PersonWhere): [Person!]!
+  directors(orderBy: [PersonOrderBy!], skip: Int, take: Int, where: PersonWhere): [Person!]!
+  genres: [String!]!
+  id: ID!
+  rating: Float
+  released: Int!
+  tagline: String
+  title: String!
+}
+
+type MovieCount {
+  actors(where: PersonWhere): Int!
+  directors(where: PersonWhere): Int!
+}
+
+type MovieList {
+  nodes: [Movie!]!
+  pageInfo: PageInfo!
+
+  """
+  Number of nodes matching where, ignoring paging. Counted only when selected.
+  """
+  totalCount: Int!
+}
+
+input MovieListRelationFilter {
+  """Every related node matches."""
+  every: MovieWhere
+
+  """No related node matches."""
+  none: MovieWhere
+
+  """At least one related node matches."""
+  some: MovieWhere
+}
+
+"""One key per element of the orderBy list."""
+input MovieOrderBy {
+  """Sort by the number of related nodes."""
+  actors: PersonRelationCountOrder
+
+  """Sort by the number of related nodes."""
+  directors: PersonRelationCountOrder
+  id: SortOrder
+  rating: SortOrder
+  released: SortOrder
+  tagline: SortOrder
+  title: SortOrder
+}
+
+input MovieRelationCountOrder {
+  _count: SortOrder!
+
+  """Count only the matching nodes."""
+  where: MovieWhere
+}
+
+input MovieWhere {
+  AND: [MovieWhere!]
+  NOT: MovieWhere
+  OR: [MovieWhere!]
+  actors: PersonListRelationFilter
+  directors: PersonListRelationFilter
+  genres: StringListFilter
+  id: IDFilter
+  rating: FloatFilter
+  released: IntFilter
+  tagline: StringFilter
+  title: StringFilter
+}
+
+"""
+At least one unique key (checked when the query runs), plus filters on the other fields.
+"""
+input MovieWhereUnique {
+  AND: [MovieWhere!]
+  NOT: MovieWhere
+  OR: [MovieWhere!]
+  actors: PersonListRelationFilter
+  directors: PersonListRelationFilter
+  genres: StringListFilter
+  id: ID
+  rating: FloatFilter
+  released: IntFilter
+  tagline: StringFilter
+  title: StringFilter
+}
+
+type PageInfo {
+  endCursor: String
+  hasNextPage: Boolean!
+  hasPreviousPage: Boolean!
+  startCursor: String
+}
+
+type Person {
+  """
+  Number of related nodes per to-many relation (only the selected ones are counted).
+  """
+  _count: PersonCount!
+
+  """
+  Edge properties when this Person is reached through a relation with a relationship model (selecting it anywhere else is an error).
+  """
+  _edge: ActedIn
+  actedIn(orderBy: [MovieOrderBy!], skip: Int, take: Int, where: MovieWhere): [Movie!]!
+  born: Int
+  directed(orderBy: [MovieOrderBy!], skip: Int, take: Int, where: MovieWhere): [Movie!]!
+  id: ID!
+  name: String!
+}
+
+type PersonCount {
+  actedIn(where: MovieWhere): Int!
+  directed(where: MovieWhere): Int!
+}
+
+type PersonList {
+  nodes: [Person!]!
+  pageInfo: PageInfo!
+
+  """
+  Number of nodes matching where, ignoring paging. Counted only when selected.
+  """
+  totalCount: Int!
+}
+
+input PersonListRelationFilter {
+  """Every related node matches."""
+  every: PersonWhere
+
+  """No related node matches."""
+  none: PersonWhere
+
+  """At least one related node matches."""
+  some: PersonWhere
+}
+
+"""One key per element of the orderBy list."""
+input PersonOrderBy {
+  """Sort by the number of related nodes."""
+  actedIn: MovieRelationCountOrder
+  born: SortOrder
+
+  """Sort by the number of related nodes."""
+  directed: MovieRelationCountOrder
+  id: SortOrder
+  name: SortOrder
+}
+
+input PersonRelationCountOrder {
+  _count: SortOrder!
+
+  """Count only the matching nodes."""
+  where: PersonWhere
+}
+
+input PersonWhere {
+  AND: [PersonWhere!]
+  NOT: PersonWhere
+  OR: [PersonWhere!]
+  actedIn: MovieListRelationFilter
+  born: IntFilter
+  directed: MovieListRelationFilter
+  id: IDFilter
+  name: StringFilter
+}
+
+"""
+At least one unique key (checked when the query runs), plus filters on the other fields.
+"""
+input PersonWhereUnique {
+  AND: [PersonWhere!]
+  NOT: PersonWhere
+  OR: [PersonWhere!]
+  actedIn: MovieListRelationFilter
+  born: IntFilter
+  directed: MovieListRelationFilter
+  id: ID
+  name: StringFilter
+}
+
+type Query {
+  movieCount(where: MovieWhere): Int
+  movieFindFirst(orderBy: [MovieOrderBy!], skip: Int, where: MovieWhere): Movie
+  movieFindMany(
+    """A cursor (pageInfo.endCursor): the page after it."""
+    after: String
+
+    """A cursor (pageInfo.startCursor): the page before it."""
+    before: String
+    orderBy: [MovieOrderBy!]
+    skip: Int
+    take: Int
+    where: MovieWhere
+  ): MovieList
+  movieFindUnique(where: MovieWhereUnique!): Movie
+  personCount(where: PersonWhere): Int
+  personFindFirst(orderBy: [PersonOrderBy!], skip: Int, where: PersonWhere): Person
+  personFindMany(
+    """A cursor (pageInfo.endCursor): the page after it."""
+    after: String
+
+    """A cursor (pageInfo.startCursor): the page before it."""
+    before: String
+    orderBy: [PersonOrderBy!]
+    skip: Int
+    take: Int
+    where: PersonWhere
+  ): PersonList
+  personFindUnique(where: PersonWhereUnique!): Person
+}
+
+"""`insensitive` compares lower-cased values."""
+enum QueryMode {
+  default
+  insensitive
+}
+
+enum SortOrder {
+  asc
+  desc
+}
+
+input StringFilter {
+  contains: String
+  endsWith: String
+  equals: String
+  gt: String
+  gte: String
+  in: [String!]
+  lt: String
+  lte: String
+  mode: QueryMode
+  not: String
+  notIn: [String!]
+  startsWith: String
+}
+
+input StringListFilter {
+  equals: [String!]
+  has: String
+  hasEvery: [String!]
+  hasSome: [String!]
+  isEmpty: Boolean
+}

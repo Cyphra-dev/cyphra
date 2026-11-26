@@ -1,0 +1,21 @@
+# features: interface, fragment
+# ordered
+query {
+  activityFindMany(orderBy: [{ _typename: asc }, { title: asc }]) {
+    nodes {
+      __typename
+      title
+      author {
+        name
+      }
+      ... on Lab {
+        image
+      }
+      ... on Quiz {
+        level
+        questions
+      }
+    }
+    totalCount
+  }
+}

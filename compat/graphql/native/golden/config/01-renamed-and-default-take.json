@@ -1,0 +1,49 @@
+{
+  "data": {
+    "posts": {
+      "nodes": [
+        {
+          "id": "p1",
+          "title": "One",
+          "author": {
+            "name": "Alice",
+            "email": "alice@x.io"
+          },
+          "comments": [
+            {
+              "text": "Nice"
+            },
+            {
+              "text": "Thanks"
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "title": "Two",
+          "author": {
+            "name": "Alice",
+            "email": "alice@x.io"
+          },
+          "comments": []
+        },
+        {
+          "id": "p3",
+          "title": "Three",
+          "author": {
+            "name": "Bob",
+            "email": "bob@x.io"
+          },
+          "comments": []
+        }
+      ],
+      "pageInfo": {
+        "hasNextPage": true
+      }
+    },
+    "post": {
+      "title": "One"
+    },
+    "auditLogCount": 2
+  }
+}

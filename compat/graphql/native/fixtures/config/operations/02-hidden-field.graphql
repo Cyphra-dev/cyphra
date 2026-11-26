@@ -1,0 +1,8 @@
+# features: config.fields
+query {
+  userFindMany {
+    nodes {
+      passwordHash
+    }
+  }
+}

@@ -1,0 +1,22 @@
+# features: errors
+query {
+  edgeOutsideRelation: personFindFirst {
+    _edge {
+      roles
+    }
+  }
+  twoKeys: movieFindMany(orderBy: [{ title: asc, released: asc }]) {
+    nodes {
+      title
+    }
+  }
+  badCursor: movieFindMany(after: "not-a-cursor") {
+    nodes {
+      title
+    }
+  }
+  noUniqueKey: movieFindUnique(where: { title: { equals: "The Matrix" } }) {
+    title
+  }
+  ok: movieCount
+}

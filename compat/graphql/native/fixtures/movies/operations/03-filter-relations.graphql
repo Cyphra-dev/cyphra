@@ -1,0 +1,26 @@
+# features: filter.relationship
+query {
+  someActorBornAfter1965: movieFindMany(where: { actors: { some: { born: { gt: 1965 } } } }) {
+    nodes {
+      title
+    }
+  }
+  everyActorBornBefore1965: movieFindMany(where: { actors: { every: { born: { lt: 1965 } } } }) {
+    nodes {
+      title
+    }
+  }
+  noKeanu: movieFindMany(where: { actors: { none: { name: { equals: "Keanu Reeves" } } } }) {
+    nodes {
+      title
+    }
+  }
+  hasDirector: movieCount(where: { directors: { some: {} } })
+  directorsOfKeanuMovies: personFindMany(
+    where: { directed: { some: { actors: { some: { name: { equals: "Keanu Reeves" } } } } } }
+  ) {
+    nodes {
+      name
+    }
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "data": {
+    "orFilter": {
+      "nodes": [
+        {
+          "title": "A Few Good Men"
+        },
+        {
+          "title": "The Matrix"
+        }
+      ]
+    },
+    "notFilter": {
+      "nodes": [
+        {
+          "title": "A Few Good Men"
+        },
+        {
+          "title": "The Devil's Advocate"
+        }
+      ]
+    },
+    "emptyOr": 0,
+    "andFilter": 3
+  }
+}

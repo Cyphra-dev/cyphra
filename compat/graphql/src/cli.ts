@@ -3,20 +3,49 @@
  * `tsx src/cli.ts report` compares every registered implementation and writes REPORT.md.
  * Extra arguments restrict the run to those fixtures (REPORT.md is then not written).
  * `--update-expected` rewrites cyphra-expected.json from the checks that pass (full runs only).
- * Both need NEO4J_TEST_URI / NEO4J_TEST_USER / NEO4J_TEST_PASSWORD (the database is wiped).
+ * `tsx src/cli.ts golden-native` writes the goldens of the native suite (native/fixtures) from
+ * `native.makeSchema` itself: review the diff.
+ * All need NEO4J_TEST_URI / NEO4J_TEST_USER / NEO4J_TEST_PASSWORD (the database is wiped).
  */
-import { writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
+import path from "node:path";
 import { compareImplementation, writeGoldens } from "./compare.js";
 import { expectationMismatches, unlistedPassHint, writeExpected } from "./expected.js";
 import { loadFixtures, REPORT_PATH } from "./fixtures.js";
 import { implementations, reference, referenceVersion } from "./implementations.js";
 import { renderReport } from "./report.js";
+import {
+  buildNativeSchema,
+  loadNativeFixtures,
+  nativeGoldenResultPath,
+  nativeGoldenSchemaPath,
+  printNativeSchema,
+  runNativeOperation,
+} from "./native.js";
 import { connect, neo4jEnv } from "./runner.js";
+
+async function writeNativeGoldens(only: string[], driver: ReturnType<typeof connect>) {
+  const write = (file: string, text: string) => {
+    mkdirSync(path.dirname(file), { recursive: true });
+    writeFileSync(file, text);
+  };
+  for (const fixture of loadNativeFixtures(only)) {
+    write(nativeGoldenSchemaPath(fixture.name), await printNativeSchema(fixture));
+    const schema = await buildNativeSchema(fixture, driver);
+    for (const op of fixture.operations) {
+      write(
+        nativeGoldenResultPath(fixture.name, op.name),
+        await runNativeOperation(schema, fixture, op, driver),
+      );
+    }
+    console.log(`native goldens written for ${fixture.name}`);
+  }
+}
 
 async function main(): Promise<void> {
   const command = process.argv[2];
-  if (command !== "golden" && command !== "report") {
-    console.error("usage: tsx src/cli.ts <golden|report>");
+  if (command !== "golden" && command !== "report" && command !== "golden-native") {
+    console.error("usage: tsx src/cli.ts <golden|golden-native|report>");
     process.exit(2);
   }
   const env = neo4jEnv();
@@ -27,6 +56,14 @@ async function main(): Promise<void> {
     process.exit(2);
   }
   const driver = connect(env);
+  if (command === "golden-native") {
+    try {
+      await writeNativeGoldens(process.argv.slice(3), driver);
+    } finally {
+      await driver.close();
+    }
+    return;
+  }
   try {
     const args = process.argv.slice(3);
     const updateExpected = args.includes("--update-expected");

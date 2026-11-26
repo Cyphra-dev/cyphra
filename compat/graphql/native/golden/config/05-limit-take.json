@@ -1,0 +1,46 @@
+{
+  "data": {
+    "tooMany": null,
+    "tooDeep": null,
+    "tooManyAliases": null,
+    "tooComplex": null,
+    "countTwice": null
+  },
+  "errors": [
+    {
+      "message": "_count.comments is selected twice with different arguments; count it once per selection.",
+      "path": [
+        "countTwice"
+      ],
+      "code": "BAD_USER_INPUT"
+    },
+    {
+      "message": "The query may load up to 39 rows; the limit is 20 (maxComplexity). Lower take or select fewer relations.",
+      "path": [
+        "tooComplex"
+      ],
+      "code": "BAD_USER_INPUT"
+    },
+    {
+      "message": "User.posts is nested 3 relations deep; the limit is 2 (maxDepth).",
+      "path": [
+        "tooDeep"
+      ],
+      "code": "BAD_USER_INPUT"
+    },
+    {
+      "message": "Post list: take 4 is above the limit (maxTake: 3).",
+      "path": [
+        "tooMany"
+      ],
+      "code": "BAD_USER_INPUT"
+    },
+    {
+      "message": "The selection has 4 aliased fields; the limit is 3 (maxAliases).",
+      "path": [
+        "tooManyAliases"
+      ],
+      "code": "BAD_USER_INPUT"
+    }
+  ]
+}

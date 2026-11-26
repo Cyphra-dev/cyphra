@@ -19,6 +19,11 @@ const schema = compat.v7.makeSchema({ typeDefs, driver });
 
 Serve `schema` with GraphQL Yoga, Apollo Server or any GraphQL server.
 
+**Native API (experimental):** `native.makeSchema({ client: db, config })` serves an API generated
+from `schema.cyphra` and run by the typed client (`postFindMany`, keyset cursors, `_edge`, typed
+config with `defineGraphQL`). Reads only for now. See
+[the docs](https://www.cyphra.dev/graphql/native).
+
 Status (early release):
 
 - The full v7 schema is generated; its printed SDL is identical to `@neo4j/graphql` 7.6.8.

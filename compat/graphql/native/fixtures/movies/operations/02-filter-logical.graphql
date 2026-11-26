@@ -1,0 +1,15 @@
+# features: filter.logical
+query {
+  orFilter: movieFindMany(where: { OR: [{ released: { lt: 1995 } }, { rating: { gte: 8 } }] }) {
+    nodes {
+      title
+    }
+  }
+  notFilter: movieFindMany(where: { NOT: { genres: { has: "Action" } } }) {
+    nodes {
+      title
+    }
+  }
+  emptyOr: movieCount(where: { OR: [] })
+  andFilter: movieCount(where: { AND: [{ released: { gte: 1995 } }, { released: { lte: 1999 } }] })
+}

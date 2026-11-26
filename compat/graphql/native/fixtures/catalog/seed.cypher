@@ -1,0 +1,17 @@
+// Two authors, labs and quizzes (each also an :Activity), tracks containing them in order.
+CREATE (ada:Author {id: "a-ada", name: "Ada", joined: date("2020-05-01"), reach: 9007199254740993, office: point({longitude: 2.35, latitude: 48.85})})
+CREATE (bob:Author {id: "a-bob", name: "Bob", joined: date("2021-01-15")})
+CREATE (l1:Lab:Activity {id: "l-cypher", title: "Cypher basics", minutes: 30, image: "neo4j:5"})
+CREATE (l2:Lab:Activity {id: "l-gql", title: "GraphQL on Neo4j", minutes: 45})
+CREATE (q1:Quiz:Activity {id: "q-cypher", title: "Cypher quiz", minutes: 10, level: "BEGINNER", questions: 5})
+CREATE (q2:Quiz:Activity {id: "q-graphs", title: "Graph theory", level: "ADVANCED", questions: 12})
+CREATE (t1:Track {id: "t-start", name: "Getting started", publishedAt: datetime("2024-03-01T09:00:00Z")})
+CREATE (t2:Track {id: "t-api", name: "APIs", publishedAt: datetime("2024-06-01T09:00:00Z")})
+CREATE (ada)-[:WROTE]->(l1)
+CREATE (ada)-[:WROTE]->(q1)
+CREATE (bob)-[:WROTE]->(l2)
+CREATE (bob)-[:WROTE]->(q2)
+CREATE (t1)-[:CONTAINS {position: 1}]->(l1)
+CREATE (t1)-[:CONTAINS {position: 2}]->(q1)
+CREATE (t2)-[:CONTAINS {position: 1}]->(l2)
+CREATE (t2)-[:CONTAINS {position: 2}]->(q1);

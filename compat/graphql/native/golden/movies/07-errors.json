@@ -1,0 +1,39 @@
+{
+  "data": {
+    "edgeOutsideRelation": null,
+    "twoKeys": null,
+    "badCursor": null,
+    "noUniqueKey": null,
+    "ok": 5
+  },
+  "errors": [
+    {
+      "message": "Movie.findMany: cursor.after is not a valid cursor for this query (malformed, or made for another model or orderBy).",
+      "path": [
+        "badCursor"
+      ],
+      "code": "BAD_USER_INPUT"
+    },
+    {
+      "message": "_edge is only available on Person reached through a relation with a relationship model.",
+      "path": [
+        "edgeOutsideRelation"
+      ],
+      "code": "BAD_USER_INPUT"
+    },
+    {
+      "message": "Movie.findUnique: where must set at least one unique field (id).",
+      "path": [
+        "noUniqueKey"
+      ],
+      "code": "BAD_USER_INPUT"
+    },
+    {
+      "message": "orderBy[0]: each element of orderBy takes exactly one key, got title, released.",
+      "path": [
+        "twoKeys"
+      ],
+      "code": "BAD_USER_INPUT"
+    }
+  ]
+}

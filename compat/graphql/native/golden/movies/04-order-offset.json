@@ -1,0 +1,45 @@
+{
+  "data": {
+    "byReleased": {
+      "nodes": [
+        {
+          "title": "The Matrix",
+          "released": 1999
+        },
+        {
+          "title": "The Devil's Advocate",
+          "released": 1997
+        }
+      ],
+      "pageInfo": {
+        "hasNextPage": true,
+        "hasPreviousPage": true
+      }
+    },
+    "byActorCount": {
+      "nodes": [
+        {
+          "title": "The Matrix",
+          "_count": {
+            "actors": 3
+          }
+        },
+        {
+          "title": "A Few Good Men",
+          "_count": {
+            "actors": 2
+          }
+        },
+        {
+          "title": "The Devil's Advocate",
+          "_count": {
+            "actors": 2
+          }
+        }
+      ]
+    },
+    "first": {
+      "title": "Johnny Mnemonic"
+    }
+  }
+}

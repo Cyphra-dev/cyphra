@@ -1,0 +1,704 @@
+interface Activity {
+  """
+  Number of related nodes per to-many relation (only the selected ones are counted).
+  """
+  _count: ActivityCount!
+
+  """
+  Edge properties when this Activity is reached through a relation with a relationship model (selecting it anywhere else is an error).
+  """
+  _edge: Contains
+  author: Author
+  id: ID!
+  minutes: Int
+  title: String!
+  tracks(orderBy: [TrackOrderBy!], skip: Int, take: Int, where: TrackWhere): [Track!]!
+}
+
+interface ActivityCount {
+  tracks(where: TrackWhere): Int!
+}
+
+type ActivityList {
+  nodes: [Activity!]!
+  pageInfo: PageInfo!
+
+  """
+  Number of nodes matching where, ignoring paging. Counted only when selected.
+  """
+  totalCount: Int!
+}
+
+input ActivityListRelationFilter {
+  """Every related node matches."""
+  every: ActivityWhere
+
+  """No related node matches."""
+  none: ActivityWhere
+
+  """At least one related node matches."""
+  some: ActivityWhere
+}
+
+"""Per-implementation filters: only the listed ones are kept."""
+input ActivityOnWhere {
+  Lab: LabWhere
+  Quiz: QuizWhere
+}
+
+"""One key per element of the orderBy list."""
+input ActivityOrderBy {
+  _typename: SortOrder
+
+  """Sort by a field of the related node."""
+  author: AuthorScalarOrderBy
+  id: SortOrder
+  minutes: SortOrder
+  title: SortOrder
+
+  """Sort by the number of related nodes."""
+  tracks: TrackRelationCountOrder
+}
+
+input ActivityRelationCountOrder {
+  _count: SortOrder!
+
+  """Count only the matching nodes."""
+  where: ActivityWhere
+}
+
+enum ActivityTypename {
+  Lab
+  Quiz
+}
+
+input ActivityTypenameFilter {
+  equals: ActivityTypename
+  in: [ActivityTypename!]
+  not: ActivityTypename
+  notIn: [ActivityTypename!]
+}
+
+input ActivityWhere {
+  AND: [ActivityWhere!]
+  NOT: ActivityWhere
+  OR: [ActivityWhere!]
+  _on: ActivityOnWhere
+  _typename: ActivityTypenameFilter
+  author: AuthorRelationFilter
+  id: IDFilter
+  minutes: IntFilter
+  title: StringFilter
+  tracks: TrackListRelationFilter
+}
+
+"""
+At least one unique key (checked when the query runs), plus filters on the other fields.
+"""
+input ActivityWhereUnique {
+  AND: [ActivityWhere!]
+  NOT: ActivityWhere
+  OR: [ActivityWhere!]
+  author: AuthorRelationFilter
+  id: ID
+  minutes: IntFilter
+  title: StringFilter
+  tracks: TrackListRelationFilter
+}
+
+type Author {
+  """
+  Number of related nodes per to-many relation (only the selected ones are counted).
+  """
+  _count: AuthorCount!
+  activities(orderBy: [ActivityOrderBy!], skip: Int, take: Int, where: ActivityWhere): [Activity!]!
+  id: ID!
+  joined: Date!
+  name: String!
+  office: Point
+  reach: BigInt
+}
+
+type AuthorCount {
+  activities(where: ActivityWhere): Int!
+}
+
+type AuthorList {
+  nodes: [Author!]!
+  pageInfo: PageInfo!
+
+  """
+  Number of nodes matching where, ignoring paging. Counted only when selected.
+  """
+  totalCount: Int!
+}
+
+"""One key per element of the orderBy list."""
+input AuthorOrderBy {
+  """Sort by the number of related nodes."""
+  activities: ActivityRelationCountOrder
+  id: SortOrder
+  joined: SortOrder
+  name: SortOrder
+  office: PointDistanceOrder
+  reach: SortOrder
+}
+
+input AuthorRelationFilter {
+  """The related node matches (null: none)."""
+  is: AuthorWhere
+  isNot: AuthorWhere
+}
+
+input AuthorScalarOrderBy {
+  id: SortOrder
+  joined: SortOrder
+  name: SortOrder
+  reach: SortOrder
+}
+
+input AuthorWhere {
+  AND: [AuthorWhere!]
+  NOT: AuthorWhere
+  OR: [AuthorWhere!]
+  activities: ActivityListRelationFilter
+  id: IDFilter
+  joined: DateFilter
+  name: StringFilter
+  office: PointFilter
+  reach: BigIntFilter
+}
+
+"""
+At least one unique key (checked when the query runs), plus filters on the other fields.
+"""
+input AuthorWhereUnique {
+  AND: [AuthorWhere!]
+  NOT: AuthorWhere
+  OR: [AuthorWhere!]
+  activities: ActivityListRelationFilter
+  id: ID
+  joined: DateFilter
+  name: String
+  office: PointFilter
+  reach: BigIntFilter
+}
+
+"""
+A 64-bit integer, as a decimal string (an integer literal is accepted in queries).
+"""
+scalar BigInt
+
+input BigIntFilter {
+  equals: BigInt
+  gt: BigInt
+  gte: BigInt
+  in: [BigInt!]
+  lt: BigInt
+  lte: BigInt
+  not: BigInt
+  notIn: [BigInt!]
+}
+
+type Contains {
+  position: Int!
+}
+
+"""A calendar date, as a `yyyy-mm-dd` string."""
+scalar Date
+
+input DateFilter {
+  equals: Date
+  gt: Date
+  gte: Date
+  in: [Date!]
+  lt: Date
+  lte: Date
+  not: Date
+  notIn: [Date!]
+}
+
+"""An instant, as an ISO 8601 string (`2026-11-01T09:30:00.000Z`)."""
+scalar DateTime
+
+input DateTimeFilter {
+  equals: DateTime
+  gt: DateTime
+  gte: DateTime
+  in: [DateTime!]
+  lt: DateTime
+  lte: DateTime
+  not: DateTime
+  notIn: [DateTime!]
+}
+
+input IDFilter {
+  contains: ID
+  endsWith: ID
+  equals: ID
+  gt: ID
+  gte: ID
+  in: [ID!]
+  lt: ID
+  lte: ID
+  mode: QueryMode
+  not: ID
+  notIn: [ID!]
+  startsWith: ID
+}
+
+input IntFilter {
+  equals: Int
+  gt: Int
+  gte: Int
+  in: [Int!]
+  lt: Int
+  lte: Int
+  not: Int
+  notIn: [Int!]
+}
+
+type Lab implements Activity {
+  """
+  Number of related nodes per to-many relation (only the selected ones are counted).
+  """
+  _count: LabCount!
+
+  """
+  Edge properties when this Lab is reached through a relation with a relationship model (selecting it anywhere else is an error).
+  """
+  _edge: Contains
+  author: Author
+  id: ID!
+  image: String
+  minutes: Int
+  title: String!
+  tracks(orderBy: [TrackOrderBy!], skip: Int, take: Int, where: TrackWhere): [Track!]!
+}
+
+type LabCount implements ActivityCount {
+  tracks(where: TrackWhere): Int!
+}
+
+type LabList {
+  nodes: [Lab!]!
+  pageInfo: PageInfo!
+
+  """
+  Number of nodes matching where, ignoring paging. Counted only when selected.
+  """
+  totalCount: Int!
+}
+
+"""One key per element of the orderBy list."""
+input LabOrderBy {
+  """Sort by a field of the related node."""
+  author: AuthorScalarOrderBy
+  id: SortOrder
+  image: SortOrder
+  minutes: SortOrder
+  title: SortOrder
+
+  """Sort by the number of related nodes."""
+  tracks: TrackRelationCountOrder
+}
+
+input LabWhere {
+  AND: [LabWhere!]
+  NOT: LabWhere
+  OR: [LabWhere!]
+  author: AuthorRelationFilter
+  id: IDFilter
+  image: StringFilter
+  minutes: IntFilter
+  title: StringFilter
+  tracks: TrackListRelationFilter
+}
+
+"""
+At least one unique key (checked when the query runs), plus filters on the other fields.
+"""
+input LabWhereUnique {
+  AND: [LabWhere!]
+  NOT: LabWhere
+  OR: [LabWhere!]
+  author: AuthorRelationFilter
+  id: ID
+  image: StringFilter
+  minutes: IntFilter
+  title: StringFilter
+  tracks: TrackListRelationFilter
+}
+
+enum Level {
+  ADVANCED
+  BEGINNER
+}
+
+input LevelFilter {
+  equals: Level
+  in: [Level!]
+  not: Level
+  notIn: [Level!]
+}
+
+type PageInfo {
+  endCursor: String
+  hasNextPage: Boolean!
+  hasPreviousPage: Boolean!
+  startCursor: String
+}
+
+"""A WGS-84 point (degrees, height in meters)."""
+type Point {
+  height: Float
+  latitude: Float!
+  longitude: Float!
+}
+
+input PointBBoxInput {
+  lowerLeft: PointInput!
+  upperRight: PointInput!
+}
+
+input PointDistanceFilter {
+  from: PointInput!
+  gt: Float
+  gte: Float
+  lt: Float
+  lte: Float
+}
+
+"""Sort by distance from a point (nearest first with asc, the default)."""
+input PointDistanceOrder {
+  distanceFrom: PointInput!
+  sort: SortOrder
+}
+
+input PointFilter {
+  distance: PointDistanceFilter
+  equals: PointInput
+  not: PointInput
+  withinBBox: PointBBoxInput
+}
+
+"""A WGS-84 point."""
+input PointInput {
+  height: Float
+  latitude: Float!
+  longitude: Float!
+}
+
+type Query {
+  activityCount(where: ActivityWhere): Int
+  activityFindFirst(orderBy: [ActivityOrderBy!], skip: Int, where: ActivityWhere): Activity
+  activityFindMany(
+    """A cursor (pageInfo.endCursor): the page after it."""
+    after: String
+
+    """A cursor (pageInfo.startCursor): the page before it."""
+    before: String
+    orderBy: [ActivityOrderBy!]
+    skip: Int
+    take: Int
+    where: ActivityWhere
+  ): ActivityList
+  activityFindUnique(where: ActivityWhereUnique!): Activity
+  authorCount(where: AuthorWhere): Int
+  authorFindFirst(orderBy: [AuthorOrderBy!], skip: Int, where: AuthorWhere): Author
+  authorFindMany(
+    """A cursor (pageInfo.endCursor): the page after it."""
+    after: String
+
+    """A cursor (pageInfo.startCursor): the page before it."""
+    before: String
+    orderBy: [AuthorOrderBy!]
+    skip: Int
+    take: Int
+    where: AuthorWhere
+  ): AuthorList
+  authorFindUnique(where: AuthorWhereUnique!): Author
+  labCount(where: LabWhere): Int
+  labFindFirst(orderBy: [LabOrderBy!], skip: Int, where: LabWhere): Lab
+  labFindMany(
+    """A cursor (pageInfo.endCursor): the page after it."""
+    after: String
+
+    """A cursor (pageInfo.startCursor): the page before it."""
+    before: String
+    orderBy: [LabOrderBy!]
+    skip: Int
+    take: Int
+    where: LabWhere
+  ): LabList
+  labFindUnique(where: LabWhereUnique!): Lab
+  quizCount(where: QuizWhere): Int
+  quizFindFirst(orderBy: [QuizOrderBy!], skip: Int, where: QuizWhere): Quiz
+  quizFindMany(
+    """A cursor (pageInfo.endCursor): the page after it."""
+    after: String
+
+    """A cursor (pageInfo.startCursor): the page before it."""
+    before: String
+    orderBy: [QuizOrderBy!]
+    skip: Int
+    take: Int
+    where: QuizWhere
+  ): QuizList
+  quizFindUnique(where: QuizWhereUnique!): Quiz
+  searchableCount(where: SearchableWhere): Int
+  searchableFindFirst(orderBy: [SearchableOrderBy!], skip: Int, where: SearchableWhere): Searchable
+  searchableFindMany(
+    """A cursor (pageInfo.endCursor): the page after it."""
+    after: String
+
+    """A cursor (pageInfo.startCursor): the page before it."""
+    before: String
+    orderBy: [SearchableOrderBy!]
+    skip: Int
+    take: Int
+    where: SearchableWhere
+  ): SearchableList
+  trackCount(where: TrackWhere): Int
+  trackFindFirst(orderBy: [TrackOrderBy!], skip: Int, where: TrackWhere): Track
+  trackFindMany(
+    """A cursor (pageInfo.endCursor): the page after it."""
+    after: String
+
+    """A cursor (pageInfo.startCursor): the page before it."""
+    before: String
+    orderBy: [TrackOrderBy!]
+    skip: Int
+    take: Int
+    where: TrackWhere
+  ): TrackList
+  trackFindUnique(where: TrackWhereUnique!): Track
+}
+
+"""`insensitive` compares lower-cased values."""
+enum QueryMode {
+  default
+  insensitive
+}
+
+type Quiz implements Activity {
+  """
+  Number of related nodes per to-many relation (only the selected ones are counted).
+  """
+  _count: QuizCount!
+
+  """
+  Edge properties when this Quiz is reached through a relation with a relationship model (selecting it anywhere else is an error).
+  """
+  _edge: Contains
+  author: Author
+  id: ID!
+  level: Level!
+  minutes: Int
+  questions: Int!
+  title: String!
+  tracks(orderBy: [TrackOrderBy!], skip: Int, take: Int, where: TrackWhere): [Track!]!
+}
+
+type QuizCount implements ActivityCount {
+  tracks(where: TrackWhere): Int!
+}
+
+type QuizList {
+  nodes: [Quiz!]!
+  pageInfo: PageInfo!
+
+  """
+  Number of nodes matching where, ignoring paging. Counted only when selected.
+  """
+  totalCount: Int!
+}
+
+"""One key per element of the orderBy list."""
+input QuizOrderBy {
+  """Sort by a field of the related node."""
+  author: AuthorScalarOrderBy
+  id: SortOrder
+  level: SortOrder
+  minutes: SortOrder
+  questions: SortOrder
+  title: SortOrder
+
+  """Sort by the number of related nodes."""
+  tracks: TrackRelationCountOrder
+}
+
+input QuizWhere {
+  AND: [QuizWhere!]
+  NOT: QuizWhere
+  OR: [QuizWhere!]
+  author: AuthorRelationFilter
+  id: IDFilter
+  level: LevelFilter
+  minutes: IntFilter
+  questions: IntFilter
+  title: StringFilter
+  tracks: TrackListRelationFilter
+}
+
+"""
+At least one unique key (checked when the query runs), plus filters on the other fields.
+"""
+input QuizWhereUnique {
+  AND: [QuizWhere!]
+  NOT: QuizWhere
+  OR: [QuizWhere!]
+  author: AuthorRelationFilter
+  id: ID
+  level: LevelFilter
+  minutes: IntFilter
+  questions: IntFilter
+  title: StringFilter
+  tracks: TrackListRelationFilter
+}
+
+union Searchable = Author | Lab | Quiz
+
+type SearchableList {
+  nodes: [Searchable!]!
+  pageInfo: PageInfo!
+
+  """
+  Number of nodes matching where, ignoring paging. Counted only when selected.
+  """
+  totalCount: Int!
+}
+
+"""Per-member filters: only the listed ones are kept."""
+input SearchableOnWhere {
+  Author: AuthorWhere
+  Lab: LabWhere
+  Quiz: QuizWhere
+}
+
+"""One key per element of the orderBy list."""
+input SearchableOrderBy {
+  _typename: SortOrder
+}
+
+enum SearchableTypename {
+  Author
+  Lab
+  Quiz
+}
+
+input SearchableTypenameFilter {
+  equals: SearchableTypename
+  in: [SearchableTypename!]
+  not: SearchableTypename
+  notIn: [SearchableTypename!]
+}
+
+input SearchableWhere {
+  AND: [SearchableWhere!]
+  NOT: SearchableWhere
+  OR: [SearchableWhere!]
+  _on: SearchableOnWhere
+  _typename: SearchableTypenameFilter
+}
+
+enum SortOrder {
+  asc
+  desc
+}
+
+input StringFilter {
+  contains: String
+  endsWith: String
+  equals: String
+  gt: String
+  gte: String
+  in: [String!]
+  lt: String
+  lte: String
+  mode: QueryMode
+  not: String
+  notIn: [String!]
+  startsWith: String
+}
+
+type Track {
+  """
+  Number of related nodes per to-many relation (only the selected ones are counted).
+  """
+  _count: TrackCount!
+
+  """
+  Edge properties when this Track is reached through a relation with a relationship model (selecting it anywhere else is an error).
+  """
+  _edge: Contains
+  id: ID!
+  items(orderBy: [ActivityOrderBy!], skip: Int, take: Int, where: ActivityWhere): [Activity!]!
+  name: String!
+  publishedAt: DateTime!
+}
+
+type TrackCount {
+  items(where: ActivityWhere): Int!
+}
+
+type TrackList {
+  nodes: [Track!]!
+  pageInfo: PageInfo!
+
+  """
+  Number of nodes matching where, ignoring paging. Counted only when selected.
+  """
+  totalCount: Int!
+}
+
+input TrackListRelationFilter {
+  """Every related node matches."""
+  every: TrackWhere
+
+  """No related node matches."""
+  none: TrackWhere
+
+  """At least one related node matches."""
+  some: TrackWhere
+}
+
+"""One key per element of the orderBy list."""
+input TrackOrderBy {
+  id: SortOrder
+
+  """Sort by the number of related nodes."""
+  items: ActivityRelationCountOrder
+  name: SortOrder
+  publishedAt: SortOrder
+}
+
+input TrackRelationCountOrder {
+  _count: SortOrder!
+
+  """Count only the matching nodes."""
+  where: TrackWhere
+}
+
+input TrackWhere {
+  AND: [TrackWhere!]
+  NOT: TrackWhere
+  OR: [TrackWhere!]
+  id: IDFilter
+  items: ActivityListRelationFilter
+  name: StringFilter
+  publishedAt: DateTimeFilter
+}
+
+"""
+At least one unique key (checked when the query runs), plus filters on the other fields.
+"""
+input TrackWhereUnique {
+  AND: [TrackWhere!]
+  NOT: TrackWhere
+  OR: [TrackWhere!]
+  id: ID
+  items: ActivityListRelationFilter
+  name: StringFilter
+  publishedAt: DateTimeFilter
+}

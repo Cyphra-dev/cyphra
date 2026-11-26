@@ -1,0 +1,24 @@
+# features: relationship, edge
+# ordered
+query {
+  movieFindUnique(where: { id: "m-matrix" }) {
+    title
+    actors(orderBy: [{ name: asc }]) {
+      name
+      _edge {
+        roles
+        screenTime
+      }
+    }
+    directors(orderBy: [{ name: asc }]) {
+      name
+    }
+    lead: actors(where: { name: { startsWith: "Keanu" } }) {
+      name
+    }
+    _count {
+      actors
+      directors
+    }
+  }
+}

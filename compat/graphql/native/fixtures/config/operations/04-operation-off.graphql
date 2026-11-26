@@ -1,0 +1,6 @@
+# features: config.operations
+query {
+  auditLogFindUnique(where: { id: "l1" }) {
+    action
+  }
+}

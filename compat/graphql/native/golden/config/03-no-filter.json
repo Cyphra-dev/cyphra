@@ -1,0 +1,7 @@
+{
+  "errors": [
+    {
+      "message": "Field \"email\" is not defined by type \"UserWhere\"."
+    }
+  ]
+}

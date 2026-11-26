@@ -1,0 +1,26 @@
+# features: pagination.cursor
+# ordered
+query ($after: String) {
+  firstPage: movieFindMany(orderBy: [{ released: asc }], take: 2) {
+    nodes {
+      title
+      released
+    }
+    pageInfo {
+      hasNextPage
+      hasPreviousPage
+      startCursor
+      endCursor
+    }
+    totalCount
+  }
+  secondPage: movieFindMany(orderBy: [{ released: asc }], take: 2, after: $after) {
+    nodes {
+      title
+    }
+    pageInfo {
+      hasNextPage
+      hasPreviousPage
+    }
+  }
+}

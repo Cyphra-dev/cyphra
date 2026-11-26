@@ -1,0 +1,35 @@
+{
+  "data": {
+    "advancedQuizzesAndLabs": {
+      "nodes": [
+        {
+          "__typename": "Lab",
+          "title": "Cypher basics"
+        },
+        {
+          "__typename": "Lab",
+          "title": "GraphQL on Neo4j"
+        },
+        {
+          "__typename": "Quiz",
+          "title": "Graph theory"
+        }
+      ]
+    },
+    "quizzesOnly": 2,
+    "byAuthor": {
+      "nodes": [
+        {
+          "title": "Cypher basics"
+        },
+        {
+          "title": "Cypher quiz"
+        }
+      ]
+    },
+    "unique": {
+      "__typename": "Quiz",
+      "title": "Graph theory"
+    }
+  }
+}
