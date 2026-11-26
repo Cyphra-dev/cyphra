@@ -34,6 +34,8 @@ import { falkordbShortestPath } from "./falkordbPaths.js";
 import {
   compileHop,
   edgeWhereModel,
+  stepOrEnd,
+  stepWhere,
   hopBound,
   memgraphExpansion,
   viaRelations,
@@ -112,8 +114,10 @@ export function compileShortestPath(
   if (ctx.dialect === "falkordb") {
     return falkordbShortestPath(ctx, model, args, max, all, { label, from, to, rels, op });
   }
-  // `where` reads the group variable of the hop's end nodes (every node but the start).
-  const y = args.where === undefined ? undefined : ctx.variable("y");
+  // `where` (and the read rules) read the group variable of the hop's end nodes (every node but
+  // the start): a path never goes through a node the rules hide.
+  const step = stepWhere(ctx, model, args.where);
+  const y = step === undefined ? undefined : ctx.variable("y");
   const hop = compileHop(
     ctx,
     model,
@@ -132,7 +136,7 @@ export function compileShortestPath(
     // inside the hop: Neo4j 5.26 fails to plan a hop predicate that mixes a subquery (relation
     // filters) with the outer `t`, which the end-node exemption would need.
     const x = ctx.variable("x");
-    const where = compileWhere(ctx, model, x, args.where);
+    const where = step!(x);
     if (where) pattern = `(${pattern} WHERE all(${x} IN ${y}[..-1] WHERE ${where}))`;
   }
 
@@ -227,12 +231,7 @@ function memgraphShortestPath(
         ? null
         : compileWhere(ctx, edgeWhereModel(ctx.schema, model, rels, op), e, args.edgeWhere),
     // `where` holds on intermediate nodes only: the end node, which `to` selects, is exempt.
-    args.where === undefined
-      ? undefined
-      : (m) => {
-          const where = compileWhere(ctx, model, m, args.where);
-          return where ? `${m} = t OR (${where})` : null;
-        },
+    stepOrEnd(ctx, model, args.where),
     range,
     op,
   );

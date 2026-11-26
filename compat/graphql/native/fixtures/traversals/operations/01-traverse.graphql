@@ -1,0 +1,14 @@
+# features: traverse, auth.rules.read
+# ordered
+# Anonymous: Cy is only reachable through Hal, who is hidden, so a path cannot go through him.
+{
+  personTraverse(
+    from: { id: { equals: "a" } }
+    via: [follows]
+    depth: { max: 2 }
+    orderBy: [{ id: asc }]
+  ) {
+    id
+    name
+  }
+}

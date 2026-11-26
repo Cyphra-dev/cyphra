@@ -30,10 +30,11 @@ import {
   labelTest,
   nodePattern,
   unionPredicate,
+  type Shape,
 } from "./compile.js";
 import { CyphraValidationError } from "./errors.js";
 import { compilePath, decodePath } from "./path.js";
-import { unsupportedOnMemgraph } from "../dialect.js";
+import { unsupportedOnFalkorDB, unsupportedOnMemgraph } from "../dialect.js";
 import { falkordbTraverse } from "./falkordbPaths.js";
 
 type AnyRecord = Record<string, unknown>;
@@ -223,6 +224,36 @@ function hopPattern(
   if (edgeWhere) preds.push(edgeWhere);
   const where = preds.length === 0 ? "" : ` WHERE ${preds.map((p) => `(${p})`).join(" AND ")}`;
   return `${pattern}${where}`;
+}
+
+/**
+ * The predicate on the nodes a path steps through, for model `model`: its `read` rules AND `where`
+ * (`undefined` when there is neither), so that a path never goes through a node the rules hide.
+ */
+export function stepWhere(
+  ctx: QueryContext,
+  model: ResolvedNodeModel,
+  where: unknown,
+): ((node: string) => string | null) | undefined {
+  if (where === undefined && (ctx.rules.length === 0 || ctx.ruleDepth > 0)) return undefined;
+  return (node) => scopedWhere(ctx, model, node, where);
+}
+
+/**
+ * The predicate on the nodes a shortest path steps through: `where` and the read rules, the end
+ * node (which `to` selects) exempt.
+ */
+export function stepOrEnd(
+  ctx: QueryContext,
+  model: ResolvedNodeModel,
+  where: unknown,
+): ((node: string) => string | null) | undefined {
+  const step = stepWhere(ctx, model, where);
+  if (!step) return undefined;
+  return (m) => {
+    const w = step(m);
+    return w ? `${m} = t OR (${w})` : null;
+  };
 }
 
 /** Whether compiled Cypher contains a subquery expression (`EXISTS {`, `COUNT {`, `COLLECT {`). */
@@ -491,9 +522,7 @@ export function compileTraverse(
                     e,
                     h.spec.edgeWhere,
                   ),
-            h.spec.where === undefined
-              ? undefined
-              : (t) => compileWhere(ctx, h.to, t, h.spec.where),
+            stepWhere(ctx, h.to, h.spec.where),
             `*${h.min}..${h.max}`,
             where,
           );
@@ -514,7 +543,7 @@ export function compileTraverse(
           args.edgeWhere === undefined
             ? null
             : compileWhere(ctx, edgeWhereModel(ctx.schema, model, rels), e, args.edgeWhere),
-        undefined,
+        stepWhere(ctx, model, undefined),
         `*${depth.min}..${depth.max}`,
         "traverse",
       );
@@ -539,7 +568,7 @@ export function compileTraverse(
                   e,
                   h.spec.edgeWhere,
                 ),
-          h.spec.where === undefined ? undefined : (t) => compileWhere(ctx, h.to, t, h.spec.where),
+          stepWhere(ctx, h.to, h.spec.where),
           undefined,
           `traverse: via[${i}]`,
         );
@@ -551,10 +580,19 @@ export function compileTraverse(
   } else {
     const rels = viaRelations(model, args.via);
     const depth = parseDepth(args.depth, maxDepth);
-    const hop = compileHop(ctx, model, rels, args.direction, (e) =>
-      args.edgeWhere === undefined
-        ? null
-        : compileWhere(ctx, edgeWhereModel(ctx.schema, model, rels), e, args.edgeWhere),
+    const hop = hopPattern(
+      ctx,
+      model,
+      model,
+      rels,
+      args.direction,
+      (e) =>
+        args.edgeWhere === undefined
+          ? null
+          : compileWhere(ctx, edgeWhereModel(ctx.schema, model, rels), e, args.edgeWhere),
+      stepWhere(ctx, model, undefined),
+      undefined,
+      "traverse",
     );
     segments = `(${hop}){${depth.min},${depth.max}}`;
     end = model;
@@ -598,4 +636,89 @@ export function compileTraverse(
         return returnPaths ? { node, path: decodePath(ctx.schema, r.path) } : node;
       }),
   };
+}
+
+/**
+ * A traversal load (internal, not in the client's types; the native GraphQL API's named
+ * traversal fields): `select: { context: { $traverse: { via: [{ rel }, …] }, where, orderBy, skip,
+ * take, select } }` loads, under `context`, the nodes the hops of `via` reach from the node bound to
+ * `alias` (each once; the start node itself only with a zero minimum), as a `COLLECT {}` in the
+ * parent's projection: one statement for the whole selection. The nodes a path steps through
+ * follow the read rules, like the reached ones. Neo4j only (quantified path patterns in a
+ * subquery).
+ */
+export function compileTraverseLoad(
+  ctx: QueryContext,
+  model: ResolvedNodeModel,
+  alias: string,
+  key: string,
+  spec: AnyRecord,
+  label: string,
+): { expr: string; shape: Shape } {
+  const { $traverse, ...args } = spec;
+  if (ctx.dialect !== "neo4j") {
+    const feature = `${label}.${key}: a traversal load ($traverse)`;
+    throw ctx.dialect === "memgraph"
+      ? unsupportedOnMemgraph(feature)
+      : unsupportedOnFalkorDB(feature);
+  }
+  if (!isPlainObject($traverse) || !isHopList($traverse.via)) {
+    throw new CyphraValidationError(
+      `${label}.${key}.$traverse takes { via: [{ rel, direction?, depth?, where? }, …] }.`,
+    );
+  }
+  for (const k of Object.keys($traverse)) {
+    if (k !== "via")
+      throw new CyphraValidationError(`${label}.${key}.$traverse: unknown option "${k}".`);
+  }
+  const scalarNames = model.fields.filter((f) => f.kind === "scalar").map((f) => f.name);
+  if (
+    key === "_count" ||
+    key.startsWith("$") ||
+    key.startsWith("__") ||
+    scalarNames.includes(key)
+  ) {
+    throw new CyphraValidationError(
+      `${label}.${key}: "${key}" cannot name a traversal load (it is ${scalarNames.includes(key) ? `a scalar field of ${model.name}` : "a reserved key"}).`,
+    );
+  }
+  const hops = resolveHops(ctx.schema, model, $traverse.via, DEFAULT_MAX_TRAVERSAL_DEPTH);
+  const segments = hops
+    .map((h, i) => {
+      const where = `${label}.${key}.$traverse.via[${i}]`;
+      const pattern = hopPattern(
+        ctx,
+        h.from,
+        h.to,
+        h.rels,
+        h.spec.direction,
+        (e) =>
+          h.spec.edgeWhere === undefined
+            ? null
+            : compileWhere(
+                ctx,
+                edgeWhereModel(ctx.schema, h.from, h.rels, where),
+                e,
+                h.spec.edgeWhere,
+              ),
+        stepWhere(ctx, h.to, h.spec.where),
+        undefined,
+        where,
+      );
+      return `(${pattern}){${h.min},${h.max}}`;
+    })
+    .join("");
+  const end = hops.at(-1)!.to;
+  const min = hops.reduce((sum, h) => sum + h.min, 0);
+  const n = ctx.variable("n");
+  const reached = [
+    min > 0 ? `${n} <> ${alias}` : null,
+    unionPredicate(n, end),
+    scopedWhere(ctx, end, n, args.where),
+  ].filter((x): x is string => Boolean(x));
+  const inner = compileProjection(ctx, end, n, args);
+  let body = `MATCH (${alias})${segments}${nodePattern(n, end)}`;
+  if (reached.length) body += ` WHERE ${reached.map((x) => `(${x})`).join(" AND ")}`;
+  body += ` WITH DISTINCT ${n}${compilePaging(ctx, end, n, args)} RETURN ${inner.expr}`;
+  return { expr: `COLLECT { ${body} }`, shape: inner.shape };
 }

@@ -1,0 +1,17 @@
+# features: traversal.named, auth.rules.read
+# ordered
+# Chunk.context, in the chunk's statement: chunks about the same or related entities; the hidden chunk c3 is not one, nor the chunk itself.
+{
+  chunkFindMany(where: { id: { in: ["c1", "c5"] } }, orderBy: [{ id: asc }]) {
+    nodes {
+      id
+      context(orderBy: [{ id: asc }]) {
+        id
+        text
+      }
+      first: context(orderBy: [{ id: asc }], take: 1, where: { text: { contains: "Cypher" } }) {
+        id
+      }
+    }
+  }
+}

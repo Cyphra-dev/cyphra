@@ -1,0 +1,29 @@
+# features: traverse.paths, auth.rules.read, auth.field.where
+# ordered
+# Each reached node with its path: typed edges with _edge, path nodes read through the field rules (Ada reads her own email only).
+{
+  personTraversePaths(
+    from: { id: { equals: "a" } }
+    via: [follows]
+    depth: { min: 0, max: 2 }
+    orderBy: [{ id: asc }]
+  ) {
+    node {
+      id
+      email
+    }
+    path {
+      nodes {
+        id
+        email
+      }
+      edges {
+        type
+        direction
+        _edge {
+          since
+        }
+      }
+    }
+  }
+}

@@ -9,7 +9,7 @@
  */
 
 import type { ResolvedNodeModel, ResolvedScalarField, SchemaModel } from "@cyphra/schema";
-import type { QueryContext } from "./compile.js";
+import { fieldRef, q, type QueryContext } from "./compile.js";
 import { decodeScalar, toNative } from "./values.js";
 import type { Path, PathEdge } from "./types.js";
 
@@ -33,12 +33,38 @@ export function compilePath(
   const x = withNodes ? ctx.variable("x") : "";
   const i = ctx.variable("i");
   const rel = `relationships(${path})[${i}]`;
-  const props = nodeProperties ? `, properties: properties(${x})` : "";
+  const props = nodeProperties ? `, properties: ${pathNodeProperties(ctx, x)}` : "";
   const edges =
     `[${i} IN range(0, length(${path}) - 1) | ` +
     `{type: type(${rel}), properties: properties(${rel}), out: startNode(${rel}) = nodes(${path})[${i}]}]`;
   if (!withNodes) return `{edges: ${edges}}`;
   return `{nodes: [${x} IN nodes(${path}) | {labels: labels(${x})${props}}], edges: ${edges}}`;
+}
+
+/**
+ * The properties of the path node bound to `x`, as statements read them: `properties(x)`, or,
+ * when field rules hide fields of some models, a map of those models' fields read through the
+ * rules (`CASE WHEN x:User THEN x{.id, email: CASE WHEN <rule> THEN x.email END, …} ELSE
+ * properties(x) END`), so that a path does not reveal what the rules hide.
+ */
+export function pathNodeProperties(ctx: QueryContext, x: string): string {
+  if (ctx.rules.length === 0 || ctx.ruleDepth > 0) return `properties(${x})`;
+  const cases: string[] = [];
+  for (const m of ctx.schema.nodes) {
+    if (m.abstract) continue;
+    const scalars = m.fields.filter((f): f is ResolvedScalarField => f.kind === "scalar");
+    const refs = scalars.map((f) => [f.name, fieldRef(ctx, m, x, f.name)] as const);
+    if (refs.every(([name, ref]) => ref === `${x}.${q(name)}`)) continue;
+    // A map projection, not a map literal: Memgraph 3 can evaluate a map literal of property
+    // reads in a CASE branch once for every element of a list comprehension.
+    const entries = refs.map(([name, ref]) =>
+      ref === `${x}.${q(name)}` ? `.${q(name)}` : `${q(name)}: ${ref}`,
+    );
+    cases.push(`WHEN ${x}:${q(m.label)} THEN ${x}{${entries.join(", ")}}`);
+  }
+  return cases.length === 0
+    ? `properties(${x})`
+    : `CASE ${cases.join(" ")} ELSE properties(${x}) END`;
 }
 
 /**

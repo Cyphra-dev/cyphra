@@ -1,0 +1,22 @@
+{
+  "data": {
+    "personTraverse": [
+      {
+        "id": "b",
+        "name": "Bo"
+      },
+      {
+        "id": "c",
+        "name": "Cy"
+      },
+      {
+        "id": "d",
+        "name": "Di"
+      },
+      {
+        "id": "h",
+        "name": "Hal"
+      }
+    ]
+  }
+}

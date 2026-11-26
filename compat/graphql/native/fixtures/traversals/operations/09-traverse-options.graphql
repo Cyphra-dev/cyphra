@@ -1,0 +1,32 @@
+# features: traverse
+# ordered
+# where on the reached nodes, direction in, distinct false (one result per path), take.
+{
+  followers: personTraverse(
+    from: { id: { equals: "d" } }
+    via: [follows]
+    direction: in
+    depth: { max: 2 }
+    orderBy: [{ id: asc }]
+  ) {
+    id
+  }
+  named: personTraverse(
+    from: { id: { equals: "a" } }
+    via: [follows]
+    depth: { max: 2 }
+    where: { name: { startsWith: "D" } }
+  ) {
+    id
+  }
+  first: personTraverse(
+    from: { id: { equals: "a" } }
+    via: [follows]
+    depth: { min: 0, max: 1 }
+    distinct: false
+    orderBy: [{ id: asc }]
+    take: 2
+  ) {
+    id
+  }
+}

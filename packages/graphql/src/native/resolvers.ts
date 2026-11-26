@@ -23,6 +23,7 @@ import { badInput, toGraphQLError } from "./errors.js";
 import { names, TYPE, type RootResolver } from "./schema.js";
 import { fromGlobalId, keyValue } from "./relay.js";
 import { aggregate, groupBy, scoredSearch } from "./reads.js";
+import { traversal } from "./traversals.js";
 import { Translator } from "./translate.js";
 import { WriteArgs } from "./writes.js";
 
@@ -241,6 +242,10 @@ export function rootResolvers(
           case "search":
           case "findSimilar":
             return await scoredSearch(t, delegateOf(client, model), model, op, args);
+          case "traverse":
+          case "traversePaths":
+          case "shortestPath":
+            return await traversal(api, t, delegateOf(client, model), model, op, args);
         }
       } catch (err) {
         throw toGraphQLError(err, options.debug, isWrite(op) ? args : undefined);

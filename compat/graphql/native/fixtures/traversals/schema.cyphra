@@ -1,0 +1,31 @@
+// Traversals of the native API (#246): traverse, traversePaths, shortestPath and named traversal
+// fields, under read and field rules.
+
+node Person {
+  id      String   @id
+  name    String
+  email   String?
+  hidden  Boolean  @default(false)
+  follows Person[] @relationship(type: "FOLLOWS", direction: OUT)
+}
+
+relationship Follows {
+  type  "FOLLOWS"
+  from  Person
+  to    Person
+  since Int
+}
+
+node Chunk {
+  id       String   @id
+  text     String
+  hidden   Boolean  @default(false)
+  entities Entity[] @relationship(type: "MENTIONS", direction: OUT)
+}
+
+node Entity {
+  id      String   @id
+  name    String
+  chunks  Chunk[]  @relationship(type: "MENTIONS", direction: IN)
+  related Entity[] @relationship(type: "RELATED", direction: OUT)
+}

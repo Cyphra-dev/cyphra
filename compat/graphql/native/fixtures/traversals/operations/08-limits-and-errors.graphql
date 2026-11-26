@@ -1,0 +1,16 @@
+# features: traverse, limits, errors
+# depth above limits.maxTraversalDepth; path nodes of traversePaths carry scalar fields only.
+{
+  personTraverse(from: { id: { equals: "a" } }, via: [follows], depth: { max: 4 }) {
+    id
+  }
+  personTraversePaths(from: { id: { equals: "a" } }, via: [follows], depth: { max: 1 }) {
+    path {
+      nodes {
+        follows {
+          id
+        }
+      }
+    }
+  }
+}

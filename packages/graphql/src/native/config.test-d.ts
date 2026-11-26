@@ -71,6 +71,14 @@ describe("defineGraphQL", () => {
       naming: { Post: { groupBy: "postGroups", findSimilar: "similarPosts" } },
     });
     defineGraphQL<TM>({
+      traversals: { User: { reach: { via: [{ rel: "posts" }], args: ["where", "take"] } } },
+      limits: { maxTraversalDepth: 4 },
+    });
+    defineGraphQL<TM>({
+      // @ts-expect-error unknown model in traversals
+      traversals: { Usr: { reach: { via: [{ rel: "posts" }] } } },
+    });
+    defineGraphQL<TM>({
       // @ts-expect-error findSimilar is in the traverse group
       models: { User: { operations: { read: ["findSimilar"] } } },
     });

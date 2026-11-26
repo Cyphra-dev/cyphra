@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { parseSchema, resolveSchema } from "@cyphra/schema";
 import { schemaModel } from "./__fixtures__/blog.gen.js";
 import { schemaModel as graphSchema } from "./__fixtures__/graph.gen.js";
-import { QueryContext } from "./compile.js";
+import { compileProjection, QueryContext } from "./compile.js";
 import { CyphraValidationError } from "./errors.js";
 import { decodePath } from "./path.js";
 import { compileTraverse, parseDepth } from "./traverse.js";
@@ -218,6 +218,76 @@ describe("decodePath", () => {
     expect(path.edges[0]!.type).toBe("FOLLOWS");
     expect(path.edges[0]!.direction).toBe("out");
     expect(path.edges[1]).toEqual({ type: "OTHER", direction: "in", properties: {} });
+  });
+});
+
+describe("engine rules on paths", () => {
+  const rules = [{ User: { read: { name: { not: null } }, fields: { email: { id: "me" } } } }];
+  const scoped = () => new QueryContext(schemaModel, "neo4j", rules);
+
+  it("checks the read rules on every node a traversal steps through", () => {
+    const c = compileTraverse(
+      scoped(),
+      user,
+      {
+        from: { id: "u1" },
+        via: "following",
+        depth: { max: 2 },
+        select: { id: true },
+      },
+      10,
+    );
+    expect(c.text).toContain(
+      "MATCH (s)((:`User`)-[e0:`FOLLOWS`]->(t1:`User`) WHERE (t1.`name` IS NOT NULL)){1,2}(n:`User`)",
+    );
+  });
+
+  it("reads path node properties through the field rules", () => {
+    const c = compileTraverse(
+      scoped(),
+      user,
+      {
+        from: { id: "u1" },
+        via: "following",
+        depth: { max: 1 },
+        returnPaths: true,
+        select: { id: true },
+      },
+      10,
+    );
+    expect(c.text).toMatch(
+      /properties: CASE WHEN (x\d+):`User` THEN \1\{\.`id`, `email`: CASE WHEN \1\.`id` = \$p\d+ THEN \1\.`email` END, /,
+    );
+  });
+
+  it("loads a traversal under a key ($traverse) as a COLLECT subquery", () => {
+    const ctx = new QueryContext(graphSchema);
+    const chunk = graphSchema.nodes.find((n) => n.name === "GrChunk")!;
+    const { expr } = compileProjection(ctx, chunk, "n", {
+      select: {
+        id: true,
+        context: {
+          $traverse: { via: [{ rel: "entities" }, { rel: "chunks" }] },
+          take: 3,
+          select: { id: true },
+        },
+      },
+    });
+    expect(expr).toBe(
+      "n{.`id`, `context`: COLLECT { MATCH (n)((:`GrChunk`)-[e0:`GR_MENTIONS`]->(:`GrEntity`)){1,1}" +
+        "((:`GrEntity`)<-[e1:`GR_MENTIONS`]-(:`GrChunk`)){1,1}(n2:`GrChunk`) WHERE (n2 <> n) " +
+        "WITH DISTINCT n2 LIMIT $p0 RETURN n2{.`id`} }}",
+    );
+    expect(() =>
+      compileProjection(new QueryContext(graphSchema, "memgraph"), chunk, "n", {
+        select: { context: { $traverse: { via: [{ rel: "entities" }] } } },
+      }),
+    ).toThrow(/traversal load/);
+    expect(() =>
+      compileProjection(ctx, chunk, "n", {
+        select: { text: { $traverse: { via: [{ rel: "entities" }] } } },
+      }),
+    ).toThrow(/cannot name a traversal load/);
   });
 });
 

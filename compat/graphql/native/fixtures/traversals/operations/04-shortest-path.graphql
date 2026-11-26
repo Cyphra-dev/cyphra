@@ -1,0 +1,32 @@
+# features: shortestPath, auth.rules.read
+# ordered
+# Anonymous: the only path from Ada to Cy goes through Hal (hidden): none. To Di, through Bo.
+{
+  toCy: personShortestPath(
+    from: { id: { equals: "a" } }
+    to: { id: { equals: "c" } }
+    via: [follows]
+    maxDepth: 3
+  ) {
+    nodes {
+      id
+    }
+  }
+  toDi: personShortestPath(
+    from: { id: { equals: "a" } }
+    to: { id: { equals: "d" } }
+    via: [follows]
+    maxDepth: 3
+  ) {
+    nodes {
+      id
+      name
+    }
+    edges {
+      direction
+      _edge {
+        since
+      }
+    }
+  }
+}
