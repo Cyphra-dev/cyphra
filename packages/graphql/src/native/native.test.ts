@@ -84,6 +84,112 @@ describe("native.printSchema", () => {
     expect(sdl).not.toMatch(/type User \{[^}]*posts/);
   });
 
+  it("serves no mutation unless writes are turned on", () => {
+    expect(printSchema(blog)).not.toContain("type Mutation");
+    expect(printSchema(blog)).not.toContain("CreateInput");
+  });
+
+  it("serves the write API of the design note", () => {
+    const sdl = printSchema(blog, {
+      models: {
+        User: {
+          operations: { create: true, update: true, delete: true },
+          fields: { passwordHash: { read: false, create: true, update: false } },
+        },
+        Post: { operations: { create: true, update: true, delete: true } },
+      },
+    });
+    valid(sdl);
+    for (const field of [
+      "postCreate(data: PostCreateInput!): Post",
+      "postCreateMany(data: [PostCreateManyInput!]!): PostBatch",
+      "postUpdate(data: PostUpdateInput!, where: PostWhereUnique!): Post",
+      "postUpdateMany(data: PostUpdateManyInput!, where: PostWhere): PostBatch",
+      "postUpsert(create: PostCreateInput!, update: PostUpdateInput!, where: PostWhereUnique!): Post",
+      "postDelete(where: PostWhereUnique!): Post",
+      "postDeleteMany(where: PostWhere): PostBatch",
+    ]) {
+      expect(sdl).toContain(`  ${field}\n`);
+    }
+    expect(sdl).not.toContain("tagCreate");
+    expect(sdl).toContain("type PostBatch {\n  count: Int!");
+    // A write-only field: set by create, never read or updated.
+    expect(sdl).toMatch(/input UserCreateInput \{[^}]*passwordHash: String!/);
+    expect(sdl).not.toMatch(/input UserUpdateInput \{[^}]*passwordHash/);
+    expect(sdl).not.toMatch(/type User \{[^}]*passwordHash/);
+    // Numeric operators in _ops; nested writes per relation side.
+    expect(sdl).toContain("input PostOps {\n  views: IntOps\n}");
+    expect(sdl).toMatch(/input UserUpdateInput \{[^}]*_ops: UserOps/);
+    expect(sdl).toMatch(
+      /input UserUpdateManyWithoutFollowersRelation \{[^}]*connect: \[UserConnectFollows!\][^}]*create: \[UserCreateWithoutFollowersInput!\][^}]*disconnect: \[UserWhereUnique!\][^}]*set: \[UserConnectFollows!\]/,
+    );
+    expect(sdl).toMatch(/input UserConnectFollows \{[^}]*_edge: FollowsInput/);
+    expect(sdl).toMatch(/input UserCreateWithoutPostsInput \{(?![^}]*posts)[^}]*\}/);
+    expect(sdl).toMatch(/input UserUpdateOneWithoutPostsRelation \{[^}]*disconnect: Boolean/);
+    // Tag is read-only: connect only, no nested create.
+    expect(sdl).toMatch(
+      /input TagCreateManyWithoutPostsRelation \{\n[^}]*connect: \[TagWhereUnique!\]\n\}/,
+    );
+    // createMany / updateMany take no relation writes.
+    expect(sdl).not.toMatch(/input PostCreateManyInput \{[^}]*tags/);
+  });
+
+  it("keeps raw ids in write inputs with relay", () => {
+    const sdl = printSchema(blog, {
+      relay: true,
+      models: { Post: { operations: { create: true, update: true } } },
+    });
+    valid(sdl);
+    expect(sdl).toMatch(/type Post implements Node \{[^}]*rawId: ID!/);
+    expect(sdl).toMatch(/input PostCreateInput \{[^}]*\n {2}id: ID\n/);
+  });
+
+  it("applies write toggles: groups, upsert, field and relation toggles, naming", () => {
+    const sdl = printSchema(blog, {
+      defaults: { operations: { create: ["create"], update: ["update", "upsert"] } },
+      models: {
+        Tag: { operations: { create: false, update: false } },
+        Post: { fields: { views: { update: false }, tags: { create: false } } },
+      },
+      naming: { Post: { create: "writePost" } },
+    });
+    valid(sdl);
+    expect(sdl).toContain("  writePost(data: PostCreateInput!): Post");
+    expect(sdl).not.toContain("upsert"); // create does not include it
+    expect(sdl).not.toContain("CreateMany(");
+    expect(sdl).not.toMatch(/input PostCreateInput \{[^}]*tags/);
+    expect(sdl).toMatch(/input PostUpdateInput \{[^}]*tags/);
+    expect(sdl).not.toMatch(/input PostUpdateInput \{[^}]*views/);
+    expect(sdl).not.toContain("PostOps");
+  });
+
+  it("writes interfaces through their implementations and unions not at all", () => {
+    const sdl = printSchema(runtimeFixture("interfaces"), {
+      defaults: { operations: { create: true, update: true, delete: true } },
+    });
+    valid(sdl);
+    expect(sdl).not.toContain("personCreate");
+    expect(sdl).toContain("personUpdate(");
+    expect(sdl).toContain("employeeCreate(");
+    valid(
+      printSchema(runtimeFixture("unions"), {
+        defaults: { operations: { create: true, update: true, delete: true } },
+      }),
+    );
+    expect(
+      printSchema(runtimeFixture("unions"), {
+        defaults: { operations: { create: true, update: true, delete: true } },
+      }),
+    ).not.toContain("searchHitUpdate");
+    for (const f of ["types", "geo", "vector", "labels", "compound", "graph", "ondelete"]) {
+      valid(
+        printSchema(runtimeFixture(f), {
+          defaults: { operations: { create: true, update: true, delete: true } },
+        }),
+      );
+    }
+  });
+
   it("marks deprecated fields", () => {
     const sdl = printSchema(blog, {
       models: { Post: { fields: { body: { deprecated: "use title" } } } },
@@ -132,7 +238,8 @@ describe("config checks at startup", () => {
     bad({ models: { Usr: {} } }, /unknown model "Usr"/);
     bad({ models: { User: { fields: { pasword: false } } } }, /unknown field "User.pasword"/);
     bad({ models: { User: { operations: { read: ["findAll"] } } } }, /unknown operation "findAll"/);
-    bad({ models: { User: { operations: { create: true } } } }, /writes are not available/);
+    bad({ models: { User: { operations: { create: ["update"] } } } }, /unknown operation "update"/);
+    bad({ mutationTransaction: "all" }, /mutationTransaction must be "field" or "request"/);
     bad({ limits: { maxTake: 0 } }, /maxTake must be a positive integer/);
     bad({ limitz: {} }, /unknown key "limitz"/);
     bad({ generator: 2 }, /unknown generator version 2/);
@@ -140,6 +247,23 @@ describe("config checks at startup", () => {
     bad({ naming: { Post: { findMany: "userCount" } } }, /Two root fields are named "userCount"/);
     bad({ defaults: { operations: { read: false } } }, /has no root field/);
     bad({ relay: "yes" }, /relay must be a boolean/);
+  });
+
+  it("rejects write configs it cannot serve", () => {
+    bad(
+      { models: { User: { operations: { create: true }, fields: { passwordHash: false } } } },
+      /User.passwordHash is required, has no default and cannot be set by create/,
+    );
+    expect(() =>
+      printSchema(runtimeFixture("interfaces"), {
+        models: { Person: { operations: { create: true } } },
+      }),
+    ).toThrow(/Person is an interface and cannot be created/);
+    expect(() =>
+      printSchema(runtimeFixture("unions"), {
+        models: { SearchHit: { operations: { delete: true } } },
+      }),
+    ).toThrow(/SearchHit is a union and has no write operations/);
   });
 
   it("rejects reserved field names and name collisions", () => {

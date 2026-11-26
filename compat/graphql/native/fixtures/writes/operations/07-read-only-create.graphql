@@ -1,0 +1,11 @@
+# features: operation toggles, read-only model
+# Tag is read-only: its nested create input does not exist (connect only), so this fails
+# validation before anything runs; tagCreate does not exist either.
+mutation {
+  postCreate(data: { title: "Nope", tags: { create: [{ name: "new" }] } }) {
+    title
+  }
+  tagCreate(data: { name: "new" }) {
+    name
+  }
+}

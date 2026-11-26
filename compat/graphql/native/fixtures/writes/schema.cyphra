@@ -1,0 +1,40 @@
+// Writes of the native API: nested create / connect (MERGE) / disconnect / set, _ops, batch
+// mutations returning records, validation issue paths and error codes.
+enum Role {
+  MEMBER
+  ADMIN
+}
+
+node User {
+  id           String  @id @default(uuid())
+  email        String  @unique
+  name         String? @length(2, 50)
+  loginCount   Int     @default(0) @min(0)
+  role         Role    @default(MEMBER)
+  passwordHash String?
+  posts        Post[]  @relationship(type: "AUTHORED", direction: OUT)
+  following    User[]  @relationship(type: "FOLLOWS", direction: OUT)
+  followers    User[]  @relationship(type: "FOLLOWS", direction: IN)
+}
+
+node Post {
+  id        String  @id @default(uuid())
+  title     String  @length(3, 100)
+  views     Int     @default(0)
+  published Boolean @default(false)
+  author    User?   @relationship(type: "AUTHORED", direction: IN)
+  tags      Tag[]   @relationship(type: "TAGGED", direction: OUT)
+}
+
+node Tag {
+  name  String @id
+  posts Post[] @relationship(type: "TAGGED", direction: IN)
+}
+
+relationship Follows {
+  type   "FOLLOWS"
+  from   User
+  to     User
+  since  DateTime @default(now())
+  weight Int      @default(0) @min(0)
+}

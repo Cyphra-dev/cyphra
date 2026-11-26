@@ -1,0 +1,43 @@
+# features: update, _ops, null, disconnect, set, to-one connect
+mutation {
+  userUpdate(
+    where: { email: "alice@acme.io" }
+    data: {
+      name: null
+      _ops: { loginCount: { increment: 2, multiply: 10 } }
+      following: { set: [{ email: "bob@acme.io" }] }
+      posts: { disconnect: [{ id: "p-cypher" }] }
+    }
+  ) {
+    name
+    loginCount
+    following {
+      email
+    }
+    posts {
+      title
+    }
+  }
+  postUpdate(
+    where: { id: "p-graphs" }
+    data: {
+      title: "Graphs!"
+      author: { connect: { email: "bob@acme.io" } }
+      tags: { connect: [{ name: "api" }] }
+    }
+  ) {
+    title
+    author {
+      email
+    }
+    tags {
+      name
+    }
+  }
+  unlinked: postUpdate(where: { id: "p-cypher" }, data: { author: { disconnect: true } }) {
+    title
+    author {
+      email
+    }
+  }
+}

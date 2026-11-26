@@ -1,0 +1,28 @@
+{
+  "data": {
+    "created": {
+      "email": "erin@acme.io",
+      "name": "Erin",
+      "loginCount": 0
+    },
+    "updated": {
+      "email": "erin@acme.io",
+      "name": "Erin 2",
+      "loginCount": 1
+    },
+    "deleted": {
+      "email": "erin@acme.io",
+      "name": "Erin 2"
+    },
+    "missing": null
+  },
+  "errors": [
+    {
+      "message": "delete: no User matches {\"email\":\"erin@acme.io\"}.",
+      "path": [
+        "missing"
+      ],
+      "code": "NOT_FOUND"
+    }
+  ]
+}

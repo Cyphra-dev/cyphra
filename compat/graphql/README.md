@@ -122,7 +122,9 @@ native/golden/<app>/NN-name.json     normalized result of each operation
 There is no reference implementation to generate goldens from: `golden:native` writes them with
 the native API itself, and the diff is reviewed like any other code. A change of the printed SDL or
 of a result is a golden diff in the PR. Errors are sorted by path (root fields resolve
-concurrently).
+concurrently) and keep `extensions.issues` when there are some (validation issue paths are part
+of the native contract). Mutation fixtures (`writes`, `writes-transaction`) start from the seed
+for each operation, like queries; a seed may create constraints (one statement each).
 
 ```sh
 pnpm --filter compat-graphql golden:native          # every native fixture

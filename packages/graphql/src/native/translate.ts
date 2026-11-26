@@ -62,7 +62,7 @@ export type Translation = {
 type Fields = Map<string, FieldNode[]>;
 
 /** A point input without its absent axes (`height: null` is "no height"). */
-function cleanPoint(v: unknown): unknown {
+export function cleanPoint(v: unknown): unknown {
   if (!isPlainObject(v)) return v;
   return Object.fromEntries(Object.entries(v).filter(([, x]) => x !== null && x !== undefined));
 }

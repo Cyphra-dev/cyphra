@@ -1,0 +1,38 @@
+{
+  "data": {
+    "created": null,
+    "renamed": null,
+    "failing": null,
+    "notRun": null
+  },
+  "errors": [
+    {
+      "message": "delete: no Post matches {\"id\":\"p-none\"}.",
+      "path": [
+        "created"
+      ],
+      "code": "NOT_FOUND"
+    },
+    {
+      "message": "delete: no Post matches {\"id\":\"p-none\"}.",
+      "path": [
+        "failing"
+      ],
+      "code": "NOT_FOUND"
+    },
+    {
+      "message": "delete: no Post matches {\"id\":\"p-none\"}.",
+      "path": [
+        "notRun"
+      ],
+      "code": "NOT_FOUND"
+    },
+    {
+      "message": "delete: no Post matches {\"id\":\"p-none\"}.",
+      "path": [
+        "renamed"
+      ],
+      "code": "NOT_FOUND"
+    }
+  ]
+}

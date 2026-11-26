@@ -31,6 +31,8 @@ export {
   type NativeMakeSchemaOptions,
   type OperationToggles,
   type ReadOperation,
+  type RootOperation,
+  type WriteOperation,
 } from "./native/index.js";
 
 export type {

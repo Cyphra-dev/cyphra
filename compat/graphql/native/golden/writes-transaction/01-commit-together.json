@@ -1,0 +1,17 @@
+{
+  "data": {
+    "created": {
+      "title": "New"
+    },
+    "updated": {
+      "title": "New",
+      "views": 5,
+      "author": {
+        "email": "bob@acme.io"
+      }
+    },
+    "count": {
+      "count": 2
+    }
+  }
+}

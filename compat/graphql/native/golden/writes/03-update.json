@@ -1,0 +1,36 @@
+{
+  "data": {
+    "userUpdate": {
+      "name": null,
+      "loginCount": 30,
+      "following": [
+        {
+          "email": "bob@acme.io"
+        }
+      ],
+      "posts": [
+        {
+          "title": "Graphs"
+        }
+      ]
+    },
+    "postUpdate": {
+      "title": "Graphs!",
+      "author": {
+        "email": "bob@acme.io"
+      },
+      "tags": [
+        {
+          "name": "api"
+        },
+        {
+          "name": "db"
+        }
+      ]
+    },
+    "unlinked": {
+      "title": "Cypher",
+      "author": null
+    }
+  }
+}

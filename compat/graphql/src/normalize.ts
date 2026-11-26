@@ -8,7 +8,12 @@ const GENERATED_WINDOW_MS = 24 * 60 * 60 * 1000;
 export type NormalizedResult = {
   events?: NormalizedResult[];
   data?: unknown;
-  errors?: { message: string; path?: readonly (string | number)[]; code?: unknown }[];
+  errors?: {
+    message: string;
+    path?: readonly (string | number)[];
+    code?: unknown;
+    issues?: unknown;
+  }[];
 };
 
 function mask(value: string, now: number): string {
@@ -60,7 +65,7 @@ function walk(value: unknown, opts: WalkOptions): unknown {
  * Turns an execution result into a stable, comparable JSON value: generated ids and
  * timestamps are masked, floats are rounded to 12 significant digits, and arrays are sorted unless the operation is `# ordered`.
  * `maskTimestamps` also masks integers within a day of now (epoch milliseconds of subscription events).
- * Errors keep their message, path and `extensions.code` only.
+ * Errors keep their message, path, `extensions.code` and `extensions.issues` only.
  */
 export function normalizeResult(
   result: ExecutionResult,
@@ -78,6 +83,10 @@ export function normalizeResult(
       message: e.message,
       ...(e.path ? { path: e.path } : {}),
       ...(e.extensions?.code !== undefined ? { code: e.extensions.code } : {}),
+      // Validation issues of the native API (their paths are part of its contract).
+      ...(Array.isArray(e.extensions?.issues) && e.extensions.issues.length > 0
+        ? { issues: e.extensions.issues }
+        : {}),
     }));
   }
   return out;

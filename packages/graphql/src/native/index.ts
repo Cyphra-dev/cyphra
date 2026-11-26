@@ -21,15 +21,24 @@ import { SchemaBuilder } from "./schema.js";
 
 export { fromGlobalId, toGlobalId } from "./relay.js";
 export {
+  CREATE_OPERATIONS,
   defineGraphQL,
+  DELETE_OPERATIONS,
   NativeSchemaError,
   READ_OPERATIONS,
+  UPDATE_OPERATIONS,
+  WRITE_OPERATIONS,
+  type CreateOperation,
+  type DeleteOperation,
   type FieldToggle,
   type GraphQLConfig,
   type Limits,
   type ModelConfig,
   type OperationToggles,
   type ReadOperation,
+  type RootOperation,
+  type UpdateOperation,
+  type WriteOperation,
 } from "./config.js";
 
 /** Options of {@link makeSchema}. */
@@ -42,7 +51,10 @@ export type NativeMakeSchemaOptions = {
   readonly client: object | ((context: never) => object | Promise<object>);
   /** The schema model; defaults to `client.$schema`. Required when `client` is a function. */
   readonly schema?: SchemaModel;
-  /** The API's configuration (`defineGraphQL`). Default: every read operation, no writes. */
+  /**
+   * The API's configuration (`defineGraphQL`). Default: every read operation, no writes (turn
+   * them on per model with `operations: { create, update, delete }`).
+   */
   readonly config?: GraphQLConfig;
   /** Show the message of unexpected errors instead of masking them (`INTERNAL_SERVER_ERROR`). */
   readonly debug?: boolean;

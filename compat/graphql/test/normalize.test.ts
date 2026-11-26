@@ -37,6 +37,23 @@ describe("normalizeResult", () => {
     expect(normalizeResult({ data }, { ordered: true, now }).data).toEqual(data);
   });
 
+  it("keeps the code and non-empty validation issues of errors", () => {
+    const issue = { path: ["data", "title"], rule: "length" };
+    const out = normalizeResult(
+      {
+        errors: [
+          { message: "a", path: ["x"], extensions: { code: "BAD_USER_INPUT", issues: [issue] } },
+          { message: "b", path: ["y"], extensions: { code: "BAD_USER_INPUT", issues: [] } },
+        ] as never,
+      },
+      { ordered: true, now },
+    );
+    expect(out.errors).toEqual([
+      { message: "a", path: ["x"], code: "BAD_USER_INPUT", issues: [issue] },
+      { message: "b", path: ["y"], code: "BAD_USER_INPUT" },
+    ]);
+  });
+
   it("rounds floats", () => {
     const out = normalizeResult({ data: { avg: 7.359999999999999 } }, { ordered: true, now });
     expect(out.data).toEqual({ avg: 7.36 });

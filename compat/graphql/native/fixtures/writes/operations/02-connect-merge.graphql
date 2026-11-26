@@ -1,0 +1,35 @@
+# features: connect, merge, _edge, _ops
+# connect is a MERGE: connecting the same pair twice keeps one edge; _edge values (and _ops) apply
+# to the existing edge, its defaults (since) are kept.
+mutation {
+  first: userUpdate(
+    where: { email: "alice@acme.io" }
+    data: {
+      following: {
+        connect: [{ email: "carol@acme.io", _edge: { _ops: { weight: { increment: 2 } } } }]
+      }
+    }
+  ) {
+    following {
+      email
+      _edge {
+        since
+        weight
+      }
+    }
+  }
+  again: userUpdate(
+    where: { email: "alice@acme.io" }
+    data: { following: { connect: [{ email: "carol@acme.io" }, { email: "bob@acme.io" }] } }
+  ) {
+    _count {
+      following
+    }
+    following(orderBy: [{ email: asc }]) {
+      email
+      _edge {
+        weight
+      }
+    }
+  }
+}

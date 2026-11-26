@@ -1,0 +1,28 @@
+# features: upsert, delete, NOT_FOUND
+mutation {
+  created: userUpsert(
+    where: { email: "erin@acme.io" }
+    create: { email: "erin@acme.io", name: "Erin" }
+    update: { name: "Erin 2" }
+  ) {
+    email
+    name
+    loginCount
+  }
+  updated: userUpsert(
+    where: { email: "erin@acme.io" }
+    create: { email: "erin@acme.io", name: "Erin" }
+    update: { name: "Erin 2", _ops: { loginCount: { increment: 1 } } }
+  ) {
+    email
+    name
+    loginCount
+  }
+  deleted: userDelete(where: { email: "erin@acme.io" }) {
+    email
+    name
+  }
+  missing: userDelete(where: { email: "erin@acme.io" }) {
+    email
+  }
+}

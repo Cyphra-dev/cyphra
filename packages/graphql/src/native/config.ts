@@ -16,25 +16,63 @@ export const READ_OPERATIONS = ["findUnique", "findFirst", "findMany", "count"] 
 /** A read operation of the native API (`<model>FindMany`, …). */
 export type ReadOperation = (typeof READ_OPERATIONS)[number];
 
-/** Write groups: not served yet (writes come with the native write API), so only `false`. */
-const WRITE_GROUPS = ["create", "update", "delete"] as const;
+/** Operations of the `create` group (`upsert` needs the `update` group too). */
+export const CREATE_OPERATIONS = ["create", "createMany", "upsert"] as const;
+/** Operations of the `update` group (`upsert` needs the `create` group too). */
+export const UPDATE_OPERATIONS = ["update", "updateMany", "upsert"] as const;
+/** Operations of the `delete` group. */
+export const DELETE_OPERATIONS = ["delete", "deleteMany"] as const;
+
+/** Write operations a model can expose as `Mutation` root fields, in printing order. */
+export const WRITE_OPERATIONS = [
+  "create",
+  "createMany",
+  "update",
+  "updateMany",
+  "upsert",
+  "delete",
+  "deleteMany",
+] as const;
+
+export type CreateOperation = (typeof CREATE_OPERATIONS)[number];
+export type UpdateOperation = (typeof UPDATE_OPERATIONS)[number];
+export type DeleteOperation = (typeof DELETE_OPERATIONS)[number];
+/** A write operation of the native API (`<model>Create`, …). */
+export type WriteOperation = (typeof WRITE_OPERATIONS)[number];
+/** Any root field operation. */
+export type RootOperation = ReadOperation | WriteOperation;
+
+const GROUPS = {
+  read: READ_OPERATIONS,
+  create: CREATE_OPERATIONS,
+  update: UPDATE_OPERATIONS,
+  delete: DELETE_OPERATIONS,
+} as const;
+type Group = keyof typeof GROUPS;
+
+/** Whether `op` is a write (a `Mutation` root field). */
+export function isWrite(op: RootOperation): op is WriteOperation {
+  return (WRITE_OPERATIONS as readonly string[]).includes(op);
+}
 
 /**
- * Which operations of a model are root fields. `read` takes `true` (every read operation), `false`
- * or a list of operations. Writes are not served yet: `create`, `update` and `delete` only take
- * `false`.
+ * Which operations of a model are root fields, per group: `true` (every operation of the group),
+ * `false` or a list of operations. `upsert` is served when both `create` and `update` include it.
+ * Default: reads on, writes off.
  */
 export type OperationToggles = {
   readonly read?: boolean | readonly ReadOperation[];
-  readonly create?: false;
-  readonly update?: false;
-  readonly delete?: false;
+  readonly create?: boolean | readonly CreateOperation[];
+  readonly update?: boolean | readonly UpdateOperation[];
+  readonly delete?: boolean | readonly DeleteOperation[];
 };
 
 /**
- * What the API does with one field. `false` hides it everywhere (types, filters, ordering).
- * `read: false` is the same; `filter: false` / `sort: false` keep it readable but remove it from
- * `where` / `orderBy`. `create` / `update` are for writes (not served yet). `deprecated` marks the
+ * What the API does with one field. `false` hides it everywhere (types, filters, ordering,
+ * writes). `read: false` hides it from types, filters and ordering, and from writes unless
+ * `create` / `update` say otherwise (a write-only field); `filter: false` / `sort: false` keep it
+ * readable but remove it from `where` / `orderBy`; `create: false` / `update: false` remove it
+ * from the create / update inputs (for a relation: its nested writes). `deprecated` marks the
  * field `@deprecated(reason)` in the schema.
  */
 export type FieldToggle =
@@ -90,7 +128,7 @@ export type GraphQLConfig<TM extends TypeMap = TypeMap, Ctx = unknown> = {
   readonly defaults?: { readonly operations?: OperationToggles };
   /** Root field names replacing `<model><Operation>` (`{ Person: { findMany: "people" } }`). */
   readonly naming?: {
-    readonly [M in keyof TM & string]?: { readonly [O in ReadOperation]?: string };
+    readonly [M in keyof TM & string]?: { readonly [O in RootOperation]?: string };
   };
   readonly limits?: Limits;
   /**
@@ -99,6 +137,13 @@ export type GraphQLConfig<TM extends TypeMap = TypeMap, Ctx = unknown> = {
    * returned as `rawId` (inputs keep `id`). Off by default.
    */
   readonly relay?: boolean;
+  /**
+   * Transactions of mutations: `"field"` (the default) runs each root field in its own
+   * transaction; `"request"` runs every root field of one mutation operation in a single write
+   * transaction, in order, so they commit together or not at all (a failing field rolls back the
+   * whole operation, and every root field reports its error).
+   */
+  readonly mutationTransaction?: "field" | "request";
   /** Phantom: the context type of the API (never set). */
   readonly __context?: Ctx;
 };
@@ -148,23 +193,43 @@ export type FieldAccess = {
   readonly read: boolean;
   readonly filter: boolean;
   readonly sort: boolean;
+  readonly create: boolean;
+  readonly update: boolean;
   readonly deprecated?: string;
 };
 
 /** The checked configuration, with defaults applied. */
 export type ResolvedConfig = {
   /** Root fields per model: operation → field name (absent: the operation is off). */
-  readonly operations: ReadonlyMap<string, ReadonlyMap<ReadOperation, string>>;
+  readonly operations: ReadonlyMap<string, ReadonlyMap<RootOperation, string>>;
   /** `field(model, name)`: the effective toggles of a field. */
   field(model: string, name: string): FieldAccess;
   readonly limits: Limits;
   /** `relay: true`: the `Node` interface and `node(id)`. */
   readonly relay: boolean;
+  readonly mutationTransaction: "field" | "request";
 };
 
 const LIMIT_KEYS = ["maxDepth", "maxTake", "maxAliases", "maxComplexity"] as const;
 const FIELD_KEYS = ["read", "filter", "sort", "create", "update", "deprecated"] as const;
-const TOP_KEYS = ["generator", "models", "defaults", "naming", "limits", "relay"] as const;
+const TOP_KEYS = [
+  "generator",
+  "models",
+  "defaults",
+  "naming",
+  "limits",
+  "relay",
+  "mutationTransaction",
+] as const;
+const ROOT_OPERATIONS: readonly RootOperation[] = [...READ_OPERATIONS, ...WRITE_OPERATIONS];
+const HIDDEN: FieldAccess = {
+  read: false,
+  filter: false,
+  sort: false,
+  create: false,
+  update: false,
+};
+const VISIBLE: FieldAccess = { read: true, filter: true, sort: true, create: true, update: true };
 
 function checkKeys(where: string, obj: AnyRecord, allowed: readonly string[]): void {
   for (const k of Object.keys(obj)) {
@@ -174,33 +239,33 @@ function checkKeys(where: string, obj: AnyRecord, allowed: readonly string[]): v
   }
 }
 
-function readOps(where: string, toggles: unknown): Set<ReadOperation> | undefined {
-  if (toggles === undefined) return undefined;
+/** The operations each group given in `toggles` turns on (groups not given are absent). */
+function readOps(where: string, toggles: unknown): Partial<Record<Group, Set<RootOperation>>> {
+  if (toggles === undefined) return {};
   if (!isPlainObject(toggles)) throw new NativeSchemaError(`${where} must be an object.`);
-  checkKeys(where, toggles, ["read", ...WRITE_GROUPS]);
-  for (const g of WRITE_GROUPS) {
+  const groups = Object.keys(GROUPS) as Group[];
+  checkKeys(where, toggles, groups);
+  const out: Partial<Record<Group, Set<RootOperation>>> = {};
+  for (const g of groups) {
     const v = toggles[g];
-    if (v !== undefined && v !== false) {
-      throw new NativeSchemaError(
-        `${where}.${g}: writes are not available in the native API yet; only false is accepted.`,
-      );
+    if (v === undefined) continue;
+    const all: readonly RootOperation[] = GROUPS[g];
+    if (v === true) out[g] = new Set(all);
+    else if (v === false) out[g] = new Set();
+    else if (!Array.isArray(v)) {
+      throw new NativeSchemaError(`${where}.${g} must be true, false or a list of operations.`);
+    } else {
+      for (const op of v) {
+        if (!all.includes(op as RootOperation)) {
+          throw new NativeSchemaError(
+            `${where}.${g}: unknown operation ${JSON.stringify(op)} (use ${all.join(", ")}).`,
+          );
+        }
+      }
+      out[g] = new Set(v as RootOperation[]);
     }
   }
-  const read = toggles.read;
-  if (read === undefined) return undefined;
-  if (read === true) return new Set(READ_OPERATIONS);
-  if (read === false) return new Set();
-  if (!Array.isArray(read)) {
-    throw new NativeSchemaError(`${where}.read must be true, false or a list of operations.`);
-  }
-  for (const op of read) {
-    if (!(READ_OPERATIONS as readonly unknown[]).includes(op)) {
-      throw new NativeSchemaError(
-        `${where}.read: unknown operation ${JSON.stringify(op)} (use ${READ_OPERATIONS.join(", ")}).`,
-      );
-    }
-  }
-  return new Set(read as ReadOperation[]);
+  return out;
 }
 
 function capitalize(s: string): string {
@@ -208,7 +273,7 @@ function capitalize(s: string): string {
 }
 
 /** `postFindMany`: the default root field of `operation` on `model`. */
-export function rootFieldName(model: string, operation: ReadOperation): string {
+export function rootFieldName(model: string, operation: RootOperation): string {
   return `${model.charAt(0).toLowerCase()}${model.slice(1)}${capitalize(operation)}`;
 }
 
@@ -223,6 +288,13 @@ export function checkConfig(schema: SchemaModel, config: GraphQLConfig = {}): Re
   checkKeys("config", config, [...TOP_KEYS, "__context"]);
   if (config.relay !== undefined && typeof config.relay !== "boolean") {
     throw new NativeSchemaError("config.relay must be a boolean.");
+  }
+  if (
+    config.mutationTransaction !== undefined &&
+    config.mutationTransaction !== "field" &&
+    config.mutationTransaction !== "request"
+  ) {
+    throw new NativeSchemaError('config.mutationTransaction must be "field" or "request".');
   }
   if (config.generator !== undefined && config.generator !== 1) {
     throw new NativeSchemaError(
@@ -246,13 +318,18 @@ export function checkConfig(schema: SchemaModel, config: GraphQLConfig = {}): Re
     }
     checkKeys("config.defaults", config.defaults, ["operations"]);
   }
-  const defaults =
-    readOps("config.defaults.operations", config.defaults?.operations) ?? new Set(READ_OPERATIONS);
+  const defaults = {
+    read: new Set<RootOperation>(READ_OPERATIONS),
+    create: new Set<RootOperation>(),
+    update: new Set<RootOperation>(),
+    delete: new Set<RootOperation>(),
+    ...readOps("config.defaults.operations", config.defaults?.operations),
+  };
 
   const models = (config.models ?? {}) as AnyRecord;
   if (!isPlainObject(models)) throw new NativeSchemaError("config.models must be an object.");
   const fieldToggles = new Map<string, FieldAccess>();
-  const opsByModel = new Map<string, Set<ReadOperation>>();
+  const opsByModel = new Map<string, Partial<Record<Group, Set<RootOperation>>>>();
   for (const [name, mc] of Object.entries(models)) {
     if (mc === undefined) continue;
     const where = `config.models.${name}`;
@@ -260,7 +337,19 @@ export function checkConfig(schema: SchemaModel, config: GraphQLConfig = {}): Re
     if (!isPlainObject(mc)) throw new NativeSchemaError(`${where} must be an object.`);
     checkKeys(where, mc, ["operations", "fields"]);
     const ops = readOps(`${where}.operations`, mc.operations);
-    if (ops) opsByModel.set(name, ops);
+    opsByModel.set(name, ops);
+    // Interfaces are written through their implementations' create, unions through their members.
+    const writes = (g: Group) => (ops[g]?.size ?? 0) > 0;
+    if (node.union && (writes("create") || writes("update") || writes("delete"))) {
+      throw new NativeSchemaError(
+        `${where}.operations: ${name} is a union and has no write operations; write its members.`,
+      );
+    }
+    if (node.abstract && writes("create")) {
+      throw new NativeSchemaError(
+        `${where}.operations.create: ${name} is an interface and cannot be created; turn create on for its implementations.`,
+      );
+    }
     if (mc.fields === undefined) continue;
     if (!isPlainObject(mc.fields))
       throw new NativeSchemaError(`${where}.fields must be an object.`);
@@ -273,7 +362,7 @@ export function checkConfig(schema: SchemaModel, config: GraphQLConfig = {}): Re
         );
       }
       if (toggle === false) {
-        fieldToggles.set(`${name}.${field}`, { read: false, filter: false, sort: false });
+        fieldToggles.set(`${name}.${field}`, HIDDEN);
         continue;
       }
       if (!isPlainObject(toggle)) {
@@ -293,6 +382,8 @@ export function checkConfig(schema: SchemaModel, config: GraphQLConfig = {}): Re
         read,
         filter: read && toggle.filter !== false,
         sort: read && toggle.sort !== false,
+        create: (toggle.create as boolean | undefined) ?? read,
+        update: (toggle.update as boolean | undefined) ?? read,
         ...(toggle.deprecated !== undefined ? { deprecated: toggle.deprecated } : {}),
       });
     }
@@ -304,7 +395,7 @@ export function checkConfig(schema: SchemaModel, config: GraphQLConfig = {}): Re
     if (n === undefined) continue;
     known("config.naming", name);
     if (!isPlainObject(n)) throw new NativeSchemaError(`config.naming.${name} must be an object.`);
-    checkKeys(`config.naming.${name}`, n, READ_OPERATIONS);
+    checkKeys(`config.naming.${name}`, n, ROOT_OPERATIONS);
     for (const [op, v] of Object.entries(n)) {
       if (v !== undefined && (typeof v !== "string" || !/^[_A-Za-z][_0-9A-Za-z]*$/.test(v))) {
         throw new NativeSchemaError(
@@ -337,12 +428,14 @@ export function checkConfig(schema: SchemaModel, config: GraphQLConfig = {}): Re
       .filter((i): i is string => i !== undefined)
       .map((i) => fieldToggles.get(`${i}.${name}`))
       .filter((t): t is FieldAccess => t !== undefined);
-    let out: FieldAccess = own ?? { read: true, filter: true, sort: true };
+    let out: FieldAccess = own ?? VISIBLE;
     for (const t of inherited) {
       out = {
         read: out.read && t.read,
         filter: out.filter && t.filter,
         sort: out.sort && t.sort,
+        create: out.create && t.create,
+        update: out.update && t.update,
         ...((out.deprecated ?? t.deprecated)
           ? { deprecated: (out.deprecated ?? t.deprecated)! }
           : {}),
@@ -364,21 +457,40 @@ export function checkConfig(schema: SchemaModel, config: GraphQLConfig = {}): Re
     }
   }
 
-  const operations = new Map<string, Map<ReadOperation, string>>();
+  const operations = new Map<string, Map<RootOperation, string>>();
   for (const node of schema.nodes) {
-    const ops = opsByModel.get(node.name) ?? defaults;
-    const names = new Map<ReadOperation, string>();
-    for (const op of READ_OPERATIONS) {
-      if (!ops.has(op)) continue;
-      // A union has no unique key.
-      if (op === "findUnique" && node.union) continue;
-      if (op === "findUnique" && node.uniqueFields.length === 0 && !node.compoundUniques?.length)
-        continue;
+    const own = opsByModel.get(node.name) ?? {};
+    const group = (g: Group) => own[g] ?? defaults[g];
+    const on = (op: RootOperation): boolean => {
+      if (op === "upsert") return group("create").has(op) && group("update").has(op);
+      for (const g of Object.keys(GROUPS) as Group[]) {
+        if ((GROUPS[g] as readonly string[]).includes(op)) return group(g).has(op);
+      }
+      return false;
+    };
+    const hasUnique = node.uniqueFields.length > 0 || (node.compoundUniques?.length ?? 0) > 0;
+    const names = new Map<RootOperation, string>();
+    for (const op of ROOT_OPERATIONS) {
+      if (!on(op)) continue;
+      if (isWrite(op)) {
+        // A union has no writes; an interface no creates (from the defaults: left out).
+        if (node.union) continue;
+        if (node.abstract && (op === "create" || op === "createMany" || op === "upsert")) continue;
+      }
+      // Operations on one node need a unique key (a union has none).
+      const single = op === "findUnique" || op === "update" || op === "upsert" || op === "delete";
+      if (single && (node.union || !hasUnique)) continue;
       const override = (naming[node.name] as AnyRecord | undefined)?.[op];
       names.set(op, typeof override === "string" ? override : rootFieldName(node.name, op));
     }
     operations.set(node.name, names);
   }
 
-  return { operations, field: access, limits: limits as Limits, relay: config.relay === true };
+  return {
+    operations,
+    field: access,
+    limits: limits as Limits,
+    relay: config.relay === true,
+    mutationTransaction: config.mutationTransaction ?? "field",
+  };
 }
