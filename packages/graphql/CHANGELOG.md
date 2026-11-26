@@ -1,5 +1,48 @@
 # @cyphra/graphql
 
+## 0.21.0
+
+### Minor Changes
+
+- 5b60cb4: Native GraphQL API, phase 2 (reads, experimental): `native.makeSchema({ client, config })` serves
+  a GraphQL API generated from `schema.cyphra` and run by the typed client, next to `compat.v7`
+  (`import { compat, native } from "@cyphra/graphql"`).
+
+  - `defineGraphQL` (also from `@cyphra/graphql/native`): a config typed against the generated
+    client's `CyphraTypeMap` (unknown models, fields and operations fail `tsc`) and checked again at
+    startup (`NativeSchemaError`). Per-model operation toggles (reads on, writes off by default),
+    field toggles (`false`, `{ read, filter, sort, deprecated }`), root field names (`naming`) and
+    `limits` (`maxDepth`, `maxTake`, `maxAliases`, `maxComplexity`).
+  - Root fields `<model>FindUnique`, `<model>FindFirst`, `<model>FindMany` (returning
+    `<Model>List { nodes pageInfo totalCount }`, offset and keyset-cursor paging) and
+    `<model>Count`; `<Model>Where` filters, `[<Model>OrderBy!]` ordering (one key per element),
+    relations with `where` / `orderBy` / `skip` / `take` (aliases become aliased loads), `_edge` for
+    edge properties (a union when several relationship models reach a node), `_count`, `_labels`,
+    interfaces and unions (fragments become `$on`), and every Cyphra scalar type.
+  - One client operation, so one Cypher statement, per root field; a page and its `totalCount` run
+    in one read transaction. Errors carry `extensions.code` (`BAD_USER_INPUT`, `NOT_FOUND`,
+    `RESTRICTED`, `UNIQUE_CONSTRAINT`, `INTERNAL_SERVER_ERROR` masked unless `debug`).
+  - `native.printSchema(schemaModel, config)`: the sorted SDL, without a client.
+  - `@cyphra/runtime`: `withReadTransaction(client, fn)` (internal, experimental) runs several
+    operations of a client in one read transaction.
+
+- 6933517: Native GraphQL API (experimental): opt-in Relay and the printed contract.
+
+  - `relay: true` in `defineGraphQL`: a `Node` interface implemented by every model with a `String`,
+    `Int` or `BigInt` `@id` (interfaces included), global ids (`base64("<Type>:<id>")`,
+    `native.toGlobalId` / `native.fromGlobalId`) and `node(id: ID!)`. The model's own `id` field is
+    returned as `rawId`; inputs keep `id`. Off by default.
+  - `cyphra graphql print [--config <file>] [--export <name>] [--out <file>] [--check]`: the native
+    API's sorted SDL from `schema.cyphra` and `graphql.config.ts`, without a database. `--check`
+    exits with 1 when the committed file differs, listing breaking and dangerous changes.
+
+### Patch Changes
+
+- Updated dependencies [5b60cb4]
+- Updated dependencies [66bc969]
+  - @cyphra/runtime@0.21.0
+  - @cyphra/schema@0.21.0
+
 ## 0.20.1
 
 ### Patch Changes

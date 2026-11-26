@@ -1,5 +1,55 @@
 # @cyphra/runtime
 
+## 0.21.0
+
+### Minor Changes
+
+- 5b60cb4: Native GraphQL API, phase 2 (reads, experimental): `native.makeSchema({ client, config })` serves
+  a GraphQL API generated from `schema.cyphra` and run by the typed client, next to `compat.v7`
+  (`import { compat, native } from "@cyphra/graphql"`).
+
+  - `defineGraphQL` (also from `@cyphra/graphql/native`): a config typed against the generated
+    client's `CyphraTypeMap` (unknown models, fields and operations fail `tsc`) and checked again at
+    startup (`NativeSchemaError`). Per-model operation toggles (reads on, writes off by default),
+    field toggles (`false`, `{ read, filter, sort, deprecated }`), root field names (`naming`) and
+    `limits` (`maxDepth`, `maxTake`, `maxAliases`, `maxComplexity`).
+  - Root fields `<model>FindUnique`, `<model>FindFirst`, `<model>FindMany` (returning
+    `<Model>List { nodes pageInfo totalCount }`, offset and keyset-cursor paging) and
+    `<model>Count`; `<Model>Where` filters, `[<Model>OrderBy!]` ordering (one key per element),
+    relations with `where` / `orderBy` / `skip` / `take` (aliases become aliased loads), `_edge` for
+    edge properties (a union when several relationship models reach a node), `_count`, `_labels`,
+    interfaces and unions (fragments become `$on`), and every Cyphra scalar type.
+  - One client operation, so one Cypher statement, per root field; a page and its `totalCount` run
+    in one read transaction. Errors carry `extensions.code` (`BAD_USER_INPUT`, `NOT_FOUND`,
+    `RESTRICTED`, `UNIQUE_CONSTRAINT`, `INTERNAL_SERVER_ERROR` masked unless `debug`).
+  - `native.printSchema(schemaModel, config)`: the sorted SDL, without a client.
+  - `@cyphra/runtime`: `withReadTransaction(client, fn)` (internal, experimental) runs several
+    operations of a client in one read transaction.
+
+- 66bc969: Keyset cursor pagination in `findMany` / `findFirst`: select `$cursor` and pass it back as
+  `cursor: { after }` (or `{ before }`) with the same `orderBy`. Cursors are opaque strings holding the
+  boundary row's sort keys plus its `@id` (always the last sort key, so ties never repeat or skip a
+  row); pages stay stable when nodes are created or deleted before them. Any `orderBy` works (mixed
+  directions, nullable fields, a related node's field, relation counts); a cursor made for another
+  model or `orderBy` throws a `CyphraValidationError`.
+
+  Groundwork for the native GraphQL API (#77), internal and experimental: `withEngineRules(client,
+rules)` returns a client whose statements AND per-model `read` / `update` / `delete` rules into
+  every match of the model (roots, nested relation loads, relation filters, `_count`, relation
+  `orderBy`, aggregates, search, traversal endpoints, write targets, `connect` targets); rules can be
+  added but not removed, and survive `$extends` and `$transaction`. `select` accepts aliased
+  relation loads (`{ recent: { $relation: "posts", take: 3 } }`, not in the public types) to load one
+  relation several times in one statement.
+
+  `$extends` no longer rebuilds a lookup of every model on each call (cheaper per-request clients on
+  large schemas). FalkorDB: a `WITH` whose projection has subquery expressions and whose `WHERE` needs
+  none is no longer rewritten into an invalid statement.
+
+### Patch Changes
+
+- @cyphra/query@0.21.0
+- @cyphra/schema@0.21.0
+
 ## 0.20.1
 
 ### Patch Changes

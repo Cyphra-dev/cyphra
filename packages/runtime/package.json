@@ -1,6 +1,6 @@
 {
   "name": "@cyphra/runtime",
-  "version": "0.20.1",
+  "version": "0.21.0",
   "description": "Cyphra runtime: typed Neo4j ORM client, sessions, transactions and the cypher tag, over Bolt or HTTP (edge runtimes), with Memgraph and FalkorDB dialects",
   "type": "module",
   "sideEffects": false,
