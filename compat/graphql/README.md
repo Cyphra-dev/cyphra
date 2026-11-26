@@ -121,7 +121,8 @@ layout, but generated from `schema.cyphra` instead of v7 type definitions:
 ```
 native/fixtures/<app>/
   schema.cyphra               the data model
-  config.ts                   optional: its default export (defineGraphQL) is the API's config
+  config.ts                   optional: its default export (defineGraphQL) is the API's config;
+                              an optional `client` export (db) => db.$extends(…) extends the client
   seed.cypher                 data (same format as above)
   operations/NN-name.graphql  one operation per file (same headers and side files as above)
 native/golden/<app>/schema.graphql   native.printSchema: the sorted SDL, the API's contract

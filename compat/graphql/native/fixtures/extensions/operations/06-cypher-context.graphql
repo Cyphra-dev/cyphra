@@ -1,0 +1,11 @@
+# features: native.cypherFields
+# ordered
+# isMe reads the subject of the request.
+{
+  personFindMany(orderBy: [{ id: asc }]) {
+    nodes {
+      id
+      isMe
+    }
+  }
+}

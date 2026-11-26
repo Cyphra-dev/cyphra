@@ -17,7 +17,10 @@ import type { SchemaModel } from "@cyphra/schema";
 import { ApiModel } from "./api.js";
 import { checkRuleWheres } from "./auth.js";
 import { checkConfig, NativeSchemaError, type GraphQLConfig } from "./config.js";
+import { applyExtend } from "./extensions.js";
 import {
+  checkComputed,
+  extensionRuntime,
   nodeResolver,
   rootResolvers,
   sessions,
@@ -29,6 +32,16 @@ import { SchemaBuilder } from "./schema.js";
 export { jwtContext, type JwtContext, type JwtContextOptions } from "./jwt.js";
 
 export { fromGlobalId, toGlobalId } from "./relay.js";
+export { cypherFragment as cypher, type CypherFragment } from "@cyphra/runtime";
+export type {
+  ComputedField,
+  CypherField,
+  CypherFieldArg,
+  CypherNode,
+  CyphraContextClient,
+  ExtendConfig,
+  ExtensionResolver,
+} from "./extensions.js";
 export {
   CREATE_OPERATIONS,
   defineGraphQL,
@@ -114,11 +127,14 @@ export function makeSchema(options: NativeMakeSchemaOptions): GraphQLSchema {
   checkRuleWheres(api);
   const session = sessions(api, options.client as ClientSource);
   const runtime = { session, debug: options.debug ?? false };
-  const built = new SchemaBuilder(
+  if (typeof options.client !== "function") checkComputed(api, options.client);
+  let built = new SchemaBuilder(
     api,
     rootResolvers(api, runtime),
     nodeResolver(api, runtime),
   ).build();
+  const extend = api.config.extensions.extend;
+  if (extend) built = applyExtend(api, built, extend, extensionRuntime(api, runtime));
   sessionsBySchema.set(built, session);
   return built;
 }
@@ -176,5 +192,8 @@ export function context<Init = unknown, C extends object = Record<string, never>
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- any type map and context
 export function printSchema(schema: SchemaModel, config?: GraphQLConfig<any, any>): string {
   const api = new ApiModel(schema, checkConfig(schema, config as GraphQLConfig));
-  return `${printGraphQLSchema(lexicographicSortSchema(new SchemaBuilder(api).build()))}\n`;
+  let built = new SchemaBuilder(api).build();
+  const extend = api.config.extensions.extend;
+  if (extend) built = applyExtend(api, built, extend);
+  return `${printGraphQLSchema(lexicographicSortSchema(built))}\n`;
 }

@@ -1,0 +1,14 @@
+# features: native.cypherFields, auth.rules.read
+# ordered
+# The same as Ada: her draft is hers to read.
+{
+  personFindUnique(where: { id: "a" }) {
+    writings {
+      id
+      title
+    }
+    first: writings(first: 1) {
+      id
+    }
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "data": {
+    "personFindMany": {
+      "nodes": [
+        {
+          "id": "a",
+          "greeting": "Hello, Ada!"
+        },
+        {
+          "id": "b",
+          "greeting": "Hello, Bob!"
+        }
+      ]
+    }
+  }
+}

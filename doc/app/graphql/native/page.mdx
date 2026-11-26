@@ -21,7 +21,8 @@ generated client.
   `findSimilar`](#search-and-findsimilar), [traversals](#traversals)), **writes** (`create`,
   `createMany`, `update`, `updateMany`, `upsert`, `delete`, `deleteMany`, off by default) and
   **[auth](#auth)** (rules compiled into the statement, field rules, `authenticated`), with nested
-  `update` / `delete` / `upsert` / `connectOrCreate` and `_count` filters
+  `update` / `delete` / `upsert` / `connectOrCreate` and `_count` filters, and **[extension
+  points](#extend-the-schema)** (computed fields, Cypher-backed fields, custom SDL and resolvers)
   ([#77](https://github.com/Cyphra-dev/cyphra/issues/77)). Relay `Node` is opt-in ([below](#relay)).
   To keep the API `@neo4j/graphql` v7 generates, use [`compat.v7`](/graphql); both can be served
   side by side.
@@ -868,7 +869,9 @@ const all = await ctx.cyphra.$unsafe.post.count(); // no rules
 ```
 
 `native.context(schema, build)` sets it before any resolver runs. Without it, the first generated
-root field of the request sets it, when the context has no `cyphra` of its own.
+root field of the request sets it, when the context has no `cyphra` of its own; the resolvers of
+[`extend`](#custom-root-fields-and-types) always have it. `ctx.cyphra.selection(info)` turns the
+GraphQL selection into the client's `select` ([below](#ctxcyphraselectioninfo)).
 
 ### Hooks
 
@@ -896,9 +899,12 @@ Checklist for an API exposed to untrusted clients:
    looked up by unique key around the rule.
 6. **Use `ctx.cyphra`** in custom resolvers, so they apply the same rules; keep `$unsafe` for
    code that must bypass them, and review it.
-7. **Set [limits](#limits)** (`maxDepth`, `maxTake`, `maxComplexity`) to bound what one request may
+7. **Review Cypher-backed fields like raw queries.** Rules do not apply inside their Cypher (the
+   nodes they return are filtered by their read rules). Pass the context and arguments as
+   interpolated values (parameters), never build the text from them.
+8. **Set [limits](#limits)** (`maxDepth`, `maxTake`, `maxComplexity`) to bound what one request may
    load, and leave `debug` off in production.
-8. **Commit the printed contract** ([`cyphra graphql print --check`](#print-and-check-the-contract))
+9. **Commit the printed contract** ([`cyphra graphql print --check`](#print-and-check-the-contract))
    so a change in what the API exposes shows up in review.
 
 What the native API fixes over `@neo4j/graphql` v7 (each has a test in
@@ -914,6 +920,204 @@ suite):
 | Relationship-only updates skip the node's `UPDATE` rules                                       | `update` restricts every update, whatever it writes; connects that move a node need its `update`. |
 | `create` responses ignore `READ` rules                                                         | Mutation results apply `read` and field rules.                                                    |
 | Rules are strings in SDL directives, checked when the schema is built                          | Rules are TypeScript, typed against `schema.cyphra`, and checked again at startup.                |
+
+## Extend the schema
+
+A real API does not live on generated CRUD alone. Four extension points add to the generated
+schema, all part of the [printed contract](#print-and-check-the-contract):
+
+| You need                                         | Use                                                                      |
+| ------------------------------------------------ | ------------------------------------------------------------------------ |
+| A field computed in TypeScript from other fields | [`computed`](#computed-fields), from the client's `$extends({ result })` |
+| A field computed by Cypher (v7 `@cypher`)        | [`cypherFields`](#cypher-backed-fields)                                  |
+| Dashboard queries, business mutations, own types | [`extend`](#custom-root-fields-and-types): SDL plus resolvers            |
+| A custom resolver returning generated types      | [`ctx.cyphra.selection(info)`](#ctxcyphraselectioninfo)                  |
+
+### Computed fields
+
+A computed field of the client (`$extends({ result })`) is exposed by naming its GraphQL type (the
+client knows its TypeScript type, not its GraphQL one):
+
+```ts filename="server.ts"
+const db = createClient({ uri, user, password }).$extends({
+  result: {
+    user: {
+      fullName: {
+        needs: { firstName: true, lastName: true },
+        compute: (u) => `${u.firstName} ${u.lastName}`,
+      },
+    },
+  },
+});
+
+const api = defineGraphQL<CyphraTypeMap, Ctx>({
+  computed: {
+    User: {
+      fullName: "String!",
+      // or { type, read: ({ ctx }) => boolean, description, deprecated }
+    },
+  },
+});
+export const schema = native.makeSchema({ client: db, config: api });
+```
+
+`User.fullName: String!` is in the schema. When a query selects it, its `needs` are added to the
+statement's projection and `compute` runs on each row after decoding, as in the client, also on
+nodes loaded through relations. It cannot be filtered or sorted on (it is not in the database).
+`makeSchema` checks that the client declares each computed field (for a `client` function, on its
+first request). The GraphQL type is not checked against `compute`'s return type. `needs` are read
+through the request's rules: a field a field rule hides from the request is `null` in `compute`.
+
+### Cypher-backed fields
+
+The native `@cypher`: a Cypher expression evaluated on each node, compiled into the parent's
+statement (still one statement), built with the `cypher` tag of `@cyphra/graphql`:
+
+```ts filename="graphql.config.ts"
+import { defineGraphQL, native } from "@cyphra/graphql";
+const { cypher } = native;
+
+export const api = defineGraphQL<CyphraTypeMap, Ctx>({
+  cypherFields: {
+    User: {
+      followerCount: {
+        type: "Int!",
+        cypher: ({ node }) => cypher`COUNT { (${node})<-[:FOLLOWS]-() }`,
+      },
+      followersSince: {
+        type: "Int!",
+        args: { since: "DateTime!" },
+        cypher: ({ node, args }) =>
+          cypher`COUNT { (${node})<-[f:FOLLOWS]-() WHERE f.since >= ${args.since} }`,
+      },
+      recommended: {
+        type: "[Movie!]!",
+        args: { first: { type: "Int", default: 5 } },
+        cypher: ({ node, args, ctx }) => cypher`
+          [(${node})-[:WATCHED]->(:Movie)<-[:WATCHED]-(:User)-[:WATCHED]->(m:Movie)
+            WHERE m.region = ${ctx.region} | m][0..${args.first}]`,
+      },
+    },
+  },
+});
+```
+
+- **The expression.** It is a Cypher expression (wrap a full subquery in `COUNT {}`, `COLLECT {}`
+  or a list comprehension). `node` is the variable of the node it is evaluated on.
+- **Values are parameters.** Every `${…}` other than `node` (an argument, a context value, a
+  constant) is bound as a parameter, never spliced into the text: a hostile `ctx` or argument
+  value cannot change the statement. `args` arrive encoded for their declared type (`Int` as a
+  Cypher integer, so `[0..${args.first}]` works; `DateTime` as a date-time). Nested `cypher` fragments
+  are inlined with the same rules.
+- **Types.** `type` is a scalar or an enum (`"Int!"`, `"[String!]!"`), decoded like a property of
+  that type, or a model (`"Movie"`, `"[Movie!]!"`): the expression returns a node or a list of
+  nodes, and the field takes a selection like a relation (fields, relations, `_count`, computed
+  fields, other Cypher fields). Arguments are scalars or enums.
+- **Filters and sorting.** A field returning one comparable scalar (`String`, `Int`, `Float`,
+  `Boolean`, temporal, `BigInt`, an enum) without arguments is in `<Model>Where` and (except a
+  `Boolean`) in `<Model>OrderBy`: `where: { followerCount: { gte: 10 } }`,
+  `orderBy: [{ followerCount: desc }]`. `filter: false` / `sort: false` turn that off.
+- **`read`**: a context-only rule, as for [field rules](#field-rules): a denied field is `null`
+  with `FORBIDDEN`, and cannot be filtered or sorted on.
+
+<Callout type="warning">
+  **Rules do not apply inside the Cypher of a Cypher-backed field**: it is raw Cypher, and it
+  reads whatever it matches: `COUNT { (${node})<-[:FOLLOWS]-() }` counts hidden followers too.
+  When the expression returns nodes, those nodes are filtered by the target's read rules (and
+  their fields by field rules), but anything the expression aggregates, compares or counts is not
+  (a `LIMIT` or a slice in the expression applies before the rules, so it may return fewer nodes).
+  Write rule-sensitive logic in the expression itself (with the context as a parameter), or use a
+  computed field or a custom resolver on `ctx.cyphra`.
+</Callout>
+
+Cypher-backed fields are declared on node models (not interfaces or unions). On FalkorDB, a
+Cypher-backed field returning nodes throws `UnsupportedFeatureError` (scalars work); the
+expression is written in the Cypher of your database.
+
+### Custom root fields and types
+
+`extend` merges SDL and resolvers into the generated schema: new types (non-node result types),
+root fields (`extend type Query` / `extend type Mutation`), and fields added to generated types.
+
+```ts filename="graphql.config.ts"
+export const api = defineGraphQL<CyphraTypeMap, Ctx>({
+  extend: {
+    typeDefs: /* GraphQL */ `
+      type DashboardStats {
+        postsThisWeek: Int!
+        topAuthors: [User!]!
+      }
+      extend type Query {
+        dashboard: DashboardStats!
+        semanticSearch(text: String!, take: Int = 10): [Chunk!]!
+      }
+      extend type Mutation {
+        publishPost(id: ID!): Post
+      }
+      extend type User {
+        greeting: String!
+      }
+    `,
+    resolvers: {
+      Query: {
+        dashboard: () => ({}), // its fields below
+        semanticSearch: async (_, { text, take }, ctx, info) =>
+          ctx.cyphra.chunk.findSimilar({
+            field: "embedding",
+            vector: await embed(text),
+            k: take,
+            ...ctx.cyphra.selection(info),
+          }),
+      },
+      DashboardStats: {
+        postsThisWeek: (_, __, ctx) =>
+          ctx.cyphra.post.count({ where: { createdAt: { gte: weekAgo() } } }),
+        topAuthors: (_, __, ctx, info) =>
+          ctx.cyphra.user.findMany({
+            orderBy: [{ posts: { _count: "desc" } }],
+            take: 5,
+            ...ctx.cyphra.selection(info),
+          }),
+      },
+      Mutation: {
+        publishPost: (_, { id }, ctx, info) =>
+          ctx.cyphra.post.update({
+            where: { id },
+            data: { published: true },
+            ...ctx.cyphra.selection(info),
+          }),
+      },
+      User: {
+        // A field added to a generated type: its parent is the node, with its id and `needs`.
+        greeting: { needs: { name: true }, resolve: (user) => `Hello, ${user.name}!` },
+      },
+    },
+  },
+});
+```
+
+- **Checked at startup.** The SDL is validated against the generated schema: an `extend type
+User` field colliding with a generated one (a scalar, a relation, a computed or Cypher-backed
+  field) is an error, so is a resolver for a generated field or for a field the SDL does not
+  declare. A field added to a generated type needs a resolver. `extend type Mutation` works when
+  no generated mutation is on (it becomes the `Mutation` type).
+- **`ctx.cyphra` is the request's client with the rules applied**, so a custom resolver cannot read
+  around a rule by accident; an `update` through it on a node outside the `update` rule is
+  `NOT_FOUND`, as from a generated field. `ctx.cyphra.$unsafe` is the raw client.
+- **Non-node types are ordinary GraphQL**: their resolvers run as GraphQL runs them. Each one that
+  calls the client is one statement; use DataLoader if a list of them is resolved.
+- **Errors** of the client are mapped as for generated fields (`NOT_FOUND`, `BAD_USER_INPUT`, …);
+  a `GraphQLError` you throw is returned as is.
+
+### `ctx.cyphra.selection(info)`
+
+`ctx.cyphra.selection(info)` turns the selection of the field being resolved, when it returns a
+generated type (a model, or a list of one), into the client's `select`: aliases, fragments,
+relations with their arguments (and `_edge` on them), `_count`, computed and Cypher-backed fields, with the
+request's field rules. Spread it into the client call and return the result as is: the resolver
+loads exactly what was asked in **one statement** (no N+1 for nested fields), and the result is
+shaped like a generated field's. Selecting `_score` works on the results of `findSimilar` /
+`search`. On a field that does not return a generated type, it throws `BAD_USER_INPUT`.
 
 ## Scalars
 

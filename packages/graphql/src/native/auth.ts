@@ -264,6 +264,20 @@ export class RequestAuth {
       if (Object.keys(fields).length) out.fields = fields;
       if (Object.keys(out).length) rules[node.name] = out;
     }
+    // Read rules of computed and Cypher-backed fields: context-only, enforced by the translator.
+    for (const [label, section] of [
+      ["computed", config.extensions.computed],
+      ["cypherFields", config.extensions.cypherFields],
+    ] as const) {
+      for (const [model, fields] of section) {
+        for (const [name, def] of fields) {
+          if (!def.read) continue;
+          if (call(def.read, `config.${label}.${model}.${name}.read`) !== true) {
+            this.denied.add(`${model}.${name}`);
+          }
+        }
+      }
+    }
     this.rules = rules;
   }
 

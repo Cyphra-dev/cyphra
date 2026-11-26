@@ -1,0 +1,12 @@
+# features: native.computed
+# ordered
+# A computed field of the client: its needs are loaded, it is computed after decoding.
+{
+  personFindMany(orderBy: [{ id: asc }]) {
+    nodes {
+      id
+      fullName
+      name: fullName
+    }
+  }
+}

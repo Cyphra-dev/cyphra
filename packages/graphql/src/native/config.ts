@@ -9,6 +9,13 @@
 
 import type { CreateInput, ModelTypeDef, TypeMap, WhereInput } from "@cyphra/runtime";
 import type { ResolvedNodeModel, SchemaModel } from "@cyphra/schema";
+import {
+  checkExtensions,
+  type ComputedField,
+  type CypherField,
+  type ExtendConfig,
+  type ResolvedExtensions,
+} from "./extensions.js";
 
 /** Read operations a model can expose as root fields (on by default). */
 export const READ_OPERATIONS = [
@@ -306,6 +313,29 @@ export type GraphQLConfig<TM extends TypeMap = TypeMap, Ctx = unknown> = {
     readonly [M in keyof TM & string]?: { readonly [field: string]: NamedTraversal };
   };
   /**
+   * Computed fields of the client (`$extends({ result })`) to expose, per model, with their
+   * GraphQL type: `{ User: { fullName: "String!" } }`. Selecting one loads its `needs`; it cannot
+   * be filtered or sorted on.
+   */
+  readonly computed?: {
+    readonly [M in keyof TM & string]?: { readonly [field: string]: ComputedField<Ctx> };
+  };
+  /**
+   * Cypher-backed fields (the native `@cypher`), per model: a Cypher expression evaluated on each
+   * node, compiled into the parent's statement, with typed arguments bound as parameters. Rules
+   * do not apply inside the expression. See {@link CypherField}.
+   */
+  readonly cypherFields?: {
+    readonly [M in keyof TM & string]?: { readonly [field: string]: CypherField<Ctx> };
+  };
+  /**
+   * Custom SDL and resolvers merged into the generated schema: non-node result types, custom
+   * root fields (`extend type Query` / `Mutation`), fields added to generated types. In resolvers,
+   * `ctx.cyphra` is the request's client with the API's rules applied, and
+   * `ctx.cyphra.selection(info)` the selection as the client's `select`.
+   */
+  readonly extend?: ExtendConfig<Ctx>;
+  /**
    * Relay: a `Node` interface with global ids, implemented by every model with an `@id` field
    * (`String`, `Int` or `BigInt`), and `node(id: ID!)`. The model's own `id` field is then
    * returned as `rawId` (inputs keep `id`). Off by default.
@@ -386,6 +416,8 @@ export type ResolvedConfig = {
   readonly rules: ReadonlyMap<string, ConfiguredRules>;
   /** Named traversal fields per model (field name → traversal). */
   readonly traversals: ReadonlyMap<string, ReadonlyMap<string, ResolvedTraversal>>;
+  /** Computed fields, Cypher-backed fields and `extend`. */
+  readonly extensions: ResolvedExtensions;
   /** Read rules of fields (functions or `{ where }`), per `Model.field` where declared. */
   readonly fieldRules: ReadonlyMap<string, ConfiguredFieldRule>;
   /** Whether the field, or the interface field it implements, has a read rule (it is nullable). */
@@ -442,6 +474,9 @@ const TOP_KEYS = [
   "mutationTransaction",
   "isAuthenticated",
   "traversals",
+  "computed",
+  "cypherFields",
+  "extend",
 ] as const;
 const ROOT_OPERATIONS: readonly RootOperation[] = [
   ...READ_OPERATIONS,
@@ -788,6 +823,12 @@ export function checkConfig(schema: SchemaModel, config: GraphQLConfig = {}): Re
   ];
   const isAuthenticated =
     (config.isAuthenticated as ((ctx: unknown) => boolean) | undefined) ?? defaultIsAuthenticated;
+  const traversals = checkTraversals(
+    config.traversals,
+    byName,
+    access,
+    (limits.maxTraversalDepth as number | undefined) ?? 10,
+  );
   return {
     operations,
     field: access,
@@ -795,11 +836,11 @@ export function checkConfig(schema: SchemaModel, config: GraphQLConfig = {}): Re
     relay: config.relay === true,
     mutationTransaction: config.mutationTransaction ?? "field",
     rules: rulesByModel,
-    traversals: checkTraversals(
-      config.traversals,
-      byName,
-      access,
-      (limits.maxTraversalDepth as number | undefined) ?? 10,
+    traversals,
+    extensions: checkExtensions(
+      schema,
+      config as AnyRecord,
+      (model, field) => traversals.get(model)?.has(field) === true,
     ),
     fieldRules,
     fieldRuled: ruledOn,

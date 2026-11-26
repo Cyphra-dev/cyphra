@@ -1,0 +1,12 @@
+{
+  "data": {
+    "publishPost": {
+      "id": "p2",
+      "title": "Draft notes",
+      "published": true,
+      "author": {
+        "fullName": "Ada Lovelace"
+      }
+    }
+  }
+}

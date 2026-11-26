@@ -14,13 +14,14 @@ import {
   type GraphQLObjectType,
   type GraphQLResolveInfo,
 } from "graphql";
-import { withEngineRules, withReadTransaction } from "@cyphra/runtime";
+import { computedFieldsOf, withEngineRules, withReadTransaction } from "@cyphra/runtime";
 import type { ResolvedNodeModel } from "@cyphra/schema";
 import type { ApiModel } from "./api.js";
-import { isWrite, type RootOperation, type WriteOperation } from "./config.js";
+import { isWrite, NativeSchemaError, type RootOperation, type WriteOperation } from "./config.js";
+import { modelOfType, type ExtensionRuntime } from "./extensions.js";
 import { RequestAuth } from "./auth.js";
 import { badInput, toGraphQLError } from "./errors.js";
-import { names, TYPE, type RootResolver } from "./schema.js";
+import { names, ROW, TYPE, type RootResolver } from "./schema.js";
 import { fromGlobalId, keyValue } from "./relay.js";
 import { aggregate, groupBy, scoredSearch } from "./reads.js";
 import { traversal } from "./traversals.js";
@@ -66,9 +67,13 @@ export function sessions(api: ApiModel, source: ClientSource): (ctx: unknown) =>
       }
       if (scoped) {
         Object.defineProperty(scoped, "$unsafe", { value: base });
+        Object.defineProperty(scoped, "selection", {
+          value: (info: GraphQLResolveInfo) => ({ select: selectionOf(api, auth, info).select }),
+        });
         (ctx as AnyRecord).cyphra = scoped;
       }
     }
+    checkComputed(api, base);
     return { auth, client };
   };
   return (ctx) => {
@@ -79,6 +84,85 @@ export function sessions(api: ApiModel, source: ClientSource): (ctx: unknown) =>
       cache.set(ctx, s);
     }
     return s;
+  };
+}
+
+/** Clients whose computed fields were checked against `config.computed`. */
+const checkedClients = new WeakMap<ApiModel, WeakSet<object>>();
+
+/**
+ * Check that the client has every computed field `config.computed` exposes (once per client; a
+ * client that is not a Cyphra client, a stub, is not checked).
+ *
+ * @throws {NativeSchemaError} On a computed field the client does not declare.
+ */
+export function checkComputed(api: ApiModel, client: object): void {
+  let seen = checkedClients.get(api);
+  if (!seen) {
+    seen = new WeakSet();
+    checkedClients.set(api, seen);
+  }
+  if (seen.has(client)) return;
+  for (const [model, fields] of api.config.extensions.computed) {
+    const declared = computedFieldsOf(client, model);
+    if (!declared) return;
+    for (const name of fields.keys()) {
+      if (!declared.has(name)) {
+        throw new NativeSchemaError(
+          `config.computed.${model}.${name}: the client has no computed field "${name}" on ${model} (declare it with db.$extends({ result: { ${delegateKey(model)}: { ${name}: { needs, compute } } } })).`,
+        );
+      }
+    }
+  }
+  seen.add(client);
+}
+
+/**
+ * The translation of the selection of the field `info` resolves, which returns a generated type
+ * (a model, or a list of one): the client `select` that loads it, and how to shape the rows.
+ */
+export function selectionOf(api: ApiModel, auth: RequestAuth, info: GraphQLResolveInfo) {
+  const model = modelOfType(api, info.schema, info.returnType);
+  if (!model) {
+    throw badInput(
+      `ctx.cyphra.selection(info): ${info.parentType.name}.${info.fieldName} does not return a generated type (a model, or a list of one).`,
+    );
+  }
+  const t = new Translator(api, info, api.config.limits, auth);
+  if (api.scored(model)) t.scoring = model.union ? "fused" : "score";
+  const tr = t.node(model, t.rootSelections(), undefined, 0, 1);
+  t.checkAliases();
+  t.checkComplexity(1, tr.cost);
+  return tr;
+}
+
+/** How the resolvers of `extend` run: on the request's session, parents and results shaped. */
+export function extensionRuntime(
+  api: ApiModel,
+  options: { session: (ctx: unknown) => Promise<Session>; debug: boolean },
+): ExtensionRuntime {
+  return {
+    wrap:
+      (resolve, { model }) =>
+      async (src, args, ctx, info) => {
+        try {
+          // Sets ctx.cyphra (and evaluates the rules) before the resolver runs.
+          const { auth } = await options.session(ctx);
+          const parent =
+            model && typeof src === "object" && src !== null && ROW in src
+              ? (src as Record<symbol, unknown>)[ROW]
+              : src;
+          const value = await resolve(parent, args, ctx, info);
+          const target = modelOfType(api, info.schema, info.returnType);
+          if (!target || value === null || value === undefined) return value;
+          const tr = selectionOf(api, auth, info);
+          const shape = (v: unknown) =>
+            typeof v === "object" && v !== null && !(TYPE in v) ? tr.shape(v as AnyRecord) : v;
+          return Array.isArray(value) ? value.map(shape) : shape(value);
+        } catch (err) {
+          throw toGraphQLError(err, options.debug);
+        }
+      },
   };
 }
 

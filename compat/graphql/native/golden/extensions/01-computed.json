@@ -1,0 +1,23 @@
+{
+  "data": {
+    "personFindMany": {
+      "nodes": [
+        {
+          "id": "a",
+          "fullName": "Ada Lovelace",
+          "name": "Ada Lovelace"
+        },
+        {
+          "id": "b",
+          "fullName": "Bob Byte",
+          "name": "Bob Byte"
+        },
+        {
+          "id": "c",
+          "fullName": "Cy Cole",
+          "name": "Cy Cole"
+        }
+      ]
+    }
+  }
+}

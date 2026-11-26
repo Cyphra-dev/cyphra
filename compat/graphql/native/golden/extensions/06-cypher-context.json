@@ -1,0 +1,20 @@
+{
+  "data": {
+    "personFindMany": {
+      "nodes": [
+        {
+          "id": "a",
+          "isMe": false
+        },
+        {
+          "id": "b",
+          "isMe": true
+        },
+        {
+          "id": "c",
+          "isMe": false
+        }
+      ]
+    }
+  }
+}

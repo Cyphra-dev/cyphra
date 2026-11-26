@@ -1,0 +1,11 @@
+# features: native.cypherFields
+# ordered
+# The context is bound as a parameter: a hostile subject is compared as a value, never run.
+{
+  personFindMany(orderBy: [{ id: asc }]) {
+    nodes {
+      id
+      isMe
+    }
+  }
+}

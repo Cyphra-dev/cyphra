@@ -1,0 +1,20 @@
+{
+  "data": {
+    "personFindMany": {
+      "nodes": [
+        {
+          "id": "a",
+          "followerCount": 2,
+          "recent": 1,
+          "all": 2
+        },
+        {
+          "id": "b",
+          "followerCount": 1,
+          "recent": 1,
+          "all": 1
+        }
+      ]
+    }
+  }
+}

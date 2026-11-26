@@ -1,0 +1,15 @@
+# features: native.extend, auth.fields.read
+# A custom root field returning a generated type: field rules apply (email is admin-only), and a
+# field added to Person by extend resolves from the node.
+{
+  me {
+    id
+    fullName
+    email
+    greeting
+  }
+  searchPosts(text: "e") {
+    id
+    title
+  }
+}
