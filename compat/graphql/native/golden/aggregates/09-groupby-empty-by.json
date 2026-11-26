@@ -1,0 +1,14 @@
+{
+  "data": {
+    "postGroupBy": null
+  },
+  "errors": [
+    {
+      "message": "Post groupBy: by lists no field (fields, or a to-one relation's).",
+      "path": [
+        "postGroupBy"
+      ],
+      "code": "BAD_USER_INPUT"
+    }
+  ]
+}

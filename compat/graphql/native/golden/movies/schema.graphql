@@ -3,7 +3,34 @@ type ActedIn {
   screenTime: Int
 }
 
+"""Aggregates of the field in each group."""
+input CountHaving {
+  """The number of non-null values."""
+  _count: IntFilter
+}
+
 input FloatFilter {
+  equals: Float
+  gt: Float
+  gte: Float
+  in: [Float!]
+  lt: Float
+  lte: Float
+  not: Float
+  notIn: [Float!]
+}
+
+"""
+Aggregates of the field in each group; the other filters need the field in by.
+"""
+input FloatHaving {
+  _avg: FloatFilter
+
+  """The number of non-null values."""
+  _count: IntFilter
+  _max: FloatFilter
+  _min: FloatFilter
+  _sum: FloatFilter
   equals: Float
   gt: Float
   gte: Float
@@ -29,7 +56,50 @@ input IDFilter {
   startsWith: ID
 }
 
+"""
+Aggregates of the field in each group; the other filters need the field in by.
+"""
+input IDHaving {
+  """The number of non-null values."""
+  _count: IntFilter
+  _max: IDFilter
+  _min: IDFilter
+  contains: ID
+  endsWith: ID
+  equals: ID
+  gt: ID
+  gte: ID
+  in: [ID!]
+  lt: ID
+  lte: ID
+  mode: QueryMode
+  not: ID
+  notIn: [ID!]
+  startsWith: ID
+}
+
 input IntFilter {
+  equals: Int
+  gt: Int
+  gte: Int
+  in: [Int!]
+  lt: Int
+  lte: Int
+  not: Int
+  notIn: [Int!]
+}
+
+"""
+Aggregates of the field in each group; the other filters need the field in by.
+"""
+input IntHaving {
+  _avg: FloatFilter
+
+  """The number of non-null values."""
+  _count: IntFilter
+  _max: IntFilter
+  _min: IntFilter
+  _sum: IntFilter
   equals: Int
   gt: Int
   gte: Int
@@ -60,9 +130,45 @@ type Movie {
   title: String!
 }
 
+type MovieAggregate {
+  _avg: MovieAvgAggregate!
+  _count: MovieCountAggregate!
+  _max: MovieMaxAggregate!
+  _min: MovieMinAggregate!
+  _sum: MovieSumAggregate!
+}
+
+"""Means of the non-null values (null when there are none)."""
+type MovieAvgAggregate {
+  rating: Float
+  released: Float
+}
+
 type MovieCount {
   actors(where: PersonWhere): Int!
   directors(where: PersonWhere): Int!
+}
+
+"""
+`_all`: the number of nodes; a field: the number of its non-null values.
+"""
+type MovieCountAggregate {
+  _all: Int!
+  genres: Int!
+  id: Int!
+  rating: Int!
+  released: Int!
+  tagline: Int!
+  title: Int!
+}
+
+input MovieCountAggregateOrderBy {
+  _all: SortOrder
+  id: SortOrder
+  rating: SortOrder
+  released: SortOrder
+  tagline: SortOrder
+  title: SortOrder
 }
 
 input MovieCountFilter {
@@ -82,6 +188,64 @@ input MovieCountFilter {
 input MovieCountWhere {
   actors: PersonCountFilter
   directors: PersonCountFilter
+}
+
+"""
+One group: its keys (only the fields listed in by can be selected) and aggregates.
+"""
+type MovieGroup {
+  _avg: MovieAvgAggregate!
+  _count: MovieCountAggregate!
+  _max: MovieMaxAggregate!
+  _min: MovieMinAggregate!
+  _sum: MovieSumAggregate!
+  id: ID
+  rating: Float
+  released: Int
+  tagline: String
+  title: String
+}
+
+"""The fields to group on: at least one."""
+input MovieGroupByInput {
+  """Fields of the model."""
+  fields: [MovieGroupField!]
+}
+
+enum MovieGroupField {
+  id
+  rating
+  released
+  tagline
+  title
+}
+
+"""
+One key per element of the orderBy list: a key listed in by, or an aggregate.
+"""
+input MovieGroupOrderBy {
+  _avg: MovieNumericAggregateOrderBy
+  _count: MovieCountAggregateOrderBy
+  _max: MovieMinMaxAggregateOrderBy
+  _min: MovieMinMaxAggregateOrderBy
+  _sum: MovieNumericAggregateOrderBy
+  id: SortOrder
+  rating: SortOrder
+  released: SortOrder
+  tagline: SortOrder
+  title: SortOrder
+}
+
+input MovieHaving {
+  AND: [MovieHaving!]
+  NOT: MovieHaving
+  OR: [MovieHaving!]
+  genres: CountHaving
+  id: IDHaving
+  rating: FloatHaving
+  released: IntHaving
+  tagline: StringHaving
+  title: StringHaving
 }
 
 type MovieList {
@@ -105,6 +269,37 @@ input MovieListRelationFilter {
   some: MovieWhere
 }
 
+"""Largest non-null values."""
+type MovieMaxAggregate {
+  id: ID
+  rating: Float
+  released: Int
+  tagline: String
+  title: String
+}
+
+"""Smallest non-null values."""
+type MovieMinAggregate {
+  id: ID
+  rating: Float
+  released: Int
+  tagline: String
+  title: String
+}
+
+input MovieMinMaxAggregateOrderBy {
+  id: SortOrder
+  rating: SortOrder
+  released: SortOrder
+  tagline: SortOrder
+  title: SortOrder
+}
+
+input MovieNumericAggregateOrderBy {
+  rating: SortOrder
+  released: SortOrder
+}
+
 """One key per element of the orderBy list."""
 input MovieOrderBy {
   """Sort by the number of related nodes."""
@@ -124,6 +319,12 @@ input MovieRelationCountOrder {
 
   """Count only the matching nodes."""
   where: MovieWhere
+}
+
+"""Sums of the non-null values (null when there are none)."""
+type MovieSumAggregate {
+  rating: Float
+  released: Int
 }
 
 input MovieWhere {
@@ -184,9 +385,39 @@ type Person {
   name: String!
 }
 
+type PersonAggregate {
+  _avg: PersonAvgAggregate!
+  _count: PersonCountAggregate!
+  _max: PersonMaxAggregate!
+  _min: PersonMinAggregate!
+  _sum: PersonSumAggregate!
+}
+
+"""Means of the non-null values (null when there are none)."""
+type PersonAvgAggregate {
+  born: Float
+}
+
 type PersonCount {
   actedIn(where: MovieWhere): Int!
   directed(where: MovieWhere): Int!
+}
+
+"""
+`_all`: the number of nodes; a field: the number of its non-null values.
+"""
+type PersonCountAggregate {
+  _all: Int!
+  born: Int!
+  id: Int!
+  name: Int!
+}
+
+input PersonCountAggregateOrderBy {
+  _all: SortOrder
+  born: SortOrder
+  id: SortOrder
+  name: SortOrder
 }
 
 input PersonCountFilter {
@@ -206,6 +437,55 @@ input PersonCountFilter {
 input PersonCountWhere {
   actedIn: MovieCountFilter
   directed: MovieCountFilter
+}
+
+"""
+One group: its keys (only the fields listed in by can be selected) and aggregates.
+"""
+type PersonGroup {
+  _avg: PersonAvgAggregate!
+  _count: PersonCountAggregate!
+  _max: PersonMaxAggregate!
+  _min: PersonMinAggregate!
+  _sum: PersonSumAggregate!
+  born: Int
+  id: ID
+  name: String
+}
+
+"""The fields to group on: at least one."""
+input PersonGroupByInput {
+  """Fields of the model."""
+  fields: [PersonGroupField!]
+}
+
+enum PersonGroupField {
+  born
+  id
+  name
+}
+
+"""
+One key per element of the orderBy list: a key listed in by, or an aggregate.
+"""
+input PersonGroupOrderBy {
+  _avg: PersonNumericAggregateOrderBy
+  _count: PersonCountAggregateOrderBy
+  _max: PersonMinMaxAggregateOrderBy
+  _min: PersonMinMaxAggregateOrderBy
+  _sum: PersonNumericAggregateOrderBy
+  born: SortOrder
+  id: SortOrder
+  name: SortOrder
+}
+
+input PersonHaving {
+  AND: [PersonHaving!]
+  NOT: PersonHaving
+  OR: [PersonHaving!]
+  born: IntHaving
+  id: IDHaving
+  name: StringHaving
 }
 
 type PersonList {
@@ -229,6 +509,30 @@ input PersonListRelationFilter {
   some: PersonWhere
 }
 
+"""Largest non-null values."""
+type PersonMaxAggregate {
+  born: Int
+  id: ID
+  name: String
+}
+
+"""Smallest non-null values."""
+type PersonMinAggregate {
+  born: Int
+  id: ID
+  name: String
+}
+
+input PersonMinMaxAggregateOrderBy {
+  born: SortOrder
+  id: SortOrder
+  name: SortOrder
+}
+
+input PersonNumericAggregateOrderBy {
+  born: SortOrder
+}
+
 """One key per element of the orderBy list."""
 input PersonOrderBy {
   """Sort by the number of related nodes."""
@@ -246,6 +550,11 @@ input PersonRelationCountOrder {
 
   """Count only the matching nodes."""
   where: PersonWhere
+}
+
+"""Sums of the non-null values (null when there are none)."""
+type PersonSumAggregate {
+  born: Int
 }
 
 input PersonWhere {
@@ -277,6 +586,10 @@ input PersonWhereUnique {
 }
 
 type Query {
+  """
+  Aggregates over the matching nodes (with skip / take: over that window).
+  """
+  movieAggregate(orderBy: [MovieOrderBy!], skip: Int, take: Int, where: MovieWhere): MovieAggregate
   movieCount(where: MovieWhere): Int
   movieFindFirst(orderBy: [MovieOrderBy!], skip: Int, where: MovieWhere): Movie
   movieFindMany(
@@ -291,6 +604,16 @@ type Query {
     where: MovieWhere
   ): MovieList
   movieFindUnique(where: MovieWhereUnique!): Movie
+
+  """
+  Groups of the matching nodes by the fields in by, with their aggregates.
+  """
+  movieGroupBy(by: MovieGroupByInput!, having: MovieHaving, orderBy: [MovieGroupOrderBy!], skip: Int, take: Int, where: MovieWhere): [MovieGroup!]
+
+  """
+  Aggregates over the matching nodes (with skip / take: over that window).
+  """
+  personAggregate(orderBy: [PersonOrderBy!], skip: Int, take: Int, where: PersonWhere): PersonAggregate
   personCount(where: PersonWhere): Int
   personFindFirst(orderBy: [PersonOrderBy!], skip: Int, where: PersonWhere): Person
   personFindMany(
@@ -305,6 +628,11 @@ type Query {
     where: PersonWhere
   ): PersonList
   personFindUnique(where: PersonWhereUnique!): Person
+
+  """
+  Groups of the matching nodes by the fields in by, with their aggregates.
+  """
+  personGroupBy(by: PersonGroupByInput!, having: PersonHaving, orderBy: [PersonGroupOrderBy!], skip: Int, take: Int, where: PersonWhere): [PersonGroup!]
 }
 
 """`insensitive` compares lower-cased values."""
@@ -319,6 +647,28 @@ enum SortOrder {
 }
 
 input StringFilter {
+  contains: String
+  endsWith: String
+  equals: String
+  gt: String
+  gte: String
+  in: [String!]
+  lt: String
+  lte: String
+  mode: QueryMode
+  not: String
+  notIn: [String!]
+  startsWith: String
+}
+
+"""
+Aggregates of the field in each group; the other filters need the field in by.
+"""
+input StringHaving {
+  """The number of non-null values."""
+  _count: IntFilter
+  _max: StringFilter
+  _min: StringFilter
   contains: String
   endsWith: String
   equals: String

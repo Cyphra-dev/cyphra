@@ -1,0 +1,8 @@
+# features: groupBy, errors
+{
+  postGroupBy(by: {}) {
+    _count {
+      _all
+    }
+  }
+}

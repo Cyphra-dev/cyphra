@@ -1,0 +1,13 @@
+{
+  "data": {
+    "postGroupBy": [
+      {
+        "status": "PUBLISHED",
+        "title": "Graphs",
+        "_count": {
+          "_all": 1
+        }
+      }
+    ]
+  }
+}

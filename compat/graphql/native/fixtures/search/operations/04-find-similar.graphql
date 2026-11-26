@@ -1,0 +1,16 @@
+# features: findSimilar, auth.rules.read
+# ordered
+# Anonymous: a3 (the nearest to the vector) is hidden; the next ones come instead.
+query ($v: [Float!]!) {
+  articleFindSimilar(field: embedding, vector: $v, k: 2) {
+    id
+  }
+  filtered: articleFindSimilar(
+    field: embedding
+    vector: $v
+    k: 5
+    where: { title: { contains: "Bread" } }
+  ) {
+    id
+  }
+}

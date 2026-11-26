@@ -1,0 +1,21 @@
+# features: search.union
+# ordered
+# indexes picks the members searched; where with _on filters per member.
+{
+  articles: searchHitSearch(query: "graph", mode: terms, indexes: { Article: articleText }) {
+    __typename
+    ... on Article {
+      id
+    }
+  }
+  adaOnly: searchHitSearch(
+    query: "graph"
+    mode: terms
+    where: { _on: { Author: { name: { startsWith: "Ada" } } } }
+  ) {
+    __typename
+    ... on Author {
+      id
+    }
+  }
+}

@@ -62,6 +62,20 @@ describe("defineGraphQL", () => {
     });
   });
 
+  it("accepts the aggregate, search and traverse operations", () => {
+    defineGraphQL<TM>({
+      models: {
+        User: { operations: { read: ["aggregate", "groupBy", "search"], traverse: true } },
+        Post: { operations: { traverse: ["findSimilar"] } },
+      },
+      naming: { Post: { groupBy: "postGroups", findSimilar: "similarPosts" } },
+    });
+    defineGraphQL<TM>({
+      // @ts-expect-error findSimilar is in the traverse group
+      models: { User: { operations: { read: ["findSimilar"] } } },
+    });
+  });
+
   it("is accepted by makeSchema, whatever the type map and context", () => {
     const api = defineGraphQL<TM, { user?: { id: string } }>({
       models: { User: { fields: { passwordHash: false } } },

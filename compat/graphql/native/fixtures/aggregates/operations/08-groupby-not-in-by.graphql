@@ -1,0 +1,8 @@
+# features: groupBy, errors
+# Only group keys can be selected.
+{
+  postGroupBy(by: { fields: [status] }) {
+    status
+    title
+  }
+}

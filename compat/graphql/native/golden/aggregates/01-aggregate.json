@@ -1,0 +1,26 @@
+{
+  "data": {
+    "postAggregate": {
+      "_count": {
+        "_all": 4,
+        "rating": 2
+      },
+      "_sum": {
+        "views": 46
+      },
+      "_avg": {
+        "views": 11.5,
+        "rating": 4
+      },
+      "_min": {
+        "createdAt": "2024-01-01T00:00:00.000Z",
+        "title": "Cypher"
+      },
+      "_max": {
+        "createdAt": "2024-04-01T00:00:00.000Z",
+        "views": 30,
+        "status": "PUBLISHED"
+      }
+    }
+  }
+}

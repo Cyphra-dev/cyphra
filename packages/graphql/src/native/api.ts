@@ -36,6 +36,26 @@ export const RESERVED_FIELDS = [
 /** Output name of a model's own `id` field when Relay global ids take `id`. */
 export const RAW_ID = "rawId";
 
+/** `_sum` / `_avg` take these field types. */
+export const NUMERIC_TYPES = new Set(["Int", "Float", "BigInt"]);
+
+/** `_min` / `_max` take these field types (the client's `MinMaxKeys`). */
+export const ORDERABLE_TYPES = new Set([
+  "Int",
+  "Float",
+  "BigInt",
+  "String",
+  "Enum",
+  "DateTime",
+  "Date",
+  "LocalDateTime",
+  "LocalTime",
+  "Time",
+]);
+
+/** Field types `groupBy` cannot group on. */
+const UNGROUPABLE_TYPES = new Set(["Vector", "Json", "Point", "CartesianPoint"]);
+
 /** Scalar types that cannot be sorted on (points sort by distance instead). */
 const UNSORTABLE = new Set(["Vector", "Json", "Duration"]);
 
@@ -190,6 +210,51 @@ export class ApiModel {
   sortableScalars(model: ResolvedNodeModel): ResolvedScalarField[] {
     return this.scalars(model).filter(
       (f) => this.sortable(model, f) && f.type !== "Point" && f.type !== "CartesianPoint",
+    );
+  }
+
+  /** Readable scalars `_sum` / `_avg` take (`Int`, `Float`, `BigInt`). */
+  numericFields(model: ResolvedNodeModel): ResolvedScalarField[] {
+    return this.scalars(model).filter((f) => !f.list && NUMERIC_TYPES.has(f.type));
+  }
+
+  /** Readable scalars `_min` / `_max` take (numbers, strings, enums, ordered temporals). */
+  orderableFields(model: ResolvedNodeModel): ResolvedScalarField[] {
+    return this.scalars(model).filter((f) => !f.list && ORDERABLE_TYPES.has(f.type));
+  }
+
+  /** Readable scalars `groupBy` can group on (no lists, vectors, points or JSON). */
+  groupFields(model: ResolvedNodeModel): ResolvedScalarField[] {
+    if (model.union) return [];
+    return this.scalars(model).filter((f) => !f.list && !UNGROUPABLE_TYPES.has(f.type));
+  }
+
+  /** To-one relations whose target's fields `groupBy` can group on (`by: { author: [name] }`). */
+  groupRelations(model: ResolvedNodeModel): ResolvedRelationField[] {
+    return this.relations(model).filter(
+      (f) => !f.many && this.groupFields(this.node(f.target)).length > 0,
+    );
+  }
+
+  /**
+   * Whether `model`'s type has `_score`: it comes out of a `search` / `findSimilar` root field (its
+   * own, an interface's, or a union's it is a member of).
+   */
+  scored(model: ResolvedNodeModel): boolean {
+    const searched = (m: ResolvedNodeModel) => this.has(m, "search") || this.has(m, "findSimilar");
+    if (searched(model)) return true;
+    if ((model.interfaces ?? []).some((i) => this.scored(this.node(i)))) return true;
+    return this.fused(model);
+  }
+
+  /** Whether `model`'s type has `_scores`: it is a member of a union searched by the API. */
+  fused(model: ResolvedNodeModel): boolean {
+    if (model.abstract) return false;
+    return this.schema.nodes.some(
+      (u) =>
+        u.union === true &&
+        (u.implementations ?? []).includes(model.name) &&
+        (this.has(u, "search") || this.has(u, "findSimilar")),
     );
   }
 

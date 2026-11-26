@@ -1,0 +1,16 @@
+# features: groupBy, auth.rules.read
+# ordered
+# An admin: Carol has her group.
+{
+  postGroupBy(by: { author: [name] }, orderBy: [{ author: { name: asc } }]) {
+    author {
+      name
+    }
+    _count {
+      _all
+    }
+    _max {
+      views
+    }
+  }
+}

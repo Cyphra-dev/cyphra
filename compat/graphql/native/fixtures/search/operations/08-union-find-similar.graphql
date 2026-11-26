@@ -1,0 +1,10 @@
+# features: findSimilar.union, auth.rules.read
+# ordered
+query ($v: [Float!]!) {
+  searchHitFindSimilar(vector: $v, take: 2) {
+    __typename
+    ... on Article {
+      id
+    }
+  }
+}

@@ -72,6 +72,13 @@ export function cleanPoint(v: unknown): unknown {
 export class Translator {
   private readonly gql: GraphQLSchema;
   private readonly aliased = new Set<FieldNode>();
+  /**
+   * What the root's nodes are scored by: `"score"` (search / findSimilar: `_score`), `"fused"`
+   * (over a union: `_score` and `_scores`), or nothing (selecting either is an error).
+   */
+  scoring?: "score" | "fused";
+  /** Set once `_scores` is selected (the client then reports each index's score). */
+  wantScores = false;
 
   constructor(
     private readonly api: ApiModel,
@@ -84,7 +91,7 @@ export class Translator {
   }
 
   /** Fail when a context-only field rule denies `model.field` to the request (filter, sort, …). */
-  private usable(model: ResolvedNodeModel, field: string, use: string): void {
+  usable(model: ResolvedNodeModel, field: string, use: string): void {
     if (this.auth?.fieldDenied(model, field)) throw this.auth.fieldForbidden(model, field, use);
   }
 
@@ -302,6 +309,33 @@ export class Translator {
           for (const [k, rel] of keys) o[k] = c[rel] ?? 0;
           out[key] = o;
         });
+        continue;
+      }
+      if (name === "_score" || name === "_scores") {
+        if (depth !== 0 || !this.scoring || (name === "_scores" && this.scoring !== "fused")) {
+          throw badInput(
+            name === "_score"
+              ? `_score is only available on the results of a search or findSimilar root field.`
+              : `_scores is only available on the results of a search or findSimilar over a union.`,
+          );
+        }
+        if (name === "_score") {
+          parts.push((row, out) => {
+            out[key] = typeof row.$score === "number" ? row.$score : null;
+          });
+        } else {
+          this.wantScores = true;
+          parts.push((row, out) => {
+            const scores = row.$scores;
+            out[key] = isPlainObject(scores)
+              ? Object.entries(scores).map(([index, v]) => ({
+                  ...(v as AnyRecord),
+                  index,
+                  [TYPE]: "IndexScore",
+                }))
+              : null;
+          });
+        }
         continue;
       }
       if (name === "_labels") {

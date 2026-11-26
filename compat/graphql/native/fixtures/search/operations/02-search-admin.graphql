@@ -1,0 +1,9 @@
+# features: search, auth.rules.read
+# ordered
+# An admin: the unpublished article is a hit (first: "graph" appears most often).
+{
+  articleSearch(index: articleText, query: "graph", mode: terms) {
+    id
+    title
+  }
+}

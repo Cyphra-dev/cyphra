@@ -1,0 +1,18 @@
+# features: aggregate, groupBy, auth.field.context, errors
+# A member cannot aggregate, group or sort on a field a context-only rule denies; the other root field still runs.
+{
+  userAggregate {
+    _sum {
+      salary
+    }
+  }
+  userGroupBy(by: { fields: [salary] }) {
+    salary
+  }
+  byTeam: userGroupBy(by: { fields: [team] }, orderBy: [{ team: asc }]) {
+    team
+    _count {
+      _all
+    }
+  }
+}

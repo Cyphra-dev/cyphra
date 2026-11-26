@@ -1,0 +1,38 @@
+{
+  "data": {
+    "searchHitSearch": [
+      {
+        "__typename": "Article",
+        "id": "a1",
+        "_score": 0.016393442623,
+        "_scores": [
+          {
+            "index": "articleText",
+            "rank": 1
+          }
+        ]
+      },
+      {
+        "__typename": "Author",
+        "name": "Ada Graph",
+        "_scores": [
+          {
+            "index": "authorText",
+            "rank": 1
+          }
+        ]
+      },
+      {
+        "__typename": "Article",
+        "id": "a2",
+        "_score": 0.0161290322581,
+        "_scores": [
+          {
+            "index": "articleText",
+            "rank": 2
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,749 @@
+input BooleanFilter {
+  equals: Boolean
+  not: Boolean
+}
+
+"""
+Aggregates of the field in each group; the other filters need the field in by.
+"""
+input BooleanHaving {
+  """The number of non-null values."""
+  _count: IntFilter
+  equals: Boolean
+  not: Boolean
+}
+
+"""An instant, as an ISO 8601 string (`2026-11-01T09:30:00.000Z`)."""
+scalar DateTime
+
+input DateTimeFilter {
+  equals: DateTime
+  gt: DateTime
+  gte: DateTime
+  in: [DateTime!]
+  lt: DateTime
+  lte: DateTime
+  not: DateTime
+  notIn: [DateTime!]
+}
+
+"""
+Aggregates of the field in each group; the other filters need the field in by.
+"""
+input DateTimeHaving {
+  """The number of non-null values."""
+  _count: IntFilter
+  _max: DateTimeFilter
+  _min: DateTimeFilter
+  equals: DateTime
+  gt: DateTime
+  gte: DateTime
+  in: [DateTime!]
+  lt: DateTime
+  lte: DateTime
+  not: DateTime
+  notIn: [DateTime!]
+}
+
+input FloatFilter {
+  equals: Float
+  gt: Float
+  gte: Float
+  in: [Float!]
+  lt: Float
+  lte: Float
+  not: Float
+  notIn: [Float!]
+}
+
+"""
+Aggregates of the field in each group; the other filters need the field in by.
+"""
+input FloatHaving {
+  _avg: FloatFilter
+
+  """The number of non-null values."""
+  _count: IntFilter
+  _max: FloatFilter
+  _min: FloatFilter
+  _sum: FloatFilter
+  equals: Float
+  gt: Float
+  gte: Float
+  in: [Float!]
+  lt: Float
+  lte: Float
+  not: Float
+  notIn: [Float!]
+}
+
+input IDFilter {
+  contains: ID
+  endsWith: ID
+  equals: ID
+  gt: ID
+  gte: ID
+  in: [ID!]
+  lt: ID
+  lte: ID
+  mode: QueryMode
+  not: ID
+  notIn: [ID!]
+  startsWith: ID
+}
+
+"""
+Aggregates of the field in each group; the other filters need the field in by.
+"""
+input IDHaving {
+  """The number of non-null values."""
+  _count: IntFilter
+  _max: IDFilter
+  _min: IDFilter
+  contains: ID
+  endsWith: ID
+  equals: ID
+  gt: ID
+  gte: ID
+  in: [ID!]
+  lt: ID
+  lte: ID
+  mode: QueryMode
+  not: ID
+  notIn: [ID!]
+  startsWith: ID
+}
+
+input IntFilter {
+  equals: Int
+  gt: Int
+  gte: Int
+  in: [Int!]
+  lt: Int
+  lte: Int
+  not: Int
+  notIn: [Int!]
+}
+
+"""
+Aggregates of the field in each group; the other filters need the field in by.
+"""
+input IntHaving {
+  _avg: FloatFilter
+
+  """The number of non-null values."""
+  _count: IntFilter
+  _max: IntFilter
+  _min: IntFilter
+  _sum: IntFilter
+  equals: Int
+  gt: Int
+  gte: Int
+  in: [Int!]
+  lt: Int
+  lte: Int
+  not: Int
+  notIn: [Int!]
+}
+
+type PageInfo {
+  endCursor: String
+  hasNextPage: Boolean!
+  hasPreviousPage: Boolean!
+  startCursor: String
+}
+
+type Post {
+  author: User
+  createdAt: DateTime!
+  id: ID!
+  rating: Float
+  secret: Boolean!
+  status: Status!
+  title: String!
+  views: Int!
+}
+
+type PostAggregate {
+  _avg: PostAvgAggregate!
+  _count: PostCountAggregate!
+  _max: PostMaxAggregate!
+  _min: PostMinAggregate!
+  _sum: PostSumAggregate!
+}
+
+"""Means of the non-null values (null when there are none)."""
+type PostAvgAggregate {
+  rating: Float
+  views: Float
+}
+
+"""
+`_all`: the number of nodes; a field: the number of its non-null values.
+"""
+type PostCountAggregate {
+  _all: Int!
+  createdAt: Int!
+  id: Int!
+  rating: Int!
+  secret: Int!
+  status: Int!
+  title: Int!
+  views: Int!
+}
+
+input PostCountAggregateOrderBy {
+  _all: SortOrder
+  createdAt: SortOrder
+  id: SortOrder
+  rating: SortOrder
+  secret: SortOrder
+  status: SortOrder
+  title: SortOrder
+  views: SortOrder
+}
+
+input PostCountFilter {
+  equals: Int
+  gt: Int
+  gte: Int
+  in: [Int!]
+  lt: Int
+  lte: Int
+  not: Int
+  notIn: [Int!]
+
+  """Count only these nodes."""
+  where: PostWhere
+}
+
+"""
+One group: its keys (only the fields listed in by can be selected) and aggregates.
+"""
+type PostGroup {
+  _avg: PostAvgAggregate!
+  _count: PostCountAggregate!
+  _max: PostMaxAggregate!
+  _min: PostMinAggregate!
+  _sum: PostSumAggregate!
+  author: UserGroupKeys
+  createdAt: DateTime
+  id: ID
+  rating: Float
+  secret: Boolean
+  status: Status
+  title: String
+  views: Int
+}
+
+"""The fields to group on: at least one."""
+input PostGroupByInput {
+  """Fields of the related User (to-one)."""
+  author: [UserGroupField!]
+
+  """Fields of the model."""
+  fields: [PostGroupField!]
+}
+
+enum PostGroupField {
+  createdAt
+  id
+  rating
+  secret
+  status
+  title
+  views
+}
+
+"""
+One key per element of the orderBy list: a key listed in by, or an aggregate.
+"""
+input PostGroupOrderBy {
+  _avg: PostNumericAggregateOrderBy
+  _count: PostCountAggregateOrderBy
+  _max: PostMinMaxAggregateOrderBy
+  _min: PostMinMaxAggregateOrderBy
+  _sum: PostNumericAggregateOrderBy
+  author: UserGroupKeyOrderBy
+  createdAt: SortOrder
+  id: SortOrder
+  rating: SortOrder
+  secret: SortOrder
+  status: SortOrder
+  title: SortOrder
+  views: SortOrder
+}
+
+input PostHaving {
+  AND: [PostHaving!]
+  NOT: PostHaving
+  OR: [PostHaving!]
+  author: UserGroupKeyFilter
+  createdAt: DateTimeHaving
+  id: IDHaving
+  rating: FloatHaving
+  secret: BooleanHaving
+  status: StatusHaving
+  title: StringHaving
+  views: IntHaving
+}
+
+type PostList {
+  nodes: [Post!]!
+  pageInfo: PageInfo!
+
+  """
+  Number of nodes matching where, ignoring paging. Counted only when selected.
+  """
+  totalCount: Int!
+}
+
+input PostListRelationFilter {
+  """Every related node matches."""
+  every: PostWhere
+
+  """No related node matches."""
+  none: PostWhere
+
+  """At least one related node matches."""
+  some: PostWhere
+}
+
+"""Largest non-null values."""
+type PostMaxAggregate {
+  createdAt: DateTime
+  id: ID
+  rating: Float
+  status: Status
+  title: String
+  views: Int
+}
+
+"""Smallest non-null values."""
+type PostMinAggregate {
+  createdAt: DateTime
+  id: ID
+  rating: Float
+  status: Status
+  title: String
+  views: Int
+}
+
+input PostMinMaxAggregateOrderBy {
+  createdAt: SortOrder
+  id: SortOrder
+  rating: SortOrder
+  status: SortOrder
+  title: SortOrder
+  views: SortOrder
+}
+
+input PostNumericAggregateOrderBy {
+  rating: SortOrder
+  views: SortOrder
+}
+
+"""One key per element of the orderBy list."""
+input PostOrderBy {
+  """Sort by a field of the related node."""
+  author: UserScalarOrderBy
+  createdAt: SortOrder
+  id: SortOrder
+  rating: SortOrder
+  secret: SortOrder
+  status: SortOrder
+  title: SortOrder
+  views: SortOrder
+}
+
+input PostRelationCountOrder {
+  _count: SortOrder!
+
+  """Count only the matching nodes."""
+  where: PostWhere
+}
+
+"""Sums of the non-null values (null when there are none)."""
+type PostSumAggregate {
+  rating: Float
+  views: Int
+}
+
+input PostWhere {
+  AND: [PostWhere!]
+  NOT: PostWhere
+  OR: [PostWhere!]
+  author: UserRelationFilter
+  createdAt: DateTimeFilter
+  id: IDFilter
+  rating: FloatFilter
+  secret: BooleanFilter
+  status: StatusFilter
+  title: StringFilter
+  views: IntFilter
+}
+
+"""
+At least one unique key (checked when the query runs), plus filters on the other fields.
+"""
+input PostWhereUnique {
+  AND: [PostWhere!]
+  NOT: PostWhere
+  OR: [PostWhere!]
+  author: UserRelationFilter
+  createdAt: DateTimeFilter
+  id: ID
+  rating: FloatFilter
+  secret: BooleanFilter
+  status: StatusFilter
+  title: StringFilter
+  views: IntFilter
+}
+
+type Query {
+  """
+  Aggregates over the matching nodes (with skip / take: over that window).
+  """
+  postAggregate(orderBy: [PostOrderBy!], skip: Int, take: Int, where: PostWhere): PostAggregate
+  postCount(where: PostWhere): Int
+  postFindFirst(orderBy: [PostOrderBy!], skip: Int, where: PostWhere): Post
+  postFindMany(
+    """A cursor (pageInfo.endCursor): the page after it."""
+    after: String
+
+    """A cursor (pageInfo.startCursor): the page before it."""
+    before: String
+    orderBy: [PostOrderBy!]
+    skip: Int
+    take: Int
+    where: PostWhere
+  ): PostList
+  postFindUnique(where: PostWhereUnique!): Post
+
+  """
+  Groups of the matching nodes by the fields in by, with their aggregates.
+  """
+  postGroupBy(by: PostGroupByInput!, having: PostHaving, orderBy: [PostGroupOrderBy!], skip: Int, take: Int, where: PostWhere): [PostGroup!]
+
+  """
+  Aggregates over the matching nodes (with skip / take: over that window).
+  """
+  userAggregate(orderBy: [UserOrderBy!], skip: Int, take: Int, where: UserWhere): UserAggregate
+  userCount(where: UserWhere): Int
+  userFindFirst(orderBy: [UserOrderBy!], skip: Int, where: UserWhere): User
+  userFindMany(
+    """A cursor (pageInfo.endCursor): the page after it."""
+    after: String
+
+    """A cursor (pageInfo.startCursor): the page before it."""
+    before: String
+    orderBy: [UserOrderBy!]
+    skip: Int
+    take: Int
+    where: UserWhere
+  ): UserList
+  userFindUnique(where: UserWhereUnique!): User
+
+  """
+  Groups of the matching nodes by the fields in by, with their aggregates.
+  """
+  userGroupBy(by: UserGroupByInput!, having: UserHaving, orderBy: [UserGroupOrderBy!], skip: Int, take: Int, where: UserWhere): [UserGroup!]
+}
+
+"""`insensitive` compares lower-cased values."""
+enum QueryMode {
+  default
+  insensitive
+}
+
+enum SortOrder {
+  asc
+  desc
+}
+
+enum Status {
+  DRAFT
+  PUBLISHED
+}
+
+input StatusFilter {
+  equals: Status
+  in: [Status!]
+  not: Status
+  notIn: [Status!]
+}
+
+"""
+Aggregates of the field in each group; the other filters need the field in by.
+"""
+input StatusHaving {
+  """The number of non-null values."""
+  _count: IntFilter
+  _max: StatusFilter
+  _min: StatusFilter
+  equals: Status
+  in: [Status!]
+  not: Status
+  notIn: [Status!]
+}
+
+input StringFilter {
+  contains: String
+  endsWith: String
+  equals: String
+  gt: String
+  gte: String
+  in: [String!]
+  lt: String
+  lte: String
+  mode: QueryMode
+  not: String
+  notIn: [String!]
+  startsWith: String
+}
+
+"""
+Aggregates of the field in each group; the other filters need the field in by.
+"""
+input StringHaving {
+  """The number of non-null values."""
+  _count: IntFilter
+  _max: StringFilter
+  _min: StringFilter
+  contains: String
+  endsWith: String
+  equals: String
+  gt: String
+  gte: String
+  in: [String!]
+  lt: String
+  lte: String
+  mode: QueryMode
+  not: String
+  notIn: [String!]
+  startsWith: String
+}
+
+type User {
+  """
+  Number of related nodes per to-many relation (only the selected ones are counted).
+  """
+  _count: UserCount!
+  id: ID!
+  name: String!
+  posts(orderBy: [PostOrderBy!], skip: Int, take: Int, where: PostWhere): [Post!]!
+
+  """Null where a read rule hides it."""
+  salary: Int
+  team: String
+}
+
+type UserAggregate {
+  _avg: UserAvgAggregate!
+  _count: UserCountAggregate!
+  _max: UserMaxAggregate!
+  _min: UserMinAggregate!
+  _sum: UserSumAggregate!
+}
+
+"""Means of the non-null values (null when there are none)."""
+type UserAvgAggregate {
+  salary: Float
+}
+
+type UserCount {
+  posts(where: PostWhere): Int!
+}
+
+"""
+`_all`: the number of nodes; a field: the number of its non-null values.
+"""
+type UserCountAggregate {
+  _all: Int!
+  id: Int!
+  name: Int!
+  salary: Int!
+  team: Int!
+}
+
+input UserCountAggregateOrderBy {
+  _all: SortOrder
+  id: SortOrder
+  name: SortOrder
+  salary: SortOrder
+  team: SortOrder
+}
+
+input UserCountWhere {
+  posts: PostCountFilter
+}
+
+"""
+One group: its keys (only the fields listed in by can be selected) and aggregates.
+"""
+type UserGroup {
+  _avg: UserAvgAggregate!
+  _count: UserCountAggregate!
+  _max: UserMaxAggregate!
+  _min: UserMinAggregate!
+  _sum: UserSumAggregate!
+  id: ID
+  name: String
+  salary: Int
+  team: String
+}
+
+"""The fields to group on: at least one."""
+input UserGroupByInput {
+  """Fields of the model."""
+  fields: [UserGroupField!]
+}
+
+enum UserGroupField {
+  id
+  name
+  salary
+  team
+}
+
+"""Filters on the related node's fields listed in by."""
+input UserGroupKeyFilter {
+  id: IDFilter
+  name: StringFilter
+  salary: IntFilter
+  team: StringFilter
+}
+
+input UserGroupKeyOrderBy {
+  id: SortOrder
+  name: SortOrder
+  salary: SortOrder
+  team: SortOrder
+}
+
+"""Group keys of the related node (only the fields listed in by)."""
+type UserGroupKeys {
+  id: ID
+  name: String
+  salary: Int
+  team: String
+}
+
+"""
+One key per element of the orderBy list: a key listed in by, or an aggregate.
+"""
+input UserGroupOrderBy {
+  _avg: UserNumericAggregateOrderBy
+  _count: UserCountAggregateOrderBy
+  _max: UserMinMaxAggregateOrderBy
+  _min: UserMinMaxAggregateOrderBy
+  _sum: UserNumericAggregateOrderBy
+  id: SortOrder
+  name: SortOrder
+  salary: SortOrder
+  team: SortOrder
+}
+
+input UserHaving {
+  AND: [UserHaving!]
+  NOT: UserHaving
+  OR: [UserHaving!]
+  id: IDHaving
+  name: StringHaving
+  salary: IntHaving
+  team: StringHaving
+}
+
+type UserList {
+  nodes: [User!]!
+  pageInfo: PageInfo!
+
+  """
+  Number of nodes matching where, ignoring paging. Counted only when selected.
+  """
+  totalCount: Int!
+}
+
+"""Largest non-null values."""
+type UserMaxAggregate {
+  id: ID
+  name: String
+  salary: Int
+  team: String
+}
+
+"""Smallest non-null values."""
+type UserMinAggregate {
+  id: ID
+  name: String
+  salary: Int
+  team: String
+}
+
+input UserMinMaxAggregateOrderBy {
+  id: SortOrder
+  name: SortOrder
+  salary: SortOrder
+  team: SortOrder
+}
+
+input UserNumericAggregateOrderBy {
+  salary: SortOrder
+}
+
+"""One key per element of the orderBy list."""
+input UserOrderBy {
+  id: SortOrder
+  name: SortOrder
+
+  """Sort by the number of related nodes."""
+  posts: PostRelationCountOrder
+  salary: SortOrder
+  team: SortOrder
+}
+
+input UserRelationFilter {
+  """The related node matches (null: none)."""
+  is: UserWhere
+  isNot: UserWhere
+}
+
+input UserScalarOrderBy {
+  id: SortOrder
+  name: SortOrder
+  salary: SortOrder
+  team: SortOrder
+}
+
+"""Sums of the non-null values (null when there are none)."""
+type UserSumAggregate {
+  salary: Int
+}
+
+input UserWhere {
+  AND: [UserWhere!]
+  NOT: UserWhere
+  OR: [UserWhere!]
+
+  """Filters on the number of related nodes (only the readable ones)."""
+  _count: UserCountWhere
+  id: IDFilter
+  name: StringFilter
+  posts: PostListRelationFilter
+  salary: IntFilter
+  team: StringFilter
+}
+
+"""
+At least one unique key (checked when the query runs), plus filters on the other fields.
+"""
+input UserWhereUnique {
+  AND: [UserWhere!]
+  NOT: UserWhere
+  OR: [UserWhere!]
+  id: ID
+  name: StringFilter
+  posts: PostListRelationFilter
+  salary: IntFilter
+  team: StringFilter
+}

@@ -1,0 +1,21 @@
+# features: groupBy, auth.rules.read
+# ordered
+# Groups by status, with having on an aggregate and ordering by one; the secret post is not in any group.
+{
+  postGroupBy(
+    by: { fields: [status] }
+    having: { views: { _sum: { gte: 5 } } }
+    orderBy: [{ _sum: { views: desc } }]
+  ) {
+    status
+    _count {
+      _all
+    }
+    _sum {
+      views
+    }
+    _avg {
+      rating
+    }
+  }
+}

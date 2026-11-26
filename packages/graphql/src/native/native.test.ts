@@ -239,6 +239,83 @@ describe("native.printSchema", () => {
   });
 });
 
+describe("aggregates, groupBy and search", () => {
+  it("serves aggregate and groupBy with typed aggregates per field", () => {
+    const sdl = printSchema(blog);
+    valid(sdl);
+    expect(sdl).toContain(
+      "postAggregate(orderBy: [PostOrderBy!], skip: Int, take: Int, where: PostWhere): PostAggregate",
+    );
+    expect(sdl).toContain("postGroupBy(by: PostGroupByInput!, having: PostHaving");
+    // _sum keeps the number type, _avg is a Float, _min / _max the field's type.
+    expect(sdl).toContain("type PostSumAggregate {\n  views: Int\n}");
+    expect(sdl).toContain("type PostAvgAggregate {\n  views: Float\n}");
+    expect(sdl).toMatch(/type PostMinAggregate \{[^}]*createdAt: DateTime[^}]*\}/);
+    expect(sdl).not.toMatch(/type PostMinAggregate \{[^}]*published[^}]*\}/);
+    // by: the model's fields and each to-one relation's.
+    expect(sdl).toContain(
+      'input PostGroupByInput {\n  """Fields of the related User (to-one)."""\n  author: [UserGroupField!]',
+    );
+    expect(sdl).toContain("type UserGroupKeys {");
+    expect(sdl).toContain("input IntHaving {\n  _avg: FloatFilter");
+  });
+
+  it("serves search where a model has a full-text index, findSimilar only with traverse", () => {
+    const sdl = printSchema(blog);
+    expect(sdl).toContain("postSearch(");
+    expect(sdl).toContain("enum PostFulltextIndex {\n  postSearch\n}");
+    expect(sdl).not.toContain("userSearch(");
+    // _score only on the types search results have.
+    expect(sdl).toMatch(/type Post \{[^}]*_score: Float/);
+    expect(sdl).not.toMatch(/type User \{[^}]*_score/);
+
+    const vector = runtimeFixture("vector");
+    expect(printSchema(vector)).not.toContain("FindSimilar(");
+    const on = printSchema(vector, { models: { VecChunk: { operations: { traverse: true } } } });
+    valid(on);
+    expect(on).toContain("vecChunkFindSimilar(");
+    expect(on).toContain("enum VecChunkVectorField {\n  embedding\n  sketch\n}");
+  });
+
+  it("serves union search over the members' indexes, with _scores on the members", () => {
+    const schema = runtimeFixture("unionSearch");
+    const sdl = printSchema(schema, {
+      defaults: { operations: { traverse: ["findSimilar"] } },
+    });
+    valid(sdl);
+    expect(sdl).toContain("usHitSearch(");
+    expect(sdl).toContain("usHitFindSimilar(");
+    expect(sdl).toContain("input UsHitSearchIndexes {");
+    expect(sdl).toMatch(/type UsArticle [^{]*\{[^}]*_scores: \[IndexScore!\]/);
+    expect(sdl).not.toContain("usHitAggregate");
+    expect(sdl).not.toContain("usHitGroupBy");
+  });
+
+  it("turns the new reads off like the others", () => {
+    const sdl = printSchema(blog, {
+      defaults: { operations: { read: ["findMany"] } },
+      naming: { Post: { aggregate: "postStats" } },
+    });
+    expect(sdl).not.toContain("Aggregate(");
+    expect(sdl).not.toContain("postSearch(");
+    expect(sdl).not.toContain("_score");
+    const named = printSchema(blog, { naming: { Post: { aggregate: "postStats" } } });
+    expect(named).toContain("postStats(");
+    expect(() =>
+      printSchema(blog, { models: { Post: { operations: { traverse: ["traverse"] as never } } } }),
+    ).toThrow(NativeSchemaError);
+  });
+
+  it("rejects index names GraphQL cannot serve as enum values", () => {
+    const s = fromSource(`node Doc {
+      id    String @id
+      title String
+      @@fulltext([title], name: "true")
+    }`);
+    expect(() => printSchema(s)).toThrow(/not a valid GraphQL enum value/);
+  });
+});
+
 describe("relay", () => {
   it("adds Node, node(id) and rawId, and keeps inputs on the raw id", () => {
     const sdl = printSchema(blog, { relay: true });

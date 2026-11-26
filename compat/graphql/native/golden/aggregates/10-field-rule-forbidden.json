@@ -1,0 +1,36 @@
+{
+  "data": {
+    "userAggregate": null,
+    "userGroupBy": null,
+    "byTeam": [
+      {
+        "team": "core",
+        "_count": {
+          "_all": 2
+        }
+      },
+      {
+        "team": null,
+        "_count": {
+          "_all": 1
+        }
+      }
+    ]
+  },
+  "errors": [
+    {
+      "message": "User.salary cannot be aggregated by this request.",
+      "path": [
+        "userAggregate"
+      ],
+      "code": "FORBIDDEN"
+    },
+    {
+      "message": "User.salary cannot be used in groupBy by this request.",
+      "path": [
+        "userGroupBy"
+      ],
+      "code": "FORBIDDEN"
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "data": {
+    "postGroupBy": null
+  },
+  "errors": [
+    {
+      "message": "PostGroup.title is selected, but by.fields does not list title; only group keys can be selected.",
+      "path": [
+        "postGroupBy"
+      ],
+      "code": "BAD_USER_INPUT"
+    }
+  ]
+}

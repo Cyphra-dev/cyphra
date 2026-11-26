@@ -1,0 +1,12 @@
+# features: search, auth.rules.read
+# ordered
+# Anonymous: the unpublished article (the best match for "graph") is not a hit.
+{
+  articleSearch(index: articleText, query: "graph", mode: terms) {
+    id
+    title
+    author {
+      name
+    }
+  }
+}

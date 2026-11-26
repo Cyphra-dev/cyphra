@@ -1,0 +1,18 @@
+{
+  "data": {
+    "articleSearch": [
+      {
+        "id": "a3",
+        "title": "Secret graph roadmap"
+      },
+      {
+        "id": "a1",
+        "title": "Graph databases"
+      },
+      {
+        "id": "a2",
+        "title": "Cypher queries"
+      }
+    ]
+  }
+}

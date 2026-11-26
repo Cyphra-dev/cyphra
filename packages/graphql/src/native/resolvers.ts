@@ -22,6 +22,7 @@ import { RequestAuth } from "./auth.js";
 import { badInput, toGraphQLError } from "./errors.js";
 import { names, TYPE, type RootResolver } from "./schema.js";
 import { fromGlobalId, keyValue } from "./relay.js";
+import { aggregate, groupBy, scoredSearch } from "./reads.js";
 import { Translator } from "./translate.js";
 import { WriteArgs } from "./writes.js";
 
@@ -233,6 +234,13 @@ export function rootResolvers(
           }
           case "findMany":
             return await findMany(t, client, model, args);
+          case "aggregate":
+            return await aggregate(t, delegateOf(client, model), model, args);
+          case "groupBy":
+            return await groupBy(api, t, delegateOf(client, model), model, args);
+          case "search":
+          case "findSimilar":
+            return await scoredSearch(t, delegateOf(client, model), model, op, args);
         }
       } catch (err) {
         throw toGraphQLError(err, options.debug, isWrite(op) ? args : undefined);

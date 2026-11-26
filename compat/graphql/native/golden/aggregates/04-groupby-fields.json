@@ -1,0 +1,30 @@
+{
+  "data": {
+    "postGroupBy": [
+      {
+        "status": "PUBLISHED",
+        "_count": {
+          "_all": 2
+        },
+        "_sum": {
+          "views": 40
+        },
+        "_avg": {
+          "rating": 4
+        }
+      },
+      {
+        "status": "DRAFT",
+        "_count": {
+          "_all": 2
+        },
+        "_sum": {
+          "views": 6
+        },
+        "_avg": {
+          "rating": null
+        }
+      }
+    ]
+  }
+}
