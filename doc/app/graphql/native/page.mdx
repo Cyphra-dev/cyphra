@@ -1,7 +1,7 @@
 ---
 title: "Native GraphQL API for Neo4j, generated from schema.cyphra"
 sidebarTitle: Native API
-description: "Serve a GraphQL API generated from schema.cyphra with @cyphra/graphql's native API: typed config, the client's filters and ordering, keyset cursors, edge properties, interfaces and unions, one Cypher statement per root field."
+description: "Serve a GraphQL API generated from schema.cyphra with @cyphra/graphql's native API: typed config, the client's filters and ordering, keyset cursors, edge properties, interfaces and unions, mutations returning records, one Cypher statement per root field."
 ---
 
 import { Callout } from "nextra/components";
@@ -10,14 +10,16 @@ import { Callout } from "nextra/components";
 
 `native.makeSchema` serves a GraphQL API generated from your `schema.cyphra` and run by the
 [typed client](/client): every root field is one client operation (`findMany`, `findUnique`, …),
-compiled to one Cypher statement, so filters, ordering, paging and errors behave the same from
+compiled to one Cypher statement, so filters, ordering, paging, writes and errors behave the same from
 TypeScript and from GraphQL. What the API exposes is configured in TypeScript, typed against the
 generated client.
 
 <Callout type="warning">
   **Experimental** (see the [stability policy](/stability#experimental-features)): the native API
-  may change in a minor release. This release serves **reads**: `findUnique`, `findFirst`,
-  `findMany` and `count`. Writes, authorization rules, aggregates, search and traversals come next
+  may change in a minor release. This release serves **reads** (`findUnique`, `findFirst`,
+  `findMany`, `count`) and **writes** (`create`, `createMany`, `update`, `updateMany`, `upsert`,
+  `delete`, `deleteMany`, off by default). Authorization rules, nested `update` / `delete` /
+  `upsert`, aggregates, search and traversals come next
   ([#77](https://github.com/Cyphra-dev/cyphra/issues/77)). Relay `Node` is opt-in ([below](#relay)).
   To keep the API `@neo4j/graphql` v7 generates, use [`compat.v7`](/graphql); both can be served
   side by side.
@@ -46,7 +48,7 @@ Server or any GraphQL server.
 | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `client` | The client of `cyphra.gen.ts` (possibly `$extends`-ed), or a function of the GraphQL context returning the request's client: `(ctx) => db.$extends(…)`. |
 | `schema` | The schema model. Default: `client.$schema`. Required when `client` is a function.                                                                      |
-| `config` | The API's configuration, from `defineGraphQL` (below). Default: every read operation of every model.                                                    |
+| `config` | The API's configuration, from `defineGraphQL` (below). Default: every read operation of every model, no writes.                                         |
 | `debug`  | Show the message of unexpected errors instead of `Internal server error`.                                                                               |
 
 With a function as `client`, every root field runs through that request's client, so the client's
@@ -69,6 +71,7 @@ export const api = defineGraphQL<CyphraTypeMap>({
     },
     AuditLog: { operations: { read: ["findMany", "count"] } },
     Session: { operations: { read: false } },
+    Post: { operations: { create: true, update: true, delete: ["delete"] } },
   },
   naming: { Person: { findMany: "people" } },
   limits: { maxDepth: 4, maxTake: 100, maxAliases: 20, maxComplexity: 10_000 },
@@ -77,24 +80,29 @@ export const api = defineGraphQL<CyphraTypeMap>({
 
 Every key is typed from `CyphraTypeMap`: `{ pasword: false }` or a model that does not exist is a
 compile error. `makeSchema` checks the config again at startup (for JavaScript, or configs built
-dynamically) and throws a `NativeSchemaError` naming the unknown model, field or option.
+dynamically) and throws a `NativeSchemaError` naming the unknown model, field or option. It
+also refuses a model whose create is on while a required field without a default cannot be set
+(`fields: { passwordHash: false }` with `create: true`), `create` on an interface and writes on a
+union.
 
-| Key                      | Description                                                                                                                                                                                                           |
-| ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `models.<M>.operations`  | `read`: `true`, `false` or a list of `findUnique`, `findFirst`, `findMany`, `count`. Turning an operation off removes its root field. `create` / `update` / `delete` only take `false` (writes are not served yet).   |
-| `models.<M>.fields.<f>`  | `false` hides the field everywhere. `{ read, filter, sort }` toggle reading it, filtering and sorting on it. `{ deprecated: "reason" }` emits `@deprecated`. A toggle on an interface applies to its implementations. |
-| `defaults.operations`    | The default of every model. Reads are on, writes off.                                                                                                                                                                 |
-| `naming.<M>.<operation>` | A root field name replacing `<model><Operation>`. It is part of the printed contract.                                                                                                                                 |
-| `relay`                  | `true` adds Relay's `Node` interface and `node(id)` ([Relay](#relay)). Off by default.                                                                                                                                |
-| `limits`                 | Checked before the statement is built (see [Limits](#limits)).                                                                                                                                                        |
-| `generator`              | The generator version the printed SDL follows. Only `1` today.                                                                                                                                                        |
+| Key                      | Description                                                                                                                                                                                                                                                                                                                                                                                 |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `models.<M>.operations`  | Per group, `true`, `false` or a list of operations: `read` (`findUnique`, `findFirst`, `findMany`, `count`), `create` (`create`, `createMany`, `upsert`), `update` (`update`, `updateMany`, `upsert`), `delete` (`delete`, `deleteMany`). `upsert` is served when both `create` and `update` include it. Turning an operation off removes its root field.                                   |
+| `models.<M>.fields.<f>`  | `false` hides the field everywhere, writes included. `{ read, filter, sort, create, update }` toggle reading it, filtering and sorting on it, and setting it in create / update inputs (for a relation: its nested writes). `{ read: false, create: true }` is a write-only field. `{ deprecated: "reason" }` emits `@deprecated`. A toggle on an interface applies to its implementations. |
+| `defaults.operations`    | The default of every model, per group. Reads are on, writes off.                                                                                                                                                                                                                                                                                                                            |
+| `naming.<M>.<operation>` | A root field name replacing `<model><Operation>` (reads and writes). It is part of the printed contract.                                                                                                                                                                                                                                                                                    |
+| `relay`                  | `true` adds Relay's `Node` interface and `node(id)` ([Relay](#relay)). Off by default.                                                                                                                                                                                                                                                                                                      |
+| `limits`                 | Checked before the statement is built (see [Limits](#limits)).                                                                                                                                                                                                                                                                                                                              |
+| `mutationTransaction`    | `"field"` (default): each mutation root field is its own transaction. `"request"`: every root field of a mutation operation in one transaction (see [Transactions](#transactions)).                                                                                                                                                                                                         |
+| `generator`              | The generator version the printed SDL follows. Only `1` today.                                                                                                                                                                                                                                                                                                                              |
 
 ## Naming
 
 Root fields are `<model><Operation>`: no pluralization, and the fields of a model sort together.
-`node BlogPost` gives `blogPostFindMany`. Types keep the model names; inputs are `<Model>Where`,
-`<Model>WhereUnique`, `<Model>OrderBy`; filters are shared per scalar type (`StringFilter`,
-`IntFilter`, `DateTimeFilter`, …).
+`node BlogPost` gives `blogPostFindMany` and `blogPostCreate`. Types keep the model names; inputs
+are `<Model>Where`, `<Model>WhereUnique`, `<Model>OrderBy`, `<Model>CreateInput`,
+`<Model>UpdateInput`; filters are shared per scalar type (`StringFilter`, `IntFilter`,
+`DateTimeFilter`, …).
 
 GraphQL names cannot contain `$`, so the client's `$` keys become `_` keys:
 
@@ -109,6 +117,7 @@ GraphQL names cannot contain `$`, so the client's `$` keys become `_` keys:
 | `__typename` in `where` / `orderBy`       | `_typename`                                    |
 | `where: { email: "a@x.io" }` (bare value) | `where: { email: { equals: "a@x.io" } }`       |
 | `orderBy: { createdAt: "desc" }`          | `orderBy: [{ createdAt: desc }]`               |
+| `data: { views: { increment: 1 } }`       | `data: { _ops: { views: { increment: 1 } } }`  |
 
 A model field named like one of these (`_edge`, `_count`, `_labels`, `_on`, `_typename`, `_score`,
 `_scores`, `_ops`) is a `makeSchema` error: rename it in `schema.cyphra`.
@@ -296,6 +305,125 @@ query {
 - An interface without fields (`interface Archivable {}`) is served as a union of its
   implementations: GraphQL interfaces need at least one field.
 
+## Mutations
+
+Writes are **off by default**: a model is writable through the API once its config turns them on
+(`operations: { create: true, update: true, delete: true }`, or a list per group). Each operation
+is one root field of `Mutation`, run as one client operation:
+
+```graphql
+type Mutation {
+  postCreate(data: PostCreateInput!): Post
+  postCreateMany(data: [PostCreateManyInput!]!): PostBatch
+  postUpdate(where: PostWhereUnique!, data: PostUpdateInput!): Post
+  postUpdateMany(where: PostWhere, data: PostUpdateManyInput!): PostBatch
+  postUpsert(where: PostWhereUnique!, create: PostCreateInput!, update: PostUpdateInput!): Post
+  postDelete(where: PostWhereUnique!): Post
+  postDeleteMany(where: PostWhere): PostBatch
+}
+
+type PostBatch {
+  count: Int!
+  nodes: [Post!]!
+}
+```
+
+- **Mutations return records**: the created, updated or upserted node, the deleted node as it was.
+  Batch mutations return `count` and, when selected, the affected `nodes` (the deleted ones as they
+  were), read in the same statement with the client's batch [`select`](/client#writing).
+- `createMany` and `updateMany` take scalars only (`<Model>CreateManyInput`,
+  `<Model>UpdateManyInput`), as in the client: nested writes go through `create` / `update`.
+- Mutation root fields are nullable, like queries: a failing one is `null` with its error.
+
+### Nested writes
+
+Relations in `<Model>CreateInput` take `create` and `connect`; in `<Model>UpdateInput` also
+`disconnect` (a list on to-many, `disconnect: true` on to-one) and, on to-many, `set`:
+
+```graphql
+mutation {
+  userUpdate(
+    where: { id: "u1" }
+    data: {
+      name: "Alice"
+      _ops: { loginCount: { increment: 1 } }
+      following: {
+        connect: [{ email: "bob@acme.io", _edge: { since: "2026-11-01T00:00:00Z" } }]
+        disconnect: [{ email: "carol@acme.io" }]
+      }
+      posts: { create: [{ title: "Hello", tags: { connect: [{ name: "graphs" }] } }] }
+    }
+  ) {
+    name
+    following {
+      email
+      _edge {
+        since
+      }
+    }
+  }
+}
+```
+
+- **`connect` is a `MERGE`**: connecting a pair that is already linked keeps one edge and updates
+  the `_edge` properties given (edge defaults are set only when the edge is created). On a to-one
+  relation, `connect` (or `create`) replaces the edge; when the other side is to-one (connecting a
+  post through `user.posts` while `Post.author` is `User?`), the post moves. Numeric `_edge`
+  properties take `_ops` on `connect` / `set`: `_edge: { _ops: { weight: { increment: 1 } } }`.
+- `set` makes the listed nodes the only linked ones (edges to the others are deleted, the listed
+  ones are kept or connected).
+- Inputs are generated per relation side: a nested create omits the back relation
+  (`UserCreateWithoutPostsInput` has no `posts`), and its relation input is named after it
+  (`PostCreateManyWithoutAuthorRelation`). Items of a typed edge take `_edge`; `connect` items are
+  the target's unique key plus `_edge` (`UserConnectFollows`).
+- A model whose `create` is off has **no nested create** either: with `Tag` read-only,
+  `PostCreateInput.tags` has `connect` only. Nested `update`, `delete`, `upsert` and
+  `connectOrCreate` are not served yet.
+- Unions take a member-keyed item (`{ Post: { … } }`); an interface is connected by its unique
+  key, and created through its implementations.
+
+### Scalar updates
+
+A field of `<Model>UpdateInput` takes the new value; `null` removes the property (a required field
+cannot be `null`: `BAD_USER_INPUT`). Numeric operators go in `_ops`, applied in order:
+`_ops: { views: { increment: 1 }, score: { multiply: 2 } }`. Setting a field and an `_ops`
+operator on it is a `BAD_USER_INPUT` error. `@min` / `@max` are checked on the value an operator
+produces.
+
+### Validation
+
+Validation rules (`@length`, `@min`, `@email`, …) and enum values are checked before anything is
+written, as in the client. The error lists every broken rule in `extensions.issues`, with paths in
+GraphQL argument terms:
+
+```json
+{
+  "message": "User.create: 1 value breaks the schema's validation rules: …",
+  "extensions": {
+    "code": "BAD_USER_INPUT",
+    "issues": [
+      {
+        "path": ["data", "posts", "create", 1, "title"],
+        "model": "Post",
+        "field": "title",
+        "rule": "length",
+        "message": "must be at least 3 characters long (got 2)."
+      }
+    ]
+  }
+}
+```
+
+A rule broken by an `_ops` update has `_ops` in its path (`["data", "_ops", "loginCount"]`).
+
+### Transactions
+
+Each mutation root field is its own transaction (by default), and the fields of one operation run
+in order. With `mutationTransaction: "request"`, every root field of a mutation operation runs in
+**one write transaction** (one statement each, in order): they commit together or not at all.
+The first failing field rolls the whole operation back, the remaining fields are not run, and
+every root field is `null` with that field's error (nothing it reported was committed).
+
 ## Scalars
 
 | Cyphra                                           | GraphQL                                                              |
@@ -331,15 +459,16 @@ the statement is built; exceeding one fails the root field with `BAD_USER_INPUT`
 
 Errors carry a stable `extensions.code`, mapped from the client's errors:
 
-| Error                                                              | `extensions.code`       | `extensions`                           |
-| ------------------------------------------------------------------ | ----------------------- | -------------------------------------- |
-| `CyphraValidationError` (bad input, invalid cursor, no unique key) | `BAD_USER_INPUT`        | `issues` when the client lists some    |
-| `_edge` outside its context, two keys in one `orderBy` element     | `BAD_USER_INPUT`        |                                        |
-| a [limit](#limits) exceeded                                        | `BAD_USER_INPUT`        | `limit`                                |
-| `NotFoundError`                                                    | `NOT_FOUND`             |                                        |
-| `RestrictError`                                                    | `RESTRICTED`            | `model`, `relation`, `target`, `count` |
-| `UniqueConstraintError`                                            | `UNIQUE_CONSTRAINT`     | `model`, `fields`, `constraint`        |
-| anything else (driver, bug)                                        | `INTERNAL_SERVER_ERROR` | message masked unless `debug: true`    |
+| Error                                                                    | `extensions.code`       | `extensions`                                                          |
+| ------------------------------------------------------------------------ | ----------------------- | --------------------------------------------------------------------- |
+| `CyphraValidationError` (bad input, invalid cursor, no unique key)       | `BAD_USER_INPUT`        | `issues` (paths in GraphQL argument terms) when the client lists some |
+| `_edge` outside its context, two keys in one `orderBy` element           | `BAD_USER_INPUT`        |                                                                       |
+| a value and an `_ops` operator on one field, `null` for a required field | `BAD_USER_INPUT`        |                                                                       |
+| a [limit](#limits) exceeded                                              | `BAD_USER_INPUT`        | `limit`                                                               |
+| `NotFoundError` (`update` / `delete` / `connect` target missing)         | `NOT_FOUND`             |                                                                       |
+| `RestrictError`                                                          | `RESTRICTED`            | `model`, `relation`, `target`, `count`                                |
+| `UniqueConstraintError` (a duplicate `@id` / `@unique` value)            | `UNIQUE_CONSTRAINT`     | `model`, `fields`, `constraint` (never the value)                     |
+| anything else (driver, bug)                                              | `INTERNAL_SERVER_ERROR` | message masked unless `debug: true`                                   |
 
 ## Relay
 
@@ -396,7 +525,8 @@ applied, variables substituted) are translated into one client operation, which 
 Cypher statement (`COLLECT {}` / `COUNT {}` subqueries for relations, `CASE WHEN n:Label` for
 fragments). Nested fields do no I/O: a query runs as many statements as it has root fields,
 whatever its depth. A `findMany` that selects `totalCount` with its nodes runs the page and the
-count in one read transaction.
+count in one read transaction. A mutation root field (nested writes and the returned record
+included) is one write statement too.
 
 ## Side by side with compat.v7
 

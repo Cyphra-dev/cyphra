@@ -1,0 +1,19 @@
+# features: mutationTransaction request
+# ordered
+mutation {
+  created: postCreate(
+    data: { id: "p-new", title: "New", author: { connect: { email: "bob@acme.io" } } }
+  ) {
+    title
+  }
+  updated: postUpdate(where: { id: "p-new" }, data: { _ops: { views: { increment: 5 } } }) {
+    title
+    views
+    author {
+      email
+    }
+  }
+  count: postDeleteMany(where: { author: { is: { email: { equals: "alice@acme.io" } } } }) {
+    count
+  }
+}

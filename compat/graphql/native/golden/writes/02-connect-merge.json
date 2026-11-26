@@ -1,0 +1,34 @@
+{
+  "data": {
+    "first": {
+      "following": [
+        {
+          "email": "carol@acme.io",
+          "_edge": {
+            "since": "2024-01-01T00:00:00.000Z",
+            "weight": 3
+          }
+        }
+      ]
+    },
+    "again": {
+      "_count": {
+        "following": 2
+      },
+      "following": [
+        {
+          "email": "bob@acme.io",
+          "_edge": {
+            "weight": 0
+          }
+        },
+        {
+          "email": "carol@acme.io",
+          "_edge": {
+            "weight": 3
+          }
+        }
+      ]
+    }
+  }
+}

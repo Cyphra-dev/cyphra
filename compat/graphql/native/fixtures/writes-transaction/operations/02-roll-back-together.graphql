@@ -1,0 +1,17 @@
+# features: mutationTransaction request, rollback
+# The third field fails: the whole operation rolls back (the post is not created, Alice is not
+# renamed) and every root field reports the error.
+mutation {
+  created: postCreate(data: { id: "p-new", title: "New" }) {
+    title
+  }
+  renamed: userUpdate(where: { email: "alice@acme.io" }, data: { name: "Al" }) {
+    name
+  }
+  failing: postDelete(where: { id: "p-none" }) {
+    title
+  }
+  notRun: postCreate(data: { id: "p-other", title: "Other" }) {
+    title
+  }
+}

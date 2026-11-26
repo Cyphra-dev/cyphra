@@ -13,7 +13,13 @@ import type {
   ResolvedScalarField,
   SchemaModel,
 } from "@cyphra/schema";
-import { NativeSchemaError, type ResolvedConfig } from "./config.js";
+import {
+  CREATE_OPERATIONS,
+  NativeSchemaError,
+  WRITE_OPERATIONS,
+  type ResolvedConfig,
+  type RootOperation,
+} from "./config.js";
 
 /** Field names the API uses for its own fields and inputs (`$edge` → `_edge`, …). */
 export const RESERVED_FIELDS = [
@@ -87,6 +93,58 @@ export class ApiModel {
       if (this.relayKey(n) && n.fields.some((f) => f.name === RAW_ID)) {
         throw new NativeSchemaError(
           `${n.name}.${RAW_ID}: with relay, a model's id field is returned as "${RAW_ID}"; rename this field in schema.cyphra.`,
+        );
+      }
+    }
+    this.checkCreatable();
+  }
+
+  /** Whether `op` is a root field of `model`. */
+  has(model: ResolvedNodeModel, op: RootOperation): boolean {
+    return this.config.operations.get(model.name)?.has(op) ?? false;
+  }
+
+  /** Whether the API creates nodes of `model` (its `create` operation, also used by nested creates). */
+  creatable(model: ResolvedNodeModel): boolean {
+    return !model.abstract && this.has(model, "create");
+  }
+
+  /** Whether any write operation of `model` is on. */
+  writable(model: ResolvedNodeModel): boolean {
+    return WRITE_OPERATIONS.some((op) => this.has(model, op));
+  }
+
+  /** The fields of `model` a create (or an update) may set, in declaration order. */
+  writeFields(model: ResolvedNodeModel, mode: "create" | "update"): ResolvedField[] {
+    if (model.union) return [];
+    return model.fields.filter((f) => this.config.field(model.name, f.name)[mode]);
+  }
+
+  /**
+   * The relation field on the target side of `f` (same type, opposite direction), the one a
+   * nested create through `f` must not set: `Post.author` for `User.posts`.
+   */
+  inverse(owner: ResolvedNodeModel, f: ResolvedRelationField): ResolvedRelationField | undefined {
+    const target = this.node(f.target);
+    if (target.union) return undefined;
+    return target.fields.find(
+      (x): x is ResolvedRelationField =>
+        x.kind === "relation" &&
+        x.relType === f.relType &&
+        x.direction !== f.direction &&
+        (x.target === owner.name || (owner.interfaces ?? []).includes(x.target)),
+    );
+  }
+
+  /** A model that creates nodes must let every required field without a default be set. */
+  private checkCreatable(): void {
+    for (const n of this.schema.nodes) {
+      if (n.abstract || !CREATE_OPERATIONS.some((op) => this.has(n, op))) continue;
+      for (const f of n.fields) {
+        if (f.kind !== "scalar" || f.optional || f.list || f.default) continue;
+        if (this.config.field(n.name, f.name).create) continue;
+        throw new NativeSchemaError(
+          `${n.name}.${f.name} is required, has no default and cannot be set by create (config.models.${n.name}.fields.${f.name}); turn create off for ${n.name} or let the field be created.`,
         );
       }
     }

@@ -1,20 +1,28 @@
 /**
  * Resolvers of the native API's root fields: each one translates the field into one client
- * operation (`findUnique`, `findFirst`, `findMany`, `count`) on the request's client, runs it in
- * one transaction and shapes the result. Nested fields do no I/O.
+ * operation (`findMany`, `create`, `updateMany`, …) on the request's client, runs it in one
+ * transaction (with `mutationTransaction: "request"`, every mutation root field of the operation
+ * in one transaction) and shapes the result. Nested fields do no I/O.
  *
  * @packageDocumentation
  */
 
-import type { GraphQLFieldResolver } from "graphql";
+import {
+  getArgumentValues,
+  type GraphQLError,
+  type GraphQLFieldResolver,
+  type GraphQLObjectType,
+  type GraphQLResolveInfo,
+} from "graphql";
 import { withReadTransaction } from "@cyphra/runtime";
 import type { ResolvedNodeModel } from "@cyphra/schema";
 import type { ApiModel } from "./api.js";
-import type { ReadOperation } from "./config.js";
+import { isWrite, type RootOperation, type WriteOperation } from "./config.js";
 import { badInput, toGraphQLError } from "./errors.js";
 import { names, TYPE, type RootResolver } from "./schema.js";
 import { fromGlobalId, keyValue } from "./relay.js";
 import { Translator } from "./translate.js";
+import { WriteArgs } from "./writes.js";
 
 type AnyRecord = Record<string, unknown>;
 type Delegate = Record<string, (args: AnyRecord) => Promise<unknown>>;
@@ -32,6 +40,11 @@ function delegateOf(client: object, model: ResolvedNodeModel): Delegate {
   return d as Delegate;
 }
 
+/** A translated write: run it on a client (or a transaction client) to get the field's value. */
+type WritePlan = { readonly run: (db: object) => Promise<unknown> };
+
+type Outcome = { readonly ok: true; readonly value: unknown } | { ok: false; error: GraphQLError };
+
 /** The resolvers of the root fields, for {@link SchemaBuilder}. */
 export function rootResolvers(
   api: ApiModel,
@@ -42,16 +55,105 @@ export function rootResolvers(
       ? await (options.client as (c: unknown) => object | Promise<object>)(ctx)
       : options.client;
 
-  return (model: ResolvedNodeModel, op: ReadOperation): GraphQLFieldResolver<unknown, unknown> =>
-    async (_src, rawArgs, ctx, info) => {
+  // Mutation root fields by name, for `mutationTransaction: "request"`.
+  const writes = new Map<string, { model: ResolvedNodeModel; op: WriteOperation }>();
+  for (const [model, ops] of api.config.operations) {
+    for (const [op, name] of ops) {
+      if (isWrite(op)) writes.set(name, { model: api.node(model), op });
+    }
+  }
+  // One run per execution of a mutation operation (`variableValues` is a new object per
+  // execution, also when a server reuses the parsed document).
+  const requests = new WeakMap<object, Promise<Map<string, Outcome>>>();
+
+  /** Run every mutation root field of the operation in one write transaction. */
+  const runRequest = async (info: GraphQLResolveInfo, ctx: unknown) => {
+    const mutationType = info.parentType as GraphQLObjectType;
+    const fields = new Translator(api, info, api.config.limits).collect(
+      [info.operation.selectionSet],
+      mutationType.name,
+    );
+    const plans: [string, WritePlan, AnyRecord][] = [];
+    const outcomes = new Map<string, Outcome>();
+    const failAll = (error: GraphQLError) => {
+      for (const key of fields.keys()) outcomes.set(key, { ok: false, error });
+      return outcomes;
+    };
+    for (const [key, nodes] of fields) {
+      const fieldName = nodes[0]!.name.value;
+      if (fieldName === "__typename") {
+        outcomes.set(key, { ok: true, value: mutationType.name });
+        continue;
+      }
+      const target = writes.get(fieldName);
+      const def = mutationType.getFields()[fieldName];
+      if (!target || !def) continue;
+      let args: AnyRecord = {};
       try {
-        const args = rawArgs as AnyRecord;
+        args = getArgumentValues(def, nodes[0]!, info.variableValues);
+        const fieldInfo: GraphQLResolveInfo = {
+          ...info,
+          fieldName,
+          fieldNodes: nodes,
+          returnType: def.type,
+          path: { prev: undefined, key, typename: mutationType.name },
+        };
+        plans.push([key, planWrite(api, target.model, target.op, args, fieldInfo), args]);
+      } catch (err) {
+        // Nothing runs when one field cannot be translated: they commit together or not at all.
+        return failAll(toGraphQLError(err, options.debug, args));
+      }
+    }
+    let failed: GraphQLError | undefined;
+    try {
+      const client = (await clientFor(ctx)) as {
+        $transaction?: (fn: (tx: object) => Promise<unknown>) => Promise<unknown>;
+      };
+      if (typeof client.$transaction !== "function") {
+        throw new Error('mutationTransaction: "request" needs a client with $transaction.');
+      }
+      await client.$transaction(async (tx) => {
+        for (const [key, plan, args] of plans) {
+          try {
+            outcomes.set(key, { ok: true, value: await plan.run(tx) });
+          } catch (err) {
+            failed = toGraphQLError(err, options.debug, args);
+            throw err;
+          }
+        }
+      });
+    } catch (err) {
+      // Rolled back: no field's write happened, so every field reports the error.
+      return failAll(failed ?? toGraphQLError(err, options.debug));
+    }
+    return outcomes;
+  };
+
+  return (model: ResolvedNodeModel, op: RootOperation): GraphQLFieldResolver<unknown, unknown> =>
+    async (_src, rawArgs, ctx, info) => {
+      const args = rawArgs as AnyRecord;
+      if (isWrite(op) && api.config.mutationTransaction === "request") {
+        let run = requests.get(info.variableValues);
+        if (!run) {
+          run = runRequest(info, ctx);
+          requests.set(info.variableValues, run);
+        }
+        const outcome = (await run).get(String(info.path.key));
+        if (!outcome) throw toGraphQLError(new Error("mutation field not run"), options.debug);
+        if (!outcome.ok) throw outcome.error;
+        return outcome.value;
+      }
+      try {
+        if (isWrite(op)) {
+          const plan = planWrite(api, model, op, args, info);
+          return await plan.run(await clientFor(ctx));
+        }
         const t = new Translator(api, info, api.config.limits);
         const client = await clientFor(ctx);
         switch (op) {
           case "count": {
             t.checkAliases();
-            return await delegateOf(client, model).count({ where: t.where(model, args.where) });
+            return await delegateOf(client, model).count!({ where: t.where(model, args.where) });
           }
           case "findUnique":
           case "findFirst": {
@@ -76,7 +178,7 @@ export function rootResolvers(
             return await findMany(t, client, model, args);
         }
       } catch (err) {
-        throw toGraphQLError(err, options.debug);
+        throw toGraphQLError(err, options.debug, isWrite(op) ? args : undefined);
       }
     };
 }
@@ -94,7 +196,10 @@ export function nodeResolver(
       const model = api.nodes.get(decoded.type);
       const keyField = model && !model.abstract ? api.relayKey(model) : undefined;
       // Unknown types, and models whose reads are all off, have no nodes.
-      if (!model || !keyField || (api.config.operations.get(model.name)?.size ?? 0) === 0) {
+      const reads = [...(api.config.operations.get(model?.name ?? "")?.keys() ?? [])].filter(
+        (op) => !isWrite(op),
+      );
+      if (!model || !keyField || reads.length === 0) {
         return null;
       }
       const key = keyValue(keyField, decoded.key);
@@ -115,6 +220,95 @@ export function nodeResolver(
     } catch (err) {
       throw toGraphQLError(err, options.debug);
     }
+  };
+}
+
+/**
+ * Translate a mutation root field (arguments and selection) into one client write, checking
+ * limits and inputs before anything runs.
+ */
+function planWrite(
+  api: ApiModel,
+  model: ResolvedNodeModel,
+  op: WriteOperation,
+  args: AnyRecord,
+  info: GraphQLResolveInfo,
+): WritePlan {
+  const t = new Translator(api, info, api.config.limits);
+  const w = new WriteArgs(api, t);
+  if (op === "createMany" || op === "updateMany" || op === "deleteMany") {
+    const batchType = names.batch(model.name);
+    const fields = t.collect(t.rootSelections(), batchType);
+    const keysOf = (name: string) =>
+      [...fields].filter(([, nodes]) => nodes[0]!.name.value === name).map(([k]) => k);
+    const nodesKeys = keysOf("nodes");
+    if (nodesKeys.length > 1) {
+      throw badInput(
+        `${batchType}.nodes is selected under ${nodesKeys.length} aliases; select it once.`,
+      );
+    }
+    const nodesKey = nodesKeys[0];
+    const countKeys = keysOf("count");
+    const data = op === "createMany" ? (Array.isArray(args.data) ? args.data : []) : undefined;
+    const tr = nodesKey
+      ? t.node(
+          model,
+          fields.get(nodesKey)!.flatMap((n) => (n.selectionSet ? [n.selectionSet] : [])),
+          undefined,
+          0,
+          1,
+        )
+      : undefined;
+    t.checkAliases();
+    if (tr) t.checkComplexity(data?.length ?? 1, (data?.length ?? 1) * tr.cost);
+    const clientArgs: AnyRecord =
+      op === "createMany"
+        ? { data: data!.map((d, i) => w.create(model, d, `data[${i}]`)) }
+        : op === "updateMany"
+          ? { where: t.where(model, args.where), data: w.update(model, args.data) }
+          : { where: t.where(model, args.where) };
+    if (tr) clientArgs.select = tr.select;
+    return {
+      run: async (db) => {
+        const res = (await delegateOf(db, model)[op]!(clientArgs)) as {
+          count: number;
+          nodes?: AnyRecord[];
+        };
+        const out: Record<string | symbol, unknown> = { [TYPE]: batchType };
+        for (const k of countKeys) out[k] = res.count;
+        if (nodesKey && tr) out[nodesKey] = (res.nodes ?? []).map((r) => tr.shape(r));
+        return out;
+      },
+    };
+  }
+  const tr = t.node(model, t.rootSelections(), undefined, 0, 1);
+  t.checkAliases();
+  t.checkComplexity(1, tr.cost);
+  let clientArgs: AnyRecord;
+  switch (op) {
+    case "create":
+      clientArgs = { data: w.create(model, args.data) };
+      break;
+    case "update":
+      clientArgs = { where: t.whereUnique(model, args.where), data: w.update(model, args.data) };
+      break;
+    case "upsert":
+      clientArgs = {
+        where: t.whereUnique(model, args.where),
+        create: w.create(model, args.create, "create"),
+        update: w.update(model, args.update, "update"),
+      };
+      break;
+    case "delete":
+      clientArgs = { where: t.whereUnique(model, args.where) };
+      break;
+  }
+  clientArgs.select = tr.select;
+  return {
+    run: async (db) => {
+      const row = (await delegateOf(db, model)[op]!(clientArgs)) as AnyRecord;
+      return tr.shape(row);
+    },
   };
 }
 

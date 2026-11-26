@@ -1,0 +1,46 @@
+{
+  "data": {
+    "userCreate": {
+      "email": "dan@acme.io",
+      "name": "Dan",
+      "loginCount": 0,
+      "role": "MEMBER",
+      "posts": [
+        {
+          "title": "Again",
+          "views": 0,
+          "published": true,
+          "tags": [],
+          "author": {
+            "email": "dan@acme.io"
+          }
+        },
+        {
+          "title": "Hello",
+          "views": 0,
+          "published": false,
+          "tags": [
+            {
+              "name": "api"
+            },
+            {
+              "name": "db"
+            }
+          ],
+          "author": {
+            "email": "dan@acme.io"
+          }
+        }
+      ],
+      "following": [
+        {
+          "email": "alice@acme.io",
+          "_edge": {
+            "since": "<generated-datetime>",
+            "weight": 2
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,128 @@
+{
+  "data": {
+    "rules": null,
+    "opsRule": null,
+    "edgeRule": null,
+    "valueAndOps": null,
+    "requiredNull": null,
+    "duplicate": null,
+    "notFound": null,
+    "connectMissing": null,
+    "ok": {
+      "views": 11
+    }
+  },
+  "errors": [
+    {
+      "message": "connect: no Tag matches {\"name\":\"none\"}.",
+      "path": [
+        "connectMissing"
+      ],
+      "code": "NOT_FOUND"
+    },
+    {
+      "message": "Unique constraint violated on User (email).",
+      "path": [
+        "duplicate"
+      ],
+      "code": "UNIQUE_CONSTRAINT"
+    },
+    {
+      "message": "Follows.update: 1 value breaks the schema's validation rules:\n  - data.following.connect[0].$edge.weight (Follows.weight): must be at least 0 (the update would make it smaller).",
+      "path": [
+        "edgeRule"
+      ],
+      "code": "BAD_USER_INPUT",
+      "issues": [
+        {
+          "path": [
+            "data",
+            "following",
+            "connect",
+            0,
+            "_edge",
+            "_ops",
+            "weight"
+          ],
+          "model": "Follows",
+          "field": "weight",
+          "rule": "min",
+          "message": "must be at least 0 (the update would make it smaller)."
+        }
+      ]
+    },
+    {
+      "message": "update: no Post matches {\"id\":\"p-none\"}.",
+      "path": [
+        "notFound"
+      ],
+      "code": "NOT_FOUND"
+    },
+    {
+      "message": "User.update: 1 value breaks the schema's validation rules:\n  - data.loginCount (User.loginCount): must be at least 0 (the update would make it smaller).",
+      "path": [
+        "opsRule"
+      ],
+      "code": "BAD_USER_INPUT",
+      "issues": [
+        {
+          "path": [
+            "data",
+            "_ops",
+            "loginCount"
+          ],
+          "model": "User",
+          "field": "loginCount",
+          "rule": "min",
+          "message": "must be at least 0 (the update would make it smaller)."
+        }
+      ]
+    },
+    {
+      "message": "data.title: Post.title is required and cannot be null.",
+      "path": [
+        "requiredNull"
+      ],
+      "code": "BAD_USER_INPUT"
+    },
+    {
+      "message": "User.create: 2 values break the schema's validation rules:\n  - data.name (User.name): must be at least 2 characters long (got 1).\n  - data.posts.create[1].title (Post.title): must be at least 3 characters long (got 2).",
+      "path": [
+        "rules"
+      ],
+      "code": "BAD_USER_INPUT",
+      "issues": [
+        {
+          "path": [
+            "data",
+            "name"
+          ],
+          "model": "User",
+          "field": "name",
+          "rule": "length",
+          "message": "must be at least 2 characters long (got 1)."
+        },
+        {
+          "path": [
+            "data",
+            "posts",
+            "create",
+            1,
+            "title"
+          ],
+          "model": "Post",
+          "field": "title",
+          "rule": "length",
+          "message": "must be at least 3 characters long (got 2)."
+        }
+      ]
+    },
+    {
+      "message": "data._ops: Post.views is given a value and an _ops update; use one of them.",
+      "path": [
+        "valueAndOps"
+      ],
+      "code": "BAD_USER_INPUT"
+    }
+  ]
+}

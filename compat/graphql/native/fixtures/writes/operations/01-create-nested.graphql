@@ -1,0 +1,41 @@
+# features: create, nested create, connect, _edge
+# ordered
+mutation {
+  userCreate(
+    data: {
+      email: "dan@acme.io"
+      name: "Dan"
+      passwordHash: "hash"
+      posts: {
+        create: [
+          { title: "Hello", tags: { connect: [{ name: "db" }, { name: "api" }] } }
+          { title: "Again", published: true }
+        ]
+      }
+      following: { connect: [{ email: "alice@acme.io", _edge: { weight: 2 } }] }
+    }
+  ) {
+    email
+    name
+    loginCount
+    role
+    posts(orderBy: [{ title: asc }]) {
+      title
+      views
+      published
+      tags(orderBy: [{ name: asc }]) {
+        name
+      }
+      author {
+        email
+      }
+    }
+    following {
+      email
+      _edge {
+        since
+        weight
+      }
+    }
+  }
+}

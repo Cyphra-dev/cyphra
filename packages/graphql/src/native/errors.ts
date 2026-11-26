@@ -9,6 +9,46 @@ import { GraphQLError } from "graphql";
 
 type AnyRecord = Record<string, unknown>;
 
+function isPlainObject(v: unknown): v is AnyRecord {
+  return typeof v === "object" && v !== null && !Array.isArray(v);
+}
+
+/**
+ * The GraphQL argument path of a client issue path, walking the GraphQL arguments `args`:
+ * `$edge` → `_edge`, `$labels` → `_labels`, and `_ops` inserted before a field the update set
+ * through `_ops`.
+ */
+export function graphQLPath(
+  path: readonly (string | number)[],
+  args: unknown,
+): (string | number)[] {
+  const out: (string | number)[] = [];
+  let cur: unknown = args;
+  for (const raw of path) {
+    const seg = raw === "$edge" ? "_edge" : raw === "$labels" ? "_labels" : raw;
+    if (
+      typeof seg === "string" &&
+      isPlainObject(cur) &&
+      cur[seg] === undefined &&
+      isPlainObject(cur._ops) &&
+      cur._ops[seg] !== undefined
+    ) {
+      out.push("_ops");
+      cur = cur._ops;
+    }
+    out.push(seg);
+    cur =
+      typeof seg === "number"
+        ? Array.isArray(cur)
+          ? cur[seg]
+          : undefined
+        : isPlainObject(cur)
+          ? cur[seg]
+          : undefined;
+  }
+  return out;
+}
+
 /** A `BAD_USER_INPUT` error raised by the API itself (before any statement runs). */
 export function badInput(message: string, extensions: AnyRecord = {}): GraphQLError {
   return new GraphQLError(message, { extensions: { code: "BAD_USER_INPUT", ...extensions } });
@@ -26,16 +66,20 @@ function errorName(err: unknown): string | undefined {
 
 /**
  * The GraphQL error of an error thrown while resolving a root field. Client errors get their
- * code; anything else is `INTERNAL_SERVER_ERROR`, with the message masked unless `debug`.
+ * code; anything else is `INTERNAL_SERVER_ERROR`, with the message masked unless `debug`. `args`
+ * (the root field's GraphQL arguments) turn validation issue paths into GraphQL argument paths.
  */
-export function toGraphQLError(err: unknown, debug: boolean): GraphQLError {
+export function toGraphQLError(err: unknown, debug: boolean, args?: unknown): GraphQLError {
   if (err instanceof GraphQLError) return err;
   const e = err as AnyRecord & Error;
   switch (errorName(err)) {
     case "CyphraValidationError":
       return badInput(e.message, {
         issues: ((e.issues as AnyRecord[] | undefined) ?? []).map((i) => ({
-          path: i.path,
+          path:
+            args !== undefined && Array.isArray(i.path)
+              ? graphQLPath(i.path as (string | number)[], args)
+              : i.path,
           model: i.model,
           field: i.field,
           rule: i.rule,

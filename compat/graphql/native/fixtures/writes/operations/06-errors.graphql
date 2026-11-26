@@ -1,0 +1,54 @@
+# features: errors, validation issues, unique constraint
+# Each root field is its own transaction: the failing ones write nothing, ok still runs.
+mutation {
+  rules: userCreate(
+    data: {
+      email: "x@acme.io"
+      name: "X"
+      passwordHash: "h"
+      posts: { create: [{ title: "Fine" }, { title: "No" }] }
+    }
+  ) {
+    email
+  }
+  opsRule: userUpdate(
+    where: { email: "bob@acme.io" }
+    data: { _ops: { loginCount: { decrement: 1 } } }
+  ) {
+    loginCount
+  }
+  edgeRule: userUpdate(
+    where: { email: "carol@acme.io" }
+    data: {
+      following: {
+        connect: [{ email: "alice@acme.io", _edge: { _ops: { weight: { decrement: 5 } } } }]
+      }
+    }
+  ) {
+    email
+  }
+  valueAndOps: postUpdate(
+    where: { id: "p-graphs" }
+    data: { views: 1, _ops: { views: { increment: 1 } } }
+  ) {
+    views
+  }
+  requiredNull: postUpdate(where: { id: "p-graphs" }, data: { title: null }) {
+    title
+  }
+  duplicate: userCreate(data: { email: "bob@acme.io" }) {
+    email
+  }
+  notFound: postUpdate(where: { id: "p-none" }, data: { views: 1 }) {
+    title
+  }
+  connectMissing: postUpdate(
+    where: { id: "p-graphs" }
+    data: { tags: { connect: [{ name: "none" }] } }
+  ) {
+    title
+  }
+  ok: postUpdate(where: { id: "p-graphs" }, data: { views: 11 }) {
+    views
+  }
+}

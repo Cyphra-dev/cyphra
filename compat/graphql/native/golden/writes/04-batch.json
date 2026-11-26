@@ -1,0 +1,45 @@
+{
+  "data": {
+    "created": {
+      "count": 2,
+      "nodes": [
+        {
+          "title": "Alpha",
+          "views": 7,
+          "published": false
+        },
+        {
+          "title": "Zeta",
+          "views": 0,
+          "published": false
+        }
+      ]
+    },
+    "updated": {
+      "count": 3
+    },
+    "deleted": {
+      "removed": 2,
+      "nodes": [
+        {
+          "title": "Alpha",
+          "views": 8,
+          "tags": [],
+          "author": null
+        },
+        {
+          "title": "Graphs",
+          "views": 10,
+          "tags": [
+            {
+              "name": "db"
+            }
+          ],
+          "author": {
+            "email": "alice@acme.io"
+          }
+        }
+      ]
+    }
+  }
+}

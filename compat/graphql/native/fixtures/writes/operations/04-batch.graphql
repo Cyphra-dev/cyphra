@@ -1,0 +1,30 @@
+# features: createMany, updateMany, deleteMany, batch nodes
+mutation {
+  created: postCreateMany(data: [{ title: "Zeta" }, { title: "Alpha", views: 7 }]) {
+    count
+    nodes {
+      title
+      views
+      published
+    }
+  }
+  updated: postUpdateMany(
+    where: { published: { equals: false } }
+    data: { published: true, _ops: { views: { increment: 1 } } }
+  ) {
+    count
+  }
+  deleted: postDeleteMany(where: { views: { gte: 8 } }) {
+    removed: count
+    nodes {
+      title
+      views
+      tags {
+        name
+      }
+      author {
+        email
+      }
+    }
+  }
+}

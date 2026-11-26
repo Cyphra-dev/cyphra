@@ -673,13 +673,13 @@ query {
 
 ```graphql
 type Mutation {
-  postCreate(data: PostCreateInput!): Post!
-  postCreateMany(data: [PostCreateInput!]!): PostBatch!
-  postUpdate(where: PostWhereUnique!, data: PostUpdateInput!): Post!
-  postUpdateMany(where: PostWhere, data: PostUpdateInput!): PostBatch!
-  postUpsert(where: PostWhereUnique!, create: PostCreateInput!, update: PostUpdateInput!): Post!
-  postDelete(where: PostWhereUnique!): Post!
-  postDeleteMany(where: PostWhere): PostBatch!
+  postCreate(data: PostCreateInput!): Post
+  postCreateMany(data: [PostCreateManyInput!]!): PostBatch
+  postUpdate(where: PostWhereUnique!, data: PostUpdateInput!): Post
+  postUpdateMany(where: PostWhere, data: PostUpdateManyInput!): PostBatch
+  postUpsert(where: PostWhereUnique!, create: PostCreateInput!, update: PostUpdateInput!): Post
+  postDelete(where: PostWhereUnique!): Post
+  postDeleteMany(where: PostWhere): PostBatch
   …
 }
 
@@ -692,9 +692,11 @@ type PostBatch {
 
 **Mutations return records.** Single-record mutations return the record (the deleted one for
 `delete`, as the client does). Batch mutations return `count` and, when selected, the affected
-records, read in the same statement. The client's `createMany` / `updateMany` / `deleteMany`
-return `{ count }` today, so this needs a `select` on batch operations in the client first
-([Runtime prerequisites](#runtime-prerequisites)); until then `PostBatch` has `count` only.
+records, read in the same statement (the client's `select` on `createMany` / `updateMany` /
+`deleteMany`, [Runtime prerequisites](#runtime-prerequisites)). As implemented (#243): root fields
+are nullable like the query ones (a failing field is `null` with its error, the others keep their
+results), and `createMany` / `updateMany` take scalar-only inputs (`PostCreateManyInput`,
+`PostUpdateManyInput`), since the client's batch operations take no relation writes.
 
 **Nested writes** follow the client's relation operations:
 
@@ -705,16 +707,16 @@ input PostCreateInput {
   body: String!
   published: Boolean
   views: Int
-  author: UserCreateOneRelation
-  tags: TagCreateManyRelation
+  author: UserCreateOneWithoutPostsRelation
+  tags: TagCreateManyWithoutPostsRelation
 }
 
-input TagCreateManyRelation {
+input TagCreateManyWithoutPostsRelation {
   create: [TagCreateWithoutPostsInput!]
-  connect: [TagConnect!]
+  connect: [TagWhereUnique!]
 }
 
-input UserUpdateManyFollowsRelation {
+input UserUpdateManyWithoutFollowersRelation {
   create: [UserCreateWithoutFollowersInput!]
   connect: [UserConnectFollows!]
   disconnect: [UserWhereUnique!]
@@ -764,8 +766,11 @@ mutation {
   properties take `{ increment, decrement, multiply }` on `connect` / `set`, as in the client.
 - `set`, `disconnect` (a list on to-many, `disconnect: true` on to-one) and nested `create` mean
   what they mean in the client. Inputs are generated per relation side (`TagCreateWithoutPostsInput`
-  omits the back relation) only for operations that are enabled, so a read-only model generates no
-  input types at all.
+  omits the back relation; the relation input is named after it,
+  `<Target><Create|Update><One|Many>Without<Inverse>Relation`, or `Via<Edge>` when there is no
+  back relation but a typed edge) only for operations that are enabled, so a read-only model
+  generates no input types at all. `connect` items are the target's `WhereUnique`, or
+  `<Target>Connect<Edge>` (the unique key plus `_edge`) on a typed edge.
 - **Scalar updates.** A field in `PostUpdateInput` takes the new value, `null` removes the property
   (GraphQL distinguishes `null` from an absent key, and so does the client). Numeric operators go in
   `_ops` (`{ increment, decrement, multiply }`, Hasura's `_inc` idea), because GraphQL cannot accept

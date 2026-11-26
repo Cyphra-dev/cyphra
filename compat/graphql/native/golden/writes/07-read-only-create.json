@@ -1,0 +1,10 @@
+{
+  "errors": [
+    {
+      "message": "Cannot query field \"tagCreate\" on type \"Mutation\". Did you mean \"postCreate\" or \"userCreate\"?"
+    },
+    {
+      "message": "Field \"create\" is not defined by type \"TagCreateManyWithoutPostsRelation\"."
+    }
+  ]
+}

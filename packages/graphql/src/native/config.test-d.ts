@@ -36,6 +36,21 @@ describe("defineGraphQL", () => {
     });
   });
 
+  it("accepts write operations, write field toggles and mutationTransaction", () => {
+    defineGraphQL<TM>({
+      models: {
+        User: {
+          operations: { create: true, update: ["update"], delete: false },
+          fields: { passwordHash: { read: false, create: true, update: false } },
+        },
+        Post: { operations: { create: ["create", "createMany"], delete: ["deleteMany"] } },
+      },
+      defaults: { operations: { update: true } },
+      naming: { Post: { createMany: "postsCreate", upsert: "postSave" } },
+      mutationTransaction: "request",
+    });
+  });
+
   it("is accepted by makeSchema, whatever the type map and context", () => {
     const api = defineGraphQL<TM, { user?: { id: string } }>({
       models: { User: { fields: { passwordHash: false } } },
@@ -59,8 +74,12 @@ describe("defineGraphQL", () => {
       models: { User: { operations: { read: ["findAll"] } } },
     });
     defineGraphQL<TM>({
-      // @ts-expect-error writes are not served yet
-      models: { User: { operations: { create: true } } },
+      // @ts-expect-error not an operation of the create group
+      models: { User: { operations: { create: ["update"] } } },
+    });
+    defineGraphQL<TM>({
+      // @ts-expect-error unknown mutationTransaction
+      mutationTransaction: "operation",
     });
     defineGraphQL<TM>({
       // @ts-expect-error unknown model in naming
