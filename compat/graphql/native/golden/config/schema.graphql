@@ -32,6 +32,20 @@ type Comment {
   text: String!
 }
 
+input CommentCountFilter {
+  equals: Int
+  gt: Int
+  gte: Int
+  in: [Int!]
+  lt: Int
+  lte: Int
+  not: Int
+  notIn: [Int!]
+
+  """Count only these nodes."""
+  where: CommentWhere
+}
+
 input CommentListRelationFilter {
   """Every related node matches."""
   every: CommentWhere
@@ -101,6 +115,24 @@ type PostCount {
   comments(where: CommentWhere): Int!
 }
 
+input PostCountFilter {
+  equals: Int
+  gt: Int
+  gte: Int
+  in: [Int!]
+  lt: Int
+  lte: Int
+  not: Int
+  notIn: [Int!]
+
+  """Count only these nodes."""
+  where: PostWhere
+}
+
+input PostCountWhere {
+  comments: CommentCountFilter
+}
+
 type PostList {
   nodes: [Post!]!
   pageInfo: PageInfo!
@@ -144,6 +176,9 @@ input PostWhere {
   AND: [PostWhere!]
   NOT: PostWhere
   OR: [PostWhere!]
+
+  """Filters on the number of related nodes (only the readable ones)."""
+  _count: PostCountWhere
   author: UserRelationFilter
   comments: CommentListRelationFilter
   id: IDFilter
@@ -247,6 +282,10 @@ type UserCount {
   posts(where: PostWhere): Int!
 }
 
+input UserCountWhere {
+  posts: PostCountFilter
+}
+
 type UserList {
   nodes: [User!]!
   pageInfo: PageInfo!
@@ -281,6 +320,9 @@ input UserWhere {
   AND: [UserWhere!]
   NOT: UserWhere
   OR: [UserWhere!]
+
+  """Filters on the number of related nodes (only the readable ones)."""
+  _count: UserCountWhere
   id: IDFilter
   name: StringFilter
   posts: PostListRelationFilter

@@ -1,0 +1,68 @@
+# features: mutation.connectOrCreate, mutation._edge
+# connectOrCreate links the node matching where (a MERGE of the edge) or creates it: db exists,
+# graphql does not; on a to-one relation it replaces the edge; on a typed edge, the _edge of create
+# also applies to an existing node it links.
+mutation {
+  postCreate(
+    data: {
+      id: "p-tagged"
+      title: "Tagged"
+      tags: {
+        connectOrCreate: [
+          { where: { name: "db" }, create: { name: "db" } }
+          { where: { name: "graphql" }, create: { name: "graphql" } }
+        ]
+      }
+      author: {
+        connectOrCreate: {
+          where: { email: "bob@acme.io" }
+          create: { id: "never", email: "bob@acme.io" }
+        }
+      }
+    }
+  ) {
+    id
+    author {
+      id
+    }
+    tags(orderBy: [{ name: asc }]) {
+      name
+    }
+  }
+  moved: postUpdate(
+    where: { id: "p-tagged" }
+    data: {
+      author: {
+        connectOrCreate: {
+          where: { email: "dan@acme.io" }
+          create: { id: "u-dan", email: "dan@acme.io" }
+        }
+      }
+    }
+  ) {
+    author {
+      id
+      email
+    }
+  }
+  follow: userUpdate(
+    where: { id: "u-carol" }
+    data: {
+      following: {
+        connectOrCreate: [
+          {
+            where: { id: "u-alice" }
+            create: { id: "u-alice", email: "alice@acme.io", _edge: { weight: 3 } }
+          }
+        ]
+      }
+    }
+  ) {
+    following {
+      id
+      _edge {
+        weight
+      }
+    }
+  }
+}

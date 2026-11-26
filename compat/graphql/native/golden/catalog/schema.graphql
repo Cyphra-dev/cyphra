@@ -19,6 +19,24 @@ interface ActivityCount {
   tracks(where: TrackWhere): Int!
 }
 
+input ActivityCountFilter {
+  equals: Int
+  gt: Int
+  gte: Int
+  in: [Int!]
+  lt: Int
+  lte: Int
+  not: Int
+  notIn: [Int!]
+
+  """Count only these nodes."""
+  where: ActivityWhere
+}
+
+input ActivityCountWhere {
+  tracks: TrackCountFilter
+}
+
 type ActivityList {
   nodes: [Activity!]!
   pageInfo: PageInfo!
@@ -83,6 +101,9 @@ input ActivityWhere {
   AND: [ActivityWhere!]
   NOT: ActivityWhere
   OR: [ActivityWhere!]
+
+  """Filters on the number of related nodes (only the readable ones)."""
+  _count: ActivityCountWhere
   _on: ActivityOnWhere
   _typename: ActivityTypenameFilter
   author: AuthorRelationFilter
@@ -123,6 +144,10 @@ type AuthorCount {
   activities(where: ActivityWhere): Int!
 }
 
+input AuthorCountWhere {
+  activities: ActivityCountFilter
+}
+
 type AuthorList {
   nodes: [Author!]!
   pageInfo: PageInfo!
@@ -161,6 +186,9 @@ input AuthorWhere {
   AND: [AuthorWhere!]
   NOT: AuthorWhere
   OR: [AuthorWhere!]
+
+  """Filters on the number of related nodes (only the readable ones)."""
+  _count: AuthorCountWhere
   activities: ActivityListRelationFilter
   id: IDFilter
   joined: DateFilter
@@ -280,6 +308,10 @@ type LabCount implements ActivityCount {
   tracks(where: TrackWhere): Int!
 }
 
+input LabCountWhere {
+  tracks: TrackCountFilter
+}
+
 type LabList {
   nodes: [Lab!]!
   pageInfo: PageInfo!
@@ -307,6 +339,9 @@ input LabWhere {
   AND: [LabWhere!]
   NOT: LabWhere
   OR: [LabWhere!]
+
+  """Filters on the number of related nodes (only the readable ones)."""
+  _count: LabCountWhere
   author: AuthorRelationFilter
   id: IDFilter
   image: StringFilter
@@ -504,6 +539,10 @@ type QuizCount implements ActivityCount {
   tracks(where: TrackWhere): Int!
 }
 
+input QuizCountWhere {
+  tracks: TrackCountFilter
+}
+
 type QuizList {
   nodes: [Quiz!]!
   pageInfo: PageInfo!
@@ -532,6 +571,9 @@ input QuizWhere {
   AND: [QuizWhere!]
   NOT: QuizWhere
   OR: [QuizWhere!]
+
+  """Filters on the number of related nodes (only the readable ones)."""
+  _count: QuizCountWhere
   author: AuthorRelationFilter
   id: IDFilter
   level: LevelFilter
@@ -642,6 +684,24 @@ type TrackCount {
   items(where: ActivityWhere): Int!
 }
 
+input TrackCountFilter {
+  equals: Int
+  gt: Int
+  gte: Int
+  in: [Int!]
+  lt: Int
+  lte: Int
+  not: Int
+  notIn: [Int!]
+
+  """Count only these nodes."""
+  where: TrackWhere
+}
+
+input TrackCountWhere {
+  items: ActivityCountFilter
+}
+
 type TrackList {
   nodes: [Track!]!
   pageInfo: PageInfo!
@@ -684,6 +744,9 @@ input TrackWhere {
   AND: [TrackWhere!]
   NOT: TrackWhere
   OR: [TrackWhere!]
+
+  """Filters on the number of related nodes (only the readable ones)."""
+  _count: TrackCountWhere
   id: IDFilter
   items: ActivityListRelationFilter
   name: StringFilter

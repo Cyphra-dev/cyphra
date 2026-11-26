@@ -15,8 +15,8 @@ function isPlainObject(v: unknown): v is AnyRecord {
 
 /**
  * The GraphQL argument path of a client issue path, walking the GraphQL arguments `args`:
- * `$edge` → `_edge`, `$labels` → `_labels`, and `_ops` inserted before a field the update set
- * through `_ops`.
+ * `$edge` → `_edge` (under `create` for a nested upsert / connectOrCreate), `$labels` →
+ * `_labels`, and `_ops` inserted before a field the update set through `_ops`.
  */
 export function graphQLPath(
   path: readonly (string | number)[],
@@ -26,6 +26,17 @@ export function graphQLPath(
   let cur: unknown = args;
   for (const raw of path) {
     const seg = raw === "$edge" ? "_edge" : raw === "$labels" ? "_labels" : raw;
+    // The `$edge` of a nested upsert / connectOrCreate is the `_edge` of its `create`.
+    if (
+      seg === "_edge" &&
+      isPlainObject(cur) &&
+      cur._edge === undefined &&
+      isPlainObject(cur.create) &&
+      cur.create._edge !== undefined
+    ) {
+      out.push("create");
+      cur = cur.create;
+    }
     if (
       typeof seg === "string" &&
       isPlainObject(cur) &&

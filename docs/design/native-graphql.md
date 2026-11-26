@@ -781,10 +781,15 @@ mutation {
   composite key (`providerId_accountId: AccountProviderIdAccountIdKey`) as optional fields, plus
   the model's filters for its other fields (as the client allows extra filters next to the key); at least one key is required, checked by the client (`BAD_USER_INPUT`), since GraphQL
   cannot express "at least one of". `@oneOf` would express "exactly one" and lose the extra filters.
-- Not in the client today, so not in the first version: nested `update`, `delete`, `upsert` and
-  `connectOrCreate` (v7 has nested `update` / `delete`). They are added to the client first
-  ([Runtime prerequisites](#runtime-prerequisites)), then exposed, so GraphQL never has a write the
-  client does not.
+- Nested `update`, `delete`, `upsert` and `connectOrCreate` (v7 has nested `update` / `delete`)
+  were added to the client first ([Runtime prerequisites](#runtime-prerequisites)), then exposed
+  (#248), so GraphQL never has a write the client does not. As implemented: to-many items name the
+  linked node by its `WhereUnique` (`{ where, data }`, `{ where, create, update }`), to-one ones
+  act on the linked node (`update: <data>`, `delete: true`, `upsert: { create, update }`); the
+  update data omits the back relation (`PostUpdateWithoutAuthorInput`); each needs the target's
+  matching operation (`update` / `delete` / `upsert`, `create` for `connectOrCreate`); the `_edge`
+  of `create` is the new edge's. `where` takes `_count: { posts: { gte: 2, where } }`
+  (`<Model>CountWhere`, `<Target>CountFilter`).
 - **Validation rules** (`@length`, `@min`, …) and enum checks run before anything is sent, as in the
   client; `issues` paths are translated to GraphQL argument paths (`["data", "tags", "create", 1,
 "name"]`).

@@ -4,6 +4,20 @@ type Audit {
   user: User
 }
 
+input AuditCountFilter {
+  equals: Int
+  gt: Int
+  gte: Int
+  in: [Int!]
+  lt: Int
+  lte: Int
+  not: Int
+  notIn: [Int!]
+
+  """Count only these nodes."""
+  where: AuditWhere
+}
+
 type AuditList {
   nodes: [Audit!]!
   pageInfo: PageInfo!
@@ -150,8 +164,42 @@ type PostBatch {
   nodes: [Post!]!
 }
 
+"""
+Links the Post matching where (a MERGE of the edge, as connect), or creates it.
+"""
+input PostConnectOrCreateManyWithoutAuthorInput {
+  create: PostCreateWithoutAuthorInput!
+  where: PostWhereUnique!
+}
+
+"""
+Links the Post matching where (a MERGE of the edge, as connect), or creates it.
+"""
+input PostConnectOrCreateManyWithoutTagsInput {
+  create: PostCreateWithoutTagsInput!
+  where: PostWhereUnique!
+}
+
 type PostCount {
   tags(where: TagWhere): Int!
+}
+
+input PostCountFilter {
+  equals: Int
+  gt: Int
+  gte: Int
+  in: [Int!]
+  lt: Int
+  lte: Int
+  not: Int
+  notIn: [Int!]
+
+  """Count only these nodes."""
+  where: PostWhere
+}
+
+input PostCountWhere {
+  tags: TagCountFilter
 }
 
 input PostCreateInput {
@@ -173,6 +221,7 @@ input PostCreateManyInput {
 input PostCreateManyWithoutTagsRelation {
   """MERGEs an edge to each node (connecting a linked node keeps one edge)."""
   connect: [PostWhereUnique!]
+  connectOrCreate: [PostConnectOrCreateManyWithoutTagsInput!]
   create: [PostCreateWithoutTagsInput!]
 }
 
@@ -259,17 +308,54 @@ input PostUpdateManyInput {
 input PostUpdateManyWithoutAuthorRelation {
   """MERGEs an edge to each node (connecting a linked node keeps one edge)."""
   connect: [PostWhereUnique!]
+  connectOrCreate: [PostConnectOrCreateManyWithoutAuthorInput!]
   create: [PostCreateWithoutAuthorInput!]
+
+  """
+  Deletes linked nodes, with their onDelete rules (NOT_FOUND when one is not linked).
+  """
+  delete: [PostWhereUnique!]
   disconnect: [PostWhereUnique!]
 
   """The only linked nodes afterwards (edges to the others are deleted)."""
   set: [PostWhereUnique!]
+
+  """Updates linked nodes (NOT_FOUND when one is not linked)."""
+  update: [PostUpdateWhereManyWithoutAuthorInput!]
+  upsert: [PostUpsertManyWithoutAuthorInput!]
+}
+
+"""A linked Post, by unique key, and its update."""
+input PostUpdateWhereManyWithoutAuthorInput {
+  data: PostUpdateWithoutAuthorInput!
+  where: PostWhereUnique!
+}
+
+input PostUpdateWithoutAuthorInput {
+  _ops: PostOps
+  id: ID
+  published: Boolean
+  tags: TagUpdateManyWithoutPostsRelation
+  title: String
+  views: Int
+}
+
+"""
+Updates the linked Post matching where, or creates and links one when there is none.
+"""
+input PostUpsertManyWithoutAuthorInput {
+  create: PostCreateWithoutAuthorInput!
+  update: PostUpdateWithoutAuthorInput!
+  where: PostWhereUnique!
 }
 
 input PostWhere {
   AND: [PostWhere!]
   NOT: PostWhere
   OR: [PostWhere!]
+
+  """Filters on the number of related nodes (only the readable ones)."""
+  _count: PostCountWhere
   author: UserRelationFilter
   id: IDFilter
   published: BooleanFilter
@@ -400,8 +486,34 @@ type Tag {
   posts(orderBy: [PostOrderBy!], skip: Int, take: Int, where: PostWhere): [Post!]!
 }
 
+"""
+Links the Tag matching where (a MERGE of the edge, as connect), or creates it.
+"""
+input TagConnectOrCreateManyWithoutPostsInput {
+  create: TagCreateWithoutPostsInput!
+  where: TagWhereUnique!
+}
+
 type TagCount {
   posts(where: PostWhere): Int!
+}
+
+input TagCountFilter {
+  equals: Int
+  gt: Int
+  gte: Int
+  in: [Int!]
+  lt: Int
+  lte: Int
+  not: Int
+  notIn: [Int!]
+
+  """Count only these nodes."""
+  where: TagWhere
+}
+
+input TagCountWhere {
+  posts: PostCountFilter
 }
 
 input TagCreateInput {
@@ -413,6 +525,7 @@ input TagCreateInput {
 input TagCreateManyWithoutPostsRelation {
   """MERGEs an edge to each node (connecting a linked node keeps one edge)."""
   connect: [TagWhereUnique!]
+  connectOrCreate: [TagConnectOrCreateManyWithoutPostsInput!]
   create: [TagCreateWithoutPostsInput!]
 }
 
@@ -461,6 +574,7 @@ input TagRelationCountOrder {
 input TagUpdateManyWithoutPostsRelation {
   """MERGEs an edge to each node (connecting a linked node keeps one edge)."""
   connect: [TagWhereUnique!]
+  connectOrCreate: [TagConnectOrCreateManyWithoutPostsInput!]
   create: [TagCreateWithoutPostsInput!]
   disconnect: [TagWhereUnique!]
 
@@ -472,6 +586,9 @@ input TagWhere {
   AND: [TagWhere!]
   NOT: TagWhere
   OR: [TagWhere!]
+
+  """Filters on the number of related nodes (only the readable ones)."""
+  _count: TagCountWhere
   internal: BooleanFilter
   name: IDFilter
   posts: PostListRelationFilter
@@ -510,6 +627,11 @@ type User {
 type UserCount {
   audits(where: AuditWhere): Int!
   posts(where: PostWhere): Int!
+}
+
+input UserCountWhere {
+  audits: AuditCountFilter
+  posts: PostCountFilter
 }
 
 input UserCreateOneWithoutPostsRelation {
@@ -577,12 +699,28 @@ input UserUpdateOneWithoutPostsRelation {
 
   """true: remove the edge."""
   disconnect: Boolean
+
+  """Updates the linked node (NOT_FOUND when there is none)."""
+  update: UserUpdateWithoutPostsInput
+}
+
+input UserUpdateWithoutPostsInput {
+  _ops: UserOps
+  audits: AuditUpdateManyWithoutUserRelation
+  email: String
+  id: ID
+  name: String
+  role: Role
+  salary: Int
 }
 
 input UserWhere {
   AND: [UserWhere!]
   NOT: UserWhere
   OR: [UserWhere!]
+
+  """Filters on the number of related nodes (only the readable ones)."""
+  _count: UserCountWhere
   audits: AuditListRelationFilter
   email: StringFilter
   id: IDFilter

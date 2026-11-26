@@ -134,6 +134,47 @@ describe("native.printSchema", () => {
     expect(sdl).not.toMatch(/input PostCreateManyInput \{[^}]*tags/);
   });
 
+  it("serves nested update / delete / upsert / connectOrCreate and _count filters", () => {
+    const sdl = printSchema(blog, {
+      models: {
+        User: {
+          operations: { create: true, update: true, delete: true },
+          fields: { passwordHash: { read: false, create: true, update: false } },
+        },
+        Post: { operations: { create: true, update: ["update"], delete: true } },
+      },
+    });
+    valid(sdl);
+    // To-many: items name the node by unique key; to-one: the linked node.
+    expect(sdl).toMatch(
+      /input PostUpdateManyWithoutAuthorRelation \{[^}]*connectOrCreate: \[PostConnectOrCreateManyWithoutAuthorInput!\][^}]*delete: \[PostWhereUnique!\][^}]*update: \[PostUpdateWhereManyWithoutAuthorInput!\]/,
+    );
+    expect(sdl).toContain(
+      "input PostUpdateWhereManyWithoutAuthorInput {\n  data: PostUpdateWithoutAuthorInput!\n  where: PostWhereUnique!\n}",
+    );
+    expect(sdl).toMatch(/input PostUpdateWithoutAuthorInput \{(?![^}]*author)[^}]*tags:/);
+    expect(sdl).toMatch(
+      /input UserUpdateOneWithoutPostsRelation \{[^}]*delete: Boolean[^}]*update: UserUpdateWithoutPostsInput[^}]*upsert: UserUpsertOneWithoutPostsInput/,
+    );
+    expect(sdl).toContain(
+      "input UserUpsertOneWithoutPostsInput {\n  create: UserCreateWithoutPostsInput!\n  update: UserUpdateWithoutPostsInput!\n}",
+    );
+    // Post has no upsert operation: no nested upsert of posts; Tag is read-only: connect only.
+    expect(sdl).not.toMatch(/input PostUpdateManyWithoutAuthorRelation \{[^}]*upsert/);
+    expect(sdl).not.toContain("TagConnectOrCreate");
+    expect(sdl).not.toMatch(/input TagUpdateManyWithoutPostsRelation \{[^}]*(update|delete):/);
+    // On create: connectOrCreate only.
+    expect(sdl).toMatch(
+      /input PostCreateManyWithoutAuthorRelation \{[^}]*connectOrCreate:(?![^}]*(update|delete|upsert):)/,
+    );
+    // _count filters on to-many relations.
+    expect(sdl).toMatch(/input UserWhere \{[^}]*_count: UserCountWhere/);
+    expect(sdl).toContain(
+      "input UserCountWhere {\n  followers: UserCountFilter\n  following: UserCountFilter\n  posts: PostCountFilter\n}",
+    );
+    expect(sdl).toMatch(/input PostCountFilter \{[^}]*gte: Int[^}]*where: PostWhere/);
+  });
+
   it("keeps raw ids in write inputs with relay", () => {
     const sdl = printSchema(blog, {
       relay: true,
@@ -350,6 +391,19 @@ describe("config checks at startup", () => {
     expect(
       make({ models: { User: { fields: { email: { read: { where: () => ({ idd: "x" }) } } } } } }),
     ).toThrow(/fields.email.read.where: unknown field "User.idd"/);
+    expect(
+      make({ models: { User: { rules: { read: () => ({ _count: { name: { gte: 1 } } }) } } } }),
+    ).toThrow(/rules.read._count: "name" is not a to-many relation of User/);
+    expect(
+      make({
+        models: {
+          User: { rules: { read: () => ({ _count: { posts: { gte: 1, where: { x: 1 } } } }) } },
+        },
+      }),
+    ).toThrow(/rules.read._count.posts.where: unknown field "Post.x"/);
+    expect(
+      make({ models: { User: { rules: { read: () => ({ _count: { posts: { gte: 1 } } }) } } } }),
+    ).not.toThrow();
     // A rule that needs a context is checked on its first request instead.
     expect(
       make({

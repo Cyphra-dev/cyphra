@@ -418,6 +418,25 @@ export class Translator {
         case "_labels":
           if (v !== null) out.$labels = v;
           continue;
+        case "_count": {
+          if (v === null) continue;
+          const counts: AnyRecord = {};
+          for (const [rel, filter] of Object.entries(v as AnyRecord)) {
+            if (filter === undefined || filter === null) continue;
+            const f = model.fields.find((x) => x.name === rel);
+            if (f?.kind !== "relation")
+              throw badInput(`Unknown relation "${model.name}.${rel}" in where._count.`);
+            this.usable(model, rel, "counted");
+            const ops: AnyRecord = {};
+            for (const [op, x] of Object.entries(filter as AnyRecord)) {
+              if (x === undefined || x === null) continue;
+              ops[op] = op === "where" ? (this.where(this.api.node(f.target), x) ?? {}) : x;
+            }
+            counts[rel] = ops;
+          }
+          out._count = counts;
+          continue;
+        }
         case "_on": {
           if (v === null) continue;
           const on: AnyRecord = {};

@@ -1,0 +1,34 @@
+{
+  "data": {
+    "hijack": null,
+    "forbidden": null,
+    "own": {
+      "tags": [
+        {
+          "name": "db"
+        }
+      ]
+    },
+    "counted": {
+      "_count": {
+        "posts": 1
+      }
+    }
+  },
+  "errors": [
+    {
+      "message": "Forbidden: the rules do not allow creating this Tag.",
+      "path": [
+        "forbidden"
+      ],
+      "code": "FORBIDDEN"
+    },
+    {
+      "message": "User.posts.update: no Post linked to this User matches {\"id\":\"p-graphs\"}.",
+      "path": [
+        "hijack"
+      ],
+      "code": "NOT_FOUND"
+    }
+  ]
+}

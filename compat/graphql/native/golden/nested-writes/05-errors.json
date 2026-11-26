@@ -1,0 +1,84 @@
+{
+  "data": {
+    "notLinked": null,
+    "noProfile": null,
+    "tooShort": null,
+    "tooMany": null,
+    "unchanged": {
+      "name": "Alice",
+      "posts": [
+        {
+          "title": "Cypher",
+          "views": 3
+        },
+        {
+          "title": "Graphs",
+          "views": 10
+        }
+      ]
+    }
+  },
+  "errors": [
+    {
+      "message": "User.profile.update: no Profile linked to this User.",
+      "path": [
+        "noProfile"
+      ],
+      "code": "NOT_FOUND"
+    },
+    {
+      "message": "User.posts.update: no Post linked to this User matches {\"id\":\"p-bob\"}.",
+      "path": [
+        "notLinked"
+      ],
+      "code": "NOT_FOUND"
+    },
+    {
+      "message": "Post.update: 1 value breaks the schema's validation rules:\n  - data.posts.update[0].data.views (Post.views): must be at most 1000 (the update would make it larger).",
+      "path": [
+        "tooMany"
+      ],
+      "code": "BAD_USER_INPUT",
+      "issues": [
+        {
+          "path": [
+            "data",
+            "posts",
+            "update",
+            0,
+            "data",
+            "_ops",
+            "views"
+          ],
+          "model": "Post",
+          "field": "views",
+          "rule": "max",
+          "message": "must be at most 1000 (the update would make it larger)."
+        }
+      ]
+    },
+    {
+      "message": "User.update: 1 value breaks the schema's validation rules:\n  - data.posts.update[0].data.title (Post.title): must be at least 3 characters long (got 1).",
+      "path": [
+        "tooShort"
+      ],
+      "code": "BAD_USER_INPUT",
+      "issues": [
+        {
+          "path": [
+            "data",
+            "posts",
+            "update",
+            0,
+            "data",
+            "title"
+          ],
+          "model": "Post",
+          "field": "title",
+          "rule": "length",
+          "message": "must be at least 3 characters long (got 1)."
+        }
+      ]
+    }
+  ]
+}

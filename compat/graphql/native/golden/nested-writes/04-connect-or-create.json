@@ -1,0 +1,34 @@
+{
+  "data": {
+    "postCreate": {
+      "id": "p-tagged",
+      "author": {
+        "id": "u-bob"
+      },
+      "tags": [
+        {
+          "name": "db"
+        },
+        {
+          "name": "graphql"
+        }
+      ]
+    },
+    "moved": {
+      "author": {
+        "id": "u-dan",
+        "email": "dan@acme.io"
+      }
+    },
+    "follow": {
+      "following": [
+        {
+          "id": "u-alice",
+          "_edge": {
+            "weight": 3
+          }
+        }
+      ]
+    }
+  }
+}

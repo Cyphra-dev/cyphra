@@ -1,0 +1,20 @@
+{
+  "data": {
+    "comment": {
+      "id": "p-cypher",
+      "_count": {
+        "comments": 1
+      }
+    },
+    "post": {
+      "posts": [
+        {
+          "id": "p-graphs"
+        }
+      ]
+    },
+    "profile": {
+      "profile": null
+    }
+  }
+}

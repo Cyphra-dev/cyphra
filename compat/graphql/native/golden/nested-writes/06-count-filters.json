@@ -1,0 +1,39 @@
+{
+  "data": {
+    "twoPosts": {
+      "nodes": [
+        {
+          "id": "u-alice"
+        }
+      ]
+    },
+    "anyPost": {
+      "nodes": [
+        {
+          "id": "u-alice"
+        },
+        {
+          "id": "u-bob"
+        }
+      ]
+    },
+    "published": {
+      "nodes": []
+    },
+    "noFollowers": {
+      "nodes": [
+        {
+          "id": "u-carol"
+        }
+      ]
+    },
+    "commented": {
+      "nodes": [
+        {
+          "id": "u-alice"
+        }
+      ]
+    },
+    "postCount": 1
+  }
+}

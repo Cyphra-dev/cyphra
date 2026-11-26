@@ -128,6 +128,26 @@ describe("defineGraphQL: rules (typed against the client, #77)", () => {
     });
   });
 
+  it("types _count filters in rules", () => {
+    defineGraphQL<TM, Ctx>({
+      models: {
+        User: {
+          rules: { read: () => ({ _count: { posts: { gte: 1, where: { published: true } } } }) },
+        },
+      },
+    });
+    defineGraphQL<TM, Ctx>({
+      models: {
+        Post: {
+          rules: {
+            // @ts-expect-error a to-one relation is not counted
+            read: () => ({ _count: { author: 1 } }),
+          },
+        },
+      },
+    });
+  });
+
   it("rejects rules on unknown fields, relations and values of the wrong type", () => {
     defineGraphQL<TM, Ctx>({
       models: {

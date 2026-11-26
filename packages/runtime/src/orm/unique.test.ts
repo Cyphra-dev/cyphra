@@ -373,3 +373,18 @@ describe("ORM client mapping", () => {
     await expect(db.$cypher`RETURN 1`).rejects.toBe(boom);
   });
 });
+
+describe("parseUniqueViolation from a SET of a map", () => {
+  it("reads the label and properties from the constraint's schema", () => {
+    expect(
+      parseUniqueViolation(
+        "New data does not satisfy Constraint( id=3, name='u', type='UNIQUENESS', schema=(:User {email}), ownedIndex=9 ): Node(9) already exists with label `Label[0]` and property `PropertyKey[0]` = 'dup@x'",
+      ),
+    ).toEqual({ entity: "node", label: "User", properties: ["email"] });
+    expect(
+      parseUniqueViolation(
+        "New data does not satisfy Constraint( id=4, name='m', type='UNIQUENESS', schema=(:`My Member` {tenantId, email}), ownedIndex=9 ): Node(1) already exists with label `Label[2]` and properties `PropertyKey[1]` = 't', `PropertyKey[0]` = 'e'",
+      ),
+    ).toEqual({ entity: "node", label: "My Member", properties: ["tenantId", "email"] });
+  });
+});
