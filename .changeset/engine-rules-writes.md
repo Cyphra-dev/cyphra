@@ -1,5 +1,0 @@
----
-"@cyphra/runtime": minor
----
-
-Engine rules (internal `withEngineRules`, the base of the native GraphQL API's authorization) cover writes and fields: `create` rules (a boolean or a function of the node's data, checked on every node a write creates, nested ones included, before anything runs), `connect` / `disconnect` rules per relation (restricting the targets; a to-one edge a write must replace outside the `disconnect` rule fails the write), `after.create` / `after.update` rules checked in the statement once every write of it ran (rolled back otherwise), and per-field read rules (`fields`): a ruled-out field reads as `null` everywhere a statement reads it, in results, filters, `orderBy`, aggregates and `groupBy` keys. `update` / `delete` targets are now also subject to the `read` rules (a node the request cannot read does not exist for it), a connect target whose inverse relation is to-one to its `update` rules, and a written node the `read` rules hide is returned as `null` (left out of batch `nodes`). New `ForbiddenError` for refused writes. `after` and `disconnect` rules are refused on FalkorDB, which cannot roll a write back.
