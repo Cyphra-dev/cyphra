@@ -1,5 +1,29 @@
 # @cyphra/cli
 
+## 0.21.0
+
+### Minor Changes
+
+- 6933517: Native GraphQL API (experimental): opt-in Relay and the printed contract.
+
+  - `relay: true` in `defineGraphQL`: a `Node` interface implemented by every model with a `String`,
+    `Int` or `BigInt` `@id` (interfaces included), global ids (`base64("<Type>:<id>")`,
+    `native.toGlobalId` / `native.fromGlobalId`) and `node(id: ID!)`. The model's own `id` field is
+    returned as `rawId`; inputs keep `id`. Off by default.
+  - `cyphra graphql print [--config <file>] [--export <name>] [--out <file>] [--check]`: the native
+    API's sorted SDL from `schema.cyphra` and `graphql.config.ts`, without a database. `--check`
+    exits with 1 when the committed file differs, listing breaking and dangerous changes.
+
+### Patch Changes
+
+- Updated dependencies [5b60cb4]
+- Updated dependencies [6933517]
+- Updated dependencies [66bc969]
+  - @cyphra/graphql@0.21.0
+  - @cyphra/runtime@0.21.0
+  - @cyphra/migrator@0.21.0
+  - @cyphra/schema@0.21.0
+
 ## 0.20.1
 
 ### Patch Changes
