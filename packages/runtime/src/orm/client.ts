@@ -107,6 +107,28 @@ export function withReadTransaction<C extends object, T>(
   return (run as (f: (tx: C) => Promise<T>) => Promise<T>)(fn);
 }
 
+/** Key of the hidden method behind {@link computedFieldsOf}. */
+const COMPUTED = Symbol.for("cyphra.computedFields");
+
+/**
+ * The computed fields (`$extends({ result })`) of `model` on `client`, with the scalar fields
+ * each one `needs`; `undefined` when `client` is not a Cyphra ORM client.
+ *
+ * This is the engine entry `@cyphra/graphql`'s native API checks its `computed` config against.
+ * It is internal: experimental, and not covered by semantic versioning.
+ *
+ * @internal
+ * @experimental
+ */
+export function computedFieldsOf(
+  client: object,
+  model: string,
+): ReadonlyMap<string, { readonly needs: readonly string[] }> | undefined {
+  const fn = (client as Record<symbol, unknown>)[COMPUTED];
+  if (typeof fn !== "function") return undefined;
+  return (fn as (m: string) => ReadonlyMap<string, { readonly needs: readonly string[] }>)(model);
+}
+
 /** Check `rules` against the schema: known models, operations and fields, valid values. */
 function checkEngineRules(schema: SchemaModel, rules: EngineRules, dialect: CyphraDialect): void {
   if (typeof rules !== "object" || rules === null || Array.isArray(rules)) {
@@ -659,6 +681,7 @@ export function createOrm<TM extends TypeMap>(
         });
       },
     });
+    Object.defineProperty(self, COMPUTED, { value: (model: string) => state.computed(model) });
     Object.defineProperty(self, WITH_RAW, {
       value: () => build(state, { ...opts, rawValues: true }),
     });

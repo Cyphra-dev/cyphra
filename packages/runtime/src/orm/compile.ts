@@ -20,10 +20,11 @@ import { CypherInteger } from "../cypher-values.js";
 import { CyphraValidationError } from "./errors.js";
 import { decodeCount, decodeScalar, encodeFilterValue, isPointValue } from "./values.js";
 import type { QueryMode } from "./types.js";
-import type { CyphraDialect } from "../dialect.js";
+import { unsupportedOnFalkorDB, type CyphraDialect } from "../dialect.js";
 import { compileLabelsFilter, decodeDynamicLabels, dynamicLabelsOf } from "./labels.js";
 import type { EngineRules, ModelRules, RuleOperation, RuleValue } from "./scope.js";
 import { compileTraverseLoad } from "./traverse.js";
+import { cypherScalar, cypherType, renderFragment } from "./cypherExpr.js";
 
 /** Quote an identifier for Cypher (labels, property keys, relationship types). */
 export function q(id: string): string {
@@ -711,6 +712,11 @@ export function compileWhere(
       if (c) parts.push(c);
       continue;
     }
+    if (key === "$cypher") {
+      const c = compileCypherFilters(ctx, model, alias, value);
+      if (c) parts.push(c);
+      continue;
+    }
     const f = model.fields.find((x) => x.name === key);
     if (!f) throw new CyphraValidationError(`Unknown field "${model.name}.${key}" in where.`);
     const c =
@@ -719,6 +725,37 @@ export function compileWhere(
         : compileRelationFilter(ctx, model, f, alias, value);
     if (c) parts.push(c);
   }
+  return and(parts);
+}
+
+/**
+ * `$cypher` in a `where` (internal, see `cypherExpr.ts`): `[{ expr, type, list?, enumValues?,
+ * filter }]`, each a scalar filter on the value of a Cypher expression of the node.
+ */
+function compileCypherFilters(
+  ctx: QueryContext,
+  model: ResolvedNodeModel,
+  alias: string,
+  value: unknown,
+): string | null {
+  const where = `${model.name}: where.$cypher`;
+  if (!Array.isArray(value)) {
+    throw new CyphraValidationError(`${where} takes [{ expr, type, filter }].`);
+  }
+  const parts: (string | null)[] = value.map((entry, i) => {
+    if (!isPlainObject(entry)) {
+      throw new CyphraValidationError(`${where}[${i}] takes { expr, type, filter }.`);
+    }
+    const at = `${where}[${i}]`;
+    const field = cypherScalar(
+      typeof entry.name === "string" ? entry.name : `$cypher[${i}]`,
+      cypherType(entry.type, at),
+      entry.list === true,
+      Array.isArray(entry.enumValues) ? (entry.enumValues as string[]) : undefined,
+    );
+    const expr = renderFragment((v) => ctx.param(v), alias, entry.expr, at);
+    return compileScalarFilter(ctx, model, field, expr, entry.filter);
+  });
   return and(parts);
 }
 
@@ -1095,6 +1132,21 @@ export function compileSortKeys(
         });
         continue;
       }
+      if (key === "$cypher") {
+        const at = `orderBy ${model.name}.$cypher`;
+        if (!isPlainObject(dir))
+          throw new CyphraValidationError(`${at} takes { expr, type, sort }.`);
+        const field = cypherScalar(
+          typeof dir.name === "string" ? dir.name : "$cypher",
+          cypherType(dir.type, at),
+        );
+        keys.push({
+          expr: renderFragment((v) => ctx.param(v), alias, dir.expr, at),
+          dir: dirOf(dir.sort, at),
+          value: { kind: "scalar", field, owner: model.name },
+        });
+        continue;
+      }
       const rel = relationField(model, key);
       if (rel && !rel.many) {
         if (!isPlainObject(dir)) {
@@ -1234,6 +1286,14 @@ export type Shape = {
   /** `true` when `$labels` is selected: the result gets the node's dynamic labels. */
   readonly labels?: true;
   /**
+   * Values of Cypher expressions (`select: { key: { $cypher, … } }`, internal): a scalar decoded
+   * as `field`, or the nodes the expression returns, decoded with `shape`.
+   */
+  readonly cyphers?: readonly (
+    | { readonly key: string; readonly field: ResolvedScalarField }
+    | { readonly key: string; readonly shape: Shape; readonly many: boolean }
+  )[];
+  /**
    * `true`: scalars and edge properties are returned as the driver gives them (`Integer`,
    * temporal and point objects, `null` lists), not decoded for their schema type.
    */
@@ -1270,6 +1330,7 @@ export function compileProjection(
   let on: { spec: AnyRecord; label: string } | undefined;
   let withLabels = false;
   const traversals: { key: string; spec: AnyRecord; label: string }[] = [];
+  const cypherSpecs: { key: string; spec: AnyRecord; label: string }[] = [];
 
   const takeRelations = (spec: AnyRecord, label: string) => {
     for (const [key, v] of Object.entries(spec)) {
@@ -1308,6 +1369,11 @@ export function compileProjection(
       }
       if (isPlainObject(v) && v.$relation !== undefined) {
         rels.push(aliasedLoad(ctx, model, key, v, label));
+        continue;
+      }
+      if (isPlainObject(v) && v.$cypher !== undefined) {
+        checkLoadKey(ctx, model, key, label, "a Cypher expression");
+        cypherSpecs.push({ key, spec: v, label });
         continue;
       }
       const f = model.fields.find((x) => x.name === key);
@@ -1434,6 +1500,45 @@ export function compileProjection(
     entries.push(`${q(key)}: ${t.expr}`);
     travShapes.push({ key, shape: t.shape });
   }
+  const cyphers: NonNullable<Shape["cyphers"]>[number][] = [];
+  for (const { key, spec, label } of cypherSpecs) {
+    const at = `${label}.${key}`;
+    if (spec.$model === undefined) {
+      const field = cypherScalar(
+        key,
+        cypherType(spec.$type, at),
+        spec.$list === true,
+        Array.isArray(spec.$enumValues) ? (spec.$enumValues as string[]) : undefined,
+      );
+      entries.push(`${q(key)}: ${renderFragment((v) => ctx.param(v), alias, spec.$cypher, at)}`);
+      cyphers.push({ key, field });
+      continue;
+    }
+    if (typeof spec.$model !== "string") {
+      throw new CyphraValidationError(`${at}.$model must be a model name.`);
+    }
+    if (ctx.dialect === "falkordb") {
+      throw unsupportedOnFalkorDB(
+        "Cypher expressions returning nodes",
+        "Return a scalar (an id, a count) from the expression, or load the nodes through a relation.",
+      );
+    }
+    const target = ctx.node(spec.$model);
+    const { $cypher, $model: _model, $many, ...sub } = spec;
+    const many = $many === true;
+    const m = ctx.variable();
+    const expr = renderFragment((v) => ctx.param(v), alias, $cypher, at);
+    const inner = compileProjection(ctx, target, m, sub as LoadArgs);
+    const where = and([labelTest(m, target), scopedWhere(ctx, target, m, sub.where)]);
+    const paging = compilePaging(ctx, target, m, sub as LoadArgs);
+    // `UNWIND [x]` for a single node: one row, filtered out by the label test when it is null.
+    let body = `UNWIND ${many ? expr : `[${expr}]`} AS ${m} WITH ${m} WHERE ${where}`;
+    if (paging) body += ` WITH ${m}${paging}`;
+    body += ` RETURN ${inner.expr}`;
+    const collected = `COLLECT { ${body} }`;
+    entries.push(`${q(key)}: ${many ? collected : `head(${collected})`}`);
+    cyphers.push({ key, shape: inner.shape, many });
+  }
   if (counts) {
     const map = counts.map(
       ({ field, where }) =>
@@ -1452,6 +1557,7 @@ export function compileProjection(
       ...(travShapes.length ? { traversals: travShapes } : {}),
       ...(counts ? { counts: counts.map((c) => c.field) } : {}),
       ...(withLabels ? { labels: true as const } : {}),
+      ...(cyphers.length ? { cyphers } : {}),
       ...(ctx.raw ? { raw: true as const } : {}),
     },
   };
@@ -1480,6 +1586,21 @@ function aliasedLoad(
       `${label}.${key}.$relation: "${$relation}" is not a relation of ${model.name}.`,
     );
   }
+  checkLoadKey(ctx, model, key, label, "a relation load");
+  return { key, field, args: args as LoadArgs };
+}
+
+/**
+ * The key of an aliased relation load or a Cypher expression in a `select`: not a scalar field of
+ * the model or a reserved key (`_count`, `$…`, `__…`).
+ */
+function checkLoadKey(
+  ctx: QueryContext,
+  model: ResolvedNodeModel,
+  key: string,
+  label: string,
+  what: string,
+): void {
   const scalarNames = [model, ...(model.implementations ?? []).map((i) => ctx.node(i))].flatMap(
     (m) => m.fields.filter((f) => f.kind === "scalar").map((f) => f.name),
   );
@@ -1490,10 +1611,9 @@ function aliasedLoad(
     scalarNames.includes(key)
   ) {
     throw new CyphraValidationError(
-      `${label}.${key}: "${key}" cannot alias a relation load (it is ${scalarNames.includes(key) ? `a scalar field of ${model.name}` : "a reserved key"}).`,
+      `${label}.${key}: "${key}" cannot name ${what} (it is ${scalarNames.includes(key) ? `a scalar field of ${model.name}` : "a reserved key"}).`,
     );
   }
-  return { key, field, args: args as LoadArgs };
 }
 
 /**
@@ -1609,6 +1729,12 @@ export function decodeRow(shape: Shape, row: unknown): AnyRecord | null {
   }
   for (const t of shape.traversals ?? []) {
     out[t.key] = ((src[t.key] as unknown[] | null) ?? []).map((v) => decodeRow(t.shape, v));
+  }
+  for (const c of shape.cyphers ?? []) {
+    const v = src[c.key];
+    if ("field" in c) out[c.key] = decode(c.field, v);
+    else if (c.many) out[c.key] = ((v as unknown[] | null) ?? []).map((x) => decodeRow(c.shape, x));
+    else out[c.key] = decodeRow(c.shape, v);
   }
   if (shape.counts) {
     const raw = (src["_count"] ?? {}) as AnyRecord;
