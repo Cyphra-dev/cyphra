@@ -1,0 +1,366 @@
+---
+title: "Native GraphQL API for Neo4j, generated from schema.cyphra"
+sidebarTitle: Native API
+description: "Serve a GraphQL API generated from schema.cyphra with @cyphra/graphql's native API: typed config, the client's filters and ordering, keyset cursors, edge properties, interfaces and unions, one Cypher statement per root field."
+---
+
+import { Callout } from "nextra/components";
+
+# Native GraphQL API
+
+`native.makeSchema` serves a GraphQL API generated from your `schema.cyphra` and run by the
+[typed client](/client): every root field is one client operation (`findMany`, `findUnique`, …),
+compiled to one Cypher statement, so filters, ordering, paging and errors behave the same from
+TypeScript and from GraphQL. What the API exposes is configured in TypeScript, typed against the
+generated client.
+
+<Callout type="warning">
+  **Experimental** (see the [stability policy](/stability#experimental-features)): the native API
+  may change in a minor release. This release serves **reads**: `findUnique`, `findFirst`,
+  `findMany` and `count`. Writes, authorization rules, aggregates, search and traversals come next
+  ([#77](https://github.com/Cyphra-dev/cyphra/issues/77)). To keep the API `@neo4j/graphql` v7
+  generates, use [`compat.v7`](/graphql); both can be served side by side.
+</Callout>
+
+## Create the schema
+
+```bash
+npm i @cyphra/graphql graphql
+```
+
+```ts filename="lib/graphql.ts"
+import { native } from "@cyphra/graphql";
+import { createClient } from "./cyphra.gen";
+import { api } from "./graphql.config";
+
+const db = createClient({ uri, user, password });
+
+export const schema = native.makeSchema({ client: db, config: api });
+```
+
+`makeSchema` returns a `GraphQLSchema` with its resolvers: serve it with GraphQL Yoga, Apollo
+Server or any GraphQL server.
+
+| Option   | Description                                                                                                                                             |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `client` | The client of `cyphra.gen.ts` (possibly `$extends`-ed), or a function of the GraphQL context returning the request's client: `(ctx) => db.$extends(…)`. |
+| `schema` | The schema model. Default: `client.$schema`. Required when `client` is a function.                                                                      |
+| `config` | The API's configuration, from `defineGraphQL` (below). Default: every read operation of every model.                                                    |
+| `debug`  | Show the message of unexpected errors instead of `Internal server error`.                                                                               |
+
+With a function as `client`, every root field runs through that request's client, so the client's
+[query hooks](/client#query-hooks) run (multi-tenancy, soft delete, audit logs). Hooks wrap the root
+operation only, as in the client.
+
+## Configure it
+
+```ts filename="graphql.config.ts"
+import { defineGraphQL } from "@cyphra/graphql/native";
+import type { CyphraTypeMap } from "./cyphra.gen";
+
+export const api = defineGraphQL<CyphraTypeMap>({
+  models: {
+    User: {
+      fields: {
+        passwordHash: false, // gone from every type and input
+        email: { filter: false, sort: false }, // readable, not usable in where / orderBy
+      },
+    },
+    AuditLog: { operations: { read: ["findMany", "count"] } },
+    Session: { operations: { read: false } },
+  },
+  naming: { Person: { findMany: "people" } },
+  limits: { maxDepth: 4, maxTake: 100, maxAliases: 20, maxComplexity: 10_000 },
+});
+```
+
+Every key is typed from `CyphraTypeMap`: `{ pasword: false }` or a model that does not exist is a
+compile error. `makeSchema` checks the config again at startup (for JavaScript, or configs built
+dynamically) and throws a `NativeSchemaError` naming the unknown model, field or option.
+
+| Key                      | Description                                                                                                                                                                                                           |
+| ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `models.<M>.operations`  | `read`: `true`, `false` or a list of `findUnique`, `findFirst`, `findMany`, `count`. Turning an operation off removes its root field. `create` / `update` / `delete` only take `false` (writes are not served yet).   |
+| `models.<M>.fields.<f>`  | `false` hides the field everywhere. `{ read, filter, sort }` toggle reading it, filtering and sorting on it. `{ deprecated: "reason" }` emits `@deprecated`. A toggle on an interface applies to its implementations. |
+| `defaults.operations`    | The default of every model. Reads are on, writes off.                                                                                                                                                                 |
+| `naming.<M>.<operation>` | A root field name replacing `<model><Operation>`. It is part of the printed contract.                                                                                                                                 |
+| `limits`                 | Checked before the statement is built (see [Limits](#limits)).                                                                                                                                                        |
+| `generator`              | The generator version the printed SDL follows. Only `1` today.                                                                                                                                                        |
+
+## Naming
+
+Root fields are `<model><Operation>`: no pluralization, and the fields of a model sort together.
+`node BlogPost` gives `blogPostFindMany`. Types keep the model names; inputs are `<Model>Where`,
+`<Model>WhereUnique`, `<Model>OrderBy`; filters are shared per scalar type (`StringFilter`,
+`IntFilter`, `DateTimeFilter`, …).
+
+GraphQL names cannot contain `$`, so the client's `$` keys become `_` keys:
+
+| Client                                    | GraphQL                                        |
+| ----------------------------------------- | ---------------------------------------------- |
+| `db.post.findMany(args)`                  | `postFindMany(...)`                            |
+| `select` / `include`                      | the selection set                              |
+| `$edge`                                   | `_edge`                                        |
+| `$labels`                                 | `_labels`                                      |
+| `$on` in `where`                          | `_on`                                          |
+| `$on` in `select`                         | inline fragments: `... on Employee { salary }` |
+| `__typename` in `where` / `orderBy`       | `_typename`                                    |
+| `where: { email: "a@x.io" }` (bare value) | `where: { email: { equals: "a@x.io" } }`       |
+| `orderBy: { createdAt: "desc" }`          | `orderBy: [{ createdAt: desc }]`               |
+
+A model field named like one of these (`_edge`, `_count`, `_labels`, `_on`, `_typename`, `_score`,
+`_scores`, `_ops`) is a `makeSchema` error: rename it in `schema.cyphra`.
+
+## Queries
+
+```graphql
+type Query {
+  userFindUnique(where: UserWhereUnique!): User
+  userFindFirst(where: UserWhere, orderBy: [UserOrderBy!], skip: Int): User
+  userFindMany(
+    where: UserWhere
+    orderBy: [UserOrderBy!]
+    skip: Int
+    take: Int
+    after: String
+    before: String
+  ): UserList
+  userCount(where: UserWhere): Int
+}
+
+type UserList {
+  nodes: [User!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+```
+
+- `userFindUnique` takes the model's `@id` / `@unique` fields as bare values (and `@@unique`
+  keys as objects), plus filters on the other fields. At least one key is required: a `where`
+  without one is a `BAD_USER_INPUT` error.
+- Root fields are nullable: a failing root field is `null` with its error, and the other root
+  fields of the query still return.
+
+### Lists and paging
+
+There is one list query per model, for offset and cursor paging:
+
+```graphql
+query Feed($after: String) {
+  postFindMany(
+    where: { published: { equals: true } }
+    orderBy: [{ createdAt: desc }]
+    take: 20
+    after: $after
+  ) {
+    nodes {
+      id
+      title
+      author {
+        name
+      }
+    }
+    pageInfo {
+      hasNextPage
+      endCursor
+    }
+    totalCount
+  }
+}
+```
+
+- `skip` / `take` page by offset; `after` / `before` page by cursor, after or before a
+  `pageInfo.endCursor` / `startCursor`. `after` with `skip` skips within the page after the cursor.
+- Cursors are **keyset cursors** (the client's [`cursor`](/client#cursor-pagination)): the
+  `orderBy` values of the boundary node and its `@id`. A page after a cursor does not shift when
+  nodes are inserted before it. A cursor made for another `orderBy` or another model, or a
+  malformed one, is a `BAD_USER_INPUT` error, never the first page.
+- `pageInfo` loads one row more than `take` to tell whether there is a next page (a previous one
+  with `before`). Paging forward, `hasPreviousPage` is `true` when `after` or `skip` is given.
+- `totalCount` (the number of nodes matching `where`) is only counted when selected, in the same
+  read transaction as the page.
+
+### Filters
+
+`<Model>Where` mirrors the client's `where`:
+
+```graphql
+query {
+  userFindMany(
+    where: {
+      OR: [{ role: { equals: ADMIN } }, { email: { endsWith: "@acme.io", mode: insensitive } }]
+      posts: { some: { published: { equals: true } } }
+      name: null
+    }
+  ) {
+    nodes {
+      email
+    }
+  }
+}
+```
+
+- Operators are the client's ([table](/client#filters)): `equals`, `not`, `in`, `notIn`, `lt`,
+  `lte`, `gt`, `gte`, `contains`, `startsWith`, `endsWith`, `mode: insensitive`; list fields take
+  `has`, `hasEvery`, `hasSome`, `isEmpty`, `equals`; points take `distance` and `withinBBox`.
+- `name: null` and `{ equals: null }` match nodes without the property; `{ not: null }` the
+  others.
+- To-many relations take `some`, `none`, `every`; `some: {}` means "has at least one". To-one
+  relations take `is`, `isNot`; `author: null` means "has none".
+- `Vector` fields cannot be filtered or sorted on (use the client's `findSimilar`).
+
+### Ordering
+
+`orderBy` is a list with **one key per element** (input object field order is not reliable in
+every client library); two keys in one element are a `BAD_USER_INPUT` error.
+
+```graphql
+orderBy: [
+  { author: { name: asc } } # to-one: a field of the related node
+  { tags: { _count: desc, where: { name: { startsWith: "a" } } } } # to-many: their number
+  { createdAt: desc }
+]
+```
+
+Point fields sort by distance: `{ location: { distanceFrom: { longitude: 2.35, latitude: 48.85 } } }`.
+
+### Relations, `_edge` and `_count`
+
+To-many relations take `where`, `orderBy`, `skip` and `take`, as a nested `include` of the client;
+to-one relations are nullable objects. The same relation can be loaded twice under aliases, still
+in one statement:
+
+```graphql
+query {
+  userFindUnique(where: { email: "alice@acme.io" }) {
+    recent: posts(orderBy: [{ createdAt: desc }], take: 3) {
+      title
+    }
+    popular: posts(orderBy: [{ views: desc }], take: 3) {
+      title
+    }
+    following(orderBy: [{ name: asc }]) {
+      name
+      _edge {
+        since
+      }
+    }
+    _count {
+      posts
+      followers(where: { role: { equals: ADMIN } })
+    }
+  }
+}
+```
+
+- **Edge properties** of a relation with a `relationship { … }` model are the `_edge` field of the
+  node it leads to: no connection types. Selecting `_edge` on a node that was not reached through
+  such a relation (a root, or another relation) is a `BAD_USER_INPUT` error, not a silent `null`.
+  When several relationship models lead to a node, `_edge` is a union of them
+  (`union UserEdge = Blocks | Follows`), selected with inline fragments.
+- `_count` counts the related nodes of each selected to-many relation (only those), optionally
+  filtered. A relation can be counted once per selection.
+
+### Interfaces and unions
+
+Cyphra interfaces (a label shared by their implementations) are GraphQL interfaces; unions are
+GraphQL unions. Inline fragments and fragment spreads are the client's `$on`: each implementation's
+selection is evaluated only on its nodes, in the same statement.
+
+```graphql
+query {
+  personFindMany(
+    where: { _on: { Employee: { salary: { gt: 100 } }, Customer: {} } }
+    orderBy: [{ _typename: asc }, { name: asc }]
+  ) {
+    nodes {
+      __typename
+      name
+      manager {
+        name
+      }
+      ... on Employee {
+        salary
+      }
+    }
+  }
+  customers: personCount(where: { _typename: { in: [Customer] } })
+}
+```
+
+- `_typename` filters and sorts by implementation (an enum of them); `_on` keeps the listed
+  implementations matching their own `where`.
+- A union has `findFirst`, `findMany` and `count` (no unique key, so no `findUnique`).
+- An interface without fields (`interface Archivable {}`) is served as a union of its
+  implementations: GraphQL interfaces need at least one field.
+
+## Scalars
+
+| Cyphra                                           | GraphQL                                                              |
+| ------------------------------------------------ | -------------------------------------------------------------------- |
+| `String` with `@id`                              | `ID`                                                                 |
+| `String`, `Int`, `Float`, `Boolean`              | the same (`Int` is GraphQL's 32-bit `Int`: use `BigInt` above it)    |
+| `DateTime`                                       | `DateTime` (ISO 8601: `2026-11-01T09:30:00.000Z`)                    |
+| `Date`                                           | `Date` (`yyyy-mm-dd`)                                                |
+| `LocalDateTime`, `LocalTime`, `Time`, `Duration` | the same names, ISO 8601 strings                                     |
+| `BigInt`                                         | `BigInt` (a decimal string)                                          |
+| `Json`                                           | `Json` (any JSON value)                                              |
+| `Point`, `CartesianPoint`                        | objects (`{ longitude latitude height }`, `{ x y z }`), `PointInput` |
+| `Vector(N)`                                      | `[Float!]`                                                           |
+| `enum`                                           | a GraphQL enum                                                       |
+| `@@labels([…])`                                  | `_labels: [String!]!`, filtered with `_labels: { has, hasSome, … }`  |
+
+Optional fields are nullable; required ones are non-null; lists are `[T!]!`.
+
+## Limits
+
+`config.limits` bounds what one root field may ask the database to load. Each is checked before
+the statement is built; exceeding one fails the root field with `BAD_USER_INPUT` and
+`extensions.limit` naming it.
+
+| Limit           | Description                                                                                                                  |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `maxDepth`      | Deepest relation nesting (a root's relations are depth 1).                                                                   |
+| `maxTake`       | Largest `take` of a list, root or relation; also the `take` of a list that sets none.                                        |
+| `maxAliases`    | Most aliased fields in one root field's selection.                                                                           |
+| `maxComplexity` | Most rows a root field may load: each list multiplies its parent's rows by its `take` (`maxTake`, or 100, when it has none). |
+
+## Errors
+
+Errors carry a stable `extensions.code`, mapped from the client's errors:
+
+| Error                                                              | `extensions.code`       | `extensions`                           |
+| ------------------------------------------------------------------ | ----------------------- | -------------------------------------- |
+| `CyphraValidationError` (bad input, invalid cursor, no unique key) | `BAD_USER_INPUT`        | `issues` when the client lists some    |
+| `_edge` outside its context, two keys in one `orderBy` element     | `BAD_USER_INPUT`        |                                        |
+| a [limit](#limits) exceeded                                        | `BAD_USER_INPUT`        | `limit`                                |
+| `NotFoundError`                                                    | `NOT_FOUND`             |                                        |
+| `RestrictError`                                                    | `RESTRICTED`            | `model`, `relation`, `target`, `count` |
+| `UniqueConstraintError`                                            | `UNIQUE_CONSTRAINT`     | `model`, `fields`, `constraint`        |
+| anything else (driver, bug)                                        | `INTERNAL_SERVER_ERROR` | message masked unless `debug: true`    |
+
+## One statement per root field
+
+A root field's arguments and its whole selection (fragments resolved, `@skip` / `@include`
+applied, variables substituted) are translated into one client operation, which compiles one
+Cypher statement (`COLLECT {}` / `COUNT {}` subqueries for relations, `CASE WHEN n:Label` for
+fragments). Nested fields do no I/O: a query runs as many statements as it has root fields,
+whatever its depth. A `findMany` that selects `totalCount` with its nodes runs the page and the
+count in one read transaction.
+
+## Side by side with compat.v7
+
+The two APIs have types with the same names and different shapes, so they are served on separate
+endpoints, from the same client or driver and the same graph:
+
+```ts filename="app/api/graphql/[[...v]]/route.ts"
+const v7 = compat.v7.makeSchema({ typeDefs, client: db.$client });
+const v2 = native.makeSchema({ client: db, config: api });
+// /api/graphql stays the v7 API; /api/graphql/v2 is the native one.
+```
+
+Frontends move operation by operation: `movies(where, sort, limit)` becomes
+`movieFindMany(where, orderBy, take) { nodes }`, `actorsConnection { edges { properties } }`
+becomes `actors { _edge { … } }`, `{ eq: … }` becomes `{ equals: … }`. Keyset cursors are not
+interchangeable with v7's offset cursors. The [migration guide](/guides/migrate-from-neo4j-graphql)
+covers moving the type definitions to `schema.cyphra` (`cyphra import graphql`).

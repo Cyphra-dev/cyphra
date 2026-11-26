@@ -1,0 +1,56 @@
+{
+  "data": {
+    "trackFindMany": {
+      "nodes": [
+        {
+          "name": "Getting started",
+          "publishedAt": "2024-03-01T09:00:00.000Z",
+          "items": [
+            {
+              "__typename": "Lab",
+              "title": "Cypher basics",
+              "_edge": {
+                "position": 1
+              }
+            },
+            {
+              "__typename": "Quiz",
+              "title": "Cypher quiz",
+              "_edge": {
+                "position": 2
+              },
+              "questions": 5
+            }
+          ],
+          "_count": {
+            "items": 2
+          }
+        },
+        {
+          "name": "APIs",
+          "publishedAt": "2024-06-01T09:00:00.000Z",
+          "items": [
+            {
+              "__typename": "Quiz",
+              "title": "Cypher quiz",
+              "_edge": {
+                "position": 2
+              },
+              "questions": 5
+            },
+            {
+              "__typename": "Lab",
+              "title": "GraphQL on Neo4j",
+              "_edge": {
+                "position": 1
+              }
+            }
+          ],
+          "_count": {
+            "items": 2
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,21 @@
+# features: interface, filter
+query {
+  advancedQuizzesAndLabs: activityFindMany(
+    where: { _on: { Quiz: { level: { equals: ADVANCED } }, Lab: {} } }
+  ) {
+    nodes {
+      __typename
+      title
+    }
+  }
+  quizzesOnly: activityCount(where: { _typename: { equals: Quiz } })
+  byAuthor: activityFindMany(where: { author: { is: { name: { equals: "Ada" } } } }) {
+    nodes {
+      title
+    }
+  }
+  unique: activityFindUnique(where: { id: "q-graphs" }) {
+    __typename
+    title
+  }
+}

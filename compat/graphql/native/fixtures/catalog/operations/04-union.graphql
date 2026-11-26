@@ -1,0 +1,18 @@
+# features: union, fragment
+query {
+  searchableFindMany(
+    where: { _on: { Author: { name: { startsWith: "A" } }, Lab: { minutes: { gte: 40 } } } }
+  ) {
+    nodes {
+      __typename
+      ... on Author {
+        name
+      }
+      ... on Activity {
+        title
+      }
+    }
+    totalCount
+  }
+  searchableCount
+}

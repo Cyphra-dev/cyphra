@@ -105,10 +105,9 @@ function parseHeader(document: string): { features: string[]; ordered: boolean }
   return { features, ordered };
 }
 
-export function loadFixture(name: string): Fixture {
-  const dir = path.join(FIXTURES_DIR, name);
-  const opsDir = path.join(dir, "operations");
-  const operations = readdirSync(opsDir)
+/** The operations of a fixture (`<opsDir>/*.graphql` and their side files). */
+export function loadOperations(fixture: string, opsDir: string): Operation[] {
+  return readdirSync(opsDir)
     .filter((f) => f.endsWith(".graphql"))
     .sort()
     .map((file): Operation => {
@@ -116,7 +115,7 @@ export function loadFixture(name: string): Fixture {
       const document = readFileSync(path.join(opsDir, file), "utf8");
       const header = parseHeader(document);
       return {
-        fixture: name,
+        fixture,
         name: opName,
         document,
         variables: readJson(path.join(opsDir, `${opName}.variables.json`)) ?? {},
@@ -128,6 +127,11 @@ export function loadFixture(name: string): Fixture {
         script: readText(path.join(opsDir, `${opName}.script.cypher`)),
       };
     });
+}
+
+export function loadFixture(name: string): Fixture {
+  const dir = path.join(FIXTURES_DIR, name);
+  const operations = loadOperations(name, path.join(dir, "operations"));
   return {
     name,
     dir,

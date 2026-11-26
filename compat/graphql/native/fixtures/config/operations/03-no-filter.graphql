@@ -1,0 +1,8 @@
+# features: config.fields
+query {
+  userFindMany(where: { email: { equals: "alice@x.io" } }) {
+    nodes {
+      name
+    }
+  }
+}

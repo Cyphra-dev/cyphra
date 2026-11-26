@@ -1,0 +1,48 @@
+{
+  "data": {
+    "someActorBornAfter1965": {
+      "nodes": [
+        {
+          "title": "The Matrix Reloaded"
+        },
+        {
+          "title": "The Matrix"
+        }
+      ]
+    },
+    "everyActorBornBefore1965": {
+      "nodes": [
+        {
+          "title": "A Few Good Men"
+        },
+        {
+          "title": "Johnny Mnemonic"
+        },
+        {
+          "title": "The Devil's Advocate"
+        }
+      ]
+    },
+    "noKeanu": {
+      "nodes": [
+        {
+          "title": "A Few Good Men"
+        }
+      ]
+    },
+    "hasDirector": 4,
+    "directorsOfKeanuMovies": {
+      "nodes": [
+        {
+          "name": "Lana Wachowski"
+        },
+        {
+          "name": "Lilly Wachowski"
+        },
+        {
+          "name": "Taylor Hackford"
+        }
+      ]
+    }
+  }
+}

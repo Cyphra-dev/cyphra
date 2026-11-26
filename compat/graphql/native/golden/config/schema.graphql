@@ -1,0 +1,299 @@
+type AuditLog {
+  action: String!
+  id: ID!
+}
+
+type AuditLogList {
+  nodes: [AuditLog!]!
+  pageInfo: PageInfo!
+
+  """
+  Number of nodes matching where, ignoring paging. Counted only when selected.
+  """
+  totalCount: Int!
+}
+
+"""One key per element of the orderBy list."""
+input AuditLogOrderBy {
+  action: SortOrder
+  id: SortOrder
+}
+
+input AuditLogWhere {
+  AND: [AuditLogWhere!]
+  NOT: AuditLogWhere
+  OR: [AuditLogWhere!]
+  action: StringFilter
+  id: IDFilter
+}
+
+type Comment {
+  id: ID!
+  text: String!
+}
+
+input CommentListRelationFilter {
+  """Every related node matches."""
+  every: CommentWhere
+
+  """No related node matches."""
+  none: CommentWhere
+
+  """At least one related node matches."""
+  some: CommentWhere
+}
+
+"""One key per element of the orderBy list."""
+input CommentOrderBy {
+  id: SortOrder
+  text: SortOrder
+}
+
+input CommentRelationCountOrder {
+  _count: SortOrder!
+
+  """Count only the matching nodes."""
+  where: CommentWhere
+}
+
+input CommentWhere {
+  AND: [CommentWhere!]
+  NOT: CommentWhere
+  OR: [CommentWhere!]
+  id: IDFilter
+  text: StringFilter
+}
+
+input IDFilter {
+  contains: ID
+  endsWith: ID
+  equals: ID
+  gt: ID
+  gte: ID
+  in: [ID!]
+  lt: ID
+  lte: ID
+  mode: QueryMode
+  not: ID
+  notIn: [ID!]
+  startsWith: ID
+}
+
+type PageInfo {
+  endCursor: String
+  hasNextPage: Boolean!
+  hasPreviousPage: Boolean!
+  startCursor: String
+}
+
+type Post {
+  """
+  Number of related nodes per to-many relation (only the selected ones are counted).
+  """
+  _count: PostCount!
+  author: User
+  comments(orderBy: [CommentOrderBy!], skip: Int, take: Int, where: CommentWhere): [Comment!]!
+  id: ID!
+  title: String! @deprecated(reason: "use a headline")
+}
+
+type PostCount {
+  comments(where: CommentWhere): Int!
+}
+
+type PostList {
+  nodes: [Post!]!
+  pageInfo: PageInfo!
+
+  """
+  Number of nodes matching where, ignoring paging. Counted only when selected.
+  """
+  totalCount: Int!
+}
+
+input PostListRelationFilter {
+  """Every related node matches."""
+  every: PostWhere
+
+  """No related node matches."""
+  none: PostWhere
+
+  """At least one related node matches."""
+  some: PostWhere
+}
+
+"""One key per element of the orderBy list."""
+input PostOrderBy {
+  """Sort by a field of the related node."""
+  author: UserScalarOrderBy
+
+  """Sort by the number of related nodes."""
+  comments: CommentRelationCountOrder
+  id: SortOrder
+  title: SortOrder
+}
+
+input PostRelationCountOrder {
+  _count: SortOrder!
+
+  """Count only the matching nodes."""
+  where: PostWhere
+}
+
+input PostWhere {
+  AND: [PostWhere!]
+  NOT: PostWhere
+  OR: [PostWhere!]
+  author: UserRelationFilter
+  comments: CommentListRelationFilter
+  id: IDFilter
+  title: StringFilter
+}
+
+"""
+At least one unique key (checked when the query runs), plus filters on the other fields.
+"""
+input PostWhereUnique {
+  AND: [PostWhere!]
+  NOT: PostWhere
+  OR: [PostWhere!]
+  author: UserRelationFilter
+  comments: CommentListRelationFilter
+  id: ID
+  title: StringFilter
+}
+
+type Query {
+  auditLogCount(where: AuditLogWhere): Int
+  auditLogFindMany(
+    """A cursor (pageInfo.endCursor): the page after it."""
+    after: String
+
+    """A cursor (pageInfo.startCursor): the page before it."""
+    before: String
+    orderBy: [AuditLogOrderBy!]
+    skip: Int
+    take: Int
+    where: AuditLogWhere
+  ): AuditLogList
+  post(where: PostWhereUnique!): Post
+  postCount(where: PostWhere): Int
+  postFindFirst(orderBy: [PostOrderBy!], skip: Int, where: PostWhere): Post
+  posts(
+    """A cursor (pageInfo.endCursor): the page after it."""
+    after: String
+
+    """A cursor (pageInfo.startCursor): the page before it."""
+    before: String
+    orderBy: [PostOrderBy!]
+    skip: Int
+    take: Int
+    where: PostWhere
+  ): PostList
+  userCount(where: UserWhere): Int
+  userFindFirst(orderBy: [UserOrderBy!], skip: Int, where: UserWhere): User
+  userFindMany(
+    """A cursor (pageInfo.endCursor): the page after it."""
+    after: String
+
+    """A cursor (pageInfo.startCursor): the page before it."""
+    before: String
+    orderBy: [UserOrderBy!]
+    skip: Int
+    take: Int
+    where: UserWhere
+  ): UserList
+  userFindUnique(where: UserWhereUnique!): User
+}
+
+"""`insensitive` compares lower-cased values."""
+enum QueryMode {
+  default
+  insensitive
+}
+
+enum SortOrder {
+  asc
+  desc
+}
+
+input StringFilter {
+  contains: String
+  endsWith: String
+  equals: String
+  gt: String
+  gte: String
+  in: [String!]
+  lt: String
+  lte: String
+  mode: QueryMode
+  not: String
+  notIn: [String!]
+  startsWith: String
+}
+
+type User {
+  """
+  Number of related nodes per to-many relation (only the selected ones are counted).
+  """
+  _count: UserCount!
+  email: String!
+  id: ID!
+  name: String!
+  posts(orderBy: [PostOrderBy!], skip: Int, take: Int, where: PostWhere): [Post!]!
+}
+
+type UserCount {
+  posts(where: PostWhere): Int!
+}
+
+type UserList {
+  nodes: [User!]!
+  pageInfo: PageInfo!
+
+  """
+  Number of nodes matching where, ignoring paging. Counted only when selected.
+  """
+  totalCount: Int!
+}
+
+"""One key per element of the orderBy list."""
+input UserOrderBy {
+  id: SortOrder
+  name: SortOrder
+
+  """Sort by the number of related nodes."""
+  posts: PostRelationCountOrder
+}
+
+input UserRelationFilter {
+  """The related node matches (null: none)."""
+  is: UserWhere
+  isNot: UserWhere
+}
+
+input UserScalarOrderBy {
+  id: SortOrder
+  name: SortOrder
+}
+
+input UserWhere {
+  AND: [UserWhere!]
+  NOT: UserWhere
+  OR: [UserWhere!]
+  id: IDFilter
+  name: StringFilter
+  posts: PostListRelationFilter
+}
+
+"""
+At least one unique key (checked when the query runs), plus filters on the other fields.
+"""
+input UserWhereUnique {
+  AND: [UserWhere!]
+  NOT: UserWhere
+  OR: [UserWhere!]
+  id: ID
+  name: StringFilter
+  posts: PostListRelationFilter
+}

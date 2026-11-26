@@ -1,0 +1,47 @@
+// Interfaces (a shared label), a union, enums and temporal / BigInt / point scalars.
+enum Level {
+  BEGINNER
+  ADVANCED
+}
+
+interface Activity {
+  id       String   @id
+  title    String
+  minutes  Int?
+  author   Author?  @relationship(type: "WROTE", direction: IN)
+  tracks   Track[]  @relationship(type: "CONTAINS", direction: IN)
+}
+
+node Lab implements Activity {
+  image String?
+}
+
+node Quiz implements Activity {
+  level     Level  @default(BEGINNER)
+  questions Int
+}
+
+node Author {
+  id         String     @id
+  name       String     @unique
+  joined     Date
+  reach      BigInt?
+  office     Point?
+  activities Activity[] @relationship(type: "WROTE", direction: OUT)
+}
+
+node Track {
+  id         String     @id
+  name       String
+  publishedAt DateTime
+  items      Activity[] @relationship(type: "CONTAINS", direction: OUT)
+}
+
+relationship Contains {
+  type     "CONTAINS"
+  from     Track
+  to       Activity
+  position Int
+}
+
+union Searchable = Lab | Quiz | Author

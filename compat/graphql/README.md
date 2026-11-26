@@ -104,6 +104,35 @@ and errors keep only `message`, `path` and `extensions.code`.
 Bumping `@neo4j/graphql`: change the exact version, run `golden`, and review the golden diff: it is
 the list of API changes the other implementations must follow.
 
+## Native suite
+
+`native/` holds the suite of the Cyphra-native API (`native.makeSchema`, #77), with the same
+layout, but generated from `schema.cyphra` instead of v7 type definitions:
+
+```
+native/fixtures/<app>/
+  schema.cyphra               the data model
+  config.ts                   optional: its default export (defineGraphQL) is the API's config
+  seed.cypher                 data (same format as above)
+  operations/NN-name.graphql  one operation per file (same headers and side files as above)
+native/golden/<app>/schema.graphql   native.printSchema: the sorted SDL, the API's contract
+native/golden/<app>/NN-name.json     normalized result of each operation
+```
+
+There is no reference implementation to generate goldens from: `golden:native` writes them with
+the native API itself, and the diff is reviewed like any other code. A change of the printed SDL or
+of a result is a golden diff in the PR. Errors are sorted by path (root fields resolve
+concurrently).
+
+```sh
+pnpm --filter compat-graphql golden:native          # every native fixture
+pnpm --filter compat-graphql golden:native catalog  # only some
+```
+
+`test` checks them too (the SDL checks need no database). `test/side-by-side.test.ts` serves
+`compat.v7` (fixtures/movies) and the native API (native/fixtures/movies) from one HTTP server, on
+one driver and one graph, and compares their answers.
+
 ## Plugging in another implementation
 
 `src/implementations.ts` defines:

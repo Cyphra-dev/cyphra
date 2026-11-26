@@ -1,0 +1,7 @@
+{
+  "errors": [
+    {
+      "message": "Cannot query field \"auditLogFindUnique\" on type \"Query\". Did you mean \"auditLogFindMany\", \"userFindUnique\", or \"auditLogCount\"?"
+    }
+  ]
+}

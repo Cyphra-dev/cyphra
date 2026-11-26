@@ -55,6 +55,33 @@ export function withEngineRules<C extends object>(client: C, rules: EngineRules)
   return (fn as (r: EngineRules) => C)(rules);
 }
 
+/** Key of the hidden method behind {@link withReadTransaction}. */
+const READ_TX = Symbol.for("cyphra.withReadTransaction");
+
+/**
+ * Run `fn` in one read transaction of `client`: `tx` has the model delegates of `client` (same
+ * extensions, hooks and engine rules), and every statement `fn` runs through them shares the
+ * transaction. On FalkorDB, which has no multi-statement transactions, `fn` gets `client` itself.
+ *
+ * This is the engine entry `@cyphra/graphql`'s native API runs a root field in (a page and its
+ * `totalCount`). It is internal: experimental, and not covered by semantic versioning.
+ *
+ * @internal
+ * @experimental
+ */
+export function withReadTransaction<C extends object, T>(
+  client: C,
+  fn: (tx: C) => Promise<T>,
+): Promise<T> {
+  const run = (client as Record<symbol, unknown>)[READ_TX];
+  if (typeof run !== "function") {
+    throw new CyphraValidationError(
+      "withReadTransaction: not a Cyphra ORM client (createOrm / createClient).",
+    );
+  }
+  return (run as (f: (tx: C) => Promise<T>) => Promise<T>)(fn);
+}
+
 /** Check `rules` against the schema: known models and operations, boolean or object values. */
 function checkEngineRules(schema: SchemaModel, rules: EngineRules): void {
   if (typeof rules !== "object" || rules === null || Array.isArray(rules)) {
@@ -500,36 +527,37 @@ export function createOrm<TM extends TypeMap>(
 
   const build = (state: ExtensionState, opts: EngineOptions): Record<string, unknown> => {
     const self: Record<string, unknown> = {};
+    const transactionIn = <T>(
+      mode: "READ" | "WRITE",
+      fn: (tx: unknown) => Promise<T>,
+    ): Promise<T> =>
+      instr.operation({ operation: "$transaction" }, () =>
+        mapped(schema, () =>
+          (mode === "READ"
+            ? client.withReadTransaction.bind(client)
+            : client.withWriteTransaction.bind(client))((tx) => {
+            const inTx: RunnerFor = (meta) => {
+              const exec = txExecutor(instr, schema, tx, { ...meta, transaction: true }, dialect);
+              return { read: (f) => f(exec), write: (f) => f(exec) };
+            };
+            const txClient: Record<string, unknown> = {};
+            installDelegates(txClient, {
+              instr,
+              schema,
+              runnerFor: inTx,
+              options: opts,
+              state,
+              parent: () => txClient,
+            });
+            txClient.$cypher = rawFor(instr, inTx);
+            return fn(txClient);
+          }),
+        ),
+      );
     const transaction = <T>(fn: (tx: unknown) => Promise<T>): Promise<T> =>
       dialect === "falkordb"
         ? Promise.reject(falkordbTransactionError())
-        : instr.operation({ operation: "$transaction" }, () =>
-            mapped(schema, () =>
-              client.withWriteTransaction((tx) => {
-                const inTx: RunnerFor = (meta) => {
-                  const exec = txExecutor(
-                    instr,
-                    schema,
-                    tx,
-                    { ...meta, transaction: true },
-                    dialect,
-                  );
-                  return { read: (f) => f(exec), write: (f) => f(exec) };
-                };
-                const txClient: Record<string, unknown> = {};
-                installDelegates(txClient, {
-                  instr,
-                  schema,
-                  runnerFor: inTx,
-                  options: opts,
-                  state,
-                  parent: () => txClient,
-                });
-                txClient.$cypher = rawFor(instr, inTx);
-                return fn(txClient);
-              }),
-            ),
-          );
+        : transactionIn("WRITE", fn);
     installDelegates(self, {
       instr,
       schema,
@@ -560,6 +588,10 @@ export function createOrm<TM extends TypeMap>(
           rules: [...(opts.rules ?? []), rules],
         });
       },
+    });
+    Object.defineProperty(self, READ_TX, {
+      value: <T>(fn: (tx: unknown) => Promise<T>): Promise<T> =>
+        dialect === "falkordb" ? fn(self) : transactionIn("READ", fn),
     });
     for (const [k, v] of Object.entries(state.clientMembers())) {
       self[k] = typeof v === "function" ? v.bind(self) : v;

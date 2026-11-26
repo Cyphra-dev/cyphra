@@ -1,0 +1,32 @@
+# features: filter.scalar
+query {
+  after2000: movieFindMany(where: { released: { gt: 2000 } }) {
+    nodes {
+      title
+    }
+  }
+  titleContains: movieFindMany(where: { title: { contains: "matrix", mode: insensitive } }) {
+    nodes {
+      title
+    }
+  }
+  inList: movieFindMany(where: { id: { in: ["m-matrix", "m-devils"] } }) {
+    nodes {
+      id
+    }
+  }
+  noTagline: movieFindMany(where: { tagline: null }) {
+    nodes {
+      title
+    }
+  }
+  hasTagline: movieFindMany(where: { tagline: { not: null } }) {
+    totalCount
+  }
+  genres: movieFindMany(where: { genres: { hasEvery: ["Action", "Thriller"] } }) {
+    nodes {
+      title
+      genres
+    }
+  }
+}

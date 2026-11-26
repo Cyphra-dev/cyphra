@@ -1,0 +1,25 @@
+# features: interface, relationship, edge, fragment
+# ordered
+query {
+  trackFindMany(orderBy: [{ publishedAt: asc }]) {
+    nodes {
+      name
+      publishedAt
+      items(orderBy: [{ title: asc }]) {
+        __typename
+        title
+        _edge {
+          position
+        }
+        ...QuizFields
+      }
+      _count {
+        items
+      }
+    }
+  }
+}
+
+fragment QuizFields on Quiz {
+  questions
+}

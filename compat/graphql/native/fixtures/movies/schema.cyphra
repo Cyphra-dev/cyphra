@@ -1,0 +1,28 @@
+// The movies fixture of the v7 suite (fixtures/movies), as schema.cyphra: the same graph, served
+// by the native API (the side-by-side test serves both from one server).
+node Movie {
+  id        String   @id
+  title     String
+  released  Int
+  tagline   String?
+  rating    Float?
+  genres    String[]
+  actors    Person[] @relationship(type: "ACTED_IN", direction: IN)
+  directors Person[] @relationship(type: "DIRECTED", direction: IN)
+}
+
+node Person {
+  id       String  @id
+  name     String
+  born     Int?
+  actedIn  Movie[] @relationship(type: "ACTED_IN", direction: OUT)
+  directed Movie[] @relationship(type: "DIRECTED", direction: OUT)
+}
+
+relationship ActedIn {
+  type       "ACTED_IN"
+  from       Person
+  to         Movie
+  roles      String[]
+  screenTime Int?
+}

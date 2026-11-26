@@ -1,0 +1,41 @@
+enum Role {
+  MEMBER
+  ADMIN
+}
+
+node User {
+  id           String  @id @default(cuid())
+  email        String  @unique
+  name         String?
+  role         Role    @default(MEMBER)
+  loginCount   Int     @default(0)
+  passwordHash String
+  posts        Post[]  @relationship(type: "AUTHORED", direction: OUT, onDelete: Cascade)
+  following    User[]  @relationship(type: "FOLLOWS", direction: OUT)
+  followers    User[]  @relationship(type: "FOLLOWS", direction: IN)
+}
+
+node Post {
+  id        String   @id @default(cuid())
+  title     String   @length(3, 100)
+  body      String
+  published Boolean  @default(false)
+  views     Int      @default(0)
+  createdAt DateTime @default(now())
+  author    User?    @relationship(type: "AUTHORED", direction: IN)
+  tags      Tag[]    @relationship(type: "TAGGED", direction: OUT)
+
+  @@fulltext([title, body], name: "postSearch", analyzer: "english")
+}
+
+node Tag {
+  name  String @id
+  posts Post[] @relationship(type: "TAGGED", direction: IN)
+}
+
+relationship Follows {
+  type  "FOLLOWS"
+  from  User
+  to    User
+  since DateTime @default(now())
+}

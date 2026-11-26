@@ -1,0 +1,43 @@
+{
+  "data": {
+    "activityFindMany": {
+      "nodes": [
+        {
+          "__typename": "Lab",
+          "title": "Cypher basics",
+          "author": {
+            "name": "Ada"
+          },
+          "image": "neo4j:5"
+        },
+        {
+          "__typename": "Lab",
+          "title": "GraphQL on Neo4j",
+          "author": {
+            "name": "Bob"
+          },
+          "image": null
+        },
+        {
+          "__typename": "Quiz",
+          "title": "Cypher quiz",
+          "author": {
+            "name": "Ada"
+          },
+          "level": "BEGINNER",
+          "questions": 5
+        },
+        {
+          "__typename": "Quiz",
+          "title": "Graph theory",
+          "author": {
+            "name": "Bob"
+          },
+          "level": "ADVANCED",
+          "questions": 12
+        }
+      ],
+      "totalCount": 4
+    }
+  }
+}

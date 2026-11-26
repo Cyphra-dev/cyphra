@@ -1,0 +1,25 @@
+# features: sort, pagination.offset
+# ordered
+query {
+  byReleased: movieFindMany(orderBy: [{ released: desc }], skip: 1, take: 2) {
+    nodes {
+      title
+      released
+    }
+    pageInfo {
+      hasNextPage
+      hasPreviousPage
+    }
+  }
+  byActorCount: movieFindMany(orderBy: [{ actors: { _count: desc } }, { title: asc }], take: 3) {
+    nodes {
+      title
+      _count {
+        actors
+      }
+    }
+  }
+  first: movieFindFirst(orderBy: [{ rating: asc }]) {
+    title
+  }
+}

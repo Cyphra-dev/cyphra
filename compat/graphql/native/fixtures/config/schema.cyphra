@@ -1,0 +1,25 @@
+// Operation and field toggles, naming overrides and limits (config.ts).
+node User {
+  id           String  @id
+  email        String  @unique
+  name         String
+  passwordHash String
+  posts        Post[]  @relationship(type: "AUTHORED", direction: OUT)
+}
+
+node Post {
+  id       String    @id
+  title    String
+  author   User?     @relationship(type: "AUTHORED", direction: IN)
+  comments Comment[] @relationship(type: "HAS_COMMENT", direction: OUT)
+}
+
+node Comment {
+  id   String @id
+  text String
+}
+
+node AuditLog {
+  id     String @id
+  action String
+}

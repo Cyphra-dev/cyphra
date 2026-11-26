@@ -1,0 +1,30 @@
+# features: scalars
+query {
+  authorFindUnique(where: { name: "Ada" }) {
+    joined
+    reach
+    office {
+      longitude
+      latitude
+      height
+    }
+  }
+  joinedBefore2021: authorFindMany(where: { joined: { lt: "2021-01-01" } }) {
+    nodes {
+      name
+    }
+  }
+  nearParis: authorFindMany(
+    where: { office: { distance: { from: { longitude: 2.3, latitude: 48.8 }, lt: 10000 } } }
+  ) {
+    nodes {
+      name
+    }
+  }
+  bigReach: authorCount(where: { reach: { gt: "9007199254740992" } })
+  recentTracks: trackFindMany(where: { publishedAt: { gte: "2024-05-01T00:00:00Z" } }) {
+    nodes {
+      name
+    }
+  }
+}

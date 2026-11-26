@@ -1,0 +1,53 @@
+{
+  "data": {
+    "movieFindUnique": {
+      "title": "The Matrix",
+      "actors": [
+        {
+          "name": "Carrie-Anne Moss",
+          "_edge": {
+            "roles": [
+              "Trinity"
+            ],
+            "screenTime": 80
+          }
+        },
+        {
+          "name": "Keanu Reeves",
+          "_edge": {
+            "roles": [
+              "Neo"
+            ],
+            "screenTime": 120
+          }
+        },
+        {
+          "name": "Laurence Fishburne",
+          "_edge": {
+            "roles": [
+              "Morpheus"
+            ],
+            "screenTime": 70
+          }
+        }
+      ],
+      "directors": [
+        {
+          "name": "Lana Wachowski"
+        },
+        {
+          "name": "Lilly Wachowski"
+        }
+      ],
+      "lead": [
+        {
+          "name": "Keanu Reeves"
+        }
+      ],
+      "_count": {
+        "actors": 3,
+        "directors": 2
+      }
+    }
+  }
+}

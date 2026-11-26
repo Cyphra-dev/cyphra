@@ -1,0 +1,13 @@
+CREATE (u1:User {id: "u1", email: "alice@x.io", name: "Alice", passwordHash: "secret"})
+CREATE (u2:User {id: "u2", email: "bob@x.io", name: "Bob", passwordHash: "secret"})
+CREATE (p1:Post {id: "p1", title: "One"})
+CREATE (p2:Post {id: "p2", title: "Two"})
+CREATE (p3:Post {id: "p3", title: "Three"})
+CREATE (p4:Post {id: "p4", title: "Four"})
+CREATE (u1)-[:AUTHORED]->(p1)
+CREATE (u1)-[:AUTHORED]->(p2)
+CREATE (u2)-[:AUTHORED]->(p3)
+CREATE (p1)-[:HAS_COMMENT]->(:Comment {id: "c1", text: "Nice"})
+CREATE (p1)-[:HAS_COMMENT]->(:Comment {id: "c2", text: "Thanks"})
+CREATE (:AuditLog {id: "l1", action: "login"})
+CREATE (:AuditLog {id: "l2", action: "logout"});

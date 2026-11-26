@@ -187,8 +187,9 @@ measured by the [compatibility suite](https://github.com/Cyphra-dev/cyphra/blob/
 - Following a later `@neo4j/graphql` 7.x release is a minor. A `@neo4j/graphql` 8 would get a new
   `compat.v8` (a minor); removing `compat.v7` would be a major.
 
-A native GraphQL API (one that does not imitate `@neo4j/graphql`), if one is added, follows the
-ordinary rules of this page.
+The [native GraphQL API](/graphql/native) (`native.makeSchema`, which does not imitate
+`@neo4j/graphql`) is [experimental](#experimental-features) for now; once stable, it follows the
+ordinary rules of this page, and its printed SDL is its contract.
 
 <Callout type="info">
 **Decided: stable at 1.0, under the v7 compatibility contract above; subscriptions are
@@ -323,12 +324,13 @@ still covered by [security fixes](#security-fixes-and-support).
 `cyphra.json` for schema-level features. A separate `cyphra/experimental` entry point was rejected.
 Experimental at 1.0:
 
-| Feature                                              | Why                                                                    |
-| ---------------------------------------------------- | ---------------------------------------------------------------------- |
-| GraphQL subscriptions (`CDCSubscriptionsEngine`)     | New; needs Neo4j Enterprise CDC; one CI job                            |
-| `cyphra studio`                                      | A development tool whose HTTP API and UI will keep changing            |
-| `cyphra import graphql` / `prisma` / `neogma` output | Conversions are heuristic; their output should improve without a major |
-| `cyphra push`                                        | Meant for prototyping; migrations are the supported path               |
+| Feature                                                | Why                                                                    |
+| ------------------------------------------------------ | ---------------------------------------------------------------------- |
+| GraphQL subscriptions (`CDCSubscriptionsEngine`)       | New; needs Neo4j Enterprise CDC; one CI job                            |
+| The native GraphQL API (`native` of `@cyphra/graphql`) | New; its printed SDL may change until writes and rules land            |
+| `cyphra studio`                                        | A development tool whose HTTP API and UI will keep changing            |
+| `cyphra import graphql` / `prisma` / `neogma` output   | Conversions are heuristic; their output should improve without a major |
+| `cyphra push`                                          | Meant for prototyping; migrations are the supported path               |
 
 For the import commands, the commands themselves and their flags stay stable; only the content they
 produce is exempt.

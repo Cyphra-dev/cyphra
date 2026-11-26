@@ -1,0 +1,38 @@
+# features: limits
+query {
+  tooMany: posts(take: 4) {
+    nodes {
+      id
+    }
+  }
+  tooDeep: userFindFirst {
+    posts {
+      author {
+        posts {
+          id
+        }
+      }
+    }
+  }
+  tooManyAliases: userFindFirst {
+    a: name
+    b: name
+    c: name
+    d: name
+  }
+  tooComplex: userFindMany(take: 3) {
+    nodes {
+      posts {
+        comments {
+          text
+        }
+      }
+    }
+  }
+  countTwice: postFindFirst {
+    _count {
+      a: comments
+      b: comments(where: { text: { equals: "Nice" } })
+    }
+  }
+}

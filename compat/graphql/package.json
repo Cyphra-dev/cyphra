@@ -5,12 +5,15 @@
   "description": "Compatibility test suite: golden SDL and results from @neo4j/graphql v7, compared against other implementations",
   "scripts": {
     "golden": "TZ=UTC tsx src/cli.ts golden",
+    "golden:native": "TZ=UTC tsx src/cli.ts golden-native",
     "report": "TZ=UTC tsx src/cli.ts report",
     "test": "TZ=UTC vitest run",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
     "@cyphra/graphql": "workspace:*",
+    "@cyphra/runtime": "workspace:*",
+    "@cyphra/schema": "workspace:*",
     "@neo4j/graphql": "7.6.8",
     "@types/node": "^22.20.5",
     "graphql": "16.15.0",
