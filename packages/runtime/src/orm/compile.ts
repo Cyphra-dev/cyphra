@@ -22,7 +22,7 @@ import { decodeCount, decodeScalar, encodeFilterValue, isPointValue } from "./va
 import type { QueryMode } from "./types.js";
 import type { CyphraDialect } from "../dialect.js";
 import { compileLabelsFilter, decodeDynamicLabels, dynamicLabelsOf } from "./labels.js";
-import type { EngineRules, RuleOperation, RuleValue } from "./scope.js";
+import type { EngineRules, ModelRules, RuleOperation, RuleValue } from "./scope.js";
 
 /** Quote an identifier for Cypher (labels, property keys, relationship types). */
 export function q(id: string): string {
@@ -709,7 +709,7 @@ export function compileWhere(
     if (!f) throw new CyphraValidationError(`Unknown field "${model.name}.${key}" in where.`);
     const c =
       f.kind === "scalar"
-        ? compileScalarFilter(ctx, model, f, `${alias}.${q(f.name)}`, value)
+        ? compileScalarFilter(ctx, model, f, fieldRef(ctx, model, alias, f.name), value)
         : compileRelationFilter(ctx, model, f, alias, value);
     if (c) parts.push(c);
   }
@@ -733,11 +733,17 @@ function compileRule(
   }
 }
 
-/** The rules of `op` on the model `name` itself, as predicates on `alias`. */
-function ownRules(ctx: QueryContext, name: string, alias: string, op: RuleOperation): string[] {
+/** The rules `pick` takes from each rule set for the model `name` itself, as predicates on `alias`. */
+function ownRules(
+  ctx: QueryContext,
+  name: string,
+  alias: string,
+  pick: (rules: ModelRules) => RuleValue | undefined,
+): string[] {
   const out: string[] = [];
   for (const set of ctx.rules) {
-    const rule = set[name]?.[op];
+    const own = set[name];
+    const rule = own ? pick(own) : undefined;
     if (rule === undefined) continue;
     const c = compileRule(ctx, ctx.node(name), alias, rule);
     if (c) out.push(c);
@@ -746,37 +752,93 @@ function ownRules(ctx: QueryContext, name: string, alias: string, op: RuleOperat
 }
 
 /**
- * The rules of `op` that apply to a node of `model` bound to `alias`, as one predicate (`null`:
- * none). A node is subject to the rules of its model and of every interface it implements; matched
- * through an interface or a union, each implementation's own rules apply to its nodes
- * (`NOT n:Post OR <Post rule>`). A rule's `where` is trusted: rules do not apply inside it.
+ * The rules `pick` takes that apply to a node of `model` bound to `alias`, as one predicate
+ * (`null`: none). A node is subject to the rules of its model and of every interface it
+ * implements; matched through an interface or a union, each implementation's own rules apply to
+ * its nodes (`NOT n:Post OR <Post rule>`). A rule's `where` is trusted: rules do not apply inside
+ * it.
  */
+export function rulePredicate(
+  ctx: QueryContext,
+  model: ResolvedNodeModel,
+  alias: string,
+  pick: (rules: ModelRules) => RuleValue | undefined,
+): string | null {
+  if (ctx.rules.length === 0 || ctx.ruleDepth > 0) return null;
+  if (!model.abstract) {
+    const parts = [model.name, ...(model.interfaces ?? [])].flatMap((n) =>
+      ownRules(ctx, n, alias, pick),
+    );
+    return and(parts);
+  }
+  const parts = ownRules(ctx, model.name, alias, pick);
+  for (const name of model.implementations ?? []) {
+    const impl = ctx.node(name);
+    const names = [impl.name, ...(impl.interfaces ?? [])].filter((n) => n !== model.name);
+    const own = and(names.flatMap((n) => ownRules(ctx, n, alias, pick)));
+    if (own) parts.push(`NOT ${alias}:${q(impl.label)} OR (${own})`);
+  }
+  return and(parts);
+}
+
+/** The `op` rules that apply to a node of `model` bound to `alias` (see {@link rulePredicate}). */
 export function ruleFilter(
   ctx: QueryContext,
   model: ResolvedNodeModel,
   alias: string,
   op: RuleOperation = "read",
 ): string | null {
+  return rulePredicate(ctx, model, alias, (r) => r[op]);
+}
+
+/**
+ * The `connect` / `disconnect` rules of the relation `rel` of `owner` (declared on `owner` or on
+ * an interface it implements), as one predicate on the target node bound to `alias`.
+ */
+export function relationRule(
+  ctx: QueryContext,
+  owner: ResolvedNodeModel,
+  rel: ResolvedRelationField,
+  alias: string,
+  kind: "connect" | "disconnect",
+): string | null {
   if (ctx.rules.length === 0 || ctx.ruleDepth > 0) return null;
-  if (!model.abstract) {
-    const parts = [model.name, ...(model.interfaces ?? [])].flatMap((n) =>
-      ownRules(ctx, n, alias, op),
-    );
-    return and(parts);
-  }
-  const parts = ownRules(ctx, model.name, alias, op);
-  for (const name of model.implementations ?? []) {
-    const impl = ctx.node(name);
-    const names = [impl.name, ...(impl.interfaces ?? [])].filter((n) => n !== model.name);
-    const own = and(names.flatMap((n) => ownRules(ctx, n, alias, op)));
-    if (own) parts.push(`NOT ${alias}:${q(impl.label)} OR (${own})`);
+  const target = ctx.node(rel.target);
+  const parts: string[] = [];
+  for (const name of [owner.name, ...(owner.interfaces ?? [])]) {
+    for (const set of ctx.rules) {
+      const rule = set[name]?.[kind]?.[rel.name];
+      if (rule === undefined) continue;
+      const c = compileRule(ctx, target, alias, rule);
+      if (c) parts.push(c);
+    }
   }
   return and(parts);
 }
 
 /**
+ * The value of the scalar `field` of the node bound to `alias`, as statements read it: `alias.f`,
+ * or `CASE WHEN <field rule> THEN alias.f END` when a field rule hides it on some rows (`null`
+ * when it hides it everywhere). Rules do not apply inside a rule's own `where`.
+ */
+export function fieldRef(
+  ctx: QueryContext,
+  model: ResolvedNodeModel,
+  alias: string,
+  field: string,
+): string {
+  const ref = `${alias}.${q(field)}`;
+  const rule = rulePredicate(ctx, model, alias, (r) => r.fields?.[field]);
+  if (rule === null) return ref;
+  if (rule === "false") return "null";
+  return `CASE WHEN ${rule} THEN ${ref} END`;
+}
+
+/**
  * The `where` of a place that matches nodes of `model` (a root, a relation load, a relation
  * filter, a count, a write target): the rules of `op` on it (see {@link ruleFilter}) AND `where`.
+ * The targets of an update or a delete are subject to the `read` rules too: a node the request
+ * cannot read does not exist for it.
  */
 export function scopedWhere(
   ctx: QueryContext,
@@ -785,7 +847,11 @@ export function scopedWhere(
   where: unknown,
   op: RuleOperation = "read",
 ): string | null {
-  return and([ruleFilter(ctx, model, alias, op), compileWhere(ctx, model, alias, where)]);
+  return and([
+    ruleFilter(ctx, model, alias, "read"),
+    op === "read" ? null : ruleFilter(ctx, model, alias, op),
+    compileWhere(ctx, model, alias, where),
+  ]);
 }
 
 /**
@@ -842,7 +908,10 @@ function compileDistanceOrder(
   }
   const from = ctx.param(encodeFilterValue(field, dir.distanceFrom, model.name));
   const d = dir.sort === undefined ? "ASC" : sortDirection(dir.sort, `${model.name}.${field.name}`);
-  return { expr: `point.distance(${alias}.${q(field.name)}, ${from})`, dir: d as "ASC" | "DESC" };
+  return {
+    expr: `point.distance(${fieldRef(ctx, model, alias, field.name)}, ${from})`,
+    dir: d as "ASC" | "DESC",
+  };
 }
 
 /**
@@ -872,7 +941,7 @@ function compileRelatedScalar(
   const m = ctx.variable();
   const w = ruleFilter(ctx, target, m);
   return {
-    expr: `head(COLLECT { MATCH ${relationMatch(ctx, alias, rel, m, "", w)} RETURN ${m}.${q(name)} })`,
+    expr: `head(COLLECT { MATCH ${relationMatch(ctx, alias, rel, m, "", w)} RETURN ${fieldRef(ctx, target, m, name)} })`,
     field: f,
     owner: target.name,
   };
@@ -1004,7 +1073,7 @@ export function compileSortKeys(
         );
       }
       keys.push({
-        expr: `${alias}.${q(key)}`,
+        expr: fieldRef(ctx, model, alias, key),
         dir: dirOf(dir, `${model.name}.${key}`),
         value: { kind: "scalar", field: sortField, owner: model.name },
       });
@@ -1207,7 +1276,10 @@ export function compileProjection(
       projected = [...scalars, ...extra];
     }
   }
-  const entries: string[] = projected.map((f) => `.${q(f.name)}`);
+  const entries: string[] = projected.map((f) => {
+    const ref = fieldRef(ctx, model, alias, f.name);
+    return ref === `${alias}.${q(f.name)}` ? `.${q(f.name)}` : `${q(f.name)}: ${ref}`;
+  });
   if (variants || withLabels) entries.push(`${q(LABELS_KEY)}: labels(${alias})`);
   if (on && variants) {
     const { label } = on;

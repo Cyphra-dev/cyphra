@@ -9,7 +9,7 @@ import {
   type QueryMeta,
 } from "../observability.js";
 import { ModelEngine, type EngineOptions, type Executor, type Runner } from "./engine.js";
-import { CyphraError, CyphraValidationError } from "./errors.js";
+import { CyphraError, CyphraValidationError, UnsupportedFeatureError } from "./errors.js";
 import { unsupportedOnMemgraph, type CyphraDialect } from "../dialect.js";
 import { CypherDuration, CypherTime } from "../cypher-values.js";
 import {
@@ -29,7 +29,7 @@ import type { DelegateKey, ModelDelegate, TypeMap } from "./types.js";
 import { mapUniqueError } from "./unique.js";
 import { falkordbTransactionError, falkordbUniqueError } from "./falkordb.js";
 import { toNative } from "./values.js";
-import { RULE_OPERATIONS, type EngineRules } from "./scope.js";
+import { MODEL_RULE_KEYS, RULE_OPERATIONS, type EngineRules } from "./scope.js";
 
 /** Key of the hidden method behind {@link withEngineRules} (shared by every copy of the runtime). */
 const WITH_RULES = Symbol.for("cyphra.withEngineRules");
@@ -107,35 +107,80 @@ export function withReadTransaction<C extends object, T>(
   return (run as (f: (tx: C) => Promise<T>) => Promise<T>)(fn);
 }
 
-/** Check `rules` against the schema: known models and operations, boolean or object values. */
-function checkEngineRules(schema: SchemaModel, rules: EngineRules): void {
+/** Check `rules` against the schema: known models, operations and fields, valid values. */
+function checkEngineRules(schema: SchemaModel, rules: EngineRules, dialect: CyphraDialect): void {
   if (typeof rules !== "object" || rules === null || Array.isArray(rules)) {
     throw new CyphraValidationError(
       "withEngineRules: rules must be an object keyed by model name.",
     );
   }
+  const isObject = (v: unknown): v is Record<string, unknown> =>
+    typeof v === "object" && v !== null && !Array.isArray(v);
+  const checkValue = (where: string, rule: unknown) => {
+    if (typeof rule !== "boolean" && !isObject(rule)) {
+      throw new CyphraValidationError(
+        `withEngineRules: ${where} must be true, false or a where object.`,
+      );
+    }
+  };
   for (const [model, ops] of Object.entries(rules)) {
     if (ops === undefined) continue;
-    if (!schema.nodes.some((n) => n.name === model)) {
+    const node = schema.nodes.find((n) => n.name === model);
+    if (!node) {
       throw new CyphraValidationError(`withEngineRules: unknown model "${model}".`);
     }
-    if (typeof ops !== "object" || ops === null || Array.isArray(ops)) {
+    if (!isObject(ops)) {
       throw new CyphraValidationError(`withEngineRules: rules.${model} must be an object.`);
     }
     for (const [op, rule] of Object.entries(ops)) {
       if (rule === undefined) continue;
-      if (!(RULE_OPERATIONS as readonly string[]).includes(op)) {
+      const where = `rules.${model}.${op}`;
+      if (!(MODEL_RULE_KEYS as readonly string[]).includes(op)) {
         throw new CyphraValidationError(
-          `withEngineRules: unknown operation "${op}" in rules.${model} (use ${RULE_OPERATIONS.join(", ")}).`,
+          `withEngineRules: unknown operation "${op}" in rules.${model} (use ${MODEL_RULE_KEYS.join(", ")}).`,
         );
       }
-      if (
-        typeof rule !== "boolean" &&
-        (typeof rule !== "object" || rule === null || Array.isArray(rule))
-      ) {
-        throw new CyphraValidationError(
-          `withEngineRules: rules.${model}.${op} must be true, false or a where object.`,
+      if ((RULE_OPERATIONS as readonly string[]).includes(op)) {
+        checkValue(where, rule);
+        continue;
+      }
+      if (op === "create") {
+        if (typeof rule !== "boolean" && typeof rule !== "function") {
+          throw new CyphraValidationError(
+            `withEngineRules: ${where} must be a boolean or a function.`,
+          );
+        }
+        continue;
+      }
+      if (!isObject(rule)) {
+        throw new CyphraValidationError(`withEngineRules: ${where} must be an object.`);
+      }
+      if ((op === "after" || op === "disconnect") && dialect === "falkordb") {
+        // Both fail a write after it ran: FalkorDB cannot roll it back.
+        throw new UnsupportedFeatureError(
+          `withEngineRules: ${where} (a rule checked after a write ran)`,
+          "falkordb",
+          "FalkorDB has no transactions to roll the write back.",
         );
+      }
+      for (const [key, value] of Object.entries(rule)) {
+        if (value === undefined) continue;
+        if (op === "after") {
+          if (key !== "create" && key !== "update") {
+            throw new CyphraValidationError(
+              `withEngineRules: unknown key "${key}" in ${where} (use create, update).`,
+            );
+          }
+        } else {
+          const f = node.fields.find((x) => x.name === key);
+          const kind = op === "fields" ? "scalar" : "relation";
+          if (f?.kind !== kind) {
+            throw new CyphraValidationError(
+              `withEngineRules: ${where}.${key}: not a ${kind} field of ${model}.`,
+            );
+          }
+        }
+        checkValue(`${where}.${key}`, value);
       }
     }
   }
@@ -607,7 +652,7 @@ export function createOrm<TM extends TypeMap>(
     });
     Object.defineProperty(self, WITH_RULES, {
       value: (rules: EngineRules) => {
-        checkEngineRules(schema, rules);
+        checkEngineRules(schema, rules, dialect);
         return build(state, {
           ...opts,
           rules: [...(opts.rules ?? []), rules],

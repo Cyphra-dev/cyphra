@@ -39,6 +39,10 @@ import {
   unionPredicate,
   memberNames,
   scopedWhere,
+  compileWhere,
+  relationRule,
+  rulePredicate,
+  ruleFilter,
 } from "./compile.js";
 import {
   cursorSortKeys,
@@ -48,7 +52,7 @@ import {
   orderFingerprint,
   parseCursorArgs,
 } from "./cursor.js";
-import type { EngineRules } from "./scope.js";
+import type { EngineRules, ModelRules, RuleValue } from "./scope.js";
 import { compileAggregate, compileGroupBy } from "./aggregate.js";
 import { DEFAULT_MAX_TRAVERSAL_DEPTH, compileTraverse } from "./traverse.js";
 import { compileShortestPath } from "./shortest.js";
@@ -66,6 +70,7 @@ import {
 import {
   CyphraError,
   CyphraValidationError,
+  ForbiddenError,
   NotFoundError,
   UniqueConstraintError,
 } from "./errors.js";
@@ -113,6 +118,8 @@ class WritePlan {
   readonly outputs: string[] = [];
   /** Checks on the returned row, in statement order; each throws to fail the operation. */
   readonly checks: ((row: AnyRecord) => void)[] = [];
+  /** Columns (`<expr> AS <name>`) evaluated after every write of the statement, for checks. */
+  readonly finals: string[] = [];
   /** Whether relation writes were added. */
   relations = false;
 
@@ -142,6 +149,18 @@ class WritePlan {
 
   get text(): string {
     return this.clauses.join(" ");
+  }
+
+  /**
+   * Check the `after` rule `pred` on a node the statement wrote, once every write of the statement
+   * ran: a node that does not match it fails the operation (and the transaction rolls back).
+   */
+  afterCheck(pred: string, model: string, kind: "create" | "update"): void {
+    const v = this.ctx.variable("ok");
+    this.finals.push(`coalesce(${pred}, false) AS ${v}`);
+    this.checks.push((row) => {
+      if (row[v] !== true) throw new ForbiddenError(model, `after.${kind}`);
+    });
   }
 
   /** Run the checks on the statement's row. */
@@ -221,6 +240,84 @@ export class ModelEngine {
 
   private get label(): string {
     return labelExpr(this.model);
+  }
+
+  /** Whether a rule set gives `model` (or an interface it implements) a rule `pick` takes. */
+  private hasRule(model: ResolvedNodeModel, pick: (r: ModelRules) => unknown): boolean {
+    const names = [model.name, ...(model.interfaces ?? [])];
+    return (this.options.rules ?? []).some((set) =>
+      names.some((n) => {
+        const own = set[n];
+        return own !== undefined && pick(own) !== undefined;
+      }),
+    );
+  }
+
+  /** Throw a {@link ForbiddenError} unless the `create` rules allow creating `model` with `data`. */
+  private checkCreateRule(model: ResolvedNodeModel, data: unknown): void {
+    for (const set of this.options.rules ?? []) {
+      for (const name of [model.name, ...(model.interfaces ?? [])]) {
+        const rule = set[name]?.create;
+        if (rule === undefined || rule === true) continue;
+        const ok = typeof rule === "function" && rule(isPlainObject(data) ? data : {}) === true;
+        if (!ok) throw new ForbiddenError(model.name, "create");
+      }
+    }
+  }
+
+  /** The `after.<kind>` rules of the node of `model` bound to `alias` (`null`: none). */
+  private static afterRule(
+    ctx: QueryContext,
+    model: ResolvedNodeModel,
+    alias: string,
+    kind: "create" | "update",
+  ): string | null {
+    return rulePredicate(ctx, model, alias, (r): RuleValue | undefined => r.after?.[kind]);
+  }
+
+  /**
+   * The projection `expr` of the written node bound to `alias`, or `null` where the read rules
+   * hide it: a write never returns what the request cannot read.
+   */
+  private readableRow(ctx: QueryContext, expr: string, alias = "n"): string {
+    const rule = ruleFilter(ctx, this.model, alias, "read");
+    return rule ? `CASE WHEN ${rule} THEN ${expr} END` : expr;
+  }
+
+  /**
+   * Before a write replaces the to-one edge `rel` of `own`: fail with a {@link ForbiddenError}
+   * when the node it links to now is one the `disconnect` rule of `rel` does not allow unlinking
+   * (other than `keep`, the node being connected).
+   */
+  private planReplaceGuard(
+    plan: WritePlan,
+    own: string,
+    rel: ResolvedRelationField,
+    keep?: { target: ResolvedNodeModel; where: AnyRecord },
+  ): void {
+    const names = [this.model.name, ...(this.model.interfaces ?? [])];
+    const ruled = (this.options.rules ?? []).some((set) =>
+      names.some((n) => set[n]?.disconnect?.[rel.name] !== undefined),
+    );
+    if (!ruled) return;
+    const ctx = plan.ctx;
+    const x = ctx.variable("x");
+    const rule = relationRule(ctx, this.model, rel, x, "disconnect");
+    if (rule === null) return;
+    const parts = [`NOT coalesce(${rule}, false)`];
+    const kept = keep ? compileWhere(ctx, keep.target, x, keep.where) : null;
+    if (kept) parts.push(`NOT coalesce(${kept}, false)`);
+    const f = ctx.variable("f");
+    plan.call(
+      [own],
+      `MATCH ${relationMatch(ctx, own, rel, x, "", and(parts))} RETURN count(${x}) AS ${f}`,
+      [f],
+    );
+    plan.relations = true;
+    plan.output(f);
+    plan.checks.push((row) => {
+      if (toCount(row[f]) > 0) throw new ForbiddenError(this.model.name, "disconnect", rel.name);
+    });
   }
 
   // -------------------------------------------------------------------------
@@ -754,6 +851,7 @@ export class ModelEngine {
   ): { props: AnyRecord; relations: AnyRecord; labels: string[] } {
     assertCreatable(this.model, `${this.model.name}.${op}`);
     const { scalars, relations, labels } = this.splitData(data, op);
+    this.checkCreateRule(this.model, data);
     const fields = this.model.fields.filter((f): f is ResolvedScalarField => f.kind === "scalar");
     return {
       props: ModelEngine.createProps(this.model.name, fields, scalars),
@@ -771,6 +869,8 @@ export class ModelEngine {
       ["n"],
     );
     this.planRelations(plan, "n", relations, "create", ["data"]);
+    const after = ModelEngine.afterRule(ctx, this.model, "n", "create");
+    if (after) plan.afterCheck(after, this.model.name, "create");
     return plan;
   }
 
@@ -818,8 +918,16 @@ export class ModelEngine {
       isPlainObject(updates.plain) ? { ...updates.plain, ...updates.base } : updates.plain,
     );
     const onMatch = this.explicitEdgeProps(rel, updates.plain);
-    // A node the rules hide cannot be connected.
-    const w = scopedWhere(ctx, target, b, where);
+    const inverse = this.toOneInverse(rel, target);
+    // Replacing the to-one edge of `a` unlinks its current node: the disconnect rule applies.
+    if (!rel.many) this.planReplaceGuard(plan, a, rel, { target, where });
+    // A node the rules hide cannot be connected; the connect rule restricts the targets, and a
+    // target whose own edge is replaced (a to-one inverse) is updated: its update rule applies.
+    const w = and([
+      scopedWhere(ctx, target, b, where),
+      relationRule(ctx, this.model, rel, b, "connect"),
+      inverse ? ruleFilter(ctx, target, b, "update") : null,
+    ]);
     let text = `MATCH (${b}:${labelExpr(target)})${w ? ` WHERE ${w}` : ""} WITH ${a}, ${b} LIMIT 1 `;
     // A to-one side can hold only one such edge: lock that node (so concurrent connects
     // serialize), then drop its edge to any other node before linking `a` and `b`.
@@ -839,7 +947,6 @@ export class ModelEngine {
       const lock = `${a}.${q(LOCK_FLAG)}`;
       text += `SET ${lock} = true REMOVE ${lock} WITH ${a}, ${b} `;
     }
-    const inverse = this.toOneInverse(rel, target);
     if (inverse) {
       const [other, old] = [ctx.variable("x"), ctx.variable("o")];
       const back = this.node(inverse.target);
@@ -926,7 +1033,9 @@ export class ModelEngine {
       const { props, relations, labels } = child.createData(data, "create");
       const extra = labelSuffix(labels);
       plan.relations = true;
-      if (Object.keys(relations).length === 0) {
+      // A node with an `after.create` rule is created on its own, to be checked by name.
+      const checked = this.hasRule(target, (r) => r.after?.create);
+      if (Object.keys(relations).length === 0 && !checked) {
         const all = `${labelExpr(target)}${extra}`;
         if (all !== batchLabels) flush();
         batchLabels = all;
@@ -942,6 +1051,8 @@ export class ModelEngine {
         [c],
       );
       child.planRelations(plan, c, relations, "create", path);
+      const after = ModelEngine.afterRule(ctx, target, c, "create");
+      if (after) plan.afterCheck(after, target.name, "create");
     }
     flush();
   }
@@ -952,13 +1063,22 @@ export class ModelEngine {
     own: string,
     rel: ResolvedRelationField,
     where?: AnyRecord,
+    replace = false,
   ): void {
     const ctx = plan.ctx;
     const target = this.node(rel.target);
+    // A to-one edge a write replaces must go: the disconnect rule fails the write otherwise.
+    if (replace) this.planReplaceGuard(plan, own, rel);
     const [b, r, d] = [ctx.variable("b"), ctx.variable("r"), ctx.variable("d")];
-    // `disconnect` / `set` only see the nodes the rules show; replacing a to-one edge (no
-    // `where`) drops it whatever its target.
-    const w = where ? scopedWhere(ctx, target, b, where) : null;
+    // `disconnect` / `set` only see the nodes the rules show, and the disconnect rule restricts
+    // them further; `disconnect: true` on a to-one relation drops the edge whatever its target
+    // (within the disconnect rule), and replacing it drops it whatever its target.
+    const w = replace
+      ? null
+      : and([
+          where ? scopedWhere(ctx, target, b, where) : null,
+          relationRule(ctx, this.model, rel, b, "disconnect"),
+        ]);
     plan.call(
       [own],
       `MATCH ${relationMatch(ctx, own, rel, b, r, w)} DELETE ${r} RETURN count(*) AS ${d}`,
@@ -1034,7 +1154,7 @@ export class ModelEngine {
       }
     } else if (disconnect === true || (mode === "update" && create !== undefined)) {
       // To-one: replace the existing edge (`connect` replaces it in its own subquery).
-      this.planDeleteEdges(plan, own, rel);
+      this.planDeleteEdges(plan, own, rel, undefined, create !== undefined);
     } else if (disconnect !== undefined && disconnect !== false) {
       throw new CyphraValidationError(
         `${rel.name}.disconnect on a to-one relation takes a boolean.`,
@@ -1072,7 +1192,12 @@ export class ModelEngine {
     },
   ): Promise<AnyRecord> {
     const { expr, shape } = compileProjection(plan.ctx, this.model, "n", args);
-    const columns = [`${expr} AS row`, ...(options.extra ?? []), ...plan.outputs];
+    const columns = [
+      `${this.readableRow(plan.ctx, expr)} AS row`,
+      ...(options.extra ?? []),
+      ...plan.outputs,
+      ...plan.finals,
+    ];
     const text = `${plan.text} RETURN ${columns.join(", ")}`;
     return this.runner.write(
       async (exec) => {
@@ -1081,7 +1206,8 @@ export class ModelEngine {
         if (!row) throw options.missing?.() ?? new NotFoundError(`${this.model.name} not found.`);
         options.before?.(row);
         plan.check(row);
-        return decodeRow(shape, row.row)!;
+        // `null` when the read rules hide the written node.
+        return decodeRow(shape, row.row) as AnyRecord;
       },
       options.autoCommit ? SINGLE : {},
     );
@@ -1216,7 +1342,10 @@ export class ModelEngine {
   /** `{ count }`, plus `nodes` (decoded with `shape`) when the operation has a `select`. */
   private static batchResult(count: unknown, shape: Shape | undefined, rows: unknown): BatchResult {
     if (!shape) return { count: toCount(count) };
-    const nodes = (Array.isArray(rows) ? rows : []).map((r) => decodeRow(shape, r)!);
+    // A node the read rules hide is projected as `null`: left out.
+    const nodes = (Array.isArray(rows) ? rows : [])
+      .filter((r) => r !== null && r !== undefined)
+      .map((r) => decodeRow(shape, r)!);
     return { count: toCount(count), nodes };
   }
 
@@ -1238,6 +1367,7 @@ export class ModelEngine {
     const groups = new Map<string, { rows: AnyRecord[]; at: number[] }>();
     data.forEach((d, i) => {
       const { scalars, relations, labels } = this.splitData(d, "createMany");
+      this.checkCreateRule(this.model, d);
       if (Object.keys(relations).length) {
         throw new CyphraValidationError("createMany does not support nested relation writes.");
       }
@@ -1252,39 +1382,72 @@ export class ModelEngine {
     const ctx = this.ctx();
     const projection = this.batchProjection(ctx, args, "createMany");
     if (groups.size === 0) return ModelEngine.batchResult(0, projection?.shape, []);
-    return this.runner.write(async (exec) => {
-      if (groups.size === 1 && !projection) {
-        const [[extra, { rows }]] = [...groups];
-        const res = await exec(
-          `UNWIND ${ctx.param(rows)} AS row CREATE (n:${this.label}${extra}) SET n = row RETURN count(n) AS c`,
-          ctx.params,
-        );
-        return { count: toCount(res[0]?.c) };
-      }
-      // One UNWIND per group, each aggregated before the next (an aggregation keeps one row).
-      const counts: string[] = [];
-      let text = "";
-      for (const [extra, { rows }] of groups) {
-        const c = `c${counts.length}`;
-        const agg = projection ? `collect(${projection.expr}) AS ${c}` : `count(n) AS ${c}`;
-        text +=
-          `${text ? " " : ""}UNWIND ${ctx.param(rows)} AS row CREATE (n:${this.label}${extra}) SET n = row ` +
-          `WITH ${[...counts, agg].join(", ")}`;
-        counts.push(c);
-      }
-      if (!projection) {
-        const res = await exec(`${text} RETURN ${counts.join(" + ")} AS c`, ctx.params);
-        return { count: toCount(res[0]?.c) };
-      }
-      const res = await exec(`${text} RETURN ${counts.join(", ")}`, ctx.params);
-      // Back in `data` order: each group's nodes come in its rows' order.
-      const nodes: unknown[] = new Array(data.length);
-      [...groups.values()].forEach(({ at }, g) => {
-        const created = (res[0]?.[counts[g]!] ?? []) as unknown[];
-        at.forEach((i, j) => (nodes[i] = created[j]));
-      });
-      return ModelEngine.batchResult(data.length, projection.shape, nodes);
-    }, SINGLE);
+    const after = ModelEngine.afterRule(ctx, this.model, "n", "create");
+    // Nodes the read rules hide are left out of `nodes`: each is collected in a one-item list, so
+    // that `nodes` stays in `data` order.
+    const readable = projection ? this.readableRow(ctx, projection.expr) : undefined;
+    const wrapped = readable !== undefined && readable !== projection?.expr;
+    return this.runner.write(
+      async (exec) => {
+        if (groups.size === 1 && !projection && !after) {
+          const [[extra, { rows }]] = [...groups];
+          const res = await exec(
+            `UNWIND ${ctx.param(rows)} AS row CREATE (n:${this.label}${extra}) SET n = row RETURN count(n) AS c`,
+            ctx.params,
+          );
+          return { count: toCount(res[0]?.c) };
+        }
+        // One UNWIND per group, each aggregated before the next (an aggregation keeps one row).
+        const counts: string[] = [];
+        // With an `after.create` rule: per group, how many created nodes break it.
+        const denied: string[] = [];
+        let text = "";
+        for (const [extra, { rows }] of groups) {
+          const c = `c${counts.length}`;
+          const aggs = [
+            projection
+              ? `collect(${wrapped ? `[${readable}]` : projection.expr}) AS ${c}`
+              : `count(n) AS ${c}`,
+          ];
+          if (after) {
+            const d = `d${denied.length}`;
+            aggs.push(`sum(CASE WHEN coalesce(${after}, false) THEN 0 ELSE 1 END) AS ${d}`);
+            denied.push(d);
+          }
+          text +=
+            `${text ? " " : ""}UNWIND ${ctx.param(rows)} AS row CREATE (n:${this.label}${extra}) SET n = row ` +
+            `WITH ${[...counts, ...denied.slice(0, after ? -1 : undefined), ...aggs].join(", ")}`;
+          counts.push(c);
+        }
+        const deniedColumn = denied.length ? `, ${denied.join(" + ")} AS denied` : "";
+        const checkAfter = (row: AnyRecord | undefined) => {
+          if (after && toCount(row?.denied) > 0) {
+            throw new ForbiddenError(this.model.name, "after.create");
+          }
+        };
+        if (!projection) {
+          const res = await exec(
+            `${text} RETURN ${counts.join(" + ")} AS c${deniedColumn}`,
+            ctx.params,
+          );
+          checkAfter(res[0]);
+          return { count: toCount(res[0]?.c) };
+        }
+        const res = await exec(`${text} RETURN ${counts.join(", ")}${deniedColumn}`, ctx.params);
+        checkAfter(res[0]);
+        // Back in `data` order: each group's nodes come in its rows' order.
+        const nodes: unknown[] = new Array(data.length);
+        [...groups.values()].forEach(({ at }, g) => {
+          const created = (res[0]?.[counts[g]!] ?? []) as unknown[];
+          at.forEach(
+            (i, j) =>
+              (nodes[i] = wrapped ? (created[j] as unknown[] | undefined)?.[0] : created[j]),
+          );
+        });
+        return ModelEngine.batchResult(data.length, projection.shape, nodes);
+      },
+      after ? {} : SINGLE,
+    );
   }
 
   /**
@@ -1313,9 +1476,11 @@ export class ModelEngine {
       guarded ? ["n", "bad"] : ["n"],
     );
     this.planRelations(plan, "n", relations, "update", ["data"]);
+    const after = ModelEngine.afterRule(ctx, this.model, "n", "update");
+    if (after) plan.afterCheck(after, this.model.name, "update");
     return this.runPlan(plan, args, {
       extra: guarded ? ["bad"] : [],
-      autoCommit: !plan.relations,
+      autoCommit: !plan.relations && plan.checks.length === 0,
       missing: () =>
         new NotFoundError(`update: no ${this.model.name} matches ${JSON.stringify(args.where)}.`),
       before: (row) => throwGuardIssues("update", this.model, checks, row.bad, ["data"]),
@@ -1344,35 +1509,54 @@ export class ModelEngine {
     const body = ModelEngine.setAndRemove(sets, remove);
     const match = `MATCH (n:${this.label})${w ? ` WHERE ${w}` : ""}`;
     const guard = numericGuard(checks);
-    // With `select`, the updated nodes are projected after the update, in the same statement.
+    // With `select`, the updated nodes are projected after the update, in the same statement
+    // (`null`, then left out, where the read rules hide them).
     const projection = this.batchProjection(ctx, args, "updateMany");
     const shape = projection?.shape;
-    return this.runner.write(async (exec) => {
-      if (guard) {
-        const head =
-          `${match} WITH collect(n) AS ns` +
-          ` WITH ns, [b IN [n IN ns | ${guard}] WHERE size(b) > 0] AS bad` +
-          ` FOREACH (n IN CASE WHEN size(bad) = 0 THEN ns ELSE [] END | ${body})`;
-        // No match: the UNWIND leaves no row (nothing was updated, nothing to report).
+    const row = projection ? this.readableRow(ctx, projection.expr) : undefined;
+    const after = ModelEngine.afterRule(ctx, this.model, "n", "update");
+    const checkAfter = (res: AnyRecord | undefined) => {
+      if (after && toCount(res?.denied) > 0) {
+        throw new ForbiddenError(this.model.name, "after.update");
+      }
+    };
+    return this.runner.write(
+      async (exec) => {
+        if (guard) {
+          const head =
+            `${match} WITH collect(n) AS ns` +
+            ` WITH ns, [b IN [n IN ns | ${guard}] WHERE size(b) > 0] AS bad` +
+            ` FOREACH (n IN CASE WHEN size(bad) = 0 THEN ns ELSE [] END | ${body})`;
+          const denied = after
+            ? `, size([n IN ns WHERE NOT coalesce(${after}, false)]) AS denied`
+            : "";
+          // No match: the UNWIND leaves no row (nothing was updated, nothing to report).
+          const res = await exec(
+            projection
+              ? `${head} WITH ns, bad UNWIND ns AS n WITH ns, bad, ${row} AS row` +
+                  ` RETURN size(ns) AS c, bad[0] AS bad, collect(row) AS nodes${denied}`
+              : `${head} RETURN size(ns) AS c, bad[0] AS bad${denied}`,
+            ctx.params,
+          );
+          throwGuardIssues("updateMany", this.model, checks, res[0]?.bad, ["data"]);
+          checkAfter(res[0]);
+          return ModelEngine.batchResult(res[0]?.c, shape, res[0]?.nodes);
+        }
+        const denied = after
+          ? `, sum(CASE WHEN coalesce(${after}, false) THEN 0 ELSE 1 END) AS denied`
+          : "";
         const res = await exec(
-          projection
-            ? `${head} WITH ns, bad UNWIND ns AS n WITH ns, bad, ${projection.expr} AS row` +
-                ` RETURN size(ns) AS c, bad[0] AS bad, collect(row) AS nodes`
-            : `${head} RETURN size(ns) AS c, bad[0] AS bad`,
+          `${match}${body ? ` ${body}` : ""}` +
+            (projection
+              ? ` WITH n, ${row} AS row RETURN count(n) AS c, collect(row) AS nodes${denied}`
+              : ` RETURN count(n) AS c${denied}`),
           ctx.params,
         );
-        throwGuardIssues("updateMany", this.model, checks, res[0]?.bad, ["data"]);
+        checkAfter(res[0]);
         return ModelEngine.batchResult(res[0]?.c, shape, res[0]?.nodes);
-      }
-      const res = await exec(
-        `${match}${body ? ` ${body}` : ""}` +
-          (projection
-            ? ` WITH n, ${projection.expr} AS row RETURN count(n) AS c, collect(row) AS nodes`
-            : ` RETURN count(n) AS c`),
-        ctx.params,
-      );
-      return ModelEngine.batchResult(res[0]?.c, shape, res[0]?.nodes);
-    }, SINGLE);
+      },
+      after ? {} : SINGLE,
+    );
   }
 
   /**
@@ -1394,6 +1578,8 @@ export class ModelEngine {
     validateWriteArgs(this.schema, this.model, "upsert", args);
     const create = this.splitData(args.create, "upsert create");
     const update = this.splitData(args.update, "upsert update");
+    // An upsert may create: the create rules apply, whether it creates or updates.
+    this.checkCreateRule(this.model, args.create);
     const createdLabels = createLabels(
       this.model,
       create.labels,
@@ -1434,8 +1620,12 @@ export class ModelEngine {
     );
     const guard = numericGuard(checks);
     const flag = `n.${q(UPSERT_FLAG)}`;
+    const afterCreate = ModelEngine.afterRule(ctx, this.model, "n", "create");
+    const afterUpdate = ModelEngine.afterRule(ctx, this.model, "n", "update");
+    const hasAfter = afterCreate !== null || afterUpdate !== null;
     // `ON MATCH SET` cannot remove labels: removing one takes the FOREACH form below.
-    const trackCreated = nested || restWhere !== null || guard !== null || remove !== null;
+    const trackCreated =
+      nested || restWhere !== null || guard !== null || remove !== null || hasAfter;
 
     let text = `MERGE (n:${this.label} {${keyProps}})`;
     if (trackCreated) onCreate.push(`${flag} = true`);
@@ -1459,7 +1649,12 @@ export class ModelEngine {
     text += ` RETURN elementId(n) AS id`;
     if (trackCreated) text += `, created`;
     if (guard) text += `, bad`;
-    if (projection) text += `, ${projection.expr} AS row`;
+    if (projection) text += `, ${this.readableRow(ctx, projection.expr)} AS row`;
+    if (projection && hasAfter) {
+      text +=
+        `, CASE WHEN created THEN coalesce(${afterCreate ?? "true"}, false)` +
+        ` ELSE coalesce(${afterUpdate ?? "true"}, false) END AS ok`;
+    }
 
     // The nested writes of each branch, compiled once (before anything runs).
     const branch = (mode: "create" | "update") => {
@@ -1468,11 +1663,14 @@ export class ModelEngine {
       const plan = new WritePlan(c, `MATCH (n) WHERE elementId(n) = ${id}`, ["n"]);
       const relations = mode === "create" ? create.relations : update.relations;
       this.planRelations(plan, "n", relations, mode, [mode]);
+      const after = ModelEngine.afterRule(c, this.model, "n", mode);
+      if (after) plan.afterCheck(after, this.model.name, mode);
       const { expr, shape } = compileProjection(c, this.model, "n", args);
+      const columns = [`${this.readableRow(c, expr)} AS row`, ...plan.outputs, ...plan.finals];
       return {
         plan,
         shape,
-        text: `${plan.text} RETURN ${[`${expr} AS row`, ...plan.outputs].join(", ")}`,
+        text: `${plan.text} RETURN ${columns.join(", ")}`,
         id: id.slice(1),
       };
     };
@@ -1489,14 +1687,23 @@ export class ModelEngine {
             );
           }
           throwGuardIssues("upsert", this.model, checks, row.bad, ["update"]);
-          if (projection) return decodeRow(projection.shape, row.row)!;
+          if (projection) {
+            if (hasAfter && row.ok !== true) {
+              throw new ForbiddenError(
+                this.model.name,
+                row.created ? "after.create" : "after.update",
+              );
+            }
+            // `null` when the read rules hide the written node.
+            return decodeRow(projection.shape, row.row) as AnyRecord;
+          }
           const b = row.created ? branches!.create : branches!.update;
           const [res] = await exec(b.text, { ...b.plan.ctx.params, [b.id]: row.id });
           if (!res) throw new NotFoundError(`${this.model.name} disappeared during the operation.`);
           b.plan.check(res);
-          return decodeRow(b.shape, res.row)!;
+          return decodeRow(b.shape, res.row) as AnyRecord;
         },
-        nested ? {} : SINGLE,
+        nested || hasAfter ? {} : SINGLE,
       );
     if (this.options.dialect !== "memgraph") return attempt();
     // Memgraph checks uniqueness at commit and its MERGE takes no lock: of two concurrent upserts

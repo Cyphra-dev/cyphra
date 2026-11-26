@@ -6,7 +6,7 @@ import { schemaModel as ondeleteSchema } from "./__fixtures__/ondelete.gen.js";
 import { ModelEngine, type Executor, type Runner } from "./engine.js";
 import neo4j from "neo4j-driver";
 import { withEngineRules, withRawValues } from "./client.js";
-import { CyphraValidationError } from "./errors.js";
+import { CyphraValidationError, ForbiddenError } from "./errors.js";
 import type { EngineRules } from "./scope.js";
 
 type Call = { text: string; params: Record<string, unknown> };
@@ -68,23 +68,25 @@ describe("engine rules", () => {
     for (const c of calls) expect(c.text).toMatch(/WHERE \(?n\.`published` = \$p0/);
   });
 
-  it("restricts write targets with the update / delete rules, and connect targets with read", async () => {
+  it("restricts write targets with the read and update / delete rules, and connect targets with read", async () => {
     const rules: EngineRules = {
       Post: { update: { views: { lt: 10 } }, delete: false, read: { published: true } },
     };
     const { calls, e } = engine("Post", [rules], () => [{ c: 0 }]);
     await e.updateMany({ data: { title: "t" } });
+    // A node the request cannot read does not exist for it: read applies to write targets too.
     expect(calls[0]!.text).toBe(
-      "MATCH (n:`Post`) WHERE n.`views` < $p0 SET n.`title` = $p1 RETURN count(n) AS c",
+      "MATCH (n:`Post`) WHERE (n.`published` = $p0) AND (n.`views` < $p1) SET n.`title` = $p2 RETURN count(n) AS c",
     );
     await e.deleteMany({ where: { title: "x" } });
     expect(calls[1]!.text).toBe(
-      "MATCH (n:`Post`) WHERE (false) AND (n.`title` = $p0) DETACH DELETE n RETURN count(*) AS c",
+      "MATCH (n:`Post`) WHERE (n.`published` = $p0) AND (false) AND (n.`title` = $p1) DETACH DELETE n RETURN count(*) AS c",
     );
     const u = engine("User", [rules], (t) => [{ row: { id: "u1" }, ...countsOf(t) }]);
     await u.e.update({ where: { id: "u1" }, data: { posts: { connect: { id: "p1" } } } });
     expect(u.calls[0]!.text).toContain(
-      "MATCH (b0:`Post`) WHERE (b0.`published` = $p1) AND (b0.`id` = $p2)",
+      // Post.author is to-one: the connected post's author is replaced, so its update rule applies.
+      "MATCH (b0:`Post`) WHERE ((b0.`published` = $p1) AND (b0.`id` = $p2)) AND (b0.`views` < $p3)",
     );
   });
 
@@ -131,6 +133,171 @@ describe("engine rules", () => {
     const denied = engine("Post", [{ Post: { read: false } }]);
     await denied.e.count();
     expect(denied.calls[0]!.text).toBe("MATCH (n:`Post`) WHERE false RETURN count(n) AS c");
+  });
+});
+
+/** A row that passes every check of `text`: connect counts, `after` checks, no denied node. */
+function passing(text: string, extra: Row = {}): Row[] {
+  const oks = [...text.matchAll(/ AS (ok\d*)\b/g)].map((m) => [m[1]!, true]);
+  return [
+    { row: { id: "x" }, c: 1, denied: 0, ...countsOf(text), ...Object.fromEntries(oks), ...extra },
+  ];
+}
+
+describe("engine rules: create, connect, disconnect, after", () => {
+  it("checks create rules on every node a write creates, before anything runs", async () => {
+    const rules: EngineRules = {
+      User: { create: (d) => d.email !== "no@x.io" },
+      Post: { create: false },
+    };
+    const user = engine("User", [rules], (t) => passing(t));
+    await user.e.create({ data: { email: "a@x.io" } });
+    expect(user.calls).toHaveLength(1);
+    await expect(user.e.create({ data: { email: "no@x.io" } })).rejects.toThrow(ForbiddenError);
+    // A nested create of a model whose create rule is false.
+    await expect(
+      user.e.create({ data: { email: "a@x.io", posts: { create: [{ title: "t" }] } } }),
+    ).rejects.toMatchObject({ name: "ForbiddenError", model: "Post", operation: "create" });
+    await expect(
+      user.e.createMany({ data: [{ email: "a@x.io" }, { email: "no@x.io" }] }),
+    ).rejects.toThrow(ForbiddenError);
+    // An upsert may create: the create rule applies whatever it ends up doing.
+    await expect(
+      user.e.upsert({ where: { email: "no@x.io" }, create: { email: "no@x.io" }, update: {} }),
+    ).rejects.toThrow(ForbiddenError);
+    expect(user.calls).toHaveLength(1);
+  });
+
+  it("restricts connect targets with the connect rule, and with update when their edge is replaced", async () => {
+    const rules: EngineRules = {
+      User: { connect: { posts: { title: { startsWith: "ok" } } } },
+      Post: { update: { views: 0 } },
+    };
+    const { calls, e } = engine("User", [rules], (t) => passing(t));
+    await e.update({ where: { id: "u1" }, data: { posts: { connect: [{ id: "p1" }] } } });
+    // Post.author is to-one: connecting a post replaces its author, an update of the post.
+    expect(calls[0]!.text).toContain(
+      "MATCH (b0:`Post`) WHERE (b0.`id` = $p1) AND (b0.`title` STARTS WITH $p2) AND (b0.`views` = $p3)",
+    );
+  });
+
+  it("restricts disconnect and set with the disconnect rule; a to-one replace outside it is forbidden", async () => {
+    const rules: EngineRules = {
+      User: { disconnect: { posts: { views: 0 } } },
+      Post: { disconnect: { author: { email: { endsWith: "@x.io" } } } },
+    };
+    const user = engine("User", [rules], (t) => passing(t));
+    await user.e.update({
+      where: { id: "u1" },
+      data: { posts: { disconnect: [{ id: "p1" }], set: [{ id: "p2" }] } },
+    });
+    expect(user.calls[0]!.text).toContain(
+      "MATCH (n)-[r1:`AUTHORED`]->(b0:`Post`) WHERE ((b0.`id` = $p1)) AND (b0.`views` = $p2) DELETE r1",
+    );
+    expect(user.calls[0]!.text).toContain(
+      "MATCH (n)-[r4:`AUTHORED`]->(b3:`Post`) WHERE (NOT ((b3.`id` = $p3))) AND (b3.`views` = $p4) DELETE r4",
+    );
+    // Replacing the author (connect or create on a to-one): the current one must be disconnectable.
+    const post = engine("Post", [rules], (t) => passing(t, { f0: 0, f1: 0, f2: 0, f3: 1 }));
+    await expect(
+      post.e.update({ where: { id: "p1" }, data: { author: { connect: { id: "u2" } } } }),
+    ).rejects.toMatchObject({
+      name: "ForbiddenError",
+      operation: "disconnect",
+      relation: "author",
+    });
+    expect(post.calls[0]!.text).toContain(
+      "CALL { WITH n MATCH (n)<-[:`AUTHORED`]-(x2:`User`) WHERE (NOT coalesce(x2.`email` ENDS WITH $p1, false)) AND (NOT coalesce(x2.`id` = $p2, false)) RETURN count(x2) AS f3 }",
+    );
+    // `disconnect: true` drops the edge only when its target is within the rule.
+    await post.e.update({ where: { id: "p1" }, data: { author: { disconnect: true } } });
+    expect(post.calls[1]!.text).toContain(
+      "MATCH (n)<-[r1:`AUTHORED`]-(b0:`User`) WHERE b0.`email` ENDS WITH $p1 DELETE r1",
+    );
+  });
+
+  it("checks after rules once every write of the statement ran, and fails with ForbiddenError", async () => {
+    const rules: EngineRules = {
+      Post: { after: { create: { author: { is: { id: "me" } } }, update: { views: { lt: 100 } } } },
+    };
+    const post = engine("Post", [rules], (t) => passing(t));
+    await post.e.create({ data: { title: "t", author: { connect: { id: "me" } } } });
+    const create = post.calls[0]!.text;
+    // Checked in the RETURN, after the connect subquery.
+    expect(create).toMatch(
+      /MERGE \(n\)<-\[r1:`AUTHORED`\]-\(b0\) RETURN count\(r1\) AS c4 \} RETURN .* AS row, c4, coalesce\(EXISTS \{ MATCH \(n\)<-\[:`AUTHORED`\]-\(m5:`User`\) WHERE m5.`id` = \$p2 \}, false\) AS ok6$/,
+    );
+    const denied = engine("Post", [rules], (t) => passing(t, { ok0: false }));
+    await expect(
+      denied.e.update({ where: { id: "p1" }, data: { views: 500 } }),
+    ).rejects.toMatchObject({ name: "ForbiddenError", operation: "after.update" });
+    expect(denied.calls[0]!.text).toContain("coalesce(n.`views` < $p2, false) AS ok0");
+    const many = engine("Post", [rules], () => [{ c: 2, denied: 1 }]);
+    await expect(many.e.updateMany({ data: { views: 500 } })).rejects.toThrow(ForbiddenError);
+    expect(many.calls[0]!.text).toContain(
+      "sum(CASE WHEN coalesce(n.`views` < $p1, false) THEN 0 ELSE 1 END) AS denied",
+    );
+    await expect(many.e.createMany({ data: [{ title: "a" }] })).rejects.toThrow(ForbiddenError);
+    expect(many.calls[1]!.text).toContain("AS d0 RETURN c0 AS c, d0 AS denied");
+    // A nested create is created on its own, to be checked by name.
+    const user = engine("User", [rules], (t) => passing(t));
+    await user.e.create({ data: { email: "a@x.io", posts: { create: [{ title: "x" }] } } });
+    expect(user.calls[0]!.text).toContain(
+      "CREATE (c0:`Post` $p1) CREATE (n)-[:`AUTHORED`]->(c0) RETURN",
+    );
+    expect(user.calls[0]!.text).toContain(
+      "coalesce(EXISTS { MATCH (c0)<-[:`AUTHORED`]-(m1:`User`) WHERE m1.`id` = $p2 }, false) AS ok2",
+    );
+    // An upsert checks the rule of what it did.
+    const upsert = engine("Post", [rules], () => [{ id: "e", created: true, ok: false, row: {} }]);
+    await expect(
+      upsert.e.upsert({ where: { id: "p" }, create: { title: "a" }, update: { title: "b" } }),
+    ).rejects.toMatchObject({ operation: "after.create" });
+  });
+
+  it("returns a written node only when the read rules show it", async () => {
+    const { calls, e } = engine("Post", [published], () => [{ row: null, c: 1, nodes: [null] }]);
+    expect(await e.create({ data: { title: "t" } })).toBeNull();
+    expect(calls[0]!.text).toContain("RETURN CASE WHEN n.`published` = $p1 THEN n{");
+    expect(await e.updateMany({ data: { title: "t" }, select: { id: true } })).toEqual({
+      count: 1,
+      nodes: [],
+    });
+  });
+});
+
+describe("engine rules: field rules", () => {
+  const rules: EngineRules = { User: { fields: { email: { name: "me" }, age: false } } };
+
+  it("reads a ruled field as null outside its rule: projections, filters, orderBy", async () => {
+    const { calls, e } = engine("User", [rules]);
+    await e.findMany({
+      where: { email: { contains: "x" }, age: 3 },
+      orderBy: { email: "asc" },
+      select: { email: true, age: true, name: true },
+    });
+    const text = calls[0]!.text;
+    expect(text).toContain("(CASE WHEN n.`name` = $p0 THEN n.`email` END CONTAINS $p1)");
+    expect(text).toContain("(null = $p2)");
+    expect(text).toContain("ORDER BY CASE WHEN n.`name` = $p3 THEN n.`email` END ASC");
+    expect(text).toContain(
+      "RETURN n{`email`: CASE WHEN n.`name` = $p4 THEN n.`email` END, `age`: null, .`name`} AS row",
+    );
+  });
+
+  it("applies to aggregates, groupBy keys, relation sorts and to-one relation loads", async () => {
+    const user = engine("User", [rules], () => [{ a0: null, a1: null }]);
+    await user.e.aggregate({ _max: { age: true, email: true } });
+    expect(user.calls[0]!.text).toContain("max(null)");
+    expect(user.calls[0]!.text).toContain("max(CASE WHEN n.`name` = $p0 THEN n.`email` END)");
+    await user.e.groupBy({ by: ["email"], _count: { _all: true } });
+    expect(user.calls[1]!.text).toContain("CASE WHEN n.`name` = $p0 THEN n.`email` END AS k0");
+    const post = engine("Post", [rules]);
+    await post.e.findMany({ orderBy: { author: { email: "desc" } }, select: { author: true } });
+    expect(post.calls[0]!.text).toContain(
+      "RETURN CASE WHEN m0.`name` = $p0 THEN m0.`email` END })",
+    );
+    expect(post.calls[0]!.text).toContain("`email`: CASE WHEN m");
   });
 });
 
@@ -202,6 +369,18 @@ describe("withEngineRules", () => {
       CyphraValidationError,
     );
     expect(() => withEngineRules({}, {})).toThrow(/not a Cyphra ORM client/);
+    expect(() => withEngineRules(db, { User: { fields: { posts: true } } })).toThrow(
+      /rules.User.fields.posts: not a scalar field of User/,
+    );
+    expect(() => withEngineRules(db, { User: { connect: { email: true } } })).toThrow(
+      /not a relation field of User/,
+    );
+    expect(() => withEngineRules(db, { User: { after: { delete: true } } } as never)).toThrow(
+      /unknown key "delete"/,
+    );
+    expect(() => withEngineRules(db, { User: { create: {} } } as never)).toThrow(
+      /must be a boolean or a function/,
+    );
   });
 });
 
