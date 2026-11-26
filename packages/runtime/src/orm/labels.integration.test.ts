@@ -73,6 +73,55 @@ describe.skipIf(!hasNeo)("dynamic labels (@@labels)", () => {
     expect(await db.page.count({ where: { $labels: { has: "Archived" } } })).toBe(2);
   });
 
+  it("createMany with select returns the nodes in data order across label groups", async () => {
+    const res = await db.article.createMany({
+      data: [
+        { title: "a" },
+        { title: "b", $labels: ["Featured"] },
+        { title: "c" },
+        { title: "d", $labels: ["Featured"] },
+      ],
+      select: { title: true, $labels: true },
+    });
+    expect(res).toEqual({
+      count: 4,
+      nodes: [
+        { title: "a", $labels: [] },
+        { title: "b", $labels: ["Featured"] },
+        { title: "c", $labels: [] },
+        { title: "d", $labels: ["Featured"] },
+      ],
+    });
+  });
+
+  it("updateMany with select checks @min first and returns the updated nodes", async () => {
+    await db.article.createMany({
+      data: [
+        { title: "a", views: 1 },
+        { title: "b", views: 5 },
+      ],
+    });
+    await expect(
+      db.article.updateMany({ data: { views: { decrement: 2 } }, select: { title: true } }),
+    ).rejects.toBeInstanceOf(CyphraValidationError);
+    const res = await db.article.updateMany({
+      data: { views: { increment: 2 } },
+      select: { title: true, views: true },
+    });
+    expect(res.count).toBe(2);
+    expect(res.nodes.sort((x, y) => x.title.localeCompare(y.title))).toEqual([
+      { title: "a", views: 3 },
+      { title: "b", views: 7 },
+    ]);
+    expect(
+      await db.article.updateMany({
+        where: { title: "none" },
+        data: { views: { increment: 1 } },
+        select: { title: true },
+      }),
+    ).toEqual({ count: 0, nodes: [] });
+  });
+
   it("adds, removes and sets labels on update, updateMany and upsert", async () => {
     const a = await db.article.create({ data: { title: "A", $labels: ["Featured"] } });
     const up = await db.article.update({

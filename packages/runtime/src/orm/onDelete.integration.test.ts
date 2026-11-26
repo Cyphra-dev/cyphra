@@ -380,6 +380,52 @@ describe.skipIf(!hasNeo)("onDelete rules (Neo4j)", () => {
     // Lock waits and deadlock retries (the driver backs off ~1 s) take time.
   }, 60_000);
 
+  it("deleteMany with select returns the deleted nodes as they were (every delete path)", async () => {
+    // No rules: one DETACH DELETE.
+    await db.odPlain.create({ data: { tags: { create: [{}, {}] } } });
+    const plain = await db.odPlain.deleteMany({
+      select: { id: true, tags: { select: { id: true } } },
+    });
+    expect(plain.count).toBe(1);
+    expect(plain.nodes).toHaveLength(1);
+    expect(plain.nodes[0]!.tags).toHaveLength(2);
+
+    // An acyclic cascade: one statement, the projections read before the delete.
+    await seedFolder("x");
+    await seedFolder("y");
+    let tree: { count: number; nodes: { name: string; files: { name: string }[] }[] } | undefined;
+    const texts = await statements(async () => {
+      tree = await db.odFolder.deleteMany({
+        where: { name: { in: ["x", "y", "none"] } },
+        select: { name: true, files: { select: { name: true }, orderBy: { name: "asc" } } },
+      });
+    });
+    expect(texts).toHaveLength(1);
+    expect(tree!.count).toBe(2);
+    expect(tree!.nodes.map((f) => [f.name, f.files.map((x) => x.name)]).sort()).toEqual([
+      ["x", ["x/a", "x/b"]],
+      ["y", ["y/a", "y/b"]],
+    ]);
+    expect(await folderCounts()).toEqual({ folder: 0, file: 0, version: 0, hold: 0 });
+    expect(await db.odFolder.deleteMany({ select: { name: true } })).toEqual({
+      count: 0,
+      nodes: [],
+    });
+
+    // A cascade with a cycle: level by level, the nodes read when they are locked.
+    await seed("a@x.io");
+    await seed("b@x.io");
+    const cyclic = await db.odUser.deleteMany({
+      select: { email: true, _count: { select: { sessions: true } } },
+    });
+    expect(cyclic.count).toBe(2);
+    expect(cyclic.nodes.map((u) => [u.email, u._count.sessions]).sort()).toEqual([
+      ["a@x.io", 2],
+      ["b@x.io", 2],
+    ]);
+    expect(await counts()).toEqual({ user: 0, session: 0, post: 0, comment: 0, invoice: 0 });
+  });
+
   it("a cascade with a cycle locks level by level: one statement per level", async () => {
     await seed("a@x.io");
     // Find + lock + read, then the levels (sessions and posts, comments, replies, replies of

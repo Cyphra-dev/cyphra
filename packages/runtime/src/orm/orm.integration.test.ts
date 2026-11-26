@@ -301,6 +301,61 @@ describe.skipIf(!hasNeo)("ORM client (Neo4j)", () => {
     expect(await db.user.count()).toBe(1);
   });
 
+  it("createMany, updateMany and deleteMany return the nodes with select", async () => {
+    const created = await db.user.createMany({
+      data: [{ email: "m2@x.io", age: 3 }, { email: "m1@x.io" }, { email: "m3@x.io", age: 1 }],
+      select: { email: true, age: true },
+    });
+    // In data order.
+    expect(created).toEqual({
+      count: 3,
+      nodes: [
+        { email: "m2@x.io", age: 3 },
+        { email: "m1@x.io", age: null },
+        { email: "m3@x.io", age: 1 },
+      ],
+    });
+    await db.post.create({
+      data: { title: "p", author: { connect: { email: "m1@x.io" } } },
+    });
+
+    const updated = await db.user.updateMany({
+      where: { email: { in: ["m1@x.io", "m2@x.io"] } },
+      data: { age: 9 },
+      select: { email: true, age: true, posts: { select: { title: true } } },
+    });
+    expect(updated.count).toBe(2);
+    expect(updated.nodes.sort((a, b) => a.email.localeCompare(b.email))).toEqual([
+      { email: "m1@x.io", age: 9, posts: [{ title: "p" }] },
+      { email: "m2@x.io", age: 9, posts: [] },
+    ]);
+    expect(
+      await db.user.updateMany({
+        where: { email: "none" },
+        data: { age: 1 },
+        select: { id: true },
+      }),
+    ).toEqual({ count: 0, nodes: [] });
+
+    const deleted = await db.user.deleteMany({
+      where: { email: { in: ["m1@x.io", "m3@x.io"] } },
+      select: { email: true, posts: { select: { title: true } } },
+    });
+    expect(deleted.count).toBe(2);
+    expect(deleted.nodes.sort((a, b) => a.email.localeCompare(b.email))).toEqual([
+      { email: "m1@x.io", posts: [{ title: "p" }] },
+      { email: "m3@x.io", posts: [] },
+    ]);
+    expect(await db.user.count()).toBe(1);
+
+    // Without select: { count } only, as before.
+    expect(await db.user.deleteMany()).toEqual({ count: 1 });
+    await expect(
+      // @ts-expect-error batch operations take select, not include
+      db.user.deleteMany({ include: { posts: true } }),
+    ).rejects.toBeInstanceOf(CyphraValidationError);
+  });
+
   it('filters strings case-insensitively with mode: "insensitive"', async () => {
     await db.user.createMany({
       data: [{ email: "Alice@Example.com", name: "Alice" }, { email: "bob@example.com" }],

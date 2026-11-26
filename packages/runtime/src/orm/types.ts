@@ -943,6 +943,16 @@ export type CountArgs<TM extends TypeMap, M extends keyof TM> = { where?: WhereI
 
 export type BatchResult = { count: number };
 
+/**
+ * Result of `createMany` / `updateMany` / `deleteMany` called with `select`: the count and the
+ * affected nodes (created, as updated, or as they were before the delete), read in the same
+ * statement.
+ */
+export type BatchResultWithNodes<T> = BatchResult & { nodes: T[] };
+
+/** `select` of a batch operation: the fields of the returned `nodes` (no `include`). */
+export type BatchSelect<S> = { select?: S; include?: never };
+
 // ---------------------------------------------------------------------------
 // aggregate / groupBy
 // ---------------------------------------------------------------------------
@@ -1609,6 +1619,10 @@ type FindSel<TM extends TypeMap, M extends keyof TM> =
 type FindInc<TM extends TypeMap, M extends keyof TM> =
   (IncludeInput<TM, M> & CursorSelect) | undefined;
 type Out<TM extends TypeMap, M extends keyof TM, S, I> = Payload<TM, M, { select: S; include: I }>;
+/** Result of a batch operation: `{ count }`, plus `nodes` with a `select`. */
+type BatchOut<TM extends TypeMap, M extends keyof TM, S> = [S] extends [undefined]
+  ? BatchResult
+  : BatchResultWithNodes<Out<TM, M, S, undefined>>;
 
 /** Operations available on `db.<model>`. */
 export type ModelDelegate<TM extends TypeMap, M extends keyof TM> =
@@ -1650,12 +1664,20 @@ type BaseModelDelegate<TM extends TypeMap, M extends keyof TM> = {
   create<S extends Sel<TM, M> = undefined, I extends Inc<TM, M> = undefined>(
     args: CreateArgs<TM, M> & Projection<S, I>,
   ): Promise<Out<TM, M, S, I>>;
-  /** Create many nodes in one statement (scalars only, no nested writes). */
-  createMany(args: CreateManyArgs<TM, M>): Promise<BatchResult>;
+  /**
+   * Create many nodes in one statement (scalars only, no nested writes). With `select`, also
+   * returns the created nodes as `nodes`, in `data` order.
+   */
+  createMany<S extends Sel<TM, M> = undefined>(
+    args: CreateManyArgs<TM, M> & BatchSelect<S>,
+  ): Promise<BatchOut<TM, M, S>>;
   update<S extends Sel<TM, M> = undefined, I extends Inc<TM, M> = undefined>(
     args: UpdateArgs<TM, M> & Projection<S, I>,
   ): Promise<Out<TM, M, S, I>>;
-  updateMany(args: UpdateManyArgs<TM, M>): Promise<BatchResult>;
+  /** Update every matching node in one statement. With `select`, also returns them, updated. */
+  updateMany<S extends Sel<TM, M> = undefined>(
+    args: UpdateManyArgs<TM, M> & BatchSelect<S>,
+  ): Promise<BatchOut<TM, M, S>>;
   upsert<S extends Sel<TM, M> = undefined, I extends Inc<TM, M> = undefined>(
     args: UpsertArgs<TM, M> & Projection<S, I>,
   ): Promise<Out<TM, M, S, I>>;
@@ -1663,7 +1685,13 @@ type BaseModelDelegate<TM extends TypeMap, M extends keyof TM> = {
   delete<S extends Sel<TM, M> = undefined, I extends Inc<TM, M> = undefined>(
     args: DeleteArgs<TM, M> & Projection<S, I>,
   ): Promise<Out<TM, M, S, I>>;
-  deleteMany(args?: CountArgs<TM, M>): Promise<BatchResult>;
+  /**
+   * Detach-delete every matching node (and what `onDelete` rules cascade to). With `select`, also
+   * returns the deleted nodes as they were.
+   */
+  deleteMany<S extends Sel<TM, M> = undefined>(
+    args?: CountArgs<TM, M> & BatchSelect<S>,
+  ): Promise<BatchOut<TM, M, S>>;
   /**
    * `_count`, `_sum`, `_avg`, `_min` and `_max` over the matching nodes, in one statement.
    * Nulls are ignored; on an empty match counts are `0` and the other aggregates `null`.

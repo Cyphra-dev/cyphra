@@ -155,7 +155,7 @@ export type CompiledRulesDelete = {
  * Compile the whole delete into one statement, or `null` when the cascades of `root` are not a
  * tree (see {@link cascadeTree}). `match` binds the roots to `n` (one row each); with `one`, the
  * first of them is deleted and `projection` (an expression on `n`, read after every lock) is
- * returned as `row`. Returns the number of roots deleted as `c` (`0` when a `Restrict` count,
+ * returned as `row`; without, `row` is the list of the projections of every root. Returns the number of roots deleted as `c` (`0` when a `Restrict` count,
  * returned too, is not zero: then nothing is deleted).
  *
  * ```cypher
@@ -225,7 +225,11 @@ export function compileRulesDelete(
   const ok = counts.length ? counts.map((c) => `${c} = 0`).join(" AND ") : null;
   // Matched again: a node deleted by another transaction before it was locked is skipped.
   const [d, x, deleted] = [ctx.variable("d"), ctx.variable("x"), ctx.variable("deleted")];
-  text += ` WITH ${[all, lists[0]!, ...counts].join(", ")}${projection ? `, ${projection} AS row` : ""}`;
+  text += ` WITH ${[all, lists[0]!, ...counts].join(", ")}${projection && one ? `, ${projection} AS row` : ""}`;
+  // Many roots: `row` is the list of their projections (empty when nothing matched).
+  if (projection && !one) {
+    text += ` CALL { WITH ${lists[0]} UNWIND ${lists[0]} AS n RETURN collect(${projection}) AS row }`;
+  }
   text +=
     ` CALL { WITH ${[all, ...counts].join(", ")}${ok ? ` WITH ${all} WHERE ${ok}` : ""}` +
     ` UNWIND ${all} AS ${d} WITH DISTINCT ${d} MATCH (${x}) WHERE elementId(${x}) = elementId(${d})` +
