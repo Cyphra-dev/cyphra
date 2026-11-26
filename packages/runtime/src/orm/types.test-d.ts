@@ -9,6 +9,9 @@ import type { Db as SearchDb } from "./__fixtures__/search.gen.js";
 import { TyRole, type Db as TypesDb } from "./__fixtures__/types.gen.js";
 import type { Db as GeoDb } from "./__fixtures__/geo.gen.js";
 import type { Db as CompoundDb } from "./__fixtures__/compound.gen.js";
+import type { Db as NxDb } from "./__fixtures__/nestedWrites.gen.js";
+import type { Db as NestedDb } from "./__fixtures__/nested.gen.js";
+import type { Db as UnionsDb } from "./__fixtures__/unions.gen.js";
 import type {
   Db as GraphDb,
   GrChunk,
@@ -1008,5 +1011,189 @@ describe("keyset cursor types", () => {
     await db.user.findUnique({ where: { id: "u1" }, select: { $cursor: true } });
     // @ts-expect-error — nor in nested loads
     await db.user.findMany({ select: { posts: { select: { $cursor: true } } } });
+  });
+});
+
+describe("nested update / delete / upsert / connectOrCreate and _count filter types", () => {
+  const nx = null as unknown as NxDb;
+  const nested = null as unknown as NestedDb;
+  const unions = null as unknown as UnionsDb;
+
+  it("types nested writes on to-many relations", async () => {
+    await nx.nxUser.update({
+      where: { id: "u1" },
+      data: {
+        posts: {
+          update: { where: { id: "p1" }, data: { title: "New", views: { increment: 1 } } },
+          delete: [{ id: "p2" }],
+          upsert: [
+            {
+              where: { id: "p3" },
+              create: { id: "p3", title: "Created" },
+              update: {
+                title: "Updated",
+                tags: { connectOrCreate: { where: { name: "a" }, create: { name: "a" } } },
+              },
+            },
+          ],
+          connectOrCreate: { where: { id: "p4" }, create: { id: "p4", title: "Linked" } },
+        },
+        follows: {
+          connectOrCreate: {
+            where: { email: "b@x.io" },
+            create: { id: "b", email: "b@x.io" },
+            $edge: { weight: 2 },
+          },
+          upsert: {
+            where: { id: "c" },
+            create: { id: "c", email: "c@x.io" },
+            update: {},
+            $edge: { weight: 3 },
+          },
+        },
+      },
+    });
+    // @ts-expect-error — a to-many update names the node: { where, data }
+    await nx.nxUser.update({ where: { id: "u1" }, data: { posts: { update: { title: "x" } } } });
+    await nx.nxUser.update({
+      where: { id: "u1" },
+      // @ts-expect-error — the where of a nested update is a unique key
+      data: { posts: { update: { where: { title: "x" }, data: {} } } },
+    });
+    // @ts-expect-error — to-many delete takes unique keys
+    await nx.nxUser.update({ where: { id: "u1" }, data: { posts: { delete: true } } });
+    await nx.nxUser.update({
+      where: { id: "u1" },
+      // @ts-expect-error — a nested upsert needs create
+      data: { posts: { upsert: { where: { id: "p" }, update: {} } } },
+    });
+    await nx.nxUser.update({
+      where: { id: "u1" },
+      // @ts-expect-error — the create data of connectOrCreate is a full create input (title required)
+      data: { posts: { connectOrCreate: { where: { id: "p" }, create: { id: "p" } } } },
+    });
+    await nx.nxUser.update({
+      where: { id: "u1" },
+      data: {
+        follows: {
+          // @ts-expect-error — $edge on connectOrCreate takes values (number updates are for connect / set)
+          connectOrCreate: {
+            where: { id: "b" },
+            create: { id: "b", email: "b" },
+            $edge: { weight: { increment: 1 } },
+          },
+        },
+      },
+    });
+  });
+
+  it("types nested writes on to-one relations", async () => {
+    await nx.nxPost.update({ where: { id: "p1" }, data: { author: { update: { name: "Ada" } } } });
+    await nx.nxPost.update({ where: { id: "p1" }, data: { author: { delete: true } } });
+    await nx.nxUser.update({
+      where: { id: "u1" },
+      data: { profile: { upsert: { create: { bio: "new" }, update: { bio: "again" } } } },
+    });
+    await nx.nxPost.update({
+      where: { id: "p1" },
+      data: {
+        author: {
+          connectOrCreate: { where: { email: "a@x.io" }, create: { id: "a", email: "a@x.io" } },
+        },
+      },
+    });
+    await nx.nxPost.update({
+      where: { id: "p1" },
+      // @ts-expect-error — a to-one update takes the data itself
+      data: { author: { update: { where: { id: "u" }, data: {} } } },
+    });
+    // @ts-expect-error — to-one delete takes a boolean
+    await nx.nxPost.update({ where: { id: "p1" }, data: { author: { delete: { id: "u1" } } } });
+    await nx.nxPost.update({
+      where: { id: "p1" },
+      // @ts-expect-error — to-one writes take a single object
+      data: { author: { upsert: [{ create: { id: "a", email: "a" }, update: {} }] } },
+    });
+  });
+
+  it("allows connectOrCreate on create, and update / delete / upsert only on update", async () => {
+    await nx.nxPost.create({
+      data: {
+        id: "p",
+        title: "Hi",
+        tags: { connectOrCreate: [{ where: { name: "a" }, create: { name: "a" } }] },
+      },
+    });
+    await nx.nxUser.create({
+      // @ts-expect-error — nothing to update yet in a create
+      data: { id: "u", email: "e", posts: { update: { where: { id: "p" }, data: {} } } },
+    });
+    // @ts-expect-error — nor to delete
+    await nx.nxUser.create({ data: { id: "u", email: "e", posts: { delete: { id: "p" } } } });
+    await nx.nxUser.upsert({
+      where: { id: "u" },
+      create: {
+        id: "u",
+        email: "e",
+        // @ts-expect-error — nor to upsert
+        posts: { upsert: { where: { id: "p" }, create: { id: "p", title: "t" }, update: {} } },
+      },
+      update: {},
+    });
+    // In the update branch of an upsert: allowed.
+    await nx.nxUser.upsert({
+      where: { id: "u" },
+      create: { id: "u", email: "e" },
+      update: { posts: { delete: { id: "p" } } },
+    });
+  });
+
+  it("restricts nested writes on interface and union targets", async () => {
+    // An interface target: update and delete (by the interface's unique key), no upsert / connectOrCreate.
+    await nested.unit.update({
+      where: { name: "core" },
+      data: {
+        staff: {
+          update: { where: { email: "a@x.io" }, data: { name: "A" } },
+          delete: { email: "b@x.io" },
+        },
+      },
+    });
+    await nested.unit.update({
+      where: { name: "core" },
+      data: {
+        // @ts-expect-error — an interface cannot be created
+        staff: { upsert: { where: { email: "a" }, create: { email: "a", name: "A" }, update: {} } },
+      },
+    });
+    await nested.unit.update({
+      where: { name: "core" },
+      data: {
+        // @ts-expect-error — nor through connectOrCreate
+        staff: { connectOrCreate: { where: { email: "a" }, create: { email: "a", name: "A" } } },
+      },
+    });
+    await unions.shelf.update({
+      where: { id: "s" },
+      // @ts-expect-error — a union target has none of them
+      data: { items: { delete: { Story: { id: "x" } } } },
+    });
+  });
+
+  it("types _count filters in where", async () => {
+    await nx.nxUser.findMany({ where: { _count: { posts: 2 } } });
+    await nx.nxUser.findMany({
+      where: {
+        _count: { posts: { gte: 1, lt: 10, where: { published: true } }, follows: { equals: 0 } },
+        posts: { some: { _count: { tags: { gt: 0 } } } },
+      },
+    });
+    await nx.nxUser.count({ where: { OR: [{ _count: { posts: { in: [0, 1] } } }] } });
+    // @ts-expect-error — a to-one relation is not counted
+    await nx.nxUser.findMany({ where: { _count: { profile: 1 } } });
+    // @ts-expect-error — the where is the related model's
+    await nx.nxUser.findMany({ where: { _count: { posts: { gte: 1, where: { email: "x" } } } } });
+    // @ts-expect-error — counts are numbers
+    await nx.nxUser.findMany({ where: { _count: { posts: { gte: "1" } } } });
   });
 });

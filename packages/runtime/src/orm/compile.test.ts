@@ -263,3 +263,31 @@ describe("generated fixture", () => {
     expect(renderCyphraGenSource(parseSchema(src), { runtimeImport: "../../index.js" })).toBe(gen);
   });
 });
+
+describe("compileWhere _count filters", () => {
+  it("compiles each count to a COUNT {} subquery with the Int operators", () => {
+    expect(where({ _count: { posts: 2 } }).text).toBe(
+      "COUNT { MATCH (n)-[:`AUTHORED`]->(m0:`Post`) } = $p0",
+    );
+    const { text, params } = where({
+      _count: { posts: { gte: 1, lt: 5, where: { published: true } }, followers: { in: [0, 1] } },
+    });
+    expect(text).toBe(
+      "((COUNT { MATCH (n)-[:`AUTHORED`]->(m0:`Post`) WHERE m0.`published` = $p0 } >= $p1) AND (COUNT { MATCH (n)-[:`AUTHORED`]->(m0:`Post`) WHERE m0.`published` = $p0 } < $p2)) AND (COUNT { MATCH (n)<-[:`FOLLOWS`]-(m1:`User`) } IN $p3)",
+    );
+    expect((params.p1 as { toNumber(): number }).toNumber()).toBe(1);
+    expect(where({ _count: { posts: {} } }).text).toBeNull();
+  });
+
+  it("rejects to-one relations, unknown relations and a where without an operator", () => {
+    const post = schemaModel.nodes.find((n) => n.name === "Post")!;
+    const ctx = new QueryContext(schemaModel);
+    expect(() => compileWhere(ctx, post, "n", { _count: { author: 1 } })).toThrow(/to-one/);
+    expect(() => where({ _count: { nope: 1 } })).toThrow(/Unknown relation/);
+    expect(() => where({ _count: { posts: { where: { published: true } } } })).toThrow(
+      /needs an operator/,
+    );
+    expect(() => where({ _count: { posts: null } })).toThrow(CyphraValidationError);
+    expect(() => where({ _count: { posts: { contains: "x" } } })).toThrow(CyphraValidationError);
+  });
+});

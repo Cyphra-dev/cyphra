@@ -361,3 +361,67 @@ describe("$edge number updates", () => {
     ).rejects.toThrow('GrEntity.related.$edge.weight: unknown number update "divide"');
   });
 });
+
+describe("nested update / delete / upsert / connectOrCreate", () => {
+  it("compiles every nested write into the one statement of the update", async () => {
+    // Every count of the statement is 1: each target was found.
+    const { calls, e } = engine("User", (text) => [
+      {
+        row: userRow,
+        ...Object.fromEntries(
+          [...text.matchAll(/count\([\w*]+\) AS (\w+)/g)].map((m) => [m[1]!, 1]),
+        ),
+      },
+    ]);
+    await e.update({
+      where: { id: "u1" },
+      data: {
+        posts: {
+          update: { where: { id: "p1" }, data: { title: "T" } },
+          delete: { id: "p2" },
+          upsert: { where: { id: "p3" }, create: { title: "N" }, update: { views: 1 } },
+        },
+      },
+    });
+    expect(calls).toHaveLength(1);
+    const text = calls[0]!.text;
+    // The delete, then the update, then the upsert's update and its create (only when nothing
+    // was updated), each a subquery from the user.
+    expect(text).toContain(
+      "CALL { WITH n MATCH (n)-[:`AUTHORED`]->(x0:`Post`) WHERE x0.`id` = $p1 WITH x0 LIMIT 1 DETACH DELETE x0 RETURN count(*) AS d1 }",
+    );
+    expect(text).toContain(
+      "CALL { WITH n MATCH (n)-[:`AUTHORED`]->(u2:`Post`) WHERE u2.`id` = $p2 WITH u2 LIMIT 1 SET u2.`title` = $p3 RETURN count(u2) AS f3 }",
+    );
+    expect(text).toMatch(
+      /CALL \{ WITH n, f5 WITH n WHERE f5 = 0 FOREACH .* RETURN count\(\*\) AS k\d+ \}/,
+    );
+  });
+
+  it("throws NotFoundError when a nested update target is not linked", async () => {
+    const { e } = engine("User", (text) => {
+      const f = /count\(u\d+\) AS (f\d+)/.exec(text)![1]!;
+      return [{ row: userRow, [f]: 0 }];
+    });
+    await expect(
+      e.update({
+        where: { id: "u1" },
+        data: { posts: { update: { where: { id: "p9" }, data: {} } } },
+      }),
+    ).rejects.toThrow(/User\.posts\.update: no Post linked to this User matches \{"id":"p9"\}/);
+  });
+
+  it("refuses nested update / delete / upsert on a create, and unknown shapes", async () => {
+    const { e } = engine("User", () => []);
+    await expect(
+      e.create({ data: { email: "a", posts: { delete: { id: "p" } } } }),
+    ).rejects.toThrow(/unsupported relation operation "delete" \(only on update\)/);
+    await expect(
+      e.update({ where: { id: "u1" }, data: { posts: { delete: true } } }),
+    ).rejects.toThrow(CyphraValidationError);
+    const post = engine("Post", () => []);
+    await expect(
+      post.e.update({ where: { id: "p" }, data: { author: { delete: true, update: {} } } }),
+    ).rejects.toThrow(/use only one of update \/ delete/);
+  });
+});

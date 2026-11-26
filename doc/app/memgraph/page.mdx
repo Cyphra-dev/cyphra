@@ -62,7 +62,7 @@ Verified against Memgraph 3.14.0. "Supported" means the shared integration suite
 | Feature                                                        | Memgraph                                                                                 |
 | -------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
 | CRUD (`create`, `findMany`, `update`, `delete`, `…Many`)       | Supported                                                                                |
-| Nested writes (`create`, `connect`, `connectOrCreate`, `set`)  | Supported                                                                                |
+| Nested writes (`create`, `connect`, `update`, `upsert`, …)     | Supported                                                                                |
 | `upsert`                                                       | Supported (see [concurrency](#concurrency-and-uniqueness))                               |
 | `UniqueConstraintError`                                        | Supported, raised at commit                                                              |
 | Relation filters, `_count`, ordering by relation counts        | Supported                                                                                |

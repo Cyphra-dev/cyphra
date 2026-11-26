@@ -1222,8 +1222,13 @@ each useful on its own:
    2.5 µs on a 4-model schema and 45 µs on a 100-model one (`pnpm --filter cyphra-bench extends`).
 5. **Edge filters and ordering on relation loads** (`_edge` in `some` / `orderBy`) where the client
    does not have them yet.
-6. Later: nested `update` / `delete` / `upsert` / `connectOrCreate`; `_count` filters in `where`
-   (for v7 aggregation filters).
+6. Nested `update` / `delete` / `upsert` / `connectOrCreate`; `_count` filters in `where` (for v7
+   aggregation filters). Landed (#248): each nested write is a subquery of the parent write's one
+   statement (targets found through the relation, under the `read` + `update` / `delete` rules;
+   `create` / `after` rules on what `upsert` / `connectOrCreate` create);
+   `where: { _count: { posts: { gte: 2, where } } }` compiles to `COUNT {}` under the `read`
+   rules. On FalkorDB a nested `delete` through an `onDelete: Restrict` rule is refused
+   (`UnsupportedFeatureError`).
 
 ## Decisions
 

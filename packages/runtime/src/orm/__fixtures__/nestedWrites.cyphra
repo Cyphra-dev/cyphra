@@ -1,0 +1,51 @@
+// Nested update / delete / upsert / connectOrCreate and `_count` filters: runtime integration
+// tests (own Nx* labels).
+
+node NxUser {
+  id      String     @id
+  email   String     @unique
+  name    String?
+  posts   NxPost[]   @relationship(type: "NX_WROTE", direction: OUT)
+  profile NxProfile? @relationship(type: "NX_HAS_PROFILE", direction: OUT)
+  follows NxUser[]   @relationship(type: "NX_FOLLOWS", direction: OUT)
+}
+
+node NxProfile {
+  id   String  @id @default(cuid())
+  bio  String
+  user NxUser? @relationship(type: "NX_HAS_PROFILE", direction: IN)
+}
+
+node NxPost {
+  id        String      @id
+  title     String      @length(min: 2)
+  views     Int         @default(0) @max(100)
+  published Boolean     @default(false)
+  author    NxUser?     @relationship(type: "NX_WROTE", direction: IN)
+  tags      NxTag[]     @relationship(type: "NX_TAGGED", direction: OUT)
+  comments  NxComment[] @relationship(type: "NX_ON", direction: IN, onDelete: Cascade)
+  locks     NxLock[]    @relationship(type: "NX_LOCKS", direction: IN, onDelete: Restrict)
+}
+
+node NxTag {
+  name  String   @id
+  posts NxPost[] @relationship(type: "NX_TAGGED", direction: IN)
+}
+
+node NxComment {
+  id   String  @id @default(cuid())
+  body String
+  post NxPost? @relationship(type: "NX_ON", direction: OUT)
+}
+
+node NxLock {
+  id   String  @id @default(cuid())
+  post NxPost? @relationship(type: "NX_LOCKS", direction: OUT)
+}
+
+relationship NxFollow {
+  type "NX_FOLLOWS"
+  from NxUser
+  to NxUser
+  weight Int @default(1)
+}

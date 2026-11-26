@@ -77,6 +77,7 @@ import {
 import { defaultLiteralValue, encodeScalar, integerToNumber, nowValue } from "./values.js";
 import { numericGuard, throwGuardIssues, validateWriteArgs, type NumericCheck } from "./rules.js";
 import { falkordbGuardedEdgeSet } from "./falkordb.js";
+import { unsupportedOnFalkorDB } from "../dialect.js";
 import { createLabels, labelItem, labelSuffix, updateLabels } from "./labels.js";
 
 type AnyRecord = Record<string, unknown>;
@@ -105,10 +106,28 @@ export type Runner = {
 /** Exactly one statement, safe to commit on its own (see {@link RunOptions.autoCommit}). */
 const SINGLE: RunOptions = { autoCommit: true };
 
+/** A node a statement wrote, checked against an `after` rule once every write of it ran. */
+type AfterCheck = {
+  readonly model: ResolvedNodeModel;
+  /** The variable bound to the node (`null` when the node was not written, see `nullable`). */
+  readonly alias: string;
+  readonly kind: "create" | "update";
+  /** The rule, compiled on `alias`. */
+  readonly pred: string;
+  /** The column the check reads. */
+  readonly column: string;
+  /** `alias` may be `null` (a node exported from a subquery that did not write it): passes. */
+  readonly nullable: boolean;
+};
+
 /**
  * A write statement being compiled: a root clause, then relation writes appended as clauses that
  * keep exactly one row (`FOREACH`, `CREATE`, `CALL { … RETURN <aggregate> }`), so the whole nested
  * write, and the projection of the written node, run as one statement.
+ *
+ * A plan can also be the body of a subquery of another plan (a nested `update`, `upsert`,
+ * `connectOrCreate`): {@link WritePlan.callSub} runs it with its outputs and `after` checks
+ * exported to the outer plan.
  */
 class WritePlan {
   private readonly clauses: string[];
@@ -118,8 +137,8 @@ class WritePlan {
   readonly outputs: string[] = [];
   /** Checks on the returned row, in statement order; each throws to fail the operation. */
   readonly checks: ((row: AnyRecord) => void)[] = [];
-  /** Columns (`<expr> AS <name>`) evaluated after every write of the statement, for checks. */
-  readonly finals: string[] = [];
+  /** Nodes checked against an `after` rule once every write of the statement ran. */
+  private readonly afters: AfterCheck[] = [];
   /** Whether relation writes were added. */
   relations = false;
 
@@ -142,6 +161,40 @@ class WritePlan {
     this.add(`WITH ${this.scope.join(", ")} CALL { WITH ${imports.join(", ")} ${body} }`, returns);
   }
 
+  /**
+   * Run `sub` (a plan whose root clause starts from `imports`, keeping at most one row) as a
+   * subquery returning `columns` (aggregates, `<expr> AS <name>`, bound in this plan), its outputs
+   * and the nodes of its `after` checks, which this plan then checks. A `sub` that keeps no row
+   * writes nothing past that point and still returns one row (its aggregates are 0, its outputs and
+   * nodes `null`).
+   */
+  callSub(imports: readonly string[], sub: WritePlan, columns: readonly string[]): void {
+    const names = columns.map((c) => c.slice(c.lastIndexOf(" AS ") + 4));
+    const returns = [...columns, ...sub.outputs.map((o) => `collect(${o})[0] AS ${o}`)];
+    const exported = sub.afters.map((a) => {
+      const v = this.ctx.variable("w");
+      returns.push(`collect(${a.alias})[0] AS ${v}`);
+      return { ...a, v };
+    });
+    this.call(imports, `${sub.text} RETURN ${returns.join(", ")}`, [
+      ...names,
+      ...sub.outputs,
+      ...exported.map((a) => a.v),
+    ]);
+    this.outputs.push(...sub.outputs);
+    this.checks.push(...sub.checks);
+    for (const a of exported) {
+      const pred = rulePredicate(this.ctx, a.model, a.v, (r) => r.after?.[a.kind]) ?? "true";
+      this.afters.push({ ...a, alias: a.v, pred, nullable: true });
+    }
+    this.relations = true;
+  }
+
+  /** Add `check` at position `index` of the checks (before the ones added since). */
+  checkAt(index: number, check: (row: AnyRecord) => void): void {
+    this.checks.splice(index, 0, check);
+  }
+
   /** Return `output` (a fresh variable bound by the statement) for a check. */
   output(name: string): void {
     this.outputs.push(name);
@@ -152,14 +205,33 @@ class WritePlan {
   }
 
   /**
-   * Check the `after` rule `pred` on a node the statement wrote, once every write of the statement
-   * ran: a node that does not match it fails the operation (and the transaction rolls back).
+   * Columns (`<expr> AS <name>`) evaluated after every write of the statement: the `after` rules
+   * of the nodes it wrote.
    */
-  afterCheck(pred: string, model: string, kind: "create" | "update"): void {
-    const v = this.ctx.variable("ok");
-    this.finals.push(`coalesce(${pred}, false) AS ${v}`);
+  get finals(): string[] {
+    return this.afters.map((a) => {
+      const ok = `coalesce(${a.pred}, false)`;
+      return `${a.nullable ? `${a.alias} IS NULL OR ${ok}` : ok} AS ${a.column}`;
+    });
+  }
+
+  /**
+   * Check the `after.<kind>` rule of `model` on the node bound to `alias`, once every write of the
+   * statement ran: a node that does not match it fails the operation (and the transaction rolls
+   * back). Nothing to check without such a rule.
+   */
+  afterCheck(model: ResolvedNodeModel, alias: string, kind: "create" | "update"): void {
+    const pred = rulePredicate(
+      this.ctx,
+      model,
+      alias,
+      (r): RuleValue | undefined => r.after?.[kind],
+    );
+    if (pred === null) return;
+    const column = this.ctx.variable("ok");
+    this.afters.push({ model, alias, kind, pred, column, nullable: false });
     this.checks.push((row) => {
-      if (row[v] !== true) throw new ForbiddenError(model, `after.${kind}`);
+      if (row[column] !== true) throw new ForbiddenError(model.name, `after.${kind}`);
     });
   }
 
@@ -198,6 +270,19 @@ function sameValue(a: unknown, b: unknown): boolean {
   if (typeof a === "bigint" || typeof b === "bigint") return String(a) === String(b);
   return a === b;
 }
+
+/** Relation operations of a create's nested writes. */
+const CREATE_RELATION_OPS: readonly string[] = ["create", "connect", "connectOrCreate"];
+
+/** Relation operations of an update's nested writes. */
+const UPDATE_RELATION_OPS: readonly string[] = [
+  ...CREATE_RELATION_OPS,
+  "disconnect",
+  "set",
+  "update",
+  "delete",
+  "upsert",
+];
 
 /** Where a value sits in the operation's arguments, for validation issues (`data.posts.connect`). */
 type IssuePath = readonly (string | number)[];
@@ -869,8 +954,7 @@ export class ModelEngine {
       ["n"],
     );
     this.planRelations(plan, "n", relations, "create", ["data"]);
-    const after = ModelEngine.afterRule(ctx, this.model, "n", "create");
-    if (after) plan.afterCheck(after, this.model.name, "create");
+    plan.afterCheck(this.model, "n", "create");
     return plan;
   }
 
@@ -892,7 +976,8 @@ export class ModelEngine {
    * again keeps a single edge. On a typed edge, a new edge gets the given `$edge` properties plus
    * schema defaults; an existing edge is updated with the given `$edge` properties only (its
    * defaults, e.g. `@default(now())`, are kept). A subquery returning the number of edges linked
-   * (0: no such node) and the broken `@min` / `@max` checks of `$edge` number updates.
+   * (0: no such node) and the broken `@min` / `@max` checks of `$edge` number updates. Returns the
+   * column of that number; `optional` (for `connectOrCreate`): a missing node is not an error.
    */
   private planConnect(
     plan: WritePlan,
@@ -900,7 +985,8 @@ export class ModelEngine {
     rel: ResolvedRelationField,
     item: unknown,
     path: IssuePath,
-  ): void {
+    optional = false,
+  ): string {
     if (!isPlainObject(item))
       throw new CyphraValidationError(`${rel.name}.connect expects unique where objects.`);
     const { $edge, ...rest } = item;
@@ -976,7 +1062,7 @@ export class ModelEngine {
     plan.output(count);
     if (bad) plan.output(bad);
     plan.checks.push((row) => {
-      if (toCount(row[count]) === 0) {
+      if (!optional && toCount(row[count]) === 0) {
         throw new NotFoundError(`connect: no ${target.name} matches ${JSON.stringify(where)}.`);
       }
       if (bad) {
@@ -985,6 +1071,7 @@ export class ModelEngine {
         throwGuardIssues("update", owner, updates.checks, row[bad], [...path, "$edge"]);
       }
     });
+    return count;
   }
 
   /**
@@ -1051,8 +1138,7 @@ export class ModelEngine {
         [c],
       );
       child.planRelations(plan, c, relations, "create", path);
-      const after = ModelEngine.afterRule(ctx, target, c, "create");
-      if (after) plan.afterCheck(after, target.name, "create");
+      plan.afterCheck(target, c, "create");
     }
     flush();
   }
@@ -1100,34 +1186,51 @@ export class ModelEngine {
         `${this.model.name}.${rel.name}: relation writes take { create, connect, … }.`,
       );
     }
-    const allowed =
-      mode === "create" ? ["create", "connect"] : ["create", "connect", "disconnect", "set"];
+    const allowed = mode === "create" ? CREATE_RELATION_OPS : UPDATE_RELATION_OPS;
     for (const k of Object.keys(spec)) {
       if (!allowed.includes(k) || (k === "set" && !rel.many)) {
         throw new CyphraValidationError(
-          `${this.model.name}.${rel.name}: unsupported relation operation "${k}".`,
+          `${this.model.name}.${rel.name}: unsupported relation operation "${k}"${mode === "create" && UPDATE_RELATION_OPS.includes(k) ? " (only on update)" : ""}.`,
         );
       }
     }
-    const { create, connect, disconnect, set } = spec;
+    const { create, connect, connectOrCreate, disconnect, set, update, upsert } = spec;
+    const del = spec.delete;
     if (!rel.many) {
-      for (const [k, v] of [
-        ["create", create],
-        ["connect", connect],
-      ] as const) {
+      for (const [k, v] of Object.entries({ create, connect, connectOrCreate, update, upsert })) {
         if (Array.isArray(v))
           throw new CyphraValidationError(
             `${rel.name}.${k}: to-one relations take a single object.`,
           );
       }
-      if ([create, connect].filter((x) => x !== undefined).length > 1) {
+      if (del !== undefined && typeof del !== "boolean") {
+        throw new CyphraValidationError(`${rel.name}.delete on a to-one relation takes a boolean.`);
+      }
+      const given = Object.entries({ create, connect, connectOrCreate, update, upsert })
+        .filter(([, v]) => v !== undefined)
+        .map(([k]) => k);
+      if (del === true) given.push("delete");
+      if (given.length > 1) {
         throw new CyphraValidationError(
-          `${rel.name}: use only one of create / connect on a to-one relation.`,
+          `${rel.name}: use only one of ${given.join(" / ")} on a to-one relation.`,
+        );
+      }
+      const nested = given.find((k) => !["create", "connect"].includes(k));
+      if (nested && disconnect !== undefined && disconnect !== false) {
+        throw new CyphraValidationError(
+          `${rel.name}: ${nested} cannot be combined with disconnect on a to-one relation.`,
         );
       }
     }
+    const at = (op: string, v: unknown, i: number): IssuePath =>
+      Array.isArray(v) ? [...path, op, i] : [...path, op];
 
     if (rel.many) {
+      if (del !== undefined) {
+        for (const item of asArray(del)) {
+          this.planNestedDelete(plan, own, rel, item);
+        }
+      }
       if (disconnect !== undefined) {
         const keys = asArray(disconnect).map((item) => {
           if (!isPlainObject(item))
@@ -1152,6 +1255,8 @@ export class ModelEngine {
           this.planConnect(plan, own, rel, item, [...path, "set", i]);
         }
       }
+    } else if (del === true) {
+      this.planNestedDelete(plan, own, rel, true);
     } else if (disconnect === true || (mode === "update" && create !== undefined)) {
       // To-one: replace the existing edge (`connect` replaces it in its own subquery).
       this.planDeleteEdges(plan, own, rel, undefined, create !== undefined);
@@ -1161,18 +1266,333 @@ export class ModelEngine {
       );
     }
 
+    if (update !== undefined) {
+      for (const [i, item] of asArray(update).entries()) {
+        this.planNestedUpdate(plan, own, rel, item, at("update", update, i));
+      }
+    }
+    if (upsert !== undefined) {
+      for (const [i, item] of asArray(upsert).entries()) {
+        this.planNestedUpsert(plan, own, rel, item, at("upsert", upsert, i));
+      }
+    }
     if (connect !== undefined) {
       for (const [i, item] of asArray(connect).entries()) {
-        const at = Array.isArray(connect) ? [...path, "connect", i] : [...path, "connect"];
-        this.planConnect(plan, own, rel, item, at);
+        this.planConnect(plan, own, rel, item, at("connect", connect, i));
+      }
+    }
+    if (connectOrCreate !== undefined) {
+      for (const [i, item] of asArray(connectOrCreate).entries()) {
+        this.planConnectOrCreate(
+          plan,
+          own,
+          rel,
+          item,
+          mode,
+          at("connectOrCreate", connectOrCreate, i),
+        );
       }
     }
     if (create !== undefined) {
-      const items = asArray(create).map((item, i) => ({
-        item,
-        path: Array.isArray(create) ? [...path, "create", i] : [...path, "create"],
-      }));
+      const items = asArray(create).map((item, i) => ({ item, path: at("create", create, i) }));
       this.planCreates(plan, own, rel, items);
+    }
+  }
+
+  /**
+   * The target of a nested `update` / `delete` / `upsert` / `connectOrCreate` on `rel`: they name
+   * the node by its own unique key, so a union target (whose items name a member) is refused, and
+   * `upsert` / `connectOrCreate`, which may create it, need a node model.
+   */
+  private nestedTarget(rel: ResolvedRelationField, op: string): ResolvedNodeModel {
+    const target = this.node(rel.target);
+    const where = `${this.model.name}.${rel.name}.${op}`;
+    if (target.union) {
+      throw new CyphraValidationError(
+        `${where}: ${target.name} is a union; nested ${op} takes a node model (use connect / create / disconnect, or write the member directly).`,
+      );
+    }
+    if (op === "upsert" || op === "connectOrCreate") assertCreatable(target, where);
+    return target;
+  }
+
+  /** The unique `where` of a nested write item on `target` (`{ where }` of `item`). */
+  private nestedUnique(target: ResolvedNodeModel, item: unknown, op: string): AnyRecord {
+    if (!isPlainObject(item) || !isPlainObject(item.where)) {
+      throw new CyphraValidationError(`${op}: each item takes { where: <unique key>, … }.`);
+    }
+    return this.engineFor(target).assertUnique(item.where, op);
+  }
+
+  /**
+   * Update the node linked through `rel` (on a to-many relation, the one matching the item's unique
+   * `where`): its scalars, its own nested writes and its `after.update` rule, in one subquery. Only
+   * nodes the `read` and `update` rules allow are found; none is a {@link NotFoundError}.
+   */
+  private planNestedUpdate(
+    plan: WritePlan,
+    own: string,
+    rel: ResolvedRelationField,
+    item: unknown,
+    path: IssuePath,
+  ): void {
+    const target = this.nestedTarget(rel, "update");
+    const op = `${this.model.name}.${rel.name}.update`;
+    let where: AnyRecord | undefined;
+    let data: unknown = item;
+    if (rel.many) {
+      where = this.nestedUnique(target, item, op);
+      data = (item as AnyRecord).data;
+      if (!isPlainObject(data)) {
+        throw new CyphraValidationError(`${op}: each item takes { where, data }.`);
+      }
+    } else if (!isPlainObject(item)) {
+      throw new CyphraValidationError(`${op} on a to-one relation takes the update data.`);
+    }
+    const ctx = plan.ctx;
+    const [c, f] = [ctx.variable("u"), ctx.variable("f")];
+    const w = scopedWhere(ctx, target, c, where, "update");
+    const sub = this.engineFor(target).planUpdateNode(
+      ctx,
+      `MATCH ${relationMatch(ctx, own, rel, c, "", w)} WITH ${c} LIMIT 1`,
+      c,
+      data,
+      "update",
+      rel.many ? [...path, "data"] : path,
+    );
+    if (sub.bad) sub.plan.output(sub.bad);
+    const first = plan.checks.length;
+    plan.callSub([own], sub.plan, [`count(${c}) AS ${f}`]);
+    plan.output(f);
+    const badColumn = sub.bad;
+    plan.checkAt(first, (row) => {
+      if (toCount(row[f]) === 0) {
+        throw new NotFoundError(
+          `${op}: no ${target.name} linked to this ${this.model.name}${where ? ` matches ${JSON.stringify(where)}` : ""}.`,
+        );
+      }
+      if (badColumn) {
+        throwGuardIssues(
+          "update",
+          target,
+          sub.checks,
+          row[badColumn],
+          rel.many ? [...path, "data"] : path,
+        );
+      }
+    });
+  }
+
+  /**
+   * Delete the node linked through `rel` (on a to-many relation, the one matching the unique
+   * `where` item), with its `onDelete` rules, in one subquery. Only nodes the `read` and `delete`
+   * rules allow are found; none is a {@link NotFoundError}.
+   */
+  private planNestedDelete(
+    plan: WritePlan,
+    own: string,
+    rel: ResolvedRelationField,
+    item: unknown,
+  ): void {
+    const target = this.nestedTarget(rel, "delete");
+    const op = `${this.model.name}.${rel.name}.delete`;
+    let where: AnyRecord | undefined;
+    if (rel.many) {
+      if (!isPlainObject(item)) {
+        throw new CyphraValidationError(`${op} expects unique where objects.`);
+      }
+      where = this.engineFor(target).assertUnique(item, op);
+    }
+    const ctx = plan.ctx;
+    const [c, d] = [ctx.variable("x"), ctx.variable("d")];
+    const match = `MATCH ${relationMatch(ctx, own, rel, c, "", scopedWhere(ctx, target, c, where, "delete"))}`;
+    const missing = () =>
+      new NotFoundError(
+        `${op}: no ${target.name} linked to this ${this.model.name}${where ? ` matches ${JSON.stringify(where)}` : ""}.`,
+      );
+    plan.relations = true;
+    if (!hasDeleteRules(this.schema, target)) {
+      plan.call([own], `${match} WITH ${c} LIMIT 1 DETACH DELETE ${c} RETURN count(*) AS ${d}`, [
+        d,
+      ]);
+      plan.output(d);
+      plan.checks.push((row) => {
+        if (toCount(row[d]) === 0) throw missing();
+      });
+      return;
+    }
+    const compiled = compileRulesDelete(ctx, target, match, true, undefined, {
+      alias: c,
+      count: d,
+    });
+    if (!compiled) {
+      throw new CyphraValidationError(
+        `${op}: the onDelete cascades of ${target.name} come back to a model already on their path or go through an interface, which a nested write cannot run in its one statement; delete it with ${target.name.charAt(0).toLowerCase()}${target.name.slice(1)}.delete.`,
+      );
+    }
+    if (compiled.restricts.length && this.options.dialect === "falkordb") {
+      // A broken Restrict rule is found after the statement's other writes ran.
+      throw unsupportedOnFalkorDB(
+        `${op} (a nested delete of a model with onDelete: Restrict rules)`,
+        "FalkorDB cannot roll back the other writes of the statement when a Restrict rule refuses the delete. Delete the node with its own delete, which checks the rules first.",
+      );
+    }
+    // The compiled delete returns no row when nothing matched: its counts are summed back to one.
+    const columns = [d, ...compiled.restricts.map((r) => r.column)];
+    plan.call(
+      [own],
+      `CALL { WITH ${own} ${compiled.text} } RETURN ${columns.map((c) => `sum(${c}) AS ${c}`).join(", ")}`,
+      columns,
+    );
+    plan.output(d);
+    for (const r of compiled.restricts) plan.output(r.column);
+    plan.checks.push((row) => {
+      throwRestrict(compiled.restricts, row);
+      if (toCount(row[d]) === 0) throw missing();
+    });
+  }
+
+  /**
+   * How many nodes of `target` matching `where` (linked through `rel` when `linked`) the `read`
+   * rules show, as a column: with rules only (`null` without, when every match is visible), to
+   * tell a node the rules forbid writing from a missing one.
+   */
+  private planVisible(
+    plan: WritePlan,
+    own: string,
+    rel: ResolvedRelationField,
+    target: ResolvedNodeModel,
+    where: AnyRecord | undefined,
+    linked: boolean,
+  ): string | null {
+    const ctx = plan.ctx;
+    if (ctx.rules.length === 0) return null;
+    const [x, e] = [ctx.variable("x"), ctx.variable("e")];
+    const w = scopedWhere(ctx, target, x, where);
+    const pattern = linked
+      ? relationMatch(ctx, own, rel, x, "", w)
+      : `(${x}:${labelExpr(target)})${w ? ` WHERE ${w}` : ""}`;
+    plan.call([own], `MATCH ${pattern} RETURN count(${x}) AS ${e}`, [e]);
+    return e;
+  }
+
+  /**
+   * Create a node linked to `own` through `rel` when `cond` (a count column) is 0, in one
+   * subquery; on a to-one relation of an existing node, its current edge is replaced.
+   */
+  private planCreateUnless(
+    plan: WritePlan,
+    own: string,
+    rel: ResolvedRelationField,
+    cond: string,
+    item: unknown,
+    replace: boolean,
+    path: IssuePath,
+  ): void {
+    const ctx = plan.ctx;
+    const sub = new WritePlan(ctx, `WITH ${own} WHERE ${cond} = 0`, [own]);
+    if (replace) this.planDeleteEdges(sub, own, rel, undefined, true);
+    this.planCreates(sub, own, rel, [{ item, path }]);
+    plan.callSub([own, cond], sub, [`count(*) AS ${ctx.variable("k")}`]);
+  }
+
+  /**
+   * Update the node linked through `rel` (matching the item's unique `where` on a to-many
+   * relation), or create and link one when there is none: one subquery each, the create only when
+   * the update found nothing. A linked node the `read` rules show but the `update` rules do not is
+   * a {@link ForbiddenError} (nothing is created in its place).
+   */
+  private planNestedUpsert(
+    plan: WritePlan,
+    own: string,
+    rel: ResolvedRelationField,
+    item: unknown,
+    path: IssuePath,
+  ): void {
+    const target = this.nestedTarget(rel, "upsert");
+    const op = `${this.model.name}.${rel.name}.upsert`;
+    if (!isPlainObject(item) || !isPlainObject(item.create) || !isPlainObject(item.update)) {
+      throw new CyphraValidationError(
+        `${op}: each item takes { ${rel.many ? "where, " : ""}create, update }.`,
+      );
+    }
+    const where = rel.many ? this.nestedUnique(target, item, op) : undefined;
+    const ctx = plan.ctx;
+    const first = plan.checks.length;
+    const visible = this.planVisible(plan, own, rel, target, where, true);
+    const [c, u] = [ctx.variable("u"), ctx.variable("f")];
+    const w = scopedWhere(ctx, target, c, where, "update");
+    const sub = this.engineFor(target).planUpdateNode(
+      ctx,
+      `MATCH ${relationMatch(ctx, own, rel, c, "", w)} WITH ${c} LIMIT 1`,
+      c,
+      item.update,
+      "upsert",
+      [...path, "update"],
+    );
+    if (sub.bad) sub.plan.output(sub.bad);
+    plan.callSub([own], sub.plan, [`count(${c}) AS ${u}`]);
+    plan.output(u);
+    const exists = visible ?? u;
+    const create = item.$edge === undefined ? item.create : { ...item.create, $edge: item.$edge };
+    this.planCreateUnless(plan, own, rel, exists, create, !rel.many && visible !== null, [
+      ...path,
+      "create",
+    ]);
+    const badColumn = sub.bad;
+    if (visible) plan.output(visible);
+    plan.checkAt(first, (row) => {
+      if (visible && toCount(row[visible]) > 0 && toCount(row[u]) === 0) {
+        throw new ForbiddenError(target.name, "update");
+      }
+      if (badColumn)
+        throwGuardIssues("upsert", target, sub.checks, row[badColumn], [...path, "update"]);
+    });
+  }
+
+  /**
+   * Link `own` to the node of `rel`'s target matching the item's unique `where` (as `connect`:
+   * a `MERGE`), or create and link one when there is none. A node the `read` rules show but the
+   * `connect` rule does not let `own` link is a {@link ForbiddenError}.
+   */
+  private planConnectOrCreate(
+    plan: WritePlan,
+    own: string,
+    rel: ResolvedRelationField,
+    item: unknown,
+    mode: "create" | "update",
+    path: IssuePath,
+  ): void {
+    const target = this.nestedTarget(rel, "connectOrCreate");
+    const op = `${this.model.name}.${rel.name}.connectOrCreate`;
+    if (!isPlainObject(item) || !isPlainObject(item.create)) {
+      throw new CyphraValidationError(`${op}: each item takes { where, create }.`);
+    }
+    const where = this.nestedUnique(target, item, op);
+    const first = plan.checks.length;
+    const visible = this.planVisible(plan, own, rel, target, where, false);
+    const $edge = item.$edge;
+    const linked = this.planConnect(
+      plan,
+      own,
+      rel,
+      $edge === undefined ? where : { ...where, $edge },
+      path,
+      true,
+    );
+    const exists = visible ?? linked;
+    const create = $edge === undefined ? item.create : { ...item.create, $edge };
+    this.planCreateUnless(plan, own, rel, exists, create, !rel.many && mode === "update", [
+      ...path,
+      "create",
+    ]);
+    if (visible) {
+      plan.output(visible);
+      plan.checkAt(first, (row) => {
+        if (toCount(row[visible]) > 0 && toCount(row[linked]) === 0) {
+          throw new ForbiddenError(this.model.name, "connect", rel.name);
+        }
+      });
     }
   }
 
@@ -1220,12 +1640,13 @@ export class ModelEngine {
   private setClauses(
     ctx: QueryContext,
     scalars: AnyRecord,
+    alias = "n",
   ): { sets: string[]; checks: NumericCheck[] } {
     const sets: string[] = [];
     const checks: NumericCheck[] = [];
     for (const [k, v] of Object.entries(scalars)) {
       const f = scalarField(this.model, k)!;
-      const ref = `n.${q(k)}`;
+      const ref = `${alias}.${q(k)}`;
       // A Json value (or a point) is set as a whole, even when it is an object.
       const wholeObject = f.type === "Json" || f.type === "Point" || f.type === "CartesianPoint";
       if (isPlainObject(v) && !f.list && !wholeObject) {
@@ -1258,7 +1679,7 @@ export class ModelEngine {
   }
 
   /**
-   * `SET` the update on `n` (and `REMOVE` the dynamic labels in `remove`, an item such as
+   * `SET` the update on `alias` (and `REMOVE` the dynamic labels in `remove`, an item such as
    * `` n:`A` ``) only when the values its numeric operators produce keep within `@min` / `@max`;
    * the clause returns the broken checks as `bad` (see {@link numericGuard}).
    */
@@ -1266,13 +1687,15 @@ export class ModelEngine {
     sets: readonly string[],
     checks: readonly NumericCheck[],
     remove: string | null = null,
+    alias = "n",
+    bad = "bad",
   ): string {
     const guard = numericGuard(checks);
     const body = ModelEngine.setAndRemove(sets, remove);
     if (!guard) return body ? ` ${body}` : "";
     return (
-      ` WITH n, ${guard} AS bad` +
-      ` FOREACH (x IN CASE WHEN size(bad) = 0 THEN [1] ELSE [] END | ${body})`
+      ` WITH ${alias}, ${guard} AS ${bad}` +
+      ` FOREACH (x IN CASE WHEN size(${bad}) = 0 THEN [1] ELSE [] END | ${body})`
     );
   }
 
@@ -1293,12 +1716,47 @@ export class ModelEngine {
     scalars: AnyRecord,
     labels: unknown,
     where: string,
+    alias = "n",
   ): { sets: string[]; checks: NumericCheck[]; remove: string | null } {
     const change = updateLabels(this.model, labels, where);
-    const { sets, checks } = this.setClauses(ctx, scalars);
-    const add = labelItem("n", change.add);
+    const { sets, checks } = this.setClauses(ctx, scalars, alias);
+    const add = labelItem(alias, change.add);
     if (add) sets.push(add);
-    return { sets, checks, remove: labelItem("n", change.remove) };
+    return { sets, checks, remove: labelItem(alias, change.remove) };
+  }
+
+  /**
+   * The update of the node bound to `alias` by `match` (a clause keeping at most one row): its
+   * `SET`s (skipped when a number update would break `@min` / `@max`), its relation writes and its
+   * `after.update` check. `bad` (when a number update is checked) is the column of the broken
+   * checks, to report with `checks`.
+   */
+  private planUpdateNode(
+    ctx: QueryContext,
+    match: string,
+    alias: string,
+    data: unknown,
+    op: string,
+    path: IssuePath,
+  ): { plan: WritePlan; checks: NumericCheck[]; bad: string | null } {
+    const { scalars, relations, labels } = this.splitData(data, op);
+    const { sets, checks, remove } = this.updateClauses(
+      ctx,
+      scalars,
+      labels,
+      `${this.model.name}.${op}: ${path.join(".")}`,
+      alias,
+    );
+    const bad =
+      numericGuard(checks) !== null ? (alias === "n" ? "bad" : ctx.variable("bad")) : null;
+    const plan = new WritePlan(
+      ctx,
+      match + ModelEngine.guardedSet(sets, checks, remove, alias, bad ?? "bad"),
+      bad ? [alias, bad] : [alias],
+    );
+    this.planRelations(plan, alias, relations, "update", path);
+    plan.afterCheck(this.model, alias, "update");
+    return { plan, checks, bad };
   }
 
   // -------------------------------------------------------------------------
@@ -1459,25 +1917,17 @@ export class ModelEngine {
     this.assertNotUnion("update");
     validateWriteArgs(this.schema, this.model, "update", args);
     const where = this.assertUnique(args.where, "update");
-    const { scalars, relations, labels } = this.splitData(args.data, "update");
     const ctx = this.ctx();
     const w = scopedWhere(ctx, this.model, "n", where, "update");
-    const { sets, checks, remove } = this.updateClauses(
+    const { plan, checks, bad } = this.planUpdateNode(
       ctx,
-      scalars,
-      labels,
-      `${this.model.name}.update: data`,
+      `MATCH (n:${this.label})${w ? ` WHERE ${w}` : ""} WITH n LIMIT 1`,
+      "n",
+      args.data,
+      "update",
+      ["data"],
     );
-    const guarded = numericGuard(checks) !== null;
-    const plan = new WritePlan(
-      ctx,
-      `MATCH (n:${this.label})${w ? ` WHERE ${w}` : ""} WITH n LIMIT 1` +
-        ModelEngine.guardedSet(sets, checks, remove),
-      guarded ? ["n", "bad"] : ["n"],
-    );
-    this.planRelations(plan, "n", relations, "update", ["data"]);
-    const after = ModelEngine.afterRule(ctx, this.model, "n", "update");
-    if (after) plan.afterCheck(after, this.model.name, "update");
+    const guarded = bad !== null;
     return this.runPlan(plan, args, {
       extra: guarded ? ["bad"] : [],
       autoCommit: !plan.relations && plan.checks.length === 0,
@@ -1663,8 +2113,7 @@ export class ModelEngine {
       const plan = new WritePlan(c, `MATCH (n) WHERE elementId(n) = ${id}`, ["n"]);
       const relations = mode === "create" ? create.relations : update.relations;
       this.planRelations(plan, "n", relations, mode, [mode]);
-      const after = ModelEngine.afterRule(c, this.model, "n", mode);
-      if (after) plan.afterCheck(after, this.model.name, mode);
+      plan.afterCheck(this.model, "n", mode);
       const { expr, shape } = compileProjection(c, this.model, "n", args);
       const columns = [`${this.readableRow(c, expr)} AS row`, ...plan.outputs, ...plan.finals];
       return {
