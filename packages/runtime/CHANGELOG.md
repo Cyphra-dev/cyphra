@@ -1,5 +1,14 @@
 # @cyphra/runtime
 
+## 0.23.0
+
+### Patch Changes
+
+- 609a44c: `compat.v7` runs list and connection queries on the shared engine (the typed client's compiler) when it answers exactly like v7: filters, sorting, `limit` / `offset`, v7 offset cursors, nested relationships and connections with edge `properties`, on types without `@authentication` / `@authorization`. Everything else (aggregations, full-text, `@cypher`, rules, unions, interfaces, edge filters and sorts, `single`, mutations, …) stays on the compat compiler, so results do not change. With `client`, the client's `query` events and spans now name the engine operation (`findMany` on `Movie`) for these queries, and a root connection selecting both a page and `totalCount` reads them with two statements in one read transaction. `@cyphra/runtime`: internal `withRawValues(client)` engine entry.
+- 5f36831: `compat.v7` runs root mutations on the shared engine when it writes and answers exactly like v7: `create` with attribute inputs (`createMany`, `info.nodesCreated`), `update` with `set` operators (`updateMany`), and `delete` without nested deletes (`deleteMany`, with `relationshipsDeleted`), the response selection read in the same statement. Nested writes (v7's `connect` is a `CREATE`, the engine's a `MERGE`), arithmetic and list operators, deprecated `field_SET` keys, `@timestamp` and `@limit` types, DateTime values and types with rules stay on the compat compiler. `@cyphra/runtime`: internal `deleteMany({ $relationships: true })` engine entry (the number of relationships a delete removed).
+  - @cyphra/query@0.23.0
+  - @cyphra/schema@0.23.0
+
 ## 0.22.0
 
 ### Minor Changes
