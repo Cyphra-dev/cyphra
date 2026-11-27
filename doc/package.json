@@ -14,7 +14,7 @@
     "@borromic/analytics": "^0.1.0",
     "@vercel/analytics": "^2.0.1",
     "gray-matter": "^4.0.3",
-    "next": "^15.5.29",
+    "next": "^16.4.6",
     "nextra": "^4.6.1",
     "nextra-theme-docs": "^4.6.1",
     "react": "^19.3.1",
