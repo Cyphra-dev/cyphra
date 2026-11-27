@@ -1241,8 +1241,116 @@ const v2 = native.makeSchema({ client: db, config: api });
 // /api/graphql stays the v7 API; /api/graphql/v2 is the native one.
 ```
 
-Frontends move operation by operation: `movies(where, sort, limit)` becomes
-`movieFindMany(where, orderBy, take) { nodes }`, `actorsConnection { edges { properties } }`
-becomes `actors { _edge { … } }`, `{ eq: … }` becomes `{ equals: … }`. Keyset cursors are not
-interchangeable with v7's offset cursors. The [migration guide](/guides/migrate-from-neo4j-graphql)
-covers moving the type definitions to `schema.cyphra` (`cyphra import graphql`).
+Frontends move operation by operation. The [migration guide](/guides/migrate-from-neo4j-graphql#next-the-native-api)
+covers the steps; the tools are:
+
+- `cyphra graphql migrate-operations` rewrites v7 operations (`.graphql` files, `gql` / `graphql`
+  templates) into native ones, following the table below, and reports what it cannot translate
+  ([CLI](/cli#migrate-operations-to-the-native-api)).
+- `cyphra graphql compare` runs each v7 operation on `compat.v7` and its translation on the native
+  API, maps the v7 result to the native shape and reports the differences
+  ([CLI](/cli#compare-compatv7-and-the-native-api)).
+- `cyphra graphql migrate-rules` drafts `rules` and `authenticated` from `@authorization` /
+  `@authentication`, as TypeScript to review ([CLI](/cli#draft-native-rules-from-authorization)).
+
+The same functions are exported as `migrate.translateDocument`, `migrate.compareResults` and
+`migrate.draftRules` (experimental), with `migrate.createMigrationContext({ typeDefs, schema,
+config })`.
+
+## Mapping from compat.v7
+
+Every construct `compat.v7` serves, and its native equivalent. "No equivalent" means the codemod
+leaves the operation as it is, with a `# cyphra: not translated: …` comment saying why; a
+selected field it drops gets a `# cyphra: …` note instead. Never silently: a filter left out would
+widen the result.
+
+### Queries
+
+| v7 (`compat.v7`)                                                                           | Native                                                                                                          |
+| ------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------- |
+| `movies(where, sort, limit, offset)`                                                       | `movieFindMany(where, orderBy, take, skip) { nodes }`                                                           |
+| `limit: 0` (v7 ignores it)                                                                 | dropped (`take: 0` returns no node)                                                                             |
+| `moviesConnection(first, after, sort, where) { totalCount edges { node } pageInfo }`       | `movieFindMany(take, after, orderBy, where) { nodes totalCount pageInfo }`                                      |
+| `edges { cursor }`, a v7 cursor stored by a client                                         | no equivalent: cursors are per page (`pageInfo`), keyset cursors, not interchangeable with v7's                 |
+| `moviesConnection { aggregate { count { nodes } node { year { min max average sum } } } }` | `movieAggregate(where) { _count { _all } _min { year } _max { year } _avg { year } _sum { year } }`             |
+| `aggregate { node { title { longest shortest } } }`                                        | no equivalent (`_min` / `_max` compare values, not lengths)                                                     |
+| interface root query `learningActivities`                                                  | `learningActivityFindMany` (a Cyphra interface: a shared label, `cyphra import graphql --add-interface-labels`) |
+| union root query `contents(where: { Movie: … }, limit, offset)`                            | `contentFindMany(where: { _on: { Movie: … } }, take, skip)`                                                     |
+| `@fulltext` query `moviesByTitle(phrase, where: { node, score: { min } }, first)`          | `movieSearch(index, query, mode: lucene, where, minScore, take) { … _score }`                                   |
+| full-text `score: { max }`, `sort` other than `score: DESC`, `after`                       | no equivalent (results are sorted by score, best first)                                                         |
+| custom `Query` / `Mutation` fields (`@cypher`, resolvers)                                  | [`extend`](#custom-root-fields-and-types) with the same name (kept as is once the native API has it)            |
+| `actors(where, sort, limit, offset)`                                                       | `actors(where, orderBy, take, skip)`                                                                            |
+| `actorsConnection(where: { node }, sort: [{ node }], first) { edges { properties node } }` | `actors(where, orderBy, take) { … _edge { … } }`                                                                |
+| `actorsConnection { totalCount }`, `aggregate { count { nodes } }`                         | `_count { actors(where) }` on the parent                                                                        |
+| connection `where: { edge }`, `sort: [{ edge }]`, `after`; nested `pageInfo` / `cursor`    | no equivalent                                                                                                   |
+| nested `aggregate { count { edges } node { … } edge { … } }`                               | no equivalent (aggregate the related model with its `Aggregate` root field)                                     |
+| `@cypher` field (scalar or nodes)                                                          | [`cypherFields`](#cypher-backed-fields) of the same name                                                        |
+| `@customResolver` field                                                                    | a field added with [`extend`](#custom-root-fields-and-types) and its resolver                                   |
+| `... on Movie`, fragments, `__typename`                                                    | the same                                                                                                        |
+| subscriptions (`movieCreated`, …)                                                          | not yet (#76): keep them on `compat.v7`                                                                         |
+
+### Filters and sorting
+
+| v7 (`compat.v7`)                                                                                     | Native                                                                         |
+| ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| `{ title: { eq: "x" } }`, `title_EQ` (deprecated)                                                    | `{ title: { equals: "x" } }`                                                   |
+| `{ in }`, `{ lt }`, `{ lte }`, `{ gt }`, `{ gte }`, `{ contains }`, `{ startsWith }`, `{ endsWith }` | same names                                                                     |
+| `{ title: { eq: null } }`                                                                            | `{ title: null }`                                                              |
+| list `{ genres: { includes: "x" } }`, `{ genres: { eq: [...] } }`                                    | `{ genres: { has: "x" } }`, `{ genres: { equals: [...] } }`                    |
+| `{ matches }` (regular expression)                                                                   | no equivalent                                                                  |
+| `AND`, `OR`, `NOT`                                                                                   | the same                                                                       |
+| `actors: { some: … }`, `none`                                                                        | the same                                                                       |
+| `actors: { all: … }` (needs at least one related node)                                               | `actors: { every: …, some: {} }`                                               |
+| `actors: { single: … }`                                                                              | `_count: { actors: { equals: 1, where: … } }`                                  |
+| `actors: { some: {} }` (v7 ignores an empty filter)                                                  | dropped                                                                        |
+| to-one `author: { … }`, `author: null`                                                               | `author: { is: … }`, `author: null`                                            |
+| `actorsConnection: { some: { node: … } }`                                                            | `actors: { some: … }`                                                          |
+| `actorsConnection: { some: { edge: … } }`                                                            | no equivalent (no filters on edge properties)                                  |
+| `actorsAggregate: { count: { gt: 2 } }`, `aggregate: { count: { nodes: … } }`                        | `_count: { actors: { gt: 2 } }`                                                |
+| aggregation filters on `count.edges`, `node` or `edge` fields                                        | no equivalent                                                                  |
+| union relationship `favorites: { some: { Movie: … } }`                                               | `favorites: { some: { _on: { Movie: … } } }`                                   |
+| union relationship `all` / `single` (per member)                                                     | no equivalent                                                                  |
+| interface `typename: [Lab]`                                                                          | `_typename: { in: [Lab] }`                                                     |
+| `sort: [{ title: ASC, year: DESC }]`                                                                 | `orderBy: [{ title: asc }, { year: desc }]`                                    |
+| a variable holding a v7 input (`$where: MovieWhere`, `$sort`)                                        | no equivalent: write the value inline, or build the native value in the client |
+
+### Mutations
+
+| v7 (`compat.v7`)                                                                  | Native                                                                                         |
+| --------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `createMovies(input: [{ … }])` (one input)                                        | `movieCreate(data) { … }`                                                                      |
+| `createMovies(input: [{ … }, { … }])` without nested writes                       | `movieCreateMany(data) { count nodes { … } }`                                                  |
+| several inputs with nested writes                                                 | no equivalent in one field: one `movieCreate` per input                                        |
+| `info { nodesCreated }`                                                           | `count` of `movieCreateMany`; the other `info` fields have no equivalent                       |
+| nested `create: [{ node, edge }]`                                                 | `create: [{ …node, _edge: edge }]`                                                             |
+| nested `connect: [{ where: { node: { id: { eq: "x" } } }, edge }]`                | `connect: [{ id: "x", _edge: edge }]` (a `MERGE`: v7 creates another edge when already linked) |
+| `connect` by a non-unique `where`, without `where`, or nested in a `connect`      | no equivalent: connect by unique key, or a custom mutation                                     |
+| `updateMovies(where, update: { title: { set: "x" } })`                            | `movieUpdateMany(where, data: { title: "x" }) { nodes }`                                       |
+| `update: { year: { add: 1 } }` (`increment`, `subtract`, `decrement`, `multiply`) | `data: { _ops: { year: { increment: 1 } } }` (`decrement`, `multiply`)                         |
+| `divide`, list `push` / `pop`                                                     | no equivalent (set the value)                                                                  |
+| `updateMovies` with nested writes, `where` on a unique key                        | `movieUpdate(where: { id }, data)` (fails with `NOT_FOUND` where v7 returned `[]`)             |
+| nested `disconnect` / `delete` / `update` by unique key                           | `disconnect: [{ id }]`, `delete: [{ id }]`, `update: [{ where: { id }, data }]`                |
+| to-one `disconnect: { }`, `delete: { }`                                           | `disconnect: true`, `delete: true`                                                             |
+| nested update of edge properties                                                  | no equivalent (`connect` with `_edge`)                                                         |
+| `deleteMovies(where) { nodesDeleted }`                                            | `movieDeleteMany(where) { count }`                                                             |
+| `deleteMovies(delete: { … })` (nested delete)                                     | `onDelete: Cascade` in `schema.cyphra`, or a nested `delete` in `movieUpdate`                  |
+| nested writes to a union or interface relationship                                | by hand: `connect: { Movie: { … } }`                                                           |
+
+### Schema directives and options
+
+| v7                                                                                            | Native                                                                                            |
+| --------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `@authorization` / `@authentication` on a type                                                | [`rules`](#rules) / [`authenticated`](#authenticated): `cyphra graphql migrate-rules` drafts them |
+| `@authorization` / `@authentication` on a field                                               | [field rules](#field-rules), by hand (v7 filters the node, native rules make the field `null`)    |
+| `extend schema @authentication`                                                               | `authenticated` on each model                                                                     |
+| `@jwt`, `@jwtClaim(path)`, `features.authorization.key`                                       | [`native.jwtContext({ key })`](#authentication); rules read `ctx.jwt` at the claim's path         |
+| `@query`, `@mutation(operations: [])`, `@selectable`, `@settable`, `@filterable`, `@sortable` | [`operations` and `fields`](#configure-it) toggles                                                |
+| `@limit(default, max)`                                                                        | [`limits.maxTake`](#limits) (one cap for every list, no per-type default)                         |
+| `@plural`                                                                                     | not needed; [`naming`](#naming) overrides single names                                            |
+| `@id` (UUID), `@timestamp(operations: [CREATE])`, `@default`                                  | `@id @default(uuid())`, `@default(now())`, `@default` in `schema.cyphra`                          |
+| `@timestamp(operations: [UPDATE])`                                                            | no automatic equivalent: set the field in the update                                              |
+| `@alias(property)`                                                                            | the field is named after the property                                                             |
+| `@relationship(properties)`, `@relationshipProperties`                                        | a `relationship` model, read and written as `_edge`                                               |
+| `@fulltext`                                                                                   | `@@fulltext` and `<model>Search`                                                                  |
+| v7 interfaces (no label)                                                                      | Cyphra interfaces (a shared label, backfilled by a migration)                                     |
+| `context.sessionConfig` (per-request database)                                                | no equivalent                                                                                     |

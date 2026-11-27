@@ -10,6 +10,7 @@
 
 import * as v7 from "./v7/index.js";
 import * as nativeApi from "./native/index.js";
+import * as migrateApi from "./migrate/index.js";
 
 export const compat = { v7 } as const;
 
@@ -20,6 +21,34 @@ export const compat = { v7 } as const;
  * @experimental
  */
 export const native = nativeApi;
+
+/**
+ * Migration tooling from `compat.v7` to the native API: `translateDocument` (the operation
+ * codemod), `compareResults` (the dual-run check) and `draftRules` (native rules drafted from
+ * `@authorization` / `@authentication`), behind `cyphra graphql migrate-operations`, `compare`
+ * and `migrate-rules`.
+ *
+ * @experimental
+ */
+export const migrate = migrateApi;
+
+export type {
+  CompareOptions,
+  DefinitionTranslation,
+  DocumentStatus,
+  DocumentTranslation,
+  DraftRulesOptions,
+  GraphQLResultLike,
+  IssueKind,
+  MigrationContext,
+  MigrationContextOptions,
+  MigrationIssue,
+  ResultDifference,
+  RuleDraftEntry,
+  RuleDraftStatus,
+  RulesDraft,
+  TranslateOptions,
+} from "./migrate/index.js";
 
 export {
   defineGraphQL,

@@ -31,7 +31,7 @@ const DEFAULT_CONFIGS = [
  * Import a config module. A `.ts` / `.mts` file Node cannot import (no type stripping) is
  * transpiled next to itself (so its relative imports resolve), imported, then removed.
  */
-async function importModule(file: string): Promise<Record<string, unknown>> {
+export async function importModule(file: string): Promise<Record<string, unknown>> {
   const url = pathToFileURL(file).href;
   try {
     return (await import(url)) as Record<string, unknown>;
@@ -60,7 +60,11 @@ async function importModule(file: string): Promise<Record<string, unknown>> {
 }
 
 /** The config the module exports: `name`, `default`, or its only export. */
-function pickExport(mod: Record<string, unknown>, file: string, name?: string): GraphQLConfig {
+export function pickExport(
+  mod: Record<string, unknown>,
+  file: string,
+  name?: string,
+): GraphQLConfig {
   if (name !== undefined) {
     if (!(name in mod)) throw new Error(`${file} has no export "${name}".`);
     return mod[name] as GraphQLConfig;

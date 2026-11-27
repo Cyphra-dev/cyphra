@@ -13,30 +13,33 @@ pnpm add -D @cyphra/cli
 
 App code depends on **`cyphra`** separately (see [Getting started](/getting-started#install)). The CLI loads `./.env` automatically.
 
-| Command                          | Description                                                                                                                                                         |
-| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `cyphra init`                    | Scaffold `cyphra.json`, `schema.cyphra`, `migrations/`, `.env.example` (existing files are kept)                                                                    |
-| `cyphra dev`                     | Run a local Neo4j 5 in Docker for this project and write `.env` (`--stop`, `--reset`, `--port`, `--http-port`, `--image`, `--watch`)                                |
-| `cyphra generate`                | Generate the [typed client](/client) (`cyphra.gen.ts`) and, if configured, [zod schemas](#zod-schemas) (`--watch`, `--zod`, `--zod-coerce`, `--zod-omit-generated`) |
-| `cyphra migrate dev`             | Generate a migration from schema changes, then apply pending ones (`--name`, `--create-only`)                                                                       |
-| `cyphra migrate diff`            | Print the migration `migrate dev` would generate                                                                                                                    |
-| `cyphra migrate deploy`          | Apply pending migrations                                                                                                                                            |
-| `cyphra migrate status`          | Applied / pending / modified migrations, uncaptured changes and [drift](/migrations#drift-detection) (`--json`, `--schema`; exit 1)                                 |
-| `cyphra migrate reset`           | Empty a local database, reapply every migration, then run the seed (`--yes`, `--force`, `--skip-seed`)                                                              |
-| `cyphra db seed`                 | Run the `seed` command from `cyphra.json`                                                                                                                           |
-| `cyphra studio`                  | Browse and edit the data in a local web UI built from the schema ([details](#cyphra-studio); `--port`, `--host`, `--no-open`, `--read-only`)                        |
-| `cyphra migration:create <name>` | Empty `.mjs` migration to write by hand                                                                                                                             |
-| `cyphra pull`                    | Introspect the database and write `schema.cyphra` (`--print`, `--force`, `--interface <labels…>`)                                                                   |
-| `cyphra import graphql <files>`  | Convert `@neo4j/graphql` v7 type definitions to `schema.cyphra` (`--out`, `--merge`, `--force`, `--print`, `--url`, `--id-fields`, `--add-interface-labels`)        |
-| `cyphra graphql check <files>`   | Report what `compat.v7.makeSchema` does not serve in v7 type definitions ([details](#check-neo4jgraphql-type-definitions); `--json`; exit 1)                        |
-| `cyphra graphql print`           | Print the native GraphQL API's SDL ([details](#print-the-native-graphql-contract); `--config`, `--export`, `--out`, `--check`)                                      |
-| `cyphra import prisma <schema>`  | Convert a Prisma schema to `schema.cyphra`, foreign keys to edges ([details](#import-from-prisma); `--out`, `--merge`, `--force`, `--print`)                        |
-| `cyphra import neogma <files>`   | Convert neogma models (decorator classes or `ModelFactory`) to `schema.cyphra` ([details](#import-from-neogma); `--out`, `--merge`, `--force`, `--print`)           |
-| `cyphra push`                    | Apply constraints and range, vector and full-text indexes directly (prototyping)                                                                                    |
-| `cyphra validate`                | Parse and validate the schema                                                                                                                                       |
-| `cyphra format`                  | Format the schema in place, keeping comments (`--check` exits with 1 instead of writing)                                                                            |
-| `cyphra schema print`            | Canonical pretty-print of the schema                                                                                                                                |
-| `cyphra schema ddl`              | Print the constraint and index DDL (no database)                                                                                                                    |
+| Command                                     | Description                                                                                                                                                         |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `cyphra init`                               | Scaffold `cyphra.json`, `schema.cyphra`, `migrations/`, `.env.example` (existing files are kept)                                                                    |
+| `cyphra dev`                                | Run a local Neo4j 5 in Docker for this project and write `.env` (`--stop`, `--reset`, `--port`, `--http-port`, `--image`, `--watch`)                                |
+| `cyphra generate`                           | Generate the [typed client](/client) (`cyphra.gen.ts`) and, if configured, [zod schemas](#zod-schemas) (`--watch`, `--zod`, `--zod-coerce`, `--zod-omit-generated`) |
+| `cyphra migrate dev`                        | Generate a migration from schema changes, then apply pending ones (`--name`, `--create-only`)                                                                       |
+| `cyphra migrate diff`                       | Print the migration `migrate dev` would generate                                                                                                                    |
+| `cyphra migrate deploy`                     | Apply pending migrations                                                                                                                                            |
+| `cyphra migrate status`                     | Applied / pending / modified migrations, uncaptured changes and [drift](/migrations#drift-detection) (`--json`, `--schema`; exit 1)                                 |
+| `cyphra migrate reset`                      | Empty a local database, reapply every migration, then run the seed (`--yes`, `--force`, `--skip-seed`)                                                              |
+| `cyphra db seed`                            | Run the `seed` command from `cyphra.json`                                                                                                                           |
+| `cyphra studio`                             | Browse and edit the data in a local web UI built from the schema ([details](#cyphra-studio); `--port`, `--host`, `--no-open`, `--read-only`)                        |
+| `cyphra migration:create <name>`            | Empty `.mjs` migration to write by hand                                                                                                                             |
+| `cyphra pull`                               | Introspect the database and write `schema.cyphra` (`--print`, `--force`, `--interface <labels…>`)                                                                   |
+| `cyphra import graphql <files>`             | Convert `@neo4j/graphql` v7 type definitions to `schema.cyphra` (`--out`, `--merge`, `--force`, `--print`, `--url`, `--id-fields`, `--add-interface-labels`)        |
+| `cyphra graphql check <files>`              | Report what `compat.v7.makeSchema` does not serve in v7 type definitions ([details](#check-neo4jgraphql-type-definitions); `--json`; exit 1)                        |
+| `cyphra graphql print`                      | Print the native GraphQL API's SDL ([details](#print-the-native-graphql-contract); `--config`, `--export`, `--out`, `--check`)                                      |
+| `cyphra graphql migrate-operations <files>` | Rewrite v7 operations into native ones, report what cannot be translated ([details](#migrate-operations-to-the-native-api); `--dry-run`, `--check`, `--json`)       |
+| `cyphra graphql compare <files>`            | Run v7 operations and their translations on both APIs, report differences ([details](#compare-compatv7-and-the-native-api); exit 1)                                 |
+| `cyphra graphql migrate-rules <files>`      | Draft native `rules` from `@authorization` / `@authentication` ([details](#draft-native-rules-from-authorization); `--out`, `--json`)                               |
+| `cyphra import prisma <schema>`             | Convert a Prisma schema to `schema.cyphra`, foreign keys to edges ([details](#import-from-prisma); `--out`, `--merge`, `--force`, `--print`)                        |
+| `cyphra import neogma <files>`              | Convert neogma models (decorator classes or `ModelFactory`) to `schema.cyphra` ([details](#import-from-neogma); `--out`, `--merge`, `--force`, `--print`)           |
+| `cyphra push`                               | Apply constraints and range, vector and full-text indexes directly (prototyping)                                                                                    |
+| `cyphra validate`                           | Parse and validate the schema                                                                                                                                       |
+| `cyphra format`                             | Format the schema in place, keeping comments (`--check` exits with 1 instead of writing)                                                                            |
+| `cyphra schema print`                       | Canonical pretty-print of the schema                                                                                                                                |
+| `cyphra schema ddl`                         | Print the constraint and index DDL (no database)                                                                                                                    |
 
 ## cyphra.json
 
@@ -349,6 +352,136 @@ cyphra graphql print --check                  # CI: compare with the committed s
   `schema.graphql`), and lists the changes `graphql`'s `findBreakingChanges` /
   `findDangerousChanges` report (a field removed by a schema edit or a toggle, a type changed, …),
   so they show up in review.
+
+## Migrate operations to the native API
+
+`cyphra graphql migrate-operations` rewrites the operations a frontend sends to
+[`compat.v7`](/graphql) into operations of the [native API](/graphql/native), following the
+[mapping table](/graphql/native#mapping-from-compatv7). It reads `.graphql` / `.gql` files and the
+templates of TS and JS files tagged `gql` or `graphql` (or after a `/* GraphQL */` comment), and
+changes nothing else: rebuild your generated client types with your own codegen afterwards.
+
+```bash
+cyphra graphql migrate-operations "src/**/*.{graphql,ts,tsx}" --typedefs typeDefs.graphql --dry-run
+cyphra graphql migrate-operations "src/**/*.{graphql,ts,tsx}" --typedefs typeDefs.graphql
+cyphra graphql migrate-operations "src/**/*.{graphql,ts,tsx}" --typedefs typeDefs.graphql --check   # CI
+```
+
+```text
+src/movies.graphql:2:1  translated Movies
+src/cast.ts:14:20  NOT TRANSLATED Cast
+  src/cast.ts:16:43  cannot translate: movies(where).actorsConnection.some.edge: the native API has no filters on edge properties (filter on the related node, or use a Cypher-backed field)
+src/pages.ts:9:31  translated Page
+  src/pages.ts:9:31  note: page.edges.cursor: dropped: the native API has cursors per page (pageInfo), not per node
+
+3 documents in 3 files: 2 translated (1 with notes), 1 not translated. 2 files rewritten.
+```
+
+- Each document (a file, or a template) is translated as a whole, or not at all: one construct with
+  no native equivalent (an edge filter, a `connect` by a non-unique `where`, a variable holding a v7
+  input such as `$where: MovieWhere`, a `${…}` substitution in the template) leaves the document as
+  it is, with a `# cyphra: not translated: …` comment above the operation. A selected field the
+  native API does not have (a `@cypher` field not declared in `cypherFields`) is dropped with a
+  `# cyphra: …` note. Run it again after fixing: the comments are replaced, not repeated, and
+  native documents are left alone.
+- The schemas: `--typedefs` names the v7 type definitions (`.graphql` files, or a module exporting
+  `typeDefs`); the native one is `schema.cyphra` given with `--schema`, else the conversion of
+  `cyphra import graphql` (`--id-fields`, `--add-interface-labels` as for the import). The native
+  config is `graphql.config.ts` (or `--config`, `--export`, as for `graphql print`); without one,
+  every operation of every model is assumed on. A mutation the config does not serve is reported.
+- `--tag doc` also reads the templates passed to `doc(…)` (or `doc<T>(…)`); repeat it or separate
+  names with commas. `--no-comments` writes no `# cyphra:` comment.
+- `--dry-run` prints the translated documents and writes nothing. `--check` writes nothing and exits
+  with 1 while a v7 operation is left (translatable or not). `--json` prints every document with
+  its status (`translated`, `blocked`, `native`, `invalid`, `skipped`) and issues.
+
+## Compare compat.v7 and the native API
+
+`cyphra graphql compare` is the dual-run check: it runs each v7 operation on `compat.v7` and its
+translation (the codemod's, in memory) on the native API, maps the v7 result to the native shape
+and reports the differences, operation by operation.
+
+```bash
+# In-process: both APIs on the database of NEO4J_URI (reads only)
+cyphra graphql compare "operations/*.graphql" --typedefs typeDefs.graphql
+# On a local, disposable database: reset and seed before each run, mutations included
+cyphra graphql compare "operations/*.graphql" --typedefs typeDefs.graphql --reset --seed seed.cypher --yes
+# Against two running endpoints
+cyphra graphql compare "operations/*.graphql" --typedefs typeDefs.graphql \
+  --v7-url http://localhost:3000/api/graphql --native-url http://localhost:3000/api/graphql/v2 \
+  --header "Authorization: Bearer $TOKEN"
+```
+
+```text
+operations/01-movies.graphql:1:1  same  Movies
+operations/02-page.graphql:1:1  same (known differences)  Page
+  movieFindMany.pageInfo.endCursor: v7 (not comparable), native "WzEsIm0tMSJd" (known: v7 cursors are offsets, native cursors are keysets)
+operations/03-cast.graphql:1:1  DIFFERS  Cast
+  movieFindMany.nodes[0].actors: v7 [{"name":"Ed"}], native [{"name":"Ed"},{"name":"Ed"}]
+operations/04-roles.graphql:1:1  not translated  Roles: movies(where).actorsConnection.some.edge: …
+
+4 operations: 2 same (1 with known differences), 1 differ, 1 not translated, 0 skipped.
+```
+
+- Lists are compared as multisets (`--ordered` compares them in order). Differences the native API
+  has on purpose are reported as known, not as failures: cursors, `connect` as a `MERGE`, a unique
+  update failing with `NOT_FOUND` where v7 returned an empty list. The command exits with 1 when
+  another difference is found.
+- In-process, the v7 API is `compat.v7.makeSchema({ typeDefs })` and the native one
+  `native.makeSchema` on `schema.cyphra` (or the conversion) and the config, on the database of
+  `NEO4J_URI` / `NEO4J_USERNAME` / `NEO4J_PASSWORD`. Without `--reset`, mutations are skipped and
+  reads run on the current data; `--reset` deletes every node before each run and applies
+  `--seed`, so **use a disposable database**. It runs the safety check of
+  [`cyphra migrate reset`](/migrations#reset-a-development-database): a URI that does not look
+  local (local: no `+s` / `+ssc` scheme, and `localhost`, a loopback address, `0.0.0.0`,
+  `host.docker.internal` or a single-label container name) is refused unless `--force`, and the command asks
+  before the first reset unless `--yes` (`-y`) or `--force`; without a terminal it refuses instead
+  of asking. Over HTTP, mutations are skipped unless
+  `--allow-mutations` (they then run once per API, on the same data).
+- Next to `NN-name.graphql`, `NN-name.variables.json` holds the variables and `NN-name.jwt.json` a
+  decoded JWT payload (passed as `jwt` to both APIs, in-process); `--jwt` gives one to every
+  operation. Custom resolvers are not loaded in-process: compare operations on custom fields over
+  HTTP.
+
+## Draft native rules from @authorization
+
+`cyphra graphql migrate-rules` drafts the native [`rules`](/graphql/native#rules) and
+[`authenticated`](/graphql/native#authenticated) of a `defineGraphQL` config from the
+`@authorization` and `@authentication` directives of the v7 type definitions. The output is
+TypeScript to review and merge into `graphql.config.ts`: it is never applied, because the native
+rules apply differently on purpose.
+
+```bash
+cyphra graphql migrate-rules typeDefs.graphql --out graphql.rules.ts --type-map ./cyphra.gen.js
+```
+
+```ts filename="graphql.rules.ts"
+export default defineGraphQL<CyphraTypeMap, Ctx>({
+  models: {
+    Post: {
+      // TODO(cyphra): v7 field filter on Post.notes: {node: {author: {id: {eq: "$jwt.sub"}}}} (READ)
+      // TODO(cyphra):   not drafted: v7 field rules filter the node (or fail the request) when the field is selected or written; …
+      rules: {
+        // v7 filter #1 (READ, requireAuthentication: false): {node: {published: {eq: true}}}
+        // v7 filter #2 (READ, UPDATE, DELETE): {node: {author: {id: {eq: "$jwt.sub"}}}}
+        read: ({ ctx }) => anyOf({ published: { equals: true } }, allOf(authenticated(ctx), { AND: [given(ctx.jwt?.sub, (v0) => ({ author: { is: { id: { equals: v0 } } } }))] })),
+        …
+```
+
+- `filter` rules become `read` / `update` / `delete` rules (several rules of one directive with
+  `anyOf`, like v7's OR), `validate` rules on `CREATE` the `create` rule (context-only) or
+  `after.create`, on `UPDATE` / `DELETE` / `READ` a rule that leaves the node out (v7 failed the
+  request with `Forbidden`), `CREATE_RELATIONSHIP` / `DELETE_RELATIONSHIP` `connect` / `disconnect`
+  rules, `@authentication` `authenticated`. `"$jwt.sub"` becomes `ctx.jwt?.sub` (at the
+  `@jwtClaim` path), `"$context.x"` `ctx.x`, `requireAuthentication` `authenticated(ctx)`.
+- A comparison with a missing `$jwt` / `$context` value matches nothing, as in v7 (`given`).
+- What the native API cannot express, or only in a way that could grant more access, is a
+  `TODO(cyphra)` comment with the v7 rule: field-level rules, `@authentication(jwt)`, filters the
+  native `where` does not have (edge properties, aggregations), relationship rules that depend on the
+  node from its own side. The summary counts the v7 rules drafted, partly drafted and TODO;
+  `--json` prints `{ code, entries, drafted, partial, todo }`.
+- `--type-map` types the draft against the generated client (`CyphraTypeMap`); without it, the draft
+  uses the loose `TypeMap` of `cyphra`.
 
 ## Check @neo4j/graphql type definitions
 
