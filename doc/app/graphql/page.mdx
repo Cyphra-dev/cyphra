@@ -876,9 +876,9 @@ Differences from v7, on purpose:
 
 ## What works today
 
-Compatibility is checked by a suite of 20 apps and 288 operations. Its expected results come from
-the real `@neo4j/graphql` 7.6.8. Today 305 of its 308 checks pass: the printed schema of the 20
-apps and 285 operations (queries, aggregations, mutations, authorization, `@cypher` fields, custom
+Compatibility is checked by a suite of 21 apps and 292 operations. Its expected results come from
+the real `@neo4j/graphql` 7.6.8. Today 331 of its 334 checks pass: the generated and printed schema
+of the 21 apps and 289 operations (queries, aggregations, mutations, authorization, `@cypher` fields, custom
 resolvers, full-text queries, unions, interfaces, to-one relationships, schema configuration directives, and
 subscription events on Neo4j Enterprise with CDC). The three others differ on purpose: the nested
 union `connect` / `disconnect` where v7 ignores `where` ([unions](#unions)), and `limit: 0` on a
@@ -910,6 +910,10 @@ type with `@limit` ([schema configuration](#schema-configuration)). The full rep
 | `@populatedBy`, `@relayId`, `@coalesce`, `@relationship(nestedOperations, aggregate, queryDirection)`                                                                          | Not yet: `makeSchema` throws `UnsupportedTypeDefsError` |
 
 ### v7 behaviour you get as well
+
+`compat.v7` reproduces v7's behaviour, including the parts that look surprising: they are what v7
+apps rely on, and v7 documents or intends them. The [native API](/graphql/native) does not carry
+them over; its [mapping from compat.v7](/graphql/native#mapping-from-compatv7) lists each difference.
 
 - `{ eq: null }` matches nodes where the property is missing.
 - An empty filter in `some`, `none` or `single` (`actors: { some: {} }`) is ignored: it matches every
@@ -950,7 +954,15 @@ generates for it, which is smaller than the one of a list:
   `MERGE`: connecting a pair that is already connected adds a second relationship, whether the
   mutations run one after the other or at the same time. To skip nodes that are already connected,
   filter them out in `where` (for example `movies: { none: { id: { eq: "…" } } }`); that filter
-  does not lock, so two concurrent mutations can still both connect.
+  does not lock, so two concurrent mutations can still both connect. This is intended in v7, which
+  supports several relationships of the same type between two nodes
+  ([neo4j/graphql#3279](https://github.com/neo4j/graphql/issues/3279); before v7, `connect` merged:
+  [#610](https://github.com/neo4j/graphql/issues/610)). It also explains two v7 results you get as
+  well: `totalCount` counts each relationship, so it can be larger than the distinct nodes returned
+  ([#6795](https://github.com/neo4j/graphql/issues/6795)), and aggregations depend on duplicate
+  relationships ([#6005](https://github.com/neo4j/graphql/issues/6005)). The
+  [native API](/graphql/native) merges instead: `connect` never adds a second relationship, and
+  `cyphra graphql compare` reports this as a known difference.
 - In an update, the scalar operators run first, then each relationship field, element by element,
   in the order `update`, `create`, `connect`, `delete`, `disconnect`.
 - `@id` fields get a UUID on create. `@timestamp` fields are set on create and on every update of
