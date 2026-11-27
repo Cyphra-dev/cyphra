@@ -5,6 +5,7 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createClient, type Db } from "./__fixtures__/paging.gen.js";
 import { withEngineRules, withRawValues } from "./client.js";
+import { CypherDateTimeText } from "./values.js";
 import {
   CyphraValidationError,
   ForbiddenError,
@@ -480,6 +481,85 @@ describe.skipIf(!hasTestDb)("keyset cursors, engine rules and aliased loads", ()
       } as never)) as unknown as { count: number; relationships: number };
       expect(res).toEqual({ count: 1, relationships: 2 });
       await db.pgPost.deleteMany({ where: { id: { in: ["rx1", "rx2"] } } });
+    },
+  );
+
+  it.skipIf(testDialect !== "neo4j")(
+    "createMany / updateMany $now set DateTime fields to the database clock",
+    async () => {
+      const raw = withRawValues(db);
+      const created = (await raw.pgPost.createMany({
+        // `$now` is set after the data (createdAt is required by the model).
+        data: [
+          { id: "now1", title: "t", createdAt: new Date(0) },
+          { id: "now2", title: "t", createdAt: new Date(0) },
+        ],
+        $now: { createdAt: true },
+        select: { id: true, createdAt: true },
+      } as never)) as unknown as { count: number; nodes: { createdAt: unknown }[] };
+      expect(created.count).toBe(2);
+      const [a, b] = created.nodes.map((n) => String(n.createdAt));
+      // `datetime()` of the statement: the same value for every node, with the database's precision.
+      expect(a).toBe(b);
+      const [{ same }] = await db.$cypher<{ same: boolean }>`
+        MATCH (p:PgPost {id: "now1"}) RETURN p.createdAt <= datetime() AND p.createdAt > datetime() - duration("PT1M") AS same`;
+      expect(same).toBe(true);
+      const updated = (await raw.pgPost.updateMany({
+        where: { id: { in: ["now1", "now2"] } },
+        data: {},
+        $now: { createdAt: true },
+        select: { createdAt: true },
+      } as never)) as unknown as { count: number; nodes: { createdAt: unknown }[] };
+      expect(updated.count).toBe(2);
+      expect(String(updated.nodes[0]!.createdAt) >= a!).toBe(true);
+      await expect(
+        db.pgPost.updateMany({ data: {}, $now: { title: true } } as never),
+      ).rejects.toThrow(CyphraValidationError);
+      await db.pgPost.deleteMany({ where: { id: { in: ["now1", "now2"] } } });
+    },
+  );
+
+  it.skipIf(testDialect !== "neo4j")(
+    "CypherDateTimeText: DateTime texts parsed by the database (offset and precision kept)",
+    async () => {
+      const raw = withRawValues(db);
+      const text = "2021-03-04T05:06:07.123456789+02:00";
+      await raw.pgPost.createMany({
+        data: [{ id: "dt1", title: "t", createdAt: new CypherDateTimeText(text) }],
+      } as never);
+      const [{ s }] = await db.$cypher<{ s: string }>`
+        MATCH (p:PgPost {id: "dt1"}) RETURN toString(p.createdAt) AS s`;
+      expect(s).toBe(text);
+      const found = await db.pgPost.findMany({
+        where: {
+          id: { in: ["dt1"] },
+          createdAt: {
+            // Same instant, other offset: a different DateTime for Cypher's `=`.
+            gte: new CypherDateTimeText("2021-03-04T03:06:07.123456789Z"),
+            in: [new CypherDateTimeText(text)],
+          },
+        } as never,
+        select: { id: true },
+      });
+      expect(found).toEqual([{ id: "dt1" }]);
+      const other = await db.pgPost.findMany({
+        where: {
+          id: "dt1",
+          createdAt: { equals: new CypherDateTimeText("2021-03-04T03:06:07.123456789Z") },
+        } as never,
+      });
+      expect(other).toEqual([]);
+      await raw.pgPost.updateMany({
+        where: { id: "dt1" },
+        data: { createdAt: new CypherDateTimeText("2022-01-01T00:00:00.5-05:00") },
+      } as never);
+      const [{ u }] = await db.$cypher<{ u: string }>`
+        MATCH (p:PgPost {id: "dt1"}) RETURN toString(p.createdAt) AS u`;
+      expect(u).toBe("2022-01-01T00:00:00.5-05:00");
+      await expect(
+        db.pgPost.findMany({ where: { title: new CypherDateTimeText(text) } as never }),
+      ).rejects.toThrow(CyphraValidationError);
+      await db.pgPost.deleteMany({ where: { id: "dt1" } });
     },
   );
 });

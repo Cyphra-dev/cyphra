@@ -36,6 +36,23 @@ import {
 import { CyphraValidationError } from "./errors.js";
 
 /**
+ * A `DateTime` value given as text and parsed by the database (`datetime($text)`), keeping the
+ * offset and the precision the text has (a JS `Date` is UTC milliseconds). Internal, for
+ * `@cyphra/graphql`'s `compat.v7`, whose v7 statements pass DateTime inputs that way; accepted
+ * wherever the client takes a `DateTime` value (filters, `createMany` / `updateMany` data). Not
+ * covered by semantic versioning.
+ *
+ * @internal
+ */
+export class CypherDateTimeText {
+  constructor(readonly text: string) {
+    if (typeof text !== "string") {
+      throw new CyphraValidationError("CypherDateTimeText: the text must be a string.");
+    }
+  }
+}
+
+/**
  * Convert a driver Integer to a JS number, refusing silent precision loss.
  *
  * @throws {RangeError} When the value is outside `Number.MAX_SAFE_INTEGER`.
@@ -237,6 +254,10 @@ export function nowValue(field: ResolvedScalarField, now = new Date()): unknown 
 
 function encodeOne(field: ResolvedScalarField, value: unknown, where: string): unknown {
   const type = field.type;
+  if (value instanceof CypherDateTimeText) {
+    if (type === "DateTime") return value;
+    throw new CyphraValidationError(`${where}: a DateTime text for a ${type} field.`);
+  }
   switch (type) {
     case "LocalDateTime":
     case "LocalTime":

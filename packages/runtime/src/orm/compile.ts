@@ -18,7 +18,13 @@ import type {
 } from "@cyphra/schema";
 import { CypherInteger } from "../cypher-values.js";
 import { CyphraValidationError } from "./errors.js";
-import { decodeCount, decodeScalar, encodeFilterValue, isPointValue } from "./values.js";
+import {
+  CypherDateTimeText,
+  decodeCount,
+  decodeScalar,
+  encodeFilterValue,
+  isPointValue,
+} from "./values.js";
 import type { QueryMode } from "./types.js";
 import { unsupportedOnFalkorDB, type CyphraDialect } from "../dialect.js";
 import { compileLabelsFilter, decodeDynamicLabels, dynamicLabelsOf } from "./labels.js";
@@ -121,6 +127,11 @@ export class QueryContext {
   private varCount = 0;
   /** Above 0 while a rule's own `where` compiles: rules do not apply inside rules. */
   ruleDepth = 0;
+  /**
+   * The edge of the relation each node variable was reached through, for `$edge` in its `where`
+   * and `orderBy` (see {@link edgeScope}).
+   */
+  readonly edges = new Map<string, EdgeScope>();
 
   constructor(
     readonly schema: SchemaModel,
@@ -140,6 +151,16 @@ export class QueryContext {
 
   /** Bind a value and return its `$placeholder`. */
   param(value: unknown): string {
+    // A DateTime text (internal, see `CypherDateTimeText`) is parsed by the database.
+    if (value instanceof CypherDateTimeText) {
+      if (this.dialect !== "neo4j") {
+        throw new CyphraValidationError("A DateTime text (CypherDateTimeText) needs Neo4j.");
+      }
+      return `datetime(${this.param(value.text)})`;
+    }
+    if (Array.isArray(value) && value.some((v) => v instanceof CypherDateTimeText)) {
+      return `[${value.map((v) => this.param(v)).join(", ")}]`;
+    }
     const key = `p${this.paramCount++}`;
     this.params[key] = value;
     return `$${key}`;
@@ -160,7 +181,13 @@ export class QueryContext {
 type AnyRecord = Record<string, unknown>;
 
 function isPlainObject(v: unknown): v is AnyRecord {
-  return typeof v === "object" && v !== null && !Array.isArray(v) && !(v instanceof Date);
+  return (
+    typeof v === "object" &&
+    v !== null &&
+    !Array.isArray(v) &&
+    !(v instanceof Date) &&
+    !(v instanceof CypherDateTimeText)
+  );
 }
 
 export function scalarField(
@@ -216,6 +243,64 @@ export function relationMatch(
 ): string {
   const w = and([unionPredicate(to, ctx.node(rel.target)), where]);
   return `${relationPattern(ctx, from, rel, to, relVar)}${w ? ` WHERE ${w}` : ""}`;
+}
+
+/**
+ * The edge a node variable was reached through: its variable in the pattern, its relationship
+ * model (as a model of its properties), and whether a `$edge` filter or sort used it.
+ */
+export type EdgeScope = {
+  /** The edge variable (given, or allocated when a `$edge` first uses it). */
+  variable: string | undefined;
+  readonly model: ResolvedNodeModel;
+  used: boolean;
+};
+
+/**
+ * Makes the edge of `rel` available to `$edge` in the `where` / `orderBy` of the node `to` reached
+ * through it (internal, for `@cyphra/graphql`'s `compat.v7` edge filters and sorts):
+ * `{ some: { $edge: { since: { gte } } } }`, `orderBy: [{ $edge: { since: "desc" } }]`. `relVar`
+ * is the edge variable when the pattern binds one; otherwise one is allocated when a `$edge` uses
+ * it, and the pattern binds it (see {@link boundEdge}). `undefined` without relationship properties.
+ */
+export function edgeScope(
+  ctx: QueryContext,
+  rel: ResolvedRelationField,
+  to: string,
+  relVar?: string,
+): EdgeScope | undefined {
+  const edge = rel.edge ? ctx.schema.relationships.find((x) => x.name === rel.edge) : undefined;
+  if (!edge) return undefined;
+  const scope: EdgeScope = {
+    variable: relVar || undefined,
+    model: { name: edge.name, label: edge.relType, uniqueFields: [], fields: edge.properties },
+    used: false,
+  };
+  ctx.edges.set(to, scope);
+  return scope;
+}
+
+/** The edge variable a pattern must bind for its {@link edgeScope} (`""`: none). */
+export function boundEdge(scope: EdgeScope | undefined): string {
+  return scope?.used ? scope.variable! : "";
+}
+
+/** The {@link EdgeScope} of `alias` for a `$edge` key, or a validation error. */
+function edgeOf(
+  ctx: QueryContext,
+  model: ResolvedNodeModel,
+  alias: string,
+  what: string,
+): EdgeScope & { variable: string } {
+  const scope = ctx.edges.get(alias);
+  if (!scope) {
+    throw new CyphraValidationError(
+      `${what}.$edge on ${model.name}: only on a node reached through a relation with edge properties.`,
+    );
+  }
+  scope.used = true;
+  scope.variable ??= ctx.variable("e");
+  return scope as EdgeScope & { variable: string };
 }
 
 // ---------------------------------------------------------------------------
@@ -519,8 +604,9 @@ function compileRelationFilter(
   // Related nodes the rules hide are not there: no filter can probe them.
   const exists = (where: unknown): string => {
     const m = ctx.variable();
+    const edge = edgeScope(ctx, rel, m);
     const inner = scopedWhere(ctx, target, m, where);
-    return `EXISTS { MATCH ${relationMatch(ctx, alias, rel, m, "", inner)} }`;
+    return `EXISTS { MATCH ${relationMatch(ctx, alias, rel, m, boundEdge(edge), inner)} }`;
   };
 
   if (rel.many) {
@@ -537,10 +623,13 @@ function compileRelationFilter(
       else if (op === "every") {
         // every(P) ≡ none(NOT P); an empty filter is vacuously true.
         const m = ctx.variable();
+        const edge = edgeScope(ctx, rel, m);
         const inner = compileWhere(ctx, target, m, v);
         if (inner) {
           const visible = and([ruleFilter(ctx, target, m), `NOT (${inner})`]);
-          parts.push(`NOT EXISTS { MATCH ${relationMatch(ctx, alias, rel, m, "", visible)} }`);
+          parts.push(
+            `NOT EXISTS { MATCH ${relationMatch(ctx, alias, rel, m, boundEdge(edge), visible)} }`,
+          );
         }
       } else throw new CyphraValidationError(`Unknown relation filter "${op}".`);
     }
@@ -714,6 +803,12 @@ export function compileWhere(
     }
     if (key === "$cypher") {
       const c = compileCypherFilters(ctx, model, alias, value);
+      if (c) parts.push(c);
+      continue;
+    }
+    if (key === "$edge") {
+      const edge = edgeOf(ctx, model, alias, "where");
+      const c = compileWhere(ctx, edge.model, edge.variable, value);
       if (c) parts.push(c);
       continue;
     }
@@ -983,8 +1078,9 @@ export function compileRelationCount(
     );
   }
   const m = ctx.variable();
+  const edge = edgeScope(ctx, rel, m);
   const inner = scopedWhere(ctx, ctx.node(rel.target), m, where);
-  return `COUNT { MATCH ${relationMatch(ctx, alias, rel, m, "", inner)} }`;
+  return `COUNT { MATCH ${relationMatch(ctx, alias, rel, m, boundEdge(edge), inner)} }`;
 }
 
 function sortDirection(dir: unknown, what: string): string {
@@ -1124,6 +1220,14 @@ export function compileSortKeys(
     if (!isPlainObject(item)) throw new CyphraValidationError("orderBy entries must be objects.");
     for (const [key, dir] of Object.entries(item)) {
       if (dir === undefined) continue;
+      if (key === "$edge") {
+        const edge = edgeOf(ctx, model, alias, "orderBy");
+        if (!isPlainObject(dir)) {
+          throw new CyphraValidationError(`orderBy.$edge takes { <edge field>: "asc" | "desc" }.`);
+        }
+        keys.push(...compileSortKeys(ctx, edge.model, edge.variable, dir));
+        continue;
+      }
       if (key === "__typename") {
         keys.push({
           expr: typenameExpr(ctx, model, alias),
@@ -1480,6 +1584,7 @@ export function compileProjection(
       edgeModel ? [`${q("$edge")}: properties(${r})`] : [],
     );
     const item = inner.expr;
+    edgeScope(ctx, field, m, r);
     const where = scopedWhere(ctx, target, m, sub.where);
     const paging = compilePaging(ctx, target, m, sub);
     let body = `MATCH ${relationMatch(ctx, alias, field, m, r, where)}`;

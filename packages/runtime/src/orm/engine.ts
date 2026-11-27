@@ -74,7 +74,13 @@ import {
   NotFoundError,
   UniqueConstraintError,
 } from "./errors.js";
-import { defaultLiteralValue, encodeScalar, integerToNumber, nowValue } from "./values.js";
+import {
+  CypherDateTimeText,
+  defaultLiteralValue,
+  encodeScalar,
+  integerToNumber,
+  nowValue,
+} from "./values.js";
 import { numericGuard, throwGuardIssues, validateWriteArgs, type NumericCheck } from "./rules.js";
 import { falkordbGuardedEdgeSet } from "./falkordb.js";
 import { unsupportedOnFalkorDB } from "../dialect.js";
@@ -242,7 +248,13 @@ class WritePlan {
 }
 
 function isPlainObject(v: unknown): v is AnyRecord {
-  return typeof v === "object" && v !== null && !Array.isArray(v) && !(v instanceof Date);
+  return (
+    typeof v === "object" &&
+    v !== null &&
+    !Array.isArray(v) &&
+    !(v instanceof Date) &&
+    !(v instanceof CypherDateTimeText)
+  );
 }
 
 function toCount(v: unknown): number {
@@ -1700,6 +1712,71 @@ export class ModelEngine {
   }
 
   /** `SET a, b REMOVE n:L`, either part left out when empty (`""` for nothing). */
+  /**
+   * `$now` of `createMany` / `updateMany` (internal, for `@cyphra/graphql`'s `compat.v7`
+   * `@timestamp`): `{ <field>: true }` sets each listed `DateTime` / `Date` field to the database
+   * clock in the statement (`datetime()` / `date()`, the statement's time: every node gets the
+   * same value). Only on Neo4j.
+   */
+  private nowItems(arg: unknown, alias: string, op: string): string[] {
+    if (arg === undefined) return [];
+    const where = `${this.model.name}.${op}: $now`;
+    if ((this.options.dialect ?? "neo4j") !== "neo4j") {
+      throw new CyphraValidationError(`${where} needs Neo4j.`);
+    }
+    if (!isPlainObject(arg)) {
+      throw new CyphraValidationError(`${where} takes { <DateTime or Date field>: true }.`);
+    }
+    const items: string[] = [];
+    for (const [name, v] of Object.entries(arg)) {
+      if (v === undefined) continue;
+      const f = scalarField(this.model, name);
+      const fn =
+        f && !f.list ? { DateTime: "datetime", Date: "date" }[f.type as string] : undefined;
+      if (v !== true || !fn) {
+        throw new CyphraValidationError(
+          `${where}.${name}: not a DateTime or Date field set to true.`,
+        );
+      }
+      items.push(`${alias}.${q(name)} = ${fn}()`);
+    }
+    return items;
+  }
+
+  /**
+   * The `SET` items of the `DateTime` fields given as {@link CypherDateTimeText} in `createMany`
+   * rows (each replaced by its text, parsed by `datetime()` in the statement). A field takes texts
+   * in every row that sets it, or none.
+   */
+  private static dateTimeTexts(
+    groups: ReadonlyMap<string, { rows: AnyRecord[] }>,
+    fields: readonly ResolvedScalarField[],
+    where: string,
+  ): string[] {
+    const items: string[] = [];
+    const isText = (v: unknown) => v instanceof CypherDateTimeText;
+    for (const f of fields) {
+      if (f.type !== "DateTime") continue;
+      const values = [...groups.values()].flatMap((g) => g.rows.map((r) => r[f.name]));
+      const set = values.filter((v) => v !== undefined && v !== null);
+      const texts = set.filter((v) => (Array.isArray(v) ? v.some(isText) : isText(v)));
+      if (texts.length === 0) continue;
+      if (texts.length !== set.length || set.some((v) => Array.isArray(v) && !v.every(isText))) {
+        throw new CyphraValidationError(`${where}: ${f.name} mixes DateTime texts and values.`);
+      }
+      for (const g of groups.values()) {
+        for (const r of g.rows) {
+          const v = r[f.name];
+          if (v instanceof CypherDateTimeText) r[f.name] = v.text;
+          else if (Array.isArray(v)) r[f.name] = v.map((x) => (x as CypherDateTimeText).text);
+        }
+      }
+      const ref = `row.${q(f.name)}`;
+      items.push(`n.${q(f.name)} = ${f.list ? `[x IN ${ref} | datetime(x)]` : `datetime(${ref})`}`);
+    }
+    return items;
+  }
+
   private static setAndRemove(sets: readonly string[], remove: string | null): string {
     const parts: string[] = [];
     if (sets.length) parts.push(`SET ${sets.join(", ")}`);
@@ -1837,6 +1914,13 @@ export class ModelEngine {
       group.rows.push(ModelEngine.createProps(this.model.name, fields, scalars));
       group.at.push(i);
     });
+    const now = this.nowItems(args.$now, "n", "createMany");
+    // DateTime texts (internal `CypherDateTimeText`): the rows carry the text, parsed by `SET`.
+    const texts = ModelEngine.dateTimeTexts(groups, fields, `${this.model.name}.createMany`);
+    if (texts.length && (this.options.dialect ?? "neo4j") !== "neo4j") {
+      throw new CyphraValidationError("A DateTime text (CypherDateTimeText) needs Neo4j.");
+    }
+    const set = ["n = row", ...texts, ...now].join(", ");
     const ctx = this.ctx();
     const projection = this.batchProjection(ctx, args, "createMany");
     if (groups.size === 0) return ModelEngine.batchResult(0, projection?.shape, []);
@@ -1850,7 +1934,7 @@ export class ModelEngine {
         if (groups.size === 1 && !projection && !after) {
           const [[extra, { rows }]] = [...groups];
           const res = await exec(
-            `UNWIND ${ctx.param(rows)} AS row CREATE (n:${this.label}${extra}) SET n = row RETURN count(n) AS c`,
+            `UNWIND ${ctx.param(rows)} AS row CREATE (n:${this.label}${extra}) SET ${set} RETURN count(n) AS c`,
             ctx.params,
           );
           return { count: toCount(res[0]?.c) };
@@ -1873,7 +1957,7 @@ export class ModelEngine {
             denied.push(d);
           }
           text +=
-            `${text ? " " : ""}UNWIND ${ctx.param(rows)} AS row CREATE (n:${this.label}${extra}) SET n = row ` +
+            `${text ? " " : ""}UNWIND ${ctx.param(rows)} AS row CREATE (n:${this.label}${extra}) SET ${set} ` +
             `WITH ${[...counts, ...denied.slice(0, after ? -1 : undefined), ...aggs].join(", ")}`;
           counts.push(c);
         }
@@ -1956,6 +2040,7 @@ export class ModelEngine {
       labels,
       `${this.model.name}.updateMany: data`,
     );
+    sets.push(...this.nowItems(args.$now, "n", "updateMany"));
     const body = ModelEngine.setAndRemove(sets, remove);
     const match = `MATCH (n:${this.label})${w ? ` WHERE ${w}` : ""}`;
     const guard = numericGuard(checks);
