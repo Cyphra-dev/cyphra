@@ -15,7 +15,7 @@
     "@cyphra/nestjs": "workspace:*",
     "@nestjs/common": "12.4.0",
     "@nestjs/config": "12.1.1",
-    "@nestjs/core": "12.4.0",
+    "@nestjs/core": "12.6.0",
     "@nestjs/platform-express": "12.4.0",
     "@nestjs/terminus": "12.1.0",
     "cyphra": "workspace:*",
