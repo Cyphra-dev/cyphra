@@ -1,0 +1,12 @@
+# features: subscriptions.changed, subscriptions.deleted
+# User has no read rule: a subscriber reads every user, so it gets every DELETED event (node null).
+subscription {
+  userChanged {
+    operation
+    id
+    node {
+      name
+    }
+    changedFields
+  }
+}

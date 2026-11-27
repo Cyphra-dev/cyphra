@@ -1,0 +1,10 @@
+# features: subscriptions.changed, subscriptions.where
+# where is applied to the re-read, with the read rule.
+subscription {
+  postChanged(where: { title: { startsWith: "A" } }) {
+    operation
+    node {
+      title
+    }
+  }
+}

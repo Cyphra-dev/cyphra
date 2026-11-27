@@ -11,7 +11,14 @@ import { GraphQLError } from "graphql";
 import type { EngineRules, ModelRules, RuleValue } from "@cyphra/runtime";
 import type { ResolvedNodeModel, SchemaModel } from "@cyphra/schema";
 import type { ApiModel } from "./api.js";
-import { isWrite, NativeSchemaError, type ConfiguredRules, type RootOperation } from "./config.js";
+import {
+  isWrite,
+  NativeSchemaError,
+  type AnyOperation,
+  type ConfiguredRules,
+  type RootOperation,
+  type SubscribeOperation,
+} from "./config.js";
 
 type AnyRecord = Record<string, unknown>;
 type AnyFn = (args: never) => unknown;
@@ -155,7 +162,7 @@ export function forbidden(message: string, extensions: AnyRecord): GraphQLError 
 }
 
 /** `UNAUTHENTICATED`, before anything runs. */
-export function unauthenticated(model: string, op: RootOperation): GraphQLError {
+export function unauthenticated(model: string, op: AnyOperation): GraphQLError {
   return new GraphQLError(`${model}.${op} needs an authenticated request.`, {
     extensions: { code: "UNAUTHENTICATED", model, operation: op },
   });
@@ -302,6 +309,51 @@ export class RequestAuth {
       model: model.name,
       field,
     });
+  }
+
+  /** The rules of `model` and of the interfaces it implements, for this request. */
+  private own(model: ResolvedNodeModel): (ModelRules | undefined)[] {
+    return [model.name, ...(model.interfaces ?? [])].map((n) => this.rules[n]);
+  }
+
+  /**
+   * Whether a read rule restricts which nodes of `model` this request reads (a `where`, or
+   * `false`): without one, it reads every node of the model.
+   */
+  readRestricted(model: ResolvedNodeModel): boolean {
+    return this.own(model).some((r) => r?.read !== undefined && r.read !== true);
+  }
+
+  /**
+   * Whether this request reads `model.field` on every node: no context rule denies it, and no
+   * row-dependent rule applies (`true` rules are dropped when evaluated).
+   */
+  readsFieldEverywhere(model: ResolvedNodeModel, field: string): boolean {
+    if (this.fieldDenied(model, field)) return false;
+    return this.own(model).every((r) => r?.fields?.[field] === undefined);
+  }
+
+  /**
+   * Fail a subscription before it opens: `UNAUTHENTICATED` when `op` (or reading the models it
+   * reads) needs an authenticated request, `FORBIDDEN` when a read rule denies one of `models`
+   * (the subscription's model first) to this request.
+   */
+  checkSubscription(op: SubscribeOperation, models: readonly ResolvedNodeModel[]): void {
+    const [model] = models;
+    if (!model) return;
+    if (!this.authenticated) {
+      const needs = (m: ResolvedNodeModel) =>
+        this.api.config.authenticatedGroups(m.name).has("read");
+      if (this.api.config.authenticated(model.name, op) || models.some(needs)) {
+        throw unauthenticated(model.name, op);
+      }
+    }
+    if (models.some((m) => this.own(m).some((r) => r?.read === false))) {
+      throw forbidden(`The rules do not allow ${model.name}.${op} for this request.`, {
+        model: model.name,
+        operation: op,
+      });
+    }
   }
 
   /**

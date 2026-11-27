@@ -1858,7 +1858,7 @@ class DocumentTranslator {
   } {
     if (op.operation === "subscription") {
       this.issues.block(
-        `${op.name?.value ?? "subscription"}: the native API has no subscriptions yet (#76); keep this one on compat.v7`,
+        `${op.name?.value ?? "subscription"}: subscriptions are not translated (the native ones, <model>Changed, have another shape); rewrite it by hand or keep it on compat.v7`,
         op.loc?.start,
       );
       return {};

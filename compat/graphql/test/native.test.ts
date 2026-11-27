@@ -1,7 +1,8 @@
 /**
  * The native suite (native/fixtures): the printed SDL of each fixture and the normalized result of
  * each operation must match the goldens in native/golden, written by `golden:native` and reviewed.
- * The SDL check needs no database; operations need a disposable Neo4j (NEO4J_TEST_*).
+ * The SDL check needs no database; operations need a disposable Neo4j (NEO4J_TEST_*), and
+ * `subscription` operations Neo4j CDC (Enterprise, txLogEnrichment FULL; skipped without it).
  */
 import { existsSync, readFileSync } from "node:fs";
 import type { GraphQLSchema } from "graphql";
@@ -14,11 +15,22 @@ import {
   nativeGoldenSchemaPath,
   printNativeSchema,
   runNativeOperation,
+  runNativeSubscription,
 } from "../src/native.js";
-import { connect, neo4jEnv } from "../src/runner.js";
+import { CDC_SKIP_REASON, cdcAvailable, connect, neo4jEnv } from "../src/runner.js";
 
 const env = neo4jEnv();
 const fixtures = loadNativeFixtures();
+const cdc = env
+  ? await (async () => {
+      const driver = connect(env);
+      try {
+        return await cdcAvailable(driver);
+      } finally {
+        await driver.close();
+      }
+    })()
+  : false;
 
 function golden(file: string): string {
   if (!existsSync(file))
@@ -51,6 +63,18 @@ describe("native API (goldens in native/golden)", () => {
           schema = await buildNativeSchema(fixture, driver!);
         });
         for (const op of fixture.operations) {
+          if (op.kind === "subscription") {
+            it.skipIf(!cdc)(
+              `${op.name}${cdc ? "" : ` (${CDC_SKIP_REASON})`}`,
+              { timeout: 30_000 },
+              async () => {
+                expect(await runNativeSubscription(fixture, op, driver!)).toBe(
+                  golden(nativeGoldenResultPath(fixture.name, op.name)),
+                );
+              },
+            );
+            continue;
+          }
           it(op.name, async () => {
             expect(await runNativeOperation(schema, fixture, op, driver!)).toBe(
               golden(nativeGoldenResultPath(fixture.name, op.name)),

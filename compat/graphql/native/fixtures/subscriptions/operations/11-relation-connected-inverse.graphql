@@ -1,0 +1,11 @@
+# features: subscriptions.relations, subscriptions.edge
+# The other side of the relationship type: Alice follows Bob, so Bob has a new follower.
+subscription {
+  userFollowersConnected(relatedWhere: { name: { equals: "Alice" } }) {
+    id
+    relatedId
+    _edge {
+      since
+    }
+  }
+}

@@ -546,7 +546,16 @@ function decodeOne(type: ScalarTypeName, value: unknown): unknown {
   return value;
 }
 
-/** Decode a property value read from Neo4j according to its schema field. */
+/**
+ * Decode a property value read from Neo4j according to its schema field.
+ *
+ * Exported for `@cyphra/graphql`'s native subscriptions, which decode the properties of Change
+ * Data Capture events as the client decodes its reads. It is internal: experimental, and not
+ * covered by semantic versioning.
+ *
+ * @internal
+ * @experimental
+ */
 export function decodeScalar(field: ResolvedScalarField, value: unknown): unknown {
   if (field.type === "Vector") {
     if (value === null || value === undefined) return null;

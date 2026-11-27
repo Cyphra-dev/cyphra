@@ -1,0 +1,9 @@
+# features: subscriptions.changed, subscriptions.deleted, subscriptions.rules
+# Post has a read rule: DELETED is only delivered for posts this subscription delivered, so the
+# key of the hidden draft is never sent (nor that of the published post it was not shown).
+subscription {
+  postChanged {
+    operation
+    id
+  }
+}

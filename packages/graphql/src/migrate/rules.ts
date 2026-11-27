@@ -708,7 +708,7 @@ class RulesDrafter {
           );
         }
       } else if (op === "SUBSCRIBE") {
-        notes.push("SUBSCRIBE: the native API has no subscriptions yet");
+        entry.groups.add("subscribe");
       } else {
         todo++;
         notes.push(

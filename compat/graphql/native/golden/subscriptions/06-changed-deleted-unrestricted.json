@@ -1,0 +1,40 @@
+{
+  "events": [
+    {
+      "data": {
+        "userChanged": {
+          "operation": "CREATED",
+          "id": "u-carol",
+          "node": {
+            "name": "Carol"
+          },
+          "changedFields": []
+        }
+      }
+    },
+    {
+      "data": {
+        "userChanged": {
+          "operation": "DELETED",
+          "id": "u-bob",
+          "node": null,
+          "changedFields": []
+        }
+      }
+    },
+    {
+      "data": {
+        "userChanged": {
+          "operation": "UPDATED",
+          "id": "u-alice",
+          "node": {
+            "name": "Alice B."
+          },
+          "changedFields": [
+            "name"
+          ]
+        }
+      }
+    }
+  ]
+}

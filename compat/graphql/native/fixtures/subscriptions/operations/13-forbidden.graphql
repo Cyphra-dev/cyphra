@@ -1,0 +1,7 @@
+# features: subscriptions.rules
+# A read rule denying the model to the subscriber: subscribing is FORBIDDEN.
+subscription {
+  auditChanged {
+    id
+  }
+}

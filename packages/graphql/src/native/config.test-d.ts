@@ -91,6 +91,21 @@ describe("defineGraphQL", () => {
     });
   });
 
+  it("accepts the subscribe group", () => {
+    defineGraphQL<TM>({
+      defaults: { operations: { subscribe: ["changed"] } },
+      models: {
+        User: { operations: { subscribe: true }, authenticated: { subscribe: true } },
+        Post: { operations: { subscribe: ["changed", "connected", "disconnected"] } },
+      },
+      naming: { Post: { changed: "postUpdates" } },
+    });
+    defineGraphQL<TM>({
+      // @ts-expect-error not an operation of the subscribe group
+      models: { User: { operations: { subscribe: ["created"] } } },
+    });
+  });
+
   it("is accepted by makeSchema, whatever the type map and context", () => {
     const api = defineGraphQL<TM, { user?: { id: string } }>({
       models: { User: { fields: { passwordHash: false } } },

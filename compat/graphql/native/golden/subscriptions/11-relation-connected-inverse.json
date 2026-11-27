@@ -1,0 +1,15 @@
+{
+  "events": [
+    {
+      "data": {
+        "userFollowersConnected": {
+          "id": "u-bob",
+          "relatedId": "u-alice",
+          "_edge": {
+            "since": 2024
+          }
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+# features: subscriptions.changed, subscriptions.rules
+# Bob gets his own draft too: the same writes, re-read with Bob's rules.
+subscription {
+  postChanged {
+    operation
+    id
+    node {
+      id
+      title
+      published
+    }
+  }
+}

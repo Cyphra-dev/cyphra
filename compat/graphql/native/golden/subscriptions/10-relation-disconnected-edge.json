@@ -1,0 +1,21 @@
+{
+  "events": [
+    {
+      "data": {
+        "userFollowingDisconnected": {
+          "id": "u-bob",
+          "relatedId": "u-alice",
+          "node": {
+            "name": "Bob"
+          },
+          "related": {
+            "name": "Alice"
+          },
+          "_edge": {
+            "since": 2020
+          }
+        }
+      }
+    }
+  ]
+}

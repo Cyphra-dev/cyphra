@@ -1,0 +1,14 @@
+{
+  "events": [
+    {
+      "data": {
+        "postChanged": {
+          "operation": "CREATED",
+          "node": {
+            "title": "Alpha"
+          }
+        }
+      }
+    }
+  ]
+}

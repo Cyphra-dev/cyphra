@@ -21,18 +21,32 @@ import {
   nativeGoldenSchemaPath,
   printNativeSchema,
   runNativeOperation,
+  runNativeSubscription,
 } from "./native.js";
-import { connect, neo4jEnv } from "./runner.js";
+import { CDC_SKIP_REASON, cdcAvailable, connect, neo4jEnv } from "./runner.js";
 
 async function writeNativeGoldens(only: string[], driver: ReturnType<typeof connect>) {
   const write = (file: string, text: string) => {
     mkdirSync(path.dirname(file), { recursive: true });
     writeFileSync(file, text);
   };
+  const cdc = await cdcAvailable(driver);
   for (const fixture of loadNativeFixtures(only)) {
     write(nativeGoldenSchemaPath(fixture.name), await printNativeSchema(fixture));
     const schema = await buildNativeSchema(fixture, driver);
     for (const op of fixture.operations) {
+      if (op.kind === "subscription") {
+        // Without CDC, the committed golden is kept.
+        if (!cdc) {
+          console.warn(`  kept ${fixture.name}/${op.name}: ${CDC_SKIP_REASON}`);
+          continue;
+        }
+        write(
+          nativeGoldenResultPath(fixture.name, op.name),
+          await runNativeSubscription(fixture, op, driver),
+        );
+        continue;
+      }
       write(
         nativeGoldenResultPath(fixture.name, op.name),
         await runNativeOperation(schema, fixture, op, driver),

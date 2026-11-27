@@ -1,0 +1,12 @@
+{
+  "events": [
+    {
+      "data": {
+        "postChanged": {
+          "operation": "CREATED",
+          "id": "p-new"
+        }
+      }
+    }
+  ]
+}

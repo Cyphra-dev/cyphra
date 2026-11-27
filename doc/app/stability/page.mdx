@@ -324,13 +324,13 @@ still covered by [security fixes](#security-fixes-and-support).
 `cyphra.json` for schema-level features. A separate `cyphra/experimental` entry point was rejected.
 Experimental at 1.0:
 
-| Feature                                                | Why                                                                    |
-| ------------------------------------------------------ | ---------------------------------------------------------------------- |
-| GraphQL subscriptions (`CDCSubscriptionsEngine`)       | New; needs Neo4j Enterprise CDC; one CI job                            |
-| The native GraphQL API (`native` of `@cyphra/graphql`) | New; its printed SDL may change until writes and rules land            |
-| `cyphra studio`                                        | A development tool whose HTTP API and UI will keep changing            |
-| `cyphra import graphql` / `prisma` / `neogma` output   | Conversions are heuristic; their output should improve without a major |
-| `cyphra push`                                          | Meant for prototyping; migrations are the supported path               |
+| Feature                                                              | Why                                                                    |
+| -------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| GraphQL subscriptions (`CDCSubscriptionsEngine`, `native.CDCReader`) | New; needs Neo4j Enterprise CDC; one CI job                            |
+| The native GraphQL API (`native` of `@cyphra/graphql`)               | New; its printed SDL may change until writes and rules land            |
+| `cyphra studio`                                                      | A development tool whose HTTP API and UI will keep changing            |
+| `cyphra import graphql` / `prisma` / `neogma` output                 | Conversions are heuristic; their output should improve without a major |
+| `cyphra push`                                                        | Meant for prototyping; migrations are the supported path               |
 
 For the import commands, the commands themselves and their flags stay stable; only the content they
 produce is exempt.

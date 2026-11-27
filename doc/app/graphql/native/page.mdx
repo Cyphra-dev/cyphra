@@ -21,8 +21,9 @@ generated client.
   `findSimilar`](#search-and-findsimilar), [traversals](#traversals)), **writes** (`create`,
   `createMany`, `update`, `updateMany`, `upsert`, `delete`, `deleteMany`, off by default) and
   **[auth](#auth)** (rules compiled into the statement, field rules, `authenticated`), with nested
-  `update` / `delete` / `upsert` / `connectOrCreate` and `_count` filters, and **[extension
+  `update` / `delete` / `upsert` / `connectOrCreate` and `_count` filters, **[extension
   points](#extend-the-schema)** (computed fields, Cypher-backed fields, custom SDL and resolvers)
+  and **[subscriptions](#subscriptions)** (on Neo4j Change Data Capture, off by default)
   ([#77](https://github.com/Cyphra-dev/cyphra/issues/77)). Relay `Node` is opt-in ([below](#relay)).
   To keep the API `@neo4j/graphql` v7 generates, use [`compat.v7`](/graphql); both can be served
   side by side.
@@ -1170,6 +1171,7 @@ Errors carry a stable `extensions.code`, mapped from the client's errors:
 | a rule denying the whole operation (`false`)                                                                                       | `FORBIDDEN`             | `model`, `operation`                                                  |
 | a `create` / `after` rule, a to-one replace outside `disconnect`, a nested `upsert` / `connectOrCreate` the rules do not let write | `FORBIDDEN`             | `model`, `operation` (`relation`)                                     |
 | a field a context-only rule denies (selected, filtered, sorted, grouped)                                                           | `FORBIDDEN`             | `model`, `field`                                                      |
+| a subscription on a database without Change Data Capture                                                                           | `CDC_UNAVAILABLE`       |                                                                       |
 | anything else (driver, bug)                                                                                                        | `INTERNAL_SERVER_ERROR` | message masked unless `debug: true`                                   |
 
 ## Relay
@@ -1203,6 +1205,93 @@ type Query {
   `BAD_USER_INPUT` error.
 
 Relay is off by default.
+
+## Subscriptions
+
+<Callout type="warning">
+  **Experimental** (see the [stability policy](/stability#experimental-features)): subscriptions of
+  the native API may change in a minor release. They need Neo4j **Change Data Capture**: Neo4j
+  Enterprise Edition or Aura, with the database in CDC mode (`ALTER DATABASE neo4j SET OPTION
+  txLogEnrichment 'FULL'`).
+</Callout>
+
+`operations: { subscribe: true }` adds `Subscription` root fields for a model (off by default;
+`defaults.operations.subscribe` turns them on for every model):
+
+```graphql
+type Subscription {
+  postChanged(where: PostWhere, operations: [ChangeOperation!]): PostChange!
+  # One pair per readable relation of the model:
+  postTagsConnected(where: PostWhere, relatedWhere: TagWhere): PostTagsEvent!
+  postTagsDisconnected(where: PostWhere, relatedWhere: TagWhere): PostTagsEvent!
+}
+
+type PostChange {
+  operation: ChangeOperation! # CREATED, UPDATED, DELETED
+  id: ID! # the key of the node, also for DELETED (the global id with relay)
+  node: Post # re-read with the selection and the read rules; null for DELETED
+  changedFields: [String!]! # UPDATED: the fields whose value changed
+}
+
+type PostTagsEvent {
+  id: ID! # the post's key
+  relatedId: ID! # the tag's key
+  node: Post!
+  related: Tag!
+  # _edge: the relationship's properties, when the relation has a relationship model
+}
+```
+
+`subscribe` takes `changed`, `connected` and `disconnected` (`subscribe: ["changed"]` for node
+changes only). `config.naming.<Model>.changed` renames `<model>Changed`, and
+`authenticated: { subscribe: true }` requires an authenticated subscriber. Subscriptions are
+served on node models with an `@id` field (`String`, `Int` or `BigInt`), not on interfaces or
+unions; a relation has events when its target has one too.
+
+Serve them with a `native.CDCReader`, one per server, closed on shutdown:
+
+```ts filename="graphql.ts"
+import { native } from "@cyphra/graphql";
+
+export const cdc = new native.CDCReader({ client: db, pollInterval: 500 });
+export const schema = native.makeSchema({ client: db, config: api, subscriptions: cdc });
+
+// On shutdown: stops polling and ends the open subscriptions.
+cdc.close();
+```
+
+The reader takes `client` (a Cyphra client) or `driver` (`neo4j-driver`, with `database`), polls
+the change log (`db.cdc.query`) only while a subscription is open, starting from the position when
+the first one opens, and serves every subscription of the process. Events include writes made
+outside the GraphQL API. Hosting is as for [`compat.v7` subscriptions](/graphql#hosting): a
+long-running process, not serverless functions. Without CDC, subscribing fails with
+`CDC_UNAVAILABLE`.
+
+### Rules apply to every event
+
+The rules are evaluated once, with the context the subscription opened with (`context.jwt`, from
+`native.jwtContext` for example). For each batch of changes, every subscription **re-reads** its
+nodes on its client, in one statement (`findMany` by key with its `where` and the API's rules,
+with exactly its selection), so:
+
+- an event is delivered only if the subscriber may read the node **now**: a draft another user
+  creates, or a node that does not match `where`, is not delivered; once published, its next
+  update is. `node` and its relations are what a query would return at that moment;
+- a relationship event is delivered only if the subscriber may read **both** nodes (`where` on the
+  node, `relatedWhere` on the related one): a readable post tagged with a hidden tag is not
+  delivered, nor is a user's `posts` event for a post the rules hide;
+- `changedFields` leaves out fields a field rule hides from the subscriber (context or
+  row-dependent) and fields the config hides;
+- `DELETED` carries only the key (the node is gone; its old properties would bypass the rules). It
+  is delivered for every deleted node when the subscriber reads every node of the model (no
+  `where`, no read rule restricting the model, and `client` is not a function of the context),
+  and otherwise only for nodes the subscription delivered before: the key of a node the subscriber
+  could not read is never sent;
+- `…Disconnected` is delivered while both nodes exist (when a node is deleted with its
+  relationships, `<model>Changed` reports it); `_edge` holds the properties the relationship had.
+
+Several changes to one node in one batch are each delivered, re-read once: they show the node as
+it is when the batch is read. Updates of relationship properties are not events.
 
 ## Print and check the contract
 
@@ -1287,7 +1376,7 @@ widen the result.
 | `@cypher` field (scalar or nodes)                                                          | [`cypherFields`](#cypher-backed-fields) of the same name                                                        |
 | `@customResolver` field                                                                    | a field added with [`extend`](#custom-root-fields-and-types) and its resolver                                   |
 | `... on Movie`, fragments, `__typename`                                                    | the same                                                                                                        |
-| subscriptions (`movieCreated`, …)                                                          | not yet (#76): keep them on `compat.v7`                                                                         |
+| subscriptions (`movieCreated`, `movieUpdated`, `movieDeleted`)                             | [`movieChanged(operations: [CREATED])`](#subscriptions), … (experimental)                                       |
 
 ### Filters and sorting
 

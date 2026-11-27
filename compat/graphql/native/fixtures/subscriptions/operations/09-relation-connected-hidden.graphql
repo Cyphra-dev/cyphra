@@ -1,0 +1,9 @@
+# features: subscriptions.relations, subscriptions.rules
+# The same writes for an anonymous subscriber: the draft and the internal tag are hidden, so only
+# the published post tagged db is delivered.
+subscription {
+  postTagsConnected {
+    id
+    relatedId
+  }
+}

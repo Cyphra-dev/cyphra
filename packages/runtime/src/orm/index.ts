@@ -28,7 +28,7 @@ export {
 export { parseUniqueViolation, type ParsedUniqueViolation } from "./unique.js";
 export { createCuid } from "./engine.js";
 export { escapeLucene } from "./fulltext.js";
-export { toNative } from "./values.js";
+export { decodeScalar, toNative } from "./values.js";
 export type * from "./types.js";
 export { getExtensionContext } from "./extensions.js";
 export type * from "./extensionTypes.js";

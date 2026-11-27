@@ -1,0 +1,7 @@
+# features: subscriptions.authenticated
+# Tag subscriptions need an authenticated request.
+subscription {
+  tagChanged {
+    id
+  }
+}

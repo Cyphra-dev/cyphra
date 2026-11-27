@@ -1,0 +1,11 @@
+{
+  "errors": [
+    {
+      "message": "The rules do not allow Audit.changed for this request.",
+      "path": [
+        "auditChanged"
+      ],
+      "code": "FORBIDDEN"
+    }
+  ]
+}

@@ -138,7 +138,12 @@ for each operation, like queries; a seed may create constraints (one statement e
 fixture covers rules, `authenticated` and field rules: an operation's context is its
 `NN-name.context.json` values, `jwt` from `NN-name.jwt.json` (trusted as-is, what the config's
 rules read), and for `NN-name.token.json` what `native.jwtContext` makes of the signed
-`Authorization` header (suite key; a token signed with another key is anonymous).
+`Authorization` header (suite key; a token signed with another key is anonymous). The
+`subscriptions` fixture has `subscription` operations: as for compat.v7, each one gets a fresh CDC
+reader (`native.CDCReader`, polling every 50 ms), runs `NN-name.script.cypher` and records the
+events, so it needs Neo4j Enterprise with CDC (skipped otherwise; `golden:native` keeps their
+goldens). Events are re-read when a batch is read: touch each node once per script, so the
+result does not depend on how the changes are batched.
 
 ```sh
 pnpm --filter compat-graphql golden:native          # every native fixture

@@ -1,0 +1,12 @@
+# features: subscriptions.changed, subscriptions.rules, subscriptions.changedFields
+# An admin reads views (in node and changedFields), but not Alice's draft.
+subscription {
+  postChanged(operations: [UPDATED]) {
+    id
+    node {
+      title
+      views
+    }
+    changedFields
+  }
+}

@@ -1,0 +1,17 @@
+# features: subscriptions.relations, subscriptions.edge
+# A deleted relationship: _edge has its properties before the delete.
+subscription {
+  userFollowingDisconnected {
+    id
+    relatedId
+    node {
+      name
+    }
+    related {
+      name
+    }
+    _edge {
+      since
+    }
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "events": [
+    {
+      "data": {
+        "postTagsConnected": {
+          "id": "p-hello",
+          "relatedId": "db"
+        }
+      }
+    }
+  ]
+}

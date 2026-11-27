@@ -1,0 +1,18 @@
+{
+  "events": [
+    {
+      "data": {
+        "postChanged": {
+          "operation": "CREATED",
+          "id": "p-public",
+          "node": {
+            "id": "p-public",
+            "title": "Public",
+            "published": true
+          },
+          "changedFields": []
+        }
+      }
+    }
+  ]
+}

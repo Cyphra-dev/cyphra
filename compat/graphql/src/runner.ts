@@ -118,7 +118,7 @@ export const CDC_SKIP_REASON =
   "needs Neo4j CDC (Enterprise, txLogEnrichment FULL): see compat/graphql/README.md";
 
 /** CDC polling interval of the engines under test, and how long to wait for the last events. */
-const POLL_MS = 50;
+export const POLL_MS = 50;
 const MIN_WAIT_MS = 1000;
 const QUIET_MS = 500;
 
@@ -154,49 +154,66 @@ export async function runSubscription(
     pollTime: POLL_MS,
   });
   try {
-    const result = await subscribe({
-      schema,
-      document: parse(op.document),
-      variableValues: op.variables,
-      contextValue: subscriptionContext(await impl.contextFor(op)),
-    });
-    if (!(Symbol.asyncIterator in result)) {
-      return stringifyResult(normalizeResult(result, { ordered: op.ordered }));
-    }
-    const events: NormalizedResult[] = [];
-    let lastEventAt = 0;
-    const iterator = result[Symbol.asyncIterator]();
-    const pump = (async () => {
-      for (;;) {
-        const next = await iterator.next();
-        if (next.done) return;
-        events.push(
-          normalizeResult(next.value as ExecutionResult, {
-            ordered: op.ordered,
-            maskTimestamps: true,
-          }),
-        );
-        lastEventAt = Date.now();
-      }
-    })();
-    const session = driver.session();
-    try {
-      for (const statement of seedStatements(op.script ?? "")) {
-        await session.executeWrite((tx) => tx.run(statement));
-      }
-    } finally {
-      await session.close();
-    }
-    const scriptDone = Date.now();
-    while (Date.now() - scriptDone < MIN_WAIT_MS || Date.now() - lastEventAt < QUIET_MS) {
-      await sleep(POLL_MS);
-    }
-    await iterator.return?.();
-    await pump;
-    // Events of one transaction come in no guaranteed order: sorted unless `# ordered`.
-    if (!op.ordered) events.sort((a, b) => canonical(a).localeCompare(canonical(b)));
-    return stringifyResult({ events } as NormalizedResult);
+    return await collectEvents(
+      await subscribe({
+        schema,
+        document: parse(op.document),
+        variableValues: op.variables,
+        contextValue: subscriptionContext(await impl.contextFor(op)),
+      }),
+      op,
+      driver,
+    );
   } finally {
     await close();
   }
+}
+
+/**
+ * The events of a subscription started with `result`: runs `<name>.script.cypher` (one
+ * transaction per statement), waits for the last events, and returns them normalized (in order
+ * with `# ordered`, sorted otherwise), or the errors of a subscription that failed to start.
+ */
+export async function collectEvents(
+  result:
+    AsyncGenerator<ExecutionResult> | AsyncIterableIterator<ExecutionResult> | ExecutionResult,
+  op: Operation,
+  driver: Driver,
+): Promise<string> {
+  if (!(Symbol.asyncIterator in result)) {
+    return stringifyResult(normalizeResult(result, { ordered: op.ordered }));
+  }
+  const events: NormalizedResult[] = [];
+  let lastEventAt = 0;
+  const iterator = result[Symbol.asyncIterator]();
+  const pump = (async () => {
+    for (;;) {
+      const next = await iterator.next();
+      if (next.done) return;
+      events.push(
+        normalizeResult(next.value as ExecutionResult, {
+          ordered: op.ordered,
+          maskTimestamps: true,
+        }),
+      );
+      lastEventAt = Date.now();
+    }
+  })();
+  const session = driver.session();
+  try {
+    for (const statement of seedStatements(op.script ?? "")) {
+      await session.executeWrite((tx) => tx.run(statement));
+    }
+  } finally {
+    await session.close();
+  }
+  const scriptDone = Date.now();
+  while (Date.now() - scriptDone < MIN_WAIT_MS || Date.now() - lastEventAt < QUIET_MS) {
+    await sleep(POLL_MS);
+  }
+  await iterator.return?.();
+  await pump;
+  // Events of one transaction come in no guaranteed order: sorted unless `# ordered`.
+  if (!op.ordered) events.sort((a, b) => canonical(a).localeCompare(canonical(b)));
+  return stringifyResult({ events } as NormalizedResult);
 }
