@@ -26,7 +26,7 @@
     "commander": "^12.1.0",
     "graphql": "^16.11.0",
     "neo4j-driver": "^5.28.3 || ^6.0.0",
-    "typescript": "^5.9.3"
+    "typescript": "^6.0.3"
   },
   "devDependencies": {
     "@types/node": "^22.20.5",

@@ -474,8 +474,11 @@ describe("draftRules", () => {
       module: ts.ModuleKind.NodeNext,
       moduleResolution: ts.ModuleResolutionKind.NodeNext,
       target: ts.ScriptTarget.ES2022,
-      baseUrl: root,
-      paths: { "@cyphra/graphql": ["graphql/src/index.ts"], cyphra: ["runtime/src/index.ts"] },
+      // Absolute paths, no `baseUrl` (deprecated in TypeScript 6).
+      paths: {
+        "@cyphra/graphql": [`${root}graphql/src/index.ts`],
+        cyphra: [`${root}runtime/src/index.ts`],
+      },
     };
     const host = ts.createCompilerHost(options);
     const read = host.readFile.bind(host);
