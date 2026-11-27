@@ -1,5 +1,17 @@
 # @cyphra/cli
 
+## 0.28.0
+
+### Patch Changes
+
+- ac66a05: Depend on TypeScript 6 (`^6.0.3`) for the TypeScript compiler API the CLI uses (`cyphra graphql print`, `cyphra graphql migrate`, `cyphra import neogma`). The published type declarations of every package are unchanged and still work with TypeScript 5.x.
+- Updated dependencies [39bf5f8]
+- Updated dependencies [55a869b]
+  - @cyphra/graphql@0.28.0
+  - @cyphra/runtime@0.28.0
+  - @cyphra/migrator@0.28.0
+  - @cyphra/schema@0.28.0
+
 ## 0.27.0
 
 ### Minor Changes

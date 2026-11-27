@@ -1,5 +1,14 @@
 # @cyphra/migrator
 
+## 0.28.0
+
+### Patch Changes
+
+- Updated dependencies [55a869b]
+  - @cyphra/runtime@0.28.0
+  - @cyphra/query@0.28.0
+  - @cyphra/schema@0.28.0
+
 ## 0.27.0
 
 ### Patch Changes
