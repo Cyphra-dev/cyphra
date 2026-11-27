@@ -1243,10 +1243,10 @@ type PostTagsEvent {
 ```
 
 `subscribe` takes `changed`, `connected` and `disconnected` (`subscribe: ["changed"]` for node
-changes only), `config.naming.<Model>.changed` renames `<model>Changed`, and `authenticated:
-{ subscribe: true }` requires an authenticated subscriber. Subscriptions are served on node
-models with an `@id` field (`String`, `Int` or `BigInt`), not on interfaces or unions; a
-relation has events when its target has one too.
+changes only). `config.naming.<Model>.changed` renames `<model>Changed`, and
+`authenticated: { subscribe: true }` requires an authenticated subscriber. Subscriptions are
+served on node models with an `@id` field (`String`, `Int` or `BigInt`), not on interfaces or
+unions; a relation has events when its target has one too.
 
 Serve them with a `native.CDCReader`, one per server, closed on shutdown:
 
