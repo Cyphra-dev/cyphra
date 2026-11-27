@@ -9,14 +9,14 @@
  * - `deleteMovies(where)` without nested `delete` → `deleteMany` (with the number of
  *   relationships the delete removed, for `relationshipsDeleted`).
  *
- * The response (`movies { … }`) is projected in the same statement, with the read translator.
+ * The response (`movies { … }`) is projected in the same statement, with the read translator, and
+ * limited by the type's `@limit` like v7. `@timestamp` fields get the database clock (`$now`:
+ * `datetime()` / `date()` in the statement), `@authentication` is checked like the compiler.
  *
  * What stays on the compat compiler ({@link Fallback}): nested writes (`create`, `connect` — a v7
  * `CREATE`, the engine's is a `MERGE` —, `update`, `delete`, `disconnect`, `connectOrCreate`),
  * arithmetic and list operators (v7 fails on `null` operands and 32-bit overflow), deprecated
- * `field_SET` keys (v7 reports conflicting modifications), `@timestamp` fields (v7 writes the
- * database clock), `@limit` types (v7 limits the returned nodes), DateTime values,
- * `@authentication`, and `@authorization` rules the engine cannot apply like the compiler: a
+ * `field_SET` keys (v7 reports conflicting modifications), DateTime values, and `@authorization` rules the engine cannot apply like the compiler: a
  * `validate` rule that may fail, a READ filter on the nodes an update returns that depends on the
  * node.
  *
@@ -28,8 +28,8 @@
 
 import type { FieldNode } from "graphql";
 import { CyphraError } from "@cyphra/runtime";
-import type { AuthContext } from "../auth/context.js";
-import { collectFields, subSelections, type SelectionInfo } from "../cypher/select.js";
+import { forbidden, type AuthContext } from "../auth/context.js";
+import { collectFields, pageLimit, subSelections, type SelectionInfo } from "../cypher/select.js";
 import type { Attribute, NodeType, V7Model } from "../model.js";
 import { ReadTranslator, delegate } from "./read.js";
 import type { EngineAuthRules } from "./rules.js";
@@ -66,6 +66,35 @@ function asList(v: unknown): unknown[] {
 function databaseError(err: unknown): unknown {
   if (err instanceof CyphraError && err.cause !== undefined) return err.cause;
   return err;
+}
+
+/**
+ * Runs a root write. When its `validate` rules fail for the request (`holds` false), every node it
+ * writes breaks them: like the compiler's statement, it runs in a transaction that fails with
+ * `Forbidden` (rolled back) once it wrote a node; a write that matched nothing returns normally.
+ */
+async function checked<R extends { count: number }>(
+  client: object,
+  holds: boolean,
+  run: (db: object) => Promise<R>,
+): Promise<R> {
+  if (holds) return run(client);
+  const transaction = (client as { $transaction?: (fn: (tx: object) => Promise<R>) => Promise<R> })
+    .$transaction;
+  if (typeof transaction !== "function") {
+    throw new Error("Internal error: the engine client has no $transaction.");
+  }
+  const denied = Symbol("forbidden");
+  try {
+    return await transaction.call(client, async (tx) => {
+      const r = await run(tx);
+      if (r.count > 0) throw denied;
+      return r;
+    });
+  } catch (e) {
+    if (e === denied) throw forbidden();
+    throw e;
+  }
 }
 
 /** A value to write to an attribute (`null` removes the property). */
@@ -108,10 +137,9 @@ export class WriteTranslator {
     return [...out];
   }
 
-  /** The type's checks shared by every write: in the engine (no `@authentication`), no `@limit`. */
+  /** The type's checks shared by every write: in the engine. */
   private writable(node: NodeType): void {
     this.where.engineNode(node);
-    if (node.limit) throw new Fallback("@limit on the returned nodes");
   }
 
   /** The engine field of an attribute input, or {@link Fallback}. */
@@ -163,7 +191,13 @@ export class WriteTranslator {
         }
         const p = this.read.node(node, nodes);
         select = { ...select, ...p.select };
-        shapers.push([key, (_counts, rows) => rows.map(p.shape)]);
+        // v7 applies `@limit(default ?? max)` to the returned nodes as well (in their order).
+        const limit = pageLimit(node, undefined);
+        shapers.push([
+          key,
+          (_counts, rows) =>
+            (typeof limit === "number" ? rows.slice(0, Math.max(0, limit)) : rows).map(p.shape),
+        ]);
       }
     }
     return {
@@ -172,20 +206,55 @@ export class WriteTranslator {
     };
   }
 
+  /**
+   * The `$now` of the `@timestamp` fields `operation` sets (v7: `datetime()` / `date()` of the
+   * database, in the statement), `undefined` without any.
+   */
+  private timestamps(node: NodeType, operation: "CREATE" | "UPDATE"): AnyRecord | undefined {
+    const attrs = node.attributes.filter(
+      // The compiler's `onCreateGenerated` / `onUpdateGenerated` (an `@id` gets a UUID instead).
+      (a) => !a.cypher && !a.id && a.timestamp?.includes(operation),
+    );
+    if (attrs.length === 0) return undefined;
+    const now: AnyRecord = {};
+    for (const a of attrs) {
+      if ((a.type.name !== "DateTime" && a.type.name !== "Date") || a.type.list) {
+        throw new Fallback(`@timestamp on ${a.type.name}`);
+      }
+      now[this.field(node, a)] = true;
+    }
+    return now;
+  }
+
+  /** Throws the first `@authentication` failure of the translated request, if any. */
+  authenticated(): void {
+    this.read.authenticated();
+  }
+
   /** `createMovies(input: [...])`. */
   create(node: NodeType, args: AnyRecord, fieldNodes: readonly FieldNode[]): WritePlan {
     this.writable(node);
-    if (node.attributes.some((a) => a.timestamp?.length)) throw new Fallback("@timestamp");
+    const now = this.timestamps(node, "CREATE");
     const ids = node.attributes.filter((a) => a.id && !a.cypher);
+    this.read.authenticate(node, "CREATE");
+    let holds = true;
     const rows = asList(args.input).map((input) => {
       if (!isPlainObject(input)) throw new Fallback("create input");
-      // CREATE validations are AFTER rules (v7); they must hold for every created node.
-      this.rules.validated(node, "CREATE", "AFTER", this.written(node, input));
+      const written = this.written(node, input);
+      this.read.authenticate(
+        node,
+        "CREATE",
+        written.map((a) => a.name),
+      );
+      // CREATE validations are AFTER rules (v7), checked on every created node.
+      if (!this.rules.holds(node, "CREATE", "AFTER", written)) holds = false;
       const row: AnyRecord = {};
       for (const [key, value] of Object.entries(input)) {
         if (value === undefined || key === EMPTY_INPUT) continue;
         const attr = node.attributes.find((a) => a.name === key);
-        if (!attr || attr.id) throw new Fallback(`create input ${key}`);
+        if (!attr || attr.id || attr.timestamp?.includes("CREATE")) {
+          throw new Fallback(`create input ${key}`);
+        }
         row[this.field(node, attr)] = writeValue(attr, value);
       }
       return row;
@@ -200,10 +269,14 @@ export class WriteTranslator {
         return out;
       });
       try {
-        const res = (await delegate(client, node.name).createMany!({
-          data,
-          ...(select ? { select } : {}),
-        })) as { count: number; nodes?: AnyRecord[] };
+        const res = await checked(client, holds, async (db) => {
+          const r = (await delegate(db, node.name).createMany!({
+            data,
+            ...(now ? { $now: now } : {}),
+            ...(select ? { select } : {}),
+          })) as { count: number; nodes?: AnyRecord[] };
+          return { ...r, count: data.length };
+        });
         return shape({ nodesCreated: data.length }, res.nodes ?? []);
       } catch (e) {
         throw databaseError(e);
@@ -214,9 +287,13 @@ export class WriteTranslator {
   /** `updateMovies(where, update)` with `set` operators only. */
   update(node: NodeType, args: AnyRecord, fieldNodes: readonly FieldNode[]): WritePlan {
     this.writable(node);
-    if (node.attributes.some((a) => a.timestamp?.includes("UPDATE") && !a.cypher)) {
-      throw new Fallback("@timestamp");
-    }
+    // v7 refreshes UPDATE timestamps even without an `update` argument.
+    const now = this.timestamps(node, "UPDATE");
+    this.read.authenticate(
+      node,
+      "UPDATE",
+      this.written(node, args.update).map((a) => a.name),
+    );
     for (const key of ["connect", "disconnect", "create", "delete", "connectOrCreate"]) {
       if (args[key] !== undefined && args[key] !== null) throw new Fallback(`update ${key}`);
     }
@@ -225,7 +302,9 @@ export class WriteTranslator {
       for (const [key, value] of Object.entries(args.update)) {
         if (value === undefined || key === EMPTY_INPUT) continue;
         const attr = node.attributes.find((a) => a.name === key);
-        if (!attr) throw new Fallback(`update input ${key}`);
+        if (!attr || (attr.timestamp?.includes("UPDATE") && !attr.id)) {
+          throw new Fallback(`update input ${key}`);
+        }
         // Not an object: the compiler writes nothing for it.
         if (!isPlainObject(value)) continue;
         const ops = Object.entries(value).filter(([, v]) => v !== undefined);
@@ -239,27 +318,35 @@ export class WriteTranslator {
     // v7 applies the type's UPDATE rules to a top-level update only when attributes are written.
     const written = this.written(node, args.update);
     const typeRules = written.length > 0;
-    for (const when of ["BEFORE", "AFTER"] as const) {
-      this.rules.validated(node, "UPDATE", when, written, typeRules);
-    }
+    const holds = (["BEFORE", "AFTER"] as const)
+      .map((when) => this.rules.holds(node, "UPDATE", when, written, typeRules))
+      .every(Boolean);
     const where = rootWhere(
       allOf([
         this.where.node(node, args.where),
         typeRules ? this.rules.filter(node, "UPDATE") : undefined,
       ]),
     );
-    const { select, shape } = this.response(node, fieldNodes, true);
+    // When the validations fail, the response is either Forbidden or empty: its READ filter does
+    // not matter.
+    const { select, shape } = this.response(node, fieldNodes, holds);
     const updateArgs: AnyRecord = {
       ...(where !== undefined ? { where } : {}),
       data,
+      ...(now ? { $now: now } : {}),
       ...(select ? { select } : {}),
     };
     return async (client) => {
       try {
-        const res = (await delegate(client, node.name).updateMany!(updateArgs)) as {
-          count: number;
-          nodes?: AnyRecord[];
-        };
+        const res = await checked(
+          client,
+          holds,
+          async (db) =>
+            (await delegate(db, node.name).updateMany!(updateArgs)) as {
+              count: number;
+              nodes?: AnyRecord[];
+            },
+        );
         return shape({}, res.nodes ?? []);
       } catch (e) {
         throw databaseError(e);
@@ -270,13 +357,14 @@ export class WriteTranslator {
   /** `deleteMovies(where)` without nested `delete`. */
   delete(node: NodeType, args: AnyRecord, fieldNodes: readonly FieldNode[]): WritePlan {
     this.where.engineNode(node);
+    this.read.authenticate(node, "DELETE");
     if (isPlainObject(args.delete)) {
       if (Object.values(args.delete).some((v) => v !== undefined))
         throw new Fallback("nested delete");
     } else if (args.delete !== undefined && args.delete !== null) {
       throw new Fallback("delete input");
     }
-    this.rules.validated(node, "DELETE", "BEFORE");
+    const holds = this.rules.holds(node, "DELETE", "BEFORE");
     const where = rootWhere(
       allOf([this.where.node(node, args.where), this.rules.filter(node, "DELETE")]),
     );
@@ -290,10 +378,15 @@ export class WriteTranslator {
     };
     return async (client) => {
       try {
-        const res = (await delegate(client, node.name).deleteMany!(deleteArgs)) as {
-          count: number;
-          relationships?: number;
-        };
+        const res = await checked(
+          client,
+          holds,
+          async (db) =>
+            (await delegate(db, node.name).deleteMany!(deleteArgs)) as {
+              count: number;
+              relationships?: number;
+            },
+        );
         const counts: Record<string, number> = {
           nodesDeleted: res.count,
           relationshipsDeleted: res.relationships ?? 0,

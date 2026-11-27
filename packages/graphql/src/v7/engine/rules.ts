@@ -14,8 +14,9 @@
  * leaves relationship filters, connected nodes and unselected fields alone.
  *
  * `validate` rules have no engine equivalent (they fail the request when one node breaks them):
- * the request runs on the engine only when they hold for every node, i.e. when they reduce to
- * `true` for the request. Anything else throws {@link Fallback}: a validation that depends on the
+ * they must reduce to `true` or `false` for the request. A root write whose validations reduce to
+ * `false` runs in a transaction that fails with `Forbidden` (rolled back) when it wrote a node,
+ * like the compiler; a read only runs on the engine when they reduce to `true`. Anything else throws {@link Fallback}: a validation that depends on the
  * node or fails, comparisons whose Cypher result is `null`, an error or not certain (`MATCHES`,
  * lists, mixed types).
  *
@@ -192,10 +193,35 @@ export class EngineAuthRules {
   }
 
   /**
-   * Throws {@link Fallback} unless the `validate` rules for `operation` / `when` (the type's when
-   * `type`, and those of `attributes`) hold for every node: each annotation's rules reduce to
-   * `true` for the request (or none applies).
+   * Whether the `validate` rules for `operation` / `when` (the type's when `type`, and those of
+   * `attributes`) hold for every node, decided for the request: `true` when each annotation's
+   * rules reduce to `true` (or none applies), `false` when one reduces to `false` (every node then
+   * fails it). Rules that depend on the node throw {@link Fallback}.
    */
+  holds(
+    node: NodeType,
+    operation: AuthOperation,
+    when: "BEFORE" | "AFTER",
+    attributes: readonly Attribute[] = [],
+    type = true,
+  ): boolean {
+    const annotations = [...(type ? [node.auth] : []), ...attributes.map((a) => a.auth)];
+    let holds = true;
+    for (const a of annotations) {
+      const v = or(
+        (a?.authorization?.validate ?? [])
+          .filter((r) => r.operations.includes(operation) && r.when.includes(when))
+          .map((r) => this.rule(node, r)),
+      );
+      if (v === false) holds = false;
+      else if (v !== undefined && v !== true) {
+        throw new Fallback(`${node.name}: ${operation} validation that depends on the node`);
+      }
+    }
+    return holds;
+  }
+
+  /** Throws {@link Fallback} unless {@link holds}. */
   validated(
     node: NodeType,
     operation: AuthOperation,
@@ -203,16 +229,8 @@ export class EngineAuthRules {
     attributes: readonly Attribute[] = [],
     type = true,
   ): void {
-    const annotations = [...(type ? [node.auth] : []), ...attributes.map((a) => a.auth)];
-    for (const a of annotations) {
-      const v = or(
-        (a?.authorization?.validate ?? [])
-          .filter((r) => r.operations.includes(operation) && r.when.includes(when))
-          .map((r) => this.rule(node, r)),
-      );
-      if (v !== undefined && v !== true) {
-        throw new Fallback(`${node.name}: ${operation} validation that may fail`);
-      }
+    if (!this.holds(node, operation, when, attributes, type)) {
+      throw new Fallback(`${node.name}: ${operation} validation that fails`);
     }
   }
 

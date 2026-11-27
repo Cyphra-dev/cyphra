@@ -13,15 +13,23 @@
  *   when the related node exists and matches.
  *
  * What it cannot translate exactly throws {@link Fallback}: the compat compiler then runs the
- * request (aggregation filters, edge filters, `@cypher` fields, relationships to
- * interfaces and unions, DateTime values, …).
+ * request (aggregation filters, `@cypher` fields, relationships to
+ * interfaces and unions, …).
  *
  * @packageDocumentation
  */
 
+import { CypherDateTimeText } from "@cyphra/runtime";
 import neo4j from "neo4j-driver";
 import { AuthValue } from "../cypher/where.js";
-import type { Attribute, NodeType, Relationship, V7Model } from "../model.js";
+import {
+  keyedConnectionEdge,
+  type Attribute,
+  type NodeType,
+  type PropertiesType,
+  type Relationship,
+  type V7Model,
+} from "../model.js";
 import type { EngineNode, EngineSchema } from "./schema.js";
 
 type AnyRecord = Record<string, unknown>;
@@ -115,21 +123,9 @@ const SCALAR_OPERATORS: Record<string, string> = {
 };
 
 /**
- * Whether `@authentication` could fail a request on the node (it stays on the compat compiler,
- * which checks it while compiling the statement).
- */
-export function hasAuthentication(model: V7Model, node: NodeType): boolean {
-  return (
-    model.authentication !== undefined ||
-    node.auth.authentication !== undefined ||
-    node.attributes.some((a) => a.auth?.authentication)
-  );
-}
-
-/**
- * One value of a filter, as the engine encodes the attribute's type to the same driver value the
- * compat compiler passes. Types whose encoding differs (DateTime: the compiler keeps the text's
- * offset and precision) throw {@link Fallback}.
+ * One value of a filter or a write, as the engine encodes the attribute's type to the same driver
+ * value the compat compiler passes (a DateTime text is parsed by `datetime()` in the statement,
+ * like the compiler's). Other values throw {@link Fallback}.
  */
 export function engineValue(attr: Attribute, value: unknown): unknown {
   const one = (v: unknown): unknown => {
@@ -154,6 +150,11 @@ export function engineValue(attr: Attribute, value: unknown): unknown {
         // The compiler passes the parsed `Date`; the engine builds the same date from its text.
         if (neo4j.isDate(v as object)) return String(v);
         break;
+      case "DateTime":
+        // The compiler passes the text to `datetime()` (offset and precision kept): so does the
+        // engine, with a DateTime text.
+        if (typeof v === "string") return new CypherDateTimeText(v);
+        break;
     }
     throw new Fallback(`${attr.type.name} filter value`);
   };
@@ -173,13 +174,12 @@ export class WhereTranslator {
   ) {}
 
   /**
-   * The engine node of a v7 node type, or {@link Fallback} (interfaces, `@authentication`). Its
-   * `@authorization` rules are the callers' (they apply where they read or write its nodes).
+   * The engine node of a v7 node type, or {@link Fallback} (interfaces). Its `@authentication` /
+   * `@authorization` annotations are the callers' (they apply where they read or write its nodes).
    */
   engineNode(node: NodeType): EngineNode {
     const n = this.schema.nodes.get(node.name);
     if (!n || n.v7 !== node) throw new Fallback(`${node.name} is not in the engine`);
-    if (hasAuthentication(this.model, node)) throw new Fallback(`${node.name} has @authentication`);
     return n;
   }
 
@@ -408,7 +408,7 @@ export class WhereTranslator {
 
   /**
    * A connection `where` (`{ node, edge }` with `AND` / `OR` / `NOT`) as a filter on the related
-   * node. Edge filters throw {@link Fallback}.
+   * node (edge filters as its `$edge` filter).
    */
   connection(rel: Relationship, target: NodeType, where: unknown): Filter {
     if (!isFilterObject(where)) return undefined;
@@ -425,10 +425,38 @@ export class WhereTranslator {
         continue;
       }
       if (key === "edge") {
-        if (value !== null && rel.properties) throw new Fallback("edge filter");
+        // Without properties, `edge` filters nothing (like the compiler).
+        if (!rel.properties) continue;
+        const props = this.model.properties.get(rel.properties);
+        if (!props || keyedConnectionEdge(this.model, rel)) throw new Fallback("keyed edge filter");
+        const f = this.edge(props, value);
+        parts.push(f === undefined || f === TRUE ? f : { $edge: f });
         continue;
       }
       throw new Fallback(`unknown connection filter ${key}`);
+    }
+    return allOf(parts);
+  }
+
+  /**
+   * A `${Properties}Where` on the edge (`role: { eq }`, `AND` / `OR` / `NOT`), as the engine's
+   * `$edge` filter of the related node.
+   */
+  edge(props: PropertiesType, where: unknown): Filter {
+    if (!isFilterObject(where)) return undefined;
+    const fields = this.schema.edgeFields.get(props.name);
+    if (!fields) throw new Fallback(`${props.name} is not in the engine`);
+    const parts: Filter[] = [];
+    for (const [key, value] of Object.entries(where)) {
+      if (value === undefined) continue;
+      const l = this.logical(key, value, (w) => this.edge(props, w));
+      if (l.handled) {
+        parts.push(l.where);
+        continue;
+      }
+      const a = this.attribute({ fields }, props.attributes, key, value);
+      if (!a.handled) throw new Fallback(`unknown filter ${props.name}Where.${key}`);
+      parts.push(a.where);
     }
     return allOf(parts);
   }

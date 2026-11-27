@@ -75,6 +75,20 @@ const typeDefs = /* GraphQL */ `
     public: Boolean!
     owner: [GqlAuthUser!]! @relationship(type: "GQLAUTH_OWNS", direction: IN)
   }
+
+  type GqlAuthNote
+    @node
+    @authentication(operations: [DELETE])
+    @authorization(
+      validate: [
+        { operations: [CREATE, UPDATE, DELETE], where: { jwt: { roles: { includes: "hr" } } } }
+      ]
+    ) {
+    id: ID!
+    text: String
+    at: DateTime
+    stamped: DateTime @timestamp(operations: [CREATE, UPDATE])
+  }
 `;
 
 // Values that must never leave the database for the requests below.
@@ -89,6 +103,7 @@ CREATE (a1:GqlAuthDoc {id: "d-ann-public", title: "Ann public", public: true})
 CREATE (a2:GqlAuthDoc {id: "d-ann-private", title: "Ann private", public: false})
 CREATE (b1:GqlAuthDoc {id: "d-ben-public", title: "Ben public", public: true})
 CREATE (b2:GqlAuthDoc {id: "d-ben-private", title: "${BEN_SECRET_TITLE}", public: false})
+CREATE (:GqlAuthNote {id: "n1", text: "one", at: datetime("2020-01-01T10:00:00.123456+02:00"), stamped: datetime("2020-01-01T00:00:00Z")})
 CREATE (ann)-[:GQLAUTH_OWNS]->(a1)
 CREATE (ann)-[:GQLAUTH_OWNS]->(a2)
 CREATE (ben)-[:GQLAUTH_OWNS]->(b1)
@@ -161,11 +176,11 @@ describe.skipIf(!hasNeo)("v7 authorization on Neo4j (adversarial)", () => {
     });
   });
   afterAll(async () => {
-    await cypher("MATCH (n) WHERE n:GqlAuthUser OR n:GqlAuthDoc DETACH DELETE n");
+    await cypher("MATCH (n) WHERE n:GqlAuthUser OR n:GqlAuthDoc OR n:GqlAuthNote DETACH DELETE n");
     await driver.close();
   });
   beforeEach(async () => {
-    await cypher("MATCH (n) WHERE n:GqlAuthUser OR n:GqlAuthDoc DETACH DELETE n");
+    await cypher("MATCH (n) WHERE n:GqlAuthUser OR n:GqlAuthDoc OR n:GqlAuthNote DETACH DELETE n");
     await cypher(SEED);
     raw = [];
   });
@@ -469,13 +484,41 @@ describe.skipIf(!hasNeo)("v7 authorization on Neo4j (adversarial)", () => {
         ],
         [`mutation { deleteGqlAuthDocs(where: { public: { eq: true } }) { nodesDeleted } }`, ann],
         [`mutation { deleteGqlAuthDocs { nodesDeleted } }`, {}],
+        // jwt-only validations: Forbidden (rolled back) once a node is written, for non-hr users.
+        [
+          `mutation { createGqlAuthNotes(input: [{ id: "n2", text: "x" }]) { info { nodesCreated } } }`,
+          ann,
+        ],
+        [
+          `mutation { createGqlAuthNotes(input: [{ id: "n2", at: "2021-05-06T07:08:09.987654321-03:00" }]) { gqlAuthNotes { id at } } }`,
+          hr,
+        ],
+        [
+          `mutation { updateGqlAuthNotes(update: { text: { set: "y" } }) { gqlAuthNotes { id text } } }`,
+          ann,
+        ],
+        [
+          `mutation { updateGqlAuthNotes(where: { id: { eq: "none" } }, update: { text: { set: "y" } }) { gqlAuthNotes { id } } }`,
+          ann,
+        ],
+        [
+          `mutation { updateGqlAuthNotes(update: { text: { set: "y" } }) { gqlAuthNotes { id text } } }`,
+          hr,
+        ],
+        [`mutation { deleteGqlAuthNotes { nodesDeleted } }`, ann],
+        [`mutation { deleteGqlAuthNotes { nodesDeleted } }`, hr],
+        [`mutation { deleteGqlAuthNotes { nodesDeleted } }`, {}],
+        [`{ gqlAuthNotes(where: { at: { gte: "2020-01-01T08:00:00.123456Z" } }) { id at } }`, {}],
+        [`{ gqlAuthNotes(where: { at: { eq: "2020-01-01T08:00:00.123456Z" } }) { id } }`, {}],
       ];
       const results = async (schema: GraphQLSchema, document: string, ctx: object) => {
-        await cypher("MATCH (n) WHERE n:GqlAuthUser OR n:GqlAuthDoc DETACH DELETE n");
+        await cypher(
+          "MATCH (n) WHERE n:GqlAuthUser OR n:GqlAuthDoc OR n:GqlAuthNote DETACH DELETE n",
+        );
         await cypher(SEED);
         const result = await execute({ schema, document: parse(document), contextValue: ctx });
         const state = await cypher(
-          "MATCH (n) WHERE n:GqlAuthUser OR n:GqlAuthDoc RETURN n.id AS id, n.title AS title, n.name AS name ORDER BY id",
+          "MATCH (n) WHERE n:GqlAuthUser OR n:GqlAuthDoc OR n:GqlAuthNote RETURN n.id AS id, n.title AS title, n.name AS name, n.text AS text, toString(n.at) AS at, n.stamped > datetime('2020-06-01') AS stamped ORDER BY id",
         );
         return JSON.stringify({ result, state });
       };
@@ -488,6 +531,10 @@ describe.skipIf(!hasNeo)("v7 authorization on Neo4j (adversarial)", () => {
           "gqlAuthUsersConnection",
           "gqlAuthDocsConnection",
           "deleteGqlAuthDocs",
+          "createGqlAuthNotes",
+          "updateGqlAuthNotes",
+          "deleteGqlAuthNotes",
+          "gqlAuthNotes",
         ]),
       );
     }, 60_000);

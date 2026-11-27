@@ -1229,7 +1229,9 @@ each useful on its own:
    (`fields`, `CASE WHEN`). Per-request `$extends` costs about
    2.5 µs on a 4-model schema and 45 µs on a 100-model one (`pnpm --filter cyphra-bench extends`).
 5. **Edge filters and ordering on relation loads** (`_edge` in `some` / `orderBy`) where the client
-   does not have them yet.
+   does not have them yet. Landed internal (#265): `$edge` in the `where` / `orderBy` of a node
+   reached through a relation with edge properties (`some` / `none` / `every` / `is`, relation
+   loads, `_count`), not in the client's types yet.
 6. Nested `update` / `delete` / `upsert` / `connectOrCreate`; `_count` filters in `where` (for v7
    aggregation filters). Landed (#248): each nested write is a subquery of the parent write's one
    statement (targets found through the relation, under the `read` + `update` / `delete` rules;
@@ -1315,6 +1317,22 @@ fixtures and goldens: printed SDL plus results) grows with it.
    connection filters inside rules (v7 reads them as `single`), and `@authentication` (checked
    while the compiler builds the statement). `compat/graphql` has an engine-off/on differential
    run (`pnpm --filter compat-graphql differential`), on an internal `makeSchema` option.
+
+   Round 2 (#265): `@authentication` (checked where the compiler checks it, each projected node
+   selection and connection, each write; the first failure is raised once the request translates,
+   so a request that falls back gets the compiler's own checks); root writes whose `validate`
+   rules reduce to `false` for the request (run in a transaction that fails with `Forbidden`, rolled
+   back, once it wrote a node, like the compiler's statement); `@timestamp` (the database clock in
+   the engine statement); `@limit` on the nodes a mutation returns; DateTime values with their
+   offset and precision; connection edge filters and sorts; to-one connections (a to-many engine
+   relation over the same edges). Engine entries added for it, internal: `$now` on `createMany` /
+   `updateMany` (`datetime()` / `date()` of the database), `CypherDateTimeText` (a DateTime text
+   parsed by `datetime()` in the statement), and `$edge` in the `where` / `orderBy` of a node
+   reached through a relation with edge properties (relation filters, relation loads, `_count`).
+   Still on the compat compiler: aggregations, fulltext, `@cypher`, subscriptions (later phases);
+   interfaces and unions; nested writes; arithmetic and list operators and `field_SET` keys;
+   custom-resolver fields; `context.cypherParams`; reads whose READ `validate` rules do not reduce to
+   `true`; `validate` rules that depend on the node.
 
 5. **Auth**: `rules` (read / create / update / delete / connect / disconnect / after),
    `authenticated`, field rules (context-only and row-dependent), `native.jwtContext`,

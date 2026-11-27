@@ -1,4 +1,4 @@
-import { CyphraClient } from "@cyphra/runtime";
+import { CyphraClient, CypherDateTimeText } from "@cyphra/runtime";
 import { execute, parse } from "graphql";
 import neo4j, { type Driver, type SessionConfig } from "neo4j-driver";
 import { describe, expect, it } from "vitest";
@@ -30,6 +30,10 @@ const typeDefs = /* GraphQL */ `
   }
   type Studio @node {
     name: String!
+  }
+  type Note @node @authentication(operations: [READ, CREATE]) {
+    text: String
+    at: DateTime @timestamp(operations: [CREATE, UPDATE])
   }
   type Book @node {
     title: String
@@ -151,6 +155,34 @@ describe("v7 where → engine where", () => {
     });
   });
 
+  it("edge filters: the related node's `$edge` filter", () => {
+    expect(tr({ actorsConnection: { some: { edge: { role: { eq: "x" } } } } })).toEqual({
+      actors: { some: { $edge: { role: { equals: "x" } } } },
+    });
+    // An OR with a member that filters nothing (`role: null`) is `true`, like v7.
+    expect(
+      tr({
+        actorsConnection: {
+          single: {
+            node: { name: { eq: "K" } },
+            edge: { OR: [{ role: null }, { NOT: { role: { eq: "y" } } }] },
+          },
+        },
+      }),
+    ).toEqual({ _count: { actors: { equals: 1, where: { name: { equals: "K" } } } } });
+    expect(
+      tr({ actorsConnection: { none: { edge: { NOT: { role: { in: ["a", "b"] } } } } } }),
+    ).toEqual({ actors: { none: { $edge: { NOT: { role: { in: ["a", "b"] } } } } } });
+  });
+
+  it("DateTime values: texts parsed by the database, like the compiler's `datetime($p)`", () => {
+    const f = tr({ premiere: { gt: "2020-01-01T00:00:00.123456+02:00" } }) as {
+      premiere: { gt: CypherDateTimeText };
+    };
+    expect(f.premiere.gt).toBeInstanceOf(CypherDateTimeText);
+    expect(f.premiere.gt.text).toBe("2020-01-01T00:00:00.123456+02:00");
+  });
+
   it("single: a `_count` of the matching related nodes equal to 1", () => {
     expect(tr({ actors: { single: { name: { eq: "K" } } } })).toEqual({
       _count: { actors: { equals: 1, where: { name: { equals: "K" } } } },
@@ -166,10 +198,8 @@ describe("v7 where → engine where", () => {
 
   it("throws Fallback for what only the compat compiler handles", () => {
     for (const w of [
-      { actorsConnection: { some: { edge: { role: { eq: "x" } } } } },
       { actorsConnection: { aggregate: { count: { nodes: { gt: 1 } } } } },
       { actorsAggregate: { count: { gt: 1 } } },
-      { premiere: { eq: "2020-01-01T00:00:00Z" } },
       { top: { name: { eq: "K" } } },
       { favorites: { some: { Book: { title: { eq: "x" } } } } },
     ]) {
@@ -250,12 +280,16 @@ describe("routing between the engine and the compat compiler", () => {
     await run(s, "{ secrets { owner } }", { jwt: { sub: "a" } });
     await run(s, '{ movies(where: { actors: { single: { name: { eq: "K" } } } }) { title } }');
     await run(s, "{ movies { title } }", { cypherParams: { x: 1 } });
-    await run(s, 'mutation { createLabs(input: [{ state: "x" }]) { labs { state } } }', {
-      jwt: { roles: ["user"] },
-    });
+    // A CREATE validation that fails for the request: the engine's write, rolled back, Forbidden.
+    const denied = await run(
+      s,
+      'mutation { createLabs(input: [{ state: "x" }]) { labs { state } } }',
+      { jwt: { roles: ["user"] } },
+    );
+    expect(denied.errors?.map((e) => e.message)).toEqual(["Forbidden"]);
     // Engine statements bind `n`; the compiler's `this0`.
     const engine = (r: Run) => r.cypher.startsWith("MATCH (n:") || r.cypher.startsWith("UNWIND");
-    expect(statements.map(engine)).toEqual([true, false, false, true, true, false, false]);
+    expect(statements.map(engine)).toEqual([true, false, false, true, true, false, true]);
     expect(statements[3]!.cypher).toContain("WHERE n.`owner` = $p0");
   });
 
@@ -361,7 +395,37 @@ describe("writes on the engine", () => {
     );
   });
 
-  it("keeps nested writes, arithmetic operators and @timestamp types on the compiler", async () => {
+  it("@authentication: checked like the compiler, the engine runs authenticated requests", async () => {
+    const { driver, statements } = engineDriver(() => [{ c: 0 }]);
+    const s = makeSchema({ typeDefs, driver });
+    const anon = await run(s, "{ notes { text } }");
+    expect(anon.errors?.map((e) => e.message)).toEqual(["Unauthenticated"]);
+    expect(statements).toHaveLength(0);
+    await run(s, "{ notes { text } }", { jwt: { sub: "a" } });
+    expect(statements[0]!.cypher.startsWith("MATCH (n:`Note`)")).toBe(true);
+    // The response's READ check fails a create too (the compiler checks it while compiling).
+    const created = await run(
+      s,
+      'mutation { createNotes(input: [{ text: "x" }]) { notes { text } } }',
+    );
+    expect(created.errors?.map((e) => e.message)).toEqual(["Unauthenticated"]);
+    expect(statements).toHaveLength(1);
+  });
+
+  it("@timestamp: the database clock in the engine statement", async () => {
+    const { driver, statements } = engineDriver(() => [{ c: 0 }]);
+    const s = makeSchema({ typeDefs, driver });
+    await run(s, 'mutation { createNotes(input: [{ text: "x" }]) { info { nodesCreated } } }', {
+      jwt: { sub: "a" },
+    });
+    await run(s, "mutation { updateNotes { info { nodesCreated } } }", { jwt: { sub: "a" } });
+    expect(statements.map((r) => r.cypher)).toEqual([
+      expect.stringContaining("SET n = row, n.`at` = datetime()"),
+      expect.stringContaining("SET n.`at` = datetime()"),
+    ]);
+  });
+
+  it("keeps nested writes and arithmetic operators on the compiler", async () => {
     const { driver, statements } = engineDriver();
     const s = makeSchema({ typeDefs, driver });
     await run(

@@ -196,13 +196,14 @@ queries, a write transaction for mutations). Values are always parameters, and l
 keys and relationship types come from your type definitions.
 
 `compat.v7` runs on the same engine as the typed client and the [native API](/graphql/native) when
-that engine answers exactly like v7: list and connection queries with their filters, sorting,
-paging and nested relationships (`single` included), `create` with attribute inputs, `update` with
-`set`, and `delete` without nested deletes. `@authorization` rules are applied by the engine where v7
-applies them, as long as their `validate` rules hold for the request (an anonymous request on a type
-that only admins may update stays on the compat compiler, which raises v7's `Forbidden`). The rest
-(aggregations, full-text, `@cypher`, `@authentication`, unions, interfaces, nested writes, edge
-filters and sorts, arithmetic operators, …) runs on the compat compiler, with the same results. What
+that engine answers exactly like v7: list and connection queries with their filters (edge filters
+and `single` included), sorting (by edge properties too), paging and nested relationships, `create`
+with attribute inputs, `update` with `set`, and `delete` without nested deletes, with
+`@timestamp`, `@limit`, DateTime values (offset and precision kept), `@authentication` and
+`@authorization` handled like v7. A write whose `validate` rules fail for the request runs in a
+transaction that raises v7's `Forbidden` once it writes a node, and is rolled back. The rest
+(aggregations, full-text, `@cypher`, unions, interfaces, nested writes, arithmetic operators, reads
+whose `validate` rules depend on the node, …) runs on the compat compiler, with the same results. What
 you can see of the difference:
 
 - With `client`, the client's `query` events and spans name the engine operation and model
