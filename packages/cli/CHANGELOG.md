@@ -1,5 +1,33 @@
 # @cyphra/cli
 
+## 0.27.0
+
+### Minor Changes
+
+- 6b0ba27: Migration tooling from `compat.v7` to the native API (#249). `cyphra graphql migrate-operations`
+  rewrites v7 operations (`.graphql` files, `gql` / `graphql` templates in TS and JS) into native
+  ones and reports what it cannot translate, with file, line and column (`--dry-run`, `--check`,
+  `--json`); a document with a construct that has no native equivalent is left as it is, with a
+  `# cyphra: not translated: …` comment. `cyphra graphql compare` runs each v7 operation on
+  `compat.v7` and its translation on the native API (in-process, or against two endpoints), maps the
+  v7 result to the native shape and reports the differences, known ones (cursors, `connect` as a
+  MERGE) apart; `--reset` (reset and seed before each run) has the safety check of `cyphra migrate
+reset`: a non-local URI is refused unless `--force`, and it asks first unless `--yes`. `cyphra graphql migrate-rules` drafts native `rules` and `authenticated` from
+  `@authorization` / `@authentication` as TypeScript to review, with a `TODO(cyphra)` comment for
+  what the native API cannot express. The same functions are exported as `migrate.translateDocument`,
+  `migrate.compareResults` and `migrate.draftRules` (experimental). The native API docs list every
+  v7 construct and its native equivalent.
+
+### Patch Changes
+
+- Updated dependencies [e378ea2]
+- Updated dependencies [fd05388]
+- Updated dependencies [6b0ba27]
+  - @cyphra/graphql@0.27.0
+  - @cyphra/runtime@0.27.0
+  - @cyphra/migrator@0.27.0
+  - @cyphra/schema@0.27.0
+
 ## 0.26.0
 
 ### Patch Changes
