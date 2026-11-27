@@ -41,7 +41,7 @@
   "devDependencies": {
     "@types/node": "^22.20.5",
     "@types/pluralize": "^0.0.33",
-    "graphql": "16.15.0",
+    "graphql": "17.1.0",
     "neo4j-driver": "^5.28.3",
     "tsup": "^9.0.0",
     "typescript": "^5.9.3",

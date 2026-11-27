@@ -17,7 +17,7 @@
     "@cyphra/schema": "workspace:*",
     "@neo4j/graphql": "7.6.8",
     "cyphra": "workspace:*",
-    "graphql": "16.15.0",
+    "graphql": "17.1.0",
     "neo4j-driver": "6.3.2",
     "neogma": "2.0.5",
     "tinybench": "6.2.4"

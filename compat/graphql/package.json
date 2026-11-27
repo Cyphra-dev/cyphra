@@ -17,7 +17,7 @@
     "@cyphra/schema": "workspace:*",
     "@neo4j/graphql": "7.6.8",
     "@types/node": "^22.20.5",
-    "graphql": "16.15.0",
+    "graphql": "17.1.0",
     "jose": "^6.2.18",
     "neo4j-driver": "^5.28.3",
     "tsx": "^4.23.15",

@@ -54,13 +54,13 @@ importers:
         version: link:../packages/schema
       '@neo4j/graphql':
         specifier: 7.6.8
-        version: 7.6.8(graphql@16.15.0)(neo4j-driver@6.3.2)
+        version: 7.6.8(graphql@17.1.0)(neo4j-driver@6.3.2)
       cyphra:
         specifier: workspace:*
         version: link:../packages/cyphra
       graphql:
-        specifier: 16.15.0
-        version: 16.15.0
+        specifier: 17.1.0
+        version: 17.1.0
       neo4j-driver:
         specifier: 6.3.2
         version: 6.3.2
@@ -97,13 +97,13 @@ importers:
         version: link:../../packages/schema
       '@neo4j/graphql':
         specifier: 7.6.8
-        version: 7.6.8(graphql@16.15.0)(neo4j-driver@5.28.3)
+        version: 7.6.8(graphql@17.1.0)(neo4j-driver@5.28.3)
       '@types/node':
         specifier: ^22.20.5
         version: 22.20.5
       graphql:
-        specifier: 16.15.0
-        version: 16.15.0
+        specifier: 17.1.0
+        version: 17.1.0
       jose:
         specifier: ^6.2.18
         version: 6.2.18
@@ -397,8 +397,8 @@ importers:
         specifier: ^12.1.0
         version: 12.1.0
       graphql:
-        specifier: ^16.11.0
-        version: 16.15.0
+        specifier: ^17.1.0
+        version: 17.1.0
       neo4j-driver:
         specifier: ^5.28.3 || ^6.0.0
         version: 5.28.3
@@ -475,8 +475,8 @@ importers:
         specifier: ^0.0.33
         version: 0.0.33
       graphql:
-        specifier: 16.15.0
-        version: 16.15.0
+        specifier: 17.1.0
+        version: 17.1.0
       neo4j-driver:
         specifier: ^5.28.3
         version: 5.28.3
@@ -4365,9 +4365,9 @@ packages:
     peerDependencies:
       graphql: '>=0.8.0'
 
-  graphql@16.15.0:
-    resolution: {integrity: sha512-32kz9FecohDiC/tgcViwnRXM7HFBVTPiW7pHO+DikKOI5KjhU/jNULOReXsrFqt2WAYbE9xFXsTffJw6iTO8qw==}
-    engines: {node: ^12.22.0 || ^14.16.0 || ^16.0.0 || >=17.0.0}
+  graphql@17.1.0:
+    resolution: {integrity: sha512-JKCOa7rSQNrket/JFhuua86hljUO+IIpyUHfKxlKD6FEfbrLX8jc1FDrA0KPKI+s8OspBCF/5npYccAICHXPpQ==}
+    engines: {node: ^22.0.0 || ^24.0.0 || >=26.0.0}
 
   gray-matter@4.0.3:
     resolution: {integrity: sha512-5v6yZd4JK3eMI3FqqCouswVqwugaA9r4dNZB1wwcmrD02QkV5H0y7XBQW8QwQqEaZY1pM9aqORSORhJRdNK44Q==}
@@ -6763,15 +6763,15 @@ snapshots:
       package-manager-detector: 1.9.0
       tinyexec: 1.4.0
 
-  '@apollo/cache-control-types@1.1.0(graphql@16.15.0)':
+  '@apollo/cache-control-types@1.1.0(graphql@17.1.0)':
     dependencies:
-      graphql: 16.15.0
+      graphql: 17.1.0
 
-  '@apollo/subgraph@2.17.0(graphql@16.15.0)':
+  '@apollo/subgraph@2.17.0(graphql@17.1.0)':
     dependencies:
-      '@apollo/cache-control-types': 1.1.0(graphql@16.15.0)
-      '@graphql-tools/utils': 12.1.0(graphql@16.15.0)
-      graphql: 16.15.0
+      '@apollo/cache-control-types': 1.1.0(graphql@17.1.0)
+      '@graphql-tools/utils': 12.1.0(graphql@17.1.0)
+      graphql: 17.1.0
 
   '@azure/abort-controller@2.2.0':
     dependencies:
@@ -7325,38 +7325,38 @@ snapshots:
     dependencies:
       tslib: 2.9.1
 
-  '@graphql-tools/merge@9.2.8(graphql@16.15.0)':
+  '@graphql-tools/merge@9.2.8(graphql@17.1.0)':
     dependencies:
-      '@graphql-tools/utils': 12.1.0(graphql@16.15.0)
-      graphql: 16.15.0
+      '@graphql-tools/utils': 12.1.0(graphql@17.1.0)
+      graphql: 17.1.0
       tslib: 2.9.1
 
-  '@graphql-tools/resolvers-composition@7.0.41(graphql@16.15.0)':
+  '@graphql-tools/resolvers-composition@7.0.41(graphql@17.1.0)':
     dependencies:
-      '@graphql-tools/utils': 12.1.0(graphql@16.15.0)
-      graphql: 16.15.0
+      '@graphql-tools/utils': 12.1.0(graphql@17.1.0)
+      graphql: 17.1.0
       lodash: 4.18.1
       micromatch: 4.0.8
       tslib: 2.9.1
 
-  '@graphql-tools/schema@10.1.5(graphql@16.15.0)':
+  '@graphql-tools/schema@10.1.5(graphql@17.1.0)':
     dependencies:
-      '@graphql-tools/merge': 9.2.8(graphql@16.15.0)
-      '@graphql-tools/utils': 12.1.0(graphql@16.15.0)
-      graphql: 16.15.0
+      '@graphql-tools/merge': 9.2.8(graphql@17.1.0)
+      '@graphql-tools/utils': 12.1.0(graphql@17.1.0)
+      graphql: 17.1.0
       tslib: 2.9.1
 
-  '@graphql-tools/utils@12.1.0(graphql@16.15.0)':
+  '@graphql-tools/utils@12.1.0(graphql@17.1.0)':
     dependencies:
-      '@graphql-typed-document-node/core': 3.2.0(graphql@16.15.0)
+      '@graphql-typed-document-node/core': 3.2.0(graphql@17.1.0)
       '@whatwg-node/promise-helpers': 2.0.2
       cross-inspect: 1.0.1
-      graphql: 16.15.0
+      graphql: 17.1.0
       tslib: 2.9.1
 
-  '@graphql-typed-document-node/core@3.2.0(graphql@16.15.0)':
+  '@graphql-typed-document-node/core@3.2.0(graphql@17.1.0)':
     dependencies:
-      graphql: 16.15.0
+      graphql: 17.1.0
 
   '@grpc/grpc-js@1.14.7':
     dependencies:
@@ -7742,22 +7742,22 @@ snapshots:
 
   '@neo4j/cypher-builder@3.3.0': {}
 
-  '@neo4j/graphql@7.6.8(graphql@16.15.0)(neo4j-driver@5.28.3)':
+  '@neo4j/graphql@7.6.8(graphql@17.1.0)(neo4j-driver@5.28.3)':
     dependencies:
-      '@apollo/subgraph': 2.17.0(graphql@16.15.0)
-      '@graphql-tools/merge': 9.2.8(graphql@16.15.0)
-      '@graphql-tools/resolvers-composition': 7.0.41(graphql@16.15.0)
-      '@graphql-tools/schema': 10.1.5(graphql@16.15.0)
-      '@graphql-tools/utils': 12.1.0(graphql@16.15.0)
+      '@apollo/subgraph': 2.17.0(graphql@17.1.0)
+      '@graphql-tools/merge': 9.2.8(graphql@17.1.0)
+      '@graphql-tools/resolvers-composition': 7.0.41(graphql@17.1.0)
+      '@graphql-tools/schema': 10.1.5(graphql@17.1.0)
+      '@graphql-tools/utils': 12.1.0(graphql@17.1.0)
       '@neo4j/cypher-builder': 3.3.0
       camelcase: 6.3.0
       debug: 4.4.3
       dot-prop: 6.0.1
-      graphql: 16.15.0
-      graphql-compose: 9.3.0(graphql@16.15.0)
-      graphql-parse-resolve-info: 4.14.1(graphql@16.15.0)
-      graphql-query-complexity: 1.1.1(graphql@16.15.0)
-      graphql-relay: 0.11.0(graphql@16.15.0)
+      graphql: 17.1.0
+      graphql-compose: 9.3.0(graphql@17.1.0)
+      graphql-parse-resolve-info: 4.14.1(graphql@17.1.0)
+      graphql-query-complexity: 1.1.1(graphql@17.1.0)
+      graphql-relay: 0.11.0(graphql@17.1.0)
       jose: 5.10.0
       neo4j-driver: 5.28.3
       pluralize: 8.0.0
@@ -7766,22 +7766,22 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@neo4j/graphql@7.6.8(graphql@16.15.0)(neo4j-driver@6.3.2)':
+  '@neo4j/graphql@7.6.8(graphql@17.1.0)(neo4j-driver@6.3.2)':
     dependencies:
-      '@apollo/subgraph': 2.17.0(graphql@16.15.0)
-      '@graphql-tools/merge': 9.2.8(graphql@16.15.0)
-      '@graphql-tools/resolvers-composition': 7.0.41(graphql@16.15.0)
-      '@graphql-tools/schema': 10.1.5(graphql@16.15.0)
-      '@graphql-tools/utils': 12.1.0(graphql@16.15.0)
+      '@apollo/subgraph': 2.17.0(graphql@17.1.0)
+      '@graphql-tools/merge': 9.2.8(graphql@17.1.0)
+      '@graphql-tools/resolvers-composition': 7.0.41(graphql@17.1.0)
+      '@graphql-tools/schema': 10.1.5(graphql@17.1.0)
+      '@graphql-tools/utils': 12.1.0(graphql@17.1.0)
       '@neo4j/cypher-builder': 3.3.0
       camelcase: 6.3.0
       debug: 4.4.3
       dot-prop: 6.0.1
-      graphql: 16.15.0
-      graphql-compose: 9.3.0(graphql@16.15.0)
-      graphql-parse-resolve-info: 4.14.1(graphql@16.15.0)
-      graphql-query-complexity: 1.1.1(graphql@16.15.0)
-      graphql-relay: 0.11.0(graphql@16.15.0)
+      graphql: 17.1.0
+      graphql-compose: 9.3.0(graphql@17.1.0)
+      graphql-parse-resolve-info: 4.14.1(graphql@17.1.0)
+      graphql-query-complexity: 1.1.1(graphql@17.1.0)
+      graphql-relay: 0.11.0(graphql@17.1.0)
       jose: 5.10.0
       neo4j-driver: 6.3.2
       pluralize: 8.0.0
@@ -10387,33 +10387,33 @@ snapshots:
 
   graceful-fs@4.2.12: {}
 
-  graphql-compose@9.3.0(graphql@16.15.0):
+  graphql-compose@9.3.0(graphql@17.1.0):
     dependencies:
-      graphql: 16.15.0
-      graphql-type-json: 0.3.2(graphql@16.15.0)
+      graphql: 17.1.0
+      graphql-type-json: 0.3.2(graphql@17.1.0)
 
-  graphql-parse-resolve-info@4.14.1(graphql@16.15.0):
+  graphql-parse-resolve-info@4.14.1(graphql@17.1.0):
     dependencies:
       debug: 4.4.3
-      graphql: 16.15.0
+      graphql: 17.1.0
       tslib: 2.9.1
     transitivePeerDependencies:
       - supports-color
 
-  graphql-query-complexity@1.1.1(graphql@16.15.0):
+  graphql-query-complexity@1.1.1(graphql@17.1.0):
     dependencies:
-      graphql: 16.15.0
+      graphql: 17.1.0
       lodash.get: 4.4.2
 
-  graphql-relay@0.11.0(graphql@16.15.0):
+  graphql-relay@0.11.0(graphql@17.1.0):
     dependencies:
-      graphql: 16.15.0
+      graphql: 17.1.0
 
-  graphql-type-json@0.3.2(graphql@16.15.0):
+  graphql-type-json@0.3.2(graphql@17.1.0):
     dependencies:
-      graphql: 16.15.0
+      graphql: 17.1.0
 
-  graphql@16.15.0: {}
+  graphql@17.1.0: {}
 
   gray-matter@4.0.3:
     dependencies:
