@@ -141,6 +141,7 @@ describe("root fields compile to one statement each", () => {
 });
 
 describe("connection aggregate selections", () => {
+  // The compiler's statements (the engine serves these aggregates too).
   it("root aggregate: counts and field aggregates in the connection statement", async () => {
     const neo4j = (await import("neo4j-driver")).default;
     const { driver, statements } = fakeDriver(() => [
@@ -160,7 +161,7 @@ describe("connection aggregate selections", () => {
         },
       },
     ]);
-    const schema = makeSchema({ typeDefs, driver });
+    const schema = makeSchema(compiler({ typeDefs, driver }));
     const result = await execute({
       schema,
       document: parse(`{
@@ -217,7 +218,7 @@ describe("connection aggregate selections", () => {
         },
       },
     ]);
-    const schema = makeSchema({ typeDefs, driver });
+    const schema = makeSchema(compiler({ typeDefs, driver }));
     const result = await execute({
       schema,
       document: parse(`{

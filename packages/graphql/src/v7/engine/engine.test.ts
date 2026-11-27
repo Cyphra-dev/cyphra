@@ -22,6 +22,9 @@ const typeDefs = /* GraphQL */ `
     studio: Studio @relationship(type: "MADE", direction: IN)
     top: Person
       @cypher(statement: "MATCH (this)<-[:ACTED_IN]-(p) RETURN p LIMIT 1", columnName: "p")
+    shout: String @cypher(statement: "RETURN this.name + '!' AS s", columnName: "s")
+    castSize: Int
+      @cypher(statement: "MATCH (this)<-[:ACTED_IN]-(p) RETURN count(p) AS c", columnName: "c")
     favorites: [Content!]! @relationship(type: "LIKES", direction: OUT)
   }
   type Person @node {
@@ -196,11 +199,106 @@ describe("v7 where → engine where", () => {
     expect(tr({ actors: { single: {} } })).toBeUndefined();
   });
 
+  it("aggregation filters: engine `$aggregate` comparisons (distinct nodes in the connection form)", () => {
+    expect(
+      tr({ actorsConnection: { aggregate: { count: { nodes: { gt: 1 }, edges: { lt: 4 } } } } }),
+    ).toEqual({
+      AND: [
+        { $aggregate: [{ relation: "actors", of: "count", distinct: true, op: "gt", value: 1 }] },
+        { $aggregate: [{ relation: "actors", of: "count", distinct: false, op: "lt", value: 4 }] },
+      ],
+    });
+    expect(tr({ actorsAggregate: { count_GT: 1 } })).toEqual({
+      $aggregate: [{ relation: "actors", of: "count", op: "gt", value: 1 }],
+    });
+    expect(
+      tr({
+        actorsConnection: {
+          aggregate: {
+            OR: [
+              { node: { name: { shortestLength: { lt: 3 } } } },
+              { edge: { role: { longest: { gte: 2 } } } },
+            ],
+          },
+        },
+      }),
+    ).toEqual({
+      OR: [
+        {
+          $aggregate: [
+            {
+              relation: "actors",
+              of: "node",
+              distinct: true,
+              field: "name",
+              length: true,
+              fn: "min",
+              op: "lt",
+              value: 3,
+            },
+          ],
+        },
+        {
+          $aggregate: [
+            {
+              relation: "actors",
+              of: "edge",
+              distinct: false,
+              field: "role",
+              length: true,
+              fn: "max",
+              op: "gte",
+              value: 2,
+            },
+          ],
+        },
+      ],
+    });
+    expect(tr({ actorsAggregate: { node: { born_AVERAGE_GTE: 1960 } } })).toEqual({
+      $aggregate: [
+        {
+          relation: "actors",
+          of: "node",
+          distinct: false,
+          field: "born",
+          length: false,
+          fn: "avg",
+          op: "gte",
+          value: 1960,
+        },
+      ],
+    });
+  });
+
+  it("@cypher filters: engine `$cypher` filters on the statement's first row", () => {
+    const f = tr({ shout: { eq: "x!" } }) as { $cypher: { expr: unknown; filter: unknown }[] };
+    expect(f.$cypher).toEqual([
+      expect.objectContaining({ type: "String", list: false, filter: { equals: "x!" } }),
+    ]);
+    // A statement that aggregates only in the `where` of a root read.
+    expect(() => tr({ castSize: { gt: 1 } })).toThrow(Fallback);
+    expect(where.atRoot(() => where.node(movie, { castSize: { gt: 1 } }))).toEqual({
+      $cypher: [expect.objectContaining({ type: "Int", filter: { gt: 1 } })],
+    });
+    // A field returning one node: its first node, or none.
+    expect(tr({ top: { name: { eq: "K" } } })).toEqual({
+      $cypherNodes: [
+        expect.objectContaining({
+          model: "Person",
+          quantifier: "first",
+          where: { name: { equals: "K" } },
+        }),
+      ],
+    });
+    expect(tr({ top: null })).toEqual({
+      $cypherNodes: [expect.objectContaining({ model: "Person", quantifier: "absent" })],
+    });
+    expect(tr({ top: {} })).toBeUndefined();
+  });
+
   it("throws Fallback for what only the compat compiler handles", () => {
     for (const w of [
-      { actorsConnection: { aggregate: { count: { nodes: { gt: 1 } } } } },
-      { actorsAggregate: { count: { gt: 1 } } },
-      { top: { name: { eq: "K" } } },
+      { actorsConnection: { aggregate: { edge: { Other: { role: { longest: { gt: 1 } } } } } } },
       { favorites: { some: { Book: { title: { eq: "x" } } } } },
     ]) {
       expect(() => where.node(movie, w), JSON.stringify(w)).toThrow(Fallback);
@@ -275,7 +373,7 @@ describe("routing between the engine and the compat compiler", () => {
     const { driver, statements } = engineDriver();
     const s = makeSchema({ typeDefs, driver });
     await run(s, "{ movies { title released } }");
-    await run(s, "{ movies { top { name } } }");
+    await run(s, "{ movies { castSize } }");
     await run(s, "{ movies { favorites { __typename } } }");
     await run(s, "{ secrets { owner } }", { jwt: { sub: "a" } });
     await run(s, '{ movies(where: { actors: { single: { name: { eq: "K" } } } }) { title } }');
@@ -299,10 +397,12 @@ describe("routing between the engine and the compat compiler", () => {
     const probe = { onRootField: (f: string, r: string | undefined) => seen.push([f, r]) };
     const s = makeSchema({ typeDefs, driver, [ENGINE_OPTION]: probe } as never);
     await run(s, "{ movies { title } }");
-    await run(s, "{ movies { top { name } } }");
+    await run(s, "{ movies { top { name } shout } }");
+    await run(s, "{ movies { castSize } }");
     expect(seen).toEqual([
       ["movies", undefined],
-      ["movies", "Movie.top"],
+      ["movies", undefined],
+      ["movies", "@cypher statement that aggregates, in a projection, a sort or a nested filter"],
     ]);
     const off = makeSchema({ typeDefs, driver, [ENGINE_OPTION]: false } as never);
     await run(off, "{ movies { title } }");

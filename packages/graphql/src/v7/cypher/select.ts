@@ -385,7 +385,7 @@ const AGGREGATE_FUNCTIONS: Record<string, ListAggregate> = {
  * Result of one aggregate (`IntAggregateSelection.average`, …): Int min / max / sum are Int and
  * `average` a Float; BigInt values are strings (the `BigInt` scalar serializes an `average` float).
  */
-function aggregateValueDecoder(type: string): Decoder {
+export function aggregateValueDecoder(type: string): Decoder {
   if (type === "Int" || type === "Float") return (v) => mapValue(v, integerToNumber);
   if (type === "BigInt") return (v) => mapValue(v, (x) => (isInt(x) ? x.toString() : x));
   return (v) => v ?? null;

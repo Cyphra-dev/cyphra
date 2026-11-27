@@ -224,6 +224,21 @@ function fulltextResolver(
     const node = model.node(nodeName);
     const index = node.fulltext.find((f) => f.queryName === queryName)!;
     const auth = await requestAuth(ctx, a);
+    // On the shared engine when it serves the request exactly like the compiler.
+    const plan = a.engine?.fulltext(
+      node,
+      index,
+      args as AnyRecord,
+      info,
+      info.fieldNodes,
+      ctx,
+      auth,
+    );
+    const client = plan && a.engine!.clients.for(sessionConfigOf(ctx));
+    if (plan) a.engine!.ran(info.fieldName, client !== undefined);
+    if (plan && client) {
+      return plan(client);
+    }
     const compiled = new SelectionCompiler(model, info, auth).rootFulltext(
       node,
       index,

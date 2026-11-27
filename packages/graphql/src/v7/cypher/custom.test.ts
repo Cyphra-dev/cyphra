@@ -2,10 +2,15 @@ import { execute, parse } from "graphql";
 import neo4j from "neo4j-driver";
 import { describe, expect, it } from "vitest";
 import { fakeDriver } from "../../../test/helpers.js";
-import { makeSchema } from "../index.js";
+import { makeSchema, type MakeSchemaOptions } from "../index.js";
+import { ENGINE_OPTION } from "../engine/index.js";
 import { readTypeDefs, UnsupportedTypeDefsError } from "../model.js";
 import { CypherContext } from "./context.js";
 import { bindArguments, hasStatement, STATEMENT_MARK, statementCall } from "./custom.js";
+
+/** Options with the shared engine off: these tests check the compiler's statements. */
+const compiler = (o: MakeSchemaOptions): MakeSchemaOptions =>
+  ({ ...o, [ENGINE_OPTION]: false }) as MakeSchemaOptions;
 
 const typeDefs = /* GraphQL */ `
   type Movie
@@ -101,7 +106,7 @@ describe("@cypher statements", () => {
 describe("@cypher fields in statements", () => {
   it("projections run the statement in a CALL clause before the RETURN", async () => {
     const { driver, statements } = fakeDriver(() => [{ title: "A", actorCount: neo4j.int(2) }]);
-    const schema = makeSchema({ typeDefs, driver });
+    const schema = makeSchema(compiler({ typeDefs, driver }));
     const result = await execute({ schema, document: parse("{ movies { title actorCount } }") });
     expect(result.errors).toBeUndefined();
     expect(result.data).toEqual({ movies: [{ title: "A", actorCount: 2 }] });
@@ -114,7 +119,7 @@ describe("@cypher fields in statements", () => {
 
   it("aliases with different arguments get their own parameters", async () => {
     const { driver, statements } = fakeDriver(() => []);
-    const schema = makeSchema({ typeDefs, driver });
+    const schema = makeSchema(compiler({ typeDefs, driver }));
     await execute({
       schema,
       document: parse(`{ movies { a: label(suffix: "!") b: label(suffix: "?", times: 3) } }`),
@@ -128,7 +133,7 @@ describe("@cypher fields in statements", () => {
 
   it("filters and sorts on @cypher fields (sorted value reused by the projection)", async () => {
     const { driver, statements } = fakeDriver(() => []);
-    const schema = makeSchema({ typeDefs, driver });
+    const schema = makeSchema(compiler({ typeDefs, driver }));
     await execute({
       schema,
       document: parse(
@@ -144,7 +149,7 @@ describe("@cypher fields in statements", () => {
 
   it("$jwt receives the request's JWT", async () => {
     const { driver, statements } = fakeDriver(() => []);
-    const schema = makeSchema({ typeDefs, driver });
+    const schema = makeSchema(compiler({ typeDefs, driver }));
     await execute({
       schema,
       document: parse("{ movies { viewer } }"),
@@ -155,7 +160,7 @@ describe("@cypher fields in statements", () => {
 
   it("context.cypherParams are top-level parameters; a clash is an error", async () => {
     const { driver, statements } = fakeDriver(() => []);
-    const schema = makeSchema({ typeDefs, driver });
+    const schema = makeSchema(compiler({ typeDefs, driver }));
     await execute({
       schema,
       document: parse("{ movies { title } }"),
@@ -174,7 +179,7 @@ describe("@cypher fields in statements", () => {
     const { driver, statements } = fakeDriver((cypher) =>
       cypher.includes("SET m.touched") ? [{ title: "A" }] : ["A", "B"],
     );
-    const schema = makeSchema({ typeDefs, driver });
+    const schema = makeSchema(compiler({ typeDefs, driver }));
     const q = await execute({ schema, document: parse('{ titles(prefix: "A\\" OR 1=1 //") }') });
     expect(q.data).toEqual({ titles: ["A", "B"] });
     expect(statements[0]!.mode).toBe("read");
@@ -192,7 +197,7 @@ describe("@cypher fields in statements", () => {
     const { driver, statements } = fakeDriver(() => [
       { total: neo4j.int(3), edges: [{ score: 1.5, node: { title: "A" } }] },
     ]);
-    const schema = makeSchema({ typeDefs, driver });
+    const schema = makeSchema(compiler({ typeDefs, driver }));
     const result = await execute({
       schema,
       document: parse(`{

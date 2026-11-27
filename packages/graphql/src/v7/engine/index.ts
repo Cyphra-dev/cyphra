@@ -1,10 +1,11 @@
 /**
  * `compat.v7` on the shared engine: v7 requests the engine can serve exactly like the compat
  * compiler are translated into ORM operations on an engine client (see `schema.ts`, `where.ts`,
- * `read.ts`, `write.ts`, with the request's `@authorization` rules from `rules.ts`); the others run
- * on the compat compiler, which stays for the v7 features whose engine pieces come later
- * (aggregations, fulltext, `@cypher`, subscriptions, interfaces, unions) and for what the engine
- * cannot express yet (nested writes, arithmetic operators, …).
+ * `read.ts`, `write.ts`, `cypher.ts`, with the request's `@authorization` rules from `rules.ts`);
+ * the others run on the compat compiler, which stays for what only v7 does (interfaces and unions,
+ * nested writes, arithmetic operators, custom-resolver fields, …), for subscriptions, and for what
+ * the engine cannot evaluate like v7 (`@cypher` statements that aggregate in a projection, root
+ * `@cypher` fields, …).
  *
  * @packageDocumentation
  */
@@ -13,7 +14,7 @@ import type { FieldNode } from "graphql";
 import type { AuthContext } from "../auth/context.js";
 import type { ExecutorOptions } from "../execute.js";
 import type { SelectionInfo } from "../cypher/select.js";
-import type { NodeType, V7Model } from "../model.js";
+import type { FulltextIndex, NodeType, V7Model } from "../model.js";
 import { EngineClients } from "./client.js";
 import { ReadTranslator, type ReadPlan } from "./read.js";
 import { WriteTranslator, type WritePlan } from "./write.js";
@@ -96,6 +97,24 @@ export class V7Engine {
           ? t.rootList(node, args, fieldNodes)
           : t.rootConnection(node, args, fieldNodes);
       // `@authentication` fails like the compiler, which checks it while compiling.
+      t.authenticated();
+      return plan;
+    });
+  }
+
+  /** The plan of a `@fulltext` query, or `undefined` when the compat compiler must run it. */
+  fulltext(
+    node: NodeType,
+    index: FulltextIndex,
+    args: AnyRecord,
+    info: SelectionInfo,
+    fieldNodes: readonly FieldNode[],
+    ctx: unknown,
+    auth: AuthContext,
+  ): ReadPlan | undefined {
+    return this.plan(fieldNodes[0]?.name.value ?? "", ctx, () => {
+      const t = new ReadTranslator(this.model, this.schema, info, auth);
+      const plan = t.rootFulltext(node, index, args, fieldNodes);
       t.authenticated();
       return plan;
     });
