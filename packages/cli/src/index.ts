@@ -474,9 +474,14 @@ migrationOptions(
   )
   .option(
     "--reset",
-    "in-process: delete every node and apply --seed before each run (a disposable database only)",
+    "in-process: delete every node and apply --seed before each run (a local, disposable database: asks first and refuses a non-local URI unless --force, as migrate reset does)",
   )
   .option("--seed <file>", "in-process: Cypher statements applied after each reset")
+  .option(
+    "-y, --yes",
+    "with --reset: skip the confirmation prompt (non-local URIs are still refused)",
+  )
+  .option("--force", "with --reset: skip the prompt and allow a non-local URI (deletes its data)")
   .option("--allow-mutations", "over HTTP: also run mutations (once per API, on the same data)")
   .option("--jwt <file>", "a decoded JWT payload (JSON) for every operation")
   .option(

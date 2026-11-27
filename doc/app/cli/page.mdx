@@ -404,8 +404,8 @@ and reports the differences, operation by operation.
 ```bash
 # In-process: both APIs on the database of NEO4J_URI (reads only)
 cyphra graphql compare "operations/*.graphql" --typedefs typeDefs.graphql
-# On a disposable database: reset and seed before each run, mutations included
-cyphra graphql compare "operations/*.graphql" --typedefs typeDefs.graphql --reset --seed seed.cypher
+# On a local, disposable database: reset and seed before each run, mutations included
+cyphra graphql compare "operations/*.graphql" --typedefs typeDefs.graphql --reset --seed seed.cypher --yes
 # Against two running endpoints
 cyphra graphql compare "operations/*.graphql" --typedefs typeDefs.graphql \
   --v7-url http://localhost:3000/api/graphql --native-url http://localhost:3000/api/graphql/v2 \
@@ -431,7 +431,12 @@ operations/04-roles.graphql:1:1  not translated  Roles: movies(where).actorsConn
   `native.makeSchema` on `schema.cyphra` (or the conversion) and the config, on the database of
   `NEO4J_URI` / `NEO4J_USERNAME` / `NEO4J_PASSWORD`. Without `--reset`, mutations are skipped and
   reads run on the current data; `--reset` deletes every node before each run and applies
-  `--seed`, so **use a disposable database**. Over HTTP, mutations are skipped unless
+  `--seed`, so **use a disposable database**. It runs the safety check of
+  [`cyphra migrate reset`](/migrations#reset-a-development-database): a URI that does not look
+  local (local: no `+s` / `+ssc` scheme, and `localhost`, a loopback address, `0.0.0.0`,
+  `host.docker.internal` or a single-label container name) is refused unless `--force`, and the command asks
+  before the first reset unless `--yes` (`-y`) or `--force`; without a terminal it refuses instead
+  of asking. Over HTTP, mutations are skipped unless
   `--allow-mutations` (they then run once per API, on the same data).
 - Next to `NN-name.graphql`, `NN-name.variables.json` holds the variables and `NN-name.jwt.json` a
   decoded JWT payload (passed as `jwt` to both APIs, in-process); `--jwt` gives one to every

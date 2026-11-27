@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { expandFiles, extractDocuments } from "./graphqlMigrate.js";
+import type { Driver } from "neo4j-driver";
 import { runGraphqlCompare } from "./graphqlCompare.js";
 import { runGraphqlMigrateOperations } from "./graphqlMigrateOperations.js";
 import { runGraphqlMigrateRules } from "./graphqlMigrateRules.js";
@@ -246,5 +247,117 @@ describe("graphql compare over HTTP", () => {
     out = [];
     expect(await runGraphqlCompare(dir, ["movies.graphql"], { ...opts, nativeUrl: other })).toBe(1);
     expect(out.join("\n")).toContain(`movieFindMany.nodes[0].title: v7 "Up", native "Cars"`);
+  });
+});
+
+describe("graphql compare --reset safety (as migrate reset)", () => {
+  let dir: string;
+  let err: string[];
+  const saved = { ...process.env };
+  /** Stops the run at the first query, after recording it. */
+  const STOP = new Error("stop");
+
+  beforeEach(async () => {
+    dir = await mkdtemp(join(tmpdir(), "cyphra-graphql-compare-reset-"));
+    err = [];
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+    vi.spyOn(console, "error").mockImplementation((m: unknown) => void err.push(String(m)));
+    await writeFile(join(dir, "typeDefs.graphql"), TYPEDEFS);
+    await writeFile(join(dir, "movies.graphql"), GRAPHQL_FILE);
+    process.env.NEO4J_USERNAME = "neo4j";
+    process.env.NEO4J_PASSWORD = "secret";
+    delete process.env.NEO4J_DATABASE;
+  });
+
+  afterEach(async () => {
+    process.env = { ...saved };
+    vi.restoreAllMocks();
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  /** A driver that records its queries and stops at the first one. */
+  function fakeDriver(queries: string[]): () => Driver {
+    return () =>
+      ({
+        executeQuery: async (q: string) => {
+          queries.push(q);
+          throw STOP;
+        },
+        close: async () => undefined,
+      }) as unknown as Driver;
+  }
+
+  it("refuses a non-local URI without --force, before connecting", async () => {
+    process.env.NEO4J_URI = "neo4j+s://abc123.databases.neo4j.io";
+    let opened = false;
+    const code = await runGraphqlCompare(
+      dir,
+      ["movies.graphql"],
+      { typedefs: ["typeDefs.graphql"], reset: true, yes: true },
+      {
+        interactive: true,
+        driver: () => {
+          opened = true;
+          throw new Error("must not connect");
+        },
+      },
+    );
+    expect(code).toBe(1);
+    expect(opened).toBe(false);
+    expect(err.join("\n")).toMatch(/Refusing to reset .*Pass --force/);
+  });
+
+  it("asks on a local URI, and refuses without a terminal unless --yes", async () => {
+    process.env.NEO4J_URI = "bolt://localhost:7687";
+    const queries: string[] = [];
+    const opts = { typedefs: ["typeDefs.graphql"], reset: true };
+    expect(
+      await runGraphqlCompare(dir, ["movies.graphql"], opts, {
+        interactive: true,
+        confirm: async () => false,
+        driver: fakeDriver(queries),
+      }),
+    ).toBe(1);
+    expect(err.join("\n")).toContain("Compare cancelled.");
+    expect(
+      await runGraphqlCompare(dir, ["movies.graphql"], opts, {
+        interactive: false,
+        driver: fakeDriver(queries),
+      }),
+    ).toBe(1);
+    expect(err.join("\n")).toMatch(/non-interactive shell\. Pass --yes/);
+    expect(queries).toEqual([]);
+    await expect(
+      runGraphqlCompare(
+        dir,
+        ["movies.graphql"],
+        { ...opts, yes: true },
+        { interactive: false, driver: fakeDriver(queries) },
+      ),
+    ).rejects.toBe(STOP);
+    expect(queries).toEqual(["MATCH (n) DETACH DELETE n"]);
+  });
+
+  it("--force resets a non-local URI without asking", async () => {
+    process.env.NEO4J_URI = "neo4j+s://abc123.databases.neo4j.io";
+    const queries: string[] = [];
+    let asked = false;
+    await expect(
+      runGraphqlCompare(
+        dir,
+        ["movies.graphql"],
+        { typedefs: ["typeDefs.graphql"], reset: true, force: true },
+        {
+          interactive: true,
+          confirm: async () => {
+            asked = true;
+            return false;
+          },
+          driver: fakeDriver(queries),
+        },
+      ),
+    ).rejects.toBe(STOP);
+    expect(asked).toBe(false);
+    expect(queries).toEqual(["MATCH (n) DETACH DELETE n"]);
   });
 });

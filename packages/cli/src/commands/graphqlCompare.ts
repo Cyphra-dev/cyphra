@@ -13,6 +13,7 @@ import {
   locate,
   type MigrationSourceOptions,
 } from "./graphqlMigrate.js";
+import { assessUri, confirm, decideReset } from "./migrateReset.js";
 
 /** Options of {@link runGraphqlCompare}. */
 export type GraphqlCompareOptions = MigrationSourceOptions & {
@@ -29,6 +30,10 @@ export type GraphqlCompareOptions = MigrationSourceOptions & {
    * Without it, mutations are skipped and reads run on the current data.
    */
   readonly reset?: boolean;
+  /** With `reset`: skip the confirmation prompt (non-local URIs are still refused). */
+  readonly yes?: boolean;
+  /** With `reset`: skip the confirmation prompt and the local-database check. */
+  readonly force?: boolean;
   /** Over HTTP: also run mutations (they run twice, once per API, on the same data). */
   readonly allowMutations?: boolean;
   /** A decoded JWT payload (JSON file) for every operation (`NN.jwt.json` next to a file wins). */
@@ -90,6 +95,16 @@ function schemaRun(schema: GraphQLSchema): Run {
   };
 }
 
+/** What {@link runGraphqlCompare} uses from its environment (replaced in tests). */
+export type GraphqlCompareDeps = {
+  /** Whether stdin and stdout are terminals (default: detected). */
+  readonly interactive?: boolean;
+  /** Ask a yes/no question (default: on the terminal). */
+  readonly confirm?: (question: string) => Promise<boolean>;
+  /** Open the driver (default: `neo4j.driver(uri, basic auth)`). */
+  readonly driver?: (uri: string, user: string, password: string) => Driver;
+};
+
 /** One operation of the report. */
 type ReportOperation = {
   location: string;
@@ -113,6 +128,7 @@ export async function runGraphqlCompare(
   cwd: string,
   patterns: readonly string[],
   opts: GraphqlCompareOptions = {},
+  deps: GraphqlCompareDeps = {},
 ): Promise<number> {
   const { ctx, typeDefs } = await loadMigrationContext(cwd, opts);
   const files = await expandFiles(cwd, patterns);
@@ -156,8 +172,29 @@ export async function runGraphqlCompare(
       );
       return 1;
     }
-    driver = neo4j.driver(uri, neo4j.auth.basic(user, password));
     const database = process.env.NEO4J_DATABASE;
+    if (opts.reset) {
+      // `--reset` deletes every node: the same safety check as `cyphra migrate reset`.
+      const interactive = deps.interactive ?? Boolean(process.stdin.isTTY && process.stdout.isTTY);
+      const decision = decideReset(uri, opts, interactive);
+      if (decision.action === "refuse") {
+        console.error(decision.message);
+        return 1;
+      }
+      if (decision.action === "prompt") {
+        const ask = deps.confirm ?? ((q: string) => confirm(q));
+        const ok = await ask(
+          `Reset ${database || "the default database"} on ${assessUri(uri).host || uri} before each operation? All its nodes will be deleted.`,
+        );
+        if (!ok) {
+          console.error("Compare cancelled.");
+          return 1;
+        }
+      }
+    }
+    driver = deps.driver
+      ? deps.driver(uri, user, password)
+      : neo4j.driver(uri, neo4j.auth.basic(user, password));
     const v7 = compat.v7.makeSchema({
       typeDefs: typeDefs.map((t) => t.body).join("\n"),
       driver,

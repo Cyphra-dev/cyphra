@@ -10,7 +10,8 @@ ones and reports what it cannot translate, with file, line and column (`--dry-ru
 `# cyphra: not translated: …` comment. `cyphra graphql compare` runs each v7 operation on
 `compat.v7` and its translation on the native API (in-process, or against two endpoints), maps the
 v7 result to the native shape and reports the differences, known ones (cursors, `connect` as a
-MERGE) apart. `cyphra graphql migrate-rules` drafts native `rules` and `authenticated` from
+MERGE) apart; `--reset` (reset and seed before each run) has the safety check of `cyphra migrate
+reset`: a non-local URI is refused unless `--force`, and it asks first unless `--yes`. `cyphra graphql migrate-rules` drafts native `rules` and `authenticated` from
 `@authorization` / `@authentication` as TypeScript to review, with a `TODO(cyphra)` comment for
 what the native API cannot express. The same functions are exported as `migrate.translateDocument`,
 `migrate.compareResults` and `migrate.draftRules` (experimental). The native API docs list every

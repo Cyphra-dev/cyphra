@@ -529,7 +529,9 @@ cursors are keyset cursors (a v7 cursor a client stored is not valid on the nati
 cyphra graphql compare "operations/*.graphql" --typedefs typeDefs.graphql --reset --seed seed.cypher
 ```
 
-On a disposable database, `compare` resets and seeds before each run, runs each v7 operation on
+On a local, disposable database (`NEO4J_URI`), `compare --reset` deletes every node and applies
+the seed before each run. Like `cyphra migrate reset`, it asks first (`--yes` skips the question)
+and refuses a database that does not look local unless you pass `--force`. It runs each v7 operation on
 `compat.v7` and its translation on the native API, maps the v7 result to the native shape and
 reports the differences. Known differences (cursors, `connect` as a `MERGE`) are reported as such.
 It also runs against two endpoints (`--v7-url`, `--native-url`). This extends the comparison of
