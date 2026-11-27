@@ -1,6 +1,6 @@
 {
   "name": "@cyphra/testing",
-  "version": "0.27.0",
+  "version": "0.28.0",
   "description": "Test helpers for Cyphra: Neo4j, Memgraph or FalkorDB in Testcontainers, schema and migrations, isolated tests and typed factories",
   "type": "module",
   "sideEffects": false,
