@@ -21,7 +21,7 @@
     "jose": "^6.2.18",
     "neo4j-driver": "^5.28.3",
     "tsx": "^4.23.15",
-    "typescript": "^5.9.3",
+    "typescript": "^6.0.3",
     "vitest": "^4.1.12"
   }
 }

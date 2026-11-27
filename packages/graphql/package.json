@@ -44,7 +44,7 @@
     "graphql": "16.15.0",
     "neo4j-driver": "^5.28.3",
     "tsup": "^9.0.0",
-    "typescript": "^5.9.3",
+    "typescript": "^6.0.3",
     "vitest": "^4.1.12"
   },
   "license": "MIT",
