@@ -23,7 +23,7 @@
     "@cyphra/migrator": "workspace:*",
     "@cyphra/runtime": "workspace:*",
     "@cyphra/schema": "workspace:*",
-    "commander": "^12.1.0",
+    "commander": "^15.1.0",
     "graphql": "^16.11.0",
     "neo4j-driver": "^5.28.3 || ^6.0.0",
     "typescript": "^6.0.3"
