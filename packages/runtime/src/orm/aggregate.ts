@@ -24,6 +24,7 @@ import {
   labelExpr,
 } from "./compile.js";
 import { CyphraValidationError } from "./errors.js";
+import { compileRootValues } from "./listAggregates.js";
 import { decodeCount, decodeScalar, integerToNumber } from "./values.js";
 import { isInt } from "../cypher-values.js";
 
@@ -236,7 +237,7 @@ export function compileAggregate(
   model: ResolvedNodeModel,
   args: AnyRecord,
 ): CompiledAggregate<AnyRecord> {
-  checkKeys(args, ["where", "orderBy", "skip", "take", ...AGGREGATES], "aggregate");
+  checkKeys(args, ["where", "orderBy", "skip", "take", "$values", ...AGGREGATES], "aggregate");
   const whereClause = scopedWhere(ctx, model, "n", args.where);
   const cols = new AggColumns(ctx, "n", model);
   const outputs = compileSelection(model, args, cols);
@@ -244,13 +245,26 @@ export function compileAggregate(
   let text = `MATCH (n:${labelExpr(model)})`;
   if (whereClause) text += ` WHERE ${whereClause}`;
   if (paging) text += ` WITH n${paging}`;
-  text += ` RETURN ${cols.columns.length ? cols.columns.join(", ") : "count(n) AS _"}`;
+  const columns = cols.columns.length ? cols.columns.join(", ") : "count(n) AS _";
+  // `$values` (internal, see `listAggregates.ts`): list aggregates over the same nodes, each an
+  // expression of its own, evaluated once the aggregation above is done.
+  let values: string | undefined;
+  if (args.$values !== undefined) {
+    if (paging) {
+      throw new CyphraValidationError("aggregate: $values does not take orderBy, skip or take.");
+    }
+    values = ctx.variable("values");
+    const map = compileRootValues(ctx, model, args.where, args.$values);
+    const aliases = cols.aliases.length ? cols.aliases.join(", ") : "_";
+    text += ` WITH ${columns} RETURN ${aliases}, ${map} AS ${values}`;
+  } else text += ` RETURN ${columns}`;
   return {
     text,
     params: ctx.params,
     decode: (rows) => {
       const out: AnyRecord = {};
       decodeSelection(outputs, rows[0] ?? {}, out);
+      if (values) out.$values = (rows[0] ?? {})[values] ?? {};
       return out;
     },
   };
