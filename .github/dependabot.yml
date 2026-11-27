@@ -5,3 +5,10 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 10
+    ignore:
+      # graphql is a peer dependency of @cyphra/graphql (^16), and the compat suite runs
+      # @neo4j/graphql 7, which supports graphql 16 only. graphql 17 changes the typings
+      # (GraphQLNonNull/GraphQLList generics) and GraphQLResolveInfo.variableValues, so moving
+      # to it means supporting 16 and 17 side by side, a change of its own (see #210).
+      - dependency-name: "graphql"
+        update-types: ["version-update:semver-major"]
