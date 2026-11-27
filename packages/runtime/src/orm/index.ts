@@ -12,6 +12,7 @@ export {
   isCypherFragment,
   type CypherFragment,
 } from "./cypherExpr.js";
+export { CypherDateTimeText } from "./values.js";
 export type { CreateRule, EngineRules, ModelRules, RuleOperation, RuleValue } from "./scope.js";
 export type { OrmClient, OrmOptions, OrmTransactionClient } from "./client.js";
 export type { ValidationIssue } from "./errors.js";

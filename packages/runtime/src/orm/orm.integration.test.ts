@@ -4151,5 +4151,62 @@ describe.skipIf(!hasNeo)(
       });
       expect(rows).toEqual([{ id: "c3", short: "Engine" }]);
     });
+
+    it("$edge (internal): edge filters and sorts in relation filters, loads and counts", async () => {
+      await seed();
+      // ada→babbage (3), babbage→engine (1), engine→loom (2), loom→hollerith (1)
+      const heavy = await db.grEntity.findMany({
+        where: { related: { some: { $edge: { weight: { gte: 2 } } } } } as never,
+        select: { id: true },
+      });
+      expect(ids(heavy)).toEqual(["ada", "engine"]);
+      const light = await db.grEntity.findMany({
+        where: {
+          related: { every: { $edge: { weight: { lt: 2 } } } },
+          _count: { related: { equals: 1, where: { $edge: { weight: 1 } } } },
+        } as never,
+        select: { id: true },
+      });
+      expect(ids(light)).toEqual(["babbage", "loom"]);
+      const [all] = (await db.grEntity.findMany({
+        where: { id: "babbage" },
+        select: {
+          from: {
+            $relation: "relatedFrom",
+            where: { $edge: { OR: [{ weight: { gt: 2 } }, { NOT: { weight: { gte: 0 } } }] } },
+            orderBy: [{ $edge: { weight: "desc" } }],
+            select: { id: true },
+          },
+          _count: { select: { relatedFrom: { where: { $edge: { weight: 3 } } } } },
+        },
+      } as never)) as unknown as { from: { id: string }[]; _count: { relatedFrom: number } }[];
+      expect(all!.from.map((r) => r.id)).toEqual(["ada"]);
+      expect(all!._count).toEqual({ relatedFrom: 1 });
+      const sorted = (await db.grEntity.findMany({
+        where: { id: { in: ["ada", "babbage", "engine", "loom"] } },
+        select: {
+          id: true,
+          next: {
+            $relation: "related",
+            orderBy: [{ $edge: { weight: "asc" } }],
+            select: { id: true },
+          },
+        },
+        orderBy: { id: "asc" },
+      } as never)) as unknown as { id: string; next: { id: string }[] }[];
+      expect(sorted.map((r) => r.next.map((n) => n.id))).toEqual([
+        ["babbage"],
+        ["engine"],
+        ["loom"],
+        ["hollerith"],
+      ]);
+      // A node not reached through a relation with edge properties has no `$edge`.
+      await expect(
+        db.grEntity.findMany({ where: { $edge: { weight: 1 } } as never }),
+      ).rejects.toThrow(CyphraValidationError);
+      await expect(
+        db.grDoc.findMany({ where: { chunks: { some: { $edge: { x: 1 } } } } as never }),
+      ).rejects.toThrow(CyphraValidationError);
+    });
   },
 );
