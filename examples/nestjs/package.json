@@ -24,7 +24,7 @@
   },
   "devDependencies": {
     "@cyphra/cli": "workspace:*",
-    "@nestjs/testing": "12.4.0",
+    "@nestjs/testing": "12.6.0",
     "@types/node": "^22.20.5",
     "typescript": "^6.0.3",
     "vitest": "^4.1.12"
