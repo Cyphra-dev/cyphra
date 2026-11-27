@@ -1,0 +1,32 @@
+{
+  "events": [
+    {
+      "data": {
+        "postTagsConnected": {
+          "id": "p-draft",
+          "relatedId": "db",
+          "node": {
+            "title": "Secret draft"
+          },
+          "related": {
+            "name": "db"
+          }
+        }
+      }
+    },
+    {
+      "data": {
+        "postTagsConnected": {
+          "id": "p-hello",
+          "relatedId": "db",
+          "node": {
+            "title": "Hello"
+          },
+          "related": {
+            "name": "db"
+          }
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "errors": [
+    {
+      "message": "Tag.changed needs an authenticated request.",
+      "path": [
+        "tagChanged"
+      ],
+      "code": "UNAUTHENTICATED"
+    }
+  ]
+}

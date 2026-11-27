@@ -1,0 +1,19 @@
+{
+  "events": [
+    {
+      "data": {
+        "postChanged": {
+          "id": "p-hello",
+          "node": {
+            "title": "Hello again",
+            "views": 10
+          },
+          "changedFields": [
+            "title",
+            "views"
+          ]
+        }
+      }
+    }
+  ]
+}

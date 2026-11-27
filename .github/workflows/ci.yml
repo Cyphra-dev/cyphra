@@ -260,8 +260,9 @@ jobs:
 
   # GraphQL subscriptions (@cyphra/graphql) need Neo4j Change Data Capture, an Enterprise feature:
   # the only job on Neo4j Enterprise (evaluation license), everything else stays on Community. It runs
-  # the subscription fixtures of the compat suite (events compared with goldens from @neo4j/graphql)
-  # and @cyphra/graphql's subscription integration tests.
+  # the subscription fixtures of the compat suite (events compared with goldens from @neo4j/graphql,
+  # and the native suite's, whose goldens are its own) and @cyphra/graphql's subscription
+  # integration tests (compat.v7 and native).
   neo4j-enterprise-cdc:
     runs-on: ubuntu-latest
     services:
@@ -311,7 +312,7 @@ jobs:
           NEO4J_TEST_CDC: "1"
         run: |
           COMPAT_FIXTURES=subscriptions,subscriptions-schema pnpm --filter compat-graphql --fail-if-no-match test
-          pnpm --filter @cyphra/graphql --fail-if-no-match exec vitest run test/subscriptions.integration.test.ts
+          pnpm --filter @cyphra/graphql --fail-if-no-match exec vitest run test/subscriptions.integration.test.ts test/native.subscriptions.integration.test.ts
 
   # @cyphra/nestjs is developed against NestJS 12; its peer range also covers 10 and 11. Unit tests
   # (module, @Transactional(), Terminus health check) and a typecheck against each older major.

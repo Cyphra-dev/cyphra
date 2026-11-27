@@ -1,0 +1,1280 @@
+type Audit {
+  id: ID!
+  message: String!
+}
+
+type AuditAggregate {
+  _count: AuditCountAggregate!
+  _max: AuditMaxAggregate!
+  _min: AuditMinAggregate!
+}
+
+"""A change of a Audit node (subscriptions, experimental)."""
+type AuditChange {
+  """
+  Fields whose value changed (UPDATED; empty otherwise). Fields a rule hides from the subscriber are left out.
+  """
+  changedFields: [String!]!
+
+  """
+  Key of the node (its global id with relay), always present, also for DELETED.
+  """
+  id: ID!
+
+  """
+  The node after the change, re-read with the selection and the read rules. Null for DELETED.
+  """
+  node: Audit
+  operation: ChangeOperation!
+}
+
+"""
+`_all`: the number of nodes; a field: the number of its non-null values.
+"""
+type AuditCountAggregate {
+  _all: Int!
+  id: Int!
+  message: Int!
+}
+
+input AuditCountAggregateOrderBy {
+  _all: SortOrder
+  id: SortOrder
+  message: SortOrder
+}
+
+"""
+One group: its keys (only the fields listed in by can be selected) and aggregates.
+"""
+type AuditGroup {
+  _count: AuditCountAggregate!
+  _max: AuditMaxAggregate!
+  _min: AuditMinAggregate!
+  id: ID
+  message: String
+}
+
+"""The fields to group on: at least one."""
+input AuditGroupByInput {
+  """Fields of the model."""
+  fields: [AuditGroupField!]
+}
+
+enum AuditGroupField {
+  id
+  message
+}
+
+"""
+One key per element of the orderBy list: a key listed in by, or an aggregate.
+"""
+input AuditGroupOrderBy {
+  _count: AuditCountAggregateOrderBy
+  _max: AuditMinMaxAggregateOrderBy
+  _min: AuditMinMaxAggregateOrderBy
+  id: SortOrder
+  message: SortOrder
+}
+
+input AuditHaving {
+  AND: [AuditHaving!]
+  NOT: AuditHaving
+  OR: [AuditHaving!]
+  id: IDHaving
+  message: StringHaving
+}
+
+type AuditList {
+  nodes: [Audit!]!
+  pageInfo: PageInfo!
+
+  """
+  Number of nodes matching where, ignoring paging. Counted only when selected.
+  """
+  totalCount: Int!
+}
+
+"""Largest non-null values."""
+type AuditMaxAggregate {
+  id: ID
+  message: String
+}
+
+"""Smallest non-null values."""
+type AuditMinAggregate {
+  id: ID
+  message: String
+}
+
+input AuditMinMaxAggregateOrderBy {
+  id: SortOrder
+  message: SortOrder
+}
+
+"""One key per element of the orderBy list."""
+input AuditOrderBy {
+  id: SortOrder
+  message: SortOrder
+}
+
+input AuditWhere {
+  AND: [AuditWhere!]
+  NOT: AuditWhere
+  OR: [AuditWhere!]
+  id: IDFilter
+  message: StringFilter
+}
+
+"""
+At least one unique key (checked when the query runs), plus filters on the other fields.
+"""
+input AuditWhereUnique {
+  AND: [AuditWhere!]
+  NOT: AuditWhere
+  OR: [AuditWhere!]
+  id: ID
+  message: StringFilter
+}
+
+input BooleanFilter {
+  equals: Boolean
+  not: Boolean
+}
+
+"""
+Aggregates of the field in each group; the other filters need the field in by.
+"""
+input BooleanHaving {
+  """The number of non-null values."""
+  _count: IntFilter
+  equals: Boolean
+  not: Boolean
+}
+
+"""What happened to a node (subscriptions, experimental)."""
+enum ChangeOperation {
+  CREATED
+  DELETED
+  UPDATED
+}
+
+input FloatFilter {
+  equals: Float
+  gt: Float
+  gte: Float
+  in: [Float!]
+  lt: Float
+  lte: Float
+  not: Float
+  notIn: [Float!]
+}
+
+type Follows {
+  since: Int!
+}
+
+input IDFilter {
+  contains: ID
+  endsWith: ID
+  equals: ID
+  gt: ID
+  gte: ID
+  in: [ID!]
+  lt: ID
+  lte: ID
+  mode: QueryMode
+  not: ID
+  notIn: [ID!]
+  startsWith: ID
+}
+
+"""
+Aggregates of the field in each group; the other filters need the field in by.
+"""
+input IDHaving {
+  """The number of non-null values."""
+  _count: IntFilter
+  _max: IDFilter
+  _min: IDFilter
+  contains: ID
+  endsWith: ID
+  equals: ID
+  gt: ID
+  gte: ID
+  in: [ID!]
+  lt: ID
+  lte: ID
+  mode: QueryMode
+  not: ID
+  notIn: [ID!]
+  startsWith: ID
+}
+
+input IntFilter {
+  equals: Int
+  gt: Int
+  gte: Int
+  in: [Int!]
+  lt: Int
+  lte: Int
+  not: Int
+  notIn: [Int!]
+}
+
+"""
+Aggregates of the field in each group; the other filters need the field in by.
+"""
+input IntHaving {
+  _avg: FloatFilter
+
+  """The number of non-null values."""
+  _count: IntFilter
+  _max: IntFilter
+  _min: IntFilter
+  _sum: IntFilter
+  equals: Int
+  gt: Int
+  gte: Int
+  in: [Int!]
+  lt: Int
+  lte: Int
+  not: Int
+  notIn: [Int!]
+}
+
+type PageInfo {
+  endCursor: String
+  hasNextPage: Boolean!
+  hasPreviousPage: Boolean!
+  startCursor: String
+}
+
+type Post {
+  """
+  Number of related nodes per to-many relation (only the selected ones are counted).
+  """
+  _count: PostCount!
+  author: User
+  id: ID!
+  published: Boolean!
+  tags(orderBy: [TagOrderBy!], skip: Int, take: Int, where: TagWhere): [Tag!]!
+  title: String!
+
+  """Null where a read rule hides it."""
+  views: Int
+}
+
+type PostAggregate {
+  _avg: PostAvgAggregate!
+  _count: PostCountAggregate!
+  _max: PostMaxAggregate!
+  _min: PostMinAggregate!
+  _sum: PostSumAggregate!
+}
+
+"""
+A relationship of Post.author created or deleted (subscriptions, experimental).
+"""
+type PostAuthorEvent {
+  """Key of the Post (its global id with relay)."""
+  id: ID!
+
+  """The Post, re-read with the selection and the read rules."""
+  node: Post!
+
+  """The related User, re-read with the selection and the read rules."""
+  related: User!
+
+  """Key of the related User (its global id with relay)."""
+  relatedId: ID!
+}
+
+"""Means of the non-null values (null when there are none)."""
+type PostAvgAggregate {
+  views: Float
+}
+
+"""A change of a Post node (subscriptions, experimental)."""
+type PostChange {
+  """
+  Fields whose value changed (UPDATED; empty otherwise). Fields a rule hides from the subscriber are left out.
+  """
+  changedFields: [String!]!
+
+  """
+  Key of the node (its global id with relay), always present, also for DELETED.
+  """
+  id: ID!
+
+  """
+  The node after the change, re-read with the selection and the read rules. Null for DELETED.
+  """
+  node: Post
+  operation: ChangeOperation!
+}
+
+type PostCount {
+  tags(where: TagWhere): Int!
+}
+
+"""
+`_all`: the number of nodes; a field: the number of its non-null values.
+"""
+type PostCountAggregate {
+  _all: Int!
+  id: Int!
+  published: Int!
+  title: Int!
+  views: Int!
+}
+
+input PostCountAggregateOrderBy {
+  _all: SortOrder
+  id: SortOrder
+  published: SortOrder
+  title: SortOrder
+  views: SortOrder
+}
+
+input PostCountFilter {
+  equals: Int
+  gt: Int
+  gte: Int
+  in: [Int!]
+  lt: Int
+  lte: Int
+  not: Int
+  notIn: [Int!]
+
+  """Count only these nodes."""
+  where: PostWhere
+}
+
+input PostCountWhere {
+  tags: TagCountFilter
+}
+
+"""
+One group: its keys (only the fields listed in by can be selected) and aggregates.
+"""
+type PostGroup {
+  _avg: PostAvgAggregate!
+  _count: PostCountAggregate!
+  _max: PostMaxAggregate!
+  _min: PostMinAggregate!
+  _sum: PostSumAggregate!
+  author: UserGroupKeys
+  id: ID
+  published: Boolean
+  title: String
+  views: Int
+}
+
+"""The fields to group on: at least one."""
+input PostGroupByInput {
+  """Fields of the related User (to-one)."""
+  author: [UserGroupField!]
+
+  """Fields of the model."""
+  fields: [PostGroupField!]
+}
+
+enum PostGroupField {
+  id
+  published
+  title
+  views
+}
+
+"""
+One key per element of the orderBy list: a key listed in by, or an aggregate.
+"""
+input PostGroupOrderBy {
+  _avg: PostNumericAggregateOrderBy
+  _count: PostCountAggregateOrderBy
+  _max: PostMinMaxAggregateOrderBy
+  _min: PostMinMaxAggregateOrderBy
+  _sum: PostNumericAggregateOrderBy
+  author: UserGroupKeyOrderBy
+  id: SortOrder
+  published: SortOrder
+  title: SortOrder
+  views: SortOrder
+}
+
+input PostHaving {
+  AND: [PostHaving!]
+  NOT: PostHaving
+  OR: [PostHaving!]
+  author: UserGroupKeyFilter
+  id: IDHaving
+  published: BooleanHaving
+  title: StringHaving
+  views: IntHaving
+}
+
+type PostList {
+  nodes: [Post!]!
+  pageInfo: PageInfo!
+
+  """
+  Number of nodes matching where, ignoring paging. Counted only when selected.
+  """
+  totalCount: Int!
+}
+
+input PostListRelationFilter {
+  """Every related node matches."""
+  every: PostWhere
+
+  """No related node matches."""
+  none: PostWhere
+
+  """At least one related node matches."""
+  some: PostWhere
+}
+
+"""Largest non-null values."""
+type PostMaxAggregate {
+  id: ID
+  title: String
+  views: Int
+}
+
+"""Smallest non-null values."""
+type PostMinAggregate {
+  id: ID
+  title: String
+  views: Int
+}
+
+input PostMinMaxAggregateOrderBy {
+  id: SortOrder
+  title: SortOrder
+  views: SortOrder
+}
+
+input PostNumericAggregateOrderBy {
+  views: SortOrder
+}
+
+"""One key per element of the orderBy list."""
+input PostOrderBy {
+  """Sort by a field of the related node."""
+  author: UserScalarOrderBy
+  id: SortOrder
+  published: SortOrder
+
+  """Sort by the number of related nodes."""
+  tags: TagRelationCountOrder
+  title: SortOrder
+  views: SortOrder
+}
+
+input PostRelationCountOrder {
+  _count: SortOrder!
+
+  """Count only the matching nodes."""
+  where: PostWhere
+}
+
+"""Sums of the non-null values (null when there are none)."""
+type PostSumAggregate {
+  views: Int
+}
+
+"""
+A relationship of Post.tags created or deleted (subscriptions, experimental).
+"""
+type PostTagsEvent {
+  """Key of the Post (its global id with relay)."""
+  id: ID!
+
+  """The Post, re-read with the selection and the read rules."""
+  node: Post!
+
+  """The related Tag, re-read with the selection and the read rules."""
+  related: Tag!
+
+  """Key of the related Tag (its global id with relay)."""
+  relatedId: ID!
+}
+
+input PostWhere {
+  AND: [PostWhere!]
+  NOT: PostWhere
+  OR: [PostWhere!]
+
+  """Filters on the number of related nodes (only the readable ones)."""
+  _count: PostCountWhere
+  author: UserRelationFilter
+  id: IDFilter
+  published: BooleanFilter
+  tags: TagListRelationFilter
+  title: StringFilter
+  views: IntFilter
+}
+
+"""
+At least one unique key (checked when the query runs), plus filters on the other fields.
+"""
+input PostWhereUnique {
+  AND: [PostWhere!]
+  NOT: PostWhere
+  OR: [PostWhere!]
+  author: UserRelationFilter
+  id: ID
+  published: BooleanFilter
+  tags: TagListRelationFilter
+  title: StringFilter
+  views: IntFilter
+}
+
+type Query {
+  """
+  Aggregates over the matching nodes (with skip / take: over that window).
+  """
+  auditAggregate(orderBy: [AuditOrderBy!], skip: Int, take: Int, where: AuditWhere): AuditAggregate
+  auditCount(where: AuditWhere): Int
+  auditFindFirst(orderBy: [AuditOrderBy!], skip: Int, where: AuditWhere): Audit
+  auditFindMany(
+    """A cursor (pageInfo.endCursor): the page after it."""
+    after: String
+
+    """A cursor (pageInfo.startCursor): the page before it."""
+    before: String
+    orderBy: [AuditOrderBy!]
+    skip: Int
+    take: Int
+    where: AuditWhere
+  ): AuditList
+  auditFindUnique(where: AuditWhereUnique!): Audit
+
+  """
+  Groups of the matching nodes by the fields in by, with their aggregates.
+  """
+  auditGroupBy(by: AuditGroupByInput!, having: AuditHaving, orderBy: [AuditGroupOrderBy!], skip: Int, take: Int, where: AuditWhere): [AuditGroup!]
+
+  """
+  Aggregates over the matching nodes (with skip / take: over that window).
+  """
+  postAggregate(orderBy: [PostOrderBy!], skip: Int, take: Int, where: PostWhere): PostAggregate
+  postCount(where: PostWhere): Int
+  postFindFirst(orderBy: [PostOrderBy!], skip: Int, where: PostWhere): Post
+  postFindMany(
+    """A cursor (pageInfo.endCursor): the page after it."""
+    after: String
+
+    """A cursor (pageInfo.startCursor): the page before it."""
+    before: String
+    orderBy: [PostOrderBy!]
+    skip: Int
+    take: Int
+    where: PostWhere
+  ): PostList
+  postFindUnique(where: PostWhereUnique!): Post
+
+  """
+  Groups of the matching nodes by the fields in by, with their aggregates.
+  """
+  postGroupBy(by: PostGroupByInput!, having: PostHaving, orderBy: [PostGroupOrderBy!], skip: Int, take: Int, where: PostWhere): [PostGroup!]
+
+  """
+  Aggregates over the matching nodes (with skip / take: over that window).
+  """
+  tagAggregate(orderBy: [TagOrderBy!], skip: Int, take: Int, where: TagWhere): TagAggregate
+  tagCount(where: TagWhere): Int
+  tagFindFirst(orderBy: [TagOrderBy!], skip: Int, where: TagWhere): Tag
+  tagFindMany(
+    """A cursor (pageInfo.endCursor): the page after it."""
+    after: String
+
+    """A cursor (pageInfo.startCursor): the page before it."""
+    before: String
+    orderBy: [TagOrderBy!]
+    skip: Int
+    take: Int
+    where: TagWhere
+  ): TagList
+  tagFindUnique(where: TagWhereUnique!): Tag
+
+  """
+  Groups of the matching nodes by the fields in by, with their aggregates.
+  """
+  tagGroupBy(by: TagGroupByInput!, having: TagHaving, orderBy: [TagGroupOrderBy!], skip: Int, take: Int, where: TagWhere): [TagGroup!]
+
+  """
+  Aggregates over the matching nodes (with skip / take: over that window).
+  """
+  userAggregate(orderBy: [UserOrderBy!], skip: Int, take: Int, where: UserWhere): UserAggregate
+  userCount(where: UserWhere): Int
+  userFindFirst(orderBy: [UserOrderBy!], skip: Int, where: UserWhere): User
+  userFindMany(
+    """A cursor (pageInfo.endCursor): the page after it."""
+    after: String
+
+    """A cursor (pageInfo.startCursor): the page before it."""
+    before: String
+    orderBy: [UserOrderBy!]
+    skip: Int
+    take: Int
+    where: UserWhere
+  ): UserList
+  userFindUnique(where: UserWhereUnique!): User
+
+  """
+  Groups of the matching nodes by the fields in by, with their aggregates.
+  """
+  userGroupBy(by: UserGroupByInput!, having: UserHaving, orderBy: [UserGroupOrderBy!], skip: Int, take: Int, where: UserWhere): [UserGroup!]
+}
+
+"""`insensitive` compares lower-cased values."""
+enum QueryMode {
+  default
+  insensitive
+}
+
+enum SortOrder {
+  asc
+  desc
+}
+
+input StringFilter {
+  contains: String
+  endsWith: String
+  equals: String
+  gt: String
+  gte: String
+  in: [String!]
+  lt: String
+  lte: String
+  mode: QueryMode
+  not: String
+  notIn: [String!]
+  startsWith: String
+}
+
+"""
+Aggregates of the field in each group; the other filters need the field in by.
+"""
+input StringHaving {
+  """The number of non-null values."""
+  _count: IntFilter
+  _max: StringFilter
+  _min: StringFilter
+  contains: String
+  endsWith: String
+  equals: String
+  gt: String
+  gte: String
+  in: [String!]
+  lt: String
+  lte: String
+  mode: QueryMode
+  not: String
+  notIn: [String!]
+  startsWith: String
+}
+
+type Subscription {
+  """
+  Changes of Audit nodes (experimental): created, updated or deleted, by GraphQL or any other writer. Delivered when the subscriber may read the node now (where, read rules).
+  """
+  auditChanged(
+    """Only these operations (default: all)."""
+    operations: [ChangeOperation!]
+    where: AuditWhere
+  ): AuditChange!
+
+  """
+  Relationships of Post.author created (experimental). Delivered when the subscriber may read both nodes now (where, relatedWhere, read rules).
+  """
+  postAuthorConnected(relatedWhere: UserWhere, where: PostWhere): PostAuthorEvent!
+
+  """
+  Relationships of Post.author deleted (experimental). Delivered when the subscriber may read both nodes now (where, relatedWhere, read rules).
+  """
+  postAuthorDisconnected(relatedWhere: UserWhere, where: PostWhere): PostAuthorEvent!
+
+  """
+  Changes of Post nodes (experimental): created, updated or deleted, by GraphQL or any other writer. Delivered when the subscriber may read the node now (where, read rules).
+  """
+  postChanged(
+    """Only these operations (default: all)."""
+    operations: [ChangeOperation!]
+    where: PostWhere
+  ): PostChange!
+
+  """
+  Relationships of Post.tags created (experimental). Delivered when the subscriber may read both nodes now (where, relatedWhere, read rules).
+  """
+  postTagsConnected(relatedWhere: TagWhere, where: PostWhere): PostTagsEvent!
+
+  """
+  Relationships of Post.tags deleted (experimental). Delivered when the subscriber may read both nodes now (where, relatedWhere, read rules).
+  """
+  postTagsDisconnected(relatedWhere: TagWhere, where: PostWhere): PostTagsEvent!
+
+  """
+  Changes of Tag nodes (experimental): created, updated or deleted, by GraphQL or any other writer. Delivered when the subscriber may read the node now (where, read rules).
+  """
+  tagChanged(
+    """Only these operations (default: all)."""
+    operations: [ChangeOperation!]
+    where: TagWhere
+  ): TagChange!
+
+  """
+  Relationships of Tag.posts created (experimental). Delivered when the subscriber may read both nodes now (where, relatedWhere, read rules).
+  """
+  tagPostsConnected(relatedWhere: PostWhere, where: TagWhere): TagPostsEvent!
+
+  """
+  Relationships of Tag.posts deleted (experimental). Delivered when the subscriber may read both nodes now (where, relatedWhere, read rules).
+  """
+  tagPostsDisconnected(relatedWhere: PostWhere, where: TagWhere): TagPostsEvent!
+
+  """
+  Changes of User nodes (experimental): created, updated or deleted, by GraphQL or any other writer. Delivered when the subscriber may read the node now (where, read rules).
+  """
+  userChanged(
+    """Only these operations (default: all)."""
+    operations: [ChangeOperation!]
+    where: UserWhere
+  ): UserChange!
+
+  """
+  Relationships of User.followers created (experimental). Delivered when the subscriber may read both nodes now (where, relatedWhere, read rules).
+  """
+  userFollowersConnected(relatedWhere: UserWhere, where: UserWhere): UserFollowersEvent!
+
+  """
+  Relationships of User.followers deleted (experimental). Delivered when the subscriber may read both nodes now (where, relatedWhere, read rules).
+  """
+  userFollowersDisconnected(relatedWhere: UserWhere, where: UserWhere): UserFollowersEvent!
+
+  """
+  Relationships of User.following created (experimental). Delivered when the subscriber may read both nodes now (where, relatedWhere, read rules).
+  """
+  userFollowingConnected(relatedWhere: UserWhere, where: UserWhere): UserFollowingEvent!
+
+  """
+  Relationships of User.following deleted (experimental). Delivered when the subscriber may read both nodes now (where, relatedWhere, read rules).
+  """
+  userFollowingDisconnected(relatedWhere: UserWhere, where: UserWhere): UserFollowingEvent!
+
+  """
+  Relationships of User.posts created (experimental). Delivered when the subscriber may read both nodes now (where, relatedWhere, read rules).
+  """
+  userPostsConnected(relatedWhere: PostWhere, where: UserWhere): UserPostsEvent!
+
+  """
+  Relationships of User.posts deleted (experimental). Delivered when the subscriber may read both nodes now (where, relatedWhere, read rules).
+  """
+  userPostsDisconnected(relatedWhere: PostWhere, where: UserWhere): UserPostsEvent!
+}
+
+type Tag {
+  """
+  Number of related nodes per to-many relation (only the selected ones are counted).
+  """
+  _count: TagCount!
+  internal: Boolean!
+  name: ID!
+  posts(orderBy: [PostOrderBy!], skip: Int, take: Int, where: PostWhere): [Post!]!
+}
+
+type TagAggregate {
+  _count: TagCountAggregate!
+  _max: TagMaxAggregate!
+  _min: TagMinAggregate!
+}
+
+"""A change of a Tag node (subscriptions, experimental)."""
+type TagChange {
+  """
+  Fields whose value changed (UPDATED; empty otherwise). Fields a rule hides from the subscriber are left out.
+  """
+  changedFields: [String!]!
+
+  """
+  Key of the node (its global id with relay), always present, also for DELETED.
+  """
+  id: ID!
+
+  """
+  The node after the change, re-read with the selection and the read rules. Null for DELETED.
+  """
+  node: Tag
+  operation: ChangeOperation!
+}
+
+type TagCount {
+  posts(where: PostWhere): Int!
+}
+
+"""
+`_all`: the number of nodes; a field: the number of its non-null values.
+"""
+type TagCountAggregate {
+  _all: Int!
+  internal: Int!
+  name: Int!
+}
+
+input TagCountAggregateOrderBy {
+  _all: SortOrder
+  internal: SortOrder
+  name: SortOrder
+}
+
+input TagCountFilter {
+  equals: Int
+  gt: Int
+  gte: Int
+  in: [Int!]
+  lt: Int
+  lte: Int
+  not: Int
+  notIn: [Int!]
+
+  """Count only these nodes."""
+  where: TagWhere
+}
+
+input TagCountWhere {
+  posts: PostCountFilter
+}
+
+"""
+One group: its keys (only the fields listed in by can be selected) and aggregates.
+"""
+type TagGroup {
+  _count: TagCountAggregate!
+  _max: TagMaxAggregate!
+  _min: TagMinAggregate!
+  internal: Boolean
+  name: ID
+}
+
+"""The fields to group on: at least one."""
+input TagGroupByInput {
+  """Fields of the model."""
+  fields: [TagGroupField!]
+}
+
+enum TagGroupField {
+  internal
+  name
+}
+
+"""
+One key per element of the orderBy list: a key listed in by, or an aggregate.
+"""
+input TagGroupOrderBy {
+  _count: TagCountAggregateOrderBy
+  _max: TagMinMaxAggregateOrderBy
+  _min: TagMinMaxAggregateOrderBy
+  internal: SortOrder
+  name: SortOrder
+}
+
+input TagHaving {
+  AND: [TagHaving!]
+  NOT: TagHaving
+  OR: [TagHaving!]
+  internal: BooleanHaving
+  name: IDHaving
+}
+
+type TagList {
+  nodes: [Tag!]!
+  pageInfo: PageInfo!
+
+  """
+  Number of nodes matching where, ignoring paging. Counted only when selected.
+  """
+  totalCount: Int!
+}
+
+input TagListRelationFilter {
+  """Every related node matches."""
+  every: TagWhere
+
+  """No related node matches."""
+  none: TagWhere
+
+  """At least one related node matches."""
+  some: TagWhere
+}
+
+"""Largest non-null values."""
+type TagMaxAggregate {
+  name: ID
+}
+
+"""Smallest non-null values."""
+type TagMinAggregate {
+  name: ID
+}
+
+input TagMinMaxAggregateOrderBy {
+  name: SortOrder
+}
+
+"""One key per element of the orderBy list."""
+input TagOrderBy {
+  internal: SortOrder
+  name: SortOrder
+
+  """Sort by the number of related nodes."""
+  posts: PostRelationCountOrder
+}
+
+"""
+A relationship of Tag.posts created or deleted (subscriptions, experimental).
+"""
+type TagPostsEvent {
+  """Key of the Tag (its global id with relay)."""
+  id: ID!
+
+  """The Tag, re-read with the selection and the read rules."""
+  node: Tag!
+
+  """The related Post, re-read with the selection and the read rules."""
+  related: Post!
+
+  """Key of the related Post (its global id with relay)."""
+  relatedId: ID!
+}
+
+input TagRelationCountOrder {
+  _count: SortOrder!
+
+  """Count only the matching nodes."""
+  where: TagWhere
+}
+
+input TagWhere {
+  AND: [TagWhere!]
+  NOT: TagWhere
+  OR: [TagWhere!]
+
+  """Filters on the number of related nodes (only the readable ones)."""
+  _count: TagCountWhere
+  internal: BooleanFilter
+  name: IDFilter
+  posts: PostListRelationFilter
+}
+
+"""
+At least one unique key (checked when the query runs), plus filters on the other fields.
+"""
+input TagWhereUnique {
+  AND: [TagWhere!]
+  NOT: TagWhere
+  OR: [TagWhere!]
+  internal: BooleanFilter
+  name: ID
+  posts: PostListRelationFilter
+}
+
+type User {
+  """
+  Number of related nodes per to-many relation (only the selected ones are counted).
+  """
+  _count: UserCount!
+
+  """
+  Edge properties when this User is reached through a relation with a relationship model (selecting it anywhere else is an error).
+  """
+  _edge: Follows
+  followers(orderBy: [UserOrderBy!], skip: Int, take: Int, where: UserWhere): [User!]!
+  following(orderBy: [UserOrderBy!], skip: Int, take: Int, where: UserWhere): [User!]!
+  id: ID!
+  name: String!
+  posts(orderBy: [PostOrderBy!], skip: Int, take: Int, where: PostWhere): [Post!]!
+}
+
+type UserAggregate {
+  _count: UserCountAggregate!
+  _max: UserMaxAggregate!
+  _min: UserMinAggregate!
+}
+
+"""A change of a User node (subscriptions, experimental)."""
+type UserChange {
+  """
+  Fields whose value changed (UPDATED; empty otherwise). Fields a rule hides from the subscriber are left out.
+  """
+  changedFields: [String!]!
+
+  """
+  Key of the node (its global id with relay), always present, also for DELETED.
+  """
+  id: ID!
+
+  """
+  The node after the change, re-read with the selection and the read rules. Null for DELETED.
+  """
+  node: User
+  operation: ChangeOperation!
+}
+
+type UserCount {
+  followers(where: UserWhere): Int!
+  following(where: UserWhere): Int!
+  posts(where: PostWhere): Int!
+}
+
+"""
+`_all`: the number of nodes; a field: the number of its non-null values.
+"""
+type UserCountAggregate {
+  _all: Int!
+  id: Int!
+  name: Int!
+}
+
+input UserCountAggregateOrderBy {
+  _all: SortOrder
+  id: SortOrder
+  name: SortOrder
+}
+
+input UserCountFilter {
+  equals: Int
+  gt: Int
+  gte: Int
+  in: [Int!]
+  lt: Int
+  lte: Int
+  not: Int
+  notIn: [Int!]
+
+  """Count only these nodes."""
+  where: UserWhere
+}
+
+input UserCountWhere {
+  followers: UserCountFilter
+  following: UserCountFilter
+  posts: PostCountFilter
+}
+
+"""
+A relationship of User.followers created or deleted (subscriptions, experimental).
+"""
+type UserFollowersEvent {
+  """
+  The relationship's properties: after it was created, or before it was deleted.
+  """
+  _edge: Follows
+
+  """Key of the User (its global id with relay)."""
+  id: ID!
+
+  """The User, re-read with the selection and the read rules."""
+  node: User!
+
+  """The related User, re-read with the selection and the read rules."""
+  related: User!
+
+  """Key of the related User (its global id with relay)."""
+  relatedId: ID!
+}
+
+"""
+A relationship of User.following created or deleted (subscriptions, experimental).
+"""
+type UserFollowingEvent {
+  """
+  The relationship's properties: after it was created, or before it was deleted.
+  """
+  _edge: Follows
+
+  """Key of the User (its global id with relay)."""
+  id: ID!
+
+  """The User, re-read with the selection and the read rules."""
+  node: User!
+
+  """The related User, re-read with the selection and the read rules."""
+  related: User!
+
+  """Key of the related User (its global id with relay)."""
+  relatedId: ID!
+}
+
+"""
+One group: its keys (only the fields listed in by can be selected) and aggregates.
+"""
+type UserGroup {
+  _count: UserCountAggregate!
+  _max: UserMaxAggregate!
+  _min: UserMinAggregate!
+  id: ID
+  name: String
+}
+
+"""The fields to group on: at least one."""
+input UserGroupByInput {
+  """Fields of the model."""
+  fields: [UserGroupField!]
+}
+
+enum UserGroupField {
+  id
+  name
+}
+
+"""Filters on the related node's fields listed in by."""
+input UserGroupKeyFilter {
+  id: IDFilter
+  name: StringFilter
+}
+
+input UserGroupKeyOrderBy {
+  id: SortOrder
+  name: SortOrder
+}
+
+"""Group keys of the related node (only the fields listed in by)."""
+type UserGroupKeys {
+  id: ID
+  name: String
+}
+
+"""
+One key per element of the orderBy list: a key listed in by, or an aggregate.
+"""
+input UserGroupOrderBy {
+  _count: UserCountAggregateOrderBy
+  _max: UserMinMaxAggregateOrderBy
+  _min: UserMinMaxAggregateOrderBy
+  id: SortOrder
+  name: SortOrder
+}
+
+input UserHaving {
+  AND: [UserHaving!]
+  NOT: UserHaving
+  OR: [UserHaving!]
+  id: IDHaving
+  name: StringHaving
+}
+
+type UserList {
+  nodes: [User!]!
+  pageInfo: PageInfo!
+
+  """
+  Number of nodes matching where, ignoring paging. Counted only when selected.
+  """
+  totalCount: Int!
+}
+
+input UserListRelationFilter {
+  """Every related node matches."""
+  every: UserWhere
+
+  """No related node matches."""
+  none: UserWhere
+
+  """At least one related node matches."""
+  some: UserWhere
+}
+
+"""Largest non-null values."""
+type UserMaxAggregate {
+  id: ID
+  name: String
+}
+
+"""Smallest non-null values."""
+type UserMinAggregate {
+  id: ID
+  name: String
+}
+
+input UserMinMaxAggregateOrderBy {
+  id: SortOrder
+  name: SortOrder
+}
+
+"""One key per element of the orderBy list."""
+input UserOrderBy {
+  """Sort by the number of related nodes."""
+  followers: UserRelationCountOrder
+
+  """Sort by the number of related nodes."""
+  following: UserRelationCountOrder
+  id: SortOrder
+  name: SortOrder
+
+  """Sort by the number of related nodes."""
+  posts: PostRelationCountOrder
+}
+
+"""
+A relationship of User.posts created or deleted (subscriptions, experimental).
+"""
+type UserPostsEvent {
+  """Key of the User (its global id with relay)."""
+  id: ID!
+
+  """The User, re-read with the selection and the read rules."""
+  node: User!
+
+  """The related Post, re-read with the selection and the read rules."""
+  related: Post!
+
+  """Key of the related Post (its global id with relay)."""
+  relatedId: ID!
+}
+
+input UserRelationCountOrder {
+  _count: SortOrder!
+
+  """Count only the matching nodes."""
+  where: UserWhere
+}
+
+input UserRelationFilter {
+  """The related node matches (null: none)."""
+  is: UserWhere
+  isNot: UserWhere
+}
+
+input UserScalarOrderBy {
+  id: SortOrder
+  name: SortOrder
+}
+
+input UserWhere {
+  AND: [UserWhere!]
+  NOT: UserWhere
+  OR: [UserWhere!]
+
+  """Filters on the number of related nodes (only the readable ones)."""
+  _count: UserCountWhere
+  followers: UserListRelationFilter
+  following: UserListRelationFilter
+  id: IDFilter
+  name: StringFilter
+  posts: PostListRelationFilter
+}
+
+"""
+At least one unique key (checked when the query runs), plus filters on the other fields.
+"""
+input UserWhereUnique {
+  AND: [UserWhere!]
+  NOT: UserWhere
+  OR: [UserWhere!]
+  followers: UserListRelationFilter
+  following: UserListRelationFilter
+  id: ID
+  name: StringFilter
+  posts: PostListRelationFilter
+}

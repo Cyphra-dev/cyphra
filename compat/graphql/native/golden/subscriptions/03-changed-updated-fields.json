@@ -1,0 +1,32 @@
+{
+  "events": [
+    {
+      "data": {
+        "postChanged": {
+          "operation": "UPDATED",
+          "id": "p-draft",
+          "node": {
+            "title": "Draft v2"
+          },
+          "changedFields": [
+            "title"
+          ]
+        }
+      }
+    },
+    {
+      "data": {
+        "postChanged": {
+          "operation": "UPDATED",
+          "id": "p-hello",
+          "node": {
+            "title": "Hello again"
+          },
+          "changedFields": [
+            "title"
+          ]
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+# features: subscriptions.relations, subscriptions.rules
+# Alice sees tags added to her posts (her draft included), never one naming the internal tag.
+subscription {
+  postTagsConnected {
+    id
+    relatedId
+    node {
+      title
+    }
+    related {
+      name
+    }
+  }
+}

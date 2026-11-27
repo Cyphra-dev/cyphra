@@ -543,8 +543,9 @@ It also runs against two endpoints (`--v7-url`, `--native-url`). This extends th
 
 Point each rewritten operation at `/api/graphql/v2`. When no operation uses `/api/graphql` any more
 (`cyphra graphql migrate-operations … --check` exits with 0), remove the `compat.v7` endpoint.
-Subscriptions are not in the native API yet ([#76](https://github.com/Cyphra-dev/cyphra/issues/76)):
-keep them on `compat.v7` until then.
+Subscriptions are not translated: the native API's ([experimental](/graphql/native#subscriptions),
+`movieChanged` instead of `movieCreated` / `movieUpdated` / `movieDeleted`, with the rules applied
+to every event) have another shape. Rewrite them by hand, or keep them on `compat.v7`.
 
 ## Related
 

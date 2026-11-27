@@ -66,6 +66,7 @@ export {
   type OperationToggles,
   type ReadOperation,
   type RootOperation,
+  type SubscribeOperation,
   type WhereRule,
   type WriteOperation,
 } from "./native/index.js";

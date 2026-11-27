@@ -36,6 +36,7 @@ import {
 import type { ResolvedNodeModel, ResolvedRelationField, ResolvedScalarField } from "@cyphra/schema";
 import type { ApiModel } from "./api.js";
 import { NativeSchemaError, isWrite, type RootOperation } from "./config.js";
+import type { SubscriptionResolvers } from "./subscriptions.js";
 import type { TypeRef } from "./extensions.js";
 import { NUMERIC_TYPES, ORDERABLE_TYPES } from "./api.js";
 import {
@@ -122,6 +123,9 @@ export const names = {
   pathEdge: (m: string) => `${m}PathEdge`,
   pathEdgeProperties: (m: string) => `${m}PathEdgeProperties`,
   traversal: (m: string) => `${m}Traversal`,
+  change: (m: string) => `${m}Change`,
+  relationEvent: (m: string, field: string) =>
+    `${m}${field.charAt(0).toUpperCase()}${field.slice(1)}Event`,
 };
 
 /** A scalar field of `type`, for the shared inputs of aggregate results (`IntFilter`, …). */
@@ -215,10 +219,22 @@ export class SchemaBuilder {
     resolveType,
   });
 
+  /** `operation` of a `<Model>Change` (subscriptions). */
+  readonly ChangeOperation = new GraphQLEnumType({
+    name: "ChangeOperation",
+    description: "What happened to a node (subscriptions, experimental).",
+    values: {
+      CREATED: { value: "CREATED" },
+      UPDATED: { value: "UPDATED" },
+      DELETED: { value: "DELETED" },
+    },
+  });
+
   constructor(
     private readonly api: ApiModel,
     private readonly resolver?: RootResolver,
     private readonly nodeResolver?: GraphQLFieldResolver<unknown, unknown>,
+    private readonly subscriptions?: SubscriptionResolvers,
   ) {
     this.modelNames = new Set([
       ...api.schema.nodes.map((n) => n.name),
@@ -2355,6 +2371,144 @@ export class SchemaBuilder {
     return field && { ...field, resolve: this.resolver?.(model, op) };
   }
 
+  // ---------------------------------------------------------------------------
+  // Subscriptions
+  // ---------------------------------------------------------------------------
+
+  /** `<Model>Change`: the payload of `<model>Changed`. */
+  changeType(model: ResolvedNodeModel): GraphQLObjectType {
+    const name = names.change(model.name);
+    return this.named(
+      name,
+      () =>
+        new GraphQLObjectType({
+          name,
+          description: `A change of a ${model.name} node (subscriptions, experimental).`,
+          fields: () => ({
+            operation: { type: new GraphQLNonNull(this.ChangeOperation), resolve: byResponseKey },
+            id: {
+              type: new GraphQLNonNull(GraphQLID),
+              description:
+                "Key of the node (its global id with relay), always present, also for DELETED.",
+              resolve: byResponseKey,
+            },
+            node: {
+              type: this.output(model),
+              description:
+                "The node after the change, re-read with the selection and the read rules. Null for DELETED.",
+              resolve: byResponseKey,
+            },
+            changedFields: {
+              type: new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(GraphQLString))),
+              description:
+                "Fields whose value changed (UPDATED; empty otherwise). Fields a rule hides from the subscriber are left out.",
+              resolve: byResponseKey,
+            },
+          }),
+        }),
+    );
+  }
+
+  /** `<Model><Relation>Event`: the payload of `<model><Relation>Connected` / `…Disconnected`. */
+  relationEventType(model: ResolvedNodeModel, field: ResolvedRelationField): GraphQLObjectType {
+    const name = names.relationEvent(model.name, field.name);
+    const target = this.api.node(field.target);
+    const edge = field.edge && this.api.edges.has(field.edge) ? field.edge : undefined;
+    return this.named(
+      name,
+      () =>
+        new GraphQLObjectType({
+          name,
+          description: `A relationship of ${model.name}.${field.name} created or deleted (subscriptions, experimental).`,
+          fields: () => ({
+            id: {
+              type: new GraphQLNonNull(GraphQLID),
+              description: `Key of the ${model.name} (its global id with relay).`,
+              resolve: byResponseKey,
+            },
+            relatedId: {
+              type: new GraphQLNonNull(GraphQLID),
+              description: `Key of the related ${target.name} (its global id with relay).`,
+              resolve: byResponseKey,
+            },
+            node: {
+              type: new GraphQLNonNull(this.output(model)),
+              description: `The ${model.name}, re-read with the selection and the read rules.`,
+              resolve: byResponseKey,
+            },
+            related: {
+              type: new GraphQLNonNull(this.output(target)),
+              description: `The related ${target.name}, re-read with the selection and the read rules.`,
+              resolve: byResponseKey,
+            },
+            ...(edge
+              ? {
+                  _edge: {
+                    type: this.edgeObject(edge),
+                    description:
+                      "The relationship's properties: after it was created, or before it was deleted.",
+                    resolve: byResponseKey,
+                  },
+                }
+              : {}),
+          }),
+        }),
+    );
+  }
+
+  /** The `Subscription` root fields (`config.subscriptions`). */
+  private subscriptionFields(): GraphQLFieldConfigMap<unknown, unknown> {
+    const out: GraphQLFieldConfigMap<unknown, unknown> = {};
+    const owners = new Map<string, string>();
+    const add = (fieldName: string, owner: string, field: GraphQLFieldConfig<unknown, unknown>) => {
+      const other = owners.get(fieldName);
+      if (other) {
+        throw new NativeSchemaError(
+          `Two subscription fields are named "${fieldName}" (${other} and ${owner}); rename one with config.naming or the relation in schema.cyphra.`,
+        );
+      }
+      owners.set(fieldName, owner);
+      out[fieldName] = field;
+    };
+    for (const [modelName, subs] of this.api.config.subscriptions) {
+      const model = this.api.node(modelName);
+      if (subs.changed) {
+        const r = this.subscriptions?.changed(model);
+        add(subs.changed, `${model.name}.changed`, {
+          type: new GraphQLNonNull(this.changeType(model)),
+          description: `Changes of ${model.name} nodes (experimental): created, updated or deleted, by GraphQL or any other writer. Delivered when the subscriber may read the node now (where, read rules).`,
+          args: {
+            where: { type: this.where(model) },
+            operations: {
+              type: new GraphQLList(new GraphQLNonNull(this.ChangeOperation)),
+              description: "Only these operations (default: all).",
+            },
+          },
+          ...(r ? { subscribe: r.subscribe, resolve: r.resolve } : {}),
+        });
+      }
+      for (const rel of subs.relations) {
+        const field = model.fields.find((f) => f.name === rel.field) as ResolvedRelationField;
+        const target = this.api.node(field.target);
+        for (const op of ["connected", "disconnected"] as const) {
+          const fieldName = rel[op];
+          if (!fieldName) continue;
+          const r = this.subscriptions?.relation(model, field, op);
+          add(fieldName, `${model.name}.${field.name} (${op})`, {
+            type: new GraphQLNonNull(this.relationEventType(model, field)),
+            description: `Relationships of ${model.name}.${field.name} ${op === "connected" ? "created" : "deleted"} (experimental). Delivered when the subscriber may read both nodes now (where, relatedWhere, read rules).`,
+            args: {
+              where: { type: this.where(model) },
+              relatedWhere: { type: this.where(target) },
+            },
+            ...(r ? { subscribe: r.subscribe, resolve: r.resolve } : {}),
+          });
+        }
+      }
+    }
+    return out;
+  }
+
   build(): GraphQLSchema {
     const query: GraphQLFieldConfigMap<unknown, unknown> = {};
     const mutation: GraphQLFieldConfigMap<unknown, unknown> = {};
@@ -2396,10 +2550,14 @@ export class SchemaBuilder {
         "The API has no root field: every read operation is turned off (config.models / config.defaults).",
       );
     }
+    const subscription = this.subscriptionFields();
     return new GraphQLSchema({
       query: new GraphQLObjectType({ name: "Query", fields: query }),
       ...(Object.keys(mutation).length > 0
         ? { mutation: new GraphQLObjectType({ name: "Mutation", fields: mutation }) }
+        : {}),
+      ...(Object.keys(subscription).length > 0
+        ? { subscription: new GraphQLObjectType({ name: "Subscription", fields: subscription }) }
         : {}),
       types,
     });

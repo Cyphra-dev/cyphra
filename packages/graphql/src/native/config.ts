@@ -71,12 +71,27 @@ export type WriteOperation = (typeof WRITE_OPERATIONS)[number];
 /** Any root field operation. */
 export type RootOperation = ReadOperation | TraverseOperation | WriteOperation;
 
+/**
+ * Operations of the `subscribe` group (`Subscription` root fields, off by default, experimental):
+ * `changed` (`<model>Changed`: node created, updated, deleted) and `connected` / `disconnected`
+ * (`<model><Relation>Connected` / `…Disconnected`, one pair per readable relation). Served on
+ * Neo4j Change Data Capture (`native.CDCReader`).
+ */
+export const SUBSCRIBE_OPERATIONS = ["changed", "connected", "disconnected"] as const;
+
+/** An operation of the `subscribe` group. */
+export type SubscribeOperation = (typeof SUBSCRIBE_OPERATIONS)[number];
+
+/** A root field operation or a subscription operation. */
+export type AnyOperation = RootOperation | SubscribeOperation;
+
 const GROUPS = {
   read: READ_OPERATIONS,
   traverse: TRAVERSE_OPERATIONS,
   create: CREATE_OPERATIONS,
   update: UPDATE_OPERATIONS,
   delete: DELETE_OPERATIONS,
+  subscribe: SUBSCRIBE_OPERATIONS,
 } as const;
 type Group = keyof typeof GROUPS;
 
@@ -88,7 +103,7 @@ export function isWrite(op: RootOperation): op is WriteOperation {
 /**
  * Which operations of a model are root fields, per group: `true` (every operation of the group),
  * `false` or a list of operations. `upsert` is served when both `create` and `update` include it.
- * Default: reads on, the expensive reads (`traverse`) and writes off.
+ * Default: reads on, the expensive reads (`traverse`), writes and subscriptions off.
  */
 export type OperationToggles = {
   readonly read?: boolean | readonly ReadOperation[];
@@ -100,6 +115,12 @@ export type OperationToggles = {
   readonly create?: boolean | readonly CreateOperation[];
   readonly update?: boolean | readonly UpdateOperation[];
   readonly delete?: boolean | readonly DeleteOperation[];
+  /**
+   * `Subscription` root fields (experimental): `changed` (`<model>Changed`), `connected` and
+   * `disconnected` (relationship events of each readable relation). Off by default; needs
+   * `subscriptions` (a `native.CDCReader`) in `makeSchema`.
+   */
+  readonly subscribe?: boolean | readonly SubscribeOperation[];
 };
 
 /** A `where` on model `M`, typed as the client's (loose when the type map is not known). */
@@ -300,9 +321,12 @@ export type GraphQLConfig<TM extends TypeMap = TypeMap, Ctx = unknown> = {
   readonly isAuthenticated?: ContextPredicate<Ctx>;
   /** Defaults for every model: reads on, writes off. */
   readonly defaults?: { readonly operations?: OperationToggles };
-  /** Root field names replacing `<model><Operation>` (`{ Person: { findMany: "people" } }`). */
+  /**
+   * Root field names replacing `<model><Operation>` (`{ Person: { findMany: "people" } }`), and
+   * `changed` for the `<model>Changed` subscription.
+   */
   readonly naming?: {
-    readonly [M in keyof TM & string]?: { readonly [O in RootOperation]?: string };
+    readonly [M in keyof TM & string]?: { readonly [O in RootOperation | "changed"]?: string };
   };
   readonly limits?: Limits;
   /**
@@ -402,10 +426,24 @@ export type FieldAccess = {
   readonly deprecated?: string;
 };
 
+/** The subscription fields of one model (`subscribe` group), with their root field names. */
+export type ResolvedSubscriptions = {
+  /** `<model>Changed`, when `changed` is on. */
+  readonly changed?: string;
+  /** Relationship events, per readable relation (`connected` / `disconnected` when on). */
+  readonly relations: readonly {
+    readonly field: string;
+    readonly connected?: string;
+    readonly disconnected?: string;
+  }[];
+};
+
 /** The checked configuration, with defaults applied. */
 export type ResolvedConfig = {
   /** Root fields per model: operation → field name (absent: the operation is off). */
   readonly operations: ReadonlyMap<string, ReadonlyMap<RootOperation, string>>;
+  /** `Subscription` root fields per model (only models with at least one). */
+  readonly subscriptions: ReadonlyMap<string, ResolvedSubscriptions>;
   /** `field(model, name)`: the effective toggles of a field. */
   field(model: string, name: string): FieldAccess;
   readonly limits: Limits;
@@ -422,8 +460,8 @@ export type ResolvedConfig = {
   readonly fieldRules: ReadonlyMap<string, ConfiguredFieldRule>;
   /** Whether the field, or the interface field it implements, has a read rule (it is nullable). */
   fieldRuled(model: string, name: string): boolean;
-  /** Whether the root operation `op` of `model` needs an authenticated request. */
-  authenticated(model: string, op: RootOperation): boolean;
+  /** Whether the root operation (or subscription) `op` of `model` needs an authenticated request. */
+  authenticated(model: string, op: AnyOperation): boolean;
   /** The operation groups of `model` `authenticated` covers as a whole (they apply everywhere). */
   authenticatedGroups(model: string): ReadonlySet<"read" | "create" | "update" | "delete">;
   /** Whether a request is authenticated (`config.isAuthenticated`, or a `user` / `jwt`). */
@@ -483,6 +521,8 @@ const ROOT_OPERATIONS: readonly RootOperation[] = [
   ...TRAVERSE_OPERATIONS,
   ...WRITE_OPERATIONS,
 ];
+/** Keys of `config.naming.<Model>`: root operations, and `changed` (the subscription). */
+const NAMING_KEYS: readonly string[] = [...ROOT_OPERATIONS, "changed"];
 const HIDDEN: FieldAccess = {
   read: false,
   filter: false,
@@ -501,29 +541,29 @@ function checkKeys(where: string, obj: AnyRecord, allowed: readonly string[]): v
 }
 
 /** The operations each group given in `toggles` turns on (groups not given are absent). */
-function readOps(where: string, toggles: unknown): Partial<Record<Group, Set<RootOperation>>> {
+function readOps(where: string, toggles: unknown): Partial<Record<Group, Set<AnyOperation>>> {
   if (toggles === undefined) return {};
   if (!isPlainObject(toggles)) throw new NativeSchemaError(`${where} must be an object.`);
   const groups = Object.keys(GROUPS) as Group[];
   checkKeys(where, toggles, groups);
-  const out: Partial<Record<Group, Set<RootOperation>>> = {};
+  const out: Partial<Record<Group, Set<AnyOperation>>> = {};
   for (const g of groups) {
     const v = toggles[g];
     if (v === undefined) continue;
-    const all: readonly RootOperation[] = GROUPS[g];
+    const all: readonly AnyOperation[] = GROUPS[g];
     if (v === true) out[g] = new Set(all);
     else if (v === false) out[g] = new Set();
     else if (!Array.isArray(v)) {
       throw new NativeSchemaError(`${where}.${g} must be true, false or a list of operations.`);
     } else {
       for (const op of v) {
-        if (!all.includes(op as RootOperation)) {
+        if (!all.includes(op as AnyOperation)) {
           throw new NativeSchemaError(
             `${where}.${g}: unknown operation ${JSON.stringify(op)} (use ${all.join(", ")}).`,
           );
         }
       }
-      out[g] = new Set(v as RootOperation[]);
+      out[g] = new Set(v as AnyOperation[]);
     }
   }
   return out;
@@ -583,21 +623,22 @@ export function checkConfig(schema: SchemaModel, config: GraphQLConfig = {}): Re
     checkKeys("config.defaults", config.defaults, ["operations"]);
   }
   const defaults = {
-    read: new Set<RootOperation>(READ_OPERATIONS),
-    traverse: new Set<RootOperation>(),
-    create: new Set<RootOperation>(),
-    update: new Set<RootOperation>(),
-    delete: new Set<RootOperation>(),
+    read: new Set<AnyOperation>(READ_OPERATIONS),
+    traverse: new Set<AnyOperation>(),
+    create: new Set<AnyOperation>(),
+    update: new Set<AnyOperation>(),
+    delete: new Set<AnyOperation>(),
+    subscribe: new Set<AnyOperation>(),
     ...readOps("config.defaults.operations", config.defaults?.operations),
   };
 
   const models = (config.models ?? {}) as AnyRecord;
   if (!isPlainObject(models)) throw new NativeSchemaError("config.models must be an object.");
   const fieldToggles = new Map<string, FieldAccess>();
-  const opsByModel = new Map<string, Partial<Record<Group, Set<RootOperation>>>>();
+  const opsByModel = new Map<string, Partial<Record<Group, Set<AnyOperation>>>>();
   const rulesByModel = new Map<string, ConfiguredRules>();
   const fieldRules = new Map<string, ConfiguredFieldRule>();
-  const authByModel = new Map<string, Partial<Record<Group, Set<RootOperation>>>>();
+  const authByModel = new Map<string, Partial<Record<Group, Set<AnyOperation>>>>();
   for (const [name, mc] of Object.entries(models)) {
     if (mc === undefined) continue;
     const where = `config.models.${name}`;
@@ -629,6 +670,11 @@ export function checkConfig(schema: SchemaModel, config: GraphQLConfig = {}): Re
     if (node.abstract && writes("create")) {
       throw new NativeSchemaError(
         `${where}.operations.create: ${name} is an interface and cannot be created; turn create on for its implementations.`,
+      );
+    }
+    if (node.abstract && writes("subscribe")) {
+      throw new NativeSchemaError(
+        `${where}.operations.subscribe: ${name} is ${node.union ? "a union" : "an interface"}; subscriptions are served on node models, turn subscribe on for its ${node.union ? "members" : "implementations"}.`,
       );
     }
     if (mc.fields === undefined) continue;
@@ -701,7 +747,7 @@ export function checkConfig(schema: SchemaModel, config: GraphQLConfig = {}): Re
     if (n === undefined) continue;
     known("config.naming", name);
     if (!isPlainObject(n)) throw new NativeSchemaError(`config.naming.${name} must be an object.`);
-    checkKeys(`config.naming.${name}`, n, ROOT_OPERATIONS);
+    checkKeys(`config.naming.${name}`, n, NAMING_KEYS);
     for (const [op, v] of Object.entries(n)) {
       if (v !== undefined && (typeof v !== "string" || !/^[_A-Za-z][_0-9A-Za-z]*$/.test(v))) {
         throw new NativeSchemaError(
@@ -787,10 +833,11 @@ export function checkConfig(schema: SchemaModel, config: GraphQLConfig = {}): Re
   }
 
   const operations = new Map<string, Map<RootOperation, string>>();
+  const subscriptions = new Map<string, ResolvedSubscriptions>();
   for (const node of schema.nodes) {
     const own = opsByModel.get(node.name) ?? {};
     const group = (g: Group) => own[g] ?? defaults[g];
-    const on = (op: RootOperation): boolean => {
+    const on = (op: AnyOperation): boolean => {
       if (op === "upsert") return group("create").has(op) && group("update").has(op);
       for (const g of Object.keys(GROUPS) as Group[]) {
         if ((GROUPS[g] as readonly string[]).includes(op)) return group(g).has(op);
@@ -814,10 +861,12 @@ export function checkConfig(schema: SchemaModel, config: GraphQLConfig = {}): Re
       names.set(op, typeof override === "string" ? override : rootFieldName(node.name, op));
     }
     operations.set(node.name, names);
+    const subs = subscriptionFields(node, on, byName, access, naming[node.name] as AnyRecord);
+    if (subs) subscriptions.set(node.name, subs);
   }
 
   // A model is subject to its interfaces' `authenticated` too.
-  const authGroups = (model: string): Partial<Record<Group, Set<RootOperation>>>[] => [
+  const authGroups = (model: string): Partial<Record<Group, Set<AnyOperation>>>[] => [
     authByModel.get(model) ?? {},
     ...(byName.get(model)?.interfaces ?? []).map((i) => authByModel.get(i) ?? {}),
   ];
@@ -831,6 +880,7 @@ export function checkConfig(schema: SchemaModel, config: GraphQLConfig = {}): Re
   );
   return {
     operations,
+    subscriptions,
     field: access,
     limits: limits as Limits,
     relay: config.relay === true,
@@ -1007,6 +1057,58 @@ function checkTraversals(
     out.set(name, resolved);
   }
   return out;
+}
+
+/**
+ * The key a subscription event carries (`id: ID!`) and re-reads its nodes by: the model's `@id`
+ * field, when it is a readable `String`, `Int` or `BigInt` (absent otherwise: no subscriptions).
+ */
+export function subscriptionKey(
+  node: ResolvedNodeModel,
+  access: (model: string, field: string) => FieldAccess,
+): string | undefined {
+  if (node.union) return undefined;
+  const f = node.fields.find((x) => x.name === node.idField);
+  if (f?.kind !== "scalar" || f.list || !["String", "Int", "BigInt"].includes(f.type)) {
+    return undefined;
+  }
+  return access(node.name, f.name).read ? f.name : undefined;
+}
+
+/**
+ * The `Subscription` fields of `node`: `<model>Changed` and, per readable relation to a model
+ * with a key, `<model><Relation>Connected` / `…Disconnected`. Node models with a key only.
+ */
+function subscriptionFields(
+  node: ResolvedNodeModel,
+  on: (op: AnyOperation) => boolean,
+  byName: ReadonlyMap<string, ResolvedNodeModel>,
+  access: (model: string, field: string) => FieldAccess,
+  naming: AnyRecord | undefined,
+): ResolvedSubscriptions | undefined {
+  if (node.abstract || !subscriptionKey(node, access)) return undefined;
+  const base = `${node.name.charAt(0).toLowerCase()}${node.name.slice(1)}`;
+  const changed = on("changed")
+    ? typeof naming?.changed === "string"
+      ? naming.changed
+      : `${base}Changed`
+    : undefined;
+  const relations: { field: string; connected?: string; disconnected?: string }[] = [];
+  if (on("connected") || on("disconnected")) {
+    for (const f of node.fields) {
+      if (f.kind !== "relation" || !access(node.name, f.name).read) continue;
+      const target = byName.get(f.target);
+      if (!target || !subscriptionKey(target, access)) continue;
+      const prefix = `${base}${capitalize(f.name)}`;
+      relations.push({
+        field: f.name,
+        ...(on("connected") ? { connected: `${prefix}Connected` } : {}),
+        ...(on("disconnected") ? { disconnected: `${prefix}Disconnected` } : {}),
+      });
+    }
+  }
+  if (!changed && relations.length === 0) return undefined;
+  return { ...(changed ? { changed } : {}), relations };
 }
 
 /** Whether a model has the indexes (or the shape) an operation needs; served only then. */

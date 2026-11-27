@@ -1098,7 +1098,7 @@ type PostChange {
 - Hosting constraints are those documented by #76 (long-lived connections, not serverless
   functions). Subscription fields are off by default (`operations: { subscribe: true }`).
 - Scope: the generated `Subscription` type is designed now so the contract does not change later;
-  implementation waits for #76's reader.
+  implementation waits for #76's reader. (Landed in phase 10, #250: see its status below.)
 
 ## Coexistence with `compat.v7` and migration
 
@@ -1443,6 +1443,33 @@ fixtures and goldens: printed SDL plus results) grows with it.
 
 10. **Subscriptions** on #76's CDC reader: `<model>Changed`, relationship events, rule-aware
     re-reads.
+
+    Status (#250): landed, experimental. Choices made where this note left them open: the reader
+    is `native.CDCReader` (`driver` or `client`, `pollInterval`), #76's polling loop (cursor,
+    stale-cursor reset, polling only while a subscription is open) made independent of the v7
+    type model: listeners name labels and relationship types, and get each poll's raw changes;
+    `compat.v7`'s engine can move onto it with #265. It is passed as
+    `makeSchema({ subscriptions })`, a `NativeSchemaError` when the config turns subscriptions
+    on without one. The `subscribe` group has `changed`, `connected` and `disconnected`;
+    `naming.<Model>.changed` renames `<model>Changed`; `authenticated: { subscribe }` guards
+    them. Served on node models whose `@id` is a readable `String` / `Int` / `BigInt` (the key
+    events carry and re-reads match on; the global id with relay), not on interfaces or unions;
+    relation events for readable relations to such a model. Relation events follow this note's
+    names (`userFollowingConnected` / `…Disconnected`), with `id`, `relatedId`, `node`, `related`
+    (both re-read, one statement per side in one read transaction, `relatedWhere` for the
+    other side) and `_edge` (the relationship's properties after the create or before the
+    delete, from the change log: edges have no rules); relationship property updates are not
+    events. Relationship events name their ends by element id only, so the reader reads the ends'
+    current properties once per batch; an end deleted since drops the event. `DELETED` carries
+    the key only, and is delivered for every deleted node when the subscriber reads every node of
+    the model (no `where`, no read rule restricting it, a client that is not a function of the
+    context), otherwise only for nodes the subscription delivered: the key of a node the
+    subscriber could not read is never sent. `changedFields` (UPDATED) leaves out fields a field
+    rule (context or row-dependent) or the config hides. Rules are evaluated once per
+    subscription, with its context. A database without CDC fails the subscription with
+    `CDC_UNAVAILABLE`. The native suite has a `subscriptions` fixture (events as goldens, run on
+    the Enterprise CDC job), and `test/native.subscriptions.integration.test.ts` checks that a
+    subscriber never receives a node the rules hide, on node changes and relationship events.
 
 Acceptance criteria of #77 map to phases 2 (both modes served side by side, with a test serving
 both from one server), 5 (typed rules fail at build time on unknown fields: a `test-d.ts` with

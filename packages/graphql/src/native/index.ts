@@ -28,6 +28,19 @@ import {
   type Session,
 } from "./resolvers.js";
 import { SchemaBuilder } from "./schema.js";
+import { subscriptionResolvers } from "./subscriptions.js";
+import type { CDCReader } from "./cdc.js";
+
+export {
+  CDCReader,
+  type CDCReaderOptions,
+  type Change,
+  type ChangeEndpoint,
+  type ChangeInterest,
+  type NodeChange,
+  type RelationshipChange,
+} from "./cdc.js";
+export type { ChangeOperation } from "./subscriptions.js";
 
 export { jwtContext, type JwtContext, type JwtContextOptions } from "./jwt.js";
 
@@ -50,6 +63,9 @@ export {
   READ_OPERATIONS,
   UPDATE_OPERATIONS,
   WRITE_OPERATIONS,
+  SUBSCRIBE_OPERATIONS,
+  type AnyOperation,
+  type SubscribeOperation,
   type CreateOperation,
   type DeleteOperation,
   type ContextPredicate,
@@ -90,6 +106,14 @@ export type NativeMakeSchemaOptions = {
   readonly config?: GraphQLConfig<any, any>;
   /** Show the message of unexpected errors instead of masking them (`INTERNAL_SERVER_ERROR`). */
   readonly debug?: boolean;
+  /**
+   * The Change Data Capture reader the `Subscription` root fields run on (experimental), needed
+   * when the config turns subscriptions on (`operations: { subscribe: true }`). One reader can
+   * serve several schemas; `close()` it on shutdown.
+   *
+   * @experimental
+   */
+  readonly subscriptions?: CDCReader;
 };
 
 function schemaOf(options: { client?: unknown; schema?: SchemaModel }): SchemaModel {
@@ -128,10 +152,22 @@ export function makeSchema(options: NativeMakeSchemaOptions): GraphQLSchema {
   const session = sessions(api, options.client as ClientSource);
   const runtime = { session, debug: options.debug ?? false };
   if (typeof options.client !== "function") checkComputed(api, options.client);
+  if (api.config.subscriptions.size > 0 && !options.subscriptions) {
+    throw new NativeSchemaError(
+      `native.makeSchema: the config turns subscriptions on (${[...api.config.subscriptions.keys()].join(", ")}); pass subscriptions: new native.CDCReader({ client }) (Neo4j Change Data Capture).`,
+    );
+  }
   let built = new SchemaBuilder(
     api,
     rootResolvers(api, runtime),
     nodeResolver(api, runtime),
+    options.subscriptions
+      ? subscriptionResolvers(api, {
+          ...runtime,
+          reader: options.subscriptions,
+          scopedClient: typeof options.client === "function",
+        })
+      : undefined,
   ).build();
   const extend = api.config.extensions.extend;
   if (extend) built = applyExtend(api, built, extend, extensionRuntime(api, runtime));

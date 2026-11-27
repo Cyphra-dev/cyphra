@@ -1,0 +1,14 @@
+# features: subscriptions.changed, subscriptions.rules
+# An anonymous subscriber gets the published post only: Bob's draft is re-read with the read rule.
+subscription {
+  postChanged {
+    operation
+    id
+    node {
+      id
+      title
+      published
+    }
+    changedFields
+  }
+}

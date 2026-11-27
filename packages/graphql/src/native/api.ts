@@ -64,6 +64,7 @@ const FIXED_TYPES = [
   "Query",
   "Mutation",
   "Subscription",
+  "ChangeOperation",
   "PageInfo",
   "SortOrder",
   "QueryMode",

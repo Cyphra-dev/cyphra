@@ -1,0 +1,30 @@
+{
+  "events": [
+    {
+      "data": {
+        "postChanged": {
+          "operation": "CREATED",
+          "id": "p-bob-draft",
+          "node": {
+            "id": "p-bob-draft",
+            "title": "Bob draft",
+            "published": false
+          }
+        }
+      }
+    },
+    {
+      "data": {
+        "postChanged": {
+          "operation": "CREATED",
+          "id": "p-public",
+          "node": {
+            "id": "p-public",
+            "title": "Public",
+            "published": true
+          }
+        }
+      }
+    }
+  ]
+}
