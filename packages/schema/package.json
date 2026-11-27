@@ -36,7 +36,7 @@
   "devDependencies": {
     "@types/node": "^22.20.5",
     "neogma": "2.0.5",
-    "peggy": "^4.2.0",
+    "peggy": "^5.1.1",
     "tsup": "^8.5.1",
     "typescript": "^5.9.3",
     "vitest": "^4.1.12"
