@@ -1,8 +1,13 @@
 import { execute, parse } from "graphql";
 import { describe, expect, it } from "vitest";
 import { fakeDriver } from "../../../test/helpers.js";
-import { makeSchema } from "../index.js";
+import { makeSchema, type MakeSchemaOptions } from "../index.js";
 import { cursorToOffset, offsetToCursor } from "./select.js";
+import { ENGINE_OPTION } from "../engine/index.js";
+
+/** Options with the shared engine off: these tests check the compiler's statements. */
+const compiler = (o: MakeSchemaOptions): MakeSchemaOptions =>
+  ({ ...o, [ENGINE_OPTION]: false }) as MakeSchemaOptions;
 
 const typeDefs = /* GraphQL */ `
   type Movie @node {
@@ -108,7 +113,7 @@ describe("root fields compile to one statement each", () => {
 
   it("nested connection with edge filter and sort stays in the same statement", async () => {
     const { driver, statements } = fakeDriver(() => []);
-    const schema = makeSchema({ typeDefs, driver });
+    const schema = makeSchema(compiler({ typeDefs, driver }));
     await execute({
       schema,
       document: parse(`{

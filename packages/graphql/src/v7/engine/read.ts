@@ -13,11 +13,13 @@
  *   `hasNextPage` on a type with `@limit`).
  *
  * - `@authorization` READ rules are ANDed into the `where` of the root, of each relation load and
- *   of each connection (see `rules.ts`), with the rules of the attributes selected there.
+ *   of each connection (see `rules.ts`), with the rules of the attributes selected there;
+ * - `@authentication` is checked where the compiler checks it (each projected node selection with
+ *   its fields, each connection), and its first failure is raised once the request translates.
  *
- * Anything else throws {@link Fallback} (connection `aggregate`, edge filters and sorts, `@cypher`
- * fields, custom resolvers' fields, interfaces, unions, `@authentication`, READ validations that
- * may fail, …).
+ * Connection edge filters and sorts are the engine's `$edge` filters and sorts of the related node.
+ *
+ * Anything else throws {@link Fallback} (connection `aggregate`, `@cypher` fields, custom resolvers' fields, interfaces, unions, READ validations that may fail, …).
  *
  * @packageDocumentation
  */
@@ -34,10 +36,11 @@ import {
   subSelections,
   type SelectionInfo,
 } from "../cypher/select.js";
-import type { AuthContext } from "../auth/context.js";
+import { checkAuthentication, type AuthContext } from "../auth/context.js";
 import {
   keyedConnectionEdge,
   type Attribute,
+  type AuthOperation,
   type NodeType,
   type Relationship,
   type V7Model,
@@ -80,12 +83,36 @@ export class ReadTranslator {
 
   constructor(
     private readonly model: V7Model,
-    schema: EngineSchema,
+    private readonly schema: EngineSchema,
     private readonly info: SelectionInfo,
-    auth: AuthContext,
+    private readonly auth: AuthContext,
   ) {
     this.where = new WhereTranslator(model, schema);
     this.rules = new EngineAuthRules(new WhereTranslator(model, schema, true), auth);
+  }
+
+  /** The first `@authentication` failure met while translating (thrown once it succeeds). */
+  private authFailure: { error: unknown } | undefined;
+
+  /**
+   * `@authentication` for `operation` on the type and on each of `fields`, where and in the order
+   * the compiler checks them (a node it projects, a connection, a write). A failure is kept and
+   * thrown by {@link authenticated} when the whole request translates: a request that falls back
+   * gets the compiler's own checks.
+   */
+  authenticate(node: NodeType, operation: AuthOperation, fields: readonly string[] = []): void {
+    if (this.authFailure) return;
+    try {
+      checkAuthentication(this.model, this.auth, node, [operation]);
+      for (const f of fields) checkAuthentication(this.model, this.auth, node, [operation], f);
+    } catch (error) {
+      this.authFailure = { error };
+    }
+  }
+
+  /** Throws the first `@authentication` failure of the translated request, if any. */
+  authenticated(): void {
+    if (this.authFailure) throw this.authFailure.error;
   }
 
   /**
@@ -176,7 +203,14 @@ export class ReadTranslator {
     const select: AnyRecord = {};
     const shapers: [string, Shape][] = [];
     const counts: Counts = new Map();
-    for (const [key, nodes] of collectFields(this.info, subSelections(fieldNodes))) {
+    const selection = collectFields(this.info, subSelections(fieldNodes));
+    // The compiler checks READ for every node selection it projects, with the selected fields.
+    this.authenticate(
+      node,
+      "READ",
+      [...selection.values()].map((n) => n[0]!.name.value),
+    );
+    for (const [key, nodes] of selection) {
       const name = nodes[0]!.name.value;
       if (name === "__typename") continue;
       if (node.userFields.some((f) => f.name === name)) throw new Fallback("custom resolver field");
@@ -369,9 +403,12 @@ export class ReadTranslator {
     fieldNodes: readonly FieldNode[],
     counts: Counts,
   ): { select: AnyRecord; shape: Shape } {
-    const { name: relation, target } = this.where.relation(engine.v7, rel);
-    // A to-one connection lists every edge the compiler finds (data may have several).
-    if (!rel.list) throw new Fallback("to-one connection");
+    const { name: own, target } = this.where.relation(engine.v7, rel);
+    // A to-one connection lists every edge the compiler finds (data may have several): it reads
+    // the to-many relation over the same edges.
+    const relation = rel.list ? own : engine.allEdges.get(rel.name);
+    if (relation === undefined) throw new Fallback("to-one connection");
+    this.authenticate(target, "READ");
     const afterOffset = cursorToOffset(args.after);
     const offset = afterOffset === undefined ? 0 : afterOffset + 1;
     const { conn, edgeFieldNodes, needsEdges, needsTotal } = this.connectionNeeds(fieldNodes);
@@ -401,8 +438,8 @@ export class ReadTranslator {
       };
     }
     if (needsTotal) {
-      // One count per relation in a projection, and only of to-many relations.
-      if (!rel.list || counts.has(relation)) throw new Fallback("connection totalCount");
+      // One count per relation in a projection.
+      if (counts.has(relation)) throw new Fallback("connection totalCount");
       counts.set(relation, where === undefined ? true : { where });
     }
     return {
@@ -419,6 +456,23 @@ export class ReadTranslator {
     };
   }
 
+  /** `edge: { role: ASC }` of a connection sort → `{ $edge: { role: "asc" } }` items. */
+  private edgeSortItems(rel: Relationship, sort: unknown): AnyRecord[] {
+    const props = this.model.properties.get(rel.properties!);
+    if (!props || keyedConnectionEdge(this.model, rel)) throw new Fallback("keyed edge sort");
+    const fields = this.schema.edgeFields.get(props.name);
+    const items: AnyRecord[] = [];
+    if (!isPlainObject(sort)) return items;
+    for (const [name, dir] of Object.entries(sort)) {
+      if (dir !== "ASC" && dir !== "DESC") continue;
+      const attr = props.attributes.find((a) => a.name === name);
+      const field = attr && !attr.cypher ? fields?.get(attr.name) : undefined;
+      if (!field) throw new Fallback(`sort on ${props.name}.${name}`);
+      items.push({ $edge: { [field]: dir === "ASC" ? "asc" : "desc" } });
+    }
+    return items;
+  }
+
   /** A connection `sort` (`[{ node: … }, { edge: … }]`) → engine `orderBy` on the related node. */
   private connectionOrder(
     rel: Relationship,
@@ -432,7 +486,7 @@ export class ReadTranslator {
       for (const [k, v] of Object.entries(s as AnyRecord)) {
         if (k === "node" && isPlainObject(v)) items.push(...this.sortItems(engine, v));
         else if (k === "edge" && rel.properties && v !== null && v !== undefined) {
-          throw new Fallback("edge sort");
+          items.push(...this.edgeSortItems(rel, v));
         }
       }
     }
@@ -452,6 +506,7 @@ export class ReadTranslator {
   /** `moviesConnection(where, sort, first, after)`. */
   rootConnection(node: NodeType, args: AnyRecord, fieldNodes: readonly FieldNode[]): ReadPlan {
     this.where.engineNode(node);
+    this.authenticate(node, "READ");
     const afterOffset = cursorToOffset(args.after);
     const offset = afterOffset === undefined ? 0 : afterOffset + 1;
     const { conn, edgeFieldNodes, needsEdges, needsTotal } = this.connectionNeeds(fieldNodes);

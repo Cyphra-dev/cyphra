@@ -30,7 +30,8 @@ const typeDefs = /* GraphQL */ `
 
 async function run(document: string, rows: unknown[] = [{ info: {}, data: {} }]) {
   const { driver, statements } = fakeDriver(() => rows);
-  const schema = makeSchema({ typeDefs, driver });
+  // The compiler's statements (the engine serves some of these mutations).
+  const schema = makeSchema({ typeDefs, driver, [ENGINE_OPTION]: false } as MakeSchemaOptions);
   const result = await execute({ schema, document: parse(document) });
   return { result, statements };
 }

@@ -9,7 +9,8 @@
  *   {@link EngineNode.fields}.
  * - Each relationship to another `@node` type is a relation field (named like the GraphQL field,
  *   unless a property already has that name), with an edge model for its
- *   `@relationshipProperties` (properties named by property too).
+ *   `@relationshipProperties` (properties named by property too). A to-one relationship also gets
+ *   a to-many relation over the same edges, for its connection.
  *
  * What the engine cannot represent exactly is left out, and a request that uses it stays on the
  * compat compiler: interfaces (v7 interfaces add no label), unions, relationships to them, and
@@ -35,12 +36,22 @@ export type EngineNode = {
   readonly fields: ReadonlyMap<string, string>;
   /** GraphQL relationship name → engine relation field. Absent: not in the engine. */
   readonly relations: ReadonlyMap<string, string>;
+  /**
+   * GraphQL to-one relationship name → a to-many engine relation over the same edges, for its
+   * connection (v7 lists every edge it finds, data may have several).
+   */
+  readonly allEdges: ReadonlyMap<string, string>;
 };
 
 export type EngineSchema = {
   readonly schema: SchemaModel;
   /** The `@node` types the engine serves, by name. */
   readonly nodes: ReadonlyMap<string, EngineNode>;
+  /**
+   * Per `@relationshipProperties` type: GraphQL attribute name → edge property (as `fields` of
+   * {@link EngineNode}), for edge filters and sorts. Absent: not in the engine.
+   */
+  readonly edgeFields: ReadonlyMap<string, ReadonlyMap<string, string>>;
 };
 
 /** Field names the engine gives a meaning in `select` / `where` (never used for a v7 field). */
@@ -88,6 +99,18 @@ function edgeProperties(props: PropertiesType): ResolvedScalarField[] {
   return [...out.values()];
 }
 
+/** GraphQL attribute → edge property, for the attributes stored like {@link edgeProperties}. */
+function edgeFieldNames(props: PropertiesType): Map<string, string> {
+  const fields = new Map(edgeProperties(props).map((f) => [f.name, f]));
+  const out = new Map<string, string>();
+  for (const a of props.attributes) {
+    const f = scalarField(a);
+    const known = f && fields.get(f.name);
+    if (f && known && known.type === f.type && known.list === f.list) out.set(a.name, f.name);
+  }
+  return out;
+}
+
 /** Whether a relationship's target is a plain `@node` type (not an interface or a union). */
 function plainTarget(model: V7Model, rel: Relationship): boolean {
   return (
@@ -122,6 +145,7 @@ export function engineSchema(model: V7Model): EngineSchema {
     }
     const relations: ResolvedRelationField[] = [];
     const relationNames = new Map<string, string>();
+    const allEdges = new Map<string, string>();
     const taken = new Set(fields.map((f) => f.name));
     for (const rel of node.relationships) {
       if (!plainTarget(model, rel)) continue;
@@ -152,6 +176,22 @@ export function engineSchema(model: V7Model): EngineSchema {
         ...(edge ? { edge } : {}),
       });
       relationNames.set(rel.name, name);
+      if (!rel.list) {
+        let all = `${rel.name}_all`;
+        for (let i = 1; taken.has(all) || reserved(all); i++) all = `${rel.name}_all${i}`;
+        taken.add(all);
+        relations.push({
+          kind: "relation",
+          name: all,
+          target: rel.target,
+          relType: rel.type,
+          direction: rel.direction,
+          many: true,
+          optional: true,
+          ...(edge ? { edge } : {}),
+        });
+        allEdges.set(rel.name, all);
+      }
     }
     const resolved: ResolvedNodeModel = {
       name: node.name,
@@ -166,10 +206,12 @@ export function engineSchema(model: V7Model): EngineSchema {
       model: resolved,
       fields: fieldNames,
       relations: relationNames,
+      allEdges,
     });
   }
   return {
     schema: { version: 1, nodes, relationships },
     nodes: mapped,
+    edgeFields: new Map([...model.properties.values()].map((p) => [p.name, edgeFieldNames(p)])),
   };
 }

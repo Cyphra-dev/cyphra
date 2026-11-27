@@ -4,7 +4,7 @@
  * `read.ts`, `write.ts`, with the request's `@authorization` rules from `rules.ts`); the others run
  * on the compat compiler, which stays for the v7 features whose engine pieces come later
  * (aggregations, fulltext, `@cypher`, subscriptions, interfaces, unions) and for what the engine
- * cannot express yet (edge filters and sorts, nested writes, …).
+ * cannot express yet (nested writes, arithmetic operators, …).
  *
  * @packageDocumentation
  */
@@ -91,9 +91,13 @@ export class V7Engine {
   ): ReadPlan | undefined {
     return this.plan(fieldNodes[0]?.name.value ?? "", ctx, () => {
       const t = new ReadTranslator(this.model, this.schema, info, auth);
-      return kind === "list"
-        ? t.rootList(node, args, fieldNodes)
-        : t.rootConnection(node, args, fieldNodes);
+      const plan =
+        kind === "list"
+          ? t.rootList(node, args, fieldNodes)
+          : t.rootConnection(node, args, fieldNodes);
+      // `@authentication` fails like the compiler, which checks it while compiling.
+      t.authenticated();
+      return plan;
     });
   }
 
@@ -112,7 +116,9 @@ export class V7Engine {
   ): WritePlan | undefined {
     return this.plan(fieldNodes[0]?.name.value ?? "", ctx, () => {
       const t = new WriteTranslator(this.model, this.schema, info, auth);
-      return t[kind](node, args, fieldNodes);
+      const plan = t[kind](node, args, fieldNodes);
+      t.authenticated();
+      return plan;
     });
   }
 
@@ -129,6 +135,8 @@ export class V7Engine {
         this.probe?.onRootField(field, e.message);
         return undefined;
       }
+      // The engine's answer: the error the compiler would raise (`@authentication`).
+      this.probe?.onRootField(field, undefined);
       throw e;
     }
   }
