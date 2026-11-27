@@ -196,20 +196,33 @@ queries, a write transaction for mutations). Values are always parameters, and l
 keys and relationship types come from your type definitions.
 
 `compat.v7` runs on the same engine as the typed client and the [native API](/graphql/native) when
-that engine answers exactly like v7: list and connection queries with their filters (edge filters
-and `single` included), sorting (by edge properties too), paging and nested relationships, `create`
-with attribute inputs, `update` with `set`, and `delete` without nested deletes, with
+that engine answers exactly like v7: list and connection queries with their filters (edge filters,
+`single` and aggregation filters included), sorting (by edge properties too), paging and nested
+relationships, connection `aggregate` selections, `@fulltext` queries, `@cypher` fields (see below),
+`create` with attribute inputs, `update` with `set`, and `delete` without nested deletes, with
 `@timestamp`, `@limit`, DateTime values (offset and precision kept), `@authentication` and
 `@authorization` handled like v7. A write whose `validate` rules fail for the request runs in a
-transaction that raises v7's `Forbidden` once it writes a node, and is rolled back. The rest
-(aggregations, full-text, `@cypher`, unions, interfaces, nested writes, arithmetic operators, reads
-whose `validate` rules depend on the node, …) runs on the compat compiler, with the same results. What
-you can see of the difference:
+transaction that raises v7's `Forbidden` once it writes a node, and is rolled back.
+
+`@cypher` fields of node types run on the engine when their statement evaluates there like in v7:
+fields returning nodes and list fields whose statement does not aggregate, scalar fields whose
+statement is a lone `RETURN` (one row, so the node is neither dropped nor repeated), and filters on
+any statement in the `where` of a root query. Neo4j 5 rejects a statement that aggregates
+(`count()`, `collect()`, …) inside the expressions the engine projects or sorts by, so those stay on
+the compat compiler, which runs them as separate `CALL` clauses.
+
+The rest stays on the compat compiler, with the same results: what only v7 does (interfaces, which
+add no label; nested writes, where v7's `connect` creates duplicate edges; arithmetic and list
+operators and `field_SET` keys, with v7's own null and overflow errors; custom-resolver fields;
+`context.cypherParams`; `validate` rules that depend on the node), unions, root `@cypher` queries and
+mutations, `@cypher` fields on relationship properties, and subscriptions. What you can see of the
+difference:
 
 - With `client`, the client's `query` events and spans name the engine operation and model
   (`findMany` on `Movie`) instead of `graphql.read` / `graphql.write`.
-- A root connection that selects both a page (`edges` / `pageInfo`) and `totalCount` reads them with
-  two statements in one read transaction.
+- A root connection that selects more than one of a page (`edges` / `pageInfo`), `totalCount` and
+  `aggregate` reads them with one statement each, in one read transaction; so does a `@fulltext`
+  query that selects both a page and `totalCount`.
 
 ## Authentication and authorization
 

@@ -1334,6 +1334,24 @@ fixtures and goldens: printed SDL plus results) grows with it.
    custom-resolver fields; `context.cypherParams`; reads whose READ `validate` rules do not reduce to
    `true`; `validate` rules that depend on the node.
 
+   Round 3 (#265): connection `aggregate` selections (root and nested, `count { nodes edges }`,
+   `node`, `edge`; `AGGREGATE` rules, and validations that fail for the request answer `Forbidden`
+   when a node is aggregated), aggregation filters (connection and deprecated forms), `@fulltext`
+   queries (score filters, sort by score and node fields, cursors, `totalCount`), and `@cypher`
+   fields of node types (nodes, lists and lone-`RETURN` scalars in projections and sorts, `$jwt`,
+   arguments, filters on scalar and node fields). Engine entries added for it, internal: list
+   aggregates with v7's semantics (`$aggregate` in `select` and `where`, `$values` on `aggregate`),
+   `$cypherNodes` filters on the nodes a Cypher expression returns, `$labelTest: false` on Cypher
+   node loads, and `$orderBy` (with `$score`) / `$maxScore` on `search`. Neo4j 5 rejects aggregating
+   functions in subquery expressions of a projection or an `ORDER BY` (the compiler hoists such
+   statements into `CALL` clauses), so `@cypher` statements that aggregate run on the engine only in
+   the `where` of a root read. These stay on the compat compiler for good, by decision: interfaces
+   and unions, nested writes, arithmetic and list operators and `field_SET` keys, custom-resolver
+   fields, `context.cypherParams`, and `validate` rules that depend on the node. Also still there:
+   root `@cypher` queries and mutations (no engine operation starts from a statement's rows), `@cypher`
+   fields on relationship properties, `@cypher` statements that aggregate outside a root `where`,
+   reads whose READ validations fail for the request, and subscriptions (#250).
+
 5. **Auth**: `rules` (read / create / update / delete / connect / disconnect / after),
    `authenticated`, field rules (context-only and row-dependent), `native.jwtContext`,
    `ctx.cyphra`, a security test per v7 footgun fixed.

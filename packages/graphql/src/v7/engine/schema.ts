@@ -13,8 +13,9 @@
  *   a to-many relation over the same edges, for its connection.
  *
  * What the engine cannot represent exactly is left out, and a request that uses it stays on the
- * compat compiler: interfaces (v7 interfaces add no label), unions, relationships to them, and
- * `@cypher` fields.
+ * compat compiler: interfaces (v7 interfaces add no label), unions and relationships to them.
+ * `@cypher` fields are not fields of the engine models: they are Cypher expressions of the
+ * operations (see `cypher.ts`). `@fulltext` indexes are the models' full-text indexes.
  *
  * @packageDocumentation
  */
@@ -59,7 +60,8 @@ function reserved(name: string): boolean {
   return name.startsWith("$") || name.startsWith("__") || name === "_count";
 }
 
-const SCALAR_TYPES: Record<string, ResolvedScalarField["type"]> = {
+/** Engine scalar types of the v7 scalars the engine stores (others are not in the engine). */
+export const ENGINE_SCALAR_TYPES: Record<string, ResolvedScalarField["type"]> = {
   ID: "String",
   String: "String",
   Int: "Int",
@@ -74,7 +76,7 @@ const SCALAR_TYPES: Record<string, ResolvedScalarField["type"]> = {
 function scalarField(attr: Attribute): ResolvedScalarField | undefined {
   if (attr.cypher || attr.variants || reserved(attr.property)) return undefined;
   // Enums are compared and stored as strings; the GraphQL schema already checks their values.
-  const type = attr.kind === "enum" ? "String" : SCALAR_TYPES[attr.type.name];
+  const type = attr.kind === "enum" ? "String" : ENGINE_SCALAR_TYPES[attr.type.name];
   if (!type) return undefined;
   return {
     kind: "scalar",
@@ -193,12 +195,20 @@ export function engineSchema(model: V7Model): EngineSchema {
         allEdges.set(rel.name, all);
       }
     }
+    // `@fulltext` indexes (created by the application). Marked as declared by the type itself, so
+    // that a search keeps the nodes with its labels, like v7.
+    const fulltextIndexes = node.fulltext.map((i) => ({
+      name: i.indexName,
+      fields: i.fields.map((f) => node.attributes.find((a) => a.name === f)?.property ?? f),
+      inheritedFrom: node.name,
+    }));
     const resolved: ResolvedNodeModel = {
       name: node.name,
       label: node.labels[0]!,
       ...(node.labels.length > 1 ? { labels: node.labels } : {}),
       uniqueFields: [],
       fields: [...fields, ...relations],
+      ...(fulltextIndexes.length ? { fulltextIndexes } : {}),
     };
     nodes.push(resolved);
     mapped.set(node.name, {

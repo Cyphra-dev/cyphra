@@ -119,7 +119,7 @@ export class WriteTranslator {
     private readonly info: SelectionInfo,
     auth: AuthContext,
   ) {
-    this.where = new WhereTranslator(model, schema);
+    this.where = new WhereTranslator(model, schema, false, auth.jwt ?? {});
     this.read = new ReadTranslator(model, schema, info, auth);
     this.rules = this.read.rules;
   }

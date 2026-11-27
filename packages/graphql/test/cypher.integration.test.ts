@@ -261,4 +261,48 @@ describe.skipIf(!hasNeo)("@cypher and @fulltext on Neo4j", () => {
     );
     expect(phrase.data).toEqual({ searchGqlCyMovies: { totalCount: 1 } });
   });
+
+  it("the shared engine answers like the compat compiler (aggregates, full-text, @cypher)", async () => {
+    const ENGINE = Symbol.for("cyphra.compat.v7.engine");
+    const onEngine: string[] = [];
+    const probe = {
+      onRootField: (field: string, reason: string | undefined) => {
+        if (reason === undefined) onEngine.push(field);
+      },
+    };
+    const on = compat.v7.makeSchema({ typeDefs, driver, [ENGINE]: probe } as never);
+    const off = compat.v7.makeSchema({ typeDefs, driver, [ENGINE]: false } as never);
+    const documents = [
+      `{ gqlCyMoviesConnection { aggregate { count { nodes } node { title { shortest longest } } } } }`,
+      `{ gqlCyMovies(sort: [{ title: ASC }]) { title castConnection(where: { edge: { role: { startsWith: "N" } } }) {
+          totalCount aggregate { count { nodes edges } edge { role { longest } } node { name { shortest } } } } } }`,
+      `{ gqlCyMovies(where: { castConnection: { aggregate: { count: { nodes: { gte: 2 } } } } }) { title } }`,
+      `{ gqlCyMovies(where: { castAggregate: { node: { name_SHORTEST_LENGTH_LT: 6 } } }) { title } }`,
+      `{ gqlCyMovies(where: { actorCount: { gt: 1 } }) { title } }`,
+      `{ gqlCyMovies(sort: [{ title: ASC }]) { title titleWith(suffix: "!") viewer actors { name } } }`,
+      `{ gqlCyMovies(where: { actors: { some: { name: { eq: "Carrie" } } } }) { title } }`,
+      `{ searchGqlCyMovies(phrase: "matrix OR speed", sort: [{ node: { title: DESC } }], first: 1, after: "YXJyYXljb25uZWN0aW9uOjA=") {
+          totalCount pageInfo { hasNextPage hasPreviousPage } edges { cursor node { title } } } }`,
+      `{ searchGqlCyMovies(phrase: "matrix OR speed", where: { score: { min: 0 } }) { edges { score node { title } } } }`,
+    ];
+    for (const document of documents) {
+      const ctx = { jwt: { sub: "u1" } };
+      const a = await execute({ schema: off, document: parse(document), contextValue: ctx });
+      const b = await execute({ schema: on, document: parse(document), contextValue: ctx });
+      expect(a.errors, document).toBeUndefined();
+      expect(b, document).toEqual(a);
+    }
+    // All but the fifth: `actorCount`'s statement names its column `n`, a variable of the engine's
+    // statement that a subquery expression cannot shadow.
+    expect(onEngine).toEqual([
+      "gqlCyMoviesConnection",
+      "gqlCyMovies",
+      "gqlCyMovies",
+      "gqlCyMovies",
+      "gqlCyMovies",
+      "gqlCyMovies",
+      "searchGqlCyMovies",
+      "searchGqlCyMovies",
+    ]);
+  });
 });

@@ -12,9 +12,12 @@
  * - to-one relationships: `null` matches nodes without one, `{}` filters nothing, a filter matches
  *   when the related node exists and matches.
  *
+ * - aggregation filters are engine `$aggregate` comparisons, `@cypher` filters engine `$cypher` /
+ *   `$cypherNodes` filters on the field's statement (see `cypher.ts`).
+ *
  * What it cannot translate exactly throws {@link Fallback}: the compat compiler then runs the
- * request (aggregation filters, `@cypher` fields, relationships to
- * interfaces and unions, …).
+ * request (relationships to interfaces and unions, `@cypher` statements that aggregate outside the
+ * `where` of a root read, …).
  *
  * @packageDocumentation
  */
@@ -24,13 +27,16 @@ import neo4j from "neo4j-driver";
 import { AuthValue } from "../cypher/where.js";
 import {
   keyedConnectionEdge,
+  keyedEdgeInput,
   type Attribute,
+  type CypherNodeField,
   type NodeType,
   type PropertiesType,
   type Relationship,
   type V7Model,
 } from "../model.js";
-import type { EngineNode, EngineSchema } from "./schema.js";
+import { filterNodes, filterValue } from "./cypher.js";
+import { ENGINE_SCALAR_TYPES, type EngineNode, type EngineSchema } from "./schema.js";
 
 type AnyRecord = Record<string, unknown>;
 
@@ -102,6 +108,40 @@ const LEGACY_OPERATORS: Record<string, string> = {
   GTE: "gte",
 };
 
+/** Comparison keys of aggregation filters, generic and deprecated (`_EQUAL`, `count_EQ`). */
+const AGGREGATION_COMPARISON: Record<string, string> = {
+  EQ: "eq",
+  EQUAL: "eq",
+  GT: "gt",
+  GTE: "gte",
+  LT: "lt",
+  LTE: "lte",
+};
+
+const AGGREGATION_OPERATORS = new Set(["eq", "gt", "gte", "lt", "lte"]);
+
+/** Aggregates of the generic aggregation filters (strings aggregate their lengths). */
+const GENERIC_AGGREGATES: Record<string, string> = {
+  average: "avg",
+  averageLength: "avg",
+  min: "min",
+  shortest: "min",
+  shortestLength: "min",
+  max: "max",
+  longest: "max",
+  longestLength: "max",
+  sum: "sum",
+};
+
+const LEGACY_AGGREGATES: Record<string, string> = {
+  AVERAGE: "avg",
+  MIN: "min",
+  SHORTEST: "min",
+  MAX: "max",
+  LONGEST: "max",
+  SUM: "sum",
+};
+
 const QUANTIFIERS: Record<string, string> = {
   ALL: "all",
   NONE: "none",
@@ -171,7 +211,26 @@ export class WhereTranslator {
      * `$context` references, to-one filters that filter nothing are left out.
      */
     private readonly authorization = false,
+    /** `$jwt` of `@cypher` statements: the decoded JWT, `{}` when not authenticated (v7). */
+    private readonly jwt: unknown = {},
   ) {}
+
+  /**
+   * `true` while translating the `where` of a root read: there, a `@cypher` filter may run a
+   * statement that aggregates (see `cypher.ts`).
+   */
+  root = false;
+
+  /** `translate()` with {@link root} set. */
+  atRoot<T>(translate: () => T): T {
+    const was = this.root;
+    this.root = true;
+    try {
+      return translate();
+    } finally {
+      this.root = was;
+    }
+  }
 
   /**
    * The engine node of a v7 node type, or {@link Fallback} (interfaces). Its `@authentication` /
@@ -214,10 +273,64 @@ export class WhereTranslator {
         push(a.where);
         continue;
       }
-      if (node.cypherNodes.some((c) => key === c.name || key.startsWith(`${c.name}_`))) {
+      const legacy = /^(.+)_(ALL|NONE|SINGLE|SOME)$/.exec(key);
+      const cypherNode =
+        node.cypherNodes.find((c) => c.name === key) ??
+        (legacy ? node.cypherNodes.find((c) => c.name === legacy[1]) : undefined);
+      if (cypherNode) {
+        push(this.cypherNodes(cypherNode, key, value));
+        continue;
+      }
+      if (node.cypherNodes.some((c) => key.startsWith(`${c.name}_`))) {
         throw new Fallback("@cypher filter");
       }
       push(this.relationship(node, key, value));
+    }
+    return allOf(parts);
+  }
+
+  /**
+   * A filter on a `@cypher` field returning nodes, on the nodes its statement returns: `some` /
+   * `none` / `single` / `all` of them (`all` holds without any), or for one node the first of them
+   * (`null`: there is none). Engine `$cypherNodes` filters.
+   */
+  private cypherNodes(field: CypherNodeField, key: string, value: unknown): Filter {
+    // v7 cannot filter on a field with arguments (an error).
+    if (field.args.length) throw new Fallback("filter on a @cypher field with arguments");
+    const target = this.model.node(field.target);
+    this.engineNode(target);
+    const entry = (quantifier: string, where?: Filter): AnyRecord => ({
+      $cypherNodes: [
+        {
+          expr: filterNodes(field.cypher, this.jwt, this.root),
+          model: target.name,
+          quantifier,
+          ...(where !== undefined && where !== TRUE ? { where } : {}),
+        },
+      ],
+    });
+    if (!field.type.list) {
+      if (value === undefined) return undefined;
+      if (value === null) return entry("absent");
+      if (!isFilterObject(value)) return undefined;
+      const inner = this.node(target, value);
+      return inner === undefined ? undefined : entry("first", inner);
+    }
+    const legacy = /^(.+)_(ALL|NONE|SINGLE|SOME)$/.exec(key);
+    const quantifiers: [string, unknown][] =
+      key === field.name
+        ? isFilterObject(value)
+          ? Object.entries(value)
+          : []
+        : [[QUANTIFIERS[legacy![2]!]!, value]];
+    const parts: Filter[] = [];
+    for (const [quantifier, where] of quantifiers) {
+      if (!isFilterObject(where)) continue;
+      if (!["some", "none", "single", "all"].includes(quantifier)) {
+        throw new Fallback(`@cypher filter ${quantifier}`);
+      }
+      const inner = this.node(target, where);
+      if (inner !== undefined) parts.push(entry(quantifier, inner));
     }
     return allOf(parts);
   }
@@ -289,8 +402,9 @@ export class WhereTranslator {
     op: string,
     value: unknown,
   ): AnyRecord | undefined {
+    if (attr.cypher) return this.cypherPredicate(attr, op, value);
     const field = engine.fields.get(attr.name);
-    if (!field || attr.cypher) throw new Fallback(`filter on ${attr.name}`);
+    if (!field) throw new Fallback(`filter on ${attr.name}`);
     if (attr.type.list) {
       if (value instanceof AuthValue) return this.reference(engine, attr, op, value.value);
       if (value === null) {
@@ -307,6 +421,43 @@ export class WhereTranslator {
     if (value === null) return op === "eq" ? { [field]: { equals: null } } : undefined;
     if (op === "in" && !Array.isArray(value)) throw new Fallback("in without a list");
     return { [field]: { [engineOp]: engineValue(attr, value) } };
+  }
+
+  /**
+   * One comparison on the value of a scalar `@cypher` field (the first row's value, every value of
+   * a list field), as an engine `$cypher` filter.
+   */
+  private cypherPredicate(attr: Attribute, op: string, value: unknown): AnyRecord | undefined {
+    // v7 cannot filter on a field with arguments (an error).
+    if (attr.args.length) throw new Fallback("filter on a @cypher field with arguments");
+    if (value instanceof AuthValue) {
+      if (value.value === null || value.value === undefined) return FALSE;
+      return this.cypherPredicate(attr, op, value.value);
+    }
+    const type = attr.kind === "enum" ? "String" : ENGINE_SCALAR_TYPES[attr.type.name];
+    if (!type) throw new Fallback(`filter on a @cypher ${attr.type.name} field`);
+    let filter: AnyRecord | undefined;
+    if (attr.type.list) {
+      if (value === null) {
+        if (op === "eq") throw new Fallback("null list filter");
+        return undefined;
+      }
+      if (op === "eq") filter = { equals: engineValue(attr, value) };
+      else if (op === "includes") filter = { has: engineValue(attr, value) };
+      else throw new Fallback(`list filter ${op}`);
+    } else {
+      const engineOp = SCALAR_OPERATORS[op];
+      if (!engineOp) throw new Fallback(`filter ${op}`);
+      if (value === null) {
+        if (op !== "eq") return undefined;
+        filter = { equals: null };
+      } else {
+        if (op === "in" && !Array.isArray(value)) throw new Fallback("in without a list");
+        filter = { [engineOp]: engineValue(attr, value) };
+      }
+    }
+    const expr = filterValue(attr.cypher!, attr.type.list, this.jwt, this.root);
+    return { $cypher: [{ expr, type, list: attr.type.list, filter }] };
   }
 
   /**
@@ -341,12 +492,14 @@ export class WhereTranslator {
       const r = rel;
       return allOf(
         Object.entries(value).map(([q, w]) => {
-          if (q === "aggregate") throw new Fallback("aggregation filter");
+          if (q === "aggregate") return this.aggregation(node, r, w, false);
           return this.related(node, r, q, w, true);
         }),
       );
     }
-    if (key.endsWith("Aggregate")) throw new Fallback("aggregation filter");
+    if (key.endsWith("Aggregate") && (rel = find(key.slice(0, -"Aggregate".length)))) {
+      return this.aggregation(node, rel, value, true);
+    }
     const m = /^(.+)_(ALL|NONE|SINGLE|SOME)$/.exec(key);
     if (m) {
       const quantifier = QUANTIFIERS[m[2]!]!;
@@ -360,6 +513,159 @@ export class WhereTranslator {
       }
     }
     throw new Fallback(`unknown filter ${node.name}Where.${key}`);
+  }
+
+  /**
+   * An aggregation filter (`actorsConnection: { aggregate }`, `deprecated`: `actorsAggregate`):
+   * `count`, `node`, `edge` with `AND` / `OR` / `NOT`, each comparison an engine `$aggregate`
+   * filter. In the connection form, `count.nodes` and `node` aggregate distinct nodes; `count.edges`,
+   * `edge` and the deprecated form do not deduplicate (like the compiler).
+   */
+  private aggregation(
+    node: NodeType,
+    rel: Relationship,
+    where: unknown,
+    deprecated: boolean,
+  ): Filter {
+    if (!isFilterObject(where)) return undefined;
+    const { name, target } = this.relation(node, rel);
+    const engineTarget = this.engineNode(target);
+    const compile = (w: AnyRecord): Filter => {
+      const parts: Filter[] = [];
+      for (const [key, value] of Object.entries(w)) {
+        if (value === undefined || value === null) continue;
+        const l = this.logical(key, value, compile);
+        if (l.handled) {
+          parts.push(l.where);
+          continue;
+        }
+        if (key === "count") {
+          if (!isFilterObject(value)) continue;
+          if (deprecated) {
+            parts.push(this.aggregateComparisons(name, { of: "count" }, value));
+            continue;
+          }
+          for (const [what, filters] of Object.entries(value)) {
+            if (!isFilterObject(filters)) continue;
+            if (what !== "nodes" && what !== "edges") throw new Fallback(`count filter ${what}`);
+            parts.push(
+              this.aggregateComparisons(name, { of: "count", distinct: what === "nodes" }, filters),
+            );
+          }
+          continue;
+        }
+        const legacyCount = /^count_(EQ|GT|GTE|LT|LTE)$/.exec(key);
+        if (legacyCount) {
+          const op = AGGREGATION_COMPARISON[legacyCount[1]!]!;
+          parts.push(this.aggregateComparisons(name, { of: "count" }, { [op]: value }));
+          continue;
+        }
+        if (key === "node") {
+          parts.push(
+            this.aggregationWhere(
+              name,
+              engineTarget.fields,
+              target.attributes,
+              "node",
+              !deprecated,
+              value,
+            ),
+          );
+          continue;
+        }
+        if (key === "edge") {
+          const props = this.model.properties.get(rel.properties ?? "");
+          if (!props || keyedEdgeInput(this.model, rel)) {
+            throw new Fallback("keyed edge aggregation filter");
+          }
+          const fields = this.schema.edgeFields.get(props.name);
+          if (!fields) throw new Fallback(`${props.name} is not in the engine`);
+          parts.push(this.aggregationWhere(name, fields, props.attributes, "edge", false, value));
+          continue;
+        }
+        throw new Fallback(`unknown aggregation filter ${key}`);
+      }
+      return allOf(parts);
+    };
+    return compile(where);
+  }
+
+  /** `${…}NodeAggregationWhereInput` / `${Properties}AggregationWhereInput`. */
+  private aggregationWhere(
+    relation: string,
+    fields: ReadonlyMap<string, string>,
+    attributes: readonly Attribute[],
+    on: "node" | "edge",
+    distinct: boolean,
+    where: unknown,
+  ): Filter {
+    if (!isFilterObject(where)) return undefined;
+    const parts: Filter[] = [];
+    for (const [key, value] of Object.entries(where)) {
+      if (value === undefined || value === null) continue;
+      const l = this.logical(key, value, (w) =>
+        this.aggregationWhere(relation, fields, attributes, on, distinct, w),
+      );
+      if (l.handled) {
+        parts.push(l.where);
+        continue;
+      }
+      const field = (attr: Attribute) => {
+        const f = attr.cypher ? undefined : fields.get(attr.name);
+        if (!f) throw new Fallback(`aggregation filter on ${attr.name}`);
+        // v7 compares the length of `String` values (not of `ID` or enum values).
+        const length = attr.kind === "scalar" && attr.type.name === "String";
+        return { of: on, distinct, field: f, length };
+      };
+      const direct = attributes.find((a) => a.name === key);
+      if (direct) {
+        if (!isFilterObject(value)) continue;
+        for (const [aggOp, filters] of Object.entries(value)) {
+          if (!isFilterObject(filters)) continue;
+          const fn = GENERIC_AGGREGATES[aggOp];
+          if (!fn) throw new Fallback(`aggregation operator ${aggOp}`);
+          parts.push(this.aggregateComparisons(relation, { ...field(direct), fn }, filters));
+        }
+        continue;
+      }
+      const m =
+        /^(.+?)_(AVERAGE|MAX|MIN|SUM|SHORTEST|LONGEST)(?:_LENGTH)?_(EQUAL|GT|GTE|LT|LTE)$/.exec(
+          key,
+        );
+      const attr = m && attributes.find((a) => a.name === m[1]);
+      if (!m || !attr) throw new Fallback(`unknown aggregation filter ${key}`);
+      parts.push(
+        this.aggregateComparisons(
+          relation,
+          { ...field(attr), fn: LEGACY_AGGREGATES[m[2]!]! },
+          { [AGGREGATION_COMPARISON[m[3]!]!]: value },
+        ),
+      );
+    }
+    return allOf(parts);
+  }
+
+  /** `{ eq, gt, … }` of one aggregate → engine `$aggregate` comparisons (ANDed). */
+  private aggregateComparisons(relation: string, aggregate: AnyRecord, filters: AnyRecord): Filter {
+    const parts: Filter[] = [];
+    for (const [op, raw] of Object.entries(filters)) {
+      if (raw === undefined || raw === null) continue;
+      if (!AGGREGATION_OPERATORS.has(op)) throw new Fallback(`aggregation filter operator ${op}`);
+      let value = raw;
+      if (value instanceof AuthValue) {
+        // `($p IS NOT NULL AND <comparison>)`: a missing value matches nothing.
+        if (value.value === null || value.value === undefined) {
+          parts.push(FALSE);
+          continue;
+        }
+        value = value.value;
+      }
+      if (typeof value !== "number" && typeof value !== "string" && typeof value !== "boolean") {
+        throw new Fallback("aggregation filter value");
+      }
+      parts.push({ $aggregate: [{ relation, ...aggregate, op, value }] });
+    }
+    return allOf(parts);
   }
 
   /** `lab: …` on a to-one relationship. */
