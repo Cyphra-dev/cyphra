@@ -31,6 +31,7 @@ import { compileLabelsFilter, decodeDynamicLabels, dynamicLabelsOf } from "./lab
 import type { EngineRules, ModelRules, RuleOperation, RuleValue } from "./scope.js";
 import { compileTraverseLoad } from "./traverse.js";
 import { cypherScalar, cypherType, renderFragment } from "./cypherExpr.js";
+import { compileAggregateFilters, compileAggregateLoad } from "./listAggregates.js";
 
 /** Quote an identifier for Cypher (labels, property keys, relationship types). */
 export function q(id: string): string {
@@ -806,6 +807,16 @@ export function compileWhere(
       if (c) parts.push(c);
       continue;
     }
+    if (key === "$aggregate") {
+      const c = compileAggregateFilters(ctx, model, alias, value);
+      if (c) parts.push(c);
+      continue;
+    }
+    if (key === "$cypherNodes") {
+      const c = compileCypherNodeFilters(ctx, model, alias, value);
+      if (c) parts.push(c);
+      continue;
+    }
     if (key === "$edge") {
       const edge = edgeOf(ctx, model, alias, "where");
       const c = compileWhere(ctx, edge.model, edge.variable, value);
@@ -850,6 +861,59 @@ function compileCypherFilters(
     );
     const expr = renderFragment((v) => ctx.param(v), alias, entry.expr, at);
     return compileScalarFilter(ctx, model, field, expr, entry.filter);
+  });
+  return and(parts);
+}
+
+const NODE_QUANTIFIERS = new Set(["some", "none", "single", "all", "first", "absent"]);
+
+/**
+ * `$cypherNodes` in a `where` (internal, for `@cyphra/graphql`'s `compat.v7`): `[{ expr, model,
+ * quantifier, where? }]`, each a filter on the non-null values of the list `expr` evaluates to (the
+ * nodes of a Cypher-backed field), as nodes of `model`: `some` / `none` / `single` / `all` of them
+ * match `where`, `first` (the first one matches), `absent` (there is none).
+ */
+function compileCypherNodeFilters(
+  ctx: QueryContext,
+  model: ResolvedNodeModel,
+  alias: string,
+  value: unknown,
+): string | null {
+  const at = `${model.name}: where.$cypherNodes`;
+  if (!Array.isArray(value)) {
+    throw new CyphraValidationError(`${at} takes [{ expr, model, quantifier, where }].`);
+  }
+  const parts = value.map((entry, i) => {
+    const where = `${at}[${i}]`;
+    if (!isPlainObject(entry) || typeof entry.model !== "string") {
+      throw new CyphraValidationError(`${where} takes { expr, model, quantifier, where }.`);
+    }
+    const quantifier = entry.quantifier;
+    if (typeof quantifier !== "string" || !NODE_QUANTIFIERS.has(quantifier)) {
+      throw new CyphraValidationError(
+        `${where}.quantifier must be ${[...NODE_QUANTIFIERS].join(", ")}.`,
+      );
+    }
+    const target = ctx.node(entry.model);
+    const expr = renderFragment((v) => ctx.param(v), alias, entry.expr, where);
+    const x = ctx.variable("x");
+    const rows = `UNWIND ${expr} AS ${x} WITH ${x} WHERE ${x} IS NOT NULL`;
+    const pred = compileWhere(ctx, target, x, entry.where);
+    const matching = pred ? `${rows} WITH ${x} WHERE ${pred}` : rows;
+    switch (quantifier) {
+      case "some":
+        return `EXISTS { ${matching} }`;
+      case "none":
+        return `NOT EXISTS { ${matching} }`;
+      case "single":
+        return `COUNT { ${matching} } = 1`;
+      case "all":
+        return `COUNT { ${matching} } = COUNT { ${rows} }`;
+      case "first":
+        return `EXISTS { ${rows} WITH ${x} LIMIT 1${pred ? ` WITH ${x} WHERE ${pred}` : ""} }`;
+      default:
+        return `NOT EXISTS { ${rows} }`;
+    }
   });
   return and(parts);
 }
@@ -1397,6 +1461,8 @@ export type Shape = {
     | { readonly key: string; readonly field: ResolvedScalarField }
     | { readonly key: string; readonly shape: Shape; readonly many: boolean }
   )[];
+  /** Keys of list aggregates (`select: { key: { $aggregate } }`, internal), returned as they come. */
+  readonly aggregates?: readonly string[];
   /**
    * `true`: scalars and edge properties are returned as the driver gives them (`Integer`,
    * temporal and point objects, `null` lists), not decoded for their schema type.
@@ -1435,6 +1501,7 @@ export function compileProjection(
   let withLabels = false;
   const traversals: { key: string; spec: AnyRecord; label: string }[] = [];
   const cypherSpecs: { key: string; spec: AnyRecord; label: string }[] = [];
+  const aggregateSpecs: { key: string; spec: AnyRecord; label: string }[] = [];
 
   const takeRelations = (spec: AnyRecord, label: string) => {
     for (const [key, v] of Object.entries(spec)) {
@@ -1478,6 +1545,14 @@ export function compileProjection(
       if (isPlainObject(v) && v.$cypher !== undefined) {
         checkLoadKey(ctx, model, key, label, "a Cypher expression");
         cypherSpecs.push({ key, spec: v, label });
+        continue;
+      }
+      if (isPlainObject(v) && v.$aggregate !== undefined) {
+        checkLoadKey(ctx, model, key, label, "an aggregate");
+        if (!isPlainObject(v.$aggregate) || Object.keys(v).length !== 1) {
+          throw new CyphraValidationError(`${label}.${key} takes { $aggregate: { … } }.`);
+        }
+        aggregateSpecs.push({ key, spec: v.$aggregate, label });
         continue;
       }
       const f = model.fields.find((x) => x.name === key);
@@ -1629,12 +1704,17 @@ export function compileProjection(
       );
     }
     const target = ctx.node(spec.$model);
-    const { $cypher, $model: _model, $many, ...sub } = spec;
+    const { $cypher, $model: _model, $many, $labelTest, ...sub } = spec;
     const many = $many === true;
+    if ($labelTest !== undefined && $labelTest !== false) {
+      throw new CyphraValidationError(`${at}.$labelTest takes false.`);
+    }
     const m = ctx.variable();
     const expr = renderFragment((v) => ctx.param(v), alias, $cypher, at);
     const inner = compileProjection(ctx, target, m, sub as LoadArgs);
-    const where = and([labelTest(m, target), scopedWhere(ctx, target, m, sub.where)]);
+    // `$labelTest: false` (internal): every node the expression returns, whatever its labels.
+    const test = $labelTest === false ? `${m} IS NOT NULL` : labelTest(m, target);
+    const where = and([test, scopedWhere(ctx, target, m, sub.where)]);
     const paging = compilePaging(ctx, target, m, sub as LoadArgs);
     // `UNWIND [x]` for a single node: one row, filtered out by the label test when it is null.
     let body = `UNWIND ${many ? expr : `[${expr}]`} AS ${m} WITH ${m} WHERE ${where}`;
@@ -1643,6 +1723,9 @@ export function compileProjection(
     const collected = `COLLECT { ${body} }`;
     entries.push(`${q(key)}: ${many ? collected : `head(${collected})`}`);
     cyphers.push({ key, shape: inner.shape, many });
+  }
+  for (const { key, spec, label } of aggregateSpecs) {
+    entries.push(`${q(key)}: ${compileAggregateLoad(ctx, model, alias, spec, `${label}.${key}`)}`);
   }
   if (counts) {
     const map = counts.map(
@@ -1663,6 +1746,7 @@ export function compileProjection(
       ...(counts ? { counts: counts.map((c) => c.field) } : {}),
       ...(withLabels ? { labels: true as const } : {}),
       ...(cyphers.length ? { cyphers } : {}),
+      ...(aggregateSpecs.length ? { aggregates: aggregateSpecs.map((a) => a.key) } : {}),
       ...(ctx.raw ? { raw: true as const } : {}),
     },
   };
@@ -1841,6 +1925,7 @@ export function decodeRow(shape: Shape, row: unknown): AnyRecord | null {
     else if (c.many) out[c.key] = ((v as unknown[] | null) ?? []).map((x) => decodeRow(c.shape, x));
     else out[c.key] = decodeRow(c.shape, v);
   }
+  for (const key of shape.aggregates ?? []) out[key] = src[key] ?? null;
   if (shape.counts) {
     const raw = (src["_count"] ?? {}) as AnyRecord;
     const counts: AnyRecord = {};

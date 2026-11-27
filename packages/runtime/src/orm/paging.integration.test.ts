@@ -520,6 +520,100 @@ describe.skipIf(!hasTestDb)("keyset cursors, engine rules and aliased loads", ()
   );
 
   it.skipIf(testDialect !== "neo4j")(
+    "list aggregates (compat.v7): relation values and filters, root $values",
+    async () => {
+      const raw = withRawValues(db);
+      const posts = await db.pgPost.findMany({
+        select: { id: true, title: true, views: true, author: { select: { id: true } } },
+      });
+      const of = (author: string) => posts.filter((p) => p.author?.id === author);
+      const [ada] = (await raw.pgUser.findMany({
+        where: { id: "ada" },
+        select: {
+          id: true,
+          agg: {
+            $aggregate: {
+              $relation: "posts",
+              where: { published: true },
+              values: {
+                nodes: { count: "nodes" },
+                edges: { count: "edges" },
+                sum: { node: "views", fn: "sum" },
+                avg: { node: "views", fn: "avg" },
+                max: { node: "views", fn: "max" },
+                longest: { node: "title", fn: "longest" },
+                none: { node: "score", fn: "sum" },
+              },
+            },
+          },
+        },
+      } as never)) as unknown as { agg: Record<string, unknown> }[];
+      const published = posts.filter(
+        (p) => p.author?.id === "ada" && Number(p.id.slice(1)) % 2 === 0,
+      );
+      const views = published.map((p) => p.views);
+      const sum = views.reduce((a, b) => a + b, 0);
+      const agg = ada!.agg;
+      expect(Number(agg.nodes)).toBe(published.length);
+      expect(Number(agg.edges)).toBe(published.length);
+      expect(Number(agg.sum)).toBe(sum);
+      expect(agg.avg).toBeCloseTo(sum / views.length);
+      expect(Number(agg.max)).toBe(Math.max(...views));
+      expect((agg.longest as string).length).toBe(
+        Math.max(...published.map((p) => p.title.length)),
+      );
+      expect(agg.none).not.toBeNull();
+
+      const busy = await db.pgUser.findMany({
+        where: {
+          $aggregate: [
+            { relation: "posts", of: "count", distinct: true, op: "gte", value: of("bob").length },
+            { relation: "posts", of: "node", field: "title", fn: "max", op: "gte", value: 7 },
+          ],
+        },
+        select: { id: true },
+        orderBy: { id: "asc" },
+      } as never);
+      expect(busy.map((u) => u.id)).toEqual(
+        ["ada", "bob", "cy"].filter((a) => of(a).length >= of("bob").length),
+      );
+      const none = await db.pgUser.findMany({
+        where: {
+          NOT: {
+            $aggregate: [
+              { relation: "posts", of: "node", field: "score", fn: "min", op: "lt", value: -1 },
+            ],
+          },
+        },
+        select: { id: true },
+      } as never);
+      expect(none.length).toBe(3);
+
+      const root = (await raw.pgPost.aggregate({
+        where: { published: true },
+        _count: true,
+        $values: {
+          shortest: { node: "title", fn: "shortest" },
+          sum: { node: "views", fn: "sum" },
+          nothing: { node: "score", fn: "avg" },
+        },
+      } as never)) as unknown as { _count: number; $values: Record<string, unknown> };
+      const all = posts.filter((p) => Number(p.id.slice(1)) % 2 === 0);
+      expect(root._count).toBe(all.length);
+      expect((root.$values.shortest as string).length).toBe(
+        Math.min(...all.map((p) => p.title.length)),
+      );
+      expect(Number(root.$values.sum)).toBe(all.reduce((a, p) => a + p.views, 0));
+      const empty = (await raw.pgPost.aggregate({
+        where: { id: "nope" },
+        $values: { sum: { node: "views", fn: "sum" }, avg: { node: "views", fn: "avg" } },
+      } as never)) as unknown as { $values: Record<string, unknown> };
+      expect(Number(empty.$values.sum)).toBe(0);
+      expect(empty.$values.avg).toBeNull();
+    },
+  );
+
+  it.skipIf(testDialect !== "neo4j")(
     "CypherDateTimeText: DateTime texts parsed by the database (offset and precision kept)",
     async () => {
       const raw = withRawValues(db);

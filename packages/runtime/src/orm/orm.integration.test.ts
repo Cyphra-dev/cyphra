@@ -2447,6 +2447,38 @@ describe.skipIf(!hasNeo || onMemgraph || onFalkorDB)("ORM full-text search (Neo4
     expect(await db.ftPost.search({ index: "ftPostSearch", query: "graph", take: 0 })).toEqual([]);
   });
 
+  it("internal $orderBy and $maxScore (compat.v7): node fields, score, or the index's order", async () => {
+    const all = await db.ftPost.search({ index: "ftPostSearch", query: "graph" });
+    const byId = await db.ftPost.search({
+      index: "ftPostSearch",
+      query: "graph",
+      $orderBy: [{ id: "desc" }],
+      skip: 1,
+    } as never);
+    expect(ids(byId)).toEqual(ids(all).sort().reverse().slice(1));
+    const worstFirst = await db.ftPost.search({
+      index: "ftPostSearch",
+      query: "graph",
+      $orderBy: [{ $score: "asc" }, { id: "asc" }],
+    } as never);
+    expect(worstFirst.map((r) => r.$score)).toEqual(all.map((r) => r.$score).reverse());
+    // Without keys: the index's own order (best first), paged without a top-k cut-off.
+    const unordered = await db.ftPost.search({
+      index: "ftPostSearch",
+      query: "graph",
+      $orderBy: [],
+      take: 2,
+    } as never);
+    expect(ids(unordered)).toEqual(ids(all).slice(0, 2));
+    const top = all[0]!.$score;
+    const weak = await db.ftPost.search({
+      index: "ftPostSearch",
+      query: "graph",
+      $maxScore: top - 1e-9,
+    } as never);
+    expect(ids(weak)).toEqual(ids(all).slice(1));
+  });
+
   it("passes Lucene syntax through and escapes user input", async () => {
     expect(ids(await db.ftPost.search({ index: "ftPostSearch", query: "prod*" }))).toEqual(["p2"]);
     expect(

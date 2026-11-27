@@ -16,6 +16,7 @@ import type { ResolvedNodeModel } from "@cyphra/schema";
 import {
   QueryContext,
   compileProjection,
+  compileSortKeys,
   scopedWhere,
   decodeRow,
   intParam,
@@ -38,6 +39,9 @@ const ARG_KEYS = new Set([
   "take",
   "select",
   "include",
+  // Internal (`@cyphra/graphql`'s `compat.v7`): see `searchOrder` and `$maxScore` below.
+  "$orderBy",
+  "$maxScore",
 ]);
 
 const MODES = ["lucene", "terms", "phrase"] as const;
@@ -128,6 +132,38 @@ export function falkordbFulltextCall(
 }
 
 /**
+ * The order of a search (internal `$orderBy`, for `@cyphra/graphql`'s `compat.v7`): `undefined`
+ * without one (best first), else the sort keys of `orderBy`, where `{ $score: "asc" | "desc" }`
+ * sorts by score (`""`: an empty `$orderBy`, the order the index returns the hits in).
+ */
+function searchOrder(
+  ctx: QueryContext,
+  model: ResolvedNodeModel,
+  orderBy: unknown,
+  op: string,
+): string | undefined {
+  if (orderBy === undefined) return undefined;
+  if (!Array.isArray(orderBy)) throw new CyphraValidationError(`${op}: $orderBy must be a list.`);
+  const items: string[] = [];
+  for (const item of orderBy) {
+    if (isPlainObjectValue(item) && Object.keys(item).length === 1 && "$score" in item) {
+      const dir = item.$score;
+      if (dir !== "asc" && dir !== "desc") {
+        throw new CyphraValidationError(`${op}: $orderBy $score must be "asc" or "desc".`);
+      }
+      items.push(`score ${dir.toUpperCase()}`);
+      continue;
+    }
+    for (const k of compileSortKeys(ctx, model, "n", [item])) items.push(`${k.expr} ${k.dir}`);
+  }
+  return items.join(", ");
+}
+
+function isPlainObjectValue(v: unknown): v is AnyRecord {
+  return typeof v === "object" && v !== null && !Array.isArray(v);
+}
+
+/**
  * Run a `search` on `model` through `exec` (a read transaction, or the current `$transaction`).
  * Rows come back best first, each with its `$score`.
  */
@@ -164,6 +200,10 @@ export async function search(
   if (minScore !== undefined && (typeof minScore !== "number" || !Number.isFinite(minScore))) {
     throw new CyphraValidationError(`${op}: minScore must be a finite number.`);
   }
+  const maxScore = args.$maxScore;
+  if (maxScore !== undefined && (typeof maxScore !== "number" || !Number.isFinite(maxScore))) {
+    throw new CyphraValidationError(`${op}: $maxScore must be a finite number.`);
+  }
   const skip = args.skip === undefined ? undefined : nonNegativeInt(args.skip, `${op}: skip`);
   const take = args.take === undefined ? undefined : nonNegativeInt(args.take, `${op}: take`);
   const ctx = ctxFactory();
@@ -174,6 +214,7 @@ export async function search(
     scopedWhere(ctx, model, "n", args.where),
   ]);
   const { expr, shape } = compileProjection(ctx, model, "n", args);
+  const order = searchOrder(ctx, model, args.$orderBy, op);
   // Lucene rejects an empty query: a blank search box simply matches nothing.
   if (args.query.trim() === "" || take === 0) return [];
 
@@ -181,25 +222,24 @@ export async function search(
     return falkordbSearch(exec, ctx, model, inherited, args.query, mode, {
       where,
       minScore,
+      maxScore,
+      order,
       skip,
       take,
       expr,
       shape,
     });
   }
-  const filters = [
-    ...(minScore === undefined ? [] : [`score >= ${ctx.param(minScore)}`]),
-    ...(where ? [`(${where})`] : []),
-  ];
-  // Unfiltered and paged: let Lucene collect only the top `skip + take` hits.
-  const top = filters.length === 0 && take !== undefined ? (skip ?? 0) + take : undefined;
+  const filters = scoreFilters(ctx, minScore, maxScore, where);
+  // Unfiltered and paged by score: let Lucene collect only the top `skip + take` hits.
+  const top =
+    filters.length === 0 && take !== undefined && order === undefined
+      ? (skip ?? 0) + take
+      : undefined;
   let text = fulltextCall(ctx, args.index, args.query, mode, top);
   text += " WITH node AS n, score";
   if (filters.length) text += ` WHERE ${filters.join(" AND ")}`;
-  text += " WITH n, score ORDER BY score DESC";
-  if (skip !== undefined) text += ` SKIP ${ctx.param(intParam(skip))}`;
-  if (take !== undefined) text += ` LIMIT ${ctx.param(intParam(take))}`;
-  text += ` RETURN ${expr} AS row, score ORDER BY score DESC`;
+  text += pageClause(ctx, order, skip, take, expr);
   const rows = (await exec(text, ctx.params)) as { row: unknown; score: unknown }[];
   return rows.map((r) => ({
     ...decodeRow(shape, r.row)!,
@@ -223,13 +263,15 @@ async function falkordbSearch(
   parts: {
     where: string | null;
     minScore: unknown;
+    maxScore: unknown;
+    order: string | undefined;
     skip: number | undefined;
     take: number | undefined;
     expr: string;
     shape: ReturnType<typeof compileProjection>["shape"];
   },
 ): Promise<AnyRecord[]> {
-  const { where, minScore, skip, take, expr, shape } = parts;
+  const { where, minScore, maxScore, order, skip, take, expr, shape } = parts;
   const call = falkordbFulltextCall(
     ctx,
     inheritedFrom ? ctx.node(inheritedFrom).label : model.label,
@@ -239,18 +281,48 @@ async function falkordbSearch(
   if (call === null) return [];
   let cypher = call;
   cypher += " WITH node AS n, score";
-  const filters = [
-    ...(minScore === undefined ? [] : [`score >= ${ctx.param(minScore)}`]),
-    ...(where ? [`(${where})`] : []),
-  ];
+  const filters = scoreFilters(ctx, minScore, maxScore, where);
   if (filters.length) cypher += ` WHERE ${filters.join(" AND ")}`;
-  cypher += " WITH n, score ORDER BY score DESC";
-  if (skip !== undefined) cypher += ` SKIP ${ctx.param(intParam(skip))}`;
-  if (take !== undefined) cypher += ` LIMIT ${ctx.param(intParam(take))}`;
-  cypher += ` RETURN ${expr} AS row, score ORDER BY score DESC`;
+  cypher += pageClause(ctx, order, skip, take, expr);
   const rows = (await exec(cypher, ctx.params)) as { row: unknown; score: unknown }[];
   return rows.map((r) => ({
     ...decodeRow(shape, r.row)!,
     $score: typeof r.score === "number" ? r.score : Number(r.score),
   }));
+}
+
+/** `score >= $min`, `score <= $max` (internal) and the `where` of a search's hits. */
+function scoreFilters(
+  ctx: QueryContext,
+  minScore: unknown,
+  maxScore: unknown,
+  where: string | null,
+): string[] {
+  return [
+    ...(minScore === undefined ? [] : [`score >= ${ctx.param(minScore)}`]),
+    ...(maxScore === undefined ? [] : [`score <= ${ctx.param(maxScore)}`]),
+    ...(where ? [`(${where})`] : []),
+  ];
+}
+
+/**
+ * The ordering, paging and `RETURN` of a search: best first, or the {@link searchOrder} (none for
+ * `""`), then `skip` / `take`.
+ */
+function pageClause(
+  ctx: QueryContext,
+  order: string | undefined,
+  skip: number | undefined,
+  take: number | undefined,
+  expr: string,
+): string {
+  const by = order === undefined ? "score DESC" : order;
+  let text = " WITH n, score";
+  if (by) text += ` ORDER BY ${by}`;
+  if (skip !== undefined) text += ` SKIP ${ctx.param(intParam(skip))}`;
+  if (take !== undefined) text += ` LIMIT ${ctx.param(intParam(take))}`;
+  text += ` RETURN ${expr} AS row, score`;
+  // Without an internal `$orderBy`, the rows are returned best first.
+  if (order === undefined) text += " ORDER BY score DESC";
+  return text;
 }
