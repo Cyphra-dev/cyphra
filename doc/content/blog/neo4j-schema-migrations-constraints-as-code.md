@@ -14,7 +14,8 @@ in the same order on every environment.
 
 This post explains how Cyphra treats that schema as code: where the constraints and indexes come
 from, how a migration is generated from a schema diff, and what happens to the data that is already
-there.
+there. For the reference, with every generated step and command, see
+[Neo4j migrations with Cyphra](/migrations).
 
 ## What a Neo4j schema actually contains
 

@@ -27,3 +27,6 @@ A relation field names the type and the direction:
 declared, here `User.posts` and `Post.author`. When the relationship has properties, a
 `relationship { … }` block types them, and the [typed client](/client) exposes them as `$edge`.
 See [Relationships](/schema#relationships).
+
+How relationships map to typed fields, the graph side of an ORM, is explained on the
+[Neo4j ORM](/neo4j-orm) page.

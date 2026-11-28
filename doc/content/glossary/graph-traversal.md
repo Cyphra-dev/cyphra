@@ -30,3 +30,5 @@ The [typed client](/client) traverses through relation fields: `include` and `se
 nodes at any depth, and filters such as `posts: { some: { … } }` test related nodes. Paths with a
 variable number of hops, or shortest paths, are clearer in Cypher, which `db.$cypher` runs as a
 parameterized query.
+
+For traversals with typed results in an application, see [Neo4j with TypeScript](/).

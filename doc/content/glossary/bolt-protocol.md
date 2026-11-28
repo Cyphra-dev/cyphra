@@ -26,3 +26,6 @@ The URI scheme says how a driver connects:
 The [runtime](/runtime) wraps the official `neo4j-driver` package, so any URI it accepts works in
 `NEO4J_URI`. `cyphra dev` writes a local `bolt://` URI to `.env`, and
 [Cyphra Cloud](/cloud) databases are only reachable over TLS with `neo4j+s://`.
+
+To connect from Node.js with typed results instead of raw records, see
+[Neo4j with TypeScript](/).

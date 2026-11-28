@@ -84,6 +84,43 @@ alice.posts;                    // Post[]
 alice.following[0].$edge.since; // Date, from the Follows edge
 `;
 
+/** Home "Neo4j from TypeScript" example: the driver's untyped records, then the same read typed. */
+const TS_VS_DRIVER = `
+// neo4j-driver: the record knows nothing about your graph
+const { records } = await driver.executeQuery(
+  "MATCH (u:User {email: $email}) RETURN u",
+  { email },
+);
+records[0].get("u").properties.name; // any
+
+// Cyphra: the same read, typed from schema.cyphra
+const db = createClient({ uri, user, password });
+const user = await db.user.findUnique({
+  where: { email },
+  include: { posts: true },
+});
+user?.name;  // string | null
+user?.posts; // Post[]
+`;
+
+const TS_LINKS: { title: string; body: string; href: string }[] = [
+  {
+    title: "Neo4j with Next.js",
+    body: "A typed client in Server Components and Server Actions, one driver across hot reloads.",
+    href: "/guides/nextjs",
+  },
+  {
+    title: "Neo4j with NestJS",
+    body: "An injectable client, @Transactional() services and a Terminus health check.",
+    href: "/guides/nestjs",
+  },
+  {
+    title: "Neo4j ORM",
+    body: "What an OGM is, how it differs from an ORM, and how Cyphra compares.",
+    href: "/neo4j-orm",
+  },
+];
+
 const CYPHER = `
 const rows = await db.$cypher<{ name: string; n: number }>\`
   MATCH (u:User)-[:AUTHORED]->(p:Post)
@@ -513,6 +550,47 @@ export function Landing() {
           ))}
         </div>
       </div>
+
+      {/* Neo4j from TypeScript */}
+      <section className={styles.section} aria-labelledby="typescript-title">
+        <div className={styles.container}>
+          <div className={styles.splitWide}>
+            <div className={styles.reveal}>
+              <Eyebrow>TypeScript and Node.js</Eyebrow>
+              <h2 id="typescript-title" className={styles.h2}>
+                Using Neo4j from TypeScript
+              </h2>
+              <p className={styles.sectionLede}>
+                Neo4j is the database, TypeScript is the language your app is written in: you use
+                them together, not one instead of the other. The official <code>neo4j-driver</code>{" "}
+                connects Node.js to Neo4j, but it returns untyped records, so every value is{" "}
+                <code>any</code> until you cast it. Cyphra adds the types: it generates a client
+                from your schema, and runs on the same driver. See{" "}
+                <Link href="/compare/neo4j-driver" className={styles.inlineLink}>
+                  Cyphra vs neo4j-driver
+                </Link>
+                .
+              </p>
+              <ul className={styles.points}>
+                {TS_LINKS.map((p) => (
+                  <li key={p.href}>
+                    <Link href={p.href}>
+                      <span className={styles.pointTitle}>
+                        {p.title}
+                        <Arrow />
+                      </span>
+                      <span className={styles.pointBody}>{p.body}</span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <Window title="users.ts" badge="typed" className={styles.reveal}>
+              <Code code={TS_VS_DRIVER} lang="ts" />
+            </Window>
+          </div>
+        </div>
+      </section>
 
       {/* Schema → graph */}
       <section className={styles.section} aria-labelledby="schema-title">

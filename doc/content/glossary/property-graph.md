@@ -26,3 +26,6 @@ and [Cypher](/glossary/cypher) is built around it.
 A `.cyphra` schema describes a property graph: `node` blocks for labels and their properties,
 relation fields for relationships, and `relationship` blocks when the relationship itself has
 properties. See the [schema reference](/schema).
+
+How a property graph maps to typed objects in code is explained on the
+[Neo4j ORM](/neo4j-orm) page.

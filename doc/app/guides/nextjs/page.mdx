@@ -1,7 +1,7 @@
 ---
 title: "Neo4j with Next.js: App Router and Server Actions"
 sidebarTitle: Next.js
-description: "Query Neo4j from Next.js App Router Server Components and Server Actions with Cyphra: a typed client, one driver across hot reloads, and dynamic rendering."
+description: "Connect Neo4j to a Next.js App Router app in 5 minutes: a typed client in Server Components and Server Actions, and one driver across hot reloads."
 ---
 
 import { Callout, Steps } from "nextra/components";
@@ -9,20 +9,67 @@ import { HowToJsonLd } from "../../../components/seo/page-jsonld";
 
 # Neo4j with Next.js
 
-To use Neo4j in a Next.js App Router app, create **one** database client in a server-only module,
+Next.js and Neo4j are not alternatives: Next.js is the framework that renders your app, Neo4j is
+the graph database it reads and writes. They work together through a database client that runs on
+the server. To use Neo4j in a Next.js App Router app, create **one** client in a server-only module,
 cache it on `globalThis` so hot reloads in development reuse it, and call it from Server
 Components, Server Actions and Route Handlers. Never from Client Components: the driver and your
 credentials stay on the server. This guide does that with Cyphra's generated, typed client.
-
-The finished app is the official starter,
-[Cyphra-dev/nextjs-starter](https://github.com/Cyphra-dev/nextjs-starter): tagged notes, where each
-note links to its tags with a `TAGGED` relationship. Clone it, or follow the steps to add Neo4j to
-your own app.
 
 <Callout type="info">
   Tested with Next.js 16.4 (App Router, Turbopack), React 19, Node.js 24 and Neo4j 5.26: `next dev`,
   `next build` and `next start`, with notes created through the Server Action in a browser.
 </Callout>
+
+## Quick start
+
+The fastest way is to [start from a template](https://github.com/Cyphra-dev/nextjs-starter): the
+official starter is a tagged-notes app, where each note links to its tags with a `TAGGED`
+relationship. It needs Node.js 20+, pnpm and Docker:
+
+```bash
+git clone https://github.com/Cyphra-dev/nextjs-starter my-app && cd my-app
+pnpm install       # also generates the typed client
+pnpm db:dev        # starts Neo4j 5 in Docker and writes .env
+pnpm db:migrate    # applies the migrations (constraints and indexes)
+pnpm dev           # http://localhost:3000
+```
+
+In your own app (default `next.config`), the whole integration is one server-only file plus your
+queries:
+
+```ts filename="lib/db.ts"
+import "server-only";
+import { createClient } from "./cyphra.gen";
+
+const globalForDb = globalThis as unknown as { cyphra?: ReturnType<typeof createClient> };
+
+export const db = () =>
+  (globalForDb.cyphra ??= createClient({
+    uri: process.env.NEO4J_URI!,
+    user: process.env.NEO4J_USERNAME!,
+    password: process.env.NEO4J_PASSWORD!,
+  }));
+```
+
+```tsx filename="app/page.tsx"
+import { connection } from "next/server";
+import { db } from "@/lib/db";
+
+export default async function Home() {
+  await connection(); // render at request time
+  const notes = await db().note.findMany({ include: { tags: true } });
+  return (
+    <ul>
+      {notes.map((n) => (
+        <li key={n.id}>{n.text}</li>
+      ))}
+    </ul>
+  );
+}
+```
+
+The steps below build this from an empty Next.js app and explain each choice.
 
 ## Steps
 

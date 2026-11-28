@@ -254,6 +254,8 @@ npx cyphra generate     # writes cyphra.gen.ts
 ```
 
 The [getting started guide](/getting-started) covers the rest, and the
-[typed client reference](/client) lists every operation and filter. If a term here was unfamiliar,
+[typed client reference](/client) lists every operation and filter. For an overview of using
+[Neo4j with TypeScript](/) and Node.js, including the Next.js and NestJS guides, start from the home
+page. If a term here was unfamiliar,
 the [glossary](/glossary) defines [labels](/glossary/node-label),
 [relationship types](/glossary/relationship-type) and the rest.

@@ -28,3 +28,5 @@ to GQL, the ISO standard graph query language.
 
 The [typed client](/client) compiles its calls to Cypher, and `db.$cypher` runs your own Cypher as a
 parameterized tagged template. The [query builder](/queries) composes Cypher from typed parts.
+
+To run Cypher from Node.js and get typed results back, see [Neo4j with TypeScript](/).
