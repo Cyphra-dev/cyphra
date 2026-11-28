@@ -597,6 +597,9 @@ node Quiz implements LearningActivity {
   types generated its ids. The `Quiz` ids must then be unique across `:LearningActivity` nodes, and
   are generated too when you create one without an id (an inherited field has a single declaration);
   the report says so.
+- **A field that differs only in its `@default`** (`kind: String! @default(value: "lab")` on
+  `Lab`, `@default(value: "quiz")` on `Quiz`) does not prevent the interface: it stays on each
+  type, with its own default, and the report lists the defaults.
 - **When the fields do not line up** (a common field declared `String!` on one type and `Int` on
   another), the label becomes [`@@labels([LearningActivity])`](/schema#dynamic-labels) on each type
   instead. Cyphra reads and filters on it, but does not add it on create: pass

@@ -7,7 +7,10 @@
  * one) becomes `interface LearningActivity { … }` holding the fields its carriers have in common,
  * and each carrier `implements` it. When the carriers declare a common field differently, the
  * fields do not line up and the label becomes `@@labels([LearningActivity])` on each carrier
- * instead (a label Cyphra reads and filters on, but does not add on create). A field that only
+ * instead (a label Cyphra reads and filters on, but does not add on create). A field that differs
+ * only in its `@default` (`kind: String! @default(value: "lab")` on one carrier, `"quiz"` on
+ * another) does not prevent the interface: it stays on each implementation, with its own default
+ * (an inherited field has a single declaration). A field that only
  * some carriers mark `@id` (`id: ID! @id` on one, a plain `id: ID!` on another) lines up: the
  * interface declares it `@id`, with `@default(uuid())` when one of them generated its values.
  *
@@ -19,7 +22,13 @@
  * @packageDocumentation
  */
 
-import type { Decorator, ModelAttribute, NodeField, ScalarNodeField } from "@cyphra/schema";
+import {
+  formatDecorator,
+  type Decorator,
+  type ModelAttribute,
+  type NodeField,
+  type ScalarNodeField,
+} from "@cyphra/schema";
 import { defaultFn, ID, type IssueDraft } from "./mappings.js";
 
 /** A converted `@node` type, before printing. The interface pass moves fields out of it. */
@@ -99,14 +108,14 @@ type Group = {
   readonly implementers: Set<string>;
 };
 
-/** `title: String @unique` as one line, to show a field in the report. */
+/** `title: String @unique` / `kind String @default("lab")` as one line, for the report. */
 function show(f: NodeField): string {
   if (f.kind === "Relational") {
     const t = f.cardinality === "many" ? `${f.target}[]` : `${f.target}${f.optional ? "?" : ""}`;
     return `${f.name} ${t}`;
   }
   const t = `${f.type.enum ?? f.type.name}${f.type.list ? "[]" : f.type.optional ? "?" : ""}`;
-  const decorators = f.decorators.map((d) => ` @${d.name}`).join("");
+  const decorators = f.decorators.map((d) => ` ${formatDecorator(d)}`).join("");
   return `${f.name} ${t}${decorators}`;
 }
 
@@ -157,6 +166,26 @@ function mergedId(
     plain: members.filter((_, i) => !hasId(fields[i]!)),
     generated,
   };
+}
+
+/** `f` without `@default`, to compare fields that may differ only by their default. */
+function withoutDefault(f: ScalarNodeField): ScalarNodeField {
+  return { ...f, decorators: f.decorators.filter((d) => d.name !== "default") };
+}
+
+/**
+ * A scalar field the members declare alike but for its `@default`: each member's default
+ * (`@default("lab")`, or `no default`), or `undefined` when the fields differ otherwise.
+ */
+function defaultsOnly(members: readonly NodeDraft[], graphqlField: string): string[] | undefined {
+  const fields = members.map((m) => m.byGraphql.get(graphqlField));
+  if (!fields.every((f): f is ScalarNodeField => f?.kind === "Scalar")) return undefined;
+  const base = withoutDefault(fields[0]!);
+  if (!fields.every((f) => same(withoutDefault(f), base))) return undefined;
+  return fields.map((f) => {
+    const d = f.decorators.find((x) => x.name === "default");
+    return d ? formatDecorator(d) : "no default";
+  });
 }
 
 function list(names: readonly string[]): string {
@@ -272,6 +301,8 @@ export function mapInterfaces(input: InterfacePassInput): InterfacePassResult {
     let mismatch: string | undefined;
     /** Identifiers only some members mark `@id`: the field declared on the interface instead. */
     const merged = new Map<string, NonNullable<ReturnType<typeof mergedId>>>();
+    /** Fields that differ only in their `@default`: kept on each member, with its default. */
+    const ownDefaults = new Map<string, string[]>();
     for (const f of names) {
       const missing = members.find((m) => !m.byGraphql.has(f));
       if (missing) {
@@ -283,6 +314,11 @@ export function mapInterfaces(input: InterfacePassInput): InterfacePassResult {
       const id = other ? mergedId(members, f) : undefined;
       if (id) {
         merged.set(f, id);
+        continue;
+      }
+      const defaults = other ? defaultsOnly(members, f) : undefined;
+      if (defaults) {
+        ownDefaults.set(f, defaults);
         continue;
       }
       if (other) {
@@ -309,6 +345,12 @@ export function mapInterfaces(input: InterfacePassInput): InterfacePassResult {
     const kept: string[] = [];
     const idNotes: string[] = [];
     for (const f of names) {
+      const defaults = ownDefaults.get(f);
+      if (defaults) {
+        const each = members.map((m, i) => `${m.graphqlName} ${defaults[i]}`);
+        kept.push(`${f} (its @default differs: ${list(each)})`);
+        continue;
+      }
       const field = merged.get(f)?.field ?? members[0]!.byGraphql.get(f)!;
       if (members.some((m) => hoisted.get(m.graphqlName)?.has(f))) continue;
       if (members.some((m) => inherited.get(m.graphqlName)?.has(field.name))) continue;
