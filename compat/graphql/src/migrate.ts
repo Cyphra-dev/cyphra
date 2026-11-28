@@ -120,7 +120,8 @@ export async function dualRunFixture(fixture: Fixture, driver: Driver): Promise<
   const out: MigrateOutcome[] = [];
   for (const { op, translation } of translateFixture(fixture, ctx)) {
     const base = { fixture: fixture.name, operation: op.name, differences: [] };
-    if (translation.status !== "translated") {
+    // `unchanged`: the same document runs on both APIs (custom fields only); compare it too.
+    if (translation.status !== "translated" && translation.status !== "unchanged") {
       out.push({ ...base, status: translation.status, reason: translation.issues[0]?.message });
       continue;
     }

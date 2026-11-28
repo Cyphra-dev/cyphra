@@ -73,6 +73,11 @@ export type DocumentStatus =
   | "blocked"
   /** Already a native document (it validates against the native schema, not the v7 one). */
   | "native"
+  /**
+   * The same in both APIs, left byte-identical: every field it uses is one both serve alike
+   * (custom root fields and types, served by `extend` in the native API).
+   */
+  | "unchanged"
   /** Neither a v7 nor a native document (syntax or validation errors). */
   | "invalid";
 
@@ -2048,7 +2053,11 @@ function commentLines(issues: readonly MigrationIssue[], indent: string): string
  *   false`) list what the translation dropped or does differently.
  * - `blocked`: something has no native equivalent; `output` is the source with `# cyphra: not
  *   translated: …` comments above the definitions concerned.
- * - `native` (already migrated) and `invalid` (neither API's document): `output` is the source.
+ * - `unchanged` (its translation is the document itself: e.g. only custom fields), `native`
+ *   (already migrated) and `invalid` (neither API's document): `output` is the source.
+ *
+ * A definition whose translation is itself keeps its source text (layout and comments) in a
+ * translated document too.
  *
  * @experimental
  */
@@ -2123,6 +2132,8 @@ export function translateDocument(
     }
   }
   const blocked = results.some((r) => r.issues.blocked);
+  /** Definitions the translation leaves as they are (custom fields only): kept as written. */
+  const same = new Set(results.filter((r) => r.node && print(r.node) === print(r.def)));
   const sorted = [...results].sort((a, b) => (a.def.loc?.start ?? 0) - (b.def.loc?.start ?? 0));
 
   let output = "";
@@ -2137,7 +2148,7 @@ export function translateDocument(
     const shown = blocked ? r.issues.list.filter((i) => i.kind === "blocking") : r.issues.list;
     if (comments && shown.length) output += commentLines(shown, indent);
     output += source.slice(lineStart, start);
-    if (blocked || !r.node) output += source.slice(start, end);
+    if (blocked || !r.node || same.has(r)) output += source.slice(start, end);
     else output += print(r.node).split("\n").join(`\n${indent}`);
     cursor = end;
   }
@@ -2150,10 +2161,12 @@ export function translateDocument(
     issues: r.issues.list,
     mapData: blocked ? undefined : r.map,
   }));
+  const unchanged =
+    !blocked && results.every((r) => same.has(r)) && results.every((r) => !r.issues.list.length);
   return {
-    status: blocked ? "blocked" : "translated",
-    output,
-    changed: output !== source,
+    status: blocked ? "blocked" : unchanged ? "unchanged" : "translated",
+    output: unchanged ? source : output,
+    changed: !unchanged && output !== source,
     definitions,
     issues: definitions.flatMap((d) => d.issues),
   };

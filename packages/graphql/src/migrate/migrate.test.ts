@@ -244,6 +244,37 @@ describe("translateDocument: queries", () => {
     );
   });
 
+  it("leaves documents that only use custom fields byte-identical, as unchanged (#311)", () => {
+    const custom = createMigrationContext({
+      typeDefs: `
+        type Movie @node { id: ID! @id title: String! }
+        type Stats { total: Int! }
+        type Query { stats(since: Int): Stats! status: String! }
+      `,
+      config: {
+        extend: {
+          typeDefs:
+            "type Stats { total: Int! }\nextend type Query { stats(since: Int): Stats! status: String! }",
+        },
+      },
+    });
+    // A layout print() would rewrap, and a comment.
+    const source = `query S($since: Int) { stats(since: $since) { total }  # the count
+      status }`;
+    const t = translateDocument(custom, source);
+    expect(t.status).toBe("unchanged");
+    expect(t.changed).toBe(false);
+    expect(t.output).toBe(source);
+    expect(t.issues).toEqual([]);
+    // In a translated document, the custom-only operation keeps its text too.
+    const mixed = `query S { status }\nquery M { movies { title } }\n`;
+    const m = translateDocument(custom, mixed);
+    expect(m.status).toBe("translated");
+    expect(m.output).toBe(
+      "query S { status }\nquery M {\n  movieFindMany {\n    nodes {\n      title\n    }\n  }\n}\n",
+    );
+  });
+
   it("recognizes native documents and invalid ones", () => {
     expect(translateDocument(ctx, `{ movieFindMany { nodes { title } } }`).status).toBe("native");
     expect(translateDocument(ctx, `{ nope }`).status).toBe("invalid");

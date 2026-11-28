@@ -144,6 +144,37 @@ query Movies {
     expect(out.join("\n")).toMatch(/2 already native/);
   });
 
+  it("leaves documents that only use custom fields unchanged, and reports them so (#311)", async () => {
+    await writeFile(
+      join(dir, "custom.graphql"),
+      `type Stats { total: Int! }\ntype Query { stats: Stats! status: String! }\n`,
+    );
+    await writeFile(
+      join(dir, "graphql.config.mjs"),
+      `export default { extend: { typeDefs: "type Stats { total: Int! }\\nextend type Query { stats: Stats! status: String! }" } };\n`,
+    );
+    const source = `# Custom fields only.\nquery Status { stats { total }  status }\n`;
+    await writeFile(join(dir, "status.graphql"), source);
+    const opts = { typedefs: ["typeDefs.graphql", "custom.graphql"] };
+    expect(await runGraphqlMigrateOperations(dir, ["status.graphql"], opts)).toBe(0);
+    expect(await readFile(join(dir, "status.graphql"), "utf8")).toBe(source);
+    expect(out.join("\n")).toMatch(
+      /1 document in 1 file: 0 translated, 0 not translated, 1 unchanged \(the same in both APIs\)\. 0 files rewritten\./,
+    );
+    // Nothing left for --check, and --json says unchanged.
+    expect(
+      await runGraphqlMigrateOperations(dir, ["status.graphql"], { ...opts, check: true }),
+    ).toBe(0);
+    out = [];
+    await runGraphqlMigrateOperations(dir, ["status.graphql"], { ...opts, json: true });
+    const json = JSON.parse(out.join("\n")) as {
+      documents: { status: string }[];
+      summary: { unchanged: number; files: string[] };
+    };
+    expect(json.documents.map((d) => d.status)).toEqual(["unchanged"]);
+    expect(json.summary).toMatchObject({ unchanged: 1, files: [] });
+  });
+
   it("--dry-run writes nothing, --check fails while v7 operations are left", async () => {
     expect(
       await runGraphqlMigrateOperations(dir, ["movies.graphql"], {
