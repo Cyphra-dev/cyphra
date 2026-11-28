@@ -201,6 +201,59 @@ describe("GraphQL interfaces", () => {
     expect(movie.join("\n")).toContain("MATCH (n:Film:Archive) SET n:Production");
   });
 
+  it("map when a field differs only in its @default, kept on each implementation (#309)", () => {
+    const { schema, model, issues } = convert(`
+      interface LearningActivity { id: ID! title: String! kind: String! }
+      type Lab implements LearningActivity @node(labels: ["Lab", "LearningActivity"]) {
+        id: ID! @id
+        title: String!
+        kind: String! @default(value: "lab")
+      }
+      type Quiz implements LearningActivity @node(labels: ["Quiz", "LearningActivity"]) {
+        id: ID! @id
+        title: String!
+        kind: String! @default(value: "quiz")
+      }
+      type Course @node {
+        id: ID! @id
+        contains: [LearningActivity!]! @relationship(type: "CONTAINS", direction: OUT)
+      }
+    `);
+    expect(schema).toContain(
+      "interface LearningActivity {\n  id String @id @default(uuid())\n  title String\n}",
+    );
+    expect(schema).toContain(
+      'node Lab implements LearningActivity {\n  kind String @default("lab")\n}',
+    );
+    expect(schema).toContain(
+      'node Quiz implements LearningActivity {\n  kind String @default("quiz")\n}',
+    );
+    expect(schema).not.toContain("@@labels");
+    expect(schema).toContain(
+      'contains LearningActivity[] @relationship(type: "CONTAINS", direction: OUT)',
+    );
+    const lab = model.nodes.find((n) => n.name === "Lab");
+    expect(lab?.labels).toEqual(["Lab", "LearningActivity"]);
+    expect(issueAt(issues, "LearningActivity")).toMatchObject({
+      severity: "changed",
+      feature: "interface",
+    });
+    expect(issueAt(issues, "LearningActivity")?.message).toContain(
+      'kept on each implementation: kind (its @default differs: Lab @default("lab") and Quiz @default("quiz"))',
+    );
+    expect(issues.some((i) => i.severity === "unsupported")).toBe(false);
+  });
+
+  it("print the values of differing defaults when the fields do not line up (#309)", () => {
+    const { issues } = convert(`
+      type Lab @node(labels: ["Lab", "Activity"]) { kind: String! @default(value: "lab") }
+      type Quiz @node(labels: ["Quiz", "Activity"]) { kind: String @default(value: "quiz") }
+    `);
+    expect(issueAt(issues, "Lab")?.message).toContain(
+      'field "kind" differs: Lab has `kind String @default("lab")`, Quiz has `kind String? @default("quiz")`',
+    );
+  });
+
   it("are not converted when the implementations differ", () => {
     const { schema, issues } = convert(
       `
