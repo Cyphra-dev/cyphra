@@ -27,3 +27,6 @@ By convention, labels are written in PascalCase.
 Each `node User { … }` block in a [schema](/schema) maps to the `User` label. `cyphra generate`
 also emits a `NodeLabel` constant, so hand-written queries can use `NodeLabel.User` instead of a
 string. `cyphra pull` reads the labels of an existing database to write a schema.
+
+How labels map to typed objects, and why that makes Cyphra an OGM, is explained on the
+[Neo4j ORM](/neo4j-orm) page.

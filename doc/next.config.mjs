@@ -22,6 +22,9 @@ const withNextra = nextra({
 
 export default withNextra({
   reactStrictMode: true,
+  // One URL per page: "/glossary/" answers 308 → "/glossary", matching the canonical and the
+  // sitemap. This is Next's default; it is spelled out because the SEO audit relies on it.
+  trailingSlash: false,
   eslint: { ignoreDuringBuilds: true },
   // `<page>.md` serves the plain-Markdown version of a page (app/md/[...slug]/route.ts).
   async rewrites() {

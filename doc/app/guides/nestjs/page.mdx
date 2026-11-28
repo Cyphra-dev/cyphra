@@ -1,7 +1,7 @@
 ---
 title: "Neo4j with NestJS: module, transactions, health"
 sidebarTitle: NestJS
-description: "Use Neo4j in NestJS with @cyphra/nestjs: CyphraModule and ConfigService, an injected typed client, @Transactional() services and a Terminus health check."
+description: "Add Neo4j to a NestJS app: an injectable typed client, @Transactional() services and a health check, with @cyphra/nestjs."
 ---
 
 import { Callout, Steps } from "nextra/components";
@@ -9,11 +9,13 @@ import { HowToJsonLd } from "../../../components/seo/page-jsonld";
 
 # Neo4j with NestJS
 
-`@cyphra/nestjs` connects a NestJS app to Neo4j: `CyphraModule.forRootAsync` builds the generated
-Cyphra client from `ConfigService`, `@InjectCyphra()` injects it with its full types,
-`@Transactional()` runs a service method (and every service it calls) in one transaction, and
-`CyphraHealthIndicator` reports the database in a `@nestjs/terminus` health check. The driver is
-closed when the application shuts down.
+NestJS and Neo4j are not alternatives: NestJS is the framework that structures your Node.js server,
+Neo4j is the graph database behind it. They work together through a module that provides the
+database client to your services. `@cyphra/nestjs` is that module: `CyphraModule.forRootAsync`
+builds the generated Cyphra client from `ConfigService`, `@InjectCyphra()` injects it with its full
+types, `@Transactional()` runs a service method (and every service it calls) in one transaction,
+and `CyphraHealthIndicator` reports the database in a `@nestjs/terminus` health check. The driver
+is closed when the application shuts down.
 
 <Callout type="info">
   Tested with NestJS 12.4, `@nestjs/config` 12.1, `@nestjs/terminus` 12.1, Node.js 22 and Neo4j 5
@@ -26,6 +28,53 @@ closed when the application shuts down.
   `"module": "nodenext"`), which works as is. In a CommonJS Nest 10 or 11 project,
   `require("cyphra")` fails with `ERR_PACKAGE_PATH_NOT_EXPORTED`: switch the project to ESM first.
 </Callout>
+
+## Quick start
+
+The shortest working setup is one module import and one injected client. After
+`npm i cyphra @cyphra/nestjs` and `npx cyphra generate` for a schema with a `User` node (see
+[the steps](#install)):
+
+```ts filename="src/app.module.ts"
+import { CyphraModule } from "@cyphra/nestjs";
+import { Module } from "@nestjs/common";
+import { createClient } from "./cyphra.gen.js";
+import { UsersService } from "./users.service.js";
+
+@Module({
+  imports: [
+    CyphraModule.forRoot({
+      client: () =>
+        createClient({
+          uri: process.env.NEO4J_URI!,
+          user: process.env.NEO4J_USERNAME!,
+          password: process.env.NEO4J_PASSWORD!,
+        }),
+    }),
+  ],
+  providers: [UsersService],
+})
+export class AppModule {}
+```
+
+```ts filename="src/users.service.ts"
+import { InjectCyphra } from "@cyphra/nestjs";
+import { Injectable } from "@nestjs/common";
+import type { Db } from "./cyphra.gen.js";
+
+@Injectable()
+export class UsersService {
+  constructor(@InjectCyphra() private readonly db: Db) {}
+
+  list() {
+    return this.db.user.findMany(); // typed from schema.cyphra
+  }
+}
+```
+
+Nest does not read `.env` by itself: start it with `node --env-file=.env dist/main.js`, or use
+`ConfigService` as in the steps below, which also add transactions, a health check and shutdown
+hooks.
 
 ## Steps
 

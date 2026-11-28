@@ -12,7 +12,8 @@
  *      at the page itself.
  *   5. Internal links: every same-site link resolves (200), its #fragment exists on the target,
  *      and every indexable internal page that is linked is also in the sitemap.
- *   6. Site files: robots.txt points at the sitemap, the sitemap and feed are well-formed XML,
+ *   6. Trailing slash: "<page>/" redirects permanently to "<page>", so each page has one URL.
+ *   7. Site files: robots.txt points at the sitemap, the sitemap and feed are well-formed XML,
  *      llms.txt / llms-full.txt are served, security.txt has Contact and a future Expires and no
  *      email address.
  *
@@ -348,6 +349,26 @@ async function auditSiteFiles(): Promise<void> {
   }
 }
 
+/** One URL per page: "<page>/" must redirect permanently to "<page>", not serve a duplicate. */
+async function auditTrailingSlash(urls: string[]): Promise<void> {
+  for (const url of urls) {
+    if (new URL(url).pathname === "/") continue;
+    const res = await fetch(`${url}/`, { redirect: "manual" });
+    const location = res.headers.get("location");
+    if (
+      ![301, 308].includes(res.status) ||
+      !location ||
+      onBase(new URL(location, url).href) !== url
+    ) {
+      error(
+        `${url}/`,
+        "trailing-slash",
+        `HTTP ${res.status} → ${location ?? "-"}, want 308 → ${url}`,
+      );
+    }
+  }
+}
+
 async function main() {
   console.log(`SEO audit against ${BASE}`);
   const urls = await collectSitemapUrls();
@@ -360,6 +381,7 @@ async function main() {
     }
   }
   await auditLinks(new Set(urls));
+  await auditTrailingSlash(urls);
   await auditSiteFiles();
 
   for (const [map, rule] of [

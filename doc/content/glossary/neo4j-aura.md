@@ -25,3 +25,5 @@ Neo4j database (the typed client needs Neo4j 5.6 or later): set `NEO4J_URI`, `NE
 dedicated Neo4j Community instance per database, [Cyphra Cloud](/cloud) offers that, and the
 [Cyphra Operator](https://github.com/Cyphra-dev/operator) runs the same setup on your own
 Kubernetes. Neo4j and Aura are trademarks of Neo4j, Inc.
+
+To query an Aura database from Node.js with a typed client, see [Neo4j with TypeScript](/).

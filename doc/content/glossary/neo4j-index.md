@@ -29,3 +29,5 @@ CREATE RANGE INDEX User_name_idx IF NOT EXISTS FOR (n:`User`) ON (n.`name`)
 `@index` on a field creates a range index like the one above, on nodes or on the properties of a
 `relationship { … }` model. Fields with `@id` or `@unique` do not need it: their
 [constraint](/glossary/constraint) already comes with an index. See [Decorators](/schema#decorators).
+
+How indexes are created, changed and deployed is covered in [Neo4j migrations](/migrations).

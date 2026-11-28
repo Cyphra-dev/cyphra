@@ -30,3 +30,6 @@ FOR (n:`User`) REQUIRE n.`email` IS UNIQUE
 `@id` and `@unique` in a [schema](/schema#decorators) become uniqueness constraints like the one
 above, created by a [migration](/migrations) or by `cyphra push`. `cyphra schema ddl` prints them
 without a database.
+
+How constraints are created, changed and deployed is covered in
+[Neo4j migrations](/migrations).
