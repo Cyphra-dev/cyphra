@@ -24,6 +24,7 @@ export {
 export {
   compareResults,
   type CompareOptions,
+  type GraphQLErrorLike,
   type GraphQLResultLike,
   type ResultDifference,
 } from "./compare.js";

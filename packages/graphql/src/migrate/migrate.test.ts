@@ -417,6 +417,48 @@ describe("mapData and compareResults", () => {
     expect(compareResults(def, v7, n, { ordered: true })).toHaveLength(2);
     expect(compareResults(def, { errors: [{ message: "Forbidden" }] }, n)[0]?.path).toBe("errors");
   });
+
+  it("compares errors on extensions.code, message and path (#310)", () => {
+    const def = translateDocument(ctx, `{ movies { title } }`).definitions[0]!;
+    const error = (code: string, path: (string | number)[]) => ({
+      message: "Unauthenticated",
+      path,
+      extensions: { code },
+    });
+    // `movies: [Movie!]!` is non-null in v7: its error nulls the whole data.
+    const v7 = { data: null, errors: [error("UNAUTHENTICATED", ["movies"])] };
+    const native = (code: string, path: (string | number)[] = ["movieFindMany"]) => ({
+      data: { movieFindMany: null },
+      errors: [error(code, path)],
+    });
+    const failing = (r: ReturnType<typeof compareResults>) => r.filter((d) => !d.known);
+    // The same error, at the mapped root field.
+    expect(failing(compareResults(def, v7, native("UNAUTHENTICATED")))).toEqual([]);
+    // Same message and path, another code.
+    expect(failing(compareResults(def, v7, native("FORBIDDEN")))).toEqual([
+      { path: "errors[0].extensions.code", v7: "UNAUTHENTICATED", native: "FORBIDDEN" },
+    ]);
+    // Another message.
+    const other = native("UNAUTHENTICATED");
+    expect(
+      failing(
+        compareResults(def, v7, { ...other, errors: [{ ...other.errors[0]!, message: "Nope" }] }),
+      ),
+    ).toEqual([{ path: "errors[0].message", v7: "Unauthenticated", native: "Nope" }]);
+    // A field error mapped through the connection shape, and one at another field.
+    const field = {
+      data: { movies: [{ title: null }] },
+      errors: [error("X", ["movies", 0, "title"])],
+    };
+    const at = (path: (string | number)[]) => ({
+      data: { movieFindMany: { nodes: [{ title: null }] } },
+      errors: [error("X", path)],
+    });
+    expect(compareResults(def, field, at(["movieFindMany", "nodes", 0, "title"]))).toEqual([]);
+    expect(compareResults(def, field, at(["movieFindMany"]))).toEqual([
+      { path: "errors[0].path", v7: ["movies", 0, "title"], native: ["movieFindMany"] },
+    ]);
+  });
 });
 
 describe("draftRules", () => {

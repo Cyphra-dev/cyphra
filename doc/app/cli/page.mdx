@@ -423,6 +423,10 @@ operations/04-roles.graphql:1:1  not translated  Roles: movies(where).actorsConn
 4 operations: 2 same (1 with known differences), 1 differ, 1 not translated, 0 skipped.
 ```
 
+- Errors are compared by their number, then paired, on their `message`, `extensions.code`
+  (`UNAUTHENTICATED` against `FORBIDDEN` is a difference) and `path` (the v7 path mapped to the
+  native shape: `movies` is `movieFindMany`). A v7 error on a non-null root field nulls the whole
+  `data` where the native root field is `null` on its own: a known difference.
 - Lists are compared as multisets (`--ordered` compares them in order). Differences the native API
   has on purpose are reported as known, not as failures: cursors, `connect` as a `MERGE`, a unique
   update failing with `NOT_FOUND` where v7 returned an empty list. The command exits with 1 when
