@@ -347,7 +347,9 @@ cyphra graphql print --check                  # CI: compare with the committed s
 - The config is `graphql.config.ts` (or `.mts`, `.js`, `.mjs`) in the project root, or the file
   given with `--config`. Its default export is used, else its only export, else the one named
   with `--export`. Without a config file, the defaults apply (every read operation). TypeScript
-  configs are imported as is when Node strips types, and transpiled otherwise.
+  configs (and `--typedefs` modules) are transpiled with `typescript` on import, with no extra
+  flag, and their relative NodeNext imports (`./rules.js` for `rules.ts`, `.mjs` for `.mts`)
+  resolve to the TypeScript files.
 - `--check` exits with 1 when the generated SDL differs from the file (`--out`, default
   `schema.graphql`), and lists the changes `graphql`'s `findBreakingChanges` /
   `findDangerousChanges` report (a field removed by a schema edit or a toggle, a type changed, …),

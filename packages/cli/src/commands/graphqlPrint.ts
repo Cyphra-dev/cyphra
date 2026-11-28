@@ -1,12 +1,12 @@
 import { existsSync } from "node:fs";
-import { readFile, rm, writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { native, type GraphQLConfig } from "@cyphra/graphql";
 import { parseSchema, resolveSchema, validateSchema } from "@cyphra/schema";
 import { buildSchema, findBreakingChanges, findDangerousChanges } from "graphql";
-import ts from "typescript";
 import type { CyphraConfig } from "../config.js";
+import { registerTsHooks } from "../tsModules.js";
 
 /** Options of {@link runGraphqlPrint}. */
 export type GraphqlPrintOptions = {
@@ -28,35 +28,12 @@ const DEFAULT_CONFIGS = [
 ];
 
 /**
- * Import a config module. A `.ts` / `.mts` file Node cannot import (no type stripping) is
- * transpiled next to itself (so its relative imports resolve), imported, then removed.
+ * Import a config (or typeDefs) module. A `.ts` / `.mts` module is transpiled on import, and its
+ * relative `./x.js` imports resolve to `./x.ts` (see {@link registerTsHooks}).
  */
 export async function importModule(file: string): Promise<Record<string, unknown>> {
-  const url = pathToFileURL(file).href;
-  try {
-    return (await import(url)) as Record<string, unknown>;
-  } catch (err) {
-    const code = (err as { code?: string }).code;
-    const isTs = /\.m?ts$/.test(file);
-    if (!isTs || (code !== "ERR_UNKNOWN_FILE_EXTENSION" && !(err instanceof SyntaxError)))
-      throw err;
-  }
-  const source = await readFile(file, "utf8");
-  const js = ts.transpileModule(source, {
-    compilerOptions: {
-      module: ts.ModuleKind.ESNext,
-      target: ts.ScriptTarget.ES2022,
-      verbatimModuleSyntax: false,
-    },
-    fileName: file,
-  }).outputText;
-  const tmp = path.join(path.dirname(file), `.${path.basename(file)}.${process.pid}.mjs`);
-  await writeFile(tmp, js);
-  try {
-    return (await import(pathToFileURL(tmp).href)) as Record<string, unknown>;
-  } finally {
-    await rm(tmp, { force: true });
-  }
+  registerTsHooks();
+  return (await import(pathToFileURL(file).href)) as Record<string, unknown>;
 }
 
 /** The config the module exports: `name`, `default`, or its only export. */
