@@ -36,6 +36,7 @@ import {
 import type { CyphraDialect } from "@cyphra/runtime";
 import { memgraphDdl } from "./memgraph.js";
 import { falkordbDdl } from "./falkordb.js";
+import { compileRenameRelationshipType } from "./rename.js";
 
 function q(id: string): string {
   return "`" + id.replace(/`/g, "``") + "`";
@@ -554,6 +555,9 @@ export function diffSchemaModels(
     }
   }
 
+  // --- Relationship types --------------------------------------------------
+  relationshipTypeSteps(prev, next, steps, warnings);
+
   // --- Relationship models ---------------------------------------------------
   const prevRels = new Map(prev.relationships.map((r) => [r.name, r]));
   for (const r of next.relationships) {
@@ -568,6 +572,118 @@ export function diffSchemaModels(
     ...dynamicLabelNotes(prev, next),
   ];
   return { steps: [...drops, ...steps, ...creates], warnings, ...(notes.length ? { notes } : {}) };
+}
+
+/** The edges a relation field reads: its type and its start and end models. */
+type EdgeSet = { readonly relType: string; readonly start: string; readonly end: string };
+
+/** The edge sets of a schema's own relation fields (not the copies on implementations). */
+function edgeSets(m: SchemaModel): EdgeSet[] {
+  const out: EdgeSet[] = [];
+  for (const n of m.nodes) {
+    for (const f of n.fields) {
+      if (f.kind !== "relation" || f.inheritedFrom) continue;
+      const [start, end] = f.direction === "OUT" ? [n.name, f.target] : [f.target, n.name];
+      out.push({ relType: f.relType, start, end });
+    }
+  }
+  return out;
+}
+
+/**
+ * Renamed relationship types. A relation field kept on both sides (same model, name, target and
+ * direction) whose type changed is a rename of its edges: the migration recreates the existing
+ * edges between those models with the new type (a type cannot be changed in place), with a review
+ * warning. Types that only disappear and appear (the fields changed too) get a warning with the
+ * helper to call if it is a rename.
+ */
+function relationshipTypeSteps(
+  prev: SchemaModel,
+  next: SchemaModel,
+  steps: MigrationStep[],
+  warnings: string[],
+): void {
+  const prevNodes = new Map(prev.nodes.map((n) => [n.name, n]));
+  const labelOf = (m: SchemaModel, name: string) => {
+    const n = m.nodes.find((x) => x.name === name);
+    // A union adds no label: its end of the pattern matches any node.
+    return n && !n.union ? n.label : undefined;
+  };
+  type Rename = EdgeSet & { readonly to: string; readonly fields: string[] };
+  const renames: Rename[] = [];
+  for (const n of next.nodes) {
+    const p = prevNodes.get(n.name);
+    if (!p) continue;
+    for (const f of n.fields) {
+      if (f.kind !== "relation" || f.inheritedFrom) continue;
+      const old = p.fields.find((x) => x.name === f.name);
+      if (
+        old?.kind !== "relation" ||
+        old.inheritedFrom ||
+        old.relType === f.relType ||
+        old.target !== f.target ||
+        old.direction !== f.direction
+      ) {
+        continue;
+      }
+      const [start, end] = f.direction === "OUT" ? [n.name, f.target] : [f.target, n.name];
+      const same = renames.find(
+        (r) =>
+          r.relType === old.relType && r.to === f.relType && r.start === start && r.end === end,
+      );
+      if (same) same.fields.push(`${n.name}.${f.name}`);
+      else
+        renames.push({
+          relType: old.relType,
+          to: f.relType,
+          start,
+          end,
+          fields: [`${n.name}.${f.name}`],
+        });
+    }
+  }
+  const before = edgeSets(prev);
+  const after = edgeSets(next);
+  const has = (sets: readonly EdgeSet[], t: string, start: string, end: string) =>
+    sets.some((e) => e.relType === t && e.start === start && e.end === end);
+  for (const r of renames) {
+    const fields = r.fields.join(", ");
+    // The new type already linked these models: the existing edges are not this field's anymore,
+    // but moving them could duplicate the ones of the new type.
+    if (has(before, r.to, r.start, r.end) || has(after, r.relType, r.start, r.end)) {
+      warnings.push(
+        `${fields}: relationship type ${r.relType} → ${r.to}, and both types link ${r.start} to ${r.end} before or after: no step was generated. To move the existing edges, add db.migrate.renameRelationshipType({ from: ${JSON.stringify(r.relType)}, to: ${JSON.stringify(r.to)}, startLabel, endLabel }).`,
+      );
+      continue;
+    }
+    const startLabel = labelOf(next, r.start);
+    const endLabel = labelOf(next, r.end);
+    const { text } = compileRenameRelationshipType({
+      from: r.relType,
+      to: r.to,
+      ...(startLabel ? { startLabel } : {}),
+      ...(endLabel ? { endLabel } : {}),
+    });
+    steps.push({
+      kind: "statement",
+      comment: `Rename the :${r.relType} edges from ${r.start} to ${r.end} to :${r.to} (${fields}).`,
+      cypher: text,
+    });
+    warnings.push(
+      `Relationship type ${r.relType} renamed to ${r.to} (${fields}): the migration recreates the existing :${r.relType} edges from ${r.start} to ${r.end} as :${r.to}, with their properties. If the field now means other edges, delete that step.`,
+    );
+  }
+  // Types that disappeared and appeared without a field kept across the change.
+  const renamed = new Set(renames.flatMap((r) => [r.relType, r.to]));
+  const typesOf = (sets: readonly EdgeSet[]) => new Set(sets.map((e) => e.relType));
+  const [was, now] = [typesOf(before), typesOf(after)];
+  const removed = [...was].filter((t) => !now.has(t) && !renamed.has(t));
+  const added = [...now].filter((t) => !was.has(t) && !renamed.has(t));
+  if (removed.length && added.length) {
+    warnings.push(
+      `Relationship types removed (${removed.join(", ")}) and added (${added.join(", ")}): if this is a rename, move the existing edges with db.migrate.renameRelationshipType({ from, to }) (no step was generated).`,
+    );
+  }
 }
 
 /**

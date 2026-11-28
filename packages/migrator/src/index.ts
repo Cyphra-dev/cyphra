@@ -16,7 +16,12 @@ export {
   indexStatementsFromSchema,
   vectorIndexStatementsFromSchema,
 } from "./push.js";
-export { compileRenameLabel, compileRenameProperty } from "./rename.js";
+export {
+  compileRenameLabel,
+  compileRenameProperty,
+  compileRenameRelationshipType,
+} from "./rename.js";
+export type { RenameRelationshipTypeOptions } from "./rename.js";
 export { applyConstraintStatements, runPendingMigrations, type LoadedMigration } from "./runner.js";
 export { schemaIntegrationHints } from "./schemaHints.js";
 export {

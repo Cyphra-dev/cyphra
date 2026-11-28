@@ -5,6 +5,7 @@
 import { parseSchema, printSchemaDocument, resolveSchema } from "@cyphra/schema";
 import { CyphraClient, UnsupportedFeatureError } from "@cyphra/runtime";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { renameRelationshipTypeCase } from "./renameTypeCase.testkit.js";
 import { EMPTY_SCHEMA_MODEL, diffSchemaModels } from "./diff.js";
 import {
   compareSchemaObjects,
@@ -278,5 +279,9 @@ relationship MgmL { type "MGM_L"
     expect(compareSchemaObjects(expectedSchemaFromModel(v2, "memgraph"), objects).missing).toEqual(
       [],
     );
+  });
+
+  it("renames a relationship type: the generated step moves the edges and their properties", async () => {
+    await renameRelationshipTypeCase(client, "Mgm");
   });
 });
