@@ -96,7 +96,7 @@ FAKGROUP will:
 1. **Isolation:** each database runs as its own Neo4j instance, in a separate Kubernetes namespace
    per workspace, with a network policy and resource quota.
 2. **Encryption in transit:** database endpoints use TLS (`neo4j+s://` for Bolt, HTTPS for the HTTP
-   API) `[confirm: TLS enforced on every production cluster]`. The website, dashboard and API use
+   API). The website, dashboard and API use
    HTTPS.
 3. **Encryption at rest:** database volumes and backups are encrypted at rest with AES-256, with keys
    managed by AWS Key Management Service.
@@ -106,7 +106,7 @@ FAKGROUP will:
    outside the database cluster, kept for the retention period of the plan. Backups are stored in Amazon S3, in the same region as
    the database.
 6. **Access control:** access to production systems is limited to authorized staff who need it
-   `[confirm]`.
+   .
 7. **Monitoring:** database status and storage use are monitored.
 
 7.2. FAKGROUP may update these measures, as long as the overall level of security does not go down.
@@ -168,7 +168,7 @@ ask for access to export them. After that, it deletes all Customer Data, includi
 EU or French law requires it to be kept.
 
 11.3. When you delete a single database, it is deleted with its storage, and its backups are
-deleted within 30 days `[confirm]`.
+deleted within 30 days.
 
 11.4. On request, FAKGROUP will confirm the deletion in writing.
 
