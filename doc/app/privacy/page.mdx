@@ -73,6 +73,7 @@ only on our instructions, under a data processing agreement.
 | Neon `[confirm]`                   | Control-plane PostgreSQL database                                         | Account, workspace, billing references, usage data             | `[confirm: region]`                             |
 | Upstash `[confirm]`                | Redis for API rate limiting                                               | IP addresses and request counters, kept for seconds to minutes | `[confirm: region]`                             |
 | Stripe                             | Payments and invoicing for direct customers                               | Billing details, payment data                                  | United States and EU (Ireland)                  |
+| Resend                             | Transactional email (for example the early-access invitation)             | Email address, workspace name, email content                   | United States `[confirm]`                       |
 | Borromic `[confirm: legal entity]` | Cookie-free web analytics                                                 | Page views and product events                                  | `[confirm]`                                     |
 | Amazon Web Services `[confirm]`    | Infrastructure that runs the hosted databases                             | Database contents (see the [DPA](/dpa)), database metadata     | EU (Ireland) or US (N. Virginia), as you choose |
 
