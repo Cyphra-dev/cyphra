@@ -1,11 +1,14 @@
 export {
   computedFieldsOf,
   createOrm,
+  runCypherFragment,
   withEngineRules,
   withRawValues,
   withReadTransaction,
+  withReservedVariables,
 } from "./client.js";
 export {
+  CYPHER_AGGREGATES,
   CYPHER_NODE,
   cypherFragment,
   encodeCypherParam,
