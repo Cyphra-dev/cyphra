@@ -436,10 +436,10 @@ describe("convertGraphQLTypeDefs: relationships", () => {
       }
       type B @node { as: [A!]! @relationship(type: "HAS", direction: IN) }
     `);
-    expect(schema).toContain('bs B[] @relationship(type: "HAS", direction: OUT)');
-    expect(schema).toContain('one B @relationship(type: "ONE", direction: OUT)');
-    expect(schema).toContain('maybe B? @relationship(type: "MAYBE", direction: IN)');
-    expect(schema).toContain('as A[] @relationship(type: "HAS", direction: IN)');
+    expect(schema).toContain("bs B[] @out(HAS)");
+    expect(schema).toContain("one B @out(ONE)");
+    expect(schema).toContain("maybe B? @in(MAYBE)");
+    expect(schema).toContain("as A[] @in(HAS)");
   });
 
   it("relationship properties become one relationship model shared by both sides", () => {
@@ -578,9 +578,9 @@ node Genre {
 
 node User {
   name String
-  search Search[] @relationship(type: "SEARCH", direction: OUT)
-  pinned Search? @relationship(type: "PINS", direction: OUT)
-  featured Search @relationship(type: "FEATURES", direction: IN)
+  search Search[] @out(SEARCH)
+  pinned Search? @out(PINS)
+  featured Search @in(FEATURES)
 }
 `);
     expect(issues).toEqual([]);
@@ -607,7 +607,7 @@ node User {
         search: [Search!]! @relationship(type: "SEARCH", direction: OUT, properties: "Hit")
       }
     `);
-    expect(schema).toContain('search Search[] @relationship(type: "SEARCH", direction: OUT)');
+    expect(schema).toContain("search Search[] @out(SEARCH)");
     expect(schema).toContain(
       'relationship Hit {\n  type "SEARCH"\n  from User\n  to Search\n  score Float\n}',
     );

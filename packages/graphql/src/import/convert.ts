@@ -28,6 +28,7 @@ import type {
   SchemaDocument,
   UnionDeclaration,
 } from "@cyphra/schema";
+import { relationFieldDecorator } from "@cyphra/schema";
 import {
   CUSTOM_SCALAR_FIELD,
   CYPHRA_TYPE_NAMES,
@@ -1064,15 +1065,7 @@ function convertRelation(
     target: other,
     cardinality: u.list ? "many" : "one",
     optional: u.list ? false : !u.nonNull,
-    decorators: [
-      {
-        name: "relationship",
-        args: [
-          { key: "type", value: { kind: "string", value: relType } },
-          { key: "direction", value: { kind: "identifier", value: direction } },
-        ],
-      },
-    ],
+    decorators: [relationFieldDecorator(relType, direction)],
   };
   const propsType = stringArg(rel, "properties");
   if (!propsType) return { field };

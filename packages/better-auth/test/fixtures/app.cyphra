@@ -8,8 +8,8 @@ node User {
   image String?
   createdAt DateTime
   updatedAt DateTime
-  sessions Session[] @relationship(type: "HAS_SESSION", direction: OUT, onDelete: Cascade)
-  accounts Account[] @relationship(type: "HAS_ACCOUNT", direction: OUT, onDelete: Cascade)
+  sessions Session[] @out(HAS_SESSION, onDelete: Cascade)
+  accounts Account[] @out(HAS_ACCOUNT, onDelete: Cascade)
 }
 
 node Project {
@@ -27,14 +27,14 @@ node Session {
   updatedAt DateTime
   ipAddress String?
   userAgent String?
-  user User @relationship(type: "HAS_SESSION", direction: IN)
+  user User @in(HAS_SESSION)
 }
 
 node Account {
   id String @id @default(cuid())
   accountId String
   providerId String
-  user User @relationship(type: "HAS_ACCOUNT", direction: IN)
+  user User @in(HAS_ACCOUNT)
   accessToken String?
   refreshToken String?
   idToken String?

@@ -363,12 +363,12 @@ describe("convertPrismaSchema: relations", () => {
     const schema = printSchemaDocument(result.document);
     expect(schema).toBe(`node User {
   id String @id
-  posts Post[] @relationship(type: "HAS_POSTS", direction: OUT, onDelete: Cascade)
+  posts Post[] @out(HAS_POSTS, onDelete: Cascade)
 }
 
 node Post {
   id String @id
-  author User @relationship(type: "HAS_POSTS", direction: IN)
+  author User @in(HAS_POSTS)
 }
 `);
     expect(issueAt(result.issues, "Post.authorId")).toMatchObject({
@@ -393,9 +393,7 @@ node Post {
   ])("onDelete %s (optional key: %s)", (action, optional, rule, severity) => {
     const result = convertPrismaSchema(ONE_TO_MANY(action, optional));
     const schema = printSchemaDocument(result.document);
-    expect(schema).toContain(
-      `posts Post[] @relationship(type: "HAS_POSTS", direction: OUT${rule ? `, ${rule}` : ""})`,
-    );
+    expect(schema).toContain(`posts Post[] @out(HAS_POSTS${rule ? `, ${rule}` : ""})`);
     expect(issueAt(result.issues, "Post.author")?.severity).toBe(severity);
   });
 
@@ -414,10 +412,10 @@ node Post {
         editorId String?
       }
     `);
-    expect(schema).toContain('written Post[] @relationship(type: "WRITTEN_POSTS", direction: OUT');
-    expect(schema).toContain('edited Post[] @relationship(type: "EDITED_POSTS", direction: OUT)');
-    expect(schema).toContain('author User @relationship(type: "WRITTEN_POSTS", direction: IN)');
-    expect(schema).toContain('editor User? @relationship(type: "EDITED_POSTS", direction: IN)');
+    expect(schema).toContain("written Post[] @out(WRITTEN_POSTS");
+    expect(schema).toContain("edited Post[] @out(EDITED_POSTS)");
+    expect(schema).toContain("author User @in(WRITTEN_POSTS)");
+    expect(schema).toContain("editor User? @in(EDITED_POSTS)");
   });
 
   it("converts one-to-one relations and reports them", () => {
@@ -429,10 +427,8 @@ node Post {
         userId String @unique
       }
     `);
-    expect(schema).toContain(
-      'profile Profile? @relationship(type: "HAS_PROFILE", direction: OUT, onDelete: Cascade)',
-    );
-    expect(schema).toContain('user User @relationship(type: "HAS_PROFILE", direction: IN)');
+    expect(schema).toContain("profile Profile? @out(HAS_PROFILE, onDelete: Cascade)");
+    expect(schema).toContain("user User @in(HAS_PROFILE)");
     expect(schema).not.toContain("userId");
     expect(issueAt(issues, "User.profile")).toMatchObject({ feature: "one-to-one" });
   });
@@ -446,8 +442,8 @@ node Post {
         children Category[] @relation("Tree")
       }
     `);
-    expect(schema).toContain('parent Category? @relationship(type: "TREE", direction: IN)');
-    expect(schema).toContain('children Category[] @relationship(type: "TREE", direction: OUT)');
+    expect(schema).toContain("parent Category? @in(TREE)");
+    expect(schema).toContain("children Category[] @out(TREE)");
   });
 
   it("turns an implicit many-to-many into one edge type, from the model that sorts first", () => {
@@ -455,8 +451,8 @@ node Post {
       model Tag { id String @id\n posts Post[] }
       model Post { id String @id\n tags Tag[] }
     `);
-    expect(schema).toContain('posts Post[] @relationship(type: "HAS_TAGS", direction: IN)');
-    expect(schema).toContain('tags Tag[] @relationship(type: "HAS_TAGS", direction: OUT)');
+    expect(schema).toContain("posts Post[] @in(HAS_TAGS)");
+    expect(schema).toContain("tags Tag[] @out(HAS_TAGS)");
     expect(issues).toEqual([]);
   });
 
@@ -468,8 +464,8 @@ node Post {
         followers User[] @relation("Follows")
       }
     `);
-    expect(schema).toContain('followers User[] @relationship(type: "FOLLOWS", direction: OUT)');
-    expect(schema).toContain('following User[] @relationship(type: "FOLLOWS", direction: IN)');
+    expect(schema).toContain("followers User[] @out(FOLLOWS)");
+    expect(schema).toContain("following User[] @in(FOLLOWS)");
     expect(issueAt(issues, "User.followers")).toMatchObject({ feature: "many-to-many" });
   });
 
@@ -492,12 +488,12 @@ node Post {
     resolveSchema(parseSchema(schema));
     expect(schema).toBe(`node Order {
   id String @id
-  items Product[] @relationship(type: "ORDER_ITEM", direction: OUT)
+  items Product[] @out(ORDER_ITEM)
 }
 
 node Product {
   id String @id
-  orderItems Order[] @relationship(type: "ORDER_ITEM", direction: IN, onDelete: Restrict)
+  orderItems Order[] @in(ORDER_ITEM, onDelete: Restrict)
 }
 
 relationship OrderItem {
@@ -528,8 +524,8 @@ relationship OrderItem {
         @@unique([followerId, followingId])
       }
     `);
-    expect(schema).toContain('following User[] @relationship(type: "FOLLOW", direction: OUT)');
-    expect(schema).toContain('followers User[] @relationship(type: "FOLLOW", direction: IN)');
+    expect(schema).toContain("following User[] @out(FOLLOW)");
+    expect(schema).toContain("followers User[] @in(FOLLOW)");
     expect(schema).toContain('relationship Follow {\n  type "FOLLOW"\n  from User\n  to User\n');
   });
 
@@ -585,8 +581,8 @@ relationship OrderItem {
         bId String
       }
     `);
-    expect(schema).toContain('"HAS_POSTS"');
-    expect(schema).toContain('"HAS_POSTS_2"');
+    expect(schema).toContain("@out(HAS_POSTS,");
+    expect(schema).toContain("@out(HAS_POSTS_2,");
     expect(issues.some((i) => i.message.includes("HAS_POSTS_2"))).toBe(true);
   });
 

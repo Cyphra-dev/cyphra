@@ -67,7 +67,7 @@ node User {
   id     String  @id @default(cuid())
   name   String
   age    Int?
-  orders Order[] @relationship(type: "PLACED", direction: OUT)
+  orders Order[] @out(PLACED)
 }
 
 node Order {

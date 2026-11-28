@@ -77,7 +77,7 @@ for anything you store.
 
 ## In Cyphra
 
-Relationships are fields in the schema (`following User[] @relationship(type: "FOLLOWS")`), and
+Relationships are fields in the schema (`following User[] @out(FOLLOWS)`), and
 `connect` links existing nodes by any `@id` / `@unique` field. Edge properties declared in a
 `relationship { … }` model go in `$edge`:
 

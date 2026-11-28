@@ -17,7 +17,7 @@ node Order {
   id String @id
   items Int @min(1)
   status OrderStatus?
-  Creator User[] @relationship(type: "CREATES", direction: IN)
+  Creator User[] @in(CREATES)
 }
 
 node User {
@@ -28,7 +28,7 @@ node User {
   age Float? @min(0) @max(150)
   nicknames String[] @size(max: 3)
   code String? @regex("^[a-z]{3}$", flags: "i")
-  Orders Order[] @relationship(type: "CREATES", direction: OUT)
+  Orders Order[] @out(CREATES)
 }
 
 relationship Creates {

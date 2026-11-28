@@ -41,7 +41,7 @@ node Document {
   id     String  @id
   title  String
   source String
-  chunks Chunk[] @relationship(type: "HAS_CHUNK", direction: OUT)
+  chunks Chunk[] @out(HAS_CHUNK)
 }
 
 node Chunk {
@@ -50,10 +50,10 @@ node Chunk {
   heading   String?
   text      String
   embedding Vector(256) @vectorIndex(similarity: cosine, name: "chunkEmbedding")
-  document  Document?   @relationship(type: "HAS_CHUNK", direction: IN)
-  next      Chunk?      @relationship(type: "NEXT", direction: OUT)
-  previous  Chunk?      @relationship(type: "NEXT", direction: IN)
-  entities  Entity[]    @relationship(type: "MENTIONS", direction: OUT)
+  document  Document?   @in(HAS_CHUNK)
+  next      Chunk?      @out(NEXT)
+  previous  Chunk?      @in(NEXT)
+  entities  Entity[]    @out(MENTIONS)
 
   @@fulltext([heading, text], name: "chunkText", analyzer: "english")
 }
@@ -62,9 +62,9 @@ node Entity {
   id          String   @id
   name        String
   type        String
-  chunks      Chunk[]  @relationship(type: "MENTIONS", direction: IN)
-  related     Entity[] @relationship(type: "RELATED_TO", direction: OUT)
-  relatedFrom Entity[] @relationship(type: "RELATED_TO", direction: IN)
+  chunks      Chunk[]  @in(MENTIONS)
+  related     Entity[] @out(RELATED_TO)
+  relatedFrom Entity[] @in(RELATED_TO)
 }
 
 relationship RelatedTo {

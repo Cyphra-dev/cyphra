@@ -73,7 +73,7 @@ node Customer implements Person {
 node Doc implements Archivable {
   body String
   id String
-  ownsBy Person[] @relationship(type: "OWNS", direction: IN)
+  ownsBy Person[] @in(OWNS)
 }
 
 node Employee implements Archivable, Person {
@@ -83,7 +83,7 @@ node Employee implements Archivable, Person {
 interface Person {
   id String @id
   name String
-  owns Doc[] @relationship(type: "OWNS", direction: OUT)
+  owns Doc[] @out(OWNS)
 }
 `);
     expect(warnings).toEqual([]);
@@ -297,8 +297,8 @@ node User {
         },
       ],
     });
-    expect(printed).toContain('wrote Post[] @relationship(type: "WROTE", direction: OUT)');
-    expect(printed).toContain('wroteBy User[] @relationship(type: "WROTE", direction: IN)');
+    expect(printed).toContain("wrote Post[] @out(WROTE)");
+    expect(printed).toContain("wroteBy User[] @in(WROTE)");
     expect(printed).not.toContain("Archived[]");
   });
 });

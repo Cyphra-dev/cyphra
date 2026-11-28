@@ -60,7 +60,7 @@ node User {
   email     String   @unique @email
   name      String   @length(2, 40) @nonEmpty
   createdAt DateTime @default(now())
-  posts     Post[]   @relationship(type: "WROTE", direction: OUT, onDelete: Cascade)
+  posts     Post[]   @out(WROTE, onDelete: Cascade)
 }
 
 node Post {
@@ -70,7 +70,7 @@ node Post {
   status    PostStatus @default(DRAFT)
   tags      String[]   @size(max: 5)
   createdAt DateTime   @default(now()) @index
-  author    User       @relationship(type: "WROTE", direction: IN)
+  author    User       @in(WROTE)
 }
 ```
 

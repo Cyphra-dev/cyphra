@@ -17,8 +17,8 @@ node Movie {
   runtime Duration?
   genres String[]
   rating Float? @default(0)
-  actors Person[] @relationship(type: "ACTED_IN", direction: IN)
-  directors Person[] @relationship(type: "DIRECTED", direction: IN)
+  actors Person[] @in(ACTED_IN)
+  directors Person[] @in(DIRECTED)
   // similar: [Movie!]! (not converted: computed field)
 }
 
@@ -26,8 +26,8 @@ node Person implements Actor {
   id String @id @default(uuid())
   name String @unique
   born Int?
-  movies Movie[] @relationship(type: "ACTED_IN", direction: OUT)
-  directed Movie[] @relationship(type: "DIRECTED", direction: OUT)
+  movies Movie[] @out(ACTED_IN)
+  directed Movie[] @out(DIRECTED)
 }
 
 relationship ActedIn {

@@ -71,15 +71,21 @@ package boundaries.
 node User {
   id    String @id @default(cuid())
   email String @unique
-  posts Post[] @relationship(type: "AUTHORED", direction: OUT)
+  posts Post[] @out(AUTHORED)
 }
 
 node Post {
   id     String @id @default(uuid())
   title  String
-  author User?  @relationship(type: "AUTHORED", direction: IN)
+  author User?  @in(AUTHORED)
 }
 ```
+
+`posts Post[] @out(AUTHORED)` reads the `:AUTHORED` edges going out of a user, and
+`author User? @in(AUTHORED)` the same edges from the post. One side is enough: drop `Post.author`
+and `user.posts` still works; keep it only to read the relation from the post too. To give the
+edges properties, add a `relationship AUTHORED { at DateTime @default(now()) }` block (see
+[Relationships](/schema#relationships)).
 
 ### Start a database and migrate
 

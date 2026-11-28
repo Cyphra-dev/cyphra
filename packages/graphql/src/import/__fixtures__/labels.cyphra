@@ -15,7 +15,7 @@ interface LearningActivity {
   id String @id @default(uuid())
   title String
   durationMinutes Int?
-  skills Skill[] @relationship(type: "TEACHES", direction: OUT)
+  skills Skill[] @out(TEACHES)
 }
 
 interface Catalogued {
@@ -36,20 +36,20 @@ node Quiz implements LearningActivity {
 
 node Skill {
   name String
-  activities LearningActivity[] @relationship(type: "TEACHES", direction: IN)
+  activities LearningActivity[] @in(TEACHES)
 }
 
 node Course implements Catalogued {
-  activities LearningActivity[] @relationship(type: "INCLUDES", direction: OUT)
+  activities LearningActivity[] @out(INCLUDES)
 }
 
 node Path implements Catalogued {
-  courses Course[] @relationship(type: "STEP", direction: OUT)
+  courses Course[] @out(STEP)
 }
 
 node Learner implements Person {
   email String
-  completed LearningActivity[] @relationship(type: "COMPLETED", direction: OUT)
+  completed LearningActivity[] @out(COMPLETED)
 }
 
 node Badge {

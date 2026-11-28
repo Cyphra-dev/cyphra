@@ -14,8 +14,8 @@ union Media = Movie | Show
 node Movie {
   title String
   released Int?
-  genres Genre[] @relationship(type: "IN_GENRE", direction: OUT)
-  watchedBy User[] @relationship(type: "WATCHED", direction: IN)
+  genres Genre[] @out(IN_GENRE)
+  watchedBy User[] @in(WATCHED)
 }
 
 node Genre {
@@ -30,9 +30,9 @@ node Show {
 node User {
   id String @id @default(uuid())
   name String
-  searches Search[] @relationship(type: "SAVED", direction: OUT)
-  favorite Media? @relationship(type: "FAVORITE", direction: OUT)
-  watched Media[] @relationship(type: "WATCHED", direction: OUT)
+  searches Search[] @out(SAVED)
+  favorite Media? @out(FAVORITE)
+  watched Media[] @out(WATCHED)
 }
 
 relationship Watched {

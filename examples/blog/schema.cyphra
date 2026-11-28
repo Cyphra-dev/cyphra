@@ -5,8 +5,8 @@ node User {
   email     String   @unique
   name      String?
   createdAt DateTime @default(now())
-  posts     Post[]   @relationship(type: "AUTHORED", direction: OUT)
-  following User[]   @relationship(type: "FOLLOWS", direction: OUT)
+  posts     Post[]   @out(AUTHORED)
+  following User[]   @out(FOLLOWS)
 }
 
 node Post {
@@ -14,7 +14,7 @@ node Post {
   title     String
   tags      String[]
   published Boolean  @default(false)
-  author    User?    @relationship(type: "AUTHORED", direction: IN)
+  author    User?    @in(AUTHORED)
 }
 
 relationship Follows {

@@ -36,8 +36,8 @@ App code depends on **`cyphra`** separately (see [Getting started](/getting-star
 | `cyphra import prisma <schema>`             | Convert a Prisma schema to `schema.cyphra`, foreign keys to edges ([details](#import-from-prisma); `--out`, `--merge`, `--force`, `--print`)                        |
 | `cyphra import neogma <files>`              | Convert neogma models (decorator classes or `ModelFactory`) to `schema.cyphra` ([details](#import-from-neogma); `--out`, `--merge`, `--force`, `--print`)           |
 | `cyphra push`                               | Apply constraints and range, vector and full-text indexes directly (prototyping)                                                                                    |
-| `cyphra validate`                           | Parse and validate the schema                                                                                                                                       |
-| `cyphra format`                             | Format the schema in place, keeping comments (`--check` exits with 1 instead of writing)                                                                            |
+| `cyphra validate`                           | Parse and validate the schema; warnings (nearly identical relationship types) go to stderr                                                                          |
+| `cyphra format`                             | Format the schema in place, keeping comments (`--check` exits with 1 instead of writing; `--codemod` also rewrites `@relationship(…)` fields into `@out` / `@in`)   |
 | `cyphra schema print`                       | Canonical pretty-print of the schema                                                                                                                                |
 | `cyphra schema ddl`                         | Print the constraint and index DDL (no database)                                                                                                                    |
 
@@ -543,7 +543,7 @@ What converts:
   values (only the ones a converted field uses).
 - `@id` becomes `@id @default(uuid())`, `@timestamp` (on `DateTime` and `Time`) becomes
   `@default(now())`, `@default` keeps its value, and `@unique` (from v6 and earlier) stays `@unique`.
-- `@relationship(type, direction)` becomes a relation field, and a `@relationshipProperties` type
+- `@relationship(type, direction)` becomes a relation field (`@out(TYPE)` / `@in(TYPE)`), and a `@relationshipProperties` type
   becomes a `relationship` model.
 - A union of `@node` types (`union Search = Movie | Genre`) becomes a [Cyphra union](/schema#unions)
   with the same members, and `@relationship` fields to it become relation fields to the union. Neither
@@ -817,7 +817,7 @@ What it reads (checked against neogma 2.0.5, November 2026):
 **Relationships**
 
 - Each alias becomes a list field: `Orders: { name: 'PLACED', direction: 'out', model: Orders }`
-  gives `Orders Order[] @relationship(type: "PLACED", direction: OUT)`. Field names are the aliases,
+  gives `Orders Order[] @out(PLACED)`. Field names are the aliases,
   unchanged. `'self'` points to the same node.
 - neogma declares each side on its own model. When both sides are declared (`direction: 'out'` on
   one, `'in'` on the other, same `name`), they become two fields over the same edges, which Cyphra

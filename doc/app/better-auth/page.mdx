@@ -118,8 +118,8 @@ node User {
   image String?
   createdAt DateTime
   updatedAt DateTime
-  sessions Session[] @relationship(type: "HAS_SESSION", direction: OUT, onDelete: Cascade)
-  accounts Account[] @relationship(type: "HAS_ACCOUNT", direction: OUT, onDelete: Cascade)
+  sessions Session[] @out(HAS_SESSION, onDelete: Cascade)
+  accounts Account[] @out(HAS_ACCOUNT, onDelete: Cascade)
 }
 
 node Session {
@@ -130,7 +130,7 @@ node Session {
   updatedAt DateTime
   ipAddress String?
   userAgent String?
-  user User @relationship(type: "HAS_SESSION", direction: IN)
+  user User @in(HAS_SESSION)
 }
 ```
 
@@ -201,13 +201,13 @@ node User {
   id String @id @default(cuid())
   email String @unique
   // … the other Better Auth fields
-  projects Project[] @relationship(type: "OWNS", direction: OUT)
+  projects Project[] @out(OWNS)
 }
 
 node Project {
   id String @id @default(uuid())
   title String
-  owner User @relationship(type: "OWNS", direction: IN)
+  owner User @in(OWNS)
 }
 ```
 

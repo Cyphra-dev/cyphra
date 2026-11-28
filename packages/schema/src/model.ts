@@ -241,6 +241,35 @@ export function relationSyntaxOf(
 }
 
 /**
+ * The decorator of a relation field, as importers and code generators write it: `@out(TYPE)` /
+ * `@in(TYPE)` (with `onDelete` when given), or `@relationship(type: "…", direction: …)` for a type
+ * that is not an identifier (`HAS-TAG`).
+ */
+export function relationFieldDecorator(
+  relType: string,
+  direction: RelationDirection,
+  onDelete?: OnDeleteRule,
+): Decorator {
+  const rule = onDelete
+    ? [{ key: "onDelete", value: { kind: "identifier" as const, value: onDelete } }]
+    : [];
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(relType)) {
+    return {
+      name: "relationship",
+      args: [
+        { key: "type", value: { kind: "string", value: relType } },
+        { key: "direction", value: { kind: "identifier", value: direction } },
+        ...rule,
+      ],
+    };
+  }
+  return {
+    name: direction === "OUT" ? "out" : "in",
+    args: [{ key: "type", value: { kind: "identifier", value: relType } }, ...rule],
+  };
+}
+
+/**
  * Read the relationship a relation field declares: `@out(TYPE, onDelete: …)`, `@in(TYPE, …)` or
  * `@relationship(type: "TYPE", direction: OUT|IN, onDelete: …)`.
  *

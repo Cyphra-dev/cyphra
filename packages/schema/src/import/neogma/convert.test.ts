@@ -319,9 +319,9 @@ describe("relationships", () => {
         @Relationship({ name: "PLACED", direction: "in", model: () => UserNode }) Buyer!: unknown;
       }
     `);
-    expect(r.schema).toContain('  Orders Order[] @relationship(type: "PLACED", direction: OUT)\n');
-    expect(r.schema).toContain('  Friends User[] @relationship(type: "KNOWS", direction: OUT)\n');
-    expect(r.schema).toContain('  Buyer User[] @relationship(type: "PLACED", direction: IN)\n');
+    expect(r.schema).toContain("  Orders Order[] @out(PLACED)\n");
+    expect(r.schema).toContain("  Friends User[] @out(KNOWS)\n");
+    expect(r.schema).toContain("  Buyer User[] @in(PLACED)\n");
     expect(features(r.issues)).toEqual(["changed User.Friends direction: 'none'"]);
   });
 

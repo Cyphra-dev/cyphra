@@ -14,7 +14,68 @@ import { formatRelationalType, formatScalarType, nodeHeader } from "./printSchem
 export type FormatSchemaOptions = {
   /** Indentation of block contents (default two spaces). */
   readonly indent?: string;
+  /**
+   * Also rewrite older syntax into the current one: `@relationship(type: "T", direction: OUT)`
+   * fields become `@out(T)` / `@in(T)` (with their `onDelete`). A type that is not an identifier
+   * (`"HAS-TAG"`) keeps `@relationship`. Off by default, so formatting never changes the syntax
+   * you wrote; running it twice gives the same text.
+   */
+  readonly codemod?: boolean;
 };
+
+const IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+/**
+ * The `@out(T, …)` / `@in(T, …)` decorator equivalent to a `@relationship(type: "T", …)` one, or
+ * `undefined` when it has none (a type that is not an identifier, an unknown or repeated
+ * argument: left for validation to report).
+ *
+ * Used by {@link formatSchema} (`codemod: true`) and the language server's quick fix.
+ */
+export function outInOf(d: Decorator): Decorator | undefined {
+  if (d.name !== "relationship") return undefined;
+  const keys = d.args.map((a) => a.key);
+  if (new Set(keys).size !== keys.length) return undefined;
+  if (keys.some((k) => k !== "type" && k !== "direction" && k !== "onDelete")) return undefined;
+  const type = d.args.find((a) => a.key === "type");
+  const dir = d.args.find((a) => a.key === "direction")?.value;
+  if (type?.value.kind !== "string" || !IDENTIFIER.test(type.value.value)) return undefined;
+  if (dir && (dir.kind !== "identifier" || (dir.value !== "OUT" && dir.value !== "IN"))) {
+    return undefined;
+  }
+  const onDelete = d.args.find((a) => a.key === "onDelete");
+  return {
+    name: dir?.value === "IN" ? "in" : "out",
+    args: [
+      { key: "type", value: { kind: "identifier", value: type.value.value } },
+      ...(onDelete ? [onDelete] : []),
+    ],
+    ...(d.loc ? { loc: d.loc } : {}),
+  };
+}
+
+/** `doc` with every `@relationship(…)` that has an `@out` / `@in` form rewritten into it. */
+function withOutIn(doc: SchemaDocument): SchemaDocument {
+  return {
+    ...doc,
+    declarations: doc.declarations.map((d) =>
+      d.kind !== "Node"
+        ? d
+        : {
+            ...d,
+            fields: d.fields.map((f) => {
+              if (f.kind !== "Relational") return f;
+              // A field mixing syntaxes is left as it is, for validation to report.
+              const rel = f.decorators.filter((x) =>
+                ["relationship", "out", "in"].includes(x.name),
+              );
+              if (rel.length !== 1) return f;
+              return { ...f, decorators: f.decorators.map((x) => outInOf(x) ?? x) };
+            }),
+          },
+    ),
+  };
+}
 
 /** One printable line of a block (a field, an attribute, an enum value, a header line). */
 type Item = {
@@ -64,7 +125,8 @@ function range(loc: SourceRange | undefined): SourceRange {
  */
 export function formatSchema(source: string, options?: FormatSchemaOptions): string {
   const indent = options?.indent ?? "  ";
-  const doc = parseSchemaSyntax(source, { locations: true });
+  const parsed = parseSchemaSyntax(source, { locations: true });
+  const doc = options?.codemod ? withOutIn(parsed) : parsed;
   const slice = (loc: SourceRange | undefined) =>
     source.slice(range(loc).start.offset, range(loc).end.offset);
 
@@ -77,6 +139,13 @@ export function formatSchema(source: string, options?: FormatSchemaOptions): str
         : `@default(${formatValue(a)})`;
     }
     if (d.args.length === 0) return `@${d.name}`;
+    // `@out(T, …)` / `@in(T, …)`: the type is positional (it may come from the codemod, with no
+    // source range of its own).
+    if ((d.name === "out" || d.name === "in") && d.args[0]?.key === "type") {
+      const [type, ...rest] = d.args;
+      const head = type!.value.kind === "identifier" ? type!.value.value : formatValue(type!);
+      return `@${d.name}(${[head, ...rest.map((a) => `${a.key}: ${formatValue(a)}`)].join(", ")})`;
+    }
     // Positional arguments (`@length(3, 20)`) have no key in the source: keep them positional.
     const arg = (a: DecoratorArg) => (a.keyLoc ? `${a.key}: ${formatValue(a)}` : formatValue(a));
     return `@${d.name}(${d.args.map(arg).join(", ")})`;
@@ -286,6 +355,7 @@ export function formatSchema(source: string, options?: FormatSchemaOptions): str
     emitLeading(fileDangling, "", true);
   }
   const formatted = out.length ? `${out.join("\n")}\n` : "";
+  // The codemod changes the syntax, not the schema: compare with the rewritten AST.
   assertSameSchema(doc, formatted);
   return formatted;
 }

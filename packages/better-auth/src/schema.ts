@@ -12,6 +12,7 @@
 
 import type { BetterAuthDBSchema, DBFieldAttribute } from "better-auth/db";
 import {
+  relationFieldDecorator,
   resolveSchema,
   type Decorator,
   type ModelAttribute,
@@ -157,13 +158,7 @@ function relationDecorator(
   direction: "IN" | "OUT",
   onDelete?: OnDeleteRule,
 ): Decorator {
-  return dec("relationship", [
-    { key: "type", value: { kind: "string", value: relType } },
-    { key: "direction", value: { kind: "identifier", value: direction } },
-    ...(onDelete
-      ? [{ key: "onDelete", value: { kind: "identifier" as const, value: onDelete } }]
-      : []),
-  ]);
+  return relationFieldDecorator(relType, direction, onDelete);
 }
 
 /**

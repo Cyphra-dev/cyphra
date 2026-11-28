@@ -114,7 +114,7 @@ node Account {
   accountId  String
   tenant     String
   email      String
-  user       User   @relationship(type: "HAS_ACCOUNT", direction: IN)
+  user       User   @in(HAS_ACCOUNT)
 
   @@unique([providerId, accountId])
   @@unique([tenant, email], name: "tenantEmail")
@@ -437,8 +437,8 @@ node User {
   email     String @unique
   name      String?
   age       Int?
-  following User[] @relationship(type: "FOLLOWS", direction: OUT)
-  followers User[] @relationship(type: "FOLLOWS", direction: IN)
+  following User[] @out(FOLLOWS)
+  followers User[] @in(FOLLOWS)
 }
 
 relationship Follows {
@@ -522,16 +522,16 @@ node Chunk {
   id       String   @id
   text     String
   draft    Boolean  @default(false)
-  entities Entity[] @relationship(type: "MENTIONS", direction: OUT)
+  entities Entity[] @out(MENTIONS)
 }
 
 node Entity {
   id          String   @id
   name        String
   kind        String
-  chunks      Chunk[]  @relationship(type: "MENTIONS", direction: IN)
-  related     Entity[] @relationship(type: "RELATED_TO", direction: OUT)
-  relatedFrom Entity[] @relationship(type: "RELATED_TO", direction: IN)
+  chunks      Chunk[]  @in(MENTIONS)
+  related     Entity[] @out(RELATED_TO)
+  relatedFrom Entity[] @in(RELATED_TO)
 }
 
 relationship RelatedTo {
@@ -1347,8 +1347,8 @@ with a `select`, see [Writing](#writing)). Edges are removed with the node
 the linked nodes:
 
 ```ts
-// schema: sessions Session[] @relationship(type: "HAS_SESSION", onDelete: Cascade)
-//         invoices Invoice[] @relationship(type: "BILLED", onDelete: Restrict)
+// schema: sessions Session[] @out(HAS_SESSION, onDelete: Cascade)
+//         invoices Invoice[] @out(BILLED, onDelete: Restrict)
 try {
   await db.user.delete({ where: { id } }); // deletes the user's sessions too
 } catch (e) {

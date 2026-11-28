@@ -32,7 +32,7 @@ export {
   quoteSchemaString,
 } from "./printSchema.js";
 export type { FormatSchemaOptions } from "./formatSchema.js";
-export { formatSchema } from "./formatSchema.js";
+export { formatSchema, outInOf } from "./formatSchema.js";
 export { MAX_SCHEMA_BYTES, parseSchema, parseSchemaSyntax } from "./parseSchema.js";
 export { parseSchemaFile } from "./readSchemaFile.js";
 export type { CodegenModel, RenderCyphraGenOptions, RuntimeTypeNames } from "./renderCyphraGen.js";
@@ -105,6 +105,7 @@ export {
   SCHEMA_MODEL_VERSION,
   getNodeModel,
   nodeLabels,
+  relationFieldDecorator,
   relationOf,
   relationSyntaxOf,
   resolveSchema,

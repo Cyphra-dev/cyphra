@@ -27,18 +27,18 @@ node User {
   role Role @default(USER)
   createdAt DateTime @default(now())
   updatedAt DateTime @default(now())
-  posts Post[] @relationship(type: "HAS_POSTS", direction: OUT, onDelete: Cascade)
-  comments Comment[] @relationship(type: "HAS_COMMENTS", direction: OUT)
-  profile Profile? @relationship(type: "HAS_PROFILE", direction: OUT, onDelete: Cascade)
-  followers User[] @relationship(type: "FOLLOWS", direction: OUT)
-  following User[] @relationship(type: "FOLLOWS", direction: IN)
+  posts Post[] @out(HAS_POSTS, onDelete: Cascade)
+  comments Comment[] @out(HAS_COMMENTS)
+  profile Profile? @out(HAS_PROFILE, onDelete: Cascade)
+  followers User[] @out(FOLLOWS)
+  following User[] @in(FOLLOWS)
 }
 
 node Profile {
   id Int @id
   bio String?
   avatar String?
-  user User @relationship(type: "HAS_PROFILE", direction: IN)
+  user User @in(HAS_PROFILE)
   // userId String (foreign key of user: replaced by the edge)
 }
 
@@ -50,9 +50,9 @@ node Post {
   published Boolean @default(false)
   views Int @default(0)
   publishedAt DateTime?
-  author User @relationship(type: "HAS_POSTS", direction: IN)
-  tags Tag[] @relationship(type: "HAS_TAGS", direction: OUT)
-  comments Comment[] @relationship(type: "HAS_COMMENTS", direction: OUT, onDelete: Cascade)
+  author User @in(HAS_POSTS)
+  tags Tag[] @out(HAS_TAGS)
+  comments Comment[] @out(HAS_COMMENTS, onDelete: Cascade)
   // authorId String (foreign key of author: replaced by the edge)
 
   @@index([published, publishedAt])
@@ -62,8 +62,8 @@ node Comment {
   id String @id @default(cuid())
   body String
   createdAt DateTime @default(now())
-  post Post @relationship(type: "HAS_COMMENTS", direction: IN)
-  author User? @relationship(type: "HAS_COMMENTS", direction: IN)
+  post Post @in(HAS_COMMENTS)
+  author User? @in(HAS_COMMENTS)
   // postId String (foreign key of post: replaced by the edge)
   // authorId String? (foreign key of author: replaced by the edge)
 }
@@ -71,5 +71,5 @@ node Comment {
 node Tag {
   id Int @id
   name String @unique
-  posts Post[] @relationship(type: "HAS_TAGS", direction: IN)
+  posts Post[] @in(HAS_TAGS)
 }

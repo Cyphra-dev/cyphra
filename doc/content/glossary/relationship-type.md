@@ -23,7 +23,7 @@ date a follow started.
 ## In Cyphra
 
 A relation field names the type and the direction:
-`posts Post[] @relationship(type: "AUTHORED", direction: OUT)`. Both ends of a relationship can be
+`posts Post[] @out(AUTHORED)`. Both ends of a relationship can be
 declared, here `User.posts` and `Post.author`. When the relationship has properties, a
 `relationship { … }` block types them, and the [typed client](/client) exposes them as `$edge`.
 See [Relationships](/schema#relationships).

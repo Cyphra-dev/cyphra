@@ -86,27 +86,27 @@ The import writes:
 node User {
   id String @id @default(cuid())
   email String @unique
-  posts Post[] @relationship(type: "HAS_POSTS", direction: OUT, onDelete: Cascade)
+  posts Post[] @out(HAS_POSTS, onDelete: Cascade)
 }
 
 node Post {
   id String @id @default(cuid())
   title String @length(max: 200)
-  author User @relationship(type: "HAS_POSTS", direction: IN)
-  tags Tag[] @relationship(type: "HAS_TAGS", direction: OUT)
-  items Order[] @relationship(type: "ORDER_ITEM", direction: IN, onDelete: Restrict)
+  author User @in(HAS_POSTS)
+  tags Tag[] @out(HAS_TAGS)
+  items Order[] @in(ORDER_ITEM, onDelete: Restrict)
   // authorId String (foreign key of author: replaced by the edge)
 }
 
 node Tag {
   id String @id @default(cuid())
   name String @unique
-  posts Post[] @relationship(type: "HAS_TAGS", direction: IN)
+  posts Post[] @in(HAS_TAGS)
 }
 
 node Order {
   id String @id @default(cuid())
-  items Post[] @relationship(type: "ORDER_ITEM", direction: OUT)
+  items Post[] @out(ORDER_ITEM)
 }
 
 relationship OrderItem {

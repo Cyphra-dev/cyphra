@@ -1,4 +1,4 @@
-import type { NodeDeclaration } from "@cyphra/schema";
+import { outInOf, type Decorator, type NodeDeclaration } from "@cyphra/schema";
 import { span, type Analysis, type Span } from "./analysis.js";
 import { inverseFields, relationFields, type OwnedRelation } from "./relTypes.js";
 
@@ -59,14 +59,51 @@ function insertion(a: Analysis, d: NodeDeclaration): { at: number; indent: strin
   return open < 0 || open >= s.end ? undefined : { at: open + 1, indent: "  " };
 }
 
+/** The edit rewriting a `@relationship(…)` decorator into `@out(…)` / `@in(…)`, if it has one. */
+function outInEdit(a: Analysis, d: Decorator): TextEdit | undefined {
+  const s = span(d.loc);
+  const o = outInOf(d);
+  if (!s || !o) return undefined;
+  const [type, ...rest] = o.args;
+  const value = (x: (typeof rest)[number]) => {
+    const v = span(x.valueLoc);
+    return v ? a.text.slice(v.start, v.end) : String(x.value.value);
+  };
+  const args = [String(type!.value.value), ...rest.map((x) => `${x.key}: ${value(x)}`)];
+  return { span: s, newText: `@${o.name}(${args.join(", ")})` };
+}
+
 /**
  * Code actions for `range`: on a relation field without an inverse, "Add inverse field on
- * <Target>" (a field on the target reading the same edges the other way).
+ * <Target>" (a field on the target reading the same edges the other way); on a
+ * `@relationship(…)` field, "Rewrite as @out(T)" / "@in(T)", and the same for every such field of
+ * the file (what `cyphra format --codemod` does).
  */
 export function codeActionsAt(a: Analysis, range: Span): CodeAction[] {
   const doc = a.doc;
   if (!doc) return [];
   const out: CodeAction[] = [];
+  const rewrites = relationFields(doc).flatMap((r) => {
+    const decs = r.field.decorators.filter((d) => ["relationship", "out", "in"].includes(d.name));
+    const edit = decs.length === 1 ? outInEdit(a, decs[0]!) : undefined;
+    return edit ? [{ r, edit }] : [];
+  });
+  for (const { r, edit } of rewrites) {
+    const loc = span(r.field.loc);
+    if (!loc || loc.end < range.start || loc.start > range.end) continue;
+    out.push({
+      title: `Rewrite as ${edit.newText.slice(0, edit.newText.indexOf("("))}(${r.relType})`,
+      kind: "quickfix",
+      edits: [edit],
+    });
+    if (rewrites.length > 1) {
+      out.push({
+        title: "Rewrite every @relationship(…) field as @out / @in",
+        kind: "quickfix",
+        edits: rewrites.map((x) => x.edit),
+      });
+    }
+  }
   for (const r of relationFields(doc)) {
     const loc = span(r.field.loc);
     if (!loc || loc.end < range.start || loc.start > range.end) continue;

@@ -103,7 +103,7 @@ describe("schemaFromIntrospection", () => {
   it("maps types, required-ness, constraints, indexes and relations", () => {
     expect(printed).toBe(`node Post {
   score Float
-  authoredBy User[] @relationship(type: "AUTHORED", direction: IN)
+  authoredBy User[] @in(AUTHORED)
 }
 
 node User {
@@ -117,9 +117,9 @@ node User {
   slot Time?
   tags String[]
   ttl Duration?
-  authored Post[] @relationship(type: "AUTHORED", direction: OUT)
-  follows User[] @relationship(type: "FOLLOWS", direction: OUT)
-  followsBy User[] @relationship(type: "FOLLOWS", direction: IN)
+  authored Post[] @out(AUTHORED)
+  follows User[] @out(FOLLOWS)
+  followsBy User[] @in(FOLLOWS)
 }
 
 relationship Authored {
@@ -424,8 +424,8 @@ describe("schemaFromIntrospection: interfaces", () => {
 node Employee implements Person {
   badge String @unique
   email String @unique
-  manages Person[] @relationship(type: "MANAGES", direction: OUT)
-  memberOf Team[] @relationship(type: "MEMBER_OF", direction: OUT)
+  manages Person[] @out(MANAGES)
+  memberOf Team[] @out(MEMBER_OF)
 }
 
 node Note {
@@ -435,7 +435,7 @@ node Note {
 interface Person {
   id String @id
   name String?
-  managesBy Employee[] @relationship(type: "MANAGES", direction: IN)
+  managesBy Employee[] @in(MANAGES)
 }
 
 node Tagged {
@@ -445,7 +445,7 @@ node Tagged {
 
 node Team {
   id String
-  memberOfBy Employee[] @relationship(type: "MEMBER_OF", direction: IN)
+  memberOfBy Employee[] @in(MEMBER_OF)
 }
 `);
   });
@@ -537,18 +537,18 @@ node Employee implements Staff {
 interface Person {
   id String @id
   name String?
-  visits Site[] @relationship(type: "VISITS", direction: OUT)
+  visits Site[] @out(VISITS)
 }
 
 node Site {
   code String
-  visitsBy Person[] @relationship(type: "VISITS", direction: IN)
-  worksAtBy Staff[] @relationship(type: "WORKS_AT", direction: IN)
+  visitsBy Person[] @in(VISITS)
+  worksAtBy Staff[] @in(WORKS_AT)
 }
 
 interface Staff extends Person {
   team String @index
-  worksAt Site[] @relationship(type: "WORKS_AT", direction: OUT)
+  worksAt Site[] @out(WORKS_AT)
 }
 `);
     expect(warnings).toEqual([]);

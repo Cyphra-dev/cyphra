@@ -1025,7 +1025,9 @@ relationship AUTHORED {
     expect(analyze(out).problem).toBeUndefined();
     // The old syntax gets an inverse in the old syntax.
     const tags = text.indexOf("tags");
-    const [tagFix] = codeActionsAt(a, { start: tags, end: tags });
+    const tagFix = codeActionsAt(a, { start: tags, end: tags }).find((c) =>
+      c.title.startsWith("Add inverse"),
+    );
     expect(tagFix!.title).toBe("Add inverse field on Tag");
     expect(tagFix!.edits[0]!.newText).toBe(
       '\n  post Post? @relationship(type: "TAGGED", direction: IN)',
@@ -1063,5 +1065,23 @@ relationship AUTHORED {
     expect(problem(OUT_IN.replace("onDelete: Restrict", "onDelete: Drop"))).toMatchObject({
       underlined: "Drop",
     });
+  });
+
+  it("offers a quick fix rewriting @relationship into @out / @in", () => {
+    const text = OUT_IN.replace(
+      '@relationship(type: "TAGGED", direction: OUT)',
+      '@relationship(type: "TAGGED", direction: IN, onDelete: Cascade)',
+    );
+    const a = analyze(text);
+    const tags = text.indexOf("tags");
+    const actions = codeActionsAt(a, { start: tags, end: tags });
+    expect(actions.map((c) => c.title)).toEqual([
+      "Rewrite as @in(TAGGED)",
+      "Add inverse field on Tag",
+    ]);
+    const e = actions[0]!.edits[0]!;
+    const out = text.slice(0, e.span.start) + e.newText + text.slice(e.span.end);
+    expect(out).toContain("tags   Tag[]  @in(TAGGED, onDelete: Cascade)");
+    expect(analyze(out).problem).toBeUndefined();
   });
 });

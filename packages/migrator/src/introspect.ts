@@ -13,6 +13,7 @@ import {
   FULLTEXT_ANALYZERS,
   MAX_VECTOR_DIMENSIONS,
   VECTOR_SIMILARITIES,
+  relationFieldDecorator,
   type Decorator,
   type DecoratorArg,
   type ModelAttribute,
@@ -1025,13 +1026,8 @@ export function schemaFromIntrospection(
     }
     const outTargets = (from: string) => pairs.filter((p) => p.from === from).length;
     const inSources = (to: string) => pairs.filter((p) => p.to === to).length;
-    const relDecorator = (direction: "OUT" | "IN"): Decorator => ({
-      name: "relationship",
-      args: [
-        { key: "type", value: { kind: "string", value: rt.type } },
-        { key: "direction", value: { kind: "identifier", value: direction } },
-      ],
-    });
+    const relDecorator = (direction: "OUT" | "IN"): Decorator =>
+      relationFieldDecorator(rt.type, direction);
     for (const { from, to } of pairs) {
       const outName = claim(from, camel(rt.type) + (outTargets(from) > 1 ? to : ""));
       nodeFields.get(from)!.push({

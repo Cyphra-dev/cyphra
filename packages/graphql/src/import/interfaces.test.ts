@@ -114,9 +114,7 @@ describe("shared @node labels", () => {
       type Tag @node { name: String }
       type Tagged @relationshipProperties { at: DateTime }
     `);
-    expect(schema).toContain(
-      'interface S {\n  tags Tag[] @relationship(type: "TAGGED", direction: OUT)\n}',
-    );
+    expect(schema).toContain("interface S {\n  tags Tag[] @out(TAGGED)\n}");
     expect(schema).toMatch(/relationship Tagged \{\n {2}type "TAGGED"\n {2}from S\n {2}to Tag\n/);
     expect(schema.match(/relationship /g)).toHaveLength(1);
   });
@@ -151,9 +149,7 @@ describe("GraphQL interfaces", () => {
     `);
     expect(schema).toContain("interface Production {\n  title String\n}");
     expect(schema).toContain("node Movie implements Production {");
-    expect(schema).toContain(
-      'actedIn Production[] @relationship(type: "ACTED_IN", direction: OUT)',
-    );
+    expect(schema).toContain("actedIn Production[] @out(ACTED_IN)");
     expect(schema).toMatch(
       /relationship ActedIn \{\n {2}type "ACTED_IN"\n {2}from Person\n {2}to Production\n/,
     );
@@ -229,9 +225,7 @@ describe("GraphQL interfaces", () => {
       'node Quiz implements LearningActivity {\n  kind String @default("quiz")\n}',
     );
     expect(schema).not.toContain("@@labels");
-    expect(schema).toContain(
-      'contains LearningActivity[] @relationship(type: "CONTAINS", direction: OUT)',
-    );
+    expect(schema).toContain("contains LearningActivity[] @out(CONTAINS)");
     const lab = model.nodes.find((n) => n.name === "Lab");
     expect(lab?.labels).toEqual(["Lab", "LearningActivity"]);
     expect(issueAt(issues, "LearningActivity")).toMatchObject({
@@ -312,7 +306,7 @@ describe("identifiers only some implementations mark @id (#252)", () => {
     );
     expect(schema).toContain("node Step implements Activity {\n}");
     // The relationship to the interface is kept.
-    expect(schema).toContain('contains Activity[] @relationship(type: "CONTAINS", direction: OUT)');
+    expect(schema).toContain("contains Activity[] @out(CONTAINS)");
     expect(model.nodes.find((n) => n.name === "Step")?.labels).toEqual(["Step", "Activity"]);
     expect(issues.filter((i) => i.severity === "unsupported")).toEqual([]);
     expect(issueAt(issues, "Activity")?.message).toMatch(
