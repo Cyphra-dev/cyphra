@@ -2545,11 +2545,8 @@ export class SchemaBuilder {
     }
     // Every model type is in the schema, even one only reached through relations.
     const types = this.api.schema.nodes.map((n) => this.output(n));
-    if (Object.keys(query).length === 0) {
-      throw new NativeSchemaError(
-        "The API has no root field: every read operation is turned off (config.models / config.defaults).",
-      );
-    }
+    // An empty Query is fine here: `extend type Query` may add the root fields (checked by
+    // `assertRootField` once `extend` is merged).
     const subscription = this.subscriptionFields();
     return new GraphQLSchema({
       query: new GraphQLObjectType({ name: "Query", fields: query }),
@@ -2562,4 +2559,17 @@ export class SchemaBuilder {
       types,
     });
   }
+}
+
+/**
+ * Refuses a schema without a root field, once `config.extend` is merged: every generated read
+ * can be off when `extend type Query` adds the API's root fields.
+ */
+export function assertRootField(schema: GraphQLSchema): GraphQLSchema {
+  if (Object.keys(schema.getQueryType()?.getFields() ?? {}).length === 0) {
+    throw new NativeSchemaError(
+      "The API has no root field: every read operation is turned off (config.models / config.defaults) and config.extend adds no Query field.",
+    );
+  }
+  return schema;
 }

@@ -27,7 +27,7 @@ import {
   type ClientSource,
   type Session,
 } from "./resolvers.js";
-import { SchemaBuilder } from "./schema.js";
+import { assertRootField, SchemaBuilder } from "./schema.js";
 import { subscriptionResolvers } from "./subscriptions.js";
 import type { CDCReader } from "./cdc.js";
 
@@ -171,6 +171,7 @@ export function makeSchema(options: NativeMakeSchemaOptions): GraphQLSchema {
   ).build();
   const extend = api.config.extensions.extend;
   if (extend) built = applyExtend(api, built, extend, extensionRuntime(api, runtime));
+  assertRootField(built);
   sessionsBySchema.set(built, session);
   return built;
 }
@@ -231,5 +232,6 @@ export function printSchema(schema: SchemaModel, config?: GraphQLConfig<any, any
   let built = new SchemaBuilder(api).build();
   const extend = api.config.extensions.extend;
   if (extend) built = applyExtend(api, built, extend);
+  assertRootField(built);
   return `${printGraphQLSchema(lexicographicSortSchema(built))}\n`;
 }

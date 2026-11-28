@@ -152,6 +152,37 @@ describe("extension points: startup checks", () => {
   });
 });
 
+describe("extension points: an API served only by extend (#307)", () => {
+  const config = {
+    defaults: { operations: { read: false } },
+    extend: {
+      typeDefs: "extend type Query { status: String! }",
+      resolvers: { Query: { status: () => "up" } },
+    },
+  };
+
+  it("builds when every generated read is off and extend type Query adds the root fields", async () => {
+    const sdl = printSchema(blog, config as never);
+    valid(sdl);
+    expect(sdl).toContain("type Query {\n  status: String!\n}");
+    const db = createOrm<TypeMap>(blog, { driver: {} as never });
+    const schema = makeSchema({ client: db, config: config as never });
+    expect(validateSchema(schema)).toEqual([]);
+    const res = await graphql({ schema, source: "{ status }", contextValue: {} });
+    expect(res.errors).toBeUndefined();
+    expect(res.data).toEqual({ status: "up" });
+  });
+
+  it("still refuses an API with no root field at all", () => {
+    expect(() =>
+      printSchema(blog, {
+        defaults: { operations: { read: false } },
+        extend: { typeDefs: "type Extra { x: Int }" },
+      } as never),
+    ).toThrow(/has no root field/);
+  });
+});
+
 describe("extension points: resolvers", () => {
   it("runs custom root fields with ctx.cyphra and refuses selection(info) on non-node fields", async () => {
     const db = createOrm<TypeMap>(blog, { driver: {} as never });
