@@ -13,14 +13,19 @@ server speaks the Language Server Protocol, so the same features work in Neovim,
 editors.
 
 - **Diagnostics while you type**: the errors of [`cyphra validate`](/cli), underlined on the field,
-  type, decorator or argument at fault.
+  type, decorator or argument at fault, and its warnings (relationship types that are nearly
+  identical, such as `AUTHORED` and `AUTHORD`).
 - **Completion**: keywords, built-in types, your models and enums, decorators and their arguments
-  (`direction: OUT | IN`, vector similarity, full-text analyzers), `@default(…)` values that fit the
-  field's type, and the `String` fields of the model inside `@@fulltext([…])`.
-- **Hover**: documentation of types and decorators, and the declaration of a relation target or
-  enum.
-- **Go to definition**, **find references** and **rename** for models and enums (a rename updates
-  every field type, `from` and `to`).
+  (the relationship types of the schema inside `@out(` / `@in(`, `onDelete`, vector similarity,
+  full-text analyzers), `@default(…)` values that fit the field's type, and the `String` fields of
+  the model inside `@@fulltext([…])`.
+- **Hover**: documentation of types and decorators, the declaration of a relation target or enum,
+  and on a relationship type (`@out(AUTHORED)`) its edges, its properties and the inverse field.
+- **Go to definition**, **find references** and **rename** for models, enums and relationship
+  types (renaming a model updates every field type, `from` and `to`; renaming a type updates every
+  `@out` / `@in` / `@relationship` field and its `relationship` block).
+- **Quick fix** _Add inverse field on &lt;Target&gt;_ on a relation field that has none (one side
+  is enough; add the other only to read the relation from there too).
 - **Outline** of nodes, relationships, enums and their fields.
 - **Formatting** that keeps your comments, the same output as `cyphra format`.
 
@@ -50,7 +55,7 @@ Besides the language features, the extension adds:
 | ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Cyphra: Generate client** (command) | Runs `cyphra generate` in a terminal, from the folder of the schema's `cyphra.json`, through your package manager (`pnpm exec`, `yarn`, `bunx` or `npx`, from the lockfile). |
 | Status bar item                       | Whether the open schema is valid; click it to open the errors, or to generate the client when the schema is valid.                                                           |
-| Snippets                              | `node`, `relationship`, `enum`, `rel` (relation field), `id`, `vector`, `@@fulltext`.                                                                                        |
+| Snippets                              | `node`, `relationship`, `enum`, `rel` (relation field, `@out` / `@in`), `id`, `vector`, `@@fulltext`.                                                                        |
 | `cyphra.generateCommand` (setting)    | Command run by **Cyphra: Generate client** instead of the detected one.                                                                                                      |
 | **Cyphra: Restart language server**   | Restarts the language server.                                                                                                                                                |
 

@@ -143,6 +143,7 @@ export function buildGrammar(scalarTypes: readonly string[]): Rule {
         patterns: [
           { include: "#string" },
           { include: "#modelAttribute" },
+          { include: "#relationDecorator" },
           { include: "#decorator" },
           { include: "#argument" },
           { include: "#value" },
@@ -153,6 +154,16 @@ export function buildGrammar(scalarTypes: readonly string[]): Rule {
         captures: {
           1: { name: "punctuation.definition.decorator.cyphra" },
           2: { name: "entity.name.function.decorator.model.cyphra" },
+        },
+      },
+      // `@out(AUTHORED` / `@in(AUTHORED`: the relationship type is a symbol, highlighted as a type.
+      relationDecorator: {
+        match: `(@)(out|in)\\b\\s*(\\()\\s*(${IDENT})?`,
+        captures: {
+          1: { name: "punctuation.definition.decorator.cyphra" },
+          2: { name: "entity.name.function.decorator.cyphra" },
+          3: { name: "punctuation.cyphra" },
+          4: { name: "entity.name.type.relationship.cyphra" },
         },
       },
       decorator: {

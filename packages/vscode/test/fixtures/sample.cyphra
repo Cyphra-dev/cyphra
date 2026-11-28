@@ -49,6 +49,17 @@ node Employee implements Person, Archivable {
   salary Int
 }
 
+// @out / @in relation fields, and a short-form relationship block.
+node Author {
+  id        String @id
+  books     Post[] @out(WROTE, onDelete: Cascade)
+  followers Author[] @in(FOLLOWS)
+}
+
+relationship WROTE {
+  at DateTime @default(now())
+}
+
 // A union of unrelated nodes (members may continue after a `|`).
 union SearchHit = User | Post
 union Attachable =

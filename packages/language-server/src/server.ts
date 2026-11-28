@@ -1,6 +1,7 @@
 import lsp from "vscode-languageserver/node";
 import { TextDocument } from "vscode-languageserver-textdocument";
 import { analyze, type Analysis, type Span } from "./analysis.js";
+import { codeActionsAt } from "./codeActions.js";
 import { completionsAt, type CompletionKind } from "./completion.js";
 import { BUILTIN_TYPES } from "./docs.js";
 import { hoverAt } from "./hover.js";
@@ -8,6 +9,7 @@ import { formatText, outline, type OutlineKind, type OutlineSymbol } from "./out
 import { definitionAt, referencesAt, renameEdits, renameTargetAt } from "./symbols.js";
 
 const {
+  CodeActionKind,
   CompletionItemKind,
   DiagnosticSeverity,
   InsertTextFormat,
@@ -91,23 +93,33 @@ export function startServer(
       documentSymbolProvider: true,
       documentFormattingProvider: true,
       renameProvider: { prepareProvider: true },
+      codeActionProvider: { codeActionKinds: [CodeActionKind.QuickFix] },
     },
     serverInfo: { name: "cyphra-language-server" },
   }));
 
   const publish = (doc: TextDocument) => {
-    const { problem } = analysisOf(doc);
-    const diagnostics: lsp.Diagnostic[] = problem
-      ? [
-          {
-            range: range(doc, problem.span),
-            message: problem.message,
-            severity: DiagnosticSeverity.Error,
-            source: DIAGNOSTIC_SOURCE,
-            code: problem.kind,
-          },
-        ]
-      : [];
+    const { problem, warnings } = analysisOf(doc);
+    const diagnostics: lsp.Diagnostic[] = [
+      ...(problem
+        ? [
+            {
+              range: range(doc, problem.span),
+              message: problem.message,
+              severity: DiagnosticSeverity.Error,
+              source: DIAGNOSTIC_SOURCE,
+              code: problem.kind,
+            },
+          ]
+        : []),
+      ...warnings.map((w) => ({
+        range: range(doc, w.span),
+        message: w.message,
+        severity: DiagnosticSeverity.Warning,
+        source: DIAGNOSTIC_SOURCE,
+        code: w.code ?? w.kind,
+      })),
+    ];
     void connection.sendDiagnostics({ uri: doc.uri, version: doc.version, diagnostics });
   };
   documents.onDidChangeContent((e) => publish(e.document));
@@ -200,6 +212,23 @@ export function startServer(
         changes: { [doc.uri]: spans.map((s) => ({ range: range(doc, s), newText: p.newName })) },
       };
     }),
+  );
+
+  connection.onCodeAction((p) =>
+    withDoc(p.textDocument.uri, (doc, a) =>
+      codeActionsAt(a, {
+        start: doc.offsetAt(p.range.start),
+        end: doc.offsetAt(p.range.end),
+      }).map((c): lsp.CodeAction => ({
+        title: c.title,
+        kind: CodeActionKind.QuickFix,
+        edit: {
+          changes: {
+            [doc.uri]: c.edits.map((e) => ({ range: range(doc, e.span), newText: e.newText })),
+          },
+        },
+      })),
+    ),
   );
 
   documents.listen(connection);

@@ -99,19 +99,39 @@ function dynamicLabelsInUse(a: Analysis): string[] {
   return [...out].sort();
 }
 
-/** Relationship types already used in the document (`type "X"`, `type: "X"`). */
-function relationshipTypes(a: Analysis): string[] {
-  const out = new Set<string>();
+/**
+ * Relationship types already used in the document: `@out(X)`, `@in(X)`, `type: "X"`, `type "X"`
+ * and the name of a short-form block (`relationship X { … }`), each with whether a block types it.
+ */
+function relationshipTypes(a: Analysis, typing?: Span): { name: string; block: boolean }[] {
+  const out = new Map<string, boolean>();
+  const add = (name: string, block = false) => out.set(name, (out.get(name) ?? false) || block);
   const toks = a.tokens.filter(significant);
   toks.forEach((t, i) => {
-    if (t.kind !== "string" || t.unterminated) return;
     const p1 = toks[i - 1];
     const p2 = toks[i - 2];
-    if (p1?.text === "type" || (p1?.text === ":" && p2?.text === "type")) {
-      out.add(t.text.slice(1, -1));
+    const p3 = toks[i - 3];
+    if (t.kind === "string" && !t.unterminated) {
+      if (p1?.text === "type") add(t.text.slice(1, -1), true);
+      else if (p1?.text === ":" && p2?.text === "type") add(t.text.slice(1, -1));
+    } else if (
+      t.kind === "ident" &&
+      p1?.text === "(" &&
+      (p2?.text === "out" || p2?.text === "in") &&
+      p3?.kind === "at" &&
+      // Not the identifier being typed.
+      t.start !== typing?.start
+    ) {
+      add(t.text);
     }
   });
-  return [...out];
+  // `relationship X {` whose body does not start with `type "…"` (the short form).
+  for (const d of a.scanned) {
+    if (d.kind !== "relationship" || d.open < 0) continue;
+    const body = a.tokens.slice(d.open + 1).filter(significant);
+    if (!(body[0]?.text === "type" && body[1]?.kind === "string")) add(d.name, true);
+  }
+  return [...out].map(([name, block]) => ({ name, block }));
 }
 
 function typeCompletions(ctx: Ctx, inNode: boolean): Completion[] {
@@ -270,17 +290,36 @@ function valueCompletions(
   if (!arg) return [];
   if (dec?.name === "relationship" && key === "type") {
     return relationshipTypes(a).map((t) => ({
-      label: `"${t}"`,
+      label: `"${t.name}"`,
       kind: "value" as const,
       detail: "relationship type in use",
       replace,
     }));
+  }
+  if ((dec?.name === "out" || dec?.name === "in") && key === "type") {
+    return relationshipTypeCompletions(ctx);
   }
   return (arg.values ?? []).map((v) => ({
     label: arg.string ? `"${v}"` : v,
     kind: "value" as const,
     replace,
   }));
+}
+
+/**
+ * The relationship types of the document, for `@out(` / `@in(`: the ones a block types first
+ * (their edges have properties), then the others.
+ */
+function relationshipTypeCompletions(ctx: Ctx): Completion[] {
+  return relationshipTypes(ctx.a, ctx.replace)
+    .filter((t) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(t.name))
+    .map((t) => ({
+      label: t.name,
+      kind: "relationship" as const,
+      detail: t.block ? "relationship type (typed edge properties)" : "relationship type in use",
+      replace: ctx.replace,
+      sortText: `${t.block ? 1 : 2}${t.name}`,
+    }));
 }
 
 /** Where the cursor is: the token being typed and the tokens before it. */
@@ -412,12 +451,17 @@ export function completionsAt(a: Analysis, offset: number): Completion[] {
         : [];
     }
     if (arg.length > 0) return [];
+    // `@out(` / `@in(`: the type comes first, without a key.
+    const positional = dec?.args?.find((x) => x.positional);
+    if (positional && !model && argStart === open + 1) {
+      return valueCompletions(ctx, dec, positional.name, undefined);
+    }
     const usedKeys = stmt
       .slice(open + 1)
       .filter((t, i, arr) => t.kind === "ident" && arr[i + 1]?.text === ":")
       .map((t) => t.text);
     return (dec?.args ?? [])
-      .filter((x) => !usedKeys.includes(x.name))
+      .filter((x) => !x.positional && !usedKeys.includes(x.name))
       .map((x) => ({
         label: x.name,
         kind: "property" as const,
@@ -498,8 +542,7 @@ function topLevelCompletions(ctx: Ctx, before: readonly Token[]): Completion[] {
   const snippets: Record<string, string> = {
     node: "node ${1:Name} {\n\tid String @id @default(cuid())\n\t$0\n}",
     interface: "interface ${1:Name} {\n\tid String @id @default(cuid())\n\t$0\n}",
-    relationship:
-      'relationship ${1:Name} {\n\ttype "${2:TYPE}"\n\tfrom ${3:Node}\n\tto ${4:Node}\n\t$0\n}',
+    relationship: "relationship ${1:TYPE} {\n\t$0\n}",
     enum: "enum ${1:Name} {\n\t${2:VALUE}\n}",
     union: "union ${1:Name} = ${2:A} | ${3:B}",
   };
@@ -588,7 +631,7 @@ function stringCompletions(
     }));
   }
   if (key === "type") {
-    return relationshipTypes(a).map((t) => ({ label: t, kind: "value" as const, replace }));
+    return relationshipTypes(a).map((t) => ({ label: t.name, kind: "value" as const, replace }));
   }
   return [];
 }

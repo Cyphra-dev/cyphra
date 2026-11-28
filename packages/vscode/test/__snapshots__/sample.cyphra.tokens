@@ -205,6 +205,49 @@
 "Int" support.type.primitive.cyphra
 "}" punctuation.definition.block.end.cyphra
 "//" comment.line.double-slash.cyphra punctuation.definition.comment.cyphra
+" @out / @in relation fields, and a short-form relationship block." comment.line.double-slash.cyphra
+"node" keyword.declaration.node.cyphra
+"Author" entity.name.type.node.cyphra
+"{" punctuation.definition.block.begin.cyphra
+"id" variable.other.property.cyphra
+"String" support.type.primitive.cyphra
+"@" punctuation.definition.decorator.cyphra
+"id" entity.name.function.decorator.cyphra
+"books" variable.other.property.cyphra
+"Post" entity.name.type.cyphra
+"[]" keyword.operator.type.modifier.cyphra
+"@" punctuation.definition.decorator.cyphra
+"out" entity.name.function.decorator.cyphra
+"(" punctuation.cyphra
+"WROTE" entity.name.type.relationship.cyphra
+"," punctuation.cyphra
+"onDelete" variable.parameter.cyphra
+":" punctuation.separator.key-value.cyphra
+"Cascade" variable.other.constant.cyphra
+")" punctuation.cyphra
+"followers" variable.other.property.cyphra
+"Author" entity.name.type.cyphra
+"[]" keyword.operator.type.modifier.cyphra
+"@" punctuation.definition.decorator.cyphra
+"in" entity.name.function.decorator.cyphra
+"(" punctuation.cyphra
+"FOLLOWS" entity.name.type.relationship.cyphra
+")" punctuation.cyphra
+"}" punctuation.definition.block.end.cyphra
+"relationship" keyword.declaration.relationship.cyphra
+"WROTE" entity.name.type.relationship.cyphra
+"{" punctuation.definition.block.begin.cyphra
+"at" variable.other.property.cyphra
+"DateTime" support.type.primitive.cyphra
+"@" punctuation.definition.decorator.cyphra
+"default" entity.name.function.decorator.cyphra
+"(" punctuation.cyphra
+"now" support.function.cyphra
+"(" punctuation.definition.parameters.begin.cyphra
+")" punctuation.definition.parameters.end.cyphra
+")" punctuation.cyphra
+"}" punctuation.definition.block.end.cyphra
+"//" comment.line.double-slash.cyphra punctuation.definition.comment.cyphra
 " A union of unrelated nodes (members may continue after a `|`)." comment.line.double-slash.cyphra
 "union" keyword.declaration.union.cyphra
 "SearchHit" entity.name.type.union.cyphra

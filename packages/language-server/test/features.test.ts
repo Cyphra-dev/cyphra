@@ -6,6 +6,7 @@ import { parseSchema, resolveSchema, SCALAR_TYPE_NAMES, validateSchema } from "@
 import { describe, expect, it } from "vitest";
 import {
   analyze,
+  codeActionsAt,
   completionsAt,
   definitionAt,
   formatText,
@@ -280,7 +281,11 @@ describe("completion", () => {
     expect(labels(BASE.replace("email String @unique", "email String @unique @|"))).not.toContain(
       "@unique",
     );
-    expect(labels(BASE.replace("bio   String?", "bio   Post @|"))).toEqual(["@relationship"]);
+    expect(labels(BASE.replace("bio   String?", "bio   Post @|"))).toEqual([
+      "@out",
+      "@in",
+      "@relationship",
+    ]);
     expect(labels(BASE.replace("bio   String?", "bio   Vector(3) @|"))).toEqual(["@vectorIndex"]);
     expect(labels(BASE.replace("since DateTime", "since DateTime @|"))).toEqual([
       "@unique",
@@ -467,7 +472,7 @@ describe("hover", () => {
 
   it("documents keywords", () => {
     expect(hover(BASE.replace("relationship Authored", "relation|ship Authored"))).toContain(
-      "typed properties",
+      "the properties of every `:TYPE` edge",
     );
   });
 });
@@ -894,5 +899,169 @@ node Tag {
     expect(cliError(UNION.replace("= Post | Author", "= Post | Nope"))).toBe(
       problem(UNION.replace("= Post | Author", "= Post | Nope"))?.message,
     );
+  });
+});
+
+describe("@out / @in relationship types", () => {
+  const OUT_IN = `node User {
+  id        String @id
+  posts     Post[] @out(AUTHORED)
+  following User[] @out(FOLLOWS)
+  followers User[] @in(FOLLOWS)
+}
+
+node Post {
+  id     String @id
+  author User?  @in(AUTHORED, onDelete: Restrict)
+  tags   Tag[]  @relationship(type: "TAGGED", direction: OUT)
+}
+
+node Tag {
+  id String @id
+}
+
+relationship AUTHORED {
+  at DateTime @default(now())
+}
+`;
+  const apply = (text: string, spans: { start: number; end: number }[], name: string) =>
+    [...spans]
+      .sort((x, y) => y.start - x.start)
+      .reduce((t, s) => t.slice(0, s.start) + name + t.slice(s.end), text);
+
+  it("analyzes the new syntax without problems", () => {
+    const a = analyze(OUT_IN);
+    expect(a.problem).toBeUndefined();
+    expect(a.warnings).toEqual([]);
+  });
+
+  it("offers @out and @in on relation fields, first", () => {
+    const l = labels(OUT_IN.replace("tags   Tag[]  @relationship", "tags   Tag[]  @|relationship"));
+    expect(l.slice(0, 3)).toEqual(["@out", "@in", "@relationship"]);
+  });
+
+  it("offers the relationship types in use inside @out( and @in(, typed ones first", () => {
+    const { text, offset } = at(
+      OUT_IN.replace("@in(AUTHORED, onDelete", "@in(|AUTHORED, onDelete"),
+    );
+    const items = completionsAt(analyze(text), offset);
+    expect(items.map((c) => c.label).sort()).toEqual(["AUTHORED", "FOLLOWS", "TAGGED"]);
+    const authored = items.find((c) => c.label === "AUTHORED")!;
+    expect(authored.detail).toBe("relationship type (typed edge properties)");
+    expect(authored.kind).toBe("relationship");
+    // While typing: the identifier being typed is not offered as a type.
+    expect(labels(OUT_IN.replace("@out(FOLLOWS)", "@out(FOL|)"))).not.toContain("FOL");
+    // After the type: the named arguments, not `type: `.
+    expect(labels(OUT_IN.replace("@in(AUTHORED, onDelete: Restrict)", "@in(AUTHORED, |)"))).toEqual(
+      ["onDelete"],
+    );
+    expect(labels(OUT_IN.replace("onDelete: Restrict", "onDelete: |"))).toEqual([
+      "Cascade",
+      "Restrict",
+      "SetNull",
+    ]);
+    // `@relationship(type: "` offers the same types.
+    expect(labels(OUT_IN.replace('type: "TAGGED"', 'type: "|"'))).toContain("AUTHORED");
+  });
+
+  it("hovers a type: its edges, its properties and the inverse field", () => {
+    const hover = (marked: string) => {
+      const { text, offset } = at(marked);
+      return hoverAt(analyze(text), offset)?.markdown ?? "";
+    };
+    const h = hover(OUT_IN.replace("@out(AUTHORED)", "@out(AUTH|ORED)"));
+    expect(h).toContain("`(User)-[:AUTHORED]->(Post)`: relationship type of **User.posts**.");
+    expect(h).toContain("Edge properties (`relationship AUTHORED`, `$edge` in the client):");
+    expect(h).toContain("at DateTime @default(now())");
+    expect(h).toContain("Inverse: **Post.author** (`@in(AUTHORED)`).");
+    const self = hover(OUT_IN.replace("@in(FOLLOWS)", "@in(FOLL|OWS)"));
+    expect(self).toContain("`(User)-[:FOLLOWS]->(User)`");
+    expect(self).toContain("No edge properties (declare them with `relationship FOLLOWS { … }`).");
+    expect(self).toContain("Inverse: **User.following** (`@out(FOLLOWS)`).");
+    const old = hover(OUT_IN.replace('type: "TAGGED"', 'type: "TAG|GED"'));
+    expect(old).toContain("No inverse field on **Tag** (one side is enough).");
+    const block = hover(OUT_IN.replace("relationship AUTHORED", "relationship AUTH|ORED"));
+    expect(block).toContain("the properties of every `:AUTHORED` edge");
+    expect(block).toContain(
+      "Used by **User.posts** (`@out(AUTHORED)`), **Post.author** (`@in(AUTHORED)`).",
+    );
+  });
+
+  it("goes to the block, finds the uses and renames a type everywhere", () => {
+    const { text, offset } = at(OUT_IN.replace("@in(AUTHORED", "@in(AUTHO|RED"));
+    const a = analyze(text);
+    const def = definitionAt(a, offset)!;
+    expect(def.start).toBe(text.indexOf("relationship AUTHORED") + "relationship ".length);
+    expect(referencesAt(a, offset, true)).toHaveLength(3);
+    expect(referencesAt(a, offset, false)).toHaveLength(2);
+    // No block: no definition.
+    expect(definitionAt(a, text.indexOf("FOLLOWS") + 1)).toBeUndefined();
+    const out = apply(text, renameEdits(a, offset, "WROTE", BUILTIN_TYPES)!, "WROTE");
+    expect(out).toContain("posts     Post[] @out(WROTE)");
+    expect(out).toContain("@in(WROTE, onDelete: Restrict)");
+    expect(out).toContain("relationship WROTE {");
+    expect(analyze(out).problem).toBeUndefined();
+    // A string type is renamed inside its quotes.
+    const tagged = text.indexOf("TAGGED") + 2;
+    const out2 = apply(text, renameEdits(a, tagged, "HAS_TAG", BUILTIN_TYPES)!, "HAS_TAG");
+    expect(out2).toContain('@relationship(type: "HAS_TAG", direction: OUT)');
+    expect(() => renameEdits(a, offset, "FOLLOWS", BUILTIN_TYPES)).toThrow(
+      /already a relationship type/,
+    );
+    expect(() => renameEdits(a, offset, "Tag", BUILTIN_TYPES)).toThrow(/already declared/);
+  });
+
+  it("offers a quick fix adding the inverse field on the target", () => {
+    const text = OUT_IN.replace("  author User?  @in(AUTHORED, onDelete: Restrict)\n", "");
+    const a = analyze(text);
+    const posts = text.indexOf("posts");
+    const [fix] = codeActionsAt(a, { start: posts, end: posts });
+    expect(fix!.title).toBe("Add inverse field on Post");
+    const e = fix!.edits[0]!;
+    const out = text.slice(0, e.span.start) + e.newText + text.slice(e.span.end);
+    expect(out).toContain(
+      '  tags   Tag[]  @relationship(type: "TAGGED", direction: OUT)\n  user User? @in(AUTHORED)\n}',
+    );
+    expect(analyze(out).problem).toBeUndefined();
+    // The old syntax gets an inverse in the old syntax.
+    const tags = text.indexOf("tags");
+    const [tagFix] = codeActionsAt(a, { start: tags, end: tags });
+    expect(tagFix!.title).toBe("Add inverse field on Tag");
+    expect(tagFix!.edits[0]!.newText).toBe(
+      '\n  post Post? @relationship(type: "TAGGED", direction: IN)',
+    );
+    // Nothing to add when the inverse exists.
+    const following = text.indexOf("following");
+    expect(codeActionsAt(a, { start: following, end: following })).toEqual([]);
+  });
+
+  it("reports nearly identical types as warnings, where they are written", () => {
+    const text = OUT_IN.replace("@in(AUTHORED, onDelete", "@in(AUTHORD, onDelete");
+    const a = analyze(text);
+    // Valid (User.posts uses the block): a warning, not an error.
+    expect(a.problem).toBeUndefined();
+    expect(a.warnings).toHaveLength(1);
+    const w = a.warnings[0]!;
+    expect(w.kind).toBe("warning");
+    expect(w.code).toBe("similar-relationship-types");
+    expect(text.slice(w.span.start, w.span.end)).toBe("AUTHORD");
+  });
+
+  it("points @out / @in errors at the decorator", () => {
+    expect(problem(OUT_IN.replace("@out(AUTHORED)", "@out"))).toEqual({
+      message: 'Node "User" field "posts": @out needs the relationship type, e.g. @out(AUTHORED).',
+      underlined: "@out",
+    });
+    expect(
+      problem(OUT_IN.replace("@out(AUTHORED)", '@out(AUTHORED) @relationship(type: "AUTHORED")')),
+    ).toMatchObject({ underlined: '@relationship(type: "AUTHORED")' });
+    expect(problem(OUT_IN.replace("@in(AUTHORED, onDelete", "@out(AUTHORED, onDelete"))).toEqual({
+      message:
+        'Node "Post" field "author": @out(AUTHORED) has the same direction as User.posts (@out(AUTHORED)), so they describe different edges; if it is the inverse of User.posts, use @in(AUTHORED).',
+      underlined: "AUTHORED",
+    });
+    expect(problem(OUT_IN.replace("onDelete: Restrict", "onDelete: Drop"))).toMatchObject({
+      underlined: "Drop",
+    });
   });
 });

@@ -5,13 +5,17 @@
 Language support for Cyphra schema files (`schema.cyphra`):
 
 - **Highlighting** of nodes, relationships, enums, types, decorators and `@@` model attributes.
-- **Diagnostics while you type**, the same errors as `cyphra validate`, underlined where they are.
+- **Diagnostics while you type**, the same errors as `cyphra validate`, underlined where they are,
+  and its warnings (nearly identical relationship types).
 - **Completion**: keywords, built-in types, your models and enums, decorators and their
-  arguments (`direction: OUT | IN`, vector similarity, full-text analyzers), `@default(…)` values
+  arguments (relationship types inside `@out(` / `@in(`, vector similarity, full-text analyzers), `@default(…)` values
   for the field's type, String fields inside `@@fulltext([…])`, scalar fields inside
   `@@unique([…])` / `@@index([…])`.
-- **Hover** documentation for types and decorators, and a summary of relation targets and enums.
-- **Go to definition**, **find references** and **rename** for models and enums.
+- **Hover** documentation for types and decorators, a summary of relation targets and enums, and
+  the edges, properties and inverse field of a relationship type (`@out(AUTHORED)`).
+- **Go to definition**, **find references** and **rename** for models, enums and relationship
+  types.
+- **Quick fix** "Add inverse field on <Target>" on a relation field without one.
 - **Outline** (document symbols) and **formatting** that keeps your comments (`Format Document`,
   the same output as `cyphra format`).
 - **Cyphra: Generate client** runs `cyphra generate` in a terminal, from the folder holding
