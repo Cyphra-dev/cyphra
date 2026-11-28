@@ -1,6 +1,6 @@
 {
   "name": "@cyphra/cli",
-  "version": "0.31.0",
+  "version": "0.32.0",
   "description": "Cyphra CLI for the TypeScript Neo4j OGM (object-graph mapper): init, generate, migrate, push, pull and a local data browser (studio)",
   "type": "module",
   "publishConfig": {
