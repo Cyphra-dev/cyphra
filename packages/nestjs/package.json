@@ -40,7 +40,7 @@
     "@nestjs/common": "12.4.0",
     "@nestjs/core": "12.4.0",
     "@nestjs/terminus": "12.1.0",
-    "@nestjs/testing": "12.4.0",
+    "@nestjs/testing": "12.6.1",
     "@types/node": "^22.20.5",
     "cyphra": "workspace:*",
     "neo4j-driver": "^5.28.3",
