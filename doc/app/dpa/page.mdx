@@ -1,0 +1,195 @@
+---
+title: "Data Processing Agreement (DPA) for Cyphra Cloud"
+sidebarTitle: Data Processing Agreement
+description: "FAKGROUP's GDPR Article 28 data processing agreement for data stored in Cyphra Cloud databases: scope, security, sub-processors, breaches, audits, deletion."
+robots:
+  index: true
+  follow: true
+---
+
+# Data Processing Agreement
+
+**Last updated: 2026-11-28**
+
+This Data Processing Agreement ("**DPA**") applies when FAKGROUP processes personal data on your
+behalf in Cyphra Cloud. It meets the requirements of Article 28 of the EU General Data Protection
+Regulation (GDPR) and is part of the [Terms of Service](/terms).
+
+## 1. Parties and acceptance
+
+1.1. The parties are you, the customer, as **controller** ("**Customer**"), and **FAKGROUP**,
+a French société par actions simplifiée unipersonnelle (SASU) with a share capital of €100, 12 rue de Port-Mahon, 75002 Paris, France, registered with the Paris Trade and Companies Register (RCS) under number 913 172 904, as
+**processor** ("**FAKGROUP**").
+
+1.2. You accept this DPA when you accept the [Terms of Service](/terms). No separate signature is
+needed.
+
+1.3. If you need a signed copy for your records, write to [privacy@cyphra.dev](mailto:privacy@cyphra.dev) and we will send
+one.
+
+1.4. If this DPA and the Terms conflict on the protection of personal data, this DPA prevails.
+
+## 2. Subject matter and duration
+
+2.1. **Subject matter:** hosting the data you store in Cyphra Cloud databases, and the data you
+send to them through the dashboard, the API or any Neo4j driver ("**Customer Data**").
+
+2.2. **Duration:** for as long as FAKGROUP provides the Service to you, plus the period needed to
+delete Customer Data under section 11.
+
+## 3. Nature and purpose of the processing
+
+3.1. **Nature:** storage, hosting, backup, restore, transmission, and the technical operations
+needed to run the databases (starting, stopping, resizing, upgrading, monitoring).
+
+3.2. **Purpose:** solely to provide the Service to you, as described in the Terms and as you
+configure it.
+
+3.3. FAKGROUP does not read, analyze, sell or use Customer Data for its own purposes. Staff look at
+Customer Data only when you ask for support or when it is needed to keep the Service secure and
+running.
+
+## 4. Types of personal data and data subjects
+
+4.1. You decide what Customer Data contains. FAKGROUP cannot see it in advance. It may include any
+type of personal data, such as identification and contact details, account data, and the
+relationships between people in your graph.
+
+4.2. Data subjects are whoever your data is about, typically your end users, customers, employees
+and contacts.
+
+4.3. Do not store special categories of personal data (GDPR Article 9) or data about criminal
+convictions (Article 10) unless you have assessed that the security measures in section 7 are
+appropriate for them.
+
+## 5. Your obligations
+
+5.1. You are responsible for the lawfulness of the processing: the legal basis, the information
+given to data subjects, and the accuracy of Customer Data.
+
+5.2. Your instructions are these Terms and this DPA, and the settings you choose in the Service
+(for example the region of a database). Other instructions must be in writing.
+
+## 6. FAKGROUP's obligations
+
+FAKGROUP will:
+
+1. process Customer Data only on your documented instructions, including for transfers outside the
+   EEA, unless EU or French law requires otherwise, in which case it will tell you first unless the
+   law forbids it;
+2. tell you if it believes an instruction breaks the GDPR;
+3. make sure everyone authorized to process Customer Data is bound by confidentiality;
+4. take the security measures in section 7;
+5. follow the rules on sub-processors in section 8;
+6. help you, as far as it can, to answer data subject requests (GDPR Articles 15 to 22), and pass
+   on any request it receives directly, without answering it itself;
+7. help you meet your obligations on security, breach notification, data protection impact
+   assessments and prior consultation (GDPR Articles 32 to 36);
+8. delete or return Customer Data at the end, under section 11;
+9. give you the information you need to show compliance with Article 28, and allow audits under
+   section 10.
+
+## 7. Security measures
+
+7.1. FAKGROUP takes technical and organizational measures appropriate to the risk, including:
+
+1. **Isolation:** each database runs as its own Neo4j instance, in a separate Kubernetes namespace
+   per workspace, with a network policy and resource quota.
+2. **Encryption in transit:** database endpoints use TLS (`neo4j+s://` for Bolt, HTTPS for the HTTP
+   API). The website, dashboard and API use
+   HTTPS.
+3. **Encryption at rest:** database volumes and backups are encrypted at rest with AES-256, with keys
+   managed by AWS Key Management Service.
+4. **Credentials:** a generated password per database. Database passwords are stored encrypted with
+   AES-256-GCM. API keys and agent tokens are stored only as hashes.
+5. **Backups:** on the plans that include them, a daily dump stored in S3-compatible object storage
+   outside the database cluster, kept for the retention period of the plan. Backups are stored in Amazon S3, in the same region as
+   the database.
+6. **Access control:** access to production systems is limited to authorized staff who need it.
+7. **Monitoring:** database status and storage use are monitored.
+
+7.2. FAKGROUP may update these measures, as long as the overall level of security does not go down.
+
+## 8. Sub-processors
+
+8.1. You give FAKGROUP general authorization to use sub-processors. The sub-processors that may
+process Customer Data are:
+
+| Sub-processor            | Role                                                                               | Location                                        |
+| ------------------------ | ---------------------------------------------------------------------------------- | ----------------------------------------------- |
+| Amazon Web Services      | Infrastructure that runs the databases                                             | EU (Ireland) or US (N. Virginia), as you choose |
+| Amazon Web Services (S3) | Storage of backups                                                                 | Same region as the database                     |
+| Vercel Inc.              | Runs the dashboard and API; queries run from the dashboard console pass through it | United States (Washington, D.C.)                |
+
+8.2. The sub-processors used for account and billing data are listed in the
+[Privacy Policy](/privacy).
+
+8.3. FAKGROUP imposes on each sub-processor, by contract, data protection obligations at least as
+protective as this DPA, and remains liable to you for their performance.
+
+8.4. **Changes:** FAKGROUP will tell you at least 30 days before adding or replacing a
+sub-processor, by email to the account owner and by updating this page. You may object in writing
+within that period, on reasonable data protection grounds. If we cannot address the objection, you
+may terminate the affected databases, and you will be refunded any fees paid in advance for the
+period after termination.
+
+## 9. Personal data breaches
+
+9.1. FAKGROUP will notify you **without undue delay, and at the latest within 72 hours**, after
+becoming aware of a personal data breach affecting Customer Data.
+
+9.2. The notice will describe, as far as known at the time: the nature of the breach, the
+categories and approximate number of data subjects and records concerned, the likely
+consequences, and the measures taken or proposed. Information that is not yet known will follow
+as soon as it is.
+
+9.3. FAKGROUP will help you notify the supervisory authority and the data subjects, where you need
+to.
+
+## 10. Audits
+
+10.1. On request, FAKGROUP will provide the information reasonably needed to show that it complies
+with this DPA, such as a description of its security measures and its sub-processors'
+certifications.
+
+10.2. If that is not enough, you may audit FAKGROUP, yourself or through an independent auditor
+bound by confidentiality, once a year, with at least 30 days' notice, during business hours, and
+without disrupting the Service or seeing other customers' data. You bear the costs of the audit,
+unless it reveals a material breach of this DPA.
+
+## 11. Deletion or return at the end
+
+11.1. You can export Customer Data at any time while the Service runs, with any Neo4j tool or
+driver.
+
+11.2. When the Service ends, FAKGROUP keeps your databases and backups for 30 days, so you can
+ask for access to export them. After that, it deletes all Customer Data, including backups, unless
+EU or French law requires it to be kept.
+
+11.3. When you delete a single database, it is deleted with its storage, and its backups are
+deleted within 30 days.
+
+11.4. On request, FAKGROUP will confirm the deletion in writing.
+
+## 12. International transfers
+
+12.1. You choose the region of each database. FAKGROUP does not move a database to another region
+without your instruction.
+
+12.2. Where Customer Data is transferred outside the EEA (for example when you choose a US region,
+or through a sub-processor in section 8), the transfer is covered by an adequacy decision (such as
+the EU-US Data Privacy Framework, for certified providers) or by the European Commission's
+**Standard Contractual Clauses** (Decision (EU) 2021/914), Module 3 (processor to processor)
+between FAKGROUP and the sub-processor, and Module 2 (controller to processor) between you and
+FAKGROUP where needed.
+
+## 13. Liability and law
+
+13.1. The limits of liability in the [Terms of Service](/terms) apply to this DPA, to the extent
+the GDPR allows.
+
+13.2. This DPA is governed by French law, and the courts named in the Terms have jurisdiction.
+
+## 14. Contact
+
+FAKGROUP, 12 rue de Port-Mahon, 75002 Paris, France. Email: [privacy@cyphra.dev](mailto:privacy@cyphra.dev).
