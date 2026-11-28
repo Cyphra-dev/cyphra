@@ -89,6 +89,8 @@ export type ArgDoc = {
   readonly values?: readonly string[];
   /** The value is a string literal. */
   readonly string?: boolean;
+  /** Written without its key, first (`@out(AUTHORED)`): not offered as `name: `. */
+  readonly positional?: boolean;
 };
 
 export type DecoratorDoc = {
@@ -109,6 +111,9 @@ const string = (type: string, list: boolean) => type === "String" && !list;
 const ORDERED = ["Int", "Float", "BigInt", "DateTime", "Date"];
 const BOUND_DOC =
   "The bound, inclusive: a number (`Int`, `Float`, `BigInt`) or an ISO 8601 string (`DateTime`, `Date`).";
+
+const ON_DELETE_DOC =
+  "What deleting this node does to the nodes this field links it to: `Cascade` deletes them too (applying their own rules), `Restrict` refuses the delete while any exist, `SetNull` (the default) only removes the edges.";
 
 export const DECORATORS: readonly DecoratorDoc[] = [
   {
@@ -218,9 +223,37 @@ export const DECORATORS: readonly DecoratorDoc[] = [
     fits: (type, list) => list || type === "String",
   },
   {
+    name: "out",
+    on: "relation",
+    doc: "A relation through the edges going out of this node: `posts Post[] @out(AUTHORED)` is `(this)-[:AUTHORED]->(post)`. A `relationship AUTHORED { … }` block types the edge properties; one side of a relation is enough.",
+    snippet: "out(${1:TYPE})",
+    args: [
+      {
+        name: "type",
+        doc: "The Neo4j relationship type, written as is (`AUTHORED`).",
+        positional: true,
+      },
+      { name: "onDelete", doc: ON_DELETE_DOC, values: [...ON_DELETE_RULES] },
+    ],
+  },
+  {
+    name: "in",
+    on: "relation",
+    doc: "A relation through the edges coming into this node: `author User? @in(AUTHORED)` is `(user)-[:AUTHORED]->(this)`. A `relationship AUTHORED { … }` block types the edge properties; one side of a relation is enough.",
+    snippet: "in(${1:TYPE})",
+    args: [
+      {
+        name: "type",
+        doc: "The Neo4j relationship type, written as is (`AUTHORED`).",
+        positional: true,
+      },
+      { name: "onDelete", doc: ON_DELETE_DOC, values: [...ON_DELETE_RULES] },
+    ],
+  },
+  {
     name: "relationship",
     on: "relation",
-    doc: 'A relation to another node: `@relationship(type: "TYPE", direction: OUT | IN, onDelete: Cascade | Restrict | SetNull)`. A `relationship { … }` model with the same type and endpoints types the edge properties.',
+    doc: 'A relation to another node, in the older form of `@out(TYPE)` / `@in(TYPE)`: `@relationship(type: "TYPE", direction: OUT | IN, onDelete: Cascade | Restrict | SetNull)`. Also how to write a type that is not an identifier (`"HAS-TAG"`).',
     snippet: 'relationship(type: "${1:TYPE}", direction: ${2|OUT,IN|})',
     args: [
       { name: "type", doc: 'The Neo4j relationship type, e.g. `"AUTHORED"`.', string: true },
@@ -334,11 +367,13 @@ export function decoratorMarkdown(d: DecoratorDoc): string {
         : d.name === "labels"
           ? "dynamic-labels"
           : "composite-constraints-and-indexes"
-      : d.on === "vector"
-        ? "vector-fields"
-        : d.rule
-          ? "validation-rules"
-          : "decorators";
+      : d.on === "relation"
+        ? "relationships"
+        : d.on === "vector"
+          ? "vector-fields"
+          : d.rule
+            ? "validation-rules"
+            : "decorators";
   return `**${sigil}${d.name}**\n\n${d.doc}${args}\n\n[Schema reference](${DOCS_URL}#${anchor})`;
 }
 
@@ -351,7 +386,7 @@ export const DEFAULT_FUNCTIONS: Readonly<Record<string, readonly string[]>> = {
 export const KEYWORD_DOCS: Readonly<Record<string, string>> = {
   node: "`node Name { … }`: a node label with its properties and relations.",
   relationship:
-    '`relationship Name { type "TYPE" from A to B … }`: typed properties of a relationship type between two nodes.',
+    '`relationship TYPE { … }`: the properties of every `:TYPE` edge (the `$edge` of the `@out(TYPE)` / `@in(TYPE)` fields). Only needed when the edge has properties. The long form `relationship Name { type "TYPE" from A to B … }` types the edges between two given nodes.',
   enum: "`enum Name { A B C }`: a closed set of string values, usable as a field type.",
   interface:
     "`interface Name { … }`: an abstract node model. Its label, fields, relations and constraints are shared by the nodes that implement it; `db.name` queries every implementation (results carry `__typename`), but an interface cannot be created.",

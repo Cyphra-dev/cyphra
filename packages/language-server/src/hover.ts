@@ -1,12 +1,22 @@
-import type {
-  Declaration,
-  Decorator,
-  ModelAttribute,
-  NodeField,
-  SourceRange,
+import {
+  resolveSchema,
+  type Declaration,
+  type Decorator,
+  type ModelAttribute,
+  type NodeField,
+  type RelationshipDeclaration,
+  type SourceRange,
 } from "@cyphra/schema";
 import { span, typeNameSpan, type Analysis, type Span } from "./analysis.js";
 import { decoratorDoc, decoratorMarkdown, KEYWORD_DOCS, typeDoc } from "./docs.js";
+import {
+  blocksOf,
+  inverseFields,
+  relationFields,
+  relTypeUseAt,
+  type OwnedRelation,
+  type RelTypeUse,
+} from "./relTypes.js";
 import { declarationNamed, occurrenceAt } from "./symbols.js";
 
 export type HoverResult = { readonly markdown: string; readonly span: Span };
@@ -47,14 +57,21 @@ function fieldMarkdown(a: Analysis, owner: Declaration, f: NodeField): string {
     owner.kind === "Node" ? (owner.abstract ? "interface" : "node") : owner.kind.toLowerCase();
   const parts = [head, `Field of ${what} **${owner.name}**.`];
   if (f.kind === "Relational") {
-    const rel = f.decorators.find((d) => d.name === "relationship");
+    const rel = f.decorators.find(
+      (d) => d.name === "relationship" || d.name === "out" || d.name === "in",
+    );
     const type = rel?.args.find((x) => x.key === "type")?.value;
-    const dir = rel?.args.find((x) => x.key === "direction")?.value;
+    const dir =
+      rel?.name === "relationship"
+        ? rel.args.find((x) => x.key === "direction")?.value
+        : rel && { kind: "identifier" as const, value: rel.name === "out" ? "OUT" : "IN" };
     const rule = rel?.args.find((x) => x.key === "onDelete")?.value;
     const many = f.cardinality === "many" ? "many" : f.optional ? "zero or one" : "one";
     parts.push(
       `Relation to ${many} **${f.target}**` +
-        (type?.kind === "string" ? ` through \`${type.value}\`` : "") +
+        (type?.kind === "string" || type?.kind === "identifier"
+          ? ` through \`${type.value}\``
+          : "") +
         ` (${dir?.kind === "identifier" ? dir.value : "OUT"}).`,
     );
     parts.push(
@@ -105,10 +122,98 @@ function keywordSpan(loc: SourceRange | undefined, keyword: string): Span | unde
   return s ? { start: s.start, end: s.start + keyword.length } : undefined;
 }
 
+/** `(User)-[:AUTHORED]->(Post)` for a relation field. */
+function edgePattern(r: OwnedRelation): string {
+  const [from, to] =
+    r.direction === "OUT" ? [r.owner.name, r.field.target] : [r.field.target, r.owner.name];
+  return `(${from})-[:${r.relType}]->(${to})`;
+}
+
+/** `@out(T)` / `@in(T)` (or the `@relationship` form a field uses) of a relation field. */
+function relSyntax(r: OwnedRelation): string {
+  const d = r.field.decorators.find((x) => x.name === "relationship");
+  if (d) return `@relationship(type: "${r.relType}", direction: ${r.direction})`;
+  return `@${r.direction === "OUT" ? "out" : "in"}(${r.relType})`;
+}
+
+/** The block typing the edges of `r`: the one the resolved schema links, else the only one. */
+function blockOf(a: Analysis, r: OwnedRelation): RelationshipDeclaration | undefined {
+  const blocks = blocksOf(a.doc!, r.relType);
+  if (blocks.length <= 1) return blocks[0];
+  try {
+    const model = resolveSchema(a.doc!);
+    const f = model.nodes
+      .find((n) => n.name === r.owner.name)
+      ?.fields.find((x) => x.name === r.field.name);
+    const edge = f?.kind === "relation" ? f.edge : undefined;
+    return blocks.find((b) => b.name === edge);
+  } catch {
+    return undefined;
+  }
+}
+
+/** The properties of a block as source lines. */
+function propertiesMarkdown(a: Analysis, b: RelationshipDeclaration): string {
+  const lines = b.fields.map((f) => {
+    const s = span(f.loc);
+    return s ? a.text.slice(s.start, s.end) : f.name;
+  });
+  const title =
+    b.from === undefined
+      ? `relationship ${b.name}`
+      : `relationship ${b.name} (${b.from} → ${b.to})`;
+  return lines.length
+    ? `Edge properties (\`${title}\`, \`$edge\` in the client):\n\n` +
+        "```cyphra\n" +
+        lines.join("\n") +
+        "\n```"
+    : `No edge properties (\`${title}\` is empty).`;
+}
+
+/** Hover on a relationship type: its edges, its properties and the fields using it. */
+function relTypeMarkdown(a: Analysis, use: RelTypeUse): string {
+  const doc = a.doc!;
+  const fields = relationFields(doc).filter((r) => r.relType === use.relType);
+  if (use.kind === "field") {
+    const self = fields.find((r) => r.field === use.field);
+    if (!self) return `Relationship type \`${use.relType}\`.`;
+    const parts = [
+      `\`${edgePattern(self)}\`: relationship type of **${self.owner.name}.${self.field.name}**.`,
+    ];
+    const block = blockOf(a, self);
+    parts.push(
+      block
+        ? propertiesMarkdown(a, block)
+        : `No edge properties (declare them with \`relationship ${use.relType} { … }\`).`,
+    );
+    const inverse = inverseFields(doc, self);
+    parts.push(
+      inverse.length
+        ? `Inverse: ${inverse.map((r) => `**${r.owner.name}.${r.field.name}** (\`${relSyntax(r)}\`)`).join(", ")}.`
+        : `No inverse field on **${self.field.target}** (one side is enough).`,
+    );
+    return parts.join("\n\n");
+  }
+  const block = use.block!;
+  const parts = [
+    block.from === undefined
+      ? `Relationship type \`${use.relType}\`: the properties of every \`:${use.relType}\` edge.`
+      : `Relationship type \`${use.relType}\` of **${block.name}**: the \`:${use.relType}\` edges from ${block.from} to ${block.to}.`,
+  ];
+  parts.push(
+    fields.length
+      ? `Used by ${fields.map((r) => `**${r.owner.name}.${r.field.name}** (\`${relSyntax(r)}\`)`).join(", ")}.`
+      : "No relation field uses it.",
+  );
+  return parts.join("\n\n");
+}
+
 /** Hover at `offset`: types, models and enums, fields, decorators and their arguments. */
 export function hoverAt(a: Analysis, offset: number): HoverResult | undefined {
   const doc = a.doc;
   if (!doc) return undefined;
+  const use = relTypeUseAt(doc, a.text, offset);
+  if (use) return { markdown: relTypeMarkdown(a, use), span: { start: use.start, end: use.end } };
   const o = occurrenceAt(doc, offset);
   if (o) {
     const d = declarationNamed(doc, o.name);

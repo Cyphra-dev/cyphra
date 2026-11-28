@@ -29,7 +29,12 @@
   },
   "Relationship": {
     "prefix": "relationship",
-    "description": "A relationship model (typed edge properties)",
+    "description": "The properties of every edge of a relationship type ($edge of its @out / @in fields)",
+    "body": ["relationship ${1:TYPE} {", "\t$0", "}"]
+  },
+  "Relationship (long form)": {
+    "prefix": "relationship from to",
+    "description": "The properties of the edges of a type between two given nodes",
     "body": [
       "relationship ${1:Name} {",
       "\ttype \"${2:TYPE}\"",
@@ -46,10 +51,8 @@
   },
   "Relation field": {
     "prefix": "rel",
-    "description": "A relation field to another node",
-    "body": [
-      "${1:posts} ${2:Post}${3|[],?|} @relationship(type: \"${4:TYPE}\", direction: ${5|OUT,IN|})"
-    ]
+    "description": "A relation field to another node (one side is enough)",
+    "body": ["${1:posts} ${2:Post}${3|[],?|} @${4|out,in|}(${5:TYPE})"]
   },
   "Id field": {
     "prefix": "id",

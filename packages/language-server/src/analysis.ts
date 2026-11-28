@@ -3,6 +3,7 @@ import {
   parentInterfaces,
   parseSchemaSyntax,
   resolveSchema,
+  schemaWarnings,
   SchemaValidationError,
   validateSchema,
   type Declaration,
@@ -22,7 +23,10 @@ export type Span = { readonly start: number; readonly end: number };
 export type SchemaProblem = {
   readonly message: string;
   readonly span: Span;
-  readonly kind: "syntax" | "validation";
+  /** `warning`: valid but suspicious (see `schemaWarnings` in `@cyphra/schema`). */
+  readonly kind: "syntax" | "validation" | "warning";
+  /** The warning's code (`similar-relationship-types`), for a `warning`. */
+  readonly code?: string;
 };
 
 /** Everything the language features need about one version of a `.cyphra` document. */
@@ -35,6 +39,8 @@ export type Analysis = {
   readonly doc?: SchemaDocument;
   /** The first syntax or validation error, as `cyphra validate` reports it. */
   readonly problem?: SchemaProblem;
+  /** Warnings about a document that parses (also when it has a validation error). */
+  readonly warnings: readonly SchemaProblem[];
 };
 
 export function span(loc: SourceRange | undefined): Span | undefined {
@@ -60,6 +66,7 @@ export function analyze(text: string): Analysis {
         tokens,
         scanned,
         problem: { kind: "validation", message: e.message, span: { start: 0, end: 0 } },
+        warnings: [],
       };
     }
     const start = e.location?.start.offset ?? 0;
@@ -71,8 +78,15 @@ export function analyze(text: string): Analysis {
       tokens,
       scanned,
       problem: { kind: "syntax", message: e.message, span: { start, end } },
+      warnings: [],
     };
   }
+  const warnings: SchemaProblem[] = schemaWarnings(doc).map((w) => ({
+    kind: "warning",
+    code: w.code,
+    message: w.message,
+    span: span(w.loc) ?? firstLine(text),
+  }));
   try {
     validateSchema(doc);
     resolveSchema(doc);
@@ -89,9 +103,10 @@ export function analyze(text: string): Analysis {
         message: err.message,
         span: locateValidationError(err.message, doc) ?? firstLine(text),
       },
+      warnings,
     };
   }
-  return { text, tokens, scanned, doc };
+  return { text, tokens, scanned, doc, warnings };
 }
 
 function firstLine(text: string): Span {
