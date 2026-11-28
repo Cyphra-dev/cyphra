@@ -20,18 +20,19 @@
  * Connection edge filters and sorts are the engine's `$edge` filters and sorts of the related node.
  *
  * Connection `aggregate` selections are engine list aggregates (`$aggregate`, and `$values` on the
- * root `aggregate`), `@cypher` fields engine Cypher expressions (see `cypher.ts`), and `@fulltext`
- * queries an engine `search`.
+ * root `aggregate`), `@cypher` fields engine `CALL` clauses (see `cypher.ts`), `@fulltext` queries
+ * an engine `search`, and root `@cypher` fields a `findMany` from the statement's rows (`$from`) or
+ * the statement itself (`runCypherFragment`).
  *
  * Anything else throws {@link Fallback} (custom resolvers' fields, interfaces, unions, READ
- * validations that may fail, `@cypher` statements that cannot be expressions, …).
+ * validations that may fail, …).
  *
  * @packageDocumentation
  */
 
 import { getArgumentValues, type FieldNode, type GraphQLObjectType } from "graphql";
 import { int as neo4jInt, isInt } from "neo4j-driver";
-import { withReadTransaction } from "@cyphra/runtime";
+import { runCypherFragment, withReadTransaction } from "@cyphra/runtime";
 import {
   aggregateValueDecoder,
   attributeDecoder,
@@ -49,13 +50,23 @@ import {
   type Attribute,
   type AuthOperation,
   type CypherNodeField,
+  type CypherRootField,
   type FulltextIndex,
   type NodeType,
   type PropertiesType,
   type Relationship,
   type V7Model,
 } from "../model.js";
-import { listValue, nodesValue, scalarValue } from "./cypher.js";
+import {
+  expressionList,
+  expressionNodes,
+  expressionValue,
+  listCall,
+  nodesCall,
+  rootNodesCall,
+  rootScalarStatement,
+  scalarCall,
+} from "./cypher.js";
 import { EngineAuthRules } from "./rules.js";
 import { ENGINE_SCALAR_TYPES, type EngineNode, type EngineSchema } from "./schema.js";
 import {
@@ -76,6 +87,16 @@ type Projection = { select: AnyRecord; shape: (row: AnyRecord) => AnyRecord };
 
 /** A translated root field, run on the request's engine client. */
 export type ReadPlan = (client: object) => Promise<unknown>;
+
+/** `fn` in a write transaction of an ORM client (its `$transaction`). */
+function inWriteTransaction<T>(client: object, fn: (tx: object) => Promise<T>): Promise<T> {
+  const transaction = (client as { $transaction?: (f: (tx: object) => Promise<T>) => Promise<T> })
+    .$transaction;
+  if (typeof transaction !== "function") {
+    throw new Error("Internal error: the engine client has no $transaction.");
+  }
+  return transaction.call(client, fn);
+}
 
 /** The delegate of a model on an ORM client. */
 export function delegate(client: object, model: string): Delegate {
@@ -122,6 +143,24 @@ export class ReadTranslator {
   /** `translate()` for the `where` of a root read (see `WhereTranslator.root`). */
   private atRoot<T>(translate: () => T): T {
     return this.where.atRoot(() => this.ruleWhere.atRoot(translate));
+  }
+
+  /** `translate()` for the `where` of a load of a projection (see `WhereTranslator.load`). */
+  private atLoad<T>(translate: () => T): T {
+    return this.where.atLoad(() => this.ruleWhere.atLoad(translate));
+  }
+
+  /**
+   * `true`: the projection of a mutation's response, in the write statement (`@cypher` fields as
+   * expressions, see `cypher.ts`).
+   */
+  private write = false;
+
+  /** Translates the response of a mutation from now on. */
+  forWrite(): void {
+    this.write = true;
+    this.where.write = true;
+    this.ruleWhere.write = true;
   }
 
   /** The first `@authentication` failure met while translating (thrown once it succeeds). */
@@ -201,7 +240,12 @@ export class ReadTranslator {
       if (dir !== "ASC" && dir !== "DESC") continue;
       const attr = engine.v7.attributes.find((a) => a.name === name);
       if (attr?.cypher) {
-        items.push({ $cypher: this.cypherSort(attr, dir) });
+        // In a mutation's projection: an expression (see `cypherAttribute`).
+        items.push(
+          this.write
+            ? { $cypher: this.cypherSort(attr, dir) }
+            : { $call: this.cypherSort(attr, dir) },
+        );
         continue;
       }
       const field = attr ? engine.fields.get(attr.name) : undefined;
@@ -212,16 +256,53 @@ export class ReadTranslator {
   }
 
   /**
-   * The sort of a scalar `@cypher` field (v7 runs its statement before sorting: only a statement
-   * returning one row sorts like an expression; arguments are not bound, so they are `NULL`).
+   * The sort of a scalar `@cypher` field: a `$call` clause before the `ORDER BY` (v7 runs the
+   * statement before sorting; arguments are not bound, so they are `NULL`), whose value the
+   * projection of the field reuses when it has no arguments.
    */
   private cypherSort(attr: Attribute, dir: "ASC" | "DESC"): AnyRecord {
     const type = attr.kind === "enum" ? "String" : ENGINE_SCALAR_TYPES[attr.type.name];
     if (attr.type.list || !type) throw new Fallback(`sort on @cypher ${attr.name}`);
+    if (this.write) {
+      return {
+        expr: expressionValue(attr.cypher!, attr.args, {}, this.jwt),
+        type,
+        sort: dir === "ASC" ? "asc" : "desc",
+      };
+    }
     return {
-      expr: scalarValue(attr.cypher!, attr.args, {}, this.jwt),
+      expr: scalarCall(attr.cypher!, attr.args, {}, this.jwt),
       type,
       sort: dir === "ASC" ? "asc" : "desc",
+      ...(attr.args.length === 0 ? { key: attr.name } : {}),
+    };
+  }
+
+  /**
+   * The engine `select` entry of a scalar or list `@cypher` attribute: a `$call` clause (`$key`:
+   * the value of the sort on it, without arguments), or an expression in a mutation's projection.
+   * `edge`: an attribute of the relationship the node was reached through.
+   */
+  private cypherAttribute(attr: Attribute, values: AnyRecord, edge = false): AnyRecord {
+    // Projected as the driver returns it (the type only names the value): decoded like v7.
+    const type = attr.kind === "enum" ? "String" : (ENGINE_SCALAR_TYPES[attr.type.name] ?? "Json");
+    const list = attr.type.list ? { $list: true } : {};
+    if (this.write) {
+      if (edge) throw new Fallback("@cypher edge property, in a mutation");
+      const expr = attr.type.list
+        ? expressionList(attr.cypher!, attr.args, values, this.jwt)
+        : expressionValue(attr.cypher!, attr.args, values, this.jwt);
+      return { $cypher: expr, $type: type, ...list };
+    }
+    const body = attr.type.list
+      ? listCall(attr.cypher!, attr.args, values, this.jwt)
+      : scalarCall(attr.cypher!, attr.args, values, this.jwt);
+    return {
+      $call: body,
+      $type: type,
+      ...list,
+      ...(attr.args.length === 0 && !attr.type.list ? { $key: attr.name } : {}),
+      ...(edge ? { $edge: true } : {}),
     };
   }
 
@@ -240,7 +321,7 @@ export class ReadTranslator {
         this.where.node(node, args.where),
         this.rules.read(node, this.selectedAttributes(node, fieldNodes)),
       ]);
-    const where = rootWhere(root ? this.atRoot(filter) : filter());
+    const where = rootWhere(root ? this.atRoot(filter) : this.atLoad(filter));
     const orderBy = this.orderBy(node, args.sort);
     const skip = count(args.offset);
     const take = count(pageLimit(node, args.limit));
@@ -278,13 +359,7 @@ export class ReadTranslator {
             ? getArgumentValues(gql, nodes[0]!, this.info.variableValues)
             : {};
         const k = this.key(engine);
-        const expr = attr.type.list
-          ? listValue(attr.cypher, attr.args, values, this.jwt)
-          : scalarValue(attr.cypher, attr.args, values, this.jwt);
-        // Projected as the driver returns it (the type only names the value): decoded like v7.
-        const type =
-          attr.kind === "enum" ? "String" : (ENGINE_SCALAR_TYPES[attr.type.name] ?? "Json");
-        select[k] = { $cypher: expr, $type: type, ...(attr.type.list ? { $list: true } : {}) };
+        select[k] = this.cypherAttribute(attr, values);
         const decode = attributeDecoder(attr);
         shapers.push([key, (row) => decode(row[k])]);
         continue;
@@ -363,14 +438,18 @@ export class ReadTranslator {
   ): { select: AnyRecord; shape: Shape } {
     const target = this.model.node(field.target);
     this.where.engineNode(target);
-    const where = rootWhere(this.rules.read(target, this.selectedAttributes(target, fieldNodes)));
+    const where = rootWhere(
+      this.atLoad(() => this.rules.read(target, this.selectedAttributes(target, fieldNodes))),
+    );
     const inner = this.node(target, fieldNodes);
     const list = field.type.list;
     const take = list ? count(pageLimit(target, undefined)) : undefined;
     const k = this.key(engine);
     const select = {
       [k]: {
-        $cypher: nodesValue(field.cypher, field.args, args, this.jwt),
+        ...(this.write
+          ? { $cypher: expressionNodes(field.cypher, field.args, args, this.jwt) }
+          : { $call: nodesCall(field.cypher, field.args, args, this.jwt) }),
         $model: target.name,
         $many: true,
         // v7 keeps every node the statement returns (`IS NOT NULL`), whatever its labels.
@@ -414,14 +493,27 @@ export class ReadTranslator {
         const props = this.model.properties.get(rel.properties)!;
         // Relationships an interface declares have a union of properties types.
         if (keyedConnectionEdge(this.model, rel)) throw new Fallback("keyed edge properties");
-        const fields: [string, Shape][] = [];
+        const fields: [string, (edge: AnyRecord, row: AnyRecord) => unknown][] = [];
         const narrowed = narrowFieldNodes(this.info, nodes, props.name, props.name);
+        const gqlFields = this.objectType(props.name).getFields();
         for (const [pk, pn] of collectFields(this.info, subSelections(narrowed))) {
           const pname = pn[0]!.name.value;
           if (pname === "__typename") continue;
           const attr = props.attributes.find((a) => a.name === pname);
-          if (!attr || attr.cypher || attr.variants) throw new Fallback(`${props.name}.${pname}`);
+          if (!attr || attr.variants) throw new Fallback(`${props.name}.${pname}`);
           const decode = attributeDecoder(attr);
+          if (attr.cypher) {
+            // A `$call` on the edge, projected next to the node's fields.
+            const gql = gqlFields[pname];
+            const values =
+              attr.args.length && gql
+                ? getArgumentValues(gql, pn[0]!, this.info.variableValues)
+                : {};
+            const k = this.key(this.where.engineNode(node));
+            select[k] = this.cypherAttribute(attr, values, true);
+            fields.push([pk, (_edge, row) => decode(row[k])]);
+            continue;
+          }
           fields.push([pk, (edge) => decode(edge[attr.property])]);
         }
         decoders.push([
@@ -429,7 +521,7 @@ export class ReadTranslator {
           (row) => {
             const edge = (row.$edge ?? {}) as AnyRecord;
             const out: AnyRecord = { __typename: props.name };
-            for (const [pk, shape] of fields) out[pk] = shape(edge);
+            for (const [pk, shape] of fields) out[pk] = shape(edge, row);
             return out;
           },
         ]);
@@ -660,7 +752,10 @@ export class ReadTranslator {
     const offset = afterOffset === undefined ? 0 : afterOffset + 1;
     const { conn, edgeFieldNodes, aggregates, needsEdges, needsTotal } =
       this.connectionNeeds(fieldNodes);
-    const connectionWhere = this.where.connection(rel, target, args.where);
+    // Only the edges are a load (a `CALL` clause when a statement of the filter aggregates).
+    const inLoad = <T>(translate: () => T): T =>
+      !needsTotal && aggregates.length === 0 ? this.atLoad(translate) : translate();
+    const connectionWhere = inLoad(() => this.where.connection(rel, target, args.where));
     const select: AnyRecord = {};
     const aggregateShapes = new Map<string, Shape>();
     for (const [key, nodes] of aggregates) {
@@ -684,9 +779,11 @@ export class ReadTranslator {
         ? rootWhere(
             allOf([
               connectionWhere,
-              this.rules.read(
-                target,
-                this.selectedAttributes(target, this.edgeNodeFields(fieldNodes)),
+              inLoad(() =>
+                this.rules.read(
+                  target,
+                  this.selectedAttributes(target, this.edgeNodeFields(fieldNodes)),
+                ),
               ),
             ]),
           )
@@ -753,7 +850,12 @@ export class ReadTranslator {
     for (const [name, dir] of Object.entries(sort)) {
       if (dir !== "ASC" && dir !== "DESC") continue;
       const attr = props.attributes.find((a) => a.name === name);
-      const field = attr && !attr.cypher ? fields?.get(attr.name) : undefined;
+      if (attr?.cypher) {
+        if (this.write) throw new Fallback("sort on a @cypher edge property, in a mutation");
+        items.push({ $edge: { $call: this.cypherSort(attr, dir) } });
+        continue;
+      }
+      const field = attr ? fields?.get(attr.name) : undefined;
       if (!field) throw new Fallback(`sort on ${props.name}.${name}`);
       items.push({ $edge: { [field]: dir === "ASC" ? "asc" : "desc" } });
     }
@@ -787,6 +889,52 @@ export class ReadTranslator {
     return async (client) => {
       const rows = (await delegate(client, node.name).findMany!(findArgs)) as AnyRecord[];
       return rows.map(p.shape);
+    };
+  }
+
+  /**
+   * A `Query` / `Mutation` `@cypher` field (the compiler's `rootCypher`): the rows of its statement
+   * (`runCypherFragment`; a list column flattened), or for a field returning nodes the nodes of its
+   * rows that the READ rules of their type let through, projected (`findMany` with `$from`; the
+   * type's `@limit` for a list). A field that is not a list takes the first row. A mutation runs
+   * in a write transaction (one statement, like the compiler's).
+   */
+  rootCypher(
+    field: CypherRootField,
+    args: AnyRecord,
+    fieldNodes: readonly FieldNode[],
+    mutation: boolean,
+  ): ReadPlan {
+    const list = field.type.list;
+    if (field.kind !== "node") {
+      const decode = attributeDecoder({ kind: field.kind, type: field.type });
+      const statement = rootScalarStatement(field.cypher, field.args, args, this.jwt, list);
+      return async (client) => {
+        const rows = await runCypherFragment(client, statement, { write: mutation });
+        if (list) return rows.map((r) => decode(r.value));
+        return rows.length ? decode(rows[0]!.value) : null;
+      };
+    }
+    const target = this.model.node(field.type.name);
+    this.where.engineNode(target);
+    this.authenticate(target, "READ");
+    const where = rootWhere(
+      this.atRoot(() => this.rules.read(target, this.selectedAttributes(target, fieldNodes))),
+    );
+    const p = this.node(target, fieldNodes);
+    const take = list ? count(pageLimit(target, undefined)) : undefined;
+    const findArgs: AnyRecord = {
+      $from: rootNodesCall(field.cypher, field.args, args, this.jwt),
+      ...(where !== undefined ? { where } : {}),
+      ...(take !== undefined ? { take } : {}),
+      select: p.select,
+    };
+    return async (client) => {
+      const read = async (db: object) =>
+        (await delegate(db, target.name).findMany!(findArgs)) as AnyRecord[];
+      const rows = mutation ? await inWriteTransaction(client, read) : await read(client);
+      if (list) return rows.map(p.shape);
+      return rows.length ? p.shape(rows[0]!) : null;
     };
   }
 

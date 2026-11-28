@@ -1352,6 +1352,26 @@ fixtures and goldens: printed SDL plus results) grows with it.
    fields on relationship properties, `@cypher` statements that aggregate outside a root `where`,
    reads whose READ validations fail for the request, and subscriptions (#250).
 
+   Round 4 (#265): every `@cypher` field. In projections and sorts each statement is a `CALL`
+   clause, like the compiler's (sorts before paging, projections after it, a projection reusing the
+   sort on the same field without arguments): statements may aggregate, and a scalar statement
+   returning no row or several drops or repeats the node, like v7. The engine client reserves every
+   name the statements use, so its variables never clash with theirs. `@cypher` fields of
+   relationship properties (a `CALL` clause on the edge), and root `Query` / `Mutation` fields
+   (scalars through `runCypherFragment`, nodes through `findMany({ $from })`, a mutation in one
+   write transaction). Subscriptions read CDC through the native API's `CDCReader` (internal
+   options: the `txMetadata` selector of `onlyGraphQLEvents`, v7's error when CDC is missing; the
+   reader now yields each change's `txStartTime`, v7's event `timestamp`). Engine entries added
+   for it, internal: `$call` in `select` and `orderBy`, `call` in `$cypherNodes`, `$from` on
+   `findMany`, `runCypherFragment`, `withReservedVariables`, and loads hoisted into `CALL` clauses
+   when they contain one or a fragment marked `CYPHER_AGGREGATES` (Neo4j rejects aggregating
+   functions in subquery expressions of a projection or an `ORDER BY`). The compat compiler now
+   serves what only v7 does (the decision above), a mutation response projecting a `@cypher`
+   statement that aggregates or returns several rows (projected inside the write statement), and
+   three `@authorization` cases: reads whose READ `validate` rules fail for the request (the
+   compiler answers `Forbidden` only when a matching node exists), a READ filter on the nodes an
+   update returns, and to-one connection filters in rules.
+
 5. **Auth**: `rules` (read / create / update / delete / connect / disconnect / after),
    `authenticated`, field rules (context-only and row-dependent), `native.jwtContext`,
    `ctx.cyphra`, a security test per v7 footgun fixed.

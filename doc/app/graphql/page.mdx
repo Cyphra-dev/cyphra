@@ -202,20 +202,23 @@ relationships, connection `aggregate` selections, `@fulltext` queries, `@cypher`
 `create` with attribute inputs, `update` with `set`, and `delete` without nested deletes, with
 `@timestamp`, `@limit`, DateTime values (offset and precision kept), `@authentication` and
 `@authorization` handled like v7. A write whose `validate` rules fail for the request runs in a
-transaction that raises v7's `Forbidden` once it writes a node, and is rolled back.
+transaction that raises v7's `Forbidden` once it writes a node, and is rolled back. Subscriptions
+read Change Data Capture through the same reader as the native API's.
 
-`@cypher` fields of node types run on the engine when their statement evaluates there like in v7:
-fields returning nodes and list fields whose statement does not aggregate, scalar fields whose
-statement is a lone `RETURN` (one row, so the node is neither dropped nor repeated), and filters on
-any statement in the `where` of a root query. Neo4j 5 rejects a statement that aggregates
-(`count()`, `collect()`, …) inside the expressions the engine projects or sorts by, so those stay on
-the compat compiler, which runs them as separate `CALL` clauses.
+`@cypher` fields run on the engine like in v7: on node types and relationship properties, and on
+`Query` / `Mutation` (a mutation in one write transaction). In projections and sorts, each statement
+is a separate `CALL` clause, as the compat compiler writes it: a statement may aggregate (`count()`,
+`collect()`, …), and a scalar field whose statement returns no row or several drops or repeats the
+node. The engine never names its variables after those of your statements. The response of a
+create or update mutation is projected in the write statement: there, a `@cypher` field runs on the
+engine when its statement does not aggregate (and, for a scalar field, is a lone `RETURN`).
 
 The rest stays on the compat compiler, with the same results: what only v7 does (interfaces, which
-add no label; nested writes, where v7's `connect` creates duplicate edges; arithmetic and list
-operators and `field_SET` keys, with v7's own null and overflow errors; custom-resolver fields;
-`context.cypherParams`; `validate` rules that depend on the node), unions, root `@cypher` queries and
-mutations, `@cypher` fields on relationship properties, and subscriptions. What you can see of the
+add no label, and unions; nested writes, where v7's `connect` creates duplicate edges; arithmetic
+and list operators and `field_SET` keys, with v7's own null and overflow errors; custom-resolver
+fields; `context.cypherParams`; `validate` rules that depend on the node), reads whose READ
+`validate` rules fail for the request, updates whose READ filter rules apply to the nodes they
+return, and to-one connection filters in `@authorization` rules. What you can see of the
 difference:
 
 - With `client`, the client's `query` events and spans name the engine operation and model

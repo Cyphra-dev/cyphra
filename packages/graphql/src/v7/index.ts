@@ -265,6 +265,13 @@ function rootCypherResolver(
     )!;
     const auth = await requestAuth(ctx, a);
     checkRootAuthentication(model, auth, type, field);
+    // On the shared engine when it serves the request exactly like the compiler.
+    const plan = a.engine?.cypher(type, field, args as AnyRecord, info, info.fieldNodes, ctx, auth);
+    const client = plan && a.engine!.clients.for(sessionConfigOf(ctx));
+    if (plan) a.engine!.ran(info.fieldName, client !== undefined);
+    if (plan && client) {
+      return plan(client);
+    }
     const compiled = new SelectionCompiler(model, info, auth).rootCypher(
       field,
       args as AnyRecord,

@@ -140,10 +140,11 @@ describe("subscriptions (CDC engine, fake database)", () => {
     await new Promise((r) => setTimeout(r, 30));
     expect(queries.some((q) => q.cypher.includes("db.cdc.query"))).toBe(true);
     const selectors = queries.find((q) => q.cypher.includes("db.cdc.query"))!.params.selectors;
+    // The shared CDC reader's selectors: one per label, sorted.
     expect(selectors).toEqual([
       { select: "n", labels: ["Movie"] },
-      { select: "n", labels: ["Secret"] },
       { select: "n", labels: ["Plain"] },
+      { select: "n", labels: ["Secret"] },
     ]);
     await iterator!.return!();
     await new Promise((r) => setTimeout(r, 20));

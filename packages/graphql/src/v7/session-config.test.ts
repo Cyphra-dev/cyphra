@@ -114,7 +114,8 @@ describe("context.sessionConfig (v7: spread over the session defaults per reques
 
   it("fails loudly with a CyphraClient instead of using the client's database", async () => {
     let opened = 0;
-    const tx = { run: async () => ({ records: [{ get: () => 0 }], summary: {} }) };
+    const record = { get: () => 0, toObject: () => ({ value: 0 }) };
+    const tx = { run: async () => ({ records: [record], summary: {} }) };
     const fake: DriverLike = {
       session: () => {
         opened++;
