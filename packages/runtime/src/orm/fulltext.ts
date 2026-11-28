@@ -17,6 +17,7 @@ import {
   QueryContext,
   compileProjection,
   compileSortKeys,
+  type SortCalls,
   scopedWhere,
   decodeRow,
   intParam,
@@ -141,6 +142,9 @@ function searchOrder(
   model: ResolvedNodeModel,
   orderBy: unknown,
   op: string,
+  n: string,
+  score: string,
+  pre: SortCalls,
 ): string | undefined {
   if (orderBy === undefined) return undefined;
   if (!Array.isArray(orderBy)) throw new CyphraValidationError(`${op}: $orderBy must be a list.`);
@@ -151,10 +155,10 @@ function searchOrder(
       if (dir !== "asc" && dir !== "desc") {
         throw new CyphraValidationError(`${op}: $orderBy $score must be "asc" or "desc".`);
       }
-      items.push(`score ${dir.toUpperCase()}`);
+      items.push(`${score} ${dir.toUpperCase()}`);
       continue;
     }
-    for (const k of compileSortKeys(ctx, model, "n", [item])) items.push(`${k.expr} ${k.dir}`);
+    for (const k of compileSortKeys(ctx, model, n, [item], pre)) items.push(`${k.expr} ${k.dir}`);
   }
   return items.join(", ");
 }
@@ -207,19 +211,27 @@ export async function search(
   const skip = args.skip === undefined ? undefined : nonNegativeInt(args.skip, `${op}: skip`);
   const take = args.take === undefined ? undefined : nonNegativeInt(args.take, `${op}: take`);
   const ctx = ctxFactory();
+  const vars: SearchVars = {
+    n: ctx.name("n"),
+    score: ctx.name("score"),
+    pre: { clauses: [], vars: [] },
+    clauses: [],
+  };
+  const { n } = vars;
   // An index inherited from an interface covers every implementation: keep this model's nodes.
   const inherited = indexes.find((i) => i.name === args.index)?.inheritedFrom;
   const where = and([
-    inherited ? `n:${labelExpr(model)}` : null,
-    scopedWhere(ctx, model, "n", args.where),
+    inherited ? `${n}:${labelExpr(model)}` : null,
+    scopedWhere(ctx, model, n, args.where),
   ]);
-  const { expr, shape } = compileProjection(ctx, model, "n", args);
-  const order = searchOrder(ctx, model, args.$orderBy, op);
+  const order = searchOrder(ctx, model, args.$orderBy, op, n, vars.score, vars.pre);
+  const { expr, shape } = compileProjection(ctx, model, n, args, [], vars.clauses);
   // Lucene rejects an empty query: a blank search box simply matches nothing.
   if (args.query.trim() === "" || take === 0) return [];
 
   if (ctx.dialect === "falkordb") {
     return falkordbSearch(exec, ctx, model, inherited, args.query, mode, {
+      vars,
       where,
       minScore,
       maxScore,
@@ -230,16 +242,16 @@ export async function search(
       shape,
     });
   }
-  const filters = scoreFilters(ctx, minScore, maxScore, where);
+  const filters = scoreFilters(ctx, minScore, maxScore, where, vars.score);
   // Unfiltered and paged by score: let Lucene collect only the top `skip + take` hits.
   const top =
     filters.length === 0 && take !== undefined && order === undefined
       ? (skip ?? 0) + take
       : undefined;
   let text = fulltextCall(ctx, args.index, args.query, mode, top);
-  text += " WITH node AS n, score";
+  text += ` WITH node AS ${n}, ${alias("score", vars.score)}`;
   if (filters.length) text += ` WHERE ${filters.join(" AND ")}`;
-  text += pageClause(ctx, order, skip, take, expr);
+  text += pageClause(ctx, order, skip, take, expr, vars);
   const rows = (await exec(text, ctx.params)) as { row: unknown; score: unknown }[];
   return rows.map((r) => ({
     ...decodeRow(shape, r.row)!,
@@ -261,6 +273,7 @@ async function falkordbSearch(
   input: string,
   mode: SearchModeName,
   parts: {
+    vars: SearchVars;
     where: string | null;
     minScore: unknown;
     maxScore: unknown;
@@ -271,7 +284,7 @@ async function falkordbSearch(
     shape: ReturnType<typeof compileProjection>["shape"];
   },
 ): Promise<AnyRecord[]> {
-  const { where, minScore, maxScore, order, skip, take, expr, shape } = parts;
+  const { vars, where, minScore, maxScore, order, skip, take, expr, shape } = parts;
   const call = falkordbFulltextCall(
     ctx,
     inheritedFrom ? ctx.node(inheritedFrom).label : model.label,
@@ -280,10 +293,10 @@ async function falkordbSearch(
   );
   if (call === null) return [];
   let cypher = call;
-  cypher += " WITH node AS n, score";
-  const filters = scoreFilters(ctx, minScore, maxScore, where);
+  cypher += ` WITH node AS ${vars.n}, ${alias("score", vars.score)}`;
+  const filters = scoreFilters(ctx, minScore, maxScore, where, vars.score);
   if (filters.length) cypher += ` WHERE ${filters.join(" AND ")}`;
-  cypher += pageClause(ctx, order, skip, take, expr);
+  cypher += pageClause(ctx, order, skip, take, expr, vars);
   const rows = (await exec(cypher, ctx.params)) as { row: unknown; score: unknown }[];
   return rows.map((r) => ({
     ...decodeRow(shape, r.row)!,
@@ -297,13 +310,25 @@ function scoreFilters(
   minScore: unknown,
   maxScore: unknown,
   where: string | null,
+  score: string,
 ): string[] {
   return [
-    ...(minScore === undefined ? [] : [`score >= ${ctx.param(minScore)}`]),
-    ...(maxScore === undefined ? [] : [`score <= ${ctx.param(maxScore)}`]),
+    ...(minScore === undefined ? [] : [`${score} >= ${ctx.param(minScore)}`]),
+    ...(maxScore === undefined ? [] : [`${score} <= ${ctx.param(maxScore)}`]),
     ...(where ? [`(${where})`] : []),
   ];
 }
+
+/** `v AS name`, or `v` when it is `name`. */
+function alias(v: string, name: string): string {
+  return v === name ? v : `${v} AS ${name}`;
+}
+
+/**
+ * The variables of a search statement (`n` and `score`, unless reserved), and the `CALL` clauses
+ * of its `$call` sorts (before the `ORDER BY`) and projections (after paging).
+ */
+type SearchVars = { n: string; score: string; pre: SortCalls; clauses: string[] };
 
 /**
  * The ordering, paging and `RETURN` of a search: best first, or the {@link searchOrder} (none for
@@ -315,14 +340,20 @@ function pageClause(
   skip: number | undefined,
   take: number | undefined,
   expr: string,
+  vars: SearchVars,
 ): string {
-  const by = order === undefined ? "score DESC" : order;
-  let text = " WITH n, score";
+  const { n, score } = vars;
+  const by = order === undefined ? `${score} DESC` : order;
+  let text = vars.pre.clauses.length ? ` ${vars.pre.clauses.join(" ")}` : "";
+  text += ` WITH ${[n, score, ...vars.pre.vars].join(", ")}`;
   if (by) text += ` ORDER BY ${by}`;
   if (skip !== undefined) text += ` SKIP ${ctx.param(intParam(skip))}`;
   if (take !== undefined) text += ` LIMIT ${ctx.param(intParam(take))}`;
-  text += ` RETURN ${expr} AS row, score`;
+  if (vars.clauses.length) text += ` ${vars.clauses.join(" ")}`;
+  text += ` RETURN ${expr} AS row, ${alias(score, "score")}`;
   // Without an internal `$orderBy`, the rows are returned best first.
-  if (order === undefined) text += " ORDER BY score DESC";
+  if (order === undefined) text += ` ORDER BY ${score} DESC`;
+  // Projection clauses run after paging: the order is applied again.
+  else if (order && vars.clauses.length) text += ` ORDER BY ${order}`;
   return text;
 }

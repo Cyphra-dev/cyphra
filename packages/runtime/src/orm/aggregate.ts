@@ -238,14 +238,15 @@ export function compileAggregate(
   args: AnyRecord,
 ): CompiledAggregate<AnyRecord> {
   checkKeys(args, ["where", "orderBy", "skip", "take", "$values", ...AGGREGATES], "aggregate");
-  const whereClause = scopedWhere(ctx, model, "n", args.where);
-  const cols = new AggColumns(ctx, "n", model);
+  const n = ctx.name("n");
+  const whereClause = scopedWhere(ctx, model, n, args.where);
+  const cols = new AggColumns(ctx, n, model);
   const outputs = compileSelection(model, args, cols);
-  const paging = compilePaging(ctx, model, "n", args);
-  let text = `MATCH (n:${labelExpr(model)})`;
+  const paging = compilePaging(ctx, model, n, args);
+  let text = `MATCH (${n}:${labelExpr(model)})`;
   if (whereClause) text += ` WHERE ${whereClause}`;
-  if (paging) text += ` WITH n${paging}`;
-  const columns = cols.columns.length ? cols.columns.join(", ") : "count(n) AS _";
+  if (paging) text += ` WITH ${n}${paging}`;
+  const columns = cols.columns.length ? cols.columns.join(", ") : `count(${n}) AS _`;
   // `$values` (internal, see `listAggregates.ts`): list aggregates over the same nodes, each an
   // expression of its own, evaluated once the aggregation above is done.
   let values: string | undefined;

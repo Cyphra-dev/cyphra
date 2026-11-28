@@ -30,7 +30,7 @@ import { unsupportedOnFalkorDB, type CyphraDialect } from "../dialect.js";
 import { compileLabelsFilter, decodeDynamicLabels, dynamicLabelsOf } from "./labels.js";
 import type { EngineRules, ModelRules, RuleOperation, RuleValue } from "./scope.js";
 import { compileTraverseLoad } from "./traverse.js";
-import { cypherScalar, cypherType, renderFragment } from "./cypherExpr.js";
+import { CYPHER_AGGREGATES, cypherScalar, cypherType, renderFragment } from "./cypherExpr.js";
 import { compileAggregateFilters, compileAggregateLoad } from "./listAggregates.js";
 
 /** Quote an identifier for Cypher (labels, property keys, relationship types). */
@@ -121,6 +121,8 @@ export function assertCreatable(model: ResolvedNodeModel, op: string): void {
   );
 }
 
+const NO_NAMES: ReadonlySet<string> = new Set();
+
 /** Collects parameters and fresh variable names for one statement. */
 export class QueryContext {
   readonly params: Record<string, unknown> = {};
@@ -148,7 +150,18 @@ export class QueryContext {
      * not decoded (see {@link Shape.raw}).
      */
     readonly raw: boolean = false,
+    /**
+     * Names fresh variables never take (internal, see {@link withReservedVariables}): the variables
+     * of the Cypher fragments a client passes, which a subquery cannot shadow.
+     */
+    readonly reserved: ReadonlySet<string> = NO_NAMES,
   ) {}
+
+  /**
+   * `CALL` clause variables by `<alias>` and the key of a `$call` sort (see
+   * {@link compileSortKeys}), reused by a `$call` projection with the same key.
+   */
+  readonly calls = new Map<string, string>();
 
   /** Bind a value and return its `$placeholder`. */
   param(value: unknown): string {
@@ -167,9 +180,17 @@ export class QueryContext {
     return `$${key}`;
   }
 
-  /** Fresh variable name, e.g. `m3`. */
+  /** Fresh variable name, e.g. `m3` (never a reserved name). */
   variable(prefix = "m"): string {
-    return `${prefix}${this.varCount++}`;
+    let v: string;
+    do v = `${prefix}${this.varCount++}`;
+    while (this.reserved.has(v));
+    return v;
+  }
+
+  /** `base` (a fixed variable of a statement, like `n`), or a fresh one when it is reserved. */
+  name(base: string): string {
+    return this.reserved.has(base) ? this.variable(base) : base;
   }
 
   node(name: string): ResolvedNodeModel {
@@ -870,7 +891,8 @@ const NODE_QUANTIFIERS = new Set(["some", "none", "single", "all", "first", "abs
 /**
  * `$cypherNodes` in a `where` (internal, for `@cyphra/graphql`'s `compat.v7`): `[{ expr, model,
  * quantifier, where? }]`, each a filter on the non-null values of the list `expr` evaluates to (the
- * nodes of a Cypher-backed field), as nodes of `model`: `some` / `none` / `single` / `all` of them
+ * nodes of a Cypher-backed field; `call` instead of `expr`: the values of the rows of a `$call`
+ * body), as nodes of `model`: `some` / `none` / `single` / `all` of them
  * match `where`, `first` (the first one matches), `absent` (there is none).
  */
 function compileCypherNodeFilters(
@@ -895,9 +917,14 @@ function compileCypherNodeFilters(
       );
     }
     const target = ctx.node(entry.model);
-    const expr = renderFragment((v) => ctx.param(v), alias, entry.expr, where);
     const x = ctx.variable("x");
-    const rows = `UNWIND ${expr} AS ${x} WITH ${x} WHERE ${x} IS NOT NULL`;
+    // `call` (a `$call` body, see `cypherExpr.ts`): the nodes of its rows, in a `CALL` clause
+    // (Neo4j rejects an aggregating subquery expression in an `UNWIND`).
+    const source =
+      entry.call !== undefined
+        ? callClause(ctx, alias, entry.call, where, x).clause
+        : `UNWIND ${renderFragment((v) => ctx.param(v), alias, entry.expr, where)} AS ${x}`;
+    const rows = `${source} WITH ${x} WHERE ${x} IS NOT NULL`;
     const pred = compileWhere(ctx, target, x, entry.where);
     const matching = pred ? `${rows} WITH ${x} WHERE ${pred}` : rows;
     switch (quantifier) {
@@ -1264,17 +1291,52 @@ export function compileOrderBy(
   model: ResolvedNodeModel,
   alias: string,
   orderBy: unknown,
+  pre?: SortCalls,
 ): string | null {
-  const keys = compileSortKeys(ctx, model, alias, orderBy);
+  const keys = compileSortKeys(ctx, model, alias, orderBy, pre);
   return keys.length ? keys.map((k) => `${k.expr} ${k.dir}`).join(", ") : null;
 }
 
-/** The keys of `orderBy`, in order (see {@link compileOrderBy}). */
+/**
+ * The `CALL` clauses of `$call` sort keys (internal, see `cypherExpr.ts`), which run before the
+ * `ORDER BY`, and the variables holding their values (to keep in its `WITH`).
+ */
+export type SortCalls = { readonly clauses: string[]; readonly vars: string[] };
+
+/**
+ * `CALL (<alias>) { <body> AS <v> }` for the `$call` fragment `body` (see `cypherExpr.ts`), and
+ * `v`.
+ */
+function callClause(
+  ctx: QueryContext,
+  alias: string,
+  body: unknown,
+  at: string,
+  as?: string,
+): { clause: string; variable: string } {
+  if (ctx.dialect !== "neo4j") {
+    throw new CyphraValidationError(`${at}: $call needs Neo4j.`);
+  }
+  const text = renderFragment((v) => ctx.param(v), alias, body, at, false);
+  const v = as ?? ctx.variable("c");
+  return { clause: `CALL (${alias}) {\n${text} AS ${v}\n}`, variable: v };
+}
+
+/** The key of the value of a `$call` of `alias` in {@link QueryContext.calls}. */
+function callKey(alias: string, key: string): string {
+  return `${alias}\u0000${key}`;
+}
+
+/**
+ * The keys of `orderBy`, in order (see {@link compileOrderBy}). `$call` keys (internal) need
+ * `pre`, where their clauses go.
+ */
 export function compileSortKeys(
   ctx: QueryContext,
   model: ResolvedNodeModel,
   alias: string,
   orderBy: unknown,
+  pre?: SortCalls,
 ): SortKey[] {
   if (orderBy === undefined || orderBy === null) return [];
   const list = Array.isArray(orderBy) ? orderBy : [orderBy];
@@ -1289,7 +1351,28 @@ export function compileSortKeys(
         if (!isPlainObject(dir)) {
           throw new CyphraValidationError(`orderBy.$edge takes { <edge field>: "asc" | "desc" }.`);
         }
-        keys.push(...compileSortKeys(ctx, edge.model, edge.variable, dir));
+        keys.push(...compileSortKeys(ctx, edge.model, edge.variable, dir, pre));
+        continue;
+      }
+      if (key === "$call") {
+        const at = `orderBy ${model.name}.$call`;
+        if (!isPlainObject(dir)) {
+          throw new CyphraValidationError(`${at} takes { expr, type, sort, key? }.`);
+        }
+        if (!pre) throw new CyphraValidationError(`${at}: not supported in this operation.`);
+        const field = cypherScalar(
+          typeof dir.name === "string" ? dir.name : "$call",
+          cypherType(dir.type, at),
+        );
+        const c = callClause(ctx, alias, dir.expr, at);
+        pre.clauses.push(c.clause);
+        pre.vars.push(c.variable);
+        if (typeof dir.key === "string") ctx.calls.set(callKey(alias, dir.key), c.variable);
+        keys.push({
+          expr: c.variable,
+          dir: dirOf(dir.sort, at),
+          value: { kind: "scalar", field, owner: model.name },
+        });
         continue;
       }
       if (key === "__typename") {
@@ -1401,6 +1484,31 @@ export function compilePaging(
   return s;
 }
 
+/**
+ * The clauses that order and page the rows of `alias` (internal sorts included): the `$call`
+ * sort clauses, then `WITH <keep>, <their variables> ORDER BY … SKIP … LIMIT …` (`text`, `""`
+ * without any), the `ORDER BY` items (`order`), and whether there are `$call` clauses.
+ */
+export function compileOrdering(
+  ctx: QueryContext,
+  model: ResolvedNodeModel,
+  alias: string,
+  args: { orderBy?: unknown; skip?: unknown; take?: unknown },
+  keep: readonly string[],
+): { text: string; order: string | null; calls: boolean } {
+  const pre: SortCalls = { clauses: [], vars: [] };
+  const order = compileOrderBy(ctx, model, alias, args.orderBy, pre);
+  let suffix = "";
+  if (order) suffix += ` ORDER BY ${order}`;
+  if (args.skip !== undefined)
+    suffix += ` SKIP ${ctx.param(intParam(nonNegativeInt(args.skip, "skip")))}`;
+  if (args.take !== undefined)
+    suffix += ` LIMIT ${ctx.param(intParam(nonNegativeInt(args.take, "take")))}`;
+  const parts = [...pre.clauses];
+  if (suffix) parts.push(`WITH ${[...keep, ...pre.vars].join(", ")}${suffix}`);
+  return { text: parts.join(" "), order, calls: pre.clauses.length > 0 };
+}
+
 // SKIP/LIMIT must be integers on the wire; the driver sends JS numbers as floats.
 export function intParam(n: number): unknown {
   return new CypherInteger(n);
@@ -1482,6 +1590,10 @@ type LoadArgs = {
 /**
  * Build the projection expression for `alias` (a map projection with nested `COLLECT {}`
  * subqueries for loaded relations) and the matching decode {@link Shape}.
+ *
+ * `$call` entries and the loads that contain them (internal, see `cypherExpr.ts`) are `CALL`
+ * clauses, added to `clauses`: the caller puts them before the `RETURN` of the projection. Without
+ * `clauses`, they are a validation error.
  */
 export function compileProjection(
   ctx: QueryContext,
@@ -1489,6 +1601,51 @@ export function compileProjection(
   alias: string,
   args: LoadArgs,
   extraEntries: readonly string[] = [],
+  clauses?: string[],
+): { expr: string; shape: Shape } {
+  const calls: string[] = [];
+  const result = projection(ctx, model, alias, args, extraEntries, calls);
+  if (calls.length) {
+    if (!clauses) {
+      throw new CyphraValidationError(
+        `${model.name}: $call projections are not supported in this operation.`,
+      );
+    }
+    clauses.push(...calls);
+  }
+  return result;
+}
+
+/** A relation or node load: a `COLLECT` subquery, or a `CALL` clause when it must be one. */
+function load(
+  ctx: QueryContext,
+  alias: string,
+  body: string,
+  item: string,
+  many: boolean,
+  hoist: boolean,
+  calls: string[],
+): string {
+  if (!hoist && !body.includes(CYPHER_AGGREGATES)) {
+    const collected = `COLLECT { ${body} RETURN ${item} }`;
+    return many ? collected : `head(${collected})`;
+  }
+  if (ctx.dialect !== "neo4j") {
+    throw new CyphraValidationError("$call and aggregating Cypher fragments need Neo4j.");
+  }
+  const v = ctx.variable("c");
+  const value = many ? `collect(${item})` : `head(collect(${item}))`;
+  calls.push(`CALL (${alias}) {\n${body} RETURN ${value} AS ${v}\n}`);
+  return v;
+}
+
+function projection(
+  ctx: QueryContext,
+  model: ResolvedNodeModel,
+  alias: string,
+  args: LoadArgs,
+  extraEntries: readonly string[],
+  calls: string[],
 ): { expr: string; shape: Shape } {
   if (args.select !== undefined && args.include !== undefined) {
     throw new CyphraValidationError("Use either select or include, not both.");
@@ -1542,7 +1699,7 @@ export function compileProjection(
         rels.push(aliasedLoad(ctx, model, key, v, label));
         continue;
       }
-      if (isPlainObject(v) && v.$cypher !== undefined) {
+      if (isPlainObject(v) && (v.$cypher !== undefined || v.$call !== undefined)) {
         checkLoadKey(ctx, model, key, label, "a Cypher expression");
         cypherSpecs.push({ key, spec: v, label });
         continue;
@@ -1651,22 +1808,28 @@ export function compileProjection(
     const edgeModel = field.edge
       ? ctx.schema.relationships.find((x) => x.name === field.edge)
       : undefined;
-    const inner = compileProjection(
+    edgeScope(ctx, field, m, r);
+    const where = scopedWhere(ctx, target, m, sub.where);
+    // Sorted first: a `$call` projection may reuse a `$call` sort value.
+    const ordering = compileOrdering(ctx, target, m, sub, [m, r]);
+    const innerCalls: string[] = [];
+    const inner = projection(
       ctx,
       target,
       m,
       sub,
       edgeModel ? [`${q("$edge")}: properties(${r})`] : [],
+      innerCalls,
     );
-    const item = inner.expr;
-    edgeScope(ctx, field, m, r);
-    const where = scopedWhere(ctx, target, m, sub.where);
-    const paging = compilePaging(ctx, target, m, sub);
-    let body = `MATCH ${relationMatch(ctx, alias, field, m, r, where)}`;
-    if (paging) body += ` WITH ${m}, ${r}${paging}`;
-    body += ` RETURN ${item}`;
-    const collected = `COLLECT { ${body} }`;
-    entries.push(`${q(key)}: ${field.many ? collected : `head(${collected})`}`);
+    const body = [
+      `MATCH ${relationMatch(ctx, alias, field, m, r, where)}`,
+      ordering.text,
+      ...innerCalls,
+    ]
+      .filter(Boolean)
+      .join(" ");
+    const hoist = ordering.calls || innerCalls.length > 0;
+    entries.push(`${q(key)}: ${load(ctx, alias, body, inner.expr, field.many, hoist, calls)}`);
     relShapes.push({
       key,
       field,
@@ -1683,6 +1846,30 @@ export function compileProjection(
   const cyphers: NonNullable<Shape["cyphers"]>[number][] = [];
   for (const { key, spec, label } of cypherSpecs) {
     const at = `${label}.${key}`;
+    if (spec.$call !== undefined && spec.$cypher !== undefined) {
+      throw new CyphraValidationError(`${at} takes $cypher or $call, not both.`);
+    }
+    if (spec.$call !== undefined && spec.$model === undefined) {
+      const field = cypherScalar(
+        key,
+        cypherType(spec.$type, at),
+        spec.$list === true,
+        Array.isArray(spec.$enumValues) ? (spec.$enumValues as string[]) : undefined,
+      );
+      // `$edge: true`: on the edge the node was reached through.
+      const on = spec.$edge === true ? edgeOf(ctx, model, alias, at).variable : alias;
+      const reused =
+        typeof spec.$key === "string" ? ctx.calls.get(callKey(on, spec.$key)) : undefined;
+      let v = reused;
+      if (v === undefined) {
+        const c = callClause(ctx, on, spec.$call, at);
+        calls.push(c.clause);
+        v = c.variable;
+      }
+      entries.push(`${q(key)}: ${v}`);
+      cyphers.push({ key, field });
+      continue;
+    }
     if (spec.$model === undefined) {
       const field = cypherScalar(
         key,
@@ -1704,24 +1891,30 @@ export function compileProjection(
       );
     }
     const target = ctx.node(spec.$model);
-    const { $cypher, $model: _model, $many, $labelTest, ...sub } = spec;
+    const { $cypher, $call, $model: _model, $many, $labelTest, ...sub } = spec;
     const many = $many === true;
     if ($labelTest !== undefined && $labelTest !== false) {
       throw new CyphraValidationError(`${at}.$labelTest takes false.`);
     }
     const m = ctx.variable();
-    const expr = renderFragment((v) => ctx.param(v), alias, $cypher, at);
-    const inner = compileProjection(ctx, target, m, sub as LoadArgs);
     // `$labelTest: false` (internal): every node the expression returns, whatever its labels.
     const test = $labelTest === false ? `${m} IS NOT NULL` : labelTest(m, target);
     const where = and([test, scopedWhere(ctx, target, m, sub.where)]);
-    const paging = compilePaging(ctx, target, m, sub as LoadArgs);
-    // `UNWIND [x]` for a single node: one row, filtered out by the label test when it is null.
-    let body = `UNWIND ${many ? expr : `[${expr}]`} AS ${m} WITH ${m} WHERE ${where}`;
-    if (paging) body += ` WITH ${m}${paging}`;
-    body += ` RETURN ${inner.expr}`;
-    const collected = `COLLECT { ${body} }`;
-    entries.push(`${q(key)}: ${many ? collected : `head(${collected})`}`);
+    let rows: string;
+    if ($call !== undefined) {
+      // One row per row of the body (a single node: the first row's).
+      rows = `${callClause(ctx, alias, $call, at, m).clause} WITH ${m} WHERE ${where}`;
+    } else {
+      const expr = renderFragment((v) => ctx.param(v), alias, $cypher, at);
+      // `UNWIND [x]` for a single node: one row, filtered out by the label test when it is null.
+      rows = `UNWIND ${many ? expr : `[${expr}]`} AS ${m} WITH ${m} WHERE ${where}`;
+    }
+    const ordering = compileOrdering(ctx, target, m, sub as LoadArgs, [m]);
+    const innerCalls: string[] = [];
+    const inner = projection(ctx, target, m, sub as LoadArgs, [], innerCalls);
+    const body = [rows, ordering.text, ...innerCalls].filter(Boolean).join(" ");
+    const hoist = $call !== undefined || ordering.calls || innerCalls.length > 0;
+    entries.push(`${q(key)}: ${load(ctx, alias, body, inner.expr, many, hoist, calls)}`);
     cyphers.push({ key, shape: inner.shape, many });
   }
   for (const { key, spec, label } of aggregateSpecs) {

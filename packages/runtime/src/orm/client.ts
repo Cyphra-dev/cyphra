@@ -29,6 +29,8 @@ import type { DelegateKey, ModelDelegate, TypeMap } from "./types.js";
 import { mapUniqueError } from "./unique.js";
 import { falkordbTransactionError, falkordbUniqueError } from "./falkordb.js";
 import { toNative } from "./values.js";
+import { QueryContext } from "./compile.js";
+import { renderFragment } from "./cypherExpr.js";
 import { MODEL_RULE_KEYS, RULE_OPERATIONS, type EngineRules } from "./scope.js";
 
 /** Key of the hidden method behind {@link withEngineRules} (shared by every copy of the runtime). */
@@ -78,6 +80,65 @@ export function withRawValues<C extends object>(client: C): C {
     );
   }
   return (fn as () => C)();
+}
+
+/** Key of the hidden method behind {@link withReservedVariables}. */
+const WITH_RESERVED = Symbol.for("cyphra.withReservedVariables");
+
+/**
+ * A client whose statements never name a variable of their own `names` (the root node is `n`
+ * unless `n` is one of them, then a fresh name): the variables of the Cypher fragments the caller
+ * passes (`$cypher`, `$call`, `$from`), which Neo4j forbids a subquery to shadow. Rules,
+ * extensions and hooks of `client` are kept; the names add to those `client` already reserves.
+ *
+ * This is the engine entry `@cyphra/graphql`'s `compat.v7` reads through, so that the variables
+ * of `@cypher` statements never clash with the engine's. It is internal: experimental, and not
+ * covered by semantic versioning.
+ *
+ * @internal
+ * @experimental
+ */
+export function withReservedVariables<C extends object>(client: C, names: Iterable<string>): C {
+  const fn = (client as Record<symbol, unknown>)[WITH_RESERVED];
+  if (typeof fn !== "function") {
+    throw new CyphraValidationError(
+      "withReservedVariables: not a Cyphra ORM client (createOrm / createClient).",
+    );
+  }
+  return (fn as (n: Iterable<string>) => C)(names);
+}
+
+/** Key of the hidden method behind {@link runCypherFragment}. */
+const RUN_FRAGMENT = Symbol.for("cyphra.runCypherFragment");
+
+/**
+ * Run a Cypher fragment (`cypherFragment`, without `CYPHER_NODE`: a whole statement) in a read
+ * transaction of `client` (`write: true`: a write transaction), and return its rows as the driver
+ * gives them (`Integer`, temporal, node objects), keyed by column. The statement is observed like
+ * the client's own (`query` events, spans) and its variables are those the caller wrote.
+ *
+ * This is the engine entry `@cyphra/graphql`'s `compat.v7` runs `Query` / `Mutation` `@cypher`
+ * fields returning scalars through. It is internal: experimental, and not covered by semantic
+ * versioning.
+ *
+ * @internal
+ * @experimental
+ */
+export function runCypherFragment(
+  client: object,
+  fragment: unknown,
+  options: { write?: boolean } = {},
+): Promise<Record<string, unknown>[]> {
+  const fn = (client as Record<symbol, unknown>)[RUN_FRAGMENT];
+  if (typeof fn !== "function") {
+    throw new CyphraValidationError(
+      "runCypherFragment: not a Cyphra ORM client (createOrm / createClient).",
+    );
+  }
+  return (fn as (f: unknown, w: boolean) => Promise<Record<string, unknown>[]>)(
+    fragment,
+    options.write === true,
+  );
 }
 
 /** Key of the hidden method behind {@link withReadTransaction}. */
@@ -684,6 +745,34 @@ export function createOrm<TM extends TypeMap>(
     Object.defineProperty(self, COMPUTED, { value: (model: string) => state.computed(model) });
     Object.defineProperty(self, WITH_RAW, {
       value: () => build(state, { ...opts, rawValues: true }),
+    });
+    Object.defineProperty(self, WITH_RESERVED, {
+      value: (names: Iterable<string>) =>
+        build(state, {
+          ...opts,
+          reservedVariables: new Set([...(opts.reservedVariables ?? []), ...names]),
+        }),
+    });
+    Object.defineProperty(self, RUN_FRAGMENT, {
+      value: (fragment: unknown, write: boolean): Promise<Record<string, unknown>[]> => {
+        const meta: QueryMeta = { operation: "$cypher" };
+        return instr.operation(meta, async () => {
+          const ctx = new QueryContext(schema, dialect, [], true, opts.reservedVariables);
+          const text = renderFragment(
+            (v) => ctx.param(v),
+            "",
+            fragment,
+            "runCypherFragment",
+            false,
+          );
+          const runner = runnerFor(meta);
+          const run = (exec: Executor) => exec(text, ctx.params);
+          return (await (write ? runner.write(run) : runner.read(run))) as Record<
+            string,
+            unknown
+          >[];
+        });
+      },
     });
     Object.defineProperty(self, READ_TX, {
       value: <T>(fn: (tx: unknown) => Promise<T>): Promise<T> =>

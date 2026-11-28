@@ -16,6 +16,25 @@
  * - `where: { $cypher: [{ expr: frag, type: "Int", filter: { gte: 3 } }] }` filters on the value.
  * - `orderBy: [{ $cypher: { expr: frag, type: "Int", sort: "desc" } }]` sorts by it.
  *
+ * `CALL` clauses (`$call`, for `@cyphra/graphql`'s `compat.v7`): the fragment is a subquery body
+ * whose last clause is `RETURN <expression>` (no alias); it runs as `CALL (node) { <body> AS v }`,
+ * so the node gets one row per row of the body: none drops it, several repeat it.
+ *
+ * - `select: { key: { $call: body, $type, $list?, $key?, $edge? } }` projects `v` (`$edge: true`:
+ *   the body runs on the edge the node was reached through; `$key`: reuse the value of the `$call`
+ *   sort with the same `key` on the same node, computed once).
+ * - `select: { key: { $call: body, $model, $many, $labelTest: false, select, where, … } }`: the
+ *   nodes of the body's rows, like the `$cypher` form.
+ * - `orderBy: [{ $call: { expr: body, type, sort, key? } }]` sorts by `v`, computed before the
+ *   `ORDER BY` (with `skip` / `take`: before paging; projections after it).
+ * - `findMany({ $from: body, … })` reads the nodes of the body's rows (not null, whatever their
+ *   labels) instead of matching the model's label.
+ *
+ * Neo4j 5 rejects an aggregating function (`count`, `collect`, …) inside a subquery expression of
+ * a projection or of an `ORDER BY`: a relation or node load whose projection has `$call` clauses,
+ * whose sort is a `$call`, or whose text contains {@link CYPHER_AGGREGATES} (a fragment that
+ * aggregates, in its `where`) runs as a `CALL` clause too. `$call` needs Neo4j.
+ *
  * Rules do not apply inside the fragment itself: it is raw Cypher.
  *
  * @packageDocumentation
@@ -129,14 +148,25 @@ function bindValue(v: unknown): unknown {
 }
 
 /**
+ * Comment a Cypher fragment contains when it aggregates (`count(…)`, `collect(…)`, …): a load whose
+ * `where` contains such a fragment runs as a `CALL` clause (see the module comment).
+ *
+ * @internal
+ * @experimental
+ */
+export const CYPHER_AGGREGATES = "/* cyphra:aggregates */";
+
+/**
  * The Cypher text of `fragment` for the node bound to `alias`: its static text, `alias` for
- * {@link CYPHER_NODE}, a parameter of `bind` for every other value. Wrapped in parentheses.
+ * {@link CYPHER_NODE}, a parameter of `bind` for every other value. Wrapped in parentheses, unless
+ * `wrap` is false (a subquery body).
  */
 export function renderFragment(
   bind: (value: unknown) => string,
   alias: string,
   fragment: unknown,
   where: string,
+  wrap = true,
 ): string {
   if (!isCypherFragment(fragment)) {
     throw new CyphraValidationError(`${where}: $cypher takes a Cypher fragment (cypher\`…\`).`);
@@ -155,7 +185,7 @@ export function renderFragment(
   }
   text += strings[strings.length - 1];
   if (text.trim() === "") throw new CyphraValidationError(`${where}: empty Cypher fragment.`);
-  return `(${text})`;
+  return wrap ? `(${text})` : text;
 }
 
 const SCALAR_TYPES: ReadonlySet<string> = new Set<ScalarTypeName>([

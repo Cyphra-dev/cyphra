@@ -25,6 +25,7 @@ import {
   QueryContext,
   assertCreatable,
   compileOrderBy,
+  compileOrdering,
   compilePaging,
   compileProjection,
   and,
@@ -54,6 +55,7 @@ import {
 } from "./cursor.js";
 import type { EngineRules, ModelRules, RuleValue } from "./scope.js";
 import { compileAggregate, compileGroupBy } from "./aggregate.js";
+import { renderFragment } from "./cypherExpr.js";
 import { DEFAULT_MAX_TRAVERSAL_DEPTH, compileTraverse } from "./traverse.js";
 import { compileShortestPath } from "./shortest.js";
 import { findSimilar } from "./vector.js";
@@ -313,6 +315,8 @@ export type EngineOptions = {
   readonly rules?: readonly EngineRules[];
   /** Return projected scalars as the driver gives them (see {@link withRawValues}). */
   readonly rawValues?: boolean;
+  /** Names statements never give their variables (see {@link withReservedVariables}). */
+  readonly reservedVariables?: ReadonlySet<string>;
 };
 
 /** Column holding the sort keys of a row, for its `$cursor`. */
@@ -332,6 +336,7 @@ export class ModelEngine {
       this.options.dialect,
       this.options.rules,
       this.options.rawValues === true,
+      this.options.reservedVariables,
     );
   }
 
@@ -428,17 +433,38 @@ export class ModelEngine {
       return this.readPage(exec, projected.args, cursor ?? {}, projected.withCursor);
     }
     const ctx = this.ctx();
-    const where = scopedWhere(ctx, this.model, "n", args.where);
-    const paging = compilePaging(ctx, this.model, "n", args);
-    const { expr, shape } = compileProjection(ctx, this.model, "n", args);
-    let text = `MATCH ${nodeMatch("n", this.model, where)}`;
-    if (paging) text += ` WITH n${paging}`;
+    const n = ctx.name("n");
+    const where = scopedWhere(ctx, this.model, n, args.where);
+    const ordering = compileOrdering(ctx, this.model, n, args, [n]);
+    const clauses: string[] = [];
+    const { expr, shape } = compileProjection(ctx, this.model, n, args, [], clauses);
+    let text = this.readStart(ctx, n, where, args.$from);
+    if (ordering.text) text += ` ${ordering.text}`;
+    if (clauses.length) text += ` ${clauses.join(" ")}`;
     text += ` RETURN ${expr} AS row`;
     // Re-apply the order on the projected rows (WITH … ORDER BY only orders that clause).
-    const order = compileOrderBy(ctx, this.model, "n", args.orderBy);
+    const order = ordering.calls
+      ? ordering.order
+      : compileOrderBy(ctx, this.model, n, args.orderBy);
     if (order) text += ` ORDER BY ${order}`;
     const rows = await exec(text, ctx.params);
     return rows.map((r) => decodeRow(shape, r.row)!);
+  }
+
+  /**
+   * `MATCH (n:Label) WHERE …`, or with `$from` (internal, see `cypherExpr.ts`) the nodes of the rows
+   * of a Cypher subquery body: `CALL () { <body> AS n } WITH n WHERE n IS NOT NULL AND …`.
+   */
+  private readStart(ctx: QueryContext, n: string, where: string | null, from: unknown): string {
+    if (from === undefined) return `MATCH ${nodeMatch(n, this.model, where)}`;
+    const at = `${this.model.name}.findMany: $from`;
+    if (ctx.dialect !== "neo4j") throw new CyphraValidationError(`${at} needs Neo4j.`);
+    if (this.model.abstract) {
+      throw new CyphraValidationError(`${at}: ${this.model.name} is an interface or a union.`);
+    }
+    const body = renderFragment((v) => ctx.param(v), n, from, at, false);
+    const keep = and([`${n} IS NOT NULL`, where]);
+    return `CALL () {\n${body} AS ${n}\n} WITH ${n} WHERE ${keep}`;
   }
 
   /** `args` without `$cursor` in its `select` / `include`, and whether it asked for it. */
@@ -467,9 +493,13 @@ export class ModelEngine {
     cursor: { after?: string; before?: string },
     withCursor: boolean,
   ): Promise<AnyRecord[]> {
+    if (args.$from !== undefined) {
+      throw new CyphraValidationError(`${this.model.name}.findMany: $from takes no cursor.`);
+    }
     const ctx = this.ctx();
-    const where = scopedWhere(ctx, this.model, "n", args.where);
-    const keys = cursorSortKeys(ctx, this.model, "n", args.orderBy);
+    const n = ctx.name("n");
+    const where = scopedWhere(ctx, this.model, n, args.where);
+    const keys = cursorSortKeys(ctx, this.model, n, args.orderBy);
     const vars = keys.map(() => ctx.variable("k"));
     const print = orderFingerprint(this.model, args.orderBy);
     const conditions = (["after", "before"] as const).flatMap((side) => {
@@ -484,12 +514,12 @@ export class ModelEngine {
         .map((k, i) => `${vars[i]} ${flip ? (k.dir === "ASC" ? "DESC" : "ASC") : k.dir}`)
         .join(", ");
     const bound = keys.map((k, i) => `${k.expr} AS ${vars[i]}`).join(", ");
-    let text = `MATCH ${nodeMatch("n", this.model, where)} WITH n, ${bound}`;
+    let text = `MATCH ${nodeMatch(n, this.model, where)} WITH ${n}, ${bound}`;
     const keep = and(conditions);
     if (keep) text += ` WHERE ${keep}`;
-    text += ` WITH n, ${vars.join(", ")} ORDER BY ${order(reverse)}`;
-    text += compilePaging(ctx, this.model, "n", { skip: args.skip, take: args.take });
-    const { expr, shape } = compileProjection(ctx, this.model, "n", args);
+    text += ` WITH ${n}, ${vars.join(", ")} ORDER BY ${order(reverse)}`;
+    text += compilePaging(ctx, this.model, n, { skip: args.skip, take: args.take });
+    const { expr, shape } = compileProjection(ctx, this.model, n, args);
     text += ` RETURN ${expr} AS row`;
     if (withCursor) text += `, [${vars.join(", ")}] AS ${CURSOR_COLUMN}`;
     text += ` ORDER BY ${order(false)}`;
@@ -611,9 +641,10 @@ export class ModelEngine {
   count(args: AnyRecord = {}): Promise<number> {
     return this.runner.read(async (exec) => {
       const ctx = this.ctx();
-      const w = scopedWhere(ctx, this.model, "n", args.where);
+      const n = ctx.name("n");
+      const w = scopedWhere(ctx, this.model, n, args.where);
       const rows = await exec(
-        `MATCH ${nodeMatch("n", this.model, w)} RETURN count(n) AS c`,
+        `MATCH ${nodeMatch(n, this.model, w)} RETURN count(${n}) AS c`,
         ctx.params,
       );
       return toCount(rows[0]?.c);
