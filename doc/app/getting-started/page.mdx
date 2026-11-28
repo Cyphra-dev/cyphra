@@ -1,5 +1,5 @@
 ---
-title: "Getting started with Cyphra, the Neo4j ORM"
+title: "Getting started with Cyphra, the Neo4j OGM"
 sidebarTitle: Getting started
 description: "Install Cyphra, describe your Neo4j graph in a .cyphra schema, start a local database, generate a migration and a typed client, and run your first query."
 ---
@@ -8,7 +8,8 @@ import { Callout, Cards, Steps, Tabs } from "nextra/components";
 
 # Getting started
 
-Cyphra is a **TypeScript ORM for Neo4j**. You describe your graph in a `.cyphra` schema, and Cyphra
+Cyphra is a **TypeScript OGM (object-graph mapper) for Neo4j**, what other stacks call an ORM
+([ORM or OGM?](/neo4j-orm#orm-or-ogm)). You describe your graph in a `.cyphra` schema, and Cyphra
 gives you:
 
 - a **generated, fully typed client**: `db.user.findMany({ include: { posts: true } })`, nested writes,

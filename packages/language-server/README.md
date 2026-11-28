@@ -1,6 +1,6 @@
 # @cyphra/language-server
 
-> Part of [Cyphra](https://www.cyphra.dev), the TypeScript ORM for Neo4j. **Editor docs:** [www.cyphra.dev/editor](https://www.cyphra.dev/editor)
+> Part of [Cyphra](https://www.cyphra.dev), the TypeScript OGM (object-graph mapper) for Neo4j. **Editor docs:** [www.cyphra.dev/editor](https://www.cyphra.dev/editor)
 
 Language server (LSP) for Cyphra `.cyphra` schema files, used by the Cyphra VS Code extension and
 by any LSP client (Neovim, Helix, …):

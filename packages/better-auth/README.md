@@ -1,8 +1,8 @@
 # @cyphra/better-auth
 
-> Part of [Cyphra](https://www.cyphra.dev), the TypeScript ORM for Neo4j. **Better Auth:** [docs](https://www.cyphra.dev/better-auth)
+> Part of [Cyphra](https://www.cyphra.dev), the TypeScript OGM (object-graph mapper) for Neo4j. **Better Auth:** [docs](https://www.cyphra.dev/better-auth)
 
-A [Better Auth](https://www.better-auth.com) database adapter for Neo4j, built on the Cyphra ORM.
+A [Better Auth](https://www.better-auth.com) database adapter for Neo4j, built on the Cyphra OGM (object-graph mapper).
 Users, sessions, accounts, verifications and plugin models are nodes in the same graph as your own
 models, described by one `schema.cyphra` and migrated by `cyphra migrate`.
 

@@ -6,7 +6,7 @@ can adopt it as is. Source of truth for tokens: [`app/globals.css`](app/globals.
 
 ## 1. Idea
 
-**Ink, paper and one signal.** Cyphra is a typed ORM for a graph database. Its identity borrows from
+**Ink, paper and one signal.** Cyphra is a typed OGM (object-graph mapper) for a graph database. Its identity borrows from
 the two things its users read all day: technical paper (precise type on a warm off-white page) and
 Cypher, Neo4j's query language, where a relationship is drawn as an arrow:
 `(:User)-[:AUTHORED]->(:Post)`.

@@ -1,5 +1,5 @@
 ---
-title: "Cyphra benchmarks: ORM overhead vs the Neo4j driver"
+title: "Cyphra benchmarks: OGM overhead vs the Neo4j driver"
 sidebarTitle: "Benchmarks"
 description: "Reproducible benchmarks of Cyphra against the raw neo4j-driver, neogma and @neo4j/graphql on the same Neo4j data: median, p95, ops/s and overhead."
 ---
@@ -18,7 +18,7 @@ import results from "./results.json";
 
 # Benchmarks
 
-**What does the ORM layer cost?** These benchmarks run the same operations on the same Neo4j data
+**What does the OGM layer cost?** These benchmarks run the same operations on the same Neo4j data
 through the raw [`neo4j-driver`](/compare/neo4j-driver) with hand-written Cypher (the baseline),
 the Cyphra typed client, [neogma](/compare/neogma-neode), and, for GraphQL,
 [`@neo4j/graphql`](/compare/neo4j-graphql-library) against [`@cyphra/graphql`](/graphql). The
@@ -155,5 +155,5 @@ Mean with its 95% margin of error; ops/s is 1000 / mean, one call in flight.
   <Cards.Card title="Cyphra vs neo4j-driver" href="/compare/neo4j-driver" />
   <Cards.Card title="Cyphra vs neogma and neode" href="/compare/neogma-neode" />
   <Cards.Card title="Cyphra vs @neo4j/graphql" href="/compare/neo4j-graphql-library" />
-  <Cards.Card title="Prisma-style ORM for Neo4j" href="/neo4j-orm" />
+  <Cards.Card title="Neo4j ORM? Cyphra is an OGM" href="/neo4j-orm" />
 </Cards>

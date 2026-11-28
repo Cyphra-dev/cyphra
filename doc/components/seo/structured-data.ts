@@ -71,7 +71,7 @@ export function breadcrumbList(crumbs: Crumb[]) {
   };
 }
 
-/** The ORM: an application (with its free offer) and its source code. Home page only. */
+/** The OGM: an application (with its free offer) and its source code. Home page only. */
 export function softwareGraph() {
   const version = cyphraVersion();
   return {
@@ -81,12 +81,12 @@ export function softwareGraph() {
         "@type": "SoftwareApplication",
         "@id": SOFTWARE_ID,
         name: "Cyphra",
-        alternateName: "Cyphra ORM",
+        alternateName: ["Cyphra OGM", "Cyphra ORM"],
         description:
-          "A typed ORM for Neo4j and TypeScript: a .cyphra schema, a generated typed client, nested writes, transactions and migrations generated from schema changes.",
+          "A typed OGM (object-graph mapper) for Neo4j and TypeScript: a .cyphra schema, a generated typed client, nested writes, transactions and migrations generated from schema changes.",
         url: SITE.url,
         applicationCategory: "DeveloperApplication",
-        applicationSubCategory: "Object-relational mapper (ORM) for Neo4j",
+        applicationSubCategory: "Object-graph mapper (OGM) for Neo4j",
         operatingSystem: "Linux, macOS, Windows (Node.js 20+)",
         softwareRequirements: "Node.js 20 or later, Neo4j 5.6 or later",
         ...(version ? { softwareVersion: version } : {}),
@@ -104,7 +104,7 @@ export function softwareGraph() {
         "@type": "SoftwareSourceCode",
         "@id": `${SITE.url}/#source`,
         name: "Cyphra",
-        description: "Source code of the Cyphra ORM, CLI and docs (pnpm monorepo).",
+        description: "Source code of the Cyphra OGM, CLI and docs (pnpm monorepo).",
         codeRepository: LINKS.github,
         programmingLanguage: { "@type": "ComputerLanguage", name: "TypeScript" },
         runtimePlatform: "Node.js",

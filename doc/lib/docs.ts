@@ -124,7 +124,7 @@ function componentPageMarkdown(route: string, description: string): string | und
   }
   if (route === "/") {
     return [
-      "# Cyphra: the typed ORM for Neo4j",
+      "# Cyphra: the typed OGM for Neo4j",
       description,
       "- [Getting started](/getting-started)",
       "- [Schema](/schema)",

@@ -2,7 +2,7 @@
   "name": "cyphra-example-blog",
   "private": true,
   "type": "module",
-  "description": "Typed ORM client generated from a .cyphra schema",
+  "description": "Typed OGM client generated from a .cyphra schema",
   "scripts": {
     "generate": "cyphra generate",
     "start": "cyphra generate && tsx src/main.ts",

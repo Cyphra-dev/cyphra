@@ -136,7 +136,7 @@ export function Pricing() {
               Cyphra Operator on GitHub
             </a>
             <Link href="/getting-started" className={landing.btnGhost}>
-              Read the ORM docs
+              Read the OGM docs
             </Link>
           </div>
         </div>

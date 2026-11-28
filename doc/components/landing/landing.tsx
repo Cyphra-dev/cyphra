@@ -461,10 +461,11 @@ export function Landing() {
               Migrations generated from schema diffs
               <Arrow />
             </Link>
-            <h1 className={styles.title}>The typed ORM for Neo4j.</h1>
+            <h1 className={styles.title}>The typed OGM for Neo4j.</h1>
             <p className={styles.lede}>
-              Describe your graph in one <code>.cyphra</code> schema. Query its nodes and
-              relationships with a TypeScript client that knows every property.
+              An object-graph mapper, what other stacks call an ORM. Describe your graph in one{" "}
+              <code>.cyphra</code> schema. Query its nodes and relationships with a TypeScript
+              client that knows every property.
             </p>
             <div className={styles.ctaRow}>
               <Link

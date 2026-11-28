@@ -1,7 +1,7 @@
 ---
 title: "FalkorDB support: the Cyphra feature matrix"
 sidebarTitle: FalkorDB
-description: "Run the Cyphra ORM and migrations on FalkorDB over the Redis protocol: the falkordb option, transactions, rewrites and the feature matrix tested in CI."
+description: "Run the Cyphra OGM and migrations on FalkorDB over the Redis protocol: the falkordb option, transactions, rewrites and the feature matrix tested in CI."
 ---
 
 import { Callout } from "nextra/components";
@@ -14,7 +14,7 @@ official [`falkordb`](https://www.npmjs.com/package/falkordb) client. The schema
 client stay the same. Where FalkorDB's Cypher differs, Cyphra rewrites the statements. Where
 FalkorDB has no equivalent, Cyphra throws an `UnsupportedFeatureError` before anything runs.
 
-CI runs the ORM, migration and CLI integration suites against `falkordb/falkordb:v4.22.3` on every
+CI runs the OGM, migration and CLI integration suites against `falkordb/falkordb:v4.22.3` on every
 push. The matrix below lists what those suites cover.
 
 ## Connect
@@ -77,7 +77,7 @@ one it is given. The CLI does not detect FalkorDB on its own (it never speaks Bo
 FalkorDB runs every statement atomically, one writer at a time per graph, but it has no
 multi-statement transactions and no rollback. Cyphra keeps what it can promise:
 
-- **One operation, one statement.** Every ORM operation, nested writes included (`create` with
+- **One operation, one statement.** Every OGM operation, nested writes included (`create` with
   `connect`, `update` with `set`, `upsert`), compiles to one statement. FalkorDB undoes the whole
   statement when it fails, so a duplicate key or an invalid nested value writes nothing.
 - **Checks on the result come after it.** A `connect` whose target does not exist, or a nested
@@ -141,7 +141,7 @@ Every "not available" row, and the exceptions above, throw `UnsupportedFeatureEr
 
 ## What compiles differently
 
-The ORM compiles the same statements as for Neo4j; the FalkorDB transport rewrites them on the way
+The OGM compiles the same statements as for Neo4j; the FalkorDB transport rewrites them on the way
 out (`rewriteForFalkorDB`, exported for your own tooling). Neo4j and Memgraph output is unchanged.
 
 | Neo4j                                                        | FalkorDB                                                                                      |
@@ -179,7 +179,7 @@ cannot carry them. Cyphra stores temporal fields as ISO 8601 text instead:
 - `DateTime` as UTC with milliseconds, `2024-03-10T07:30:15.123Z` (fixed width, so `<`, `>` and
   `orderBy` follow time order), read back as a `Date`.
 - `Date` as `2024-03-10`, `LocalDateTime`, `LocalTime`, `Time` and `Duration` as the same text the
-  ORM returns for them on Neo4j.
+  OGM returns for them on Neo4j.
 
 Filters, sorting, `_min` / `_max` and `groupBy` work on every type but `Duration` (equality only).
 A raw `$cypher` query returns the text, not a `Date`. Data written by other clients with

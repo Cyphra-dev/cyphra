@@ -34,17 +34,27 @@ const mono = Geist_Mono({
 });
 
 const description =
-  "Cyphra is the typed ORM for Neo4j: describe your graph in a .cyphra schema, get a fully typed TypeScript client, and generate migrations from schema changes. Open source, MIT.";
+  "Cyphra is the typed OGM (object-graph mapper) for Neo4j: describe your graph in a .cyphra schema, get a fully typed TypeScript client, and generate migrations from schema changes. Open source, MIT.";
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: {
-    default: "Cyphra: the typed ORM for Neo4j and TypeScript",
+    default: "Cyphra: the typed OGM for Neo4j and TypeScript",
     template: "%s | Cyphra",
   },
   description,
   applicationName: "Cyphra",
-  keywords: ["Neo4j", "ORM", "TypeScript", "Cypher", "graph database", "migrations", "Prisma"],
+  keywords: [
+    "Neo4j",
+    "OGM",
+    "object-graph mapper",
+    "Neo4j ORM",
+    "TypeScript",
+    "Cypher",
+    "graph database",
+    "migrations",
+    "Prisma",
+  ],
   // "./" resolves against each route, so every page gets its own canonical URL.
   alternates: {
     canonical: "./",

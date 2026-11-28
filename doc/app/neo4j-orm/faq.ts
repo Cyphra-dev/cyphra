@@ -3,6 +3,22 @@
 // the page renders typographic quotes.
 export const NEO4J_ORM_FAQ = [
   [
+    "Is Cyphra an ORM?",
+    "Strictly, no: Cyphra is an OGM (object-graph mapper). It maps nodes, labels and relationships rather than tables and rows, and it generates Cypher rather than SQL. Its client follows the ORM conventions TypeScript developers know (findMany, include, select, nested writes), so it fills the role people mean when they search for a Neo4j ORM.",
+  ],
+  [
+    "What is the difference between an ORM and an OGM?",
+    "An ORM maps relational tables, rows and foreign keys to objects and generates SQL. An OGM maps graph nodes, labels and relationships to objects and generates a graph query language such as Cypher. In a graph, relationships are records of their own, with a type, a direction and properties, so an OGM models them directly instead of through foreign keys and join tables.",
+  ],
+  [
+    "Can I use Cyphra like Prisma?",
+    "Yes, for the workflow: a schema file, cyphra generate for the typed client, and cyphra migrate dev, status and deploy for migrations. The client uses the same names as Prisma Client (findMany, include, select, orderBy, upsert, $transaction). It adds graph features Prisma has no equivalent for, such as typed edge properties, traverse and shortestPath, and cyphra import prisma converts an existing schema.prisma.",
+  ],
+  [
+    "Does Cyphra work with Memgraph or FalkorDB?",
+    "Yes. Set the memgraph dialect for Memgraph 3.x over Bolt, or pass the falkordb option for FalkorDB over the Redis protocol. CI runs the client, migration and CLI suites against both. A feature a database has no equivalent for throws an UnsupportedFeatureError before anything runs: interactive transactions, for example, are not available on FalkorDB.",
+  ],
+  [
     "Does Prisma support Neo4j?",
     "No. Prisma ORM supports relational databases and MongoDB, and Neo4j is not on its list of supported databases. The GitHub feature request for Neo4j support was closed as not planned in December 2024.",
   ],

@@ -1,6 +1,6 @@
 # @cyphra/testing
 
-> Part of [Cyphra](https://www.cyphra.dev), the TypeScript ORM for Neo4j. **Testing:** [docs](https://www.cyphra.dev/testing)
+> Part of [Cyphra](https://www.cyphra.dev), the TypeScript OGM (object-graph mapper) for Neo4j. **Testing:** [docs](https://www.cyphra.dev/testing)
 
 Integration-test helpers for apps built on Cyphra. They do not depend on a test framework, so they
 work with Vitest, Jest, `node:test` or Mocha:

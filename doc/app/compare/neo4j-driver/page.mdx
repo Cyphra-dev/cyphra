@@ -1,7 +1,7 @@
 ---
-title: "Cyphra vs neo4j-driver: ORM or raw driver?"
+title: "Cyphra vs neo4j-driver: OGM or raw driver?"
 sidebarTitle: "Cyphra vs neo4j-driver"
-description: "Should you use the official neo4j-driver directly or an ORM like Cyphra? What the driver gives you, what Cyphra adds on top of it, and when the raw driver wins."
+description: "Should you use the official neo4j-driver directly or an OGM like Cyphra? What the driver gives you, what Cyphra adds on top of it, and when the raw driver wins."
 ---
 
 import { Callout, Cards } from "nextra/components";
@@ -112,7 +112,7 @@ Cyphra is not free, and it is fair to list what you take on:
 ## When to choose the raw driver
 
 - Your workload is mostly complex Cypher (variable-length paths, graph algorithms, heavy
-  aggregations) that an ORM would only pass through.
+  aggregations) that an OGM would only pass through.
 - You are writing a library, a script or a small service and want one dependency.
 - You run a Neo4j server older than 5.6, or need a driver feature that Cyphra does not expose.
 - You already have types and value mapping you are happy with, for example through the driver's
