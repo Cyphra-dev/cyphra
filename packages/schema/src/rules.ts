@@ -520,7 +520,9 @@ export function assertNamedArgs(where: string, decorators: readonly Decorator[])
     if (isRuleDecorator(d.name) || d.name === "default") continue;
     if (d.args.some((a) => a.key === "")) {
       throw new SchemaValidationError(
-        `${where}: @${d.name} takes named arguments only (key: value).`,
+        d.name === "out" || d.name === "in"
+          ? `${where}: @${d.name} takes the type, then named arguments only: @${d.name}(TYPE, onDelete: Cascade).`
+          : `${where}: @${d.name} takes named arguments only (key: value).`,
       );
     }
   }

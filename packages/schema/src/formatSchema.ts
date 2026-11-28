@@ -136,13 +136,16 @@ export function formatSchema(source: string, options?: FormatSchemaOptions): str
         items = [...fields, ...attrs];
       } else {
         header = `relationship ${d.name} {`;
-        items = [
-          lineItem(range(d.relTypeLoc), `type ${slice(d.relTypeLoc)}`),
-          lineItem(range(d.fromLoc), `from ${d.from}`),
-          lineItem(range(d.toLoc), `to ${d.to}`),
-          ...fields,
-          ...attrs,
-        ];
+        // The short form (`relationship AUTHORED { … }`) has no `type` / `from` / `to` lines.
+        const ends =
+          d.from === undefined
+            ? []
+            : [
+                lineItem(range(d.relTypeLoc), `type ${slice(d.relTypeLoc)}`),
+                lineItem(range(d.fromLoc), `from ${d.from}`),
+                lineItem(range(d.toLoc), `to ${d.to}`),
+              ];
+        items = [...ends, ...fields, ...attrs];
       }
     }
     return {

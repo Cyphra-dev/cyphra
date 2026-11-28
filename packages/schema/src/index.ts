@@ -105,8 +105,13 @@ export {
   SCHEMA_MODEL_VERSION,
   getNodeModel,
   nodeLabels,
+  relationOf,
+  relationSyntaxOf,
   resolveSchema,
 } from "./model.js";
+export type { RelationSpec, RelationSyntax } from "./model.js";
+export type { RelationshipTypeUse, SchemaWarning, SchemaWarningCode } from "./lint.js";
+export { relationshipTypeUses, schemaWarnings, similarRelationshipTypes } from "./lint.js";
 export type { RenderZodOptions } from "./renderZod.js";
 export { isGeneratedField, renderZodFromModel, renderZodSource } from "./renderZod.js";
 export type {

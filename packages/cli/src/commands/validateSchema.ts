@@ -4,9 +4,11 @@ import {
   formatRule,
   parseSchema,
   resolveSchema,
+  schemaWarnings,
   validateSchema,
   type ResolvedScalarField,
   type SchemaModel,
+  type SchemaWarning,
 } from "@cyphra/schema";
 import type { CyphraConfig } from "../config.js";
 
@@ -43,7 +45,19 @@ export function describeRules(model: SchemaModel): string[] {
 }
 
 /**
- * Parse and semantically validate `schema.cyphra`.
+ * `warning: schema.cyphra:12:21: …` lines for the {@link schemaWarnings} of a schema.
+ *
+ * @param file - The schema path to print (relative to the project root).
+ */
+export function warningLines(file: string, warnings: readonly SchemaWarning[]): string[] {
+  return warnings.map((w) => {
+    const at = w.loc ? `:${w.loc.start.line}:${w.loc.start.column}` : "";
+    return `warning: ${file}${at}: ${w.message}`;
+  });
+}
+
+/**
+ * Parse and semantically validate `schema.cyphra`; print its warnings (on stderr) when it has any.
  *
  * @param cwd - Project root (for relative log paths).
  * @param config - Config with absolute schema path.
@@ -54,10 +68,11 @@ export async function runValidateSchema(
   options: ValidateSchemaOptions = {},
 ): Promise<void> {
   const raw = await readFile(config.schema, "utf8");
-  const doc = parseSchema(raw);
+  const doc = parseSchema(raw, { locations: true });
   validateSchema(doc);
   const model = resolveSchema(doc);
   const rel = path.relative(cwd, config.schema);
+  for (const line of warningLines(rel, schemaWarnings(doc))) console.warn(line);
   console.log(`OK — ${rel} (${doc.declarations.length} declaration(s))`);
   if (options.verbose) {
     const lines = describeRules(model);

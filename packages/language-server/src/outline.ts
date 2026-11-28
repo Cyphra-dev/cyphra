@@ -80,7 +80,9 @@ export function outline(a: Analysis): OutlineSymbol[] {
     }
     const detail =
       d.kind === "Relationship"
-        ? `${d.from} -[${d.relType}]-> ${d.to}`
+        ? d.from === undefined
+          ? `:${d.relType} edge properties`
+          : `${d.from} -[${d.relType}]-> ${d.to}`
         : d.kind === "Node" && d.implements?.length
           ? `implements ${d.implements.join(", ")}`
           : d.kind === "Node" && d.extends?.length

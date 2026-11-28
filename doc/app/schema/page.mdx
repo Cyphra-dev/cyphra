@@ -350,9 +350,109 @@ re-checked. They are enforced by the Cyphra client only: raw Cypher writes skip 
 
 ## Relationships
 
-`posts Post[] @relationship(type: "AUTHORED", direction: OUT)`. `direction` defaults to
-`OUT`. If a `relationship { … }` model has the same type and endpoints, its properties type the edge
-(`$edge` in the client).
+A relation field lives in the node you read it from (`user.posts`) and names the edge type with
+`@out(TYPE)` (edges going out of this node) or `@in(TYPE)` (edges coming in). The target type
+gives the cardinality: `Post[]` is to-many, `User?` an optional to-one, `User` a required to-one.
+
+```cyphra
+node User {
+  id    String @id
+  posts Post[] @out(AUTHORED)       // (user)-[:AUTHORED]->(post)
+}
+
+node Post {
+  id     String @id
+  title  String
+  author User?  @in(AUTHORED)       // the same edges, read from the post
+}
+
+relationship AUTHORED {             // only when the edge has properties
+  at DateTime @default(now())
+}
+```
+
+- **The type is a symbol, defined once.** `AUTHORED` is the Neo4j relationship type as written
+  (UPPER_SNAKE by convention). A `relationship AUTHORED { … }` block types the properties of every
+  `:AUTHORED` edge (`$edge` in the [client](/client)); without a block the edge has no properties.
+- **One side is enough.** `User.posts` alone gives `user.posts` in the client and writes the
+  edges; add `Post.author` only if you also read the relation from the post. The two sides are the
+  same edges: write either one.
+- **Options go in the same call:** `posts Post[] @out(AUTHORED, onDelete: Cascade)` (see
+  [onDelete rules](#ondelete-rules)).
+- **Self-relationships** use the same type on both sides:
+  `following User[] @out(FOLLOWS)` and `followers User[] @in(FOLLOWS)`.
+- The target can be a node, an [interface](#interfaces-and-multiple-labels) or a
+  [union](#unions).
+
+### Edge or node?
+
+An edge can carry properties (`at`, `role`, `weight`), but not relationships of its own: nothing
+can point at an `:AUTHORED` edge. When the thing you are modelling needs its own relations (an
+`Order` with line items and a shipping address, a `Membership` that has an approver, a `Review`
+that others can like), make it a node with an edge to each side:
+
+```cyphra
+node Membership {
+  id       String @id @default(cuid())
+  role     String
+  user     User   @in(HAS_MEMBERSHIP)
+  team     Team   @out(MEMBERSHIP_IN)
+  approver User?  @in(APPROVED)
+}
+```
+
+Keep it an edge while it only describes the link between two nodes.
+
+### Validation
+
+`cyphra validate` and `cyphra generate` (and the [editor](/editor)) check relation fields:
+
+- **A pair with the same direction on both sides is an error.** `posts Post[] @out(AUTHORED)` on
+  `User` and `author User? @out(AUTHORED)` on `Post` describe two different sets of edges
+  (`User → Post` and `Post → User`); one of them is meant to be `@in(AUTHORED)`. Both directions
+  stay allowed when each side has its inverse too.
+- **A `relationship` block that no field uses is an error**: usually a misspelled type, on the
+  block or on the fields.
+- **Nearly identical types are a warning** (`AUTHORED` and `AUTHORD`, or `FOLLOWS` and `Follows`:
+  one or two characters apart, or differing only in case). They are different types to the
+  database, so a typo silently creates unrelated edges.
+
+### The `@relationship` syntax
+
+The older form keeps working, and resolves to the same model and the same generated client:
+
+```cyphra
+node User {
+  id    String @id
+  posts Post[] @relationship(type: "AUTHORED", direction: OUT)
+}
+```
+
+`direction` defaults to `OUT`. It is also how to write a type that is not an identifier
+(`@relationship(type: "HAS-TAG", direction: OUT)`). A field uses one form: `@out(…)` together
+with `@relationship(…)` (or `@out` with `@in`) is an error.
+
+### Long-form relationship blocks
+
+A block can also name its type and ends, and be named differently from its type:
+
+```cyphra
+relationship Wrote {
+  type "AUTHORED"
+  from User
+  to   Post
+  at   DateTime @default(now())
+}
+```
+
+It types the `:AUTHORED` edges from a `User` to a `Post` only (an end may be an interface or a
+union), and the client calls the model `Wrote`. Use it when one type links different pairs of
+nodes with different properties (one long-form block per pair), or when the type is not an
+identifier. The short form `relationship AUTHORED { … }` types every `:AUTHORED` edge: its ends
+are those of the fields (if the fields link unrelated pairs, `User → Post` and `Team → Post`,
+it is an error; point them at a shared interface or union, or use long-form blocks). A type has
+either one short-form block or long-form ones, not both. Fields with `@out` / `@in` and fields
+with `@relationship` match both forms.
 
 ### onDelete rules
 

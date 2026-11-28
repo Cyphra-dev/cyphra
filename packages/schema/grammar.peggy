@@ -28,6 +28,8 @@
     min: ["value"],
     max: ["value"],
     regex: ["pattern", "flags"],
+    out: ["type"],
+    in: ["type"],
   };
   // Give positional arguments their key; one without a known key keeps the key "" (rejected by
   // validation). Positional arguments must come before named ones.
@@ -99,6 +101,7 @@ start
 declaration
   = nodeDeclaration
   / relationshipDeclaration
+  / shortRelationshipDeclaration
   / enumDeclaration
   / unionDeclaration
 
@@ -155,6 +158,8 @@ nodeItem
   = @modelAttribute _
   / @nodeField _
 
+// The long form, `relationship X { type "T" from A to B … }`: the properties of the `:T` edges
+// from A to B, in a model named X.
 relationshipDeclaration
   = "relationship" __ n:nameTok _ "{" _ body:relationshipBody _ "}" {
       return withLoc(
@@ -183,6 +188,25 @@ relationshipBody
       const attributes = items.filter((i) => i.kind === "ModelAttribute");
       const body = { relType: rt.value, relTypeLoc: rt.loc, from: fromLine, to: toLine, fields };
       return attributes.length ? { ...body, attributes } : body;
+    }
+
+// The short form, `relationship TYPE { … }`: the properties of every `:TYPE` edge (`relType` is
+// the block's name; the ends come from the `@out(TYPE)` / `@in(TYPE)` fields). Tried after the
+// long form, so a body starting with `type "…"` keeps its meaning.
+shortRelationshipDeclaration
+  = "relationship" __ n:nameTok _ "{" _ items:relationshipItem* _ "}" {
+      const fields = items.filter((i) => i.kind !== "ModelAttribute");
+      const attributes = items.filter((i) => i.kind === "ModelAttribute");
+      return withLoc(
+        {
+          kind: "Relationship",
+          name: n.id,
+          relType: n.id,
+          fields,
+          ...(attributes.length ? { attributes } : {}),
+        },
+        { loc: here(), nameLoc: n.loc, relTypeLoc: n.loc },
+      );
     }
 
 relationshipItem

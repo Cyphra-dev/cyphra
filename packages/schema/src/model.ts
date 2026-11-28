@@ -14,6 +14,7 @@ import type {
   DecoratorValue,
   ModelAttribute,
   NodeDeclaration,
+  RelationalNodeField,
   ScalarNodeField,
   ScalarTypeName,
   SchemaDocument,
@@ -204,6 +205,134 @@ export const ON_DELETE_RULES = [
 
 /** Arguments accepted by `@relationship(…)`. */
 const RELATIONSHIP_ARGS = ["type", "direction", "onDelete"] as const;
+
+/** Arguments accepted by `@out(…)` / `@in(…)` (`type` is the positional one). */
+const OUT_IN_ARGS = ["type", "onDelete"] as const;
+
+/** The decorators that make a field a relation field. */
+const RELATION_DECORATORS = ["out", "in", "relationship"] as const;
+
+/**
+ * How a relation field names its edges: `@out(TYPE)` / `@in(TYPE)`, or the older
+ * `@relationship(type: "TYPE", direction: OUT|IN)`.
+ */
+export type RelationSyntax = "out" | "in" | "relationship";
+
+/** The edges a relation field declares, read from its decorator (see {@link relationOf}). */
+export type RelationSpec = {
+  readonly relType: string;
+  readonly direction: RelationDirection;
+  readonly onDelete?: OnDeleteRule;
+  readonly syntax: RelationSyntax;
+  /** The decorator it was read from. */
+  readonly decorator: Decorator;
+};
+
+/** `@out(TYPE)` or `@in(TYPE)` (or the `@relationship` form) of `direction` for a message. */
+export function relationSyntaxOf(
+  syntax: RelationSyntax,
+  relType: string,
+  direction: RelationDirection,
+): string {
+  if (syntax === "relationship") {
+    return `@relationship(type: ${JSON.stringify(relType)}, direction: ${direction})`;
+  }
+  return `@${direction === "OUT" ? "out" : "in"}(${relType})`;
+}
+
+/**
+ * Read the relationship a relation field declares: `@out(TYPE, onDelete: …)`, `@in(TYPE, …)` or
+ * `@relationship(type: "TYPE", direction: OUT|IN, onDelete: …)`.
+ *
+ * @param where - Prefix of error messages (`Node "User" field "posts"`).
+ * @throws {SchemaValidationError} When the field has none of them, several, or bad arguments.
+ */
+export function relationOf(where: string, f: RelationalNodeField): RelationSpec {
+  const decs = f.decorators.filter((d) =>
+    (RELATION_DECORATORS as readonly string[]).includes(d.name),
+  );
+  if (decs.length === 0) {
+    throw new SchemaValidationError(
+      `${where}: relation fields need @out(TYPE) or @in(TYPE) (or @relationship(type: "TYPE", direction: OUT|IN)).`,
+    );
+  }
+  if (decs.length > 1) {
+    const names = decs.map((d) => `@${d.name}`);
+    const what =
+      new Set(names).size === 1
+        ? `at most one ${names[0]} allowed`
+        : `use one of @out(TYPE), @in(TYPE) or @relationship(…), not ${names.join(" and ")}`;
+    throw new SchemaValidationError(`${where}: ${what}.`);
+  }
+  const rel = decs[0]!;
+  const allowed: readonly string[] = rel.name === "relationship" ? RELATIONSHIP_ARGS : OUT_IN_ARGS;
+  const typeArg = argValue(rel, "type");
+  let relType: string;
+  let direction: RelationDirection = "OUT";
+  if (rel.name === "relationship") {
+    if (!typeArg || typeArg.kind !== "string" || typeArg.value === "") {
+      throw new SchemaValidationError(
+        `${where}: relation fields need @relationship(type: "TYPE", direction: OUT|IN).`,
+      );
+    }
+    relType = typeArg.value;
+    const dirArg = argValue(rel, "direction");
+    if (dirArg) {
+      if (dirArg.kind !== "identifier" || (dirArg.value !== "OUT" && dirArg.value !== "IN")) {
+        throw new SchemaValidationError(`${where}: direction must be OUT or IN.`);
+      }
+      direction = dirArg.value;
+    }
+  } else {
+    if (!typeArg || typeArg.kind !== "identifier") {
+      const got =
+        typeArg?.kind === "string"
+          ? ` (got ${JSON.stringify(typeArg.value)}: write the type without quotes, or use @relationship(type: "…", direction: ${rel.name === "out" ? "OUT" : "IN"}) for a type that is not an identifier)`
+          : "";
+      throw new SchemaValidationError(
+        `${where}: @${rel.name} needs the relationship type, e.g. @${rel.name}(AUTHORED)${got}.`,
+      );
+    }
+    relType = typeArg.value;
+    direction = rel.name === "out" ? "OUT" : "IN";
+  }
+  const seenArgs = new Set<string>();
+  for (const a of rel.args) {
+    if (!allowed.includes(a.key)) {
+      const hint =
+        rel.name !== "relationship" && a.key === "direction"
+          ? ` (@${rel.name} already gives the direction)`
+          : "";
+      throw new SchemaValidationError(
+        `${where}: unknown @${rel.name} argument "${a.key}" (expected ${allowed.join(", ")})${hint}.`,
+      );
+    }
+    if (seenArgs.has(a.key)) {
+      throw new SchemaValidationError(`${where}: @${rel.name} ${a.key} given twice.`);
+    }
+    seenArgs.add(a.key);
+  }
+  const ruleArg = argValue(rel, "onDelete");
+  let onDelete: OnDeleteRule | undefined;
+  if (ruleArg) {
+    if (
+      ruleArg.kind !== "identifier" ||
+      !(ON_DELETE_RULES as readonly string[]).includes(ruleArg.value)
+    ) {
+      throw new SchemaValidationError(
+        `${where}: onDelete must be ${ON_DELETE_RULES.join(", ")} (got ${ruleArg.kind === "string" ? JSON.stringify(ruleArg.value) : String(ruleArg.value)}).`,
+      );
+    }
+    onDelete = ruleArg.value as OnDeleteRule;
+  }
+  return {
+    relType,
+    direction,
+    ...(onDelete ? { onDelete } : {}),
+    syntax: rel.name as RelationSyntax,
+    decorator: rel,
+  };
+}
 
 export type ResolvedRelationField = {
   readonly kind: "relation";
@@ -609,13 +738,15 @@ export function resolveSchema(doc: SchemaDocument): SchemaModel {
   }
 
   const relationships: ResolvedRelationshipModel[] = [];
+  /** Short-form models (`relationship AUTHORED { … }`) by type; their ends are set below. */
+  const shortForms = new Map<string, ResolvedRelationshipModel>();
   for (const d of doc.declarations) {
     if (d.kind !== "Relationship") {
       continue;
     }
     const owner = `Relationship "${d.name}"`;
     // An end may be a node, an interface or a union (one edge model for every member).
-    for (const end of [d.from, d.to]) {
+    for (const end of d.from === undefined ? [] : [d.from, d.to ?? ""]) {
       if (!nodeNames.has(end)) {
         throw new SchemaValidationError(`${owner}: unknown node "${end}".`);
       }
@@ -624,14 +755,25 @@ export function resolveSchema(doc: SchemaDocument): SchemaModel {
       owner,
       d.fields.map((f) => f.name),
     );
-    relationships.push({
+    const model: ResolvedRelationshipModel = {
       name: d.name,
       relType: d.relType,
-      from: d.from,
-      to: d.to,
+      from: d.from ?? "",
+      to: d.to ?? "",
       properties: d.fields.map((f) => resolveScalar(owner, f, false, enums)),
-    });
+    };
+    if (d.from === undefined) shortForms.set(d.relType, model);
+    relationships.push(model);
   }
+  // A type has one short-form block, or long-form ones (one per pair of ends), not both.
+  for (const d of doc.declarations) {
+    if (d.kind !== "Relationship" || d.from === undefined || !shortForms.has(d.relType)) continue;
+    throw new SchemaValidationError(
+      `Relationship "${d.name}": relationship ${d.relType} { … } already types every :${d.relType} edge (use one or the other).`,
+    );
+  }
+  /** Every relation field (own fields of each node and interface), for the checks below. */
+  const ends: RelationEnd[] = [];
 
   const nodes: ResolvedNodeModel[] = [];
   // Index and constraint names share one namespace in Neo4j: track every name the schema implies.
@@ -669,57 +811,29 @@ export function resolveSchema(doc: SchemaDocument): SchemaModel {
           `${where}: unknown node "${f.target}" (not a node model, a union or an enum).`,
         );
       }
-      const rel = findDecorator(f.decorators, "relationship");
-      const typeArg = rel ? argValue(rel, "type") : undefined;
-      if (!rel || !typeArg || typeArg.kind !== "string" || typeArg.value === "") {
-        throw new SchemaValidationError(
-          `${where}: relation fields need @relationship(type: "TYPE", direction: OUT|IN).`,
-        );
-      }
-      const dirArg = argValue(rel, "direction");
-      let direction: RelationDirection = "OUT";
-      if (dirArg) {
-        if (dirArg.kind !== "identifier" || (dirArg.value !== "OUT" && dirArg.value !== "IN")) {
-          throw new SchemaValidationError(`${where}: direction must be OUT or IN.`);
-        }
-        direction = dirArg.value;
-      }
-      const seenArgs = new Set<string>();
-      for (const a of rel.args) {
-        if (!(RELATIONSHIP_ARGS as readonly string[]).includes(a.key)) {
-          throw new SchemaValidationError(
-            `${where}: unknown @relationship argument "${a.key}" (expected ${RELATIONSHIP_ARGS.join(", ")}).`,
-          );
-        }
-        if (seenArgs.has(a.key)) {
-          throw new SchemaValidationError(`${where}: @relationship ${a.key} given twice.`);
-        }
-        seenArgs.add(a.key);
-      }
-      const ruleArg = argValue(rel, "onDelete");
-      let onDelete: OnDeleteRule | undefined;
-      if (ruleArg) {
-        if (
-          ruleArg.kind !== "identifier" ||
-          !(ON_DELETE_RULES as readonly string[]).includes(ruleArg.value)
-        ) {
-          throw new SchemaValidationError(
-            `${where}: onDelete must be ${ON_DELETE_RULES.join(", ")} (got ${ruleArg.kind === "string" ? JSON.stringify(ruleArg.value) : String(ruleArg.value)}).`,
-          );
-        }
-        onDelete = ruleArg.value as OnDeleteRule;
-      }
-      // A `relationship { … }` model names this node, or else one of its interfaces, as the end.
+      const { relType, direction, onDelete, syntax } = relationOf(where, f);
+      // A `relationship TYPE { … }` block types every edge of its type.
+      const short = shortForms.get(relType);
+      // A long-form model names this node, or else one of its interfaces, as the end.
       const edgeModels = (self: string) => {
         const [start, end] = direction === "OUT" ? [self, f.target] : [f.target, self];
         return relationships.filter(
-          (r) => r.relType === typeArg.value && r.from === start && r.to === end,
+          (r) =>
+            !shortForms.has(r.relType) && r.relType === relType && r.from === start && r.to === end,
         );
       };
-      let edges = edgeModels(d.name);
+      let edges = short ? [short] : edgeModels(d.name);
       for (const i of ancestorInterfaces(doc, d)) if (edges.length === 0) edges = edgeModels(i);
       // …or else a union it is a member of (directly or through one of its interfaces).
       for (const u of unionsOf(doc, d)) if (edges.length === 0) edges = edgeModels(u);
+      ends.push({
+        owner: d.name,
+        field: f.name,
+        target: f.target,
+        relType,
+        direction,
+        syntax,
+      });
       if (edges.length > 1) {
         throw new SchemaValidationError(
           `${where}: several relationship models match (${edges.map((e) => e.name).join(", ")}).`,
@@ -729,7 +843,7 @@ export function resolveSchema(doc: SchemaDocument): SchemaModel {
         kind: "relation",
         name: f.name,
         target: f.target,
-        relType: typeArg.value,
+        relType,
         direction,
         many: f.cardinality === "many",
         optional: f.cardinality === "many" ? false : f.optional,
@@ -815,12 +929,109 @@ export function resolveSchema(doc: SchemaDocument): SchemaModel {
 
   // Unions are checked once every node is known (their members must be nodes).
   for (const d of doc.declarations) if (d.kind === "Union") validateUnion(doc, d);
+  checkSameDirectionPairs(ends);
+  const used = new Set(
+    nodes.flatMap((n) =>
+      n.fields.flatMap((f) => (f.kind === "relation" && f.edge ? [f.edge] : [])),
+    ),
+  );
+  for (const r of relationships) {
+    if (used.has(r.name)) continue;
+    // A type that is not an identifier (`HAS-TAG`) can only be written with @relationship.
+    const syntax = /^[A-Za-z_][A-Za-z0-9_]*$/.test(r.relType) ? "out" : "relationship";
+    const out = relationSyntaxOf(syntax, r.relType, "OUT");
+    const inn = relationSyntaxOf(syntax, r.relType, "IN");
+    throw new SchemaValidationError(
+      shortForms.has(r.relType)
+        ? `Relationship "${r.name}": no relation field uses it (add a field with ${out} or ${inn}, or remove the block).`
+        : `Relationship "${r.name}": no relation field uses it (add a field with ${out} on ${r.from} or ${inn} on ${r.to}, or remove the block).`,
+    );
+  }
+  const resolvedRelationships = relationships.map((r) =>
+    shortForms.has(r.relType) ? { ...r, ...shortFormEnds(doc, r, ends) } : r,
+  );
   return {
     version: SCHEMA_MODEL_VERSION,
     nodes: withUnions(linkInterfaces(nodes, doc), doc),
-    relationships,
+    relationships: resolvedRelationships,
     ...(enums.size ? { enums: [...enums.values()] } : {}),
   };
+}
+
+/** A relation field as the cross-field checks see it. */
+type RelationEnd = {
+  readonly owner: string;
+  readonly field: string;
+  readonly target: string;
+  readonly relType: string;
+  readonly direction: RelationDirection;
+  readonly syntax: RelationSyntax;
+};
+
+/**
+ * Reject `b B @out(T)` on A with `a A @out(T)` on B when they look like a pair (neither has an
+ * inverse with the other direction): one of them was meant to be `@in(T)`, and as written they
+ * describe two unrelated sets of edges.
+ */
+function checkSameDirectionPairs(ends: readonly RelationEnd[]): void {
+  const flip = (d: RelationDirection): RelationDirection => (d === "OUT" ? "IN" : "OUT");
+  const hasInverse = (e: RelationEnd) =>
+    ends.some(
+      (o) =>
+        o.owner === e.target &&
+        o.target === e.owner &&
+        o.relType === e.relType &&
+        o.direction === flip(e.direction),
+    );
+  ends.forEach((b, i) => {
+    if (b.owner === b.target) return;
+    const a = ends
+      .slice(0, i)
+      .find(
+        (o) =>
+          o.owner === b.target &&
+          o.target === b.owner &&
+          o.relType === b.relType &&
+          o.direction === b.direction,
+      );
+    if (!a || hasInverse(a) || hasInverse(b)) return;
+    const meant = relationSyntaxOf(b.syntax, b.relType, flip(b.direction));
+    throw new SchemaValidationError(
+      `Node "${b.owner}" field "${b.field}": ${relationSyntaxOf(b.syntax, b.relType, b.direction)} has the same direction as ${a.owner}.${a.field} (${relationSyntaxOf(a.syntax, a.relType, a.direction)}), so they describe different edges; if it is the inverse of ${a.owner}.${a.field}, use ${meant}.`,
+    );
+  });
+}
+
+/**
+ * The ends of a short-form model (`relationship AUTHORED { … }`): the start and end nodes of the
+ * fields of its type, or the interface or union covering all of them.
+ */
+function shortFormEnds(
+  doc: SchemaDocument,
+  r: ResolvedRelationshipModel,
+  ends: readonly RelationEnd[],
+): { from: string; to: string } {
+  const pairs: [string, string][] = [];
+  for (const e of ends) {
+    if (e.relType !== r.relType) continue;
+    const pair: [string, string] =
+      e.direction === "OUT" ? [e.owner, e.target] : [e.target, e.owner];
+    if (!pairs.some(([f, t]) => f === pair[0] && t === pair[1])) pairs.push(pair);
+  }
+  /** `name` and every interface or union it belongs to. */
+  const covers = (general: string, name: string) => {
+    if (general === name) return true;
+    const decl = doc.declarations.find((x) => x.name === name);
+    if (decl?.kind !== "Node") return false;
+    return ancestorInterfaces(doc, decl).includes(general) || unionsOf(doc, decl).includes(general);
+  };
+  const cover = pairs.find(([f, t]) => pairs.every(([f2, t2]) => covers(f, f2) && covers(t, t2)));
+  if (!cover) {
+    throw new SchemaValidationError(
+      `Relationship "${r.name}": :${r.relType} edges link different pairs of nodes (${pairs.map(([f, t]) => `${f} to ${t}`).join(", ")}); give each pair its own block (relationship Name { type "${r.relType}" from A to B … }), or point the fields at a shared interface or union.`,
+    );
+  }
+  return { from: cover[0], to: cover[1] };
 }
 
 /**

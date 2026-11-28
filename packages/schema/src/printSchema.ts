@@ -29,6 +29,8 @@ export function formatScalarType(t: ScalarTypeRef): string {
 
 /** Arguments a rule decorator prints positionally, in order. */
 const PRINT_POSITIONAL: Readonly<Record<string, readonly string[]>> = {
+  out: ["type"],
+  in: ["type"],
   length: ["min", "max"],
   size: ["min", "max"],
   min: ["value"],
@@ -154,9 +156,11 @@ export function printSchemaDocument(doc: SchemaDocument): string {
       const fieldLines = d.fields.map((f) => `  ${formatScalarField(f)}`);
       const lines = [
         `relationship ${d.name} {`,
-        `  type ${quoteSchemaString(d.relType)}`,
-        `  from ${d.from}`,
-        `  to ${d.to}`,
+        // The long form names its type and ends; the short form (`relationship AUTHORED { … }`)
+        // has neither.
+        ...(d.from === undefined || d.to === undefined
+          ? []
+          : [`  type ${quoteSchemaString(d.relType)}`, `  from ${d.from}`, `  to ${d.to}`]),
         ...fieldLines,
         ...attributeLines(d.attributes),
         "}",

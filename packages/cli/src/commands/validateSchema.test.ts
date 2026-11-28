@@ -10,6 +10,7 @@ const SCHEMA = `node User {
   email String @unique @email
   name  String @length(2, 40) @nonEmpty
   age   Int?   @min(13)
+  follows User[] @out(FOLLOWS)
 }
 
 relationship Follows {
@@ -71,5 +72,18 @@ describe("runValidateSchema", () => {
     await expect(runValidateSchema(dir, config)).rejects.toThrow(
       'Node "A" field "n": @length is not valid on a Int field (only on String fields).',
     );
+  });
+
+  it("prints warnings about nearly identical relationship types on stderr", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    await writeFile(
+      config.schema,
+      "node A {\n  id String @id\n  bs B[] @out(AUTHORED)\n}\n\nnode B {\n  id String @id\n  a A? @in(AUTHORD)\n}\n",
+    );
+    await runValidateSchema(dir, config);
+    expect(output()).toBe("OK — schema.cyphra (2 declaration(s))");
+    expect(warn.mock.calls.map((c: unknown[]) => String(c[0]))).toEqual([
+      "warning: schema.cyphra:8:12: Relationship types AUTHORD (B.a) and AUTHORED (A.bs) are nearly identical: they are different edge types, is one of them a typo?",
+    ]);
   });
 });

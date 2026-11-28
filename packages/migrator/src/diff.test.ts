@@ -17,6 +17,7 @@ const v1 = model(`
     email String @unique
     name  String @index
     bio   String?
+    follows User[] @relationship(type: "FOLLOWS", direction: OUT)
   }
   relationship Follows { type "FOLLOWS"
     from User
@@ -295,6 +296,7 @@ describe("enum, Json and BigInt fields", () => {
       id    String @id
       role  Role   @default(USER)
       roles Role[]
+      knows User[] @out(KNOWS)
     }
     relationship Knows { type "KNOWS"
       from User
@@ -309,6 +311,7 @@ describe("enum, Json and BigInt fields", () => {
         id    String @id
         role  Role   @default(USER)
         roles Role[]
+        knows User[] @out(KNOWS)
       }
       relationship Knows { type "KNOWS"
         from User
@@ -327,6 +330,7 @@ describe("enum, Json and BigInt fields", () => {
         id    String @id
         role  Role   @default(USER)
         roles Role[]
+        knows User[] @out(KNOWS)
       }
       relationship Knows { type "KNOWS"
         from User
@@ -395,6 +399,7 @@ describe("point and temporal fields", () => {
         location Point @index
         grid CartesianPoint? @index
         opens LocalTime? @index
+        visits Place[] @out(VISITED)
       }
       relationship Visit { type "VISITED"
         from Place

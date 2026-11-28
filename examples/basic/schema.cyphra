@@ -2,6 +2,7 @@ node User {
   id    String @id @default(cuid())
   email String @unique
   name  String @index
+  follows User[] @relationship(type: "FOLLOWS", direction: OUT)
 }
 
 node Post {
