@@ -4,7 +4,8 @@
  * - Each model becomes a `node` named after its (first) label; extra labels become empty
  *   `interface`s the node implements.
  * - Properties map through {@link shapeToField}; the primary key gets `@id`.
- * - Each relationship alias becomes a list field `alias Target[] @relationship(type, direction)`.
+ * - Each relationship alias becomes a list field `alias Target[] @out(TYPE)` / `@in(TYPE)`
+ *   (`@relationship(type, direction)` for a type that is not an identifier).
  *   neogma declares each side on its own model: when both models declare the same edges (same
  *   type, opposite directions), the two fields are inverses of each other in Cyphra too.
  * - Relationship properties, from one side or both, become one `relationship` model per edge type
@@ -16,7 +17,6 @@
 
 import type {
   Decorator,
-  DecoratorArg,
   EnumDeclaration,
   NodeDeclaration,
   NodeField,
@@ -25,6 +25,7 @@ import type {
   ScalarNodeField,
   SchemaDocument,
 } from "../../ast.js";
+import { relationFieldDecorator } from "../../model.js";
 import type { ImportIssue, ImportResult, IssueDraft } from "../print.js";
 import { IDENT, describeSchema, issue, shapeToField } from "./mappings.js";
 import {
@@ -497,17 +498,13 @@ function relationField(
     const props = edgeProperties(r.properties, `${node}.${r.alias}`, report);
     edge.properties.push(...props);
   }
-  const args: DecoratorArg[] = [
-    { key: "type", value: { kind: "string", value: relType } },
-    { key: "direction", value: { kind: "identifier", value: direction } },
-  ];
   return {
     kind: "Relational",
     name: r.alias,
     target,
     cardinality: "many",
     optional: false,
-    decorators: [{ name: "relationship", args }],
+    decorators: [relationFieldDecorator(relType, direction)],
   };
 }
 

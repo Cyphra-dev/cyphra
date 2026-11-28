@@ -21,6 +21,7 @@ import type {
   ScalarTypeName,
   SchemaDocument,
 } from "../../ast.js";
+import { relationFieldDecorator } from "../../model.js";
 import type { ImportIssue, ImportResult, IssueDraft } from "../print.js";
 import {
   COMPOSITE_TYPE,
@@ -582,19 +583,13 @@ function sortDecorators(decorators: readonly Decorator[]): Decorator[] {
 }
 
 function relationField(name: string, edge: Edge): RelationalNodeField {
-  const args: DecoratorArg[] = [
-    { key: "type", value: { kind: "string", value: edge.relType } },
-    { key: "direction", value: { kind: "identifier", value: edge.direction } },
-  ];
-  if (edge.onDelete)
-    args.push({ key: "onDelete", value: { kind: "identifier", value: edge.onDelete } });
   return {
     kind: "Relational",
     name,
     target: edge.target,
     cardinality: edge.many ? "many" : "one",
     optional: edge.many ? false : edge.optional,
-    decorators: [{ name: "relationship", args }],
+    decorators: [relationFieldDecorator(edge.relType, edge.direction, edge.onDelete)],
   };
 }
 

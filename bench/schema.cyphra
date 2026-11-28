@@ -7,9 +7,9 @@ node User {
   name      String
   age       Int       @index
   createdAt DateTime  @default(now())
-  posts     Post[]    @relationship(type: "AUTHORED", direction: OUT, onDelete: Cascade)
-  following User[]    @relationship(type: "FOLLOWS", direction: OUT)
-  followers User[]    @relationship(type: "FOLLOWS", direction: IN)
+  posts     Post[]    @out(AUTHORED, onDelete: Cascade)
+  following User[]    @out(FOLLOWS)
+  followers User[]    @in(FOLLOWS)
 }
 
 node Post {
@@ -17,14 +17,14 @@ node Post {
   title     String
   views     Int
   published Boolean   @default(false)
-  author    User?     @relationship(type: "AUTHORED", direction: IN)
-  comments  Comment[] @relationship(type: "HAS_COMMENT", direction: OUT, onDelete: Cascade)
+  author    User?     @in(AUTHORED)
+  comments  Comment[] @out(HAS_COMMENT, onDelete: Cascade)
 }
 
 node Comment {
   id   String @id @default(uuid())
   text String
-  post Post?  @relationship(type: "HAS_COMMENT", direction: IN)
+  post Post?  @in(HAS_COMMENT)
 }
 
 node Doc {

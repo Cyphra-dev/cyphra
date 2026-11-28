@@ -34,7 +34,7 @@ node Customer {
   tier CustomerTier @default(bronze)
   newsletter Boolean @default(false)
   createdAt DateTime
-  Orders Order[] @relationship(type: "PLACED", direction: OUT)
+  Orders Order[] @out(PLACED)
 }
 
 node Order {
@@ -43,8 +43,8 @@ node Order {
   total Float @min(0)
   deliveryDate Date?
   reference String @regex("^[A-Z]{2}-[0-9]{6}$")
-  Customer Customer[] @relationship(type: "PLACED", direction: IN)
-  Products Product[] @relationship(type: "CONTAINS", direction: OUT)
+  Customer Customer[] @in(PLACED)
+  Products Product[] @out(CONTAINS)
 }
 
 node Product {
@@ -54,7 +54,7 @@ node Product {
   tags String[] @size(max: 10)
   price Float
   dimensions Json?
-  Orders Order[] @relationship(type: "CONTAINS", direction: IN)
+  Orders Order[] @in(CONTAINS)
 }
 
 relationship Contains {

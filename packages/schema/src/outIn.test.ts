@@ -431,3 +431,59 @@ node A {
     expect(formatSchema(out)).toBe(out);
   });
 });
+
+describe("formatSchema codemod (@relationship → @out / @in)", () => {
+  const OLD = `// Blog
+node User {
+  id    String @id
+  posts Post[] @relationship(type: "AUTHORED", direction: OUT, onDelete: Cascade) // mine
+  tags  Tag[]  @relationship(type: "HAS-TAG")
+  likes Post[] @relationship(direction: IN, type: "LIKED")
+}
+
+node Post {
+  id     String @id
+  author User? @relationship(type: "AUTHORED", direction: IN)
+}
+
+node Tag {
+  id String @id
+}
+`;
+
+  it("rewrites @relationship fields into @out / @in, keeping comments and options", () => {
+    const out = formatSchema(OLD, { codemod: true });
+    expect(out).toBe(`// Blog
+node User {
+  id    String @id
+  posts Post[] @out(AUTHORED, onDelete: Cascade) // mine
+  tags  Tag[]  @relationship(type: "HAS-TAG")
+  likes Post[] @in(LIKED)
+}
+
+node Post {
+  id     String @id
+  author User?  @in(AUTHORED)
+}
+
+node Tag {
+  id String @id
+}
+`);
+    // Same schema, and idempotent.
+    expect(resolveSchema(parseSchema(out))).toEqual(resolveSchema(parseSchema(OLD)));
+    expect(formatSchema(out, { codemod: true })).toBe(out);
+    // Without the option, formatting keeps the syntax.
+    expect(formatSchema(OLD)).toContain('@relationship(type: "AUTHORED", direction: OUT');
+  });
+
+  it("leaves fields mixing syntaxes or with bad arguments for validation to report", () => {
+    const mixed = `node A {
+  id String @id
+  b  A[]    @relationship(type: "T") @out(T)
+  c  A[]    @relationship(type: "U", nope: 1)
+}
+`;
+    expect(formatSchema(mixed, { codemod: true })).toBe(mixed);
+  });
+});

@@ -74,12 +74,12 @@ aligned by hand):
 ```cyphra filename="schema.cyphra"
 node Product {
   productName String?
-  category    Category[] @relationship(type: "PART_OF", direction: OUT)
+  category    Category[] @out(PART_OF)
 }
 
 node Category {
   categoryName String?
-  products     Product[] @relationship(type: "PART_OF", direction: IN)
+  products     Product[] @in(PART_OF)
 }
 ```
 

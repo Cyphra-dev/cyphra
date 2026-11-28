@@ -17,8 +17,8 @@ node Book {
   title String
   summary String?
   year Int
-  authors Author[] @relationship(type: "WROTE", direction: IN)
-  reviews Review[] @relationship(type: "REVIEWS", direction: IN)
+  authors Author[] @in(WROTE)
+  reviews Review[] @in(REVIEWS)
   // reviewCount: Int! (not converted: computed field)
   // averageRating: Float (not converted: computed field)
   // keywords: [String!]! (not converted: computed field)
@@ -34,14 +34,14 @@ node Book {
 node Author {
   name String
   born Int?
-  books Book[] @relationship(type: "WROTE", direction: OUT)
+  books Book[] @out(WROTE)
   // bookCount: Int! (not converted: computed field)
 }
 
 node Review {
   rating Int
   by String
-  book Book[] @relationship(type: "REVIEWS", direction: OUT)
+  book Book[] @out(REVIEWS)
 }
 
 relationship Wrote {

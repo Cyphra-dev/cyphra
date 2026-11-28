@@ -25,19 +25,19 @@ node Person implements Account {
   interests String[] @size(0, 5)
   age Int? @min(13)
   avatarUrl String?
-  Following Person[] @relationship(type: "FOLLOWS", direction: OUT)
-  Followers Person[] @relationship(type: "FOLLOWS", direction: IN)
-  Friends Person[] @relationship(type: "FRIENDS_WITH", direction: OUT)
-  LikedPosts Post[] @relationship(type: "LIKED", direction: OUT)
-  Posts Post[] @relationship(type: "WROTE", direction: OUT)
+  Following Person[] @out(FOLLOWS)
+  Followers Person[] @in(FOLLOWS)
+  Friends Person[] @out(FRIENDS_WITH)
+  LikedPosts Post[] @out(LIKED)
+  Posts Post[] @out(WROTE)
 }
 
 node Post {
   id String @id
   body String @length(1, 5000)
   revision Int @min(1)
-  Author Person[] @relationship(type: "WROTE", direction: IN)
-  LikedBy Person[] @relationship(type: "LIKED", direction: IN)
+  Author Person[] @in(WROTE)
+  LikedBy Person[] @in(LIKED)
   // legacyScore (not converted: Type.Union)
 }
 

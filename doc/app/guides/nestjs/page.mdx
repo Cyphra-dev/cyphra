@@ -98,15 +98,15 @@ node Account {
   id       String     @id @default(uuid())
   owner    String     @unique
   balance  Int        @default(0)
-  sent     Transfer[] @relationship(type: "SENT", direction: OUT)
-  received Transfer[] @relationship(type: "RECEIVED", direction: OUT)
+  sent     Transfer[] @out(SENT)
+  received Transfer[] @out(RECEIVED)
 }
 
 node Transfer {
   id     String  @id @default(uuid())
   amount Int
-  from   Account @relationship(type: "SENT", direction: IN)
-  to     Account @relationship(type: "RECEIVED", direction: IN)
+  from   Account @in(SENT)
+  to     Account @in(RECEIVED)
 }
 ```
 

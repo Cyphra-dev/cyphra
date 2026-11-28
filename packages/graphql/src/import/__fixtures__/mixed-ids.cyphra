@@ -30,7 +30,7 @@ node Step implements Activity {
 
 node Course {
   id String @id @default(uuid())
-  contains Activity[] @relationship(type: "CONTAINS", direction: OUT)
+  contains Activity[] @out(CONTAINS)
 }
 
 node Video implements Media {

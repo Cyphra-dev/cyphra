@@ -43,7 +43,7 @@ and a mapper built for tables has no place for edge properties, labels or paths.
 | row                              | node                                                                                 |
 | column                           | property (a scalar field)                                                            |
 | primary key, unique column       | `@id`, `@unique`: uniqueness constraints on the label                                |
-| foreign key                      | relationship: `@relationship(type: "AUTHORED", direction: OUT)`                      |
+| foreign key                      | relationship: `@out(AUTHORED)`                                                       |
 | join table (many-to-many)        | relationship; its extra columns become a `relationship { … }` model, read as `$edge` |
 | `JOIN`                           | a pattern, `(u:User)-[:AUTHORED]->(p:Post)`; `include` / `select` in the client      |
 | recursive CTE (`WITH RECURSIVE`) | variable-length path: `traverse`, `shortestPath`, `allShortestPaths`                 |
@@ -62,7 +62,7 @@ client reads and writes it as `$edge`:
 node User {
   id        String @id @default(cuid())
   email     String @unique
-  following User[] @relationship(type: "FOLLOWS", direction: OUT)
+  following User[] @out(FOLLOWS)
 }
 
 relationship Follows {
@@ -165,7 +165,7 @@ union SearchHit = Post | User | Comment
 
 node Board {
   id    String      @id @default(cuid())
-  items SearchHit[] @relationship(type: "SHOWS", direction: OUT)
+  items SearchHit[] @out(SHOWS)
 }
 ```
 
@@ -307,8 +307,8 @@ node User {
   email     String   @unique
   name      String?
   createdAt DateTime @default(now())
-  posts     Post[]   @relationship(type: "AUTHORED", direction: OUT)
-  following User[]   @relationship(type: "FOLLOWS", direction: OUT)
+  posts     Post[]   @out(AUTHORED)
+  following User[]   @out(FOLLOWS)
 }
 
 node Post {
@@ -316,7 +316,7 @@ node Post {
   title     String
   tags      String[]
   published Boolean  @default(false)
-  author    User?    @relationship(type: "AUTHORED", direction: IN)
+  author    User?    @in(AUTHORED)
 }
 
 relationship Follows {
@@ -460,7 +460,7 @@ The left column uses the names from the Prisma ORM 7
 | ---------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
 | `schema.prisma`                                | `schema.cyphra` (`cyphra import prisma` converts one: [details](/cli#import-from-prisma))                 |
 | `model User { … }`                             | `node User { … }`                                                                                         |
-| `@relation(fields: […], references: […])`      | `@relationship(type: "AUTHORED", direction: OUT)`                                                         |
+| `@relation(fields: […], references: […])`      | `@out(AUTHORED)` / `@in(AUTHORED)`                                                                        |
 | implicit or explicit many-to-many join table   | a relationship; its properties go in a `relationship { … }` model                                         |
 | `@id`, `@unique`, `@@index`                    | `@id`, `@unique`, `@index` (Neo4j constraints and range indexes)                                          |
 | `prisma generate`                              | `cyphra generate`                                                                                         |

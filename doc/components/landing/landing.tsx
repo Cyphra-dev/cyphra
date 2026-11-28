@@ -14,21 +14,18 @@ node User {
   id        String  @id @default(cuid())
   email     String  @unique
   name      String?
-  posts     Post[]  @relationship(type: "AUTHORED", direction: OUT)
-  following User[]  @relationship(type: "FOLLOWS", direction: OUT)
+  posts     Post[]  @out(AUTHORED)
+  following User[]  @out(FOLLOWS)
 }
 
 node Post {
   id        String  @id @default(uuid())
   title     String
   published Boolean @default(false)
-  author    User?   @relationship(type: "AUTHORED", direction: IN)
+  author    User?   @in(AUTHORED)
 }
 
-relationship Follows {
-  type "FOLLOWS"
-  from User
-  to   User
+relationship FOLLOWS {
   since DateTime @default(now())
 }
 `;
@@ -55,8 +52,8 @@ export type Post = {
   published: boolean;
 };
 
-/** \`Follows\` (\`:FOLLOWS\`) edge properties. */
-export type Follows = {
+/** \`FOLLOWS\` (\`:FOLLOWS\`) edge properties. */
+export type FOLLOWS = {
   since: Date;
 };
 
@@ -81,7 +78,7 @@ const alice = await db.user.create({
 });
 
 alice.posts;                    // Post[]
-alice.following[0].$edge.since; // Date, from the Follows edge
+alice.following[0].$edge.since; // Date, from the FOLLOWS edge
 `;
 
 /** Home "Neo4j from TypeScript" example: the driver's untyped records, then the same read typed. */
@@ -613,7 +610,7 @@ export function Landing() {
             <div className={`${styles.graphPanel} ${styles.reveal}`}>
               <SchemaModel />
               <p className={styles.graphCaption}>
-                Your schema is a graph too. <code>Follows</code> is a relationship model, so{" "}
+                Your schema is a graph too. <code>FOLLOWS</code> types its edges, so{" "}
                 <code>since</code> is typed on the edge.
               </p>
             </div>

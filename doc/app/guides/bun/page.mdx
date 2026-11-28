@@ -37,13 +37,13 @@ node User {
   id    String @id @default(uuid())
   email String @unique
   name  String?
-  posts Post[] @relationship(type: "AUTHORED", direction: OUT)
+  posts Post[] @out(AUTHORED)
 }
 
 node Post {
   id     String @id @default(uuid())
   title  String
-  author User?  @relationship(type: "AUTHORED", direction: IN)
+  author User?  @in(AUTHORED)
 }
 ```
 

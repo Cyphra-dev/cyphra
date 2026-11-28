@@ -6,13 +6,13 @@
 node User {
   id    String @id @default(cuid())
   email String @unique
-  posts Post[] @relationship(type: "AUTHORED", direction: OUT)
+  posts Post[] @out(AUTHORED)
 }
 
 node Post {
   id     String @id @default(uuid())
   title  String
-  author User?  @relationship(type: "AUTHORED", direction: IN)
+  author User?  @in(AUTHORED)
 }
 ```
 

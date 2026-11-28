@@ -37,7 +37,7 @@ node User {
   // nickname comes from the old app
   nickname String?
   age Int?
-  posts Post[] @relationship(type: "WROTE", direction: OUT)
+  posts Post[] @out(WROTE)
   // loc: Geo (not converted: type not supported)
 }
 
@@ -73,7 +73,7 @@ node Post {
 
   it("keeps an existing relationship model", () => {
     const existing = `node A {
-  bs B[] @relationship(type: "R", direction: OUT)
+  bs B[] @out(R)
 }
 
 node B {

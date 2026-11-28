@@ -191,7 +191,8 @@ program
   .command("format")
   .description("Reformat schema.cyphra in place, keeping comments")
   .option("--check", "exit with 1 instead of writing when the schema is not formatted")
-  .action(async (opts: { check?: boolean }) => {
+  .option("--codemod", "also rewrite @relationship(…) fields into @out(…) / @in(…)")
+  .action(async (opts: { check?: boolean; codemod?: boolean }) => {
     const cwd = process.cwd();
     const config = await loadConfig(cwd);
     process.exitCode = await runFormat(cwd, config, opts);

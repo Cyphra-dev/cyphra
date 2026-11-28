@@ -40,4 +40,25 @@ describe("runFormat", () => {
     await writeFile(config.schema, "node User {\n  id String @id\n}\n");
     expect(await runFormat(dir, config, { check: true })).toBe(0);
   });
+
+  it("--codemod rewrites @relationship fields into @out / @in; plain format only hints", async () => {
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    const raw =
+      'node User {\n  id    String @id\n  posts Post[] @relationship(type: "AUTHORED", direction: OUT)\n}\n\nnode Post {\n  id String @id\n}\n';
+    await writeFile(config.schema, raw);
+    expect(await runFormat(dir, config)).toBe(0);
+    expect(await readFile(config.schema, "utf8")).toBe(raw);
+    expect(log.mock.calls.map((c) => String(c[0]))).toEqual([
+      "schema.cyphra is formatted.",
+      "hint: 1 relation field uses @relationship(…): `cyphra format --codemod` rewrites it into @out(…) / @in(…).",
+    ]);
+    expect(await runFormat(dir, config, { check: true, codemod: true })).toBe(1);
+    log.mockClear();
+    expect(await runFormat(dir, config, { codemod: true })).toBe(0);
+    const out = await readFile(config.schema, "utf8");
+    expect(out).toContain("  posts Post[] @out(AUTHORED)\n");
+    expect(log.mock.calls.map((c) => String(c[0]))).toEqual(["Formatted schema.cyphra."]);
+    // Idempotent.
+    expect(await runFormat(dir, config, { check: true, codemod: true })).toBe(0);
+  });
 });

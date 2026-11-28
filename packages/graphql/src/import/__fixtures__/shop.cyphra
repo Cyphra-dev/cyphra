@@ -26,22 +26,22 @@ node Item {
   weightKg Float?
   location Point?
   tags String[]
-  categories Category[] @relationship(type: "IN_CATEGORY", direction: OUT)
-  reviews Review[] @relationship(type: "REVIEWS", direction: IN)
+  categories Category[] @out(IN_CATEGORY)
+  reviews Review[] @in(REVIEWS)
   // attributes: JSON (not converted: type not supported)
 }
 
 node Category {
   id String @id @default(uuid())
   name String
-  parent Category? @relationship(type: "CHILD_OF", direction: OUT)
-  products Item[] @relationship(type: "IN_CATEGORY", direction: IN)
+  parent Category? @out(CHILD_OF)
+  products Item[] @in(IN_CATEGORY)
 }
 
 node Customer {
   id String @id @default(uuid())
   email String
-  orders Order[] @relationship(type: "PLACED", direction: OUT)
+  orders Order[] @out(PLACED)
   // wishlist: [Purchasable!]! (not converted: relationship not converted)
 }
 
@@ -50,8 +50,8 @@ node Order {
   status OrderStatus @default(PENDING)
   placedAt DateTime @default(now())
   deliveryWindow LocalTime?
-  customer Customer @relationship(type: "PLACED", direction: IN)
-  lines Item[] @relationship(type: "CONTAINS", direction: OUT)
+  customer Customer @in(PLACED)
+  lines Item[] @out(CONTAINS)
   // total: Float (not converted: computed field)
 }
 
@@ -59,7 +59,7 @@ node Review {
   id String @id @default(uuid())
   stars Int
   body String?
-  product Item @relationship(type: "REVIEWS", direction: OUT)
+  product Item @out(REVIEWS)
 }
 
 relationship OrderLine {

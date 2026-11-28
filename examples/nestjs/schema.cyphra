@@ -6,14 +6,14 @@ node Account {
   owner     String     @unique @length(2, 40)
   balance   Int        @default(0)
   createdAt DateTime   @default(now())
-  sent      Transfer[] @relationship(type: "SENT", direction: OUT)
-  received  Transfer[] @relationship(type: "RECEIVED", direction: OUT)
+  sent      Transfer[] @out(SENT)
+  received  Transfer[] @out(RECEIVED)
 }
 
 node Transfer {
   id        String   @id @default(uuid())
   amount    Int
   createdAt DateTime @default(now()) @index
-  from      Account  @relationship(type: "SENT", direction: IN)
-  to        Account  @relationship(type: "RECEIVED", direction: IN)
+  from      Account  @in(SENT)
+  to        Account  @in(RECEIVED)
 }

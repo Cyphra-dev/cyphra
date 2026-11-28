@@ -35,8 +35,8 @@ node User {
   email String @unique
   name String
   avatarUrl String?
-  memberships Organization[] @relationship(type: "MEMBERSHIP", direction: OUT)
-  invitations Invitation[] @relationship(type: "INVITED_BY", direction: OUT)
+  memberships Organization[] @out(MEMBERSHIP)
+  invitations Invitation[] @out(INVITED_BY)
   createdAt DateTime @default(now())
 }
 
@@ -46,10 +46,10 @@ node Organization {
   name String
   plan Plan @default(FREE)
   settings Json?
-  memberships User[] @relationship(type: "MEMBERSHIP", direction: IN)
-  projects Project[] @relationship(type: "HAS_PROJECTS", direction: OUT, onDelete: Cascade)
-  apiKeys ApiKey[] @relationship(type: "HAS_API_KEYS", direction: OUT, onDelete: Cascade)
-  invitations Invitation[] @relationship(type: "HAS_INVITATIONS", direction: OUT, onDelete: Cascade)
+  memberships User[] @in(MEMBERSHIP)
+  projects Project[] @out(HAS_PROJECTS, onDelete: Cascade)
+  apiKeys ApiKey[] @out(HAS_API_KEYS, onDelete: Cascade)
+  invitations Invitation[] @out(HAS_INVITATIONS, onDelete: Cascade)
   createdAt DateTime @default(now())
   updatedAt DateTime @default(now())
 }
@@ -59,7 +59,7 @@ node Project {
   name String
   description String?
   archived Boolean @default(false)
-  org Organization @relationship(type: "HAS_PROJECTS", direction: IN)
+  org Organization @in(HAS_PROJECTS)
   createdAt DateTime @index @default(now())
   // orgId String (foreign key of org: replaced by the edge)
 }
@@ -70,7 +70,7 @@ node ApiKey {
   hashedKey String @unique
   lastUsedAt DateTime?
   expiresAt DateTime?
-  org Organization @relationship(type: "HAS_API_KEYS", direction: IN)
+  org Organization @in(HAS_API_KEYS)
   // orgId String (foreign key of org: replaced by the edge)
 }
 
@@ -79,8 +79,8 @@ node Invitation {
   email String
   role MemberRole @default(MEMBER)
   token String @unique @default(uuid())
-  org Organization @relationship(type: "HAS_INVITATIONS", direction: IN)
-  invitedBy User? @relationship(type: "INVITED_BY", direction: IN)
+  org Organization @in(HAS_INVITATIONS)
+  invitedBy User? @in(INVITED_BY)
   expiresAt DateTime
   // orgId String (foreign key of org: replaced by the edge)
   // invitedById String? (foreign key of invitedBy: replaced by the edge)

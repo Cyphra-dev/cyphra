@@ -75,10 +75,8 @@ describe("authSchema", () => {
       "Cascade",
     ]);
     const text = printSchemaDocument(graph.document);
-    expect(text).toContain(
-      'as A[] @relationship(type: "HAS_A", direction: OUT, onDelete: Cascade)',
-    );
-    expect(text).toContain('ds D[] @relationship(type: "HAS_D", direction: OUT)');
+    expect(text).toContain("as A[] @out(HAS_A, onDelete: Cascade)");
+    expect(text).toContain("ds D[] @out(HAS_D)");
   });
 
   it("turns foreign keys into edges, not properties", () => {
@@ -133,13 +131,9 @@ describe("authSchema", () => {
 
   it("covers plugin models (organization) with one edge per foreign key", () => {
     const text = printSchemaDocument(authSchema({ plugins: [organization()] }).document);
-    expect(text).toContain(
-      'organization Organization @relationship(type: "HAS_MEMBER", direction: IN)',
-    );
-    expect(text).toContain('inviter User @relationship(type: "HAS_INVITATION", direction: IN)');
-    expect(text).toContain(
-      'members Member[] @relationship(type: "HAS_MEMBER", direction: OUT, onDelete: Cascade)',
-    );
+    expect(text).toContain("organization Organization @in(HAS_MEMBER)");
+    expect(text).toContain("inviter User @in(HAS_INVITATION)");
+    expect(text).toContain("members Member[] @out(HAS_MEMBER, onDelete: Cascade)");
   });
 
   it("gives distinct edge types and names when a model references the same parent twice", () => {

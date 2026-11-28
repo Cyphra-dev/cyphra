@@ -28,7 +28,7 @@ node Customer {
   email String @unique
   name String
   addresses Json @default("[]")
-  orders Order[] @relationship(type: "HAS_ORDERS", direction: OUT, onDelete: Restrict)
+  orders Order[] @out(HAS_ORDERS, onDelete: Restrict)
   createdAt DateTime @default(now())
 }
 
@@ -36,9 +36,9 @@ node Category {
   id Int @id
   name String
   slug String @unique
-  parent Category? @relationship(type: "CATEGORY_TREE", direction: IN)
-  children Category[] @relationship(type: "CATEGORY_TREE", direction: OUT)
-  products Product[] @relationship(type: "HAS_PRODUCTS", direction: OUT, onDelete: Restrict)
+  parent Category? @in(CATEGORY_TREE)
+  children Category[] @out(CATEGORY_TREE)
+  products Product[] @out(HAS_PRODUCTS, onDelete: Restrict)
   // parentId Int? (foreign key of parent: replaced by the edge)
 }
 
@@ -50,8 +50,8 @@ node Product {
   stock Int @default(0)
   tags String[]
   releasedOn Date?
-  category Category @relationship(type: "HAS_PRODUCTS", direction: IN)
-  orderItems Order[] @relationship(type: "ORDER_ITEM", direction: IN, onDelete: Restrict)
+  category Category @in(HAS_PRODUCTS)
+  orderItems Order[] @in(ORDER_ITEM, onDelete: Restrict)
   // image Bytes? (not converted: type not supported)
   // categoryId Int (foreign key of category: replaced by the edge)
 }
@@ -61,8 +61,8 @@ node Order {
   status OrderStatus @default(PENDING)
   placedAt DateTime @index @default(now())
   total Float
-  customer Customer @relationship(type: "HAS_ORDERS", direction: IN)
-  items Product[] @relationship(type: "ORDER_ITEM", direction: OUT)
+  customer Customer @in(HAS_ORDERS)
+  items Product[] @out(ORDER_ITEM)
   // customerId String (foreign key of customer: replaced by the edge)
 }
 

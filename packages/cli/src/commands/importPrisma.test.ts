@@ -54,9 +54,7 @@ describe("cyphra import prisma", () => {
     expect(await runImportPrisma(dir, ["schema.prisma"])).toBe(0);
     const schema = await readFile(join(dir, "schema.cyphra"), "utf8");
     expect(schema).toMatch(/^\/\/ Imported from a Prisma schema with `cyphra import prisma`\./);
-    expect(schema).toContain(
-      'posts Post[] @relationship(type: "HAS_POSTS", direction: OUT, onDelete: Cascade)',
-    );
+    expect(schema).toContain("posts Post[] @out(HAS_POSTS, onDelete: Cascade)");
     expect(schema).toContain("// authorId String (foreign key of author: replaced by the edge)");
     expect(out.join("\n")).toBe("Wrote schema.cyphra (3 node(s), 0 relationship model(s))");
     const report = err.join("\n");

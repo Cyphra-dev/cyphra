@@ -2,13 +2,13 @@ node User {
   id    String @id @default(cuid())
   email String @unique
   name  String @index
-  follows User[] @relationship(type: "FOLLOWS", direction: OUT)
+  follows User[] @out(FOLLOWS)
 }
 
 node Post {
   id     String @id
   title  String
-  author User? @relationship(type: "AUTHORED", direction: IN)
+  author User? @in(AUTHORED)
 }
 
 relationship Follows {

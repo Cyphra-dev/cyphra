@@ -106,7 +106,7 @@ still depend on, declare an [`onDelete` rule](/schema#ondelete-rules) on the rel
 node User {
   id    String @id @default(cuid())
   email String @unique
-  posts Post[] @relationship(type: "AUTHORED", direction: OUT, onDelete: Cascade)
+  posts Post[] @out(AUTHORED, onDelete: Cascade)
 }
 ```
 

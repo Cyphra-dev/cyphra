@@ -50,7 +50,7 @@ describe("cyphra import neogma", () => {
     const schema = await readFile(join(dir, "schema.cyphra"), "utf8");
     expect(schema).toMatch(/^\/\/ Imported from neogma models with `cyphra import neogma`\./);
     expect(schema).toContain("  email String @email\n  age Int @min(0)\n");
-    expect(schema).toContain('  Orders Order[] @relationship(type: "PLACED", direction: OUT)');
+    expect(schema).toContain("  Orders Order[] @out(PLACED)");
     expect(out.join("\n")).toBe("Wrote schema.cyphra (2 node(s), 0 relationship model(s))");
     const report = err.join("\n");
     expect(report).toMatch(/User\s+method greet: instance method: not converted/);

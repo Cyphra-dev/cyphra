@@ -40,9 +40,9 @@ node User {
   name       String?
   loginCount Int      @default(0)
   createdAt  DateTime @default(now())
-  posts      Post[]   @relationship(type: "AUTHORED", direction: OUT)
-  following  User[]   @relationship(type: "FOLLOWS", direction: OUT)
-  followers  User[]   @relationship(type: "FOLLOWS", direction: IN)
+  posts      Post[]   @out(AUTHORED)
+  following  User[]   @out(FOLLOWS)
+  followers  User[]   @in(FOLLOWS)
 }
 
 node Post {
@@ -50,7 +50,7 @@ node Post {
   title     String
   published Boolean  @default(false)
   createdAt DateTime @default(now())
-  author    User?    @relationship(type: "AUTHORED", direction: IN)
+  author    User?    @in(AUTHORED)
 }
 
 relationship Follows {

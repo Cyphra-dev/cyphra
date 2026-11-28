@@ -11,14 +11,14 @@ node User {
   email String @unique // login
   name  String
   // business data
-  projects Project[] @relationship(type: "OWNS", direction: OUT)
+  projects Project[] @out(OWNS)
   plan     String    @default("free")
 }
 
 node Project {
   id    String @id @default(uuid())
   title String
-  owner User   @relationship(type: "OWNS", direction: IN)
+  owner User   @in(OWNS)
 }
 
 relationship Owns {
@@ -46,7 +46,7 @@ describe("mergeAuthSchema", () => {
       "  email String @unique // login",
       "  name  String",
       "  // business data",
-      '  projects Project[] @relationship(type: "OWNS", direction: OUT)',
+      "  projects Project[] @out(OWNS)",
       '  plan     String    @default("free")',
     ]) {
       expect(out).toContain(line);
@@ -54,10 +54,8 @@ describe("mergeAuthSchema", () => {
     expect(out).toContain(userFile.slice(userFile.indexOf("node Project")).trimEnd());
     // Better Auth fields are added to User, and the missing auth nodes are appended.
     expect(out).toContain("  emailVerified Boolean\n");
-    expect(out).toContain(
-      '  sessions Session[] @relationship(type: "HAS_SESSION", direction: OUT, onDelete: Cascade)',
-    );
-    expect(out).toMatch(/node Session \{[\s\S]*user User @relationship\(type: "HAS_SESSION"/);
+    expect(out).toContain("  sessions Session[] @out(HAS_SESSION, onDelete: Cascade)");
+    expect(out).toMatch(/node Session \{[\s\S]*user User @in\(HAS_SESSION/);
 
     const model = resolveSchema(parseSchema(out));
     const user = model.nodes.find((n) => n.name === "User")!;
@@ -92,11 +90,9 @@ describe("mergeAuthSchema", () => {
     const out = mergeAuthSchema(edited, authSchema({ plugins: [twoFactor()] }).document);
     expect(out).toContain("  image String? // custom comment\n");
     expect(out).toContain("  twoFactorEnabled Boolean?\n");
-    expect(out).toContain(
-      '  twoFactors TwoFactor[] @relationship(type: "HAS_TWO_FACTOR", direction: OUT, onDelete: Cascade)',
-    );
+    expect(out).toContain("  twoFactors TwoFactor[] @out(HAS_TWO_FACTOR, onDelete: Cascade)");
     expect(out).toContain("node TwoFactor {");
-    expect(out).toContain('  projects Project[] @relationship(type: "OWNS", direction: OUT)');
+    expect(out).toContain("  projects Project[] @out(OWNS)");
   });
 
   it("keeps the developer's @@ attributes and adds Better Auth's compound indexes", () => {
@@ -133,10 +129,10 @@ describe("mergeAuthSchema", () => {
 
   it("reprints a node whose layout it cannot edit line by line, keeping extra fields", () => {
     const compact = `node User { id String @id
-  projects Project[] @relationship(type: "OWNS", direction: OUT) }
+  projects Project[] @out(OWNS) }
 node Project {
   id String @id
-  owner User? @relationship(type: "OWNS", direction: IN)
+  owner User? @in(OWNS)
 }
 `;
     const out = mergeAuthSchema(compact, core);
@@ -148,14 +144,14 @@ node Project {
   it("replaces a clashing auth field and throws on a file that does not parse", () => {
     const clash = `node User {
   id String @id
-  sessions Ghost[] @relationship(type: "X", direction: OUT)
+  sessions Ghost[] @out(X)
 }
 node Ghost {
   id String @id
 }
 `;
     expect(mergeAuthSchema(clash, core)).toContain(
-      '  sessions Session[] @relationship(type: "HAS_SESSION", direction: OUT, onDelete: Cascade)',
+      "  sessions Session[] @out(HAS_SESSION, onDelete: Cascade)",
     );
     expect(() => mergeAuthSchema("node User {", core)).toThrow();
   });

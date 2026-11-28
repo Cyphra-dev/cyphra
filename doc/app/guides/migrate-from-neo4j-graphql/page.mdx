@@ -99,7 +99,7 @@ node Movie {
   id String @id @default(uuid())
   title String
   released Int?
-  actors Person[] @relationship(type: "ACTED_IN", direction: IN)
+  actors Person[] @in(ACTED_IN)
   // actorCount: Int! (not converted: computed field)
 
   @@fulltext([title], name: "MovieTitle")
@@ -108,7 +108,7 @@ node Movie {
 node Person {
   id String @id @default(uuid())
   name String
-  movies Movie[] @relationship(type: "ACTED_IN", direction: OUT)
+  movies Movie[] @out(ACTED_IN)
 }
 
 relationship ActedIn {

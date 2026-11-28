@@ -10,21 +10,19 @@ read it.
 
 ```cyphra
 node User {
-  id    String @id @default(cuid())
-  email String @unique
-  name  String @index
+  id        String @id @default(cuid())
+  email     String @unique
+  name      String @index
+  following User[] @out(FOLLOWS)
 }
 
 node Post {
   id     String @id
   title  String
-  author User? @relationship(type: "AUTHORED", direction: IN)
+  author User?  @in(AUTHORED)
 }
 
-relationship Follows {
-  type "FOLLOWS"
-  from User
-  to User
+relationship FOLLOWS {
   since     DateTime @index
   requestId String   @unique
 }
@@ -185,7 +183,7 @@ node Chunk {
   id        String        @id @default(cuid())
   text      String
   embedding Vector(1536)? @vectorIndex(similarity: cosine)
-  document  Document?     @relationship(type: "PART_OF", direction: OUT)
+  document  Document?     @out(PART_OF)
 }
 ```
 
@@ -430,7 +428,9 @@ node User {
 
 `direction` defaults to `OUT`. It is also how to write a type that is not an identifier
 (`@relationship(type: "HAS-TAG", direction: OUT)`). A field uses one form: `@out(…)` together
-with `@relationship(…)` (or `@out` with `@in`) is an error.
+with `@relationship(…)` (or `@out` with `@in`) is an error. To move a schema to `@out` / `@in`, run
+`cyphra format --codemod` (the editor offers the same as a quick fix, field by field); plain
+`cyphra format` keeps the syntax you wrote and only says how many fields it would rewrite.
 
 ### Long-form relationship blocks
 
@@ -463,14 +463,14 @@ sessions are …".
 ```cyphra
 node User {
   id       String    @id @default(cuid())
-  sessions Session[] @relationship(type: "HAS_SESSION", direction: OUT, onDelete: Cascade)
-  invoices Invoice[] @relationship(type: "BILLED", direction: OUT, onDelete: Restrict)
-  reviews  Post[]    @relationship(type: "REVIEWED", direction: OUT) // SetNull
+  sessions Session[] @out(HAS_SESSION, onDelete: Cascade)
+  invoices Invoice[] @out(BILLED, onDelete: Restrict)
+  reviews  Post[]    @out(REVIEWED) // SetNull
 }
 
 node Session {
   id   String @id @default(cuid())
-  user User   @relationship(type: "HAS_SESSION", direction: IN)
+  user User   @in(HAS_SESSION)
 }
 ```
 
@@ -500,7 +500,7 @@ interface Person {
   id      String  @id @default(cuid())
   email   String  @unique
   name    String
-  manager Person? @relationship(type: "MANAGES", direction: IN)
+  manager Person? @in(MANAGES)
 
   @@fulltext([name])
 }
@@ -550,7 +550,7 @@ every label up the chain.
 ```cyphra
 interface Staff extends Person {
   badge String @unique
-  team  Team?  @relationship(type: "MEMBER_OF", direction: OUT)
+  team  Team?  @out(MEMBER_OF)
 }
 
 interface Contact extends Person {
@@ -609,12 +609,12 @@ union SearchHit = Post | User | Comment
 
 node Board {
   id    String      @id @default(cuid())
-  items SearchHit[] @relationship(type: "SHOWS", direction: OUT, onDelete: Cascade)
+  items SearchHit[] @out(SHOWS, onDelete: Cascade)
 }
 
 node Pin {
   id      String     @id @default(cuid())
-  subject SearchHit? @relationship(type: "PINS", direction: OUT)
+  subject SearchHit? @out(PINS)
 }
 ```
 
@@ -644,7 +644,7 @@ node Pin {
 ```cyphra
 node Board {
   id    String      @id @default(cuid())
-  picks SearchHit[] @relationship(type: "PICKS", direction: OUT)
+  picks SearchHit[] @out(PICKS)
 }
 
 relationship Pick {
@@ -702,7 +702,7 @@ property or constraint of their own, as dynamic labels.
 
 ## Decorators
 
-`@id`, `@unique`, `@vectorIndex(…)` (on `Vector(N)` fields, see above), `@@fulltext([…])`, `@@unique([…])`, `@@index([…])` and `@@labels([…])` (model attributes, see above), `@index` (Neo4j 5+ **range** index, or a **point** index on a `Point` / `CartesianPoint` field: on nodes via `(n:Label)`, on rich relationships via `()-[r:TYPE]-()`), `@default(…)`, `@relationship(…)`, and the [validation rules](#validation-rules) `@length`, `@size`,
+`@id`, `@unique`, `@vectorIndex(…)` (on `Vector(N)` fields, see above), `@@fulltext([…])`, `@@unique([…])`, `@@index([…])` and `@@labels([…])` (model attributes, see above), `@index` (Neo4j 5+ **range** index, or a **point** index on a `Point` / `CartesianPoint` field: on nodes via `(n:Label)`, on rich relationships via `()-[r:TYPE]-()`), `@default(…)`, `@out(…)` / `@in(…)` (and the older `@relationship(…)`, see [Relationships](#relationships)), and the [validation rules](#validation-rules) `@length`, `@size`,
 `@min`, `@max`, `@email`, `@url`, `@regex` and `@nonEmpty`. On **nodes**, you cannot combine `@index` with `@id` or `@unique` on the same field (those constraints already imply an index). On **relationship** models, `@unique` maps to a **relationship property uniqueness** constraint (Neo4j **5.7+**); `@id` is not allowed on relationship fields.
 
 ## Programmatic API
