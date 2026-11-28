@@ -37,7 +37,7 @@
     }
   },
   "devDependencies": {
-    "@nestjs/common": "12.4.0",
+    "@nestjs/common": "12.6.1",
     "@nestjs/core": "12.4.0",
     "@nestjs/terminus": "12.1.0",
     "@nestjs/testing": "12.4.0",
