@@ -1101,7 +1101,9 @@ export const api = defineGraphQL<CyphraTypeMap, Ctx>({
 User` field colliding with a generated one (a scalar, a relation, a computed or Cypher-backed
   field) is an error, so is a resolver for a generated field or for a field the SDL does not
   declare. A field added to a generated type needs a resolver. `extend type Mutation` works when
-  no generated mutation is on (it becomes the `Mutation` type).
+  no generated mutation is on (it becomes the `Mutation` type), and `extend type Query` works
+  when every generated read is off (`defaults: { operations: { read: false } }`): an API may
+  serve only custom root fields. The API needs at least one `Query` field, generated or added.
 - **`ctx.cyphra` is the request's client with the rules applied**, so a custom resolver cannot read
   around a rule by accident; an `update` through it on a node outside the `update` rule is
   `NOT_FOUND`, as from a generated field. `ctx.cyphra.$unsafe` is the raw client.
