@@ -63,6 +63,9 @@ const COLUMNS: { title: string; links: [string, string][] }[] = [
       ["Cyphra Cloud", "/cloud"],
       ["Pricing", "/pricing"],
       ["Dashboard", "https://app.cyphra.dev"],
+      ["Terms of Service", "/terms"],
+      ["Privacy Policy", "/privacy"],
+      ["DPA", "/dpa"],
     ],
   },
 ];

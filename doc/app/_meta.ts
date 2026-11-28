@@ -39,6 +39,15 @@ const meta: MetaRecord = {
   "neo4j-orm": { type: "page", title: "Neo4j ORM", display: "hidden", theme: CONTENT_SECTION },
   compare: { type: "page", title: "Compare", display: "hidden", theme: CONTENT_SECTION },
   benchmarks: { type: "page", title: "Benchmarks", display: "hidden", theme: CONTENT_SECTION },
+  // Legal pages: linked from the footer only, never in the navbar or sidebar.
+  terms: { type: "page", title: "Terms of Service", display: "hidden", theme: CONTENT_SECTION },
+  privacy: { type: "page", title: "Privacy Policy", display: "hidden", theme: CONTENT_SECTION },
+  dpa: {
+    type: "page",
+    title: "Data Processing Agreement",
+    display: "hidden",
+    theme: CONTENT_SECTION,
+  },
   operator: { type: "page", title: "Operator", href: "https://github.com/Cyphra-dev/operator" },
   "--start": { type: "separator", title: "Start here" },
   "getting-started": "Getting started",
