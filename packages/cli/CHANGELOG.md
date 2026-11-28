@@ -1,5 +1,22 @@
 # @cyphra/cli
 
+## 0.31.0
+
+### Patch Changes
+
+- aa32727: `cyphra graphql …` loads TypeScript config and `--typedefs` modules that import siblings NodeNext style (`./rules.js` for `rules.ts`) without `NODE_OPTIONS="--import tsx"`: the CLI registers module hooks that resolve a missing `./x.js` from a `.ts` module to `./x.ts` and transpile `.ts` / `.mts` files with `typescript`. Nothing is written next to the modules any more.
+- da5f7a0: `cyphra graphql migrate-operations` (`migrate.translateDocument`) leaves a document that only uses custom fields (served by `extend` in the native API) byte-identical and reports it as `unchanged` (new `DocumentStatus`), instead of "translated" and rewrapped; `--check` no longer fails on it. In a translated document, an operation whose translation is itself keeps its source text too.
+- 1abed04: Describe Cyphra as an OGM (object-graph mapper) for Neo4j in the package descriptions and READMEs, instead of an ORM. No code or API change.
+- Updated dependencies [5b6623b]
+- Updated dependencies [76bcb93]
+- Updated dependencies [da5f7a0]
+- Updated dependencies [37e493c]
+- Updated dependencies [1abed04]
+  - @cyphra/graphql@0.31.0
+  - @cyphra/runtime@0.31.0
+  - @cyphra/migrator@0.31.0
+  - @cyphra/schema@0.31.0
+
 ## 0.30.0
 
 ### Patch Changes

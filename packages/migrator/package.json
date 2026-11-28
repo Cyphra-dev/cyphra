@@ -1,6 +1,6 @@
 {
   "name": "@cyphra/migrator",
-  "version": "0.30.0",
+  "version": "0.31.0",
   "description": "Versioned schema migrations for Neo4j: constraints, indexes and data migrations (Cyphra)",
   "type": "module",
   "sideEffects": false,
