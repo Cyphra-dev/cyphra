@@ -98,12 +98,13 @@ FAKGROUP will:
 2. **Encryption in transit:** database endpoints use TLS (`neo4j+s://` for Bolt, HTTPS for the HTTP
    API) `[confirm: TLS enforced on every production cluster]`. The website, dashboard and API use
    HTTPS.
-3. **Encryption at rest:** `[confirm: whether database volumes and backups are encrypted at rest, and how]`.
+3. **Encryption at rest:** database volumes and backups are encrypted at rest with AES-256, with keys
+   managed by AWS Key Management Service.
 4. **Credentials:** a generated password per database. Database passwords are stored encrypted with
    AES-256-GCM. API keys and agent tokens are stored only as hashes.
 5. **Backups:** on the plans that include them, a daily dump stored in S3-compatible object storage
-   outside the database cluster, kept for the retention period of the plan
-   `[confirm: backup storage provider, region, and that backups are enabled in production]`.
+   outside the database cluster, kept for the retention period of the plan. Backups are stored in Amazon S3, in the same region as
+   the database.
 6. **Access control:** access to production systems is limited to authorized staff who need it
    `[confirm]`.
 7. **Monitoring:** database status and storage use are monitored.
@@ -115,11 +116,11 @@ FAKGROUP will:
 8.1. You give FAKGROUP general authorization to use sub-processors. The sub-processors that may
 process Customer Data are:
 
-| Sub-processor                        | Role                                                                               | Location                                        |
-| ------------------------------------ | ---------------------------------------------------------------------------------- | ----------------------------------------------- |
-| Amazon Web Services `[confirm]`      | Infrastructure that runs the databases                                             | EU (Ireland) or US (N. Virginia), as you choose |
-| `[confirm: backup storage provider]` | Storage of backups                                                                 | `[confirm]`                                     |
-| Vercel Inc.                          | Runs the dashboard and API; queries run from the dashboard console pass through it | United States and EU `[confirm: regions]`       |
+| Sub-processor            | Role                                                                               | Location                                        |
+| ------------------------ | ---------------------------------------------------------------------------------- | ----------------------------------------------- |
+| Amazon Web Services      | Infrastructure that runs the databases                                             | EU (Ireland) or US (N. Virginia), as you choose |
+| Amazon Web Services (S3) | Storage of backups                                                                 | Same region as the database                     |
+| Vercel Inc.              | Runs the dashboard and API; queries run from the dashboard console pass through it | United States (Washington, D.C.)                |
 
 8.2. The sub-processors used for account and billing data are listed in the
 [Privacy Policy](/privacy).
