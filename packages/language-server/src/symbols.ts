@@ -26,8 +26,8 @@ export function occurrences(doc: SchemaDocument): Occurrence[] {
       continue;
     }
     if (d.kind === "Relationship") {
-      add(d.from, span(d.fromLoc));
-      add(d.to, span(d.toLoc));
+      if (d.from !== undefined) add(d.from, span(d.fromLoc));
+      if (d.to !== undefined) add(d.to, span(d.toLoc));
     } else {
       (d.implements ?? []).forEach((n, i) => add(n, span(d.implementsLocs?.[i])));
       (d.extends ?? []).forEach((n, i) => add(n, span(d.extendsLocs?.[i])));

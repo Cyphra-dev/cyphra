@@ -99,18 +99,30 @@ export type NodeDeclaration = {
   readonly extendsLocs?: readonly SourceRange[];
 };
 
+/**
+ * A `relationship` block: the properties of some edges. Two forms:
+ *
+ * - `relationship AUTHORED { … }` (short form): every `:AUTHORED` edge. `relType` is the name;
+ *   `from` and `to` are absent (the ends are those of the `@out(AUTHORED)` / `@in(AUTHORED)`
+ *   fields).
+ * - `relationship Wrote { type "AUTHORED" from User to Post … }` (long form): the `:AUTHORED`
+ *   edges from a `User` to a `Post`, in a model named `Wrote`.
+ */
 export type RelationshipDeclaration = {
   readonly kind: "Relationship";
   readonly name: string;
+  /** Neo4j relationship type (the name, in the short form). */
   readonly relType: string;
-  readonly from: string;
-  readonly to: string;
+  /** Start node of the long form (absent in the short form). */
+  readonly from?: string;
+  /** End node of the long form (absent in the short form). */
+  readonly to?: string;
   readonly fields: readonly ScalarNodeField[];
   /** Model-level `@@…` attributes (absent when the model has none). */
   readonly attributes?: readonly ModelAttribute[];
   readonly loc?: SourceRange;
   readonly nameLoc?: SourceRange;
-  /** Range of the `type "…"` string literal. */
+  /** Range of the `type "…"` string literal (of the name, in the short form). */
   readonly relTypeLoc?: SourceRange;
   readonly fromLoc?: SourceRange;
   readonly toLoc?: SourceRange;
@@ -182,7 +194,10 @@ export type RelationalNodeField = {
   readonly typeLoc?: SourceRange;
 };
 
-/** Parsed decorator such as `@id` or `@relationship(type: "X", direction: OUT)`. */
+/**
+ * Parsed decorator such as `@id`, `@out(AUTHORED)` (its positional argument has the key `type`) or
+ * `@relationship(type: "X", direction: OUT)`.
+ */
 export type Decorator = {
   readonly name: string;
   readonly args: readonly DecoratorArg[];

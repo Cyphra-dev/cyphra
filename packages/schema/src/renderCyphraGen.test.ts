@@ -10,6 +10,7 @@ const sample = `
 node User {
   id String @id
   posts Post[] @relationship(type: "AUTHORED", direction: OUT)
+  orgs  Organization[] @relationship(type: "MEMBER_OF", direction: OUT)
 }
 
 node Post {

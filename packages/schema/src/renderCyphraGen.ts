@@ -263,6 +263,7 @@ export function collectCodegenModel(doc: SchemaDocument): CodegenModel {
     toLabel: string;
   }[] = [];
   const relTypes = new Set<string>();
+  let resolvedModel: SchemaModel | undefined;
 
   for (const decl of doc.declarations) {
     // A union adds no label.
@@ -271,18 +272,29 @@ export function collectCodegenModel(doc: SchemaDocument): CodegenModel {
       nodeLabels.push(decl.name);
       for (const f of decl.fields) {
         if (f.kind === "Relational") {
-          const t = decoratorStringArg(f.decorators, "relationship", "type");
+          // `@out(TYPE)` / `@in(TYPE)`, or `@relationship(type: "TYPE", …)`.
+          const short = f.decorators.find((d) => d.name === "out" || d.name === "in");
+          const arg = short?.args.find((a) => a.key === "type")?.value;
+          const t =
+            arg?.kind === "identifier"
+              ? arg.value
+              : decoratorStringArg(f.decorators, "relationship", "type");
           if (t) {
             relTypes.add(t);
           }
         }
       }
     } else {
+      // The ends of a short-form block (`relationship AUTHORED { … }`) come from its fields.
+      const resolved =
+        decl.from === undefined
+          ? (resolvedModel ??= resolveSchema(doc)).relationships.find((r) => r.name === decl.name)
+          : undefined;
       relationshipModels.push({
         name: decl.name,
         neo4jType: decl.relType,
-        fromLabel: decl.from,
-        toLabel: decl.to,
+        fromLabel: decl.from ?? resolved?.from ?? "",
+        toLabel: decl.to ?? resolved?.to ?? "",
       });
       relTypes.add(decl.relType);
     }

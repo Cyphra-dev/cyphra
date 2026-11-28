@@ -4,19 +4,26 @@ import {
   parseSchema,
   renderCyphraGenSource,
   renderZodSource,
+  schemaWarnings,
   validateSchema,
 } from "@cyphra/schema";
 import { DEFAULT_ZOD_OUTPUT, type CyphraConfig } from "../config.js";
 import { resolveUnderRoot } from "../paths.js";
 import { untilInterrupted, watchFile, type WatchFn } from "../watch.js";
+import { warningLines } from "./validateSchema.js";
 
 /** A generated file: absolute path and content. */
 type Output = { readonly path: string; readonly content: string };
 
 /** Every file `cyphra generate` writes for `source`: the client, then the zod schemas if configured. */
-function generateFrom(source: string, config: CyphraConfig): Output[] {
-  const doc = parseSchema(source);
+function generateFrom(source: string, config: CyphraConfig, cwd?: string): Output[] {
+  const doc = parseSchema(source, { locations: true });
   validateSchema(doc);
+  if (cwd !== undefined) {
+    for (const line of warningLines(path.relative(cwd, config.schema), schemaWarnings(doc))) {
+      console.warn(line);
+    }
+  }
   const out: Output[] = [
     {
       path: config.generate,
@@ -87,7 +94,7 @@ export function withZodFlags(cwd: string, config: CyphraConfig, flags: ZodFlags)
  * @param config - Loaded config with absolute schema and output paths.
  */
 export async function runGenerate(cwd: string, config: CyphraConfig): Promise<void> {
-  const outputs = generateFrom(await readFile(config.schema, "utf8"), config);
+  const outputs = generateFrom(await readFile(config.schema, "utf8"), config, cwd);
   await writeOutputs(outputs);
   console.log(`Wrote ${relList(cwd, outputs)}`);
 }
@@ -135,7 +142,7 @@ export async function runGenerateWatch(
     last = source;
     let outputs: Output[];
     try {
-      outputs = generateFrom(source, config);
+      outputs = generateFrom(source, config, cwd);
     } catch (err) {
       console.error(`[${time()}] ${rel}: ${err instanceof Error ? err.message : String(err)}`);
       return;

@@ -196,12 +196,25 @@ relationship Tagging {
   });
 
   it("accepts a union at either end", () => {
-    const m = resolveSchema(
-      parseSchema(EDGES.replace("from Tag\n  to   SearchHit", "from SearchHit\n  to   Tag")),
-    );
+    const reversed = EDGES.replace("from Tag\n  to   SearchHit", "from SearchHit\n  to   Tag")
+      .replace(
+        '@relationship(type: "TAGS", direction: IN)',
+        '@relationship(type: "TAGS", direction: OUT)',
+      )
+      .replace(
+        'targets SearchHit[] @relationship(type: "TAGS", direction: OUT)',
+        'targets SearchHit[] @relationship(type: "TAGS", direction: IN)',
+      );
+    const m = resolveSchema(parseSchema(reversed));
     expect(m.relationships[0]).toMatchObject({ from: "SearchHit", to: "Tag" });
-    // Tag.targets goes Tag -> SearchHit: this model is the other way round.
-    expect(m.nodes.find((n) => n.name === "Tag")!.fields[1]).not.toHaveProperty("edge");
+    expect(m.nodes.find((n) => n.name === "Tag")!.fields[1]).toMatchObject({ edge: "Tagging" });
+  });
+
+  it("rejects a model no field uses (here, the other way round from Tag.targets)", () => {
+    const reversed = EDGES.replace("from Tag\n  to   SearchHit", "from SearchHit\n  to   Tag");
+    expect(() => resolveSchema(parseSchema(reversed))).toThrow(
+      /Relationship "Tagging": no relation field uses it/,
+    );
   });
 });
 

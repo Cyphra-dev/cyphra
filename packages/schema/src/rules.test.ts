@@ -31,6 +31,7 @@ node User {
   seen     DateTime? @max("2100-01-01T00:00:00Z")
   tags     String[] @size(1, 5)
   roles    Int[]    @nonEmpty
+  follows  User[]   @out(FOLLOWS)
 }
 
 relationship Follows {

@@ -24,6 +24,7 @@ const model = resolveSchema(
     location Point? @index
     tenant   String
     handle   String
+    follows  User[] @relationship(type: "FOLLOWS", direction: OUT)
     @@unique([tenant, handle])
     @@index([tenant, name])
   }

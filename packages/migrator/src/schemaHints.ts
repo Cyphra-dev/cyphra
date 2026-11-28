@@ -11,7 +11,9 @@ export function schemaIntegrationHints(doc: SchemaDocument): string[] {
   for (const d of doc.declarations) {
     if (d.kind === "Relationship") {
       hints.push(
-        `Relationship model "${d.name}" maps to Neo4j type \`${d.relType}\` (:${d.from} → :${d.to}).`,
+        d.from === undefined
+          ? `Relationship model "${d.name}" types every Neo4j \`${d.relType}\` edge.`
+          : `Relationship model "${d.name}" maps to Neo4j type \`${d.relType}\` (:${d.from} → :${d.to}).`,
       );
     }
   }

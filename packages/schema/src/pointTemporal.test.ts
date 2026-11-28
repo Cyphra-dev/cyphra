@@ -29,6 +29,7 @@ node Place {
   starts    LocalDateTime? @default("2024-05-01T10:30")
   stay      Duration @default("PT90M")
   windows   Duration[]
+  next      Place[] @relationship(type: "VISITED", direction: OUT)
 }
 
 relationship Visit {
@@ -130,7 +131,7 @@ describe("point and temporal types", () => {
   it("aliases a runtime type whose name a declaration takes", () => {
     const out = renderCyphraGenSource(
       parseSchema(`
-        node Shop { id String @id\n loc Point? }
+        node Shop { id String @id\n loc Point?\n near Shop[] @out(P) }
         relationship Point { type "P"\n from Shop\n to Shop\n at LocalTime? }
       `),
     );

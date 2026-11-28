@@ -309,29 +309,42 @@ function locateFieldError(rest: string, f: NodeField): Span | undefined {
     return typeNameSpan(f) ?? span(f.typeLoc);
   }
   if (/^an @id field cannot be optional or a list/.test(rest)) return span(f.typeLoc);
-  if (/^relation fields need @relationship/.test(rest)) {
-    const r = dec("relationship");
-    return r ? (argSpan(r, "type") ?? decoratorSpan(r)) : typeNameSpan(f);
+  /** The decorator that makes `f` a relation field (`@out`, `@in` or `@relationship`). */
+  const relDecs = f.decorators.filter(
+    (d) => d.name === "out" || d.name === "in" || d.name === "relationship",
+  );
+  const relDec = relDecs[0];
+  if (/^relation fields need @/.test(rest)) {
+    return relDec ? (argSpan(relDec, "type") ?? decoratorSpan(relDec)) : typeNameSpan(f);
+  }
+  if (/^@(out|in) needs the relationship type/.test(rest)) {
+    return relDec ? (argSpan(relDec, "type") ?? decoratorSpan(relDec)) : undefined;
+  }
+  if (/^(use one of @out|at most one @(out|in|relationship) )/.test(rest)) {
+    const d = relDecs[1] ?? relDec;
+    return d ? decoratorSpan(d) : undefined;
+  }
+  if (/^@(out|in|relationship)\(.*\) has the same direction as/.test(rest)) {
+    return relDec ? (argSpan(relDec, "type") ?? decoratorSpan(relDec)) : undefined;
   }
   if (/^direction must be/.test(rest)) {
-    const r = dec("relationship");
-    return r ? (argSpan(r, "direction") ?? decoratorSpan(r)) : undefined;
+    return relDec ? (argSpan(relDec, "direction") ?? decoratorSpan(relDec)) : undefined;
   }
   const relArg =
-    /^(?:onDelete must be|@relationship (\w+) given twice|onDelete \w+ conflicts)/.exec(rest);
+    /^(?:onDelete must be|@(?:relationship|out|in) (\w+) given twice|onDelete \w+ conflicts)/.exec(
+      rest,
+    );
   if (relArg) {
-    const r = dec("relationship");
     const key = relArg[1] ?? "onDelete";
-    return r ? (argSpan(r, key, relArg[1] ? 1 : 0) ?? decoratorSpan(r)) : undefined;
+    return relDec ? (argSpan(relDec, key, relArg[1] ? 1 : 0) ?? decoratorSpan(relDec)) : undefined;
   }
-  const unknownRelArg = /^unknown @relationship argument "(\w+)"/.exec(rest);
+  const unknownRelArg = /^unknown @(?:relationship|out|in) argument "(\w*)"/.exec(rest);
   if (unknownRelArg) {
-    const a = dec("relationship")?.args.find((x) => x.key === unknownRelArg[1]);
+    const a = relDec?.args.find((x) => x.key === unknownRelArg[1]);
     return span(a?.keyLoc ?? a?.loc);
   }
   if (/^several relationship models match/.test(rest)) {
-    const r = dec("relationship");
-    return r ? decoratorSpan(r) : undefined;
+    return relDec ? decoratorSpan(relDec) : undefined;
   }
   if (
     /^(unknown default function|default |unsupported @default|a Json default|@default\()/.test(rest)
