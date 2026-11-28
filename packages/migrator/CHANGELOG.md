@@ -1,5 +1,14 @@
 # @cyphra/migrator
 
+## 0.31.0
+
+### Patch Changes
+
+- Updated dependencies [1abed04]
+  - @cyphra/runtime@0.31.0
+  - @cyphra/query@0.31.0
+  - @cyphra/schema@0.31.0
+
 ## 0.30.0
 
 ### Patch Changes

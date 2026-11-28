@@ -1,5 +1,20 @@
 # @cyphra/graphql
 
+## 0.31.0
+
+### Minor Changes
+
+- 37e493c: `native.makeSchema` / `native.printSchema` accept an API whose only `Query` fields come from `config.extend` (every generated read off, `extend type Query { … }`). The "API has no root field" check now runs after `extend` is merged.
+
+### Patch Changes
+
+- 5b6623b: `cyphra graphql compare` (`migrate.compareResults`) compares errors on `extensions.code`, `message` and `path` (the v7 path mapped to the native shape), not only their number: an `UNAUTHENTICATED` / `FORBIDDEN` mismatch with the same message is now a difference. A v7 error that nulls the whole `data` (a non-null root field) against a `null` native root field is reported as a known difference. New exported type `GraphQLErrorLike`.
+- 76bcb93: `cyphra import graphql` keeps an interface (or a shared `@node(labels)` label) whose implementations declare a field alike but for its `@default` (`kind: String! @default(value: "lab")` on one, `"quiz"` on another): the field stays on each implementation with its own default, instead of the interface falling back to `@@labels` and dropping the relationships to it. The report now prints decorator arguments (`@default("lab")`, `@default(uuid())`), so differing defaults are visible.
+- da5f7a0: `cyphra graphql migrate-operations` (`migrate.translateDocument`) leaves a document that only uses custom fields (served by `extend` in the native API) byte-identical and reports it as `unchanged` (new `DocumentStatus`), instead of "translated" and rewrapped; `--check` no longer fails on it. In a translated document, an operation whose translation is itself keeps its source text too.
+- Updated dependencies [1abed04]
+  - @cyphra/runtime@0.31.0
+  - @cyphra/schema@0.31.0
+
 ## 0.30.0
 
 ### Minor Changes

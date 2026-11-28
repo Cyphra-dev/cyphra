@@ -1,5 +1,14 @@
 # @cyphra/better-auth
 
+## 0.31.0
+
+### Patch Changes
+
+- 1abed04: Describe Cyphra as an OGM (object-graph mapper) for Neo4j in the package descriptions and READMEs, instead of an ORM. No code or API change.
+- Updated dependencies [1abed04]
+  - @cyphra/runtime@0.31.0
+  - @cyphra/schema@0.31.0
+
 ## 0.30.0
 
 ### Patch Changes
