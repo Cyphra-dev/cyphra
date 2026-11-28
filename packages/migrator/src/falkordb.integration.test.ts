@@ -6,6 +6,7 @@
 import { parseSchema, printSchemaDocument, resolveSchema } from "@cyphra/schema";
 import { CyphraClient, UnsupportedFeatureError } from "@cyphra/runtime";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { renameRelationshipTypeCase } from "./renameTypeCase.testkit.js";
 import { EMPTY_SCHEMA_MODEL, diffSchemaModels } from "./diff.js";
 import {
   compareSchemaObjects,
@@ -214,5 +215,9 @@ describe.skipIf(!hasFalkorDB)("migrator on FalkorDB", () => {
         await readSchemaObjects(client),
       ),
     ).toEqual({ extra: [], missing: [], changed: [] });
+  });
+
+  it("renames a relationship type: the generated step moves the edges and their properties", async () => {
+    await renameRelationshipTypeCase(client, "Fkm");
   });
 });

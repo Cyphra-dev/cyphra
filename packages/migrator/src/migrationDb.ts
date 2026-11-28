@@ -1,7 +1,12 @@
 import type { Session } from "neo4j-driver";
 import { toNative, type CyphraClient } from "@cyphra/runtime";
 import { wrapInTransactions } from "./batch.js";
-import { compileRenameLabel, compileRenameProperty } from "./rename.js";
+import {
+  compileRenameLabel,
+  compileRenameProperty,
+  compileRenameRelationshipType,
+  type RenameRelationshipTypeOptions,
+} from "./rename.js";
 import { isMemgraphDdl, memgraphDdl } from "./memgraph.js";
 import { withMemgraphStorageAccess } from "./memgraphAccess.js";
 import { falkordbDdl, isFalkorDBDdl, runFalkorDBDdl } from "./falkordb.js";
@@ -41,6 +46,11 @@ export type MigrationDb = {
 export type MigrationMigrateHelpers = {
   renameLabel(opts: { from: string; to: string }): Promise<void>;
   renameProperty(opts: { label: string; from: string; to: string }): Promise<void>;
+  /**
+   * Rename a relationship type: recreate each `from` edge (between `startLabel` and `endLabel`
+   * nodes, when given) as a `to` edge with the same properties.
+   */
+  renameRelationshipType(opts: RenameRelationshipTypeOptions): Promise<void>;
 };
 
 /**
@@ -102,6 +112,10 @@ export function createMigrationDb(client: CyphraClient, session: Session): Migra
     },
     async renameProperty(opts) {
       const { text, params } = compileRenameProperty(opts.label, opts.from, opts.to);
+      await session.run(text, params);
+    },
+    async renameRelationshipType(opts) {
+      const { text, params } = compileRenameRelationshipType(opts);
       await session.run(text, params);
     },
   };

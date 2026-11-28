@@ -328,6 +328,7 @@ function recordingDb(statements: string[]): MigrationDb {
     migrate: {
       async renameLabel() {},
       async renameProperty() {},
+      async renameRelationshipType() {},
     },
   };
 }

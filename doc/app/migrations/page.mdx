@@ -44,6 +44,7 @@ migration and the snapshot.
 | node starts / stops implementing an interface      | `SET n:Person` / `REMOVE n:Person` on its existing nodes            |
 | new required field without a default               | **guard**: the migration fails if any existing node lacks it        |
 | removed field / model                              | `REMOVE` / `DETACH DELETE`, **commented out**: you opt in           |
+| renamed relationship type (`@out(A)` → `@out(B)`)  | the edges are recreated with the new type (and a review warning)    |
 | type change, or a likely rename                    | a review warning at the top of the file                             |
 
 Steps run in this order: drop obsolete DDL → data steps → create new DDL, so values are backfilled
@@ -205,6 +206,29 @@ the usual step adding it to existing nodes instead.
 A [union](/schema#unions) adds no label, constraint or index, so declaring, changing or removing
 one generates no step (and is not read as a renamed model).
 
+## Relationship types
+
+A relationship type cannot be changed in place in Neo4j, so renaming one in the schema needs a data
+migration. When a relation field keeps its name, target and direction but its type changes
+(`posts Post[] @out(AUTHORED)` becomes `@out(WROTE)`, in either syntax, from one side or both), the
+migration recreates the existing edges between those two models with the new type and the same
+properties, and lists the rename under `REVIEW`:
+
+```js
+// Rename the :AUTHORED edges from User to Post to :WROTE (User.posts, Post.author).
+await db.execute(
+  "MATCH (a:`User`)-[r:`AUTHORED`]->(b:`Post`) CREATE (a)-[n:`WROTE`]->(b) SET n = properties(r) DELETE r",
+);
+```
+
+Only the edges between the field's models move: `:AUTHORED` edges between other nodes stay. A
+`relationship AUTHORED { … }` block renamed with its type gets the usual constraint and index steps
+(drop the old names, create the new ones after the edges moved). Like a renamed field, a type that
+disappears while another appears, with the fields renamed too, only gets a warning: move the edges
+yourself with `db.migrate.renameRelationshipType({ from, to })` if it is a rename. Changing only
+the syntax (`@relationship(type: "AUTHORED", direction: OUT)` to `@out(AUTHORED)`) changes nothing
+in the database and generates no step.
+
 ## Writing migrations by hand
 
 `cyphra migration:create <name>` creates an empty migration. The `db` handle offers:
@@ -213,6 +237,8 @@ one generates no step (and is not read as a renamed model).
 - `db.execute(text, params?)`: trusted Cypher text, for DDL that cannot be parameterized. It returns rows as plain objects.
 - `db.runInTransactionBatches({ inner, batchSize, params })`: wraps `inner` in `CALL { … } IN TRANSACTIONS OF … ROWS` for large rewrites.
 - `db.migrate.renameLabel({ from, to })` and `db.migrate.renameProperty({ label, from, to })`.
+- `db.migrate.renameRelationshipType({ from, to, startLabel?, endLabel? })`: recreates the `from`
+  edges (between nodes with those labels, when given) as `to` edges with the same properties.
 
 ```js
 import { defineMigration } from "cyphra";

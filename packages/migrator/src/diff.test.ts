@@ -569,3 +569,107 @@ describe("validation rule changes", () => {
     expect(diffSchemaModels(schema("@length(1)"), schema("@length(2)")).notes).toHaveLength(1);
   });
 });
+
+describe("relationship type renames", () => {
+  const blog = (type: string, extra = "") =>
+    model(`
+      node User {
+        id    String @id
+        posts Post[] @out(${type})
+      }
+      node Post {
+        id     String @id
+        author User?  @in(${type})
+      }
+      relationship ${type} {
+        key String @unique
+        ${extra}
+      }
+    `);
+
+  it("recreates the edges with the new type, once for both sides, between the DDL steps", () => {
+    const plan = diffSchemaModels(blog("AUTHORED"), blog("WROTE"));
+    expect(plan.steps.map((s) => `${s.kind}: ${s.comment}`)).toEqual([
+      "statement: Drop constraint AUTHORED_key_rel_unique.",
+      "statement: Rename the :AUTHORED edges from User to Post to :WROTE (User.posts, Post.author).",
+      "statement: Create constraint WROTE_key_rel_unique.",
+    ]);
+    expect(plan.steps[1]).toMatchObject({
+      cypher:
+        "MATCH (a:`User`)-[r:`AUTHORED`]->(b:`Post`) CREATE (a)-[n:`WROTE`]->(b) SET n = properties(r) DELETE r",
+    });
+    expect(plan.warnings).toEqual([
+      "Relationship type AUTHORED renamed to WROTE (User.posts, Post.author): the migration recreates the existing :AUTHORED edges from User to Post as :WROTE, with their properties. If the field now means other edges, delete that step.",
+    ]);
+    expect(renderMigrationSource(plan, { name: "rename" })).toContain(
+      'await db.execute("MATCH (a:`User`)-[r:`AUTHORED`]->(b:`Post`) CREATE (a)-[n:`WROTE`]->(b) SET n = properties(r) DELETE r");',
+    );
+  });
+
+  it("detects a rename from one side, a self-relationship and the @relationship syntax", () => {
+    const one = (t: string) =>
+      model(`node User { id String @id
+        posts Post[] @relationship(type: "${t}", direction: OUT) }
+        node Post { id String @id }`);
+    expect(diffSchemaModels(one("AUTHORED"), one("WROTE")).steps.map((s) => s.comment)).toEqual([
+      "Rename the :AUTHORED edges from User to Post to :WROTE (User.posts).",
+    ]);
+    const self = (t: string) =>
+      model(`node User { id String @id
+        following User[] @out(${t})
+        followers User[] @in(${t}) }`);
+    const plan = diffSchemaModels(self("FOLLOWS"), self("SUBSCRIBED_TO"));
+    expect(plan.steps.map((s) => s.kind === "statement" && s.cypher)).toEqual([
+      "MATCH (a:`User`)-[r:`FOLLOWS`]->(b:`User`) CREATE (a)-[n:`SUBSCRIBED_TO`]->(b) SET n = properties(r) DELETE r",
+    ]);
+  });
+
+  it("leaves a union end unlabeled", () => {
+    const m = (t: string) =>
+      model(`union Hit = Post | User
+        node Post { id String @id }
+        node User { id String @id }
+        node Tag { id String @id
+          targets Hit[] @out(${t}) }`);
+    const [step] = diffSchemaModels(m("TAGS"), m("TAGGED")).steps;
+    expect(step).toMatchObject({
+      cypher:
+        "MATCH (a:`Tag`)-[r:`TAGS`]->(b) CREATE (a)-[n:`TAGGED`]->(b) SET n = properties(r) DELETE r",
+    });
+  });
+
+  it("only warns when the fields changed too, or when both types link the same models", () => {
+    const before = model(`node User { id String @id
+      posts Post[] @out(AUTHORED) }
+      node Post { id String @id }`);
+    const renamedField = model(`node User { id String @id
+      articles Post[] @out(WROTE) }
+      node Post { id String @id }`);
+    const plan = diffSchemaModels(before, renamedField);
+    expect(plan.steps).toEqual([]);
+    expect(plan.warnings).toEqual([
+      "Relationship types removed (AUTHORED) and added (WROTE): if this is a rename, move the existing edges with db.migrate.renameRelationshipType({ from, to }) (no step was generated).",
+    ]);
+    const both = model(`node User { id String @id
+      posts Post[] @out(WROTE)
+      liked Post[] @out(AUTHORED) }
+      node Post { id String @id }`);
+    const plan2 = diffSchemaModels(before, both);
+    expect(plan2.steps).toEqual([]);
+    expect(plan2.warnings[0]).toMatch(
+      /^User\.posts: relationship type AUTHORED → WROTE, and both types link User to Post before or after: no step was generated/,
+    );
+  });
+
+  it("generates nothing when only the syntax changed", () => {
+    const old = model(`node User { id String @id
+      posts Post[] @relationship(type: "AUTHORED", direction: OUT) }
+      node Post { id String @id
+      author User? @relationship(type: "AUTHORED", direction: IN) }`);
+    const neu = model(`node User { id String @id
+      posts Post[] @out(AUTHORED) }
+      node Post { id String @id
+      author User? @in(AUTHORED) }`);
+    expect(isEmptyPlan(diffSchemaModels(old, neu))).toBe(true);
+  });
+});

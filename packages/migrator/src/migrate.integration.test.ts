@@ -1,6 +1,7 @@
 import { parseSchema, printSchemaDocument, resolveSchema } from "@cyphra/schema";
 import { CyphraClient } from "@cyphra/runtime";
 import { afterAll, describe, expect, it, vi } from "vitest";
+import { renameRelationshipTypeCase } from "./renameTypeCase.testkit.js";
 import { diffSchemaModels, EMPTY_SCHEMA_MODEL } from "./diff.js";
 import { introspectDatabase, schemaFromIntrospection } from "./introspect.js";
 import { fulltextIndexStatementsFromSchema, vectorIndexStatementsFromSchema } from "./push.js";
@@ -522,5 +523,9 @@ describe.skipIf(!hasNeo)("schema migrations and pull (Neo4j)", () => {
     } finally {
       await clean();
     }
+  });
+
+  it("renames a relationship type: the generated step moves the edges and their properties", async () => {
+    await renameRelationshipTypeCase(client, "Mig");
   });
 });
