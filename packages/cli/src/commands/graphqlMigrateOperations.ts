@@ -111,6 +111,7 @@ export async function runGraphqlMigrateOperations(
             translated: count("translated"),
             blocked: count("blocked"),
             native: count("native"),
+            unchanged: count("unchanged"),
             invalid: count("invalid"),
             skipped: count("skipped"),
             files: rewritten,
@@ -130,11 +131,12 @@ export async function runGraphqlMigrateOperations(
       translated: "translated",
       blocked: "NOT TRANSLATED",
       native: "already native",
+      unchanged: "unchanged",
       invalid: "not a v7 document",
       skipped: "skipped",
     };
     for (const r of report) {
-      if (r.status === "native") continue;
+      if (r.status === "native" || r.status === "unchanged") continue;
       const ops = r.operations.length ? ` ${r.operations.join(", ")}` : "";
       console.log(`${r.location}  ${STATUS[r.status]}${ops}`);
       for (const i of r.issues) {
@@ -152,6 +154,7 @@ export async function runGraphqlMigrateOperations(
       `${count("blocked")} not translated`,
       ...(count("skipped") ? [`${count("skipped")} skipped`] : []),
       ...(count("native") ? [`${count("native")} already native`] : []),
+      ...(count("unchanged") ? [`${count("unchanged")} unchanged (the same in both APIs)`] : []),
       ...(count("invalid") ? [`${count("invalid")} not v7 documents`] : []),
     ];
     const verb = opts.dryRun || opts.check ? "would be rewritten" : "rewritten";

@@ -383,7 +383,10 @@ src/pages.ts:9:31  translated Page
   it is, with a `# cyphra: not translated: …` comment above the operation. A selected field the
   native API does not have (a `@cypher` field not declared in `cypherFields`) is dropped with a
   `# cyphra: …` note. Run it again after fixing: the comments are replaced, not repeated, and
-  native documents are left alone.
+  native documents are left alone. A document that only uses fields both APIs serve alike (custom
+  root fields and types, served by [`extend`](/graphql/native#custom-root-fields-and-types)) is
+  left byte-identical and reported as `unchanged`; so is such an operation inside a translated
+  document.
 - The schemas: `--typedefs` names the v7 type definitions (`.graphql` files, or a module exporting
   `typeDefs`); the native one is `schema.cyphra` given with `--schema`, else the conversion of
   `cyphra import graphql` (`--id-fields`, `--add-interface-labels` as for the import). The native
@@ -393,7 +396,7 @@ src/pages.ts:9:31  translated Page
   names with commas. `--no-comments` writes no `# cyphra:` comment.
 - `--dry-run` prints the translated documents and writes nothing. `--check` writes nothing and exits
   with 1 while a v7 operation is left (translatable or not). `--json` prints every document with
-  its status (`translated`, `blocked`, `native`, `invalid`, `skipped`) and issues.
+  its status (`translated`, `blocked`, `native`, `unchanged`, `invalid`, `skipped`) and issues.
 
 ## Compare compat.v7 and the native API
 
