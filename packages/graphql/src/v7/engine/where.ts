@@ -16,8 +16,8 @@
  *   `$cypherNodes` filters on the field's statement (see `cypher.ts`).
  *
  * What it cannot translate exactly throws {@link Fallback}: the compat compiler then runs the
- * request (relationships to interfaces and unions, `@cypher` statements that aggregate outside the
- * `where` of a root read, …).
+ * request (relationships to interfaces and unions, `@cypher` statements that aggregate in the
+ * `where` of a connection count, …).
  *
  * @packageDocumentation
  */
@@ -29,13 +29,14 @@ import {
   keyedConnectionEdge,
   keyedEdgeInput,
   type Attribute,
+  type CypherAnnotation,
   type CypherNodeField,
   type NodeType,
   type PropertiesType,
   type Relationship,
   type V7Model,
 } from "../model.js";
-import { filterNodes, filterValue } from "./cypher.js";
+import { filterNodes, filterValue, statementShape } from "./cypher.js";
 import { ENGINE_SCALAR_TYPES, type EngineNode, type EngineSchema } from "./schema.js";
 
 type AnyRecord = Record<string, unknown>;
@@ -221,14 +222,47 @@ export class WhereTranslator {
    */
   root = false;
 
+  /**
+   * `true` while translating the `where` of a relation or node load of a projection, which runs
+   * as a `CALL` clause when a statement of it aggregates: such a statement may be in it too.
+   */
+  load = false;
+
+  /**
+   * `true` for the filters of a mutation (the write statement's variables are not reserved): a
+   * statement naming one falls back.
+   */
+  write = false;
+
   /** `translate()` with {@link root} set. */
   atRoot<T>(translate: () => T): T {
-    const was = this.root;
-    this.root = true;
+    return this.scoped("root", translate);
+  }
+
+  /** `translate()` with {@link load} set. */
+  atLoad<T>(translate: () => T): T {
+    return this.scoped("load", translate);
+  }
+
+  private scoped<T>(flag: "root" | "load", translate: () => T): T {
+    const was = this[flag];
+    this[flag] = true;
     try {
       return translate();
     } finally {
-      this.root = was;
+      this[flag] = was;
+    }
+  }
+
+  /** Whether a filter may run `cypher` here (else {@link Fallback}). */
+  private statement(cypher: CypherAnnotation): void {
+    const shape = statementShape(cypher.statement);
+    if (this.write && shape.clashes) {
+      throw new Fallback("@cypher statement variable that may shadow the engine's, in a mutation");
+    }
+    // A mutation projects its response in the write statement: no `CALL` clause there.
+    if (shape.aggregates && (this.write || (!this.root && !this.load))) {
+      throw new Fallback("@cypher statement that aggregates, in a count or a mutation filter");
     }
   }
 
@@ -299,10 +333,11 @@ export class WhereTranslator {
     if (field.args.length) throw new Fallback("filter on a @cypher field with arguments");
     const target = this.model.node(field.target);
     this.engineNode(target);
+    this.statement(field.cypher);
     const entry = (quantifier: string, where?: Filter): AnyRecord => ({
       $cypherNodes: [
         {
-          expr: filterNodes(field.cypher, this.jwt, this.root),
+          call: filterNodes(field.cypher, this.jwt),
           model: target.name,
           quantifier,
           ...(where !== undefined && where !== TRUE ? { where } : {}),
@@ -456,7 +491,8 @@ export class WhereTranslator {
         filter = { [engineOp]: engineValue(attr, value) };
       }
     }
-    const expr = filterValue(attr.cypher!, attr.type.list, this.jwt, this.root);
+    this.statement(attr.cypher!);
+    const expr = filterValue(attr.cypher!, attr.type.list, this.jwt);
     return { $cypher: [{ expr, type, list: attr.type.list, filter }] };
   }
 

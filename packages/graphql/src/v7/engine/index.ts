@@ -3,9 +3,10 @@
  * compiler are translated into ORM operations on an engine client (see `schema.ts`, `where.ts`,
  * `read.ts`, `write.ts`, `cypher.ts`, with the request's `@authorization` rules from `rules.ts`);
  * the others run on the compat compiler, which stays for what only v7 does (interfaces and unions,
- * nested writes, arithmetic operators, custom-resolver fields, …), for subscriptions, and for what
- * the engine cannot evaluate like v7 (`@cypher` statements that aggregate in a projection, root
- * `@cypher` fields, …).
+ * nested writes, arithmetic operators, custom-resolver fields, `context.cypherParams`, validations
+ * that depend on the node), and for a few cases the engine does not evaluate like v7 yet (READ
+ * validations that fail for the request, a READ filter on the nodes an update returns, to-one
+ * connection filters in rules, `@cypher` statements a mutation's response cannot project).
  *
  * @packageDocumentation
  */
@@ -14,8 +15,9 @@ import type { FieldNode } from "graphql";
 import type { AuthContext } from "../auth/context.js";
 import type { ExecutorOptions } from "../execute.js";
 import type { SelectionInfo } from "../cypher/select.js";
-import type { FulltextIndex, NodeType, V7Model } from "../model.js";
+import type { CypherRootField, FulltextIndex, NodeType, V7Model } from "../model.js";
 import { EngineClients } from "./client.js";
+import { statementVariables } from "./cypher.js";
 import { ReadTranslator, type ReadPlan } from "./read.js";
 import { WriteTranslator, type WritePlan } from "./write.js";
 import { engineSchema, type EngineSchema } from "./schema.js";
@@ -74,7 +76,7 @@ export class V7Engine {
     private readonly probe?: EngineProbe,
   ) {
     this.schema = engineSchema(model);
-    this.clients = new EngineClients(this.schema.schema, opts);
+    this.clients = new EngineClients(this.schema.schema, opts, statementVariables(model));
   }
 
   /**
@@ -136,6 +138,27 @@ export class V7Engine {
     return this.plan(fieldNodes[0]?.name.value ?? "", ctx, () => {
       const t = new WriteTranslator(this.model, this.schema, info, auth);
       const plan = t[kind](node, args, fieldNodes);
+      t.authenticated();
+      return plan;
+    });
+  }
+
+  /**
+   * The plan of a `Query` / `Mutation` `@cypher` field, or `undefined` when the compat compiler
+   * must run it.
+   */
+  cypher(
+    type: "Query" | "Mutation",
+    field: CypherRootField,
+    args: AnyRecord,
+    info: SelectionInfo,
+    fieldNodes: readonly FieldNode[],
+    ctx: unknown,
+    auth: AuthContext,
+  ): ReadPlan | undefined {
+    return this.plan(fieldNodes[0]?.name.value ?? "", ctx, () => {
+      const t = new ReadTranslator(this.model, this.schema, info, auth);
+      const plan = t.rootCypher(field, args, fieldNodes, type === "Mutation");
       t.authenticated();
       return plan;
     });

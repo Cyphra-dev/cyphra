@@ -387,7 +387,7 @@ describe("routing between the engine and the compat compiler", () => {
     expect(denied.errors?.map((e) => e.message)).toEqual(["Forbidden"]);
     // Engine statements bind `n`; the compiler's `this0`.
     const engine = (r: Run) => r.cypher.startsWith("MATCH (n:") || r.cypher.startsWith("UNWIND");
-    expect(statements.map(engine)).toEqual([true, false, false, true, true, false, true]);
+    expect(statements.map(engine)).toEqual([true, true, false, true, true, false, true]);
     expect(statements[3]!.cypher).toContain("WHERE n.`owner` = $p0");
   });
 
@@ -399,10 +399,12 @@ describe("routing between the engine and the compat compiler", () => {
     await run(s, "{ movies { title } }");
     await run(s, "{ movies { top { name } shout } }");
     await run(s, "{ movies { castSize } }");
+    await run(s, "{ movies { favorites { __typename } } }");
     expect(seen).toEqual([
       ["movies", undefined],
       ["movies", undefined],
-      ["movies", "@cypher statement that aggregates, in a projection, a sort or a nested filter"],
+      ["movies", undefined],
+      ["movies", "Movie.favorites is not in the engine"],
     ]);
     const off = makeSchema({ typeDefs, driver, [ENGINE_OPTION]: false } as never);
     await run(off, "{ movies { title } }");

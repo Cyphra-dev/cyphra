@@ -120,7 +120,9 @@ export class WriteTranslator {
     auth: AuthContext,
   ) {
     this.where = new WhereTranslator(model, schema, false, auth.jwt ?? {});
+    this.where.write = true;
     this.read = new ReadTranslator(model, schema, info, auth);
+    this.read.forWrite();
     this.rules = this.read.rules;
   }
 

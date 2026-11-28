@@ -284,6 +284,11 @@ describe.skipIf(!hasNeo)("@cypher and @fulltext on Neo4j", () => {
       `{ searchGqlCyMovies(phrase: "matrix OR speed", sort: [{ node: { title: DESC } }], first: 1, after: "YXJyYXljb25uZWN0aW9uOjA=") {
           totalCount pageInfo { hasNextPage hasPreviousPage } edges { cursor node { title } } } }`,
       `{ searchGqlCyMovies(phrase: "matrix OR speed", where: { score: { min: 0 } }) { edges { score node { title } } } }`,
+      // Statements that aggregate in projections, sorts and nested filters (CALL clauses), and an
+      // edge's @cypher field in a projection and a sort.
+      `{ gqlCyMovies(sort: [{ actorCount: DESC }]) { title actorCount cast(where: { movieCount: { gt: 1 } }) { name movieCount }
+          castConnection(sort: [{ edge: { roleLength: DESC } }]) { edges { properties { role roleLength } node { name } } } } }`,
+      `{ gqlCyTitles(prefix: "S") }`,
     ];
     for (const document of documents) {
       const ctx = { jwt: { sub: "u1" } };
@@ -292,8 +297,7 @@ describe.skipIf(!hasNeo)("@cypher and @fulltext on Neo4j", () => {
       expect(a.errors, document).toBeUndefined();
       expect(b, document).toEqual(a);
     }
-    // All but the fifth: `actorCount`'s statement names its column `n`, a variable of the engine's
-    // statement that a subquery expression cannot shadow.
+    // Every one: `actorCount`'s statement names its column `n`, which the engine client reserves.
     expect(onEngine).toEqual([
       "gqlCyMoviesConnection",
       "gqlCyMovies",
@@ -301,8 +305,11 @@ describe.skipIf(!hasNeo)("@cypher and @fulltext on Neo4j", () => {
       "gqlCyMovies",
       "gqlCyMovies",
       "gqlCyMovies",
+      "gqlCyMovies",
       "searchGqlCyMovies",
       "searchGqlCyMovies",
+      "gqlCyMovies",
+      "gqlCyTitles",
     ]);
   });
 });

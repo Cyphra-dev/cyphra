@@ -1,7 +1,7 @@
 /**
  * The Change Data Capture reader of the native API's subscriptions: one poller per server
  * (`db.cdc.query` from a cursor), fanning batches of node and relationship changes out to the
- * subscriptions listening. It is the reader of `compat.v7`'s `CDCSubscriptionsEngine` (#76) made
+ * subscriptions listening; `compat.v7`'s `CDCSubscriptionsEngine` reads through it too. It is
  * independent of a type model: listeners say which labels and relationship types they want, and
  * get the raw changes of each poll (properties as the driver gives them), in commit order.
  *
@@ -16,9 +16,19 @@
 
 import { GraphQLError } from "graphql";
 import neo4j, { type Driver } from "neo4j-driver";
-import { cdcUnavailable } from "../v7/subscriptions/engine.js";
 
 type AnyRecord = Record<string, unknown>;
+
+/** The error a subscription gets when the database does not serve CDC. */
+export function cdcUnavailable(cause: unknown): GraphQLError {
+  const detail = cause instanceof Error ? cause.message : String(cause);
+  return new GraphQLError(
+    "GraphQL subscriptions need Neo4j Change Data Capture (CDC): Neo4j Enterprise Edition or Aura, " +
+      "with the database in CDC mode (ALTER DATABASE <name> SET OPTION txLogEnrichment 'FULL'). " +
+      `Neo4j answered: ${detail}`,
+    { originalError: cause instanceof Error ? cause : undefined },
+  );
+}
 
 /** One end of a relationship change. */
 export type ChangeEndpoint = {
@@ -36,6 +46,8 @@ export type NodeChange = {
   readonly kind: "node";
   readonly operation: "c" | "u" | "d";
   readonly elementId: string;
+  /** Start of the change's transaction (`txStartTime`), as the driver gives it. */
+  readonly txStartTime?: unknown;
   /** Labels after the change (before it, for a delete). */
   readonly labels: readonly string[];
   /** Properties before the change (updates and deletes), raw driver values. */
@@ -49,6 +61,8 @@ export type RelationshipChange = {
   readonly kind: "relationship";
   readonly operation: "c" | "u" | "d";
   readonly elementId: string;
+  /** Start of the change's transaction (`txStartTime`), as the driver gives it. */
+  readonly txStartTime?: unknown;
   readonly type: string;
   readonly start: ChangeEndpoint;
   readonly end: ChangeEndpoint;
@@ -77,6 +91,18 @@ export type CDCReaderOptions = {
   readonly database?: string;
   /** Milliseconds between two polls. Default 1000. */
   readonly pollInterval?: number;
+};
+
+/**
+ * Internal options of a {@link CDCReader} (`compat.v7`'s `CDCSubscriptionsEngine` reads through
+ * one): only changes whose transaction metadata matches `txMetadata`, and `cdcUnavailable`'s
+ * error as it is (no `CDC_UNAVAILABLE` code) when the database does not serve CDC.
+ *
+ * @internal
+ */
+export type CDCReaderInternals = {
+  readonly txMetadata?: AnyRecord;
+  readonly plainErrors?: boolean;
 };
 
 type Listener = {
@@ -181,7 +207,10 @@ export class CDCReader {
   private generation = 0;
   private closed = false;
 
-  constructor(options: CDCReaderOptions) {
+  constructor(
+    options: CDCReaderOptions,
+    private readonly internals: CDCReaderInternals = {},
+  ) {
     const pollInterval = options.pollInterval ?? 1000;
     if (!Number.isFinite(pollInterval) || pollInterval <= 0) {
       throw new TypeError("native.CDCReader: pollInterval must be a positive number.");
@@ -207,6 +236,7 @@ export class CDCReader {
         })
         .catch((err: unknown) => {
           const e = cdcUnavailable(err);
+          if (this.internals.plainErrors) throw e;
           throw new GraphQLError(e.message, {
             originalError: e.originalError ?? undefined,
             extensions: { code: "CDC_UNAVAILABLE" },
@@ -274,9 +304,10 @@ export class CDCReader {
       for (const x of l.interest.labels) labels.add(x);
       for (const x of l.interest.types) types.add(x);
     }
+    const tx = this.internals.txMetadata ? { txMetadata: this.internals.txMetadata } : {};
     return [
-      ...[...labels].sort().map((l) => ({ select: "n", labels: [l] })),
-      ...[...types].sort().map((t) => ({ select: "r", type: t })),
+      ...[...labels].sort().map((l) => ({ select: "n", labels: [l], ...tx })),
+      ...[...types].sort().map((t) => ({ select: "r", type: t, ...tx })),
     ];
   }
 
@@ -292,8 +323,8 @@ export class CDCReader {
       // The position before reading changes: when there are none, everything up to it was seen.
       current = await this.fetchCurrent();
       rows = await this.run(
-        "CALL db.cdc.query($from, $selectors) YIELD id, txId, seq, event " +
-          "RETURN id, event ORDER BY txId ASC, seq ASC",
+        "CALL db.cdc.query($from, $selectors) YIELD id, txId, seq, event, metadata " +
+          "RETURN id, event, metadata ORDER BY txId ASC, seq ASC",
         { from, selectors },
       );
     } catch (err) {
@@ -331,7 +362,12 @@ export class CDCReader {
       const state = (e.state ?? {}) as { before?: unknown; after?: unknown };
       const before = propertiesOf(state.before);
       const after = propertiesOf(state.after);
-      const props = { ...(before ? { before } : {}), ...(after ? { after } : {}) };
+      const start = (row.metadata as { txStartTime?: unknown } | undefined)?.txStartTime;
+      const props = {
+        ...(start !== undefined ? { txStartTime: start } : {}),
+        ...(before ? { before } : {}),
+        ...(after ? { after } : {}),
+      };
       if (e.eventType === "n") {
         out.push({
           kind: "node",

@@ -3,6 +3,9 @@
  * {@link EngineSchema}, returning raw driver values (shaped by the v7 decoders, like the compat
  * compiler's results).
  *
+ * The client reserves the names the `@cypher` statements use (`withReservedVariables`): a
+ * statement may name a variable the engine would otherwise use (`n`, `m0`, …).
+ *
  * - With `makeSchema({ client })`: on that client, so its `query` events, spans, missing-index
  *   warnings and hooks cover these statements.
  * - With `makeSchema({ driver })`: on a client over the driver whose transactions carry the same
@@ -16,6 +19,7 @@ import {
   CyphraClient,
   createOrm,
   withRawValues,
+  withReservedVariables,
   type ManagedTransaction,
   type SchemaModel,
 } from "@cyphra/runtime";
@@ -78,6 +82,8 @@ export class EngineClients {
   constructor(
     private readonly schema: SchemaModel,
     private readonly opts: ExecutorOptions,
+    /** The names of the `@cypher` statements, which no engine variable takes. */
+    private readonly reserved: ReadonlySet<string> = new Set(),
   ) {}
 
   private create(client: CyphraClient): object {
@@ -93,7 +99,8 @@ export class EngineClients {
         ),
       );
     }
-    return withRawValues(orm);
+    const raw = withRawValues(orm);
+    return this.reserved.size ? withReservedVariables(raw, this.reserved) : raw;
   }
 
   /**
