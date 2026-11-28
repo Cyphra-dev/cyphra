@@ -1,5 +1,14 @@
 # @cyphra/runtime
 
+## 0.32.0
+
+### Patch Changes
+
+- Updated dependencies [cba69f3]
+- Updated dependencies [fd81ee5]
+  - @cyphra/schema@0.32.0
+  - @cyphra/query@0.32.0
+
 ## 0.31.0
 
 ### Patch Changes

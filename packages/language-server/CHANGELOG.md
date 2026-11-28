@@ -1,5 +1,24 @@
 # @cyphra/language-server
 
+## 0.32.0
+
+### Minor Changes
+
+- cba69f3: `cyphra format --codemod` rewrites `@relationship(type: "T", direction: OUT|IN, onDelete: …)` fields into `@out(T, …)` / `@in(T, …)`, keeping comments; it is idempotent, and a type that is not an identifier keeps `@relationship`. Plain `cyphra format` keeps the syntax you wrote (so `--check` in CI and format-on-save do not change on upgrade) and prints how many fields `--codemod` would rewrite. The same is `formatSchema(source, { codemod: true })`, and the editor offers it as a quick fix ("Rewrite as @out(T)", or every field of the file).
+
+  The importers write the new syntax: `cyphra import graphql`, `cyphra pull`, `cyphra import neogma`, `cyphra import prisma` and the Better Auth schema generator emit `@out(TYPE)` / `@in(TYPE)` relation fields (`relationFieldDecorator()` in `@cyphra/schema`), `@relationship(…)` only for a type that is not an identifier. The docs, examples and README use `@out` / `@in`.
+
+- e2df487: Relationship types in the editor: completion of the schema's types inside `@out(` / `@in(` (and `onDelete` after it), hover on a type with its edges (`(User)-[:AUTHORED]->(Post)`), its edge properties and the inverse field, go to definition (the `relationship` block), find references and rename of a type (every `@out` / `@in` / `@relationship` field and its block), the code action "Add inverse field on <Target>" (`codeActionsAt`), and warnings for nearly identical relationship types. `@out` and `@in` are documented and offered first on relation fields; the `relationship` snippet writes the short form.
+- fd81ee5: Relation fields can name their edges with `@out(TYPE)` / `@in(TYPE)`, the type written once as a symbol: `posts Post[] @out(AUTHORED)`, `author User? @in(AUTHORED)`, options in the same call (`@out(AUTHORED, onDelete: Cascade)`). One side is enough. A short-form block `relationship AUTHORED { at DateTime }` types the properties of every `:AUTHORED` edge (its ends come from the fields); without a block the edge has no properties. The `@relationship(type:, direction:)` syntax and the long-form `relationship X { type "T" from A to B … }` block keep working and resolve to the same model and the same generated client; mixing `@out` / `@in` / `@relationship` on one field is an error.
+
+  New checks, on both syntaxes: a pair of fields with the same type and the same direction on both sides (`b B @out(T)` on A, `a A @out(T)` on B) is an error, and so is a `relationship` block that no field uses (schemas with such a block need a field or no block now). Nearly identical relationship types (one or two edits apart, or differing only in case) are a warning, from the new `schemaWarnings()`, printed by `cyphra validate` and `cyphra generate`.
+
+### Patch Changes
+
+- Updated dependencies [cba69f3]
+- Updated dependencies [fd81ee5]
+  - @cyphra/schema@0.32.0
+
 ## 0.31.0
 
 ### Patch Changes
