@@ -12,3 +12,11 @@ updates:
       # to it means supporting 16 and 17 side by side, a change of its own (see #210).
       - dependency-name: "graphql"
         update-types: ["version-update:semver-major"]
+      # The docs site runs on Nextra 4.6.1, which does not support Next 16 yet (shuding/nextra#5003:
+      # MDX pages fail to build, and the custom `cyphra` highlighter is rejected under Turbopack).
+      # eslint-config-next 16 only serves `next lint`, which Next 16 removes. Lift both ignores
+      # once Nextra supports Next 16 (see #215 and #209).
+      - dependency-name: "next"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "eslint-config-next"
+        update-types: ["version-update:semver-major"]
