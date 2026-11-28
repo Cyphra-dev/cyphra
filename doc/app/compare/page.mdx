@@ -11,13 +11,13 @@ import { COMPARE_COLLECTION } from "./collection";
 # Neo4j libraries for TypeScript, compared
 
 There are a handful of ways to use Neo4j from TypeScript: the official driver, the Neo4j GraphQL
-Library, object-graph mappers such as neogma and neode, and Cyphra, a Prisma-style ORM with a
-schema file, a generated client and migrations. Each page below says what the other tool does
+Library, object-graph mappers such as neogma and neode, and Cyphra, an OGM with a
+Prisma-style schema file, a generated client and migrations. Each page below says what the other tool does
 well, where Cyphra differs, and when to choose the other one. Competitor facts are checked against
 their own docs, npm and GitHub, with sources at the bottom of each page.
 
 <Cards>
-  <Cards.Card title="Prisma for Neo4j: the Prisma-style ORM" href="/neo4j-orm" />
+  <Cards.Card title="Neo4j ORM? Cyphra is an OGM" href="/neo4j-orm" />
   <Cards.Card title="Cyphra vs the Neo4j GraphQL Library" href="/compare/neo4j-graphql-library" />
   <Cards.Card title="Cyphra vs neogma and neode" href="/compare/neogma-neode" />
   <Cards.Card title="Cyphra vs neo4j-driver" href="/compare/neo4j-driver" />
@@ -34,11 +34,12 @@ their own docs, npm and GitHub, with sources at the bottom of each page.
 | Hand-written Cypher with no extra layer                       | [`neo4j-driver`](/compare/neo4j-driver)                                                                                  |
 | Constraints, indexes and data changes as versioned migrations | [Cyphra migrations](/migrations)                                                                                         |
 
-Prisma itself does not support Neo4j; the [Prisma-style ORM page](/neo4j-orm#prisma-and-neo4j)
+Prisma itself does not support Neo4j; the [Neo4j ORM page](/neo4j-orm#prisma-and-neo4j)
 has the details and sources. Neo4j-OGM is a Java library, covered on the
 [neogma and neode page](/compare/neogma-neode#what-about-neo4j-ogm).
 
-New to the terms? Start with [ORM vs OGM](/glossary/orm-vs-ogm) and
+New to the terms? [ORM or OGM?](/neo4j-orm#orm-or-ogm) compares the two with Cyphra examples;
+the glossary defines [ORM vs OGM](/glossary/orm-vs-ogm) and
 [property graph](/glossary/property-graph) in the glossary.
 
 <CollectionJsonLd {...COMPARE_COLLECTION} />

@@ -1,6 +1,6 @@
 # Cyphra example — blog
 
-The typed ORM workflow end to end:
+The typed OGM workflow end to end:
 
 1. `schema.cyphra` declares nodes, relations and a typed edge (`Follows`).
 2. `cyphra generate` writes `src/cyphra.gen.ts`: model types and a typed `createClient()`.

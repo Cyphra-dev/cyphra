@@ -10,7 +10,7 @@ import {
   softwareGraph,
 } from "./structured-data";
 
-/** Home: the ORM as a SoftwareApplication (free offer) and its SoftwareSourceCode. */
+/** Home: the OGM as a SoftwareApplication (free offer) and its SoftwareSourceCode. */
 export function HomeJsonLd() {
   return <JsonLd data={softwareGraph()} />;
 }

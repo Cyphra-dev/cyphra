@@ -1,6 +1,6 @@
 # @cyphra/query
 
-> Part of [Cyphra](https://www.cyphra.dev), the TypeScript ORM for Neo4j. **Queries docs:** [www.cyphra.dev/queries](https://www.cyphra.dev/queries)
+> Part of [Cyphra](https://www.cyphra.dev), the TypeScript OGM (object-graph mapper) for Neo4j. **Queries docs:** [www.cyphra.dev/queries](https://www.cyphra.dev/queries)
 
 Cypher template tag and minimal query builder for Cyphra.
 

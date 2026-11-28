@@ -8,8 +8,8 @@ import { Callout, Cards } from "nextra/components";
 
 # Cyphra vs neogma and neode
 
-**neogma and neode are object-graph mappers (OGMs) that define models in TypeScript or JavaScript
-code; Cyphra generates a typed client from a separate `.cyphra` schema and adds migrations.**
+**neogma, neode and Cyphra are all object-graph mappers (OGMs). neogma and neode define models in
+TypeScript or JavaScript code; Cyphra generates a typed client from a separate `.cyphra` schema and adds migrations.**
 neogma is actively released (2.0.5 in November 2026) and validates values with TypeBox. neode's
 npm release is still 0.4.9 from 2023, with a 1.0 TypeScript rewrite in prerelease on GitHub. If
 you searched for Neo4j-OGM: that is a Java library, not an option for a TypeScript project.
@@ -158,7 +158,7 @@ Neo4j-OGM." For the terms themselves, see [ORM vs OGM](/glossary/orm-vs-ogm).
 
 - You want migrations generated from model changes, including data backfills and guards.
 - You want Prisma-style queries (`findMany`, `include`, `select`, nested writes) with result types
-  that follow your arguments ([Prisma-style ORM for Neo4j](/neo4j-orm)).
+  that follow your arguments ([Neo4j ORM? Cyphra is an OGM](/neo4j-orm)).
 - You are adopting an existing database: `cyphra pull` writes the schema for you ([CLI](/cli)).
 - You are on neogma already: `cyphra import neogma` converts the models and reports the rest.
 

@@ -1,6 +1,6 @@
 # @cyphra/graphql
 
-> Part of [Cyphra](https://www.cyphra.dev), the TypeScript ORM for Neo4j. **GraphQL:** [docs](https://www.cyphra.dev/graphql)
+> Part of [Cyphra](https://www.cyphra.dev), the TypeScript OGM (object-graph mapper) for Neo4j. **GraphQL:** [docs](https://www.cyphra.dev/graphql)
 
 Serves the GraphQL API that `@neo4j/graphql` v7 generates from your type definitions (same types,
 fields, filters and results) on the Cyphra runtime, so frontends switch without changing their

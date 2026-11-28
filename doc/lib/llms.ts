@@ -18,7 +18,8 @@ const HEADER = `# Cyphra
 
 > ${SITE.description}
 
-Cyphra is a TypeScript ORM for Neo4j (5.6+ for the typed client). You describe the graph in a
+Cyphra is a TypeScript OGM (object-graph mapper) for Neo4j (5.6+ for the typed client), what other
+stacks call an ORM. You describe the graph in a
 \`.cyphra\` schema; \`cyphra generate\` writes a typed client (\`findMany\`, \`include\`/\`select\`,
 nested writes, \`$transaction\`, typed edge properties as \`$edge\`, raw Cypher with \`db.$cypher\`), and
 \`cyphra migrate dev\` generates migrations (constraints, indexes, backfills, guards) from schema

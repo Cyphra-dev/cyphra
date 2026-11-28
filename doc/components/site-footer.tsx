@@ -74,7 +74,7 @@ export function SiteFooter() {
         <Link href="/" aria-label="Cyphra home">
           <Logo />
         </Link>
-        <p>The typed ORM for Neo4j. Schema, client, migrations and CLI for TypeScript.</p>
+        <p>The typed OGM for Neo4j. Schema, client, migrations and CLI for TypeScript.</p>
       </div>
       {COLUMNS.map((col) => (
         <nav key={col.title} aria-label={col.title}>

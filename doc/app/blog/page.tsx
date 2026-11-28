@@ -11,7 +11,7 @@ import { PageWrapper as Wrapper } from "../../mdx-components";
 
 const TITLE = "Blog: Neo4j and TypeScript in practice";
 const DESCRIPTION =
-  "Guides and design notes from the team building Cyphra: typed Neo4j queries in TypeScript, schema migrations, Cypher and the trade-offs behind the ORM.";
+  "Guides and design notes from the team building Cyphra: typed Neo4j queries in TypeScript, schema migrations, Cypher and the trade-offs behind the OGM.";
 
 export const metadata: Metadata = {
   title: TITLE,

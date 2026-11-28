@@ -71,7 +71,7 @@ export const FAQ: [string, string][] = [
     "Paid plans take a daily dump stored outside the cluster. Neo4j Community has no online backup, so the database stops for the length of the dump.",
   ],
   [
-    "Do I have to use the Cyphra ORM?",
-    "No. Databases speak Bolt over TLS (neo4j+s://), so any Neo4j driver or tool works. The Cyphra ORM is free and open source either way.",
+    "Do I have to use the Cyphra OGM?",
+    "No. Databases speak Bolt over TLS (neo4j+s://), so any Neo4j driver or tool works. The Cyphra OGM is free and open source either way.",
   ],
 ];

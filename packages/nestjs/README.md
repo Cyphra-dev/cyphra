@@ -1,6 +1,6 @@
 # @cyphra/nestjs
 
-> Part of [Cyphra](https://www.cyphra.dev), the TypeScript ORM for Neo4j. **NestJS:** [guide](https://www.cyphra.dev/guides/nestjs)
+> Part of [Cyphra](https://www.cyphra.dev), the TypeScript OGM (object-graph mapper) for Neo4j. **NestJS:** [guide](https://www.cyphra.dev/guides/nestjs)
 
 The NestJS module for Cyphra: the generated typed client as an injectable provider,
 `@Transactional()` service methods, a `@nestjs/terminus` health indicator, and the Neo4j driver

@@ -1,6 +1,6 @@
 # Cyphra for Visual Studio Code
 
-> Part of [Cyphra](https://www.cyphra.dev), the TypeScript ORM for Neo4j. **Docs:** [www.cyphra.dev/editor](https://www.cyphra.dev/editor)
+> Part of [Cyphra](https://www.cyphra.dev), the TypeScript OGM (object-graph mapper) for Neo4j. **Docs:** [www.cyphra.dev/editor](https://www.cyphra.dev/editor)
 
 Language support for Cyphra schema files (`schema.cyphra`):
 

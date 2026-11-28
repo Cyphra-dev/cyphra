@@ -1,6 +1,6 @@
 import { OG_CONTENT_TYPE, OG_SIZE, docsOgImage } from "../../components/og";
 
-export const alt = "Cyphra benchmarks: the cost of the ORM layer over the raw Neo4j driver";
+export const alt = "Cyphra benchmarks: the cost of the OGM layer over the raw Neo4j driver";
 export const size = OG_SIZE;
 export const contentType = OG_CONTENT_TYPE;
 

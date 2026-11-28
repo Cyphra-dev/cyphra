@@ -1,7 +1,7 @@
 ---
 title: "Memgraph support: the Cyphra feature matrix"
 sidebarTitle: Memgraph
-description: "Run the Cyphra ORM and migrations on Memgraph over Bolt: the dialect option, what compiles differently, and which features Memgraph supports, tested in CI."
+description: "Run the Cyphra OGM and migrations on Memgraph over Bolt: the dialect option, what compiles differently, and which features Memgraph supports, tested in CI."
 ---
 
 import { Callout } from "nextra/components";
@@ -13,7 +13,7 @@ openCypher, so the same `neo4j-driver`, the same schema and the same typed clien
 Cypher differs, Cyphra compiles to Memgraph's syntax. Where Memgraph has no equivalent, Cyphra
 throws an `UnsupportedFeatureError` before anything runs.
 
-CI runs the ORM, migration and CLI integration suites against `memgraph/memgraph:3.14.0` on every
+CI runs the OGM, migration and CLI integration suites against `memgraph/memgraph:3.14.0` on every
 push. The matrix below lists what those suites cover.
 
 ## Set the dialect
@@ -42,7 +42,7 @@ And set it in `cyphra.json`, so that `cyphra migrate dev`, `cyphra migrate diff`
 }
 ```
 
-The client does not detect the dialect on its own: ORM statements are compiled without a round
+The client does not detect the dialect on its own: OGM statements are compiled without a round
 trip to the server, and Neo4j stays the default. If a Neo4j-dialect client talks to Memgraph, the
 first Cypher Memgraph cannot parse fails with a `CyphraError` that points at the `dialect` option.
 The CLI commands that connect (`push`, `pull`, `migrate deploy`, `migrate status`, `migrate reset`,

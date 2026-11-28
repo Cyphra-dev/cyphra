@@ -1,7 +1,8 @@
 ---
 title: "ORM vs OGM"
-description: "An ORM maps database tables to objects; an OGM maps graph nodes and relationships to objects. What the terms mean and why Cyphra calls itself an ORM."
+description: "An ORM maps relational tables to objects; an OGM maps graph nodes and relationships to objects. The two terms, and why Cyphra is an OGM."
 date: "2026-11-20"
+updated: "2026-11-28"
 aliases: ["Object-relational mapper", "Object-graph mapper"]
 related: ["property-graph", "relationship-type"]
 ---
@@ -20,7 +21,10 @@ which have no direct equivalent in a table.
 
 ## In Cyphra
 
-Strictly speaking, Cyphra is an object-graph mapper: it maps nodes, relationships and edge
-properties from a `.cyphra` schema. It uses the more familiar word ORM because its API follows the
-ORMs TypeScript developers already know, with `findMany`, `include`, `select` and nested writes.
-See the [typed client](/client).
+Cyphra is an OGM for Neo4j, Memgraph and FalkorDB: it maps nodes, labels, relationships and edge
+properties from a `.cyphra` schema, and compiles every call to Cypher. Its API follows the ORMs
+TypeScript developers already know (`findMany`, `include`, `select`, nested writes), which is why
+people often find it by searching for a "Neo4j ORM".
+
+For the full comparison, with a concept table, Cyphra examples and an FAQ, read
+**[ORM or OGM? on the Neo4j ORM page](/neo4j-orm#orm-or-ogm)**.

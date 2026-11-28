@@ -6,7 +6,7 @@ export const SITE = {
   legalName: "FAKGROUP",
   url: SITE_URL,
   description:
-    "Cyphra is the typed ORM for Neo4j: a .cyphra schema, a fully typed TypeScript client and migrations generated from schema changes. Open source, MIT.",
+    "Cyphra is the typed OGM (object-graph mapper) for Neo4j: a .cyphra schema, a fully typed TypeScript client and migrations generated from schema changes. Open source, MIT.",
   // Raster logo: Google wants a bitmap of at least 112 px for Organization.
   logo: `${SITE_URL}/apple-icon`,
   sameAs: ["https://github.com/Cyphra-dev", LINKS.npm],

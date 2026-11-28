@@ -1,7 +1,7 @@
 {
   "name": "cyphra-vscode",
   "displayName": "Cyphra",
-  "description": "Cyphra schema (.cyphra) support: highlighting, diagnostics, completion, hover, go to definition, rename, formatting and client generation for the TypeScript ORM for Neo4j",
+  "description": "Cyphra schema (.cyphra) support: highlighting, diagnostics, completion, hover, go to definition, rename, formatting and client generation for the TypeScript OGM (object-graph mapper) for Neo4j",
   "version": "0.1.0",
   "private": true,
   "publisher": "cyphra",

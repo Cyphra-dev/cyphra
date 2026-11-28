@@ -1,6 +1,6 @@
 # Cyphra
 
-**Cyphra** is a TypeScript ORM for [Neo4j](https://neo4j.com/): describe your graph in a `.cyphra` schema, generate a **fully typed client**, and keep raw **Cypher** one call away. It also ships versioned **migrations** and a **CLI**.
+**Cyphra** is a TypeScript **OGM** (object-graph mapper) for [Neo4j](https://neo4j.com/) and compatible graph databases ([Memgraph](https://www.cyphra.dev/memgraph), [FalkorDB](https://www.cyphra.dev/falkordb)), what other stacks call an ORM ([why OGM?](https://www.cyphra.dev/neo4j-orm#orm-or-ogm)): describe your graph in a `.cyphra` schema, generate a **fully typed client**, and keep raw **Cypher** one call away. It also ships versioned **migrations** and a **CLI**.
 
 ```cyphra
 node User {

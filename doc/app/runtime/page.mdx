@@ -30,7 +30,7 @@ await client.close();
 ```
 
 Optional **`dialect`** is `"neo4j"` (default), `"memgraph"` or `"falkordb"`: the Cypher flavour
-the ORM compiles to and the DDL the migrator writes (`client.dialect`). See [Memgraph](/memgraph)
+the OGM compiles to and the DDL the migrator writes (`client.dialect`). See [Memgraph](/memgraph)
 for what changes and what is not available there; `detectDialect(client)` reads it from the server.
 
 To connect to [FalkorDB](/falkordb), pass `falkordb: { url, graph }` instead of `uri`, `user` and
@@ -56,7 +56,7 @@ add `neo4j-driver` next to `@cyphra/runtime` if you use the subpackages.
 
 Cyphra only uses APIs that are the same in both majors (`executeRead` / `executeWrite`, `run`), and
 it recognises driver values by their markers (`isInt`, `isDateTime`, `isDate`, …), never with
-`instanceof`. The ORM builds its parameters with its own value classes (`CypherInteger`,
+`instanceof`. The OGM builds its parameters with its own value classes (`CypherInteger`,
 `CypherDateTime`, …), which carry the same markers and fields as the driver's, so the driver sends
 them as Cypher `INTEGER`, `DATETIME` and so on. Integers and temporals therefore round-trip the same
 way on 5 and 6, even if two copies of the driver end up installed, and over HTTP (below).
@@ -167,7 +167,7 @@ type QueryEvent = {
 
 An `error` event has the same fields (without `rows`) plus `message`, `code` (the Neo4j status code,
 for example `Neo.ClientError.Statement.SyntaxError`), `gqlStatus` when the driver reports one, and
-`error` (the original error, which is still thrown to your code). Most ORM operations are one
+`error` (the original error, which is still thrown to your code). Most OGM operations are one
 statement, nested writes and the read-back included; an `upsert` with nested writes, or a `delete`
 whose `onDelete` cascades loop back on a model, runs several, and emits a `query` event for each,
 all with the same `model` and `operation`. The driver may retry a transaction on transient errors, and each attempt
@@ -197,7 +197,7 @@ new NodeSDK({ serviceName: "my-app" /* exporter, ... */ }).start();
 const db = createClient({ uri, user, password, tracer: trace.getTracer("my-app") });
 ```
 
-Each ORM operation is a span named `cyphra.<Model>.<operation>` (`cyphra.Post.findMany`,
+Each OGM operation is a span named `cyphra.<Model>.<operation>` (`cyphra.Post.findMany`,
 `cyphra.$transaction`, `cyphra.$cypher`), made active so that its statements and any span you start
 inside `$transaction` are its children. Each statement is a child span of kind `CLIENT`, named after
 its first clause and model (`MATCH Post`), with the database semantic conventions:
@@ -339,7 +339,7 @@ Set the password with `wrangler secret put NEO4J_PASSWORD`. No `nodejs_compat` f
 
 Everything the typed client does: CRUD, nested writes, `upsert`, `aggregate` / `groupBy`,
 traversals and shortest paths, vector and full-text search, `$cypher` and `$transaction`. CI runs
-the whole ORM integration suite over both transports. Logging, OpenTelemetry spans and missing-index
+the whole OGM integration suite over both transports. Logging, OpenTelemetry spans and missing-index
 warnings work the same (`server.address` is the HTTP host).
 
 - An operation that is one statement and writes nothing when it fails (reads, `create` and
@@ -353,7 +353,7 @@ warnings work the same (`server.address` is the HTTP host).
   transaction callback, like the driver's managed transactions.
 - Values use the Query API's typed JSON: a schema `Int` is sent as an `Integer`, a JS number as a
   `Float` (as with Bolt). Results decode into the same JS values as with Bolt.
-- Errors are `Neo4jHttpError`s with the Neo4j `code` (`Neo.ClientError.Schema.ConstraintValidationFailed`, …) and the HTTP `status`. The ORM client turns uniqueness violations into a
+- Errors are `Neo4jHttpError`s with the Neo4j `code` (`Neo.ClientError.Schema.ConstraintValidationFailed`, …) and the HTTP `status`. The OGM client turns uniqueness violations into a
   [`UniqueConstraintError`](/client#unique-constraint-errors), as with Bolt.
 
 ### Limitations

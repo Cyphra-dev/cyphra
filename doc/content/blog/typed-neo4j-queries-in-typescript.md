@@ -211,7 +211,7 @@ The driver may retry the callback on transient errors, so keep it free of outsid
 
 ## When Cypher is the better tool
 
-An ORM should not stand between you and the query language. Aggregations, variable-length paths and
+An OGM should not stand between you and the query language. Aggregations, variable-length paths and
 graph algorithms are often clearer in Cypher, so Cyphra keeps it one call away:
 
 ```ts
@@ -226,7 +226,7 @@ the query text. Results are converted to plain JavaScript (integers to `number`,
 `Date`, nodes to their properties). The type parameter is a declaration rather than a check, so
 keep these queries small and close to where they are used.
 
-When you want composable queries without the ORM, the [query builder](/queries) and the
+When you want composable queries without the OGM, the [query builder](/queries) and the
 [runtime](/runtime) are the layers underneath, and they are exported from the same `cyphra`
 package.
 

@@ -1005,7 +1005,7 @@ some: { movieCount: { gt: 1 } } }`) works. v7 fails with a Neo4j "Variable not d
 
 ## Move the data model to Cyphra
 
-The GraphQL API and the Cyphra ORM can work on the same graph. To get a `schema.cyphra` from the same
+The GraphQL API and the Cyphra OGM can work on the same graph. To get a `schema.cyphra` from the same
 type definitions, run [`cyphra import graphql`](/cli#import-from-neo4jgraphql). In code,
 `compat.v7.cyphraSchema(typeDefs)` returns the same conversion as a schema model, with the list of
 what Cyphra models differently.
